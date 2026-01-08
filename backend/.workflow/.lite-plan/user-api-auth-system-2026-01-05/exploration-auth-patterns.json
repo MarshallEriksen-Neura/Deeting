@@ -1,0 +1,789 @@
+{
+  "exploration_type": "auth-patterns",
+  "timestamp": "2026-01-05T00:07:00Z",
+  "task_description": "实现用户认证系统 - JWT登录/刷新/登出、用户注册/激活/重置密码、管理员用户管理",
+
+  "relevant_files": [
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/deps/auth.py",
+      "relevance": "critical",
+      "rationale": "Current authentication pattern (X-User-Id header-based). Contains get_current_user dependency, require_permissions factory, and permission checking logic. Lines 27-46 show the header-based user extraction that needs JWT extension."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/models/user.py",
+      "relevance": "critical",
+      "rationale": "User, Role, Permission, UserRole, RolePermission ORM models. User model has email, hashed_password, is_active, is_superuser fields. RBAC structure already in place (lines 11-87)."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/repositories/user_repository.py",
+      "relevance": "critical",
+      "rationale": "UserRepository with get_by_id and permission_codes methods. Lines 21-31 show how permissions are fetched via Role->RolePermission->Permission joins. Needs extension for email-based lookup, user creation, password updates."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/core/cache.py",
+      "relevance": "high",
+      "rationale": "Redis cache abstraction with get/set/delete/clear_prefix methods. Lines 43-95 show key prefixing with CACHE_PREFIX, pickle serialization. Ready for auth:*, acl:perm:* caching patterns."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/core/config.py",
+      "relevance": "high",
+      "rationale": "Settings with DATABASE_URL, REDIS_URL, CACHE_PREFIX. Needs JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS additions."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/core/database.py",
+      "relevance": "medium",
+      "rationale": "AsyncSession factory and get_db dependency. Lines 27-35 show dependency injection pattern to follow in new auth routes."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/schemas/base.py",
+      "relevance": "high",
+      "rationale": "BaseSchema, IDSchema, TimestampSchema pattern. Lines 7-21 show Pydantic BaseModel with from_attributes=True for ORM mapping. Template for UserRead, UserCreate, LoginRequest schemas."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/docs/user-api-design.md",
+      "relevance": "critical",
+      "rationale": "Complete design specification for user auth system. Lines 10-13 describe login/refresh/logout JWT flow with backward compatibility for X-User-Id. Lines 48-59 detail Redis key patterns (auth:access:{jti}, auth:refresh:{jti}, auth:token_version:{user_id}, etc.)."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/pyproject.toml",
+      "relevance": "medium",
+      "rationale": "Lines 25-26 confirm python-jose[cryptography] and passlib[bcrypt] already in dependencies. No additional packages needed for JWT implementation."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/api/v1/chat_proxy_route.py",
+      "relevance": "low",
+      "rationale": "Currently minimal (only comment). Example of v1 route structure to follow for /api/v1/auth/* and /api/v1/users/* endpoints."
+    }
+  ],
+
+  "patterns": {
+    "current_auth_pattern": {
+      "type": "header_based_simple",
+      "location": "app/deps/auth.py:27-46",
+      "mechanism": "X-User-Id header containing UUID -> UserRepository.get_by_id() -> check is_active",
+      "strengths": [
+        "Simple dependency injection via Depends(get_current_user)",
+        "Async-native (AsyncSession)",
+        "Clear separation: auth dep -> repository -> model"
+      ],
+      "limitations": [
+        "No password verification",
+        "No token lifecycle (login/logout)",
+        "No expiration/revocation mechanism",
+        "Client controls user_id (insecure for production)"
+      ]
+    },
+
+    "permission_pattern": {
+      "type": "rbac_dependency_factory",
+      "location": "app/deps/auth.py:55-76",
+      "mechanism": "require_permissions(codes) factory creates dependency -> fetches user permissions via UserRepository.permission_codes() -> checks superuser or code match",
+      "implementation": "User -> UserRole -> Role -> RolePermission -> Permission (code field)",
+      "caching_strategy": "Lines 107-131 show get_permission_flags can return {can_xxx: 0/1} dict, designed for caching",
+      "strengths": [
+        "Composable via Depends(require_permissions(['code']))",
+        "Superuser bypass built-in",
+        "Database-driven permission codes"
+      ]
+    },
+
+    "resource_visibility_pattern": {
+      "type": "policy_function",
+      "location": "app/deps/auth.py:79-104",
+      "mechanism": "can_use_item(user, item) checks visibility (public/private/shared) + owner/superuser/shared_targets",
+      "usage": "assert_can_use_item raises 403 if check fails",
+      "relevance": "Similar pattern needed for user profile access (self vs admin)"
+    },
+
+    "repository_pattern": {
+      "type": "repository_abstraction",
+      "example": "app/repositories/user_repository.py",
+      "characteristics": [
+        "Takes AsyncSession in __init__",
+        "Async methods (async def get_by_id, async def permission_codes)",
+        "Hides SQLAlchemy details from service/route layer",
+        "Uses select() + join for complex queries (permission_codes joins 4 tables)"
+      ],
+      "extension_needed": [
+        "get_by_email(email: str) -> Optional[User]",
+        "create_user(email, hashed_password, ...) -> User",
+        "update_password(user_id, new_hashed_password)",
+        "update_user_status(user_id, is_active: bool)",
+        "assign_roles(user_id, role_ids: list[UUID])"
+      ]
+    },
+
+    "schema_pattern": {
+      "type": "pydantic_dto",
+      "base_location": "app/schemas/base.py:7-21",
+      "conventions": [
+        "BaseSchema with from_attributes=True for ORM compatibility",
+        "Separate Base/Update/DTO classes (e.g., PublicModelBase, PublicModelUpdate, PublicModelDTO)",
+        "DTO inherits Base + IDSchema + TimestampSchema",
+        "Field(...) with max_length, description for validation"
+      ],
+      "needed_schemas": [
+        "UserBase (email, username) - no password",
+        "UserCreate (email, password, invite_code?)",
+        "UserUpdate (username, ...)",
+        "UserRead/UserDTO (id, email, username, is_active, is_superuser, created_at, updated_at) - excludes hashed_password",
+        "LoginRequest (email, password)",
+        "TokenPair (access_token, refresh_token, token_type)",
+        "ChangePasswordRequest (old_password, new_password)"
+      ]
+    },
+
+    "dependency_injection_pattern": {
+      "location": "app/deps/auth.py:27-30, 61-64",
+      "mechanism": "FastAPI Depends() for db, headers, and nested dependencies (get_current_user calls Depends(get_db))",
+      "best_practice": "Dependency chain: get_current_user (basic) -> require_permissions(['code']) (adds RBAC check)",
+      "usage_example": "async def endpoint(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db))"
+    },
+
+    "error_handling_pattern": {
+      "location": "app/deps/auth.py:36,40,44,70,104",
+      "conventions": [
+        "HTTPException with status_code from fastapi.status (HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN)",
+        "detail field contains user-facing error message",
+        "401 for authentication failures (missing/invalid credentials)",
+        "403 for authorization failures (missing permissions)"
+      ],
+      "needed_additions": [
+        "422 for validation errors (Pydantic handles automatically)",
+        "400 for business logic errors (e.g., email already exists)",
+        "429 for rate limiting"
+      ]
+    },
+
+    "cache_pattern": {
+      "location": "app/core/cache.py",
+      "key_strategy": "Lines 43-44 show _make_key(key) prepends CACHE_PREFIX (ai_gateway:)",
+      "serialization": "pickle.loads/dumps (line 52, 66) for Python object storage",
+      "methods": [
+        "get/set with TTL (default CACHE_DEFAULT_TTL=300s)",
+        "delete for single key invalidation",
+        "clear_prefix for batch invalidation (e.g., clear_prefix('acl:perm:') on role change)"
+      ],
+      "decorator_available": "Lines 97-153 show @cache.cached(prefix, ttl, key_builder) for function memoization",
+      "usage_for_auth": [
+        "Cache permission codes: acl:perm:{user_id}",
+        "Store JWT blacklist: auth:access:{jti} (TTL = token expiry)",
+        "Track login failures: auth:login_fail:{email}",
+        "Store verification codes: auth:captcha:{email}"
+      ]
+    }
+  },
+
+  "integration_points": {
+    "jwt_token_creation": {
+      "library": "python-jose (pyproject.toml:25)",
+      "location_to_add": "app/services/users/auth_service.py (new file)",
+      "dependencies": "from jose import jwt, JWTError",
+      "methods_needed": [
+        "create_access_token(user_id, jti) -> str",
+        "create_refresh_token(user_id, jti) -> str",
+        "decode_token(token) -> dict (returns payload with user_id, jti, exp)"
+      ],
+      "config_needed": "JWT_SECRET_KEY, JWT_ALGORITHM='HS256', ACCESS_TOKEN_EXPIRE_MINUTES=30, REFRESH_TOKEN_EXPIRE_DAYS=7 in Settings"
+    },
+
+    "password_hashing": {
+      "library": "passlib[bcrypt] (pyproject.toml:26)",
+      "location_to_add": "app/services/users/password_service.py (new file) or inline in auth_service.py",
+      "dependencies": "from passlib.context import CryptContext",
+      "implementation": "pwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')",
+      "methods_needed": [
+        "hash_password(plain_password) -> str",
+        "verify_password(plain_password, hashed_password) -> bool"
+      ]
+    },
+
+    "get_current_user_extension": {
+      "current_location": "app/deps/auth.py:27-46",
+      "extension_strategy": "Dual-mode authentication with priority",
+      "implementation_steps": [
+        "1. Add optional Authorization header: authorization: str | None = Header(default=None)",
+        "2. Priority: if authorization and starts with 'Bearer ' -> extract token -> decode JWT -> get user_id and jti",
+        "3. Check Redis blacklist: auth:access:{jti} exists (if exists, token is revoked, raise 401)",
+        "4. Check token version: auth:token_version:{user_id} matches token's version (if mismatch, raise 401)",
+        "5. Fallback: if no Authorization -> use X-User-Id header (current logic)",
+        "6. UserRepository.get_by_id() and check is_active (existing logic)",
+        "7. Check ban status: auth:ban:{user_id} exists (if exists, raise 403 with ban reason)"
+      ],
+      "backward_compatibility": "X-User-Id header continues to work for internal/testing use until deprecated",
+      "security_note": "JWT mode should be mandatory in production (configured via feature flag or remove X-User-Id fallback)"
+    },
+
+    "logout_implementation": {
+      "endpoint": "POST /api/v1/auth/logout",
+      "strategy": "JWT blacklist using Redis",
+      "steps": [
+        "1. Extract jti from access_token (current user's token)",
+        "2. Store auth:access:{jti} in Redis with TTL = remaining token lifetime",
+        "3. Find and revoke refresh_token: auth:refresh:{refresh_jti} (client should send or derive from session)",
+        "4. Optionally increment auth:token_version:{user_id} for global logout"
+      ],
+      "design_choice": "Per-token revocation (jti blacklist) vs global revocation (token_version increment)"
+    },
+
+    "permission_caching": {
+      "current_method": "app/deps/auth.py:49-52 calls UserRepository.permission_codes(user_id) on every request",
+      "caching_point": "app/deps/auth.py:107-131 get_permission_flags already designed for caching",
+      "implementation": [
+        "1. In require_permissions dependency, check cache.get(f'acl:perm:{user.id}') first",
+        "2. If miss, call UserRepository.permission_codes(user.id) and cache.set with TTL=300-900s",
+        "3. On role change (POST /admin/users/{id}/roles), call cache.delete(f'acl:perm:{user_id}')"
+      ],
+      "invalidation_triggers": [
+        "User role assignment/removal",
+        "Role permission changes",
+        "User ban/unban"
+      ]
+    },
+
+    "rate_limiting": {
+      "location": "Not yet implemented",
+      "needed_for": [
+        "Login attempts: auth:login_fail:{email} (counter with TTL, threshold triggers captcha/temp ban)",
+        "Registration: auth:register_limit:{ip} (prevent spam)",
+        "Password reset: auth:reset_limit:{email}"
+      ],
+      "redis_pattern": "INCR key, EXPIRE key ttl, GET key to check count",
+      "library_option": "slowapi or custom Redis-based limiter"
+    },
+
+    "email_service": {
+      "location": "Not yet implemented",
+      "needed_for": [
+        "User registration activation code",
+        "Password reset verification code",
+        "Admin-created user welcome email"
+      ],
+      "implementation_approach": "Celery task (celery[redis] already in pyproject.toml:27) or inline via aiosmtplib",
+      "config_needed": "SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, FROM_EMAIL in Settings"
+    }
+  },
+
+  "backward_compatibility_approach": {
+    "strategy": "Additive dual-mode authentication",
+    "phases": [
+      {
+        "phase": "1. JWT implementation",
+        "changes": [
+          "Add JWT token creation/validation to auth_service.py",
+          "Add POST /api/v1/auth/login endpoint (returns tokens)",
+          "Add POST /api/v1/auth/refresh endpoint",
+          "Extend get_current_user to check Authorization: Bearer header first"
+        ],
+        "compatibility": "X-User-Id header still works (fallback mode)"
+      },
+      {
+        "phase": "2. Feature rollout",
+        "changes": [
+          "Frontend switches to JWT (stores access_token + refresh_token)",
+          "Monitor X-User-Id usage via logging",
+          "Add deprecation warning in response headers when X-User-Id is used"
+        ],
+        "compatibility": "Both modes active"
+      },
+      {
+        "phase": "3. Deprecation (optional)",
+        "changes": [
+          "Add ALLOW_HEADER_AUTH=false config flag",
+          "When false, get_current_user raises 401 if only X-User-Id provided",
+          "Only allow X-User-Id for specific internal endpoints (health checks, metrics)"
+        ],
+        "compatibility": "Controlled migration"
+      }
+    ],
+    "testing_strategy": [
+      "Keep existing tests using X-User-Id (regression)",
+      "Add new tests using JWT Bearer tokens (new functionality)",
+      "Test dual-mode scenarios (both headers present -> JWT takes priority)"
+    ]
+  },
+
+  "clarification_needs": [
+    {
+      "topic": "Token rotation strategy",
+      "question": "Should refresh token rotation be implemented (each refresh issues new refresh_token and invalidates old one) or allow same refresh_token for multiple access_token refreshes?",
+      "recommendation": "Implement rotation for security (prevents refresh token reuse attacks). Store auth:refresh:{jti}:used flag on first use.",
+      "impact": "Moderate - affects refresh endpoint logic and Redis key management"
+    },
+    {
+      "topic": "Email verification requirement",
+      "question": "Should user registration require email verification before allowing login, or allow immediate login with unverified status?",
+      "recommendation": "Based on docs line 16, registration creates 'unactivated user' -> email verification required before login.",
+      "impact": "High - affects registration flow, User model may need is_verified field or rely on is_active"
+    },
+    {
+      "topic": "Admin user creation password strategy",
+      "question": "Should admin-created users get random password + email reset link, or admin sets initial password?",
+      "recommendation": "Design doc line 74 mentions 'random password + email notification' -> more secure, user sets own password.",
+      "impact": "Low - affects admin user creation endpoint implementation"
+    },
+    {
+      "topic": "Ban enforcement scope",
+      "question": "Should banned users have existing sessions immediately terminated (WebSocket disconnect, API calls fail), or only prevent new logins?",
+      "recommendation": "Design doc lines 26, 46 mention 'immediately invalidate token/cache' -> active session termination required. Need Redis pubsub or token_version increment.",
+      "impact": "High - requires ban check in get_current_user and potentially WebSocket middleware"
+    },
+    {
+      "topic": "Invite code requirement",
+      "question": "Is invite_code optional or required for registration? How are codes generated/validated?",
+      "recommendation": "Design doc line 16 shows 'optional invite_code' -> closed beta vs open registration toggle. Need InviteCode model or Redis-based validation.",
+      "impact": "Medium - affects registration endpoint and may need invite code management endpoints"
+    },
+    {
+      "topic": "MFA implementation priority",
+      "question": "Should MFA (TOTP/SMS) be implemented in MVP or post-MVP?",
+      "recommendation": "Design doc line 41 lists MFA under 'design direction' not MVP -> implement after core auth working.",
+      "impact": "Low for MVP - can defer to later iteration"
+    },
+    {
+      "topic": "Token storage location",
+      "question": "Should access_token be stored in HTTP-only cookie or localStorage (frontend handles)?",
+      "recommendation": "Backend only returns tokens in response body. Frontend decision (cookies vs localStorage). Backend should support both (check Authorization header or Cookie header).",
+      "impact": "Low - affects get_current_user header parsing (add Cookie fallback)"
+    }
+  ],
+
+  "recommended_file_structure": {
+    "new_files_needed": [
+      {
+        "path": "app/services/users/auth_service.py",
+        "purpose": "JWT token creation/validation, login/logout logic, password verification",
+        "key_functions": [
+          "create_tokens(user_id) -> TokenPair",
+          "verify_credentials(email, password) -> User",
+          "revoke_token(jti)",
+          "decode_and_validate_token(token) -> dict"
+        ]
+      },
+      {
+        "path": "app/schemas/user.py",
+        "purpose": "User-related Pydantic schemas",
+        "schemas": [
+          "UserBase, UserCreate, UserUpdate, UserRead",
+          "LoginRequest, TokenPair, RefreshRequest",
+          "ChangePasswordRequest, ResetPasswordRequest",
+          "UserAdminUpdate, UserListResponse"
+        ]
+      },
+      {
+        "path": "app/schemas/auth.py",
+        "purpose": "Auth-specific schemas",
+        "schemas": [
+          "LoginRequest, TokenPair, RefreshRequest, LogoutRequest",
+          "ActivateRequest, ResetPasswordRequest, ChangePasswordRequest"
+        ]
+      },
+      {
+        "path": "app/api/v1/auth.py",
+        "purpose": "Authentication endpoints router",
+        "routes": [
+          "POST /login",
+          "POST /refresh",
+          "POST /logout"
+        ]
+      },
+      {
+        "path": "app/api/v1/users.py",
+        "purpose": "User self-service endpoints router",
+        "routes": [
+          "POST /register",
+          "POST /activate",
+          "POST /reset-password",
+          "GET /me",
+          "PATCH /me",
+          "POST /me/change-password"
+        ]
+      },
+      {
+        "path": "app/api/v1/admin/users.py",
+        "purpose": "Admin user management router",
+        "routes": [
+          "GET /users (list)",
+          "POST /users (create)",
+          "PATCH /users/{id}",
+          "POST /users/{id}/roles",
+          "POST /users/{id}/ban",
+          "POST /users/{id}/unban"
+        ]
+      },
+      {
+        "path": "app/api/v1/admin/roles.py",
+        "purpose": "Admin role/permission management",
+        "routes": [
+          "GET /roles",
+          "GET /permissions"
+        ]
+      },
+      {
+        "path": "migrations/versions/xxxx_add_user_auth_fields.py",
+        "purpose": "Alembic migration (if User model needs changes)",
+        "note": "Current User model already has email, hashed_password, is_active - may not need migration unless adding is_verified, failed_login_count, etc."
+      }
+    ],
+    "files_to_extend": [
+      {
+        "path": "app/deps/auth.py",
+        "changes": [
+          "Extend get_current_user with Authorization Bearer parsing",
+          "Add JWT validation and blacklist check",
+          "Add ban status check",
+          "Keep X-User-Id fallback for backward compatibility"
+        ]
+      },
+      {
+        "path": "app/repositories/user_repository.py",
+        "changes": [
+          "Add get_by_email(email) -> Optional[User]",
+          "Add create_user(...) -> User",
+          "Add update_password(user_id, hashed_password)",
+          "Add update_status(user_id, is_active)",
+          "Add list_users(filters, pagination)",
+          "Add assign_roles(user_id, role_ids)"
+        ]
+      },
+      {
+        "path": "app/core/config.py",
+        "changes": [
+          "Add JWT_SECRET_KEY: str",
+          "Add JWT_ALGORITHM: str = 'HS256'",
+          "Add ACCESS_TOKEN_EXPIRE_MINUTES: int = 30",
+          "Add REFRESH_TOKEN_EXPIRE_DAYS: int = 7",
+          "Add ALLOW_HEADER_AUTH: bool = True (feature flag for X-User-Id)",
+          "Add email/SMTP config if email service needed"
+        ]
+      },
+      {
+        "path": "app/api/v1/__init__.py",
+        "changes": [
+          "Create file if not exists",
+          "Import and include auth, users, admin routers",
+          "Register with main app"
+        ]
+      }
+    ]
+  },
+
+  "redis_key_design": {
+    "prefix": "ai_gateway: (from settings.CACHE_PREFIX)",
+    "keys": [
+      {
+        "pattern": "auth:access:{jti}",
+        "purpose": "Blacklist revoked access tokens",
+        "value": "user_id or revocation timestamp",
+        "ttl": "Match access token expiry (30 minutes default)",
+        "operations": [
+          "SET on logout/ban",
+          "GET in get_current_user to check revocation",
+          "Auto-expires with token"
+        ]
+      },
+      {
+        "pattern": "auth:refresh:{jti}",
+        "purpose": "Track refresh token usage/revocation",
+        "value": "{user_id, token_version, used: bool}",
+        "ttl": "7-30 days (refresh token lifetime)",
+        "operations": [
+          "SET on login",
+          "GET+SET(used=true) on refresh (rotation)",
+          "DELETE on logout"
+        ]
+      },
+      {
+        "pattern": "auth:token_version:{user_id}",
+        "purpose": "Global token invalidation (password change, forced logout)",
+        "value": "integer version counter",
+        "ttl": "No expiry (persistent state) or very long",
+        "operations": [
+          "INCR on password change/global logout",
+          "GET in get_current_user to verify token version",
+          "Tokens include version at creation time"
+        ]
+      },
+      {
+        "pattern": "auth:login_fail:{email}",
+        "purpose": "Rate limiting login attempts",
+        "value": "attempt counter",
+        "ttl": "10-30 minutes",
+        "operations": [
+          "INCR on failed login",
+          "GET before login to check threshold",
+          "Trigger captcha/temp ban if count > threshold",
+          "DELETE on successful login"
+        ]
+      },
+      {
+        "pattern": "auth:captcha:{email}",
+        "purpose": "Store email verification/registration codes",
+        "value": "6-digit code or UUID token",
+        "ttl": "5-10 minutes",
+        "operations": [
+          "SET on registration/reset request",
+          "GET+DELETE on activation/reset completion (single use)"
+        ]
+      },
+      {
+        "pattern": "acl:perm:{user_id}",
+        "purpose": "Cache user permission codes",
+        "value": "set of permission code strings (pickled)",
+        "ttl": "5-15 minutes",
+        "operations": [
+          "SET after fetching from DB",
+          "GET in require_permissions",
+          "DELETE on role assignment change"
+        ]
+      },
+      {
+        "pattern": "auth:ban:{user_id}",
+        "purpose": "Store ban status and metadata",
+        "value": "{type: 'permanent'|'temporary', reason: str, expires_at: timestamp}",
+        "ttl": "For temporary ban: remaining duration; permanent: very long TTL",
+        "operations": [
+          "SET on ban",
+          "GET in get_current_user to check ban status",
+          "DELETE on unban"
+        ]
+      }
+    ]
+  },
+
+  "testing_considerations": [
+    {
+      "category": "Unit tests",
+      "files": [
+        "tests/services/test_auth_service.py - JWT creation/validation, password hashing",
+        "tests/repositories/test_user_repository.py - User CRUD operations",
+        "tests/deps/test_auth.py - Dependency injection with mocked users/tokens"
+      ]
+    },
+    {
+      "category": "Integration tests",
+      "files": [
+        "tests/api/test_auth_routes.py - Login/refresh/logout flows",
+        "tests/api/test_user_routes.py - Registration/activation/password reset",
+        "tests/api/test_admin_routes.py - User management, role assignment"
+      ],
+      "scenarios": [
+        "Login with valid credentials -> receive tokens",
+        "Login with invalid password -> 401",
+        "Access protected endpoint with valid JWT -> 200",
+        "Access protected endpoint with expired JWT -> 401",
+        "Access protected endpoint with revoked JWT (after logout) -> 401",
+        "Refresh token rotation -> old refresh invalid, new refresh works",
+        "Password change -> old tokens invalidated",
+        "User ban -> existing session terminated (401 on next request)",
+        "Permission check -> 403 when permission missing",
+        "Backward compatibility -> X-User-Id header still works"
+      ]
+    },
+    {
+      "category": "Cache tests",
+      "scenarios": [
+        "Permission cache hit/miss",
+        "Permission cache invalidation on role change",
+        "Token blacklist check (revoked vs valid)",
+        "Login failure rate limiting"
+      ]
+    }
+  ],
+
+  "security_checklist": [
+    {
+      "requirement": "Password storage",
+      "implementation": "bcrypt hashing via passlib (never store plaintext)",
+      "status": "Ready (library in pyproject.toml)"
+    },
+    {
+      "requirement": "JWT secret security",
+      "implementation": "JWT_SECRET_KEY must be strong random string (256-bit), stored in .env, never committed",
+      "status": "Needs config addition"
+    },
+    {
+      "requirement": "Token expiration",
+      "implementation": "Short-lived access (30min), longer refresh (7 days), include exp claim",
+      "status": "Design defined"
+    },
+    {
+      "requirement": "Token revocation",
+      "implementation": "Redis blacklist (auth:access:{jti}) + token_version for global invalidation",
+      "status": "Design defined"
+    },
+    {
+      "requirement": "Brute force protection",
+      "implementation": "auth:login_fail:{email} counter, require captcha or temp ban after threshold",
+      "status": "Needs implementation"
+    },
+    {
+      "requirement": "SQL injection prevention",
+      "implementation": "SQLAlchemy ORM with parameterized queries (already in use)",
+      "status": "Ready"
+    },
+    {
+      "requirement": "CORS configuration",
+      "implementation": "BACKEND_CORS_ORIGINS in config.py (currently '*', should restrict in production)",
+      "status": "Needs production hardening"
+    },
+    {
+      "requirement": "Sensitive data exclusion",
+      "implementation": "Pydantic schemas must exclude hashed_password from responses (UserRead schema design)",
+      "status": "Needs careful schema design"
+    },
+    {
+      "requirement": "HTTPS enforcement",
+      "implementation": "Deployment-level (reverse proxy/load balancer), backend should set secure cookie flags if using cookies",
+      "status": "Out of scope for backend code"
+    },
+    {
+      "requirement": "Rate limiting",
+      "implementation": "Redis-based counters for login, registration, password reset",
+      "status": "Needs implementation"
+    }
+  ],
+
+  "dependencies_ready": {
+    "python_jose": {
+      "status": "installed",
+      "version": ">=3.3.0",
+      "purpose": "JWT encoding/decoding"
+    },
+    "passlib": {
+      "status": "installed",
+      "version": ">=1.7.4",
+      "purpose": "Password hashing with bcrypt"
+    },
+    "redis": {
+      "status": "installed",
+      "version": ">=5.0.0",
+      "purpose": "Caching, token blacklist, rate limiting"
+    },
+    "pydantic": {
+      "status": "installed",
+      "version": ">=2.12.5",
+      "purpose": "Schema validation, email validation"
+    },
+    "fastapi": {
+      "status": "installed",
+      "version": ">=0.115.0",
+      "purpose": "Web framework, dependency injection"
+    },
+    "sqlalchemy": {
+      "status": "installed",
+      "version": ">=2.0.44",
+      "purpose": "ORM, async database access"
+    },
+    "alembic": {
+      "status": "installed",
+      "version": ">=1.17.2",
+      "purpose": "Database migrations"
+    },
+    "additional_needed": {
+      "email_service": "aiosmtplib or use Celery with existing celery[redis] dependency",
+      "captcha": "Optional - pillow + random string generation or third-party service"
+    }
+  },
+
+  "implementation_priority": [
+    {
+      "order": 1,
+      "task": "Core JWT infrastructure",
+      "files": [
+        "app/core/config.py (add JWT settings)",
+        "app/services/users/auth_service.py (token creation/validation)",
+        "app/schemas/auth.py (LoginRequest, TokenPair)"
+      ],
+      "rationale": "Foundation for all auth features"
+    },
+    {
+      "order": 2,
+      "task": "Login/Refresh/Logout endpoints",
+      "files": [
+        "app/api/v1/auth.py (routes)",
+        "app/deps/auth.py (extend get_current_user)"
+      ],
+      "rationale": "MVP authentication flow"
+    },
+    {
+      "order": 3,
+      "task": "User repository extensions",
+      "files": [
+        "app/repositories/user_repository.py (get_by_email, create_user, etc.)"
+      ],
+      "rationale": "Required for login and user management"
+    },
+    {
+      "order": 4,
+      "task": "User self-service endpoints",
+      "files": [
+        "app/api/v1/users.py (register, activate, reset-password, /me)",
+        "app/schemas/user.py (UserCreate, UserRead, etc.)"
+      ],
+      "rationale": "User onboarding and profile management"
+    },
+    {
+      "order": 5,
+      "task": "Permission caching",
+      "files": [
+        "app/deps/auth.py (cache integration in require_permissions)"
+      ],
+      "rationale": "Performance optimization"
+    },
+    {
+      "order": 6,
+      "task": "Admin user management",
+      "files": [
+        "app/api/v1/admin/users.py (CRUD, role assignment)",
+        "app/api/v1/admin/roles.py (list roles/permissions)"
+      ],
+      "rationale": "Administrative capabilities"
+    },
+    {
+      "order": 7,
+      "task": "Ban/unban functionality",
+      "files": [
+        "app/deps/auth.py (ban check in get_current_user)",
+        "app/api/v1/admin/users.py (ban/unban endpoints)"
+      ],
+      "rationale": "User moderation"
+    },
+    {
+      "order": 8,
+      "task": "Rate limiting and security hardening",
+      "files": [
+        "Login failure tracking",
+        "Captcha integration",
+        "Email service setup"
+      ],
+      "rationale": "Production readiness"
+    }
+  ],
+
+  "open_questions_for_user": [
+    "Should we implement token rotation for refresh tokens (higher security) or allow refresh token reuse?",
+    "Is email verification (activation) required before first login, or optional?",
+    "Should banned users' active sessions be immediately terminated (requires token_version increment) or only blocked on next request?",
+    "Do we need invite code system for closed beta, or open registration from day one?",
+    "Should access tokens be returned in HTTP-only cookies (XSS protection) or response body (frontend storage)?"
+  ],
+
+  "summary": {
+    "current_state": "X-User-Id header-based authentication with RBAC (User-Role-Permission) models in place. Redis caching infrastructure ready. JWT and password hashing libraries installed.",
+    "extension_approach": "Additive implementation - add JWT Bearer token support while maintaining X-User-Id fallback for backward compatibility. Extend get_current_user dependency to check Authorization header first, then fallback to X-User-Id.",
+    "architecture_alignment": "Follows existing patterns - Repository for data access, Service for business logic, FastAPI Depends for injection, Pydantic for validation, Redis for caching/blacklist.",
+    "key_risks": [
+      "Token revocation complexity (need Redis blacklist + version checking)",
+      "Backward compatibility testing (ensure X-User-Id still works during transition)",
+      "Email service integration (if using external SMTP, need error handling and retry logic)",
+      "Rate limiting implementation (need careful Redis key design to avoid race conditions)"
+    ],
+    "next_steps": [
+      "Confirm answers to open_questions_for_user",
+      "Create detailed task breakdown for each implementation priority",
+      "Set up test database fixtures for auth testing",
+      "Generate JWT_SECRET_KEY and add to .env.example"
+    ]
+  }
+}

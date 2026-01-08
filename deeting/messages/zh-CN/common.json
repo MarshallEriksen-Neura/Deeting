@@ -1,0 +1,29 @@
+{
+  "common": {
+    "brand": "AI Higress 网关",
+    "subtitle": "智能 API 网关，支持 AI 驱动的路由、流量治理与可观测性。",
+    "getStarted": "快速开始",
+    "docs": "文档",
+    "viewDemo": "查看演示",
+    "learnMore": "了解更多",
+    "language": {
+      "label": "界面语言",
+      "zhCN": "中文",
+      "en": "英文"
+    },
+    "notFound": {
+      "title": "页面走失了",
+      "description": "可能被水墨的雾气遮住了视线。请检查链接，或回到主页继续浏览。",
+      "backHome": "返回首页",
+      "contact": "联系管理员",
+      "hint": "提示：导航或搜索可以帮助你重新找到需要的内容。"
+    },
+    "globalError": {
+      "title": "系统出现波动",
+      "description": "我们正在平复涟漪，请稍后再试或返回首页。",
+      "primary": "重试",
+      "secondary": "返回首页",
+      "detailLabel": "错误详情"
+    }
+  }
+}

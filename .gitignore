@@ -1,0 +1,119 @@
+# ============================================
+# Python (Backend)
+# ============================================
+.pytest_cache/
+.ruff_cache/
+.venv/
+security/
+__pycache__/
+.claude/
+.codex/
+backend/__pycache__
+backend/*.py[oc]
+backend/build/
+backend/dist/
+backend/wheels/
+backend/*.egg-info
+backend/*.pyc
+
+# Virtual environments
+backend/.venv
+backend/.uv-*
+backend/.pytest_*
+
+# Backend logs
+backend/logs/
+logs/
+*.log
+
+# Backend environment
+backend/.env
+backend/.env.deploy
+backend/.env.local
+
+# Root environment (for Docker Compose)
+.env
+.env.deploy
+docker-compose-deploy.yml
+docker-compose.override.yml
+
+scripts/test_*
+
+# Celery Beat scheduler database
+backend/celerybeat-schedule
+backend/celerybeat-schedule-shm
+backend/celerybeat-schedule-wal
+
+# Temporary database files
+backend/tmp.db
+backend/*.db
+
+# Python version files
+backend/.python-version
+
+# ============================================
+# Node.js (Frontend)
+# ============================================
+
+# Dependencies
+frontend/node_modules/
+frontend/.pnp/
+frontend/.pnp.*
+frontend/.yarn/
+!frontend/.yarn/patches
+!frontend/.yarn/plugins
+!frontend/.yarn/releases
+!frontend/.yarn/versions
+
+# Build outputs
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Frontend environment
+frontend/.env.local
+frontend/.env.*.local
+
+# Misc
+frontend/.DS_Store
+frontend/*.pem
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Debug logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# bridge
+bin/
+nginx/
+# start sh
+scripts/start_*.sh
+
+# ============================================
+# IDE & Tools
+# ============================================
+.vscode/
+.idea/
+.serena/
+.codebuddy/
+
+
+# ============================================
+# Project-specific
+# ============================================
+CODEBUDDY.md
+dist/
+specs/
+.specs/
+plans/
+media/
+.kiro/
+.secrets.baseline/
+# ============================================
+# Old directories (can be removed after migration)
+# ============================================
+ai_higress/
+ai_higress_front/

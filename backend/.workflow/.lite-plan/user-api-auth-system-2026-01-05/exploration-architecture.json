@@ -1,0 +1,421 @@
+{
+  "exploration_type": "architecture",
+  "project_structure": {
+    "layered_architecture": {
+      "api_layer": "app/api/v1",
+      "service_layer": "app/services",
+      "repository_layer": "app/repositories",
+      "model_layer": "app/models",
+      "schema_layer": "app/schemas",
+      "dependency_layer": "app/deps",
+      "core_layer": "app/core",
+      "utils_layer": "app/utils"
+    },
+    "key_modules": [
+      "app/core/config.py",
+      "app/core/database.py",
+      "app/core/cache.py",
+      "app/core/logging.py",
+      "app/models/user.py",
+      "app/repositories/user_repository.py",
+      "app/deps/auth.py",
+      "app/schemas/base.py"
+    ]
+  },
+  "relevant_files": [
+    {
+      "path": "backend/app/models/user.py",
+      "relevance": "critical",
+      "rationale": "Existing User, Role, Permission, UserRole, RolePermission ORM models with RBAC structure. Foundation for auth system. Uses UUIDPrimaryKeyMixin and TimestampMixin."
+    },
+    {
+      "path": "backend/app/repositories/user_repository.py",
+      "relevance": "critical",
+      "rationale": "Existing repository with get_by_id and permission_codes methods. Must extend with email lookup, user creation, password management, role operations."
+    },
+    {
+      "path": "backend/app/deps/auth.py",
+      "relevance": "critical",
+      "rationale": "Existing auth dependencies: get_current_user (X-User-Id header), require_permissions factory, permission_codes fetching. Must extend to support JWT with X-User-Id fallback."
+    },
+    {
+      "path": "backend/app/models/base.py",
+      "relevance": "high",
+      "rationale": "Base ORM classes: Base, UUIDPrimaryKeyMixin, TimestampMixin. Shows UUID primary key pattern, timezone-aware timestamps using app.utils.time_utils.Datetime."
+    },
+    {
+      "path": "backend/app/schemas/base.py",
+      "relevance": "high",
+      "rationale": "BaseSchema, IDSchema, TimestampSchema using Pydantic V2 with strict=False, from_attributes=True. Pattern for creating user DTOs."
+    },
+    {
+      "path": "backend/app/core/cache.py",
+      "relevance": "critical",
+      "rationale": "CacheService with Redis async operations: get/set/delete/clear_prefix, cached decorator. Essential for JWT blacklist, permission caching, login rate limiting. Uses pickle serialization, CACHE_PREFIX from settings."
+    },
+    {
+      "path": "backend/app/core/database.py",
+      "relevance": "high",
+      "rationale": "AsyncSession setup with create_async_engine, async_sessionmaker, get_db dependency. Shows pool configuration (pool_size=20, max_overflow=10, pool_pre_ping=True)."
+    },
+    {
+      "path": "backend/app/core/config.py",
+      "relevance": "high",
+      "rationale": "Settings using Pydantic BaseSettings with .env support. Contains DATABASE_URL, REDIS_URL, CACHE_PREFIX, logging config. Need to add JWT_SECRET, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS."
+    },
+    {
+      "path": "backend/app/schemas/provider_preset.py",
+      "relevance": "medium",
+      "rationale": "Example schema pattern: Base/Create/Update/DTO separation, field_validator for sensitive data masking (auth_config), JSONB fields, visibility enum pattern."
+    },
+    {
+      "path": "backend/app/repositories/base.py",
+      "relevance": "medium",
+      "rationale": "BaseRepository[ModelType] generic pattern with async CRUD: create/get/get_multi/update/delete/count. UserRepository should NOT inherit this (custom methods needed)."
+    },
+    {
+      "path": "backend/app/repositories/provider_preset_repository.py",
+      "relevance": "medium",
+      "rationale": "Example custom repository extending BaseRepository: get_by_slug, get_with_items (selectinload), get_active_presets. Pattern for custom user queries (get_by_email, etc)."
+    },
+    {
+      "path": "backend/docs/user-api-design.md",
+      "relevance": "critical",
+      "rationale": "Complete requirements specification: MVP scope (auth, self-service, admin), Redis key patterns (auth:access, auth:refresh, auth:token_version, etc), API contract, security requirements, caching strategy."
+    },
+    {
+      "path": "backend/pyproject.toml",
+      "relevance": "high",
+      "rationale": "Dependencies: python-jose[cryptography] for JWT, passlib[bcrypt] for password hashing, redis>=5.0.0, pydantic-settings. Python 3.12+ required."
+    },
+    {
+      "path": "backend/app/core/logging.py",
+      "relevance": "medium",
+      "rationale": "Loguru logging setup for structured logging. Auth events (login, logout, permission denial) should use logger.info/warning/error with structured context."
+    },
+    {
+      "path": "backend/app/utils/time_utils.py",
+      "relevance": "medium",
+      "rationale": "Datetime.now() for timezone-aware timestamps used in TimestampMixin. Use for token expiration calculations and audit timestamps."
+    }
+  ],
+  "patterns": {
+    "repository_service_pattern": {
+      "description": "Repository + Service layer separation with async operations",
+      "repository_responsibilities": [
+        "Direct database access via SQLAlchemy AsyncSession",
+        "CRUD operations with typed return values",
+        "Custom queries with select/join/where clauses",
+        "Relationship loading with selectinload/joinedload"
+      ],
+      "service_responsibilities": [
+        "Business logic orchestration",
+        "Repository coordination for multi-table operations",
+        "Cache management (read-through, write-through)",
+        "External API calls (email, SMS)",
+        "Transaction boundary management"
+      ],
+      "example_pattern": "UserRepository handles DB queries; AuthService handles JWT creation, password verification, token blacklist, email sending"
+    },
+    "schema_dto_conventions": {
+      "base_schemas": "BaseSchema (Pydantic V2, from_attributes=True, strict=False)",
+      "create_schemas": "All required fields from base, no ID/timestamps",
+      "update_schemas": "All fields Optional, supports partial updates",
+      "dto_schemas": "Extends Base + IDSchema + TimestampSchema, includes computed fields, sensitive data masking via field_validator",
+      "example": "UserBase (email, username) -> UserCreate (+ password) -> UserUpdate (all Optional) -> UserDTO (+ id, created_at, roles, permissions, hashed_password excluded)"
+    },
+    "dependency_injection": {
+      "database": "db: AsyncSession = Depends(get_db)",
+      "auth": "current_user: User = Depends(get_current_user)",
+      "permissions": "user: User = Depends(require_permissions(['user.manage']))",
+      "cache": "Import cache singleton from app.core.cache",
+      "composition": "Dependencies can depend on other dependencies (e.g., require_permissions depends on get_current_user)"
+    },
+    "orm_model_conventions": {
+      "base_class": "class MyModel(Base, UUIDPrimaryKeyMixin, TimestampMixin)",
+      "primary_key": "UUID(as_uuid=True) with default=uuid.uuid4",
+      "timestamps": "created_at, updated_at using DateTime(timezone=True) with Datetime.now",
+      "relationships": "Mapped[list[RelatedModel]] with back_populates, secondary for M2M",
+      "table_name": "__tablename__ = 'snake_case'",
+      "constraints": "__table_args__ with UniqueConstraint, Index",
+      "metadata": "Uses POSTGRES_NAMING_CONVENTION for constraint names"
+    },
+    "api_route_organization": {
+      "structure": "app/api/v1/<domain>_route.py",
+      "router_prefix": "router = APIRouter(prefix='/domain', tags=['Domain'])",
+      "response_models": "Use response_model for DTOs, status_code for success responses",
+      "error_handling": "HTTPException with status_code and detail",
+      "dependencies": "Apply at router level with dependencies=[Depends(...)] or endpoint level"
+    },
+    "cache_patterns": {
+      "key_format": "f'{prefix}:{entity}:{identifier}' -> 'auth:access:{jti}'",
+      "operations": "await cache.get(key), await cache.set(key, value, ttl), await cache.delete(key), await cache.clear_prefix(prefix)",
+      "decorator": "@cache.cached(prefix='acl:perm', ttl=300, key_builder=lambda user_id: user_id)",
+      "serialization": "Automatic pickle serialization for Python objects",
+      "prefix_convention": "All keys auto-prefixed with settings.CACHE_PREFIX (ai_gateway:)"
+    },
+    "error_handling": {
+      "http_exceptions": "HTTPException(status_code=401/403/404/422, detail='message')",
+      "domain_errors": "Define custom exceptions in app/core/exceptions.py (future)",
+      "validation": "Pydantic automatic validation with 422 responses",
+      "logging": "logger.error/warning for exceptions with structured context"
+    },
+    "async_patterns": {
+      "all_io_async": "Database, Redis, HTTP calls all use async/await",
+      "session_management": "async with AsyncSessionLocal() as session pattern",
+      "repository_init": "Repository(session) per-request",
+      "service_init": "Service(repository, cache) per-request or as needed"
+    }
+  },
+  "integration_points": {
+    "new_modules_to_create": [
+      {
+        "path": "app/schemas/user.py",
+        "purpose": "UserBase, UserCreate, UserUpdate, UserDTO, LoginRequest, TokenPair, ChangePasswordRequest, RegisterRequest, ActivateRequest, ResetPasswordRequest"
+      },
+      {
+        "path": "app/schemas/auth.py",
+        "purpose": "TokenData, TokenPayload, RefreshTokenRequest, LogoutRequest"
+      },
+      {
+        "path": "app/services/users/auth_service.py",
+        "purpose": "JWT creation/verification, password hashing/verification, token blacklist, login/logout logic, refresh token rotation"
+      },
+      {
+        "path": "app/services/users/user_service.py",
+        "purpose": "User CRUD, registration flow, activation, password reset, profile update, admin operations"
+      },
+      {
+        "path": "app/api/v1/auth_route.py",
+        "purpose": "/auth/login, /auth/refresh, /auth/logout endpoints"
+      },
+      {
+        "path": "app/api/v1/users_route.py",
+        "purpose": "/users/register, /users/activate, /users/reset-password, /users/me endpoints"
+      },
+      {
+        "path": "app/api/v1/admin_users_route.py",
+        "purpose": "/admin/users CRUD, role management, ban/unban endpoints"
+      },
+      {
+        "path": "app/utils/security.py",
+        "purpose": "Password hashing (passlib bcrypt), JWT encode/decode (python-jose), random token generation"
+      },
+      {
+        "path": "app/utils/email.py",
+        "purpose": "Email sending for activation codes, password reset codes (future: SMTP/SendGrid integration)"
+      }
+    ],
+    "files_to_extend": [
+      {
+        "path": "app/deps/auth.py",
+        "changes": [
+          "Extend get_current_user to parse Authorization: Bearer <JWT> before X-User-Id fallback",
+          "Add JWT verification with token_version check and blacklist lookup",
+          "Keep require_permissions factory unchanged (works with both auth methods)",
+          "Add optional_auth dependency for endpoints accepting both authenticated and anonymous users"
+        ]
+      },
+      {
+        "path": "app/repositories/user_repository.py",
+        "changes": [
+          "Add get_by_email(email: str) -> Optional[User]",
+          "Add create_user(user_data: dict) -> User",
+          "Add update_user(user: User, updates: dict) -> User",
+          "Add get_users_paginated(filters: dict, skip: int, limit: int) -> tuple[list[User], int]",
+          "Add assign_roles(user_id: UUID, role_ids: list[UUID])",
+          "Add remove_roles(user_id: UUID, role_ids: list[UUID])",
+          "Add increment_token_version(user_id: UUID) -> int",
+          "Keep existing get_by_id and permission_codes methods"
+        ]
+      },
+      {
+        "path": "app/core/config.py",
+        "changes": [
+          "Add JWT_SECRET_KEY: str (required)",
+          "Add JWT_ALGORITHM: str = 'HS256'",
+          "Add ACCESS_TOKEN_EXPIRE_MINUTES: int = 30",
+          "Add REFRESH_TOKEN_EXPIRE_DAYS: int = 7",
+          "Add PASSWORD_MIN_LENGTH: int = 8",
+          "Add LOGIN_RATE_LIMIT_ATTEMPTS: int = 5",
+          "Add LOGIN_RATE_LIMIT_WINDOW: int = 600 (seconds)",
+          "Add SMTP_* settings for email (future)"
+        ]
+      },
+      {
+        "path": "app/models/user.py",
+        "changes": [
+          "Add token_version: Mapped[int] = mapped_column(Integer, default=0, server_default='0') to User model",
+          "Add is_email_verified: Mapped[bool] = mapped_column(Boolean, default=False) (optional for activation flow)",
+          "Consider adding last_login_at: Mapped[Optional[datetime]] (optional audit field)"
+        ]
+      },
+      {
+        "path": "app/schemas/__init__.py",
+        "changes": [
+          "Export user and auth schemas after creation"
+        ]
+      },
+      {
+        "path": "app/repositories/__init__.py",
+        "changes": [
+          "No changes needed (UserRepository already exported)"
+        ]
+      }
+    ],
+    "database_migrations": [
+      {
+        "migration": "Add token_version to user_account table",
+        "alembic_command": "alembic revision --autogenerate -m 'add_user_token_version'",
+        "sql": "ALTER TABLE user_account ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0;"
+      },
+      {
+        "migration": "Add is_email_verified to user_account (optional)",
+        "alembic_command": "alembic revision --autogenerate -m 'add_email_verification'",
+        "sql": "ALTER TABLE user_account ADD COLUMN is_email_verified BOOLEAN NOT NULL DEFAULT false;"
+      },
+      {
+        "migration": "Add last_login_at to user_account (optional)",
+        "alembic_command": "alembic revision --autogenerate -m 'add_last_login_timestamp'",
+        "sql": "ALTER TABLE user_account ADD COLUMN last_login_at TIMESTAMP WITH TIME ZONE NULL;"
+      },
+      {
+        "migration": "Add index on email for login lookups",
+        "note": "email already has unique=True, index=True in current model - no migration needed"
+      }
+    ],
+    "redis_key_namespace": {
+      "auth_access_tokens": "auth:access:{jti} -> {user_id: UUID, expires_at: timestamp} with TTL=access_token_ttl",
+      "auth_refresh_tokens": "auth:refresh:{jti} -> {user_id: UUID, token_version: int} with TTL=refresh_token_ttl",
+      "auth_token_version": "auth:token_version:{user_id} -> int (incremented on password change, logout all)",
+      "auth_login_failures": "auth:login_fail:{email} -> int (counter) with TTL=600s (10min)",
+      "auth_verification_codes": "auth:verify:{email} -> {code: str, purpose: 'activate'|'reset'} with TTL=600s",
+      "acl_permissions": "acl:perm:{user_id} -> set[str] (permission codes) with TTL=300-900s",
+      "auth_ban_status": "auth:ban:{user_id} -> {type: 'permanent'|'temporary', reason: str, expires_at: timestamp|null} with TTL=ban_duration or very_long for permanent"
+    },
+    "api_router_registration": {
+      "main_app_location": "Find main FastAPI app instance (likely backend/main.py or backend/app/main.py)",
+      "registration_pattern": "app.include_router(auth_router, prefix='/api/v1'); app.include_router(users_router, prefix='/api/v1'); app.include_router(admin_users_router, prefix='/api/v1')",
+      "router_tags": "auth_router: tags=['Authentication'], users_router: tags=['Users'], admin_users_router: tags=['Admin - Users']"
+    }
+  },
+  "clarification_needs": [
+    {
+      "question": "Main application entry point location",
+      "context": "Need to find where FastAPI app is instantiated to register new routers. Likely backend/main.py or backend/app/main.py, but not found in current exploration.",
+      "impact": "Required for router registration",
+      "resolution": "Search for 'FastAPI(' or 'app = ' in backend root and app directories"
+    },
+    {
+      "question": "Email service implementation priority",
+      "context": "Design doc mentions activation codes and password reset codes require email delivery. Should this be stubbed (log-only) initially or fully implemented?",
+      "impact": "MVP scope definition - can defer SMTP integration if development/testing doesn't require real emails",
+      "resolution": "Recommend: Create email.py interface with log-only stub, mark SMTP integration as post-MVP enhancement"
+    },
+    {
+      "question": "Token storage in database vs Redis-only",
+      "context": "Design uses Redis for token blacklist/version checking. Should refresh tokens also be stored in database for audit trail?",
+      "impact": "Affects repository design and token revocation strategy",
+      "resolution": "Recommend: Redis-only for active tokens (performance), optional audit_log table for token issuance/revocation events"
+    },
+    {
+      "question": "Role and Permission seeding strategy",
+      "context": "User RBAC models exist but no initial roles/permissions defined. Need default admin role, permission codes (user.manage, role.view, etc).",
+      "impact": "Required for admin endpoints to function",
+      "resolution": "Create alembic data migration with seed roles: admin (all permissions), user (basic permissions). Define permission codes matching API design doc."
+    },
+    {
+      "question": "X-User-Id backward compatibility timeline",
+      "context": "Design says preserve X-User-Id during gray period. Should endpoints support BOTH simultaneously or JWT-only for new endpoints?",
+      "impact": "get_current_user complexity and testing scope",
+      "resolution": "Recommend: All endpoints support both (JWT preferred, X-User-Id fallback) for smooth migration. Add deprecation notice in docs."
+    },
+    {
+      "question": "Password reset flow: email link vs verification code",
+      "context": "Design mentions verification codes. Should reset use: (1) code-only, (2) magic link with token, or (3) both?",
+      "impact": "API design for /users/reset-password endpoint",
+      "resolution": "Recommend: Code-only initially (simpler, matches activation flow). Magic links can be added later."
+    },
+    {
+      "question": "Ban/unban audit logging table",
+      "context": "Design mentions audit for ban events. Reuse gateway_log or create dedicated audit_event table?",
+      "impact": "Schema design and repository patterns",
+      "resolution": "Recommend: Extend gateway_log with event_type field if compatible, or create lightweight audit_event table (user_id, event_type, details, timestamp)"
+    }
+  ],
+  "architecture_recommendations": [
+    {
+      "area": "Service layer separation",
+      "recommendation": "Create two service classes: AuthService (login/logout/refresh/JWT ops) and UserService (registration/profile/admin CRUD). AuthService depends on UserRepository for user lookup; UserService depends on AuthService for password hashing.",
+      "rationale": "Clear separation of concerns: auth handles credentials and tokens, user handles account lifecycle. Prevents circular dependencies."
+    },
+    {
+      "area": "Security utilities centralization",
+      "recommendation": "Create app/utils/security.py with: get_password_hash(password), verify_password(plain, hashed), create_access_token(data), decode_access_token(token), generate_verification_code()",
+      "rationale": "Reusable across auth and user services. Easy to swap hashing algorithms (bcrypt -> argon2) or JWT library in one place."
+    },
+    {
+      "area": "Token blacklist strategy",
+      "recommendation": "Use token_version approach (increment on logout/password change) + Redis for individual token revocation (logout endpoint). Check both: token_version matches AND jti not in blacklist.",
+      "rationale": "token_version provides bulk invalidation (all user tokens at once). Redis blacklist handles individual token logout before expiration. Combination is most flexible."
+    },
+    {
+      "area": "Permission caching",
+      "recommendation": "Cache permission codes with 5-15min TTL. Clear on role assignment/removal. Use cache.cached decorator on permission_codes method with user_id as key.",
+      "rationale": "Permissions checked on every protected endpoint. DB join (UserRole -> Role -> RolePermission -> Permission) is expensive. Invalidation on role change keeps it fresh."
+    },
+    {
+      "area": "Rate limiting implementation",
+      "recommendation": "Implement login rate limiting in AuthService using Redis INCR with EX. Key: auth:login_fail:{email}, value: attempt count, TTL: 10min. Block after 5 attempts.",
+      "rationale": "Prevents brute force attacks. Redis atomic INCR is thread-safe. TTL auto-cleanup removes old counters. Email-based prevents account enumeration via IP rotation."
+    },
+    {
+      "area": "Error response consistency",
+      "recommendation": "Define standard error responses: {'detail': str, 'error_code': str, 'field': str|null}. Use HTTPException consistently. Consider adding app/core/exceptions.py for domain exceptions.",
+      "rationale": "Frontend can handle errors uniformly. error_code enables i18n. field helps with form validation errors."
+    },
+    {
+      "area": "Testing strategy",
+      "recommendation": "Create fixtures: test_db (isolated database), test_user (factory), auth_headers (JWT/X-User-Id). Test layers independently: repository (DB only), service (mock repository), API (integration with TestClient).",
+      "rationale": "Fast unit tests for business logic. Integration tests catch auth flow issues. Fixtures reduce test boilerplate."
+    },
+    {
+      "area": "Migration rollback safety",
+      "recommendation": "For token_version column, use default=0 with server_default='0'. For is_email_verified, default=False. Both nullable=False. This allows adding to existing users safely.",
+      "rationale": "Server defaults work in SQL for existing rows. Alembic autogenerate will create safe ADD COLUMN statements. No data migration script needed."
+    }
+  ],
+  "architecture_summary": {
+    "description": "FastAPI backend with async SQLAlchemy, PostgreSQL, Redis, JWT authentication, RBAC authorization, layered architecture following Repository + Service pattern",
+    "technology_stack": {
+      "web_framework": "FastAPI 0.115+",
+      "database": "PostgreSQL with asyncpg driver",
+      "orm": "SQLAlchemy 2.0 async with Alembic migrations",
+      "cache": "Redis 5.0+ with redis.asyncio client",
+      "auth": "python-jose for JWT, passlib bcrypt for passwords",
+      "validation": "Pydantic V2 with strict validation",
+      "logging": "Loguru structured logging",
+      "testing": "pytest with pytest-asyncio"
+    },
+    "architectural_principles": {
+      "separation_of_concerns": "API (routing) -> Service (business logic) -> Repository (data access) -> ORM (models)",
+      "dependency_injection": "FastAPI Depends() for DB sessions, auth, permissions",
+      "schema_driven": "Pydantic schemas enforce input/output contracts, separate from ORM models",
+      "async_first": "All I/O operations use async/await (DB, Redis, HTTP)",
+      "single_source_of_truth": "Database is authority for persistent data, Redis for ephemeral state",
+      "backward_compatibility": "Support X-User-Id header during JWT migration",
+      "security_by_default": "All protected endpoints require explicit auth dependency"
+    },
+    "data_flow": {
+      "authentication_flow": "Request -> Auth Dependency (JWT decode OR X-User-Id lookup) -> UserRepository.get_by_id -> Permission check -> Handler",
+      "login_flow": "POST /auth/login -> AuthService.verify_credentials -> UserRepository.get_by_email -> AuthService.create_tokens -> Redis.set(jti) -> Response",
+      "permission_check_flow": "require_permissions() -> get_current_user -> UserRepository.permission_codes -> Cache lookup/miss -> DB query -> Cache set -> Check codes -> Allow/Deny"
+    },
+    "existing_patterns_to_follow": {
+      "schema_pattern": "Follow provider_preset.py: Base/Create/Update/DTO, field_validator for masking, JSONB for complex fields",
+      "repository_pattern": "UserRepository does NOT inherit BaseRepository (custom methods). Follow provider_preset_repository.py for custom queries",
+      "dependency_pattern": "Follow deps/auth.py: factory functions returning async dependencies, composition with Depends()",
+      "cache_pattern": "Follow core/cache.py: CacheService singleton, _make_key with prefix, pickle serialization, clear_prefix for bulk invalidation"
+    }
+  }
+}

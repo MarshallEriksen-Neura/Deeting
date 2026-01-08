@@ -1,0 +1,91 @@
+[project]
+name = "apiproxy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx[socks]>=0.27.0",
+    "redis>=5.0.0",
+    "pydantic-settings>=2.3.0",
+    "pytest>=9.0.1",
+    "pytest-asyncio>=0.23.0", # Added for async tests
+    "google-genai>=1.52.0",
+    "openai>=2.8.1",
+    "anthropic>=0.75.0",
+    "django>=5.2.8",
+    "sqlalchemy>=2.0.44",
+    "alembic>=1.17.2",
+    "psycopg[binary]>=3.1.12",
+    "cryptography>=43.0.0",
+    "ruff>=0.14.7",
+    "pydantic[email]>=2.12.5",
+    "python-jose[cryptography]>=3.3.0", # For JWT handling
+    "passlib[bcrypt]>=1.7.4", # For password hashing
+    "celery[redis]>=5.4.0", # Async task queue
+    "python-multipart>=0.0.20",
+    "httpx-curl-cffi>=0.1.5",
+    "curl-cffi>=0.7.0",
+    "oss2>=2.19.1",
+    "alibabacloud-oss-v2>=1.2.2",
+    "boto3>=1.34.0",
+    "aiosqlite>=0.19.0",
+    "mcp-server-fetch>=2025.1.17",
+    "playwright>=1.48.0",
+    "jmespath>=0.9.3,<1.0.0",
+    "pypdf>=5.1.0",
+    "beautifulsoup4>=4.12.0",
+    "html2text>=2024.2.26",
+    "loguru>=0.7.3",
+    "prometheus-client>=0.20.0",
+    "asyncpg>=0.31.0",
+    "locust>=2.43.0",
+    "qdrant-client>=1.16.2",
+    "jinja2>=3.1.6",
+]
+
+[project.scripts]
+apiproxy = "main:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "alembic*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "W",
+    "B",
+    "I",
+    "N",
+    "UP",
+    "ASYNC",
+    "S",
+    "RUF",
+]
+ignore = ["E203"]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = [
+    "--ignore=backend/tests/test_chat_greeting.py"
+]

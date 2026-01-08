@@ -1,0 +1,305 @@
+from typing import Any
+
+import httpx
+import pytest
+
+from app.provider.discovery import (
+    ensure_provider_models_cached,
+    fetch_models_from_provider,
+)
+from app.provider.key_pool import reset_key_pool
+from app.schemas import Model, ProviderConfig
+
+
+class DummyRedis:
+    """
+    Minimal Redis replacement for discovery tests.
+    """
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+
+    async def get(self, key: str):
+        return self._data.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None):
+        self._data[key] = value
+
+
+def _make_provider(**overrides: Any) -> ProviderConfig:
+    data: dict[str, Any] = {
+        "id": "mock",
+        "name": "Mock Provider",
+        "base_url": "https://api.mock.local",
+        "api_key": "sk-test",  # pragma: allowlist secret
+        "models_path": "/v1/models",
+    }
+    data.update(overrides)
+    return ProviderConfig(**data)
+
+
+@pytest.fixture(autouse=True)
+def _reset_key_pool():
+    reset_key_pool()
+    yield
+    reset_key_pool()
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_normalises_payload():
+    provider = _make_provider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v1/models")
+        data = {
+            "object": "list",
+            "data": [
+                {"id": "m1", "context_length": 4096, "capabilities": ["chat"]},
+                {"id": "m2", "context_length": 8192, "capabilities": ["completion"]},
+            ],
+        }
+        return httpx.Response(200, json=data)
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: list[Model] = await fetch_models_from_provider(client, provider)
+
+    assert len(models) == 2
+    assert models[0].model_id == "m1"
+    assert models[0].context_length == 4096
+    assert models[1].model_id == "m2"
+    assert models[1].context_length == 8192
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_infers_tts_capability():
+    provider = _make_provider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v1/models")
+        data = {
+            "object": "list",
+            "data": [
+                # upstream /models 通常不返回 capabilities；这里验证网关的启发式推断
+                {"id": "tts-1", "context_length": 4096},
+                {"id": "gpt-4o-mini-tts", "context_length": 8192},
+            ],
+        }
+        return httpx.Response(200, json=data)
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: list[Model] = await fetch_models_from_provider(client, provider)
+
+    assert [m.model_id for m in models] == ["tts-1", "gpt-4o-mini-tts"]
+
+    for model in models:
+        assert model.capabilities == [model.capabilities[0]]
+        assert model.capabilities[0].value == "audio"
+        # TTS-only 模型不应被标记为 chat，否则会污染聊天模型下拉框并导致路由失败。
+        assert "chat" not in {c.value for c in model.capabilities}
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_infers_embedding_capability():
+    """Test that embedding models are correctly inferred from model id."""
+    provider = _make_provider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v1/models")
+        data = {
+            "object": "list",
+            "data": [
+                # upstream /models 通常不返回 capabilities；这里验证网关的启发式推断
+                {"id": "text-embedding-ada-002", "context_length": 8191},
+                {"id": "text-embedding-3-small", "context_length": 8191},
+                {"id": "embed-english-v3.0", "context_length": 512},
+            ],
+        }
+        return httpx.Response(200, json=data)
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: list[Model] = await fetch_models_from_provider(client, provider)
+
+    assert [m.model_id for m in models] == [
+        "text-embedding-ada-002",
+        "text-embedding-3-small",
+        "embed-english-v3.0",
+    ]
+
+    for model in models:
+        assert model.capabilities == [model.capabilities[0]]
+        assert model.capabilities[0].value == "embedding"
+        # Embedding 模型不应被标记为 chat，否则会污染聊天模型下拉框
+        assert "chat" not in {c.value for c in model.capabilities}
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_uses_static_models():
+    provider = _make_provider(
+        static_models=[
+            {"id": "manual-1", "context_length": 1024},
+            {"id": "manual-2", "context_length": 2048},
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - should not run
+        raise AssertionError("HTTP call should be skipped when static_models is set")
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: list[Model] = await fetch_models_from_provider(client, provider)
+
+    assert [m.model_id for m in models] == ["manual-1", "manual-2"]
+    assert [m.context_length for m in models] == [1024, 2048]
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_static_models_metadata_does_not_nest():
+    provider = _make_provider(
+        static_models=[
+            {
+                "id": "m1",
+                "context_length": 1024,
+                "metadata": {
+                    "id": "m1",
+                    "family": "x",
+                    "metadata": {
+                        "id": "m1",
+                        "family": "x",
+                        "metadata": {"id": "m1"},
+                    },
+                },
+            }
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - should not run
+        raise AssertionError("HTTP call should be skipped when static_models is set")
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: list[Model] = await fetch_models_from_provider(client, provider)
+
+    assert len(models) == 1
+    assert models[0].model_id == "m1"
+    assert isinstance(models[0].metadata, dict)
+    assert models[0].metadata.get("id") == "m1"
+    assert "metadata" not in models[0].metadata
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_falls_back_to_env_static_on_invalid_json(
+    monkeypatch,
+):
+    provider = _make_provider()
+
+    fallback_provider = _make_provider(
+        static_models=[{"id": "env-manual-1", "context_length": 1234}]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v1/models")
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/json"},
+            content=b"<html>not json</html>",
+        )
+
+    monkeypatch.setattr(
+        "app.provider.discovery.get_provider_config",
+        lambda provider_id: fallback_provider if provider_id == provider.id else None,
+    )
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: list[Model] = await fetch_models_from_provider(client, provider)
+
+    assert [m.model_id for m in models] == ["env-manual-1"]
+    assert [m.context_length for m in models] == [1234]
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_raises_when_no_fallback(monkeypatch):
+    provider = _make_provider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v1/models")
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/json"},
+            content=b"*invalid-json*",
+        )
+
+    monkeypatch.setattr("app.provider.discovery.get_provider_config", lambda _: None)
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(ValueError):
+            await fetch_models_from_provider(client, provider)
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_from_provider_normalises_non_httpx_404():
+    """
+    Regression test: when the upstream client is curl-cffi, resp.raise_for_status()
+    would raise curl_cffi.requests.exceptions.HTTPError (not a httpx.HTTPError),
+    causing unhandled exceptions in callers that only catch httpx.HTTPError.
+    """
+    provider = _make_provider()
+
+    class FakeResponse:
+        status_code = 404
+        headers = {"Content-Type": "application/json"}
+        content = b'{"error":"not found"}'
+
+        def raise_for_status(self) -> None:  # pragma: no cover - must not be called
+            raise AssertionError("fetch_models_from_provider should not call raise_for_status")
+
+        def json(self) -> Any:  # pragma: no cover - status code is already fatal
+            raise AssertionError("fetch_models_from_provider should not parse json on 4xx")
+
+    class FakeClient:
+        async def get(self, url: str, *, headers: dict[str, str] | None = None):
+            return FakeResponse()
+
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        await fetch_models_from_provider(FakeClient(), provider)  # type: ignore[arg-type]
+
+    assert excinfo.value.response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_ensure_provider_models_cached_uses_redis_cache():
+    provider = _make_provider()
+    redis = DummyRedis()
+    call_count = {"models": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["models"] += 1
+        data = {
+            "object": "list",
+            "data": [
+                {"id": "m1", "context_length": 4096, "capabilities": ["chat"]},
+            ],
+        }
+        return httpx.Response(200, json=data)
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models_first = await ensure_provider_models_cached(client, redis, provider)
+        models_second = await ensure_provider_models_cached(client, redis, provider)
+
+    assert call_count["models"] == 1
+    assert models_first == models_second
+    assert len(models_first) == 1
+    assert models_first[0]["model_id"] == "m1"

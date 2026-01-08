@@ -1,0 +1,70 @@
+{
+  "stats": {
+    "title": "仪表盘统计",
+    "totalRoutes": "路由总数",
+    "activeServices": "活跃服务",
+    "securityRules": "安全规则",
+    "activePlugins": "活跃插件"
+  },
+  "cards": {
+    "ios": "iOS 风格玻璃卡片",
+    "defaultTitle": "默认玻璃卡片",
+    "defaultDesc": "细腻动画的磨砂玻璃效果",
+    "defaultBody": "卡片采用 iOS 风格的玻璃拟态，包含毛玻璃、内边框和顶部高光。",
+    "primaryTitle": "主色主题",
+    "primaryDesc": "紫色玻璃，匹配品牌主色调",
+    "primaryBody": "使用主题变体让品牌主色统一呈现，建立清晰的视觉层级。",
+    "tealTitle": "青绿色高亮",
+    "tealDesc": "悬停时的辉光效果",
+    "tealBody": "使用青绿色强调色，悬停时带有辉光效果，区别于默认抬升。",
+    "action": "操作",
+    "cancel": "取消",
+    "confirm": "确认",
+    "tealButton": "青绿按钮"
+  },
+  "buttons": {
+    "variants": "按钮变体",
+    "primary": "主按钮",
+    "secondary": "次按钮",
+    "outline": "描边",
+    "ghost": "幽灵",
+    "destructive": "删除",
+    "success": "成功"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "description": "监控和管理您的 API 网关",
+    "recentActivity": "最近活动",
+    "recentActivityDesc": "最新的更改和事件",
+    "quickActions": "快捷操作",
+    "quickActionsDesc": "常用任务和快捷方式",
+    "viewAll": "查看全部",
+    "createRoute": "创建路由",
+    "addService": "添加服务",
+    "configureRules": "配置规则",
+    "managePlugins": "管理插件"
+  },
+  "nav": {
+    "main": "主菜单",
+    "configuration": "配置",
+    "account": "账户",
+    "analytics": "分析",
+    "system": "系统",
+    "dashboard": "仪表盘",
+    "routes": "路由",
+    "services": "服务",
+    "plugins": "插件",
+    "apiKeys": "API 密钥",
+    "monitoring": "监控",
+    "logs": "日志",
+    "profile": "个人资料",
+    "notifications": "通知",
+    "statistics": "统计",
+    "performance": "性能",
+    "users": "用户",
+    "roles": "角色",
+    "security": "安全",
+    "database": "数据库",
+    "settings": "设置"
+  }
+}

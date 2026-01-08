@@ -1,0 +1,184 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: apiproxy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER not set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB not set}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.9
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: apiproxy-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - redis-data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD not set}
+    command:
+      - sh
+      - -c
+      - |
+        redis-server /usr/local/etc/redis/redis.conf --requirepass "$${REDIS_PASSWORD}"
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.10
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: apiproxy-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:16333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.12
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: apiproxy-api:dev
+    container_name: apiproxy-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AVATAR_LOCAL_DIR=/app/media/avatars
+      - IMAGE_LOCAL_DIR=/app/media/images
+    volumes:
+      - ./security:/app/security:ro
+      - ./backend/logs:/app/logs
+      - ./backend/media:/app/media
+      # 开发模式: 挂载源代码实现热重载（可选）
+      - ./backend/app:/app/app:ro
+      - ./backend/main.py:/app/main.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.11
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # 开发模式:启用热重载
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: apiproxy-api:dev
+    container_name: apiproxy-celery-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AVATAR_LOCAL_DIR=/app/media/avatars
+      - IMAGE_LOCAL_DIR=/app/media/images
+    volumes:
+      - ./security:/app/security:ro
+      - ./backend/logs:/app/logs
+      - ./backend/media:/app/media
+      - ./backend/app:/app/app:ro
+      - ./backend/main.py:/app/main.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.14
+    command: celery -A app.core.celery_app.celery_app worker -Q default,audit_queue,billing_queue -l info
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: apiproxy-api:dev
+    container_name: apiproxy-celery-beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AVATAR_LOCAL_DIR=/app/media/avatars
+      - IMAGE_LOCAL_DIR=/app/media/images
+    volumes:
+      - ./security:/app/security:ro
+      - ./backend/logs:/app/logs
+      - ./backend/media:/app/media
+      - ./backend/app:/app/app:ro
+      - ./backend/main.py:/app/main.py:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.15
+    command: celery -A app.core.celery_app.celery_app beat -l info
+
+  # 前端服务(开发环境,可选)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    image: apiproxy-frontend:dev
+    container_name: apiproxy-frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app:cached
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.13
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:
+
+networks:
+  apiproxy-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24

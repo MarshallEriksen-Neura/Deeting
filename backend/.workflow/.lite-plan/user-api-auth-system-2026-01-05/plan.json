@@ -1,0 +1,293 @@
+{
+  "summary": "实现用户认证系统 - JWT 登录/刷新/登出、用户注册/激活/重置密码、管理员用户管理",
+  "approach": "分层实现：1) 配置和安全工具 → 2) 数据层扩展 → 3) 认证服务 → 4) API 路由 → 5) 管理员功能。保持 X-User-Id 向后兼容，JWT Bearer 优先。",
+  "clarifications": {
+    "mfa": "跳过 MFA，后续迭代添加",
+    "password_reset": "6 位验证码方式",
+    "refresh_token": "实现轮换策略",
+    "email_service": "Mock 邮件（控制台输出）"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "配置扩展与安全工具模块",
+      "scope": "添加 JWT 配置到 Settings，创建 security 工具模块（密码哈希、JWT 编解码、验证码生成）",
+      "files": [
+        "app/core/config.py",
+        "app/utils/security.py"
+      ],
+      "details": {
+        "config_additions": [
+          "JWT_SECRET_KEY: str (required, from .env)",
+          "JWT_ALGORITHM: str = 'RS256'",
+          "ACCESS_TOKEN_EXPIRE_MINUTES: int = 30",
+          "REFRESH_TOKEN_EXPIRE_DAYS: int = 7",
+          "JWT_PRIVATE_KEY_PATH: str = 'security/private.pem'",
+          "JWT_PUBLIC_KEY_PATH: str = 'security/public.pem'",
+          "PASSWORD_MIN_LENGTH: int = 8",
+          "LOGIN_RATE_LIMIT_ATTEMPTS: int = 5",
+          "LOGIN_RATE_LIMIT_WINDOW: int = 600"
+        ],
+        "security_functions": [
+          "get_password_hash(password: str) -> str",
+          "verify_password(plain_password: str, hashed_password: str) -> bool",
+          "create_access_token(user_id: UUID, jti: str) -> str",
+          "create_refresh_token(user_id: UUID, jti: str, version: int) -> str",
+          "decode_token(token: str) -> dict",
+          "generate_verification_code() -> str"
+        ]
+      },
+      "depends_on": [],
+      "execution_group": 1,
+      "complexity": "Medium"
+    },
+    {
+      "id": "T2",
+      "title": "User 模型扩展与数据库迁移",
+      "scope": "添加 token_version 字段到 User 模型，创建 Alembic 迁移",
+      "files": [
+        "app/models/user.py",
+        "migrations/versions/xxx_add_user_token_version.py"
+      ],
+      "details": {
+        "model_additions": [
+          "token_version: Mapped[int] = mapped_column(Integer, default=0, server_default='0', comment='Token 版本号，密码修改或强制登出时递增')"
+        ],
+        "migration": "alembic revision --autogenerate -m 'add_user_token_version'"
+      },
+      "depends_on": [],
+      "execution_group": 1,
+      "complexity": "Low"
+    },
+    {
+      "id": "T3",
+      "title": "UserRepository 扩展",
+      "scope": "添加 email 查询、用户创建、密码更新、角色管理等方法",
+      "files": [
+        "app/repositories/user_repository.py"
+      ],
+      "details": {
+        "methods_to_add": [
+          "get_by_email(email: str) -> Optional[User]",
+          "create_user(email: str, hashed_password: str, username: str | None = None) -> User",
+          "update_password(user_id: UUID, hashed_password: str) -> User",
+          "update_user(user_id: UUID, **fields) -> User",
+          "increment_token_version(user_id: UUID) -> int",
+          "list_users(skip: int, limit: int, filters: dict) -> tuple[list[User], int]",
+          "assign_roles(user_id: UUID, role_ids: list[UUID]) -> None",
+          "remove_roles(user_id: UUID, role_ids: list[UUID]) -> None",
+          "get_all_roles() -> list[Role]",
+          "get_all_permissions() -> list[Permission]"
+        ]
+      },
+      "depends_on": ["T2"],
+      "execution_group": 2,
+      "complexity": "Medium"
+    },
+    {
+      "id": "T4",
+      "title": "Pydantic Schemas 定义",
+      "scope": "创建用户和认证相关的 Pydantic 模型",
+      "files": [
+        "app/schemas/user.py",
+        "app/schemas/auth.py"
+      ],
+      "details": {
+        "user_schemas": [
+          "UserBase(email: EmailStr, username: str | None)",
+          "UserCreate(email: EmailStr, password: str, username: str | None, invite_code: str | None)",
+          "UserUpdate(username: str | None, ...)",
+          "UserRead(id: UUID, email: str, username: str | None, is_active: bool, is_superuser: bool, created_at: datetime, updated_at: datetime) - excludes hashed_password",
+          "UserWithRoles(UserRead + roles: list[RoleRead])",
+          "UserAdminUpdate(is_active: bool | None, is_superuser: bool | None)",
+          "UserListResponse(items: list[UserRead], total: int, skip: int, limit: int)"
+        ],
+        "auth_schemas": [
+          "LoginRequest(email: EmailStr, password: str)",
+          "TokenPair(access_token: str, refresh_token: str, token_type: str = 'bearer')",
+          "RefreshRequest(refresh_token: str)",
+          "ChangePasswordRequest(old_password: str, new_password: str)",
+          "RegisterRequest(email: EmailStr, password: str, username: str | None, invite_code: str | None)",
+          "ActivateRequest(email: EmailStr, code: str)",
+          "ResetPasswordRequest(email: EmailStr)",
+          "ResetPasswordConfirmRequest(email: EmailStr, code: str, new_password: str)",
+          "RoleRead(id: UUID, name: str, description: str | None)",
+          "PermissionRead(id: UUID, code: str, description: str | None)",
+          "BanRequest(reason: str, duration_hours: int | None)"
+        ]
+      },
+      "depends_on": [],
+      "execution_group": 1,
+      "complexity": "Medium"
+    },
+    {
+      "id": "T5",
+      "title": "AuthService 认证服务",
+      "scope": "实现 JWT 登录/登出/刷新、Token 黑名单、登录限流、Mock 邮件",
+      "files": [
+        "app/services/users/auth_service.py",
+        "app/services/users/__init__.py"
+      ],
+      "details": {
+        "class_methods": [
+          "verify_credentials(email: str, password: str) -> User",
+          "create_tokens(user: User) -> TokenPair",
+          "refresh_tokens(refresh_token: str) -> TokenPair",
+          "logout(access_token: str, refresh_token: str | None) -> None",
+          "revoke_all_tokens(user_id: UUID) -> None",
+          "check_login_rate_limit(email: str) -> None",
+          "increment_login_failure(email: str) -> int",
+          "reset_login_failures(email: str) -> None",
+          "send_verification_code(email: str, purpose: str) -> str",
+          "verify_code(email: str, code: str, purpose: str) -> bool"
+        ],
+        "redis_operations": [
+          "auth:access:{jti} - token blacklist",
+          "auth:refresh:{jti} - refresh token tracking with rotation",
+          "auth:token_version:{user_id} - version for bulk invalidation",
+          "auth:login_fail:{email} - rate limiting counter",
+          "auth:verify:{email}:{purpose} - verification codes"
+        ]
+      },
+      "depends_on": ["T1", "T3", "T4"],
+      "execution_group": 3,
+      "complexity": "High"
+    },
+    {
+      "id": "T6",
+      "title": "扩展 get_current_user 支持 JWT",
+      "scope": "修改认证依赖支持 JWT Bearer + X-User-Id 回退，添加封禁检查",
+      "files": [
+        "app/deps/auth.py"
+      ],
+      "details": {
+        "changes": [
+          "解析 Authorization: Bearer {token}",
+          "JWT 解码和签名验证 (RS256)",
+          "检查 token blacklist (auth:access:{jti})",
+          "检查 token_version 匹配",
+          "检查用户封禁状态 (auth:ban:{user_id})",
+          "X-User-Id 回退（保持向后兼容）",
+          "添加权限缓存到 require_permissions"
+        ],
+        "new_dependencies": [
+          "get_current_user_optional() - 可选认证",
+          "get_current_active_user() - 确保用户活跃"
+        ]
+      },
+      "depends_on": ["T1", "T5"],
+      "execution_group": 4,
+      "complexity": "High"
+    },
+    {
+      "id": "T7",
+      "title": "Auth API 路由 (/api/v1/auth)",
+      "scope": "实现登录、刷新、登出 API 端点",
+      "files": [
+        "app/api/v1/auth_route.py"
+      ],
+      "details": {
+        "endpoints": [
+          "POST /auth/login - 登录获取 token pair",
+          "POST /auth/refresh - 刷新 access token (轮换 refresh token)",
+          "POST /auth/logout - 登出失效当前 token"
+        ],
+        "features": [
+          "登录限流检查",
+          "结构化审计日志",
+          "错误处理 (401 Invalid credentials)"
+        ]
+      },
+      "depends_on": ["T5", "T6"],
+      "execution_group": 5,
+      "complexity": "Medium"
+    },
+    {
+      "id": "T8",
+      "title": "Users API 路由 (/api/v1/users)",
+      "scope": "实现用户自助功能：注册、激活、重置密码、个人信息",
+      "files": [
+        "app/api/v1/users_route.py"
+      ],
+      "details": {
+        "endpoints": [
+          "POST /users/register - 注册新用户，发送激活验证码",
+          "POST /users/activate - 验证码激活账号",
+          "POST /users/reset-password - 请求密码重置验证码",
+          "POST /users/reset-password/confirm - 验证码确认重置密码",
+          "GET /users/me - 获取当前用户信息 + 权限 flags",
+          "PATCH /users/me - 更新个人信息（username 等）",
+          "POST /users/me/change-password - 修改密码"
+        ]
+      },
+      "depends_on": ["T5", "T6", "T4"],
+      "execution_group": 5,
+      "complexity": "Medium"
+    },
+    {
+      "id": "T9",
+      "title": "Admin Users API 路由 (/api/v1/admin/users)",
+      "scope": "实现管理员用户管理功能：列表、创建、编辑、角色、封禁",
+      "files": [
+        "app/api/v1/admin/users_route.py",
+        "app/api/v1/admin/__init__.py"
+      ],
+      "details": {
+        "endpoints": [
+          "GET /admin/users - 用户列表（分页、筛选）[权限: user.manage]",
+          "POST /admin/users - 创建用户（发送密码重置链接）[权限: user.manage]",
+          "PATCH /admin/users/{id} - 更新用户状态 [权限: user.manage]",
+          "POST /admin/users/{id}/roles - 分配/移除角色 [权限: role.manage]",
+          "POST /admin/users/{id}/ban - 封禁用户 [权限: user.manage]",
+          "POST /admin/users/{id}/unban - 解封用户 [权限: user.manage]",
+          "GET /admin/roles - 获取所有角色 [权限: role.view]",
+          "GET /admin/permissions - 获取所有权限 [权限: role.view]"
+        ]
+      },
+      "depends_on": ["T3", "T6"],
+      "execution_group": 5,
+      "complexity": "Medium"
+    },
+    {
+      "id": "T10",
+      "title": "路由注册与集成测试",
+      "scope": "将新路由注册到 FastAPI app，编写集成测试",
+      "files": [
+        "main.py or app/main.py",
+        "tests/api/test_auth.py",
+        "tests/api/test_users.py",
+        "tests/api/test_admin_users.py"
+      ],
+      "details": {
+        "router_registration": [
+          "app.include_router(auth_router, prefix='/api/v1', tags=['Authentication'])",
+          "app.include_router(users_router, prefix='/api/v1', tags=['Users'])",
+          "app.include_router(admin_users_router, prefix='/api/v1', tags=['Admin - Users'])"
+        ],
+        "test_scenarios": [
+          "登录成功/失败",
+          "JWT 验证有效/过期/吊销",
+          "Token 刷新和轮换",
+          "密码修改使旧 token 失效",
+          "权限检查通过/拒绝",
+          "X-User-Id 向后兼容",
+          "用户注册和激活流程",
+          "管理员用户 CRUD",
+          "封禁/解封生效"
+        ]
+      },
+      "depends_on": ["T7", "T8", "T9"],
+      "execution_group": 6,
+      "complexity": "Medium"
+    }
+  ],
+  "estimated_time": "4-6 小时",
+  "recommended_execution": "Agent",
+  "complexity": "High",
+  "_metadata": {
+    "timestamp": "2026-01-05T08:15:00+08:00",
+    "source": "lite-plan-orchestrator",
+    "planning_mode": "direct",
+    "exploration_angles": ["security", "auth-patterns", "dependencies", "architecture"]
+  }
+}
