@@ -22,7 +22,7 @@ from app.schemas.user_api_key import (
     ApiKeyListResponse,
     ApiKeyResponse,
 )
-from app.services.api_key import ApiKeyService
+from app.services.providers.api_key import ApiKeyService
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 models_router = APIRouter(prefix="/models", tags=["Models"])

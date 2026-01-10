@@ -6,7 +6,7 @@ from uuid import uuid4
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, patch, MagicMock
 from main import app
-from app.services.api_key import ApiKeyService, ApiPrincipal
+from app.services.providers.api_key import ApiKeyService, ApiPrincipal
 from app.models.api_key import ApiKeyType
 from app.repositories.billing_repository import BillingRepository, InsufficientBalanceError
 from app.services.workflow.steps.base import StepResult, StepStatus

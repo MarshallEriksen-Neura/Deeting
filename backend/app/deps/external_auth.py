@@ -69,7 +69,7 @@ from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import get_db
 from app.repositories.api_key import ApiKeyRepository
-from app.services.api_key import ApiKeyService
+from app.services.providers.api_key import ApiKeyService
 
 
 @dataclass

@@ -18,7 +18,7 @@ async def test_continuous_signature_failure_blocks_key(monkeypatch):
     # that exercises the Orchestrator with a mock Upstream
     
     from main import app
-    from app.services.api_key import ApiKeyService, ApiPrincipal
+    from app.services.providers.api_key import ApiKeyService, ApiPrincipal
     from app.models.api_key import ApiKeyType
     
     api_key = "sk-block-test"

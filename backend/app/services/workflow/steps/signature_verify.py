@@ -17,7 +17,7 @@ from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.repositories.api_key import ApiKeyRepository
-from app.services.api_key import ApiKeyService
+from app.services.providers.api_key import ApiKeyService
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepConfig, StepResult, StepStatus

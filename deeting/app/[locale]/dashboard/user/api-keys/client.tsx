@@ -169,7 +169,6 @@ export function ApiKeysPageClient() {
         availableModels={availableModels}
         modelsLoading={modelsLoading}
       />
-        availableModels={availableModels}
 
       <KeyRevealModal
         open={revealModalOpen}

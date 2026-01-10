@@ -30,7 +30,7 @@ API Key Service
 - 支持缓存穿透保护
 
 使用示例:
-    from app.services.api_key import ApiKeyService
+    from app.services.providers.api_key import ApiKeyService
 
     service = ApiKeyService(repo, redis)
 

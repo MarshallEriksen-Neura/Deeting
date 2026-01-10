@@ -15,7 +15,7 @@ from app.models import User
 from app.repositories import UserRepository
 from app.repositories.api_key import ApiKeyRepository
 from app.schemas.auth import TokenPair
-from app.services.api_key import ApiKeyService
+from app.services.providers.api_key import ApiKeyService
 from app.services.users.user_provisioning_service import UserProvisioningService
 from app.utils.security import (
     create_access_token,

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
 
 from app.models.api_key import ApiKeyType
-from app.services.api_key import ApiKeyService, ApiPrincipal
+from app.services.providers.api_key import ApiKeyService, ApiPrincipal
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.workflow.steps.signature_verify import SignatureError, SignatureVerifyStep
 from app.core.cache import cache

@@ -40,7 +40,7 @@ from app.schemas.api_key import (
     ApiKeyUsageStatsResponse,
 )
 from app.schemas.auth import MessageResponse
-from app.services.api_key import ApiKeyService
+from app.services.providers.api_key import ApiKeyService
 
 router = APIRouter(prefix="/admin/api-keys", tags=["Admin - API Keys"])
 
