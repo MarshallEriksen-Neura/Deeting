@@ -1,3 +1,4 @@
+import uuid
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Integer, String
@@ -35,6 +36,9 @@ class ProviderPreset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     provider: Mapped[str] = mapped_column(String(40), nullable=False, comment="上游厂商/驱动名称")
     icon: Mapped[str] = mapped_column(
         String(255), nullable=False, default="lucide:cpu", server_default="lucide:cpu", comment="品牌/图标引用"
+    )
+    theme_color: Mapped[str] = mapped_column(
+        String(20), nullable=True, comment="品牌主色调 (Hex/Tailwind class)"
     )
     base_url: Mapped[str] = mapped_column(String(255), nullable=False, comment="上游基础 URL")
 

@@ -1,6 +1,10 @@
 from loguru import logger
+import asyncio
 
 from app.core.celery_app import celery_app
+from app.core.database import async_session_factory
+from app.services.providers.health_monitor import HealthMonitorService
+from app.core.cache import cache
 
 
 @celery_app.task
@@ -19,3 +23,26 @@ def heartbeat_task():
     """
     logger.info("Celery Beat heartbeat...")
     return "Alive"
+
+@celery_app.task
+def check_providers_health_task():
+    """
+    Periodic task to check health of all provider instances.
+    """
+    logger.info("Starting check_providers_health_task...")
+    
+    async def _run():
+        async with async_session_factory() as session:
+            # Ensure Redis is init if running in worker process that didn't init it
+            if not cache._redis and cache._redis is None:
+                cache.init()
+            
+            svc = HealthMonitorService(cache.redis)
+            await svc.check_all_instances(session)
+    
+    try:
+        asyncio.run(_run())
+        return "Health check completed"
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return f"Failed: {e}"

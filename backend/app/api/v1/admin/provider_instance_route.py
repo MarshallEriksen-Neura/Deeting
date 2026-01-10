@@ -5,17 +5,38 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.cache import cache
 from app.models.provider_instance import ProviderModel
 from app.schemas.provider_instance import (
     ProviderInstanceCreate,
     ProviderInstanceResponse,
     ProviderModelResponse,
     ProviderModelsUpsertRequest,
+    ProviderVerifyRequest,
+    ProviderVerifyResponse,
 )
 from app.deps.superuser import get_current_superuser
 from app.services.providers.provider_instance_service import ProviderInstanceService
+from app.services.providers.health_monitor import HealthMonitorService
 
 router = APIRouter(prefix="/admin/provider-instances", tags=["ProviderInstances"])
+
+
+@router.post("/verify", response_model=ProviderVerifyResponse)
+async def verify_provider(
+    payload: ProviderVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_superuser),
+):
+    """验证 Provider 凭证并尝试发现模型。"""
+    svc = ProviderInstanceService(db)
+    result = await svc.verify_credentials(
+        preset_slug=payload.preset_slug,
+        base_url=payload.base_url,
+        api_key=payload.api_key,
+        model=payload.model
+    )
+    return result
 
 
 @router.post("", response_model=ProviderInstanceResponse, status_code=status.HTTP_201_CREATED)
@@ -29,6 +50,7 @@ async def create_instance(
         user_id=getattr(user, "id", None),
         preset_slug=payload.preset_slug,
         name=payload.name,
+        description=payload.description,
         base_url=payload.base_url,
         icon=payload.icon,
         credentials_ref=payload.credentials_ref,
@@ -45,7 +67,25 @@ async def list_instances(
     user=Depends(get_current_superuser),
 ):
     svc = ProviderInstanceService(db)
-    return await svc.list_instances(user_id=getattr(user, "id", None), include_public=True)
+    instances = await svc.list_instances(user_id=getattr(user, "id", None), include_public=True)
+
+    # Inject Health Data
+    health_svc = HealthMonitorService(cache.redis)
+    response_list = []
+    
+    for inst in instances:
+        dto = ProviderInstanceResponse.model_validate(inst)
+        try:
+            health = await health_svc.get_health_status(str(inst.id))
+            dto.health_status = health.get("status", "unknown")
+            dto.latency_ms = health.get("latency", 0)
+            dto.sparkline = await health_svc.get_sparkline(str(inst.id))
+        except Exception:
+            # Redis unavailable or init error
+            pass
+        response_list.append(dto)
+        
+    return response_list
 
 
 @router.post("/{instance_id}/models:sync", response_model=List[ProviderModelResponse])

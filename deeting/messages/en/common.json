@@ -32,6 +32,30 @@
       "docs": "Documentation",
       "logout": "Log out",
       "guest": "Guest"
+    },
+    "nav": {
+      "main": "Main",
+      "dashboard": "Dashboard",
+      "routes": "Routes",
+      "services": "Services",
+      "plugins": "Plugins",
+      "configuration": "Configuration",
+      "providers": "Providers",
+      "apiKeys": "API Keys",
+      "monitoring": "Monitoring",
+      "logs": "Logs",
+      "account": "Account",
+      "profile": "Profile",
+      "notifications": "Notifications",
+      "analytics": "Analytics",
+      "statistics": "Statistics",
+      "performance": "Performance",
+      "system": "System",
+      "users": "Users",
+      "roles": "Roles",
+      "security": "Security",
+      "database": "Database",
+      "settings": "Settings"
     }
   }
 }

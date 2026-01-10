@@ -1,6 +1,25 @@
 {
   "presets": [
     {
+      "preset_id": "CUSTOM",
+      "display_name": "Custom HTTP",
+      "description": "Connect to any OpenAI-compatible API",
+      "provider_type": "native",
+      "transport": "http",
+      "sdk_vendor": null,
+      "base_url": "http://localhost:11434/v1",
+      "models_path": "/models",
+      "messages_path": null,
+      "chat_completions_path": "/chat/completions",
+      "responses_path": null,
+      "supported_api_styles": ["openai"],
+      "retryable_status_codes": [429, 500],
+      "custom_headers": {},
+      "static_models": [],
+      "theme_color": "#64748b",
+      "icon": "lucide:webhook"
+    },
+    {
       "preset_id": "OPENAI",
       "display_name": "OpenAI",
       "description": "OpenAI 官方 API",
@@ -15,7 +34,9 @@
       "supported_api_styles": ["openai"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#10a37f",
+      "icon": "simple-icons:openai"
     },
     {
       "preset_id": "ANTHROPIC",
@@ -32,7 +53,9 @@
       "supported_api_styles": ["claude"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#d97757",
+      "icon": "simple-icons:anthropic"
     },
     {
       "preset_id": "GOOGLE",
@@ -49,7 +72,9 @@
       "supported_api_styles": ["claude"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#4285f4",
+      "icon": "simple-icons:google"
     },
     {
       "preset_id": "VERTEXAI",
@@ -66,7 +91,9 @@
       "supported_api_styles": ["openai"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#4285f4",
+      "icon": "simple-icons:googlecloud"
     },
     {
       "preset_id": "KIMI",
@@ -83,7 +110,9 @@
       "supported_api_styles": ["openai"],
       "retryable_status_codes": null,
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#000000",
+      "icon": "lucide:moon"
     },
     {
       "preset_id": "DEEPSEEK",
@@ -100,7 +129,9 @@
       "supported_api_styles": ["openai"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#4e69e2",
+      "icon": "lucide:fish-symbol"
     },
     {
       "preset_id": "QWEN",
@@ -117,7 +148,9 @@
       "supported_api_styles": ["openai"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#615ced",
+      "icon": "simple-icons:alibabacloud"
     },
     {
       "preset_id": "BAICHUAN",
@@ -134,7 +167,9 @@
       "supported_api_styles": ["openai"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#f97316",
+      "icon": "lucide:mountain"
     },
     {
       "preset_id": "GLM",
@@ -151,7 +186,9 @@
       "supported_api_styles": ["openai"],
       "retryable_status_codes": [429, 500],
       "custom_headers": {},
-      "static_models": []
+      "static_models": [],
+      "theme_color": "#3b82f6",
+      "icon": "lucide:messages-square"
     }
   ]
 }

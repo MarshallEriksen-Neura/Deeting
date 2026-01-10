@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ProviderInstanceCreate(BaseModel):
     preset_slug: str = Field(..., description="引用的模板 slug")
     name: str = Field(..., description="实例名称")
+    description: str | None = Field(default=None, description="实例描述")
     base_url: str = Field(..., description="基础 URL")
     icon: str | None = Field(default=None, description="图标引用，覆盖模板 icon")
     credentials_ref: str = Field(..., description="密钥引用 ID/环境变量名")
@@ -21,6 +22,7 @@ class ProviderInstanceResponse(BaseModel):
     user_id: Optional[UUID] = None
     preset_slug: str
     name: str
+    description: Optional[str] = None
     base_url: str
     icon: Optional[str] = None
     channel: str
@@ -28,6 +30,10 @@ class ProviderInstanceResponse(BaseModel):
     is_enabled: bool
     created_at: datetime
     updated_at: datetime
+    
+    health_status: str | None = "unknown"
+    latency_ms: int | None = 0
+    sparkline: List[int] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,3 +87,17 @@ class ProviderModelResponse(BaseModel):
 
 class ProviderModelsUpsertRequest(BaseModel):
     models: List[ProviderModelUpsert]
+
+
+class ProviderVerifyRequest(BaseModel):
+    preset_slug: str
+    base_url: str
+    api_key: str
+    model: str | None = None
+
+
+class ProviderVerifyResponse(BaseModel):
+    success: bool
+    message: str
+    latency_ms: int = 0
+    discovered_models: List[str] = Field(default_factory=list)

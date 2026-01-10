@@ -1,5 +1,5 @@
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.models.provider_preset import ProviderPreset
 from app.core.cache import cache
@@ -32,7 +32,9 @@ class ProviderPresetRepository(BaseRepository[ProviderPreset]):
 
         async def loader() -> list[ProviderPreset]:
             result = await self.session.execute(
-                select(ProviderPreset).where(ProviderPreset.is_active == True)  # noqa: E712
+                select(ProviderPreset).where(
+                    ProviderPreset.is_active == True,
+                )
             )
             return list(result.scalars().all())
 

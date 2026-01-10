@@ -32,6 +32,30 @@
       "docs": "文档",
       "logout": "退出登录",
       "guest": "访客"
+    },
+    "nav": {
+      "main": "主要",
+      "dashboard": "仪表盘",
+      "routes": "路由",
+      "services": "服务",
+      "plugins": "插件",
+      "configuration": "配置",
+      "providers": "模型服务",
+      "apiKeys": "API 密钥",
+      "monitoring": "监控",
+      "logs": "日志",
+      "account": "账户",
+      "profile": "个人资料",
+      "notifications": "通知",
+      "analytics": "分析",
+      "statistics": "统计",
+      "performance": "性能",
+      "system": "系统",
+      "users": "用户",
+      "roles": "角色",
+      "security": "安全",
+      "database": "数据库",
+      "settings": "设置"
     }
   }
 }

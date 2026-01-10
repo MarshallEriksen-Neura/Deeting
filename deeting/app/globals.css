@@ -163,6 +163,11 @@ body {
 /* Light mode frosted glass veil */
 html:not(.dark) body {
   position: relative;
+  background-color: oklch(0.985 0.01 240); /* Slightly tinted background */
+  background-image:
+    linear-gradient(rgba(124, 109, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 109, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 html:not(.dark) body::before {
@@ -171,9 +176,10 @@ html:not(.dark) body::before {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(1200px at 15% 20%, rgba(124, 109, 255, 0.06), transparent 55%),
-    radial-gradient(900px at 85% 10%, rgba(94, 200, 255, 0.05), transparent 60%),
-    rgba(255, 255, 255, 0.14);
+    radial-gradient(1200px at 15% 20%, rgba(124, 109, 255, 0.08), transparent 55%),
+    radial-gradient(900px at 85% 10%, rgba(33, 201, 195, 0.08), transparent 60%),
+    radial-gradient(1000px at 50% 80%, rgba(166, 176, 255, 0.06), transparent 50%),
+    rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px) saturate(1.04);
   -webkit-backdrop-filter: blur(8px) saturate(1.04);
   z-index: 0;

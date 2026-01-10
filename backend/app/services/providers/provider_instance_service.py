@@ -1,6 +1,8 @@
 import uuid
+import httpx
+import time
 from datetime import datetime
-from typing import Iterable, List
+from typing import Iterable, List, Dict, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -24,11 +26,62 @@ class ProviderInstanceService:
         self.credential_repo = ProviderCredentialRepository(session)
         self._invalidator = CacheInvalidator()
 
+    async def verify_credentials(
+        self,
+        preset_slug: str,
+        base_url: str,
+        api_key: str,
+        model: str | None = None,
+    ) -> Dict[str, Any]:
+        """验证凭证有效性并尝试发现模型列表。"""
+        # 1. 简单 Ping 测试 (探测模型列表)
+        # 针对 OpenAI 风格的 /v1/models
+        url = base_url.rstrip("/") + "/v1/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        
+        # 针对 Google 等特殊处理逻辑可以在此扩展
+        # 此处以最通用的 OpenAI 风格为例
+        
+        start = time.time()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers)
+                latency = int((time.time() - start) * 1000)
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # 尝试提取模型 ID 列表
+                    models = []
+                    if isinstance(data, dict) and "data" in data:
+                         models = [m["id"] for m in data["data"] if "id" in m]
+                    
+                    return {
+                        "success": True,
+                        "message": "Verification successful",
+                        "latency_ms": latency,
+                        "discovered_models": models
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"Verification failed: HTTP {resp.status_code} - {resp.text[:100]}",
+                        "latency_ms": latency,
+                        "discovered_models": []
+                    }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Verification error: {str(e)}",
+                "latency_ms": 0,
+                "discovered_models": []
+            }
+
     async def create_instance(
         self,
         user_id: uuid.UUID | None,
         preset_slug: str,
         name: str,
+        description: str | None,
         base_url: str,
         icon: str | None,
         credentials_ref: str,
@@ -41,6 +94,7 @@ class ProviderInstanceService:
             user_id=user_id,
             preset_slug=preset_slug,
             name=name,
+            description=description,
             base_url=base_url,
             icon=icon,
             credentials_ref=credentials_ref,

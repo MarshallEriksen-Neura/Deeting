@@ -177,8 +177,8 @@ export default function ProviderMarketPage() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: filteredProviders.length * 0.05 + 0.1 }}
         >
-          <button className="w-full h-full min-h-[220px] rounded-2xl border-2 border-dashed border-[var(--border)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all flex flex-col items-center justify-center gap-3 group text-[var(--muted)] hover:text-[var(--primary)]">
-            <div className="size-12 rounded-full bg-[var(--surface)] flex items-center justify-center group-hover:scale-110 transition-transform">
+          <button className="w-full h-full min-h-[220px] rounded-2xl border-2 border-dashed border-[var(--muted)]/30 hover:border-[var(--primary)]/60 hover:bg-[var(--primary)]/5 transition-all duration-300 flex flex-col items-center justify-center gap-3 group text-[var(--muted)] hover:text-[var(--primary)] cursor-pointer">
+            <div className="size-12 rounded-full bg-[var(--surface)]/80 backdrop-blur-sm flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm border border-white/10">
               <Plus className="size-6" />
             </div>
             <span className="font-medium">Request Provider</span>
@@ -208,6 +208,18 @@ function ProviderCard({ provider, index }: { provider: any, index: number }) {
   
   const gradientClass = gradientMap[colorName] || "from-gray-500"
 
+  // Define shadow color based on the logo color
+  const shadowColorMap: Record<string, string> = {
+    emerald: "rgba(16, 185, 129, 0.4)",
+    amber: "rgba(245, 158, 11, 0.4)",
+    blue: "rgba(59, 130, 246, 0.4)",
+    slate: "rgba(100, 116, 139, 0.4)",
+    indigo: "rgba(99, 102, 241, 0.4)",
+    sky: "rgba(14, 165, 233, 0.4)",
+    purple: "rgba(168, 85, 247, 0.4)",
+  }
+  const shadowColor = shadowColorMap[colorName] || "rgba(156, 163, 175, 0.4)"
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -215,7 +227,7 @@ function ProviderCard({ provider, index }: { provider: any, index: number }) {
       transition={{ delay: index * 0.05, duration: 0.4 }}
     >
       <GlassCard 
-        className="group relative h-full flex flex-col transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer overflow-hidden"
+        className="group relative h-full flex flex-col transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer overflow-hidden backdrop-blur-md bg-white/40 dark:bg-black/40 border-white/20"
         padding="lg"
       >
         {/* Background Gradient Effect on Hover */}
@@ -223,7 +235,12 @@ function ProviderCard({ provider, index }: { provider: any, index: number }) {
 
         <div className="flex flex-col h-full gap-4">
           <div className="flex justify-between items-start">
-            <div className={`size-14 rounded-2xl ${provider.logoBg} ${provider.logoColor} flex items-center justify-center shadow-lg ring-1 ring-white/10 group-hover:scale-110 transition-transform duration-300`}>
+            <div 
+              className={`size-14 rounded-2xl ${provider.logoBg} ${provider.logoColor} flex items-center justify-center shadow-lg ring-1 ring-white/10 group-hover:scale-110 transition-all duration-300`}
+              style={{
+                boxShadow: `0 4px 15px -3px ${shadowColor}`
+              }}
+            >
               <Icon className="size-8" />
             </div>
             {provider.popular && (
@@ -243,7 +260,7 @@ function ProviderCard({ provider, index }: { provider: any, index: number }) {
           </div>
 
           <div className="pt-4 flex items-center justify-between border-t border-[var(--border)]/30">
-            <span className="text-xs font-medium text-[var(--muted)] uppercase tracking-wider">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--surface)] text-[var(--muted-foreground)] border border-[var(--border)]/50">
               {provider.category}
             </span>
             <div className="flex items-center gap-1 text-xs font-semibold text-[var(--primary)] opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">

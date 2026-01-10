@@ -8,6 +8,7 @@ from app.api.v1.admin import assistants_router as admin_assistants_router
 from app.api.v1.admin import registration_router as admin_registration_router
 from app.api.v1.admin import provider_instance_router as admin_provider_instance_router
 from app.api.v1.admin import provider_credential_router as admin_provider_credential_router
+from app.api.v1.admin import provider_preset_router as admin_provider_preset_router
 from app.api.v1.admin import discovery_router as admin_discovery_router
 from app.api.v1.auth_route import router as auth_router
 from app.api.v1.user_api_keys_route import router as user_api_keys_router, models_router as available_models_router
@@ -24,6 +25,7 @@ __all__ = [
     "admin_registration_router",
     "admin_provider_instance_router",
     "admin_provider_credential_router",
+    "admin_provider_preset_router",
     "admin_discovery_router",
     "auth_router",
     "user_api_keys_router",

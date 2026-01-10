@@ -27,6 +27,7 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     preset_slug: Mapped[str] = mapped_column(String(80), nullable=False, index=True, comment="引用 provider_preset.slug")
     name: Mapped[str] = mapped_column(String(80), nullable=False, comment="实例名称，用户自定义")
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="实例描述")
     base_url: Mapped[str] = mapped_column(String(255), nullable=False, comment="实例基础 URL，可覆盖模板")
     icon: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="覆盖模板的图标引用")
     credentials_ref: Mapped[str] = mapped_column(String(128), nullable=False, comment="密钥引用 ID/环境变量名")
