@@ -70,11 +70,31 @@ class ConversationAppendStep(BaseStep):
             else ConversationChannel.INTERNAL
         )
 
-        result = await conv_service.append_messages(
-            session_id=session_id,
-            messages=msgs_to_append,
-            channel=channel,
-        )
+        # 使用分布式锁防止并发写入冲突（P1-4）
+        from app.core.distributed_lock import distributed_lock
+        from app.core.cache_keys import CacheKeys
+        
+        lock_key = CacheKeys.session_lock(session_id)
+        
+        async with distributed_lock(lock_key, ttl=10, retry_times=3) as acquired:
+            if not acquired:
+                logger.warning(
+                    "conversation_append_lock_failed session=%s trace=%s",
+                    session_id,
+                    ctx.trace_id,
+                )
+                # 锁获取失败，降级处理（不阻塞请求）
+                return StepResult(
+                    status=StepStatus.SUCCESS,
+                    message="lock_acquisition_failed",
+                )
+            
+            # 持有锁，执行会话追加
+            result = await conv_service.append_messages(
+                session_id=session_id,
+                messages=msgs_to_append,
+                channel=channel,
+            )
 
         # 将 session_id 透传到响应
         response = ctx.get("response_transform", "response") or {}

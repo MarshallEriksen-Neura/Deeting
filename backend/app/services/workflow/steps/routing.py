@@ -106,7 +106,7 @@ class RoutingStep(BaseStep):
         )
 
         try:
-            routing_result, backups = await self._select_upstream(
+            routing_result, backups, affinity_hit = await self._select_upstream(
                 session=ctx.db_session,
                 capability=capability,
                 model=model,
@@ -214,11 +214,49 @@ class RoutingStep(BaseStep):
         allowed_providers: set[str] | None = None,
         allowed_presets: set[str] | None = None,
         allowed_preset_items: set[str] | None = None,
-    ) -> tuple[dict, list[dict]]:
+    ) -> tuple[dict, list[dict], bool]:
         """
-        选择上游
+        选择上游（P1-5 集成路由亲和）
+        
+        流程：
+        1. 检查是否有会话 ID 和路由亲和状态
+        2. 如果亲和锁定，优先使用锁定的上游
+        3. 否则正常路由选择
+        4. 记录路由结果到亲和状态机
         """
         from app.services.providers.routing_selector import RoutingSelector
+        from app.services.routing.affinity import RoutingAffinityStateMachine
+
+        # 检查是否启用路由亲和
+        session_id = ctx.get("conversation", "session_id") or (
+            (ctx.get("validation", "validated") or {}).get("session_id")
+        )
+        
+        affinity_hit = False
+        affinity_machine = None
+        
+        if session_id:
+            # 创建亲和状态机
+            affinity_machine = RoutingAffinityStateMachine(
+                session_id=session_id,
+                model=model,
+                explore_threshold=3,  # 探索 3 次后锁定
+                lock_duration=3600,  # 锁定 1 小时
+                failure_threshold=3,  # 连续失败 3 次后重新探索
+            )
+            
+            # 检查是否应该使用亲和路由
+            should_use, locked_provider, locked_item_id = await affinity_machine.should_use_affinity()
+            
+            if should_use and locked_item_id:
+                # 尝试使用锁定的上游
+                logger.debug(
+                    "routing_affinity_locked session=%s model=%s item=%s",
+                    session_id,
+                    model,
+                    locked_item_id,
+                )
+                affinity_hit = True
 
         selector = RoutingSelector(session)
         candidates = await selector.load_candidates(
@@ -234,9 +272,58 @@ class RoutingStep(BaseStep):
                 f"No upstream available for {capability}/{model}/{channel}"
             )
 
-        # 传入 messages 以做前缀亲和（无需 session_id）
+        # 如果亲和命中，尝试从候选中找到锁定的上游
+        if affinity_hit and locked_item_id:
+            for candidate in candidates:
+                if str(candidate.preset_item_id) == locked_item_id:
+                    # 找到锁定的上游，直接使用
+                    primary = candidate
+                    backups = [c for c in candidates if c != primary]
+                    
+                    def to_dict(c):
+                        return {
+                            "preset_id": c.preset_id,
+                            "preset_item_id": c.preset_item_id,
+                            "instance_id": c.instance_id,
+                            "provider_model_id": c.model_id,
+                            "upstream_url": c.upstream_url,
+                            "provider": c.provider,
+                            "template_engine": c.template_engine,
+                            "request_template": c.request_template,
+                            "response_transform": c.response_transform,
+                            "pricing_config": c.pricing_config,
+                            "limit_config": c.limit_config,
+                            "auth_type": c.auth_type,
+                            "auth_config": c.auth_config,
+                            "default_headers": c.default_headers,
+                            "default_params": c.default_params,
+                            "routing_config": c.routing_config,
+                            "weight": c.weight,
+                            "priority": c.priority,
+                            "credential_id": c.credential_id,
+                            "credential_alias": c.credential_alias,
+                        }
+                    
+                    logger.info(
+                        "routing_affinity_used session=%s model=%s provider=%s",
+                        session_id,
+                        model,
+                        primary.provider,
+                    )
+                    return to_dict(primary), [to_dict(b) for b in backups], True
+            
+            # 锁定的上游不在候选中（可能已下线），重新探索
+            logger.warning(
+                "routing_affinity_locked_unavailable session=%s model=%s item=%s",
+                session_id,
+                model,
+                locked_item_id,
+            )
+            affinity_hit = False
+
+        # 正常路由选择
         messages = ctx.get("conversation", "merged_messages") or ctx.get("validation", "validated", {}).get("messages")
-        primary, backups, affinity_hit = await selector.choose(candidates, messages=messages)
+        primary, backups, _ = await selector.choose(candidates, messages=messages)
 
         def to_dict(c):
             return {
@@ -262,7 +349,17 @@ class RoutingStep(BaseStep):
                 "credential_alias": c.credential_alias,
             }
 
-        return to_dict(primary), [to_dict(b) for b in backups]
+        # 记录路由结果到亲和状态机（异步，不阻塞）
+        if affinity_machine:
+            try:
+                # 这里只记录选择，成功/失败在 upstream_call 步骤记录
+                ctx.set("routing", "affinity_machine", affinity_machine)
+                ctx.set("routing", "affinity_provider", primary.provider)
+                ctx.set("routing", "affinity_item_id", str(primary.preset_item_id))
+            except Exception as exc:
+                logger.warning("routing_affinity_record_failed err=%s", exc)
+
+        return to_dict(primary), [to_dict(b) for b in backups], affinity_hit
 
     def on_failure(
         self,

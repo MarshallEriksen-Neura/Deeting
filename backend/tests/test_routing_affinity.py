@@ -1,66 +1,132 @@
-import asyncio
-from types import SimpleNamespace
+"""
+路由亲和状态机测试
+
+测试 RoutingAffinityStateMachine 的状态转换：
+- INIT -> EXPLORING
+- EXPLORING -> LOCKED
+- LOCKED -> EXPLORING (失败后)
+"""
 
 import pytest
 
-from app.core import cache
-from app.core.config import settings
-from app.services.providers.routing_selector import RoutingCandidate, RoutingSelector
+from app.services.routing.affinity import (
+    AffinityState,
+    RoutingAffinityStateMachine,
+)
 
 
 @pytest.mark.asyncio
-async def test_affinity_bonus_prefers_cached_arm(monkeypatch):
-    """
-    当存在前缀亲和记录时，应在 bandit 评分中给予加成，优先选择已缓存上游。
-    """
-
-    # 启用并放大加成，避免随机权重影响
-    monkeypatch.setattr(settings, "AFFINITY_ROUTING_ENABLED", True)
-    monkeypatch.setattr(settings, "AFFINITY_ROUTING_BONUS", 1.0)
-    monkeypatch.setattr(settings, "AFFINITY_ROUTING_PREFIX_RATIO", 1.0)
-
-    # 让缓存查询始终命中 model_a
-    async def fake_get(key: str):
-        return "model_a"
-
-    monkeypatch.setattr(cache, "get", fake_get)
-
-    selector = RoutingSelector(session=None)  # session 未在 choose 中使用
-
-    # 构造两个候选：model_a 成功率较低，但有亲和加成；model_b 成功率更高但无加成
-    base_kwargs = dict(
-        preset_id=None,
-        instance_id="inst",
-        preset_item_id=None,
-        provider="mock",
-        upstream_url="http://upstream",
-        channel="external",
-        template_engine="simple_replace",
-        request_template={},
-        response_transform={},
-        pricing_config={},
-        limit_config={},
-        auth_type="bearer",
-        auth_config={},
-        default_headers={},
-        default_params={},
-        routing_config={"strategy": "bandit", "epsilon": 0},
-        weight=1,
-        priority=1,
+async def test_affinity_initial_state():
+    """测试初始状态"""
+    machine = RoutingAffinityStateMachine(
+        session_id="test_session_1",
+        model="gpt-4",
+        explore_threshold=3,
     )
+    
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.INIT
 
-    cand_affined = RoutingCandidate(
-        model_id="model_a",
-        bandit_state=SimpleNamespace(total_trials=10, successes=4, failures=6, latency_p95_ms=None),
-        **base_kwargs,
+
+@pytest.mark.asyncio
+async def test_affinity_exploring_to_locked():
+    """测试从探索期到锁定期的转换"""
+    machine = RoutingAffinityStateMachine(
+        session_id="test_session_2",
+        model="gpt-4",
+        explore_threshold=3,
     )
-    cand_other = RoutingCandidate(
-        model_id="model_b",
-        bandit_state=SimpleNamespace(total_trials=10, successes=6, failures=4, latency_p95_ms=None),
-        **base_kwargs,
+    
+    # 第一次请求：INIT -> EXPLORING
+    await machine.record_request("openai", "item_1", success=True)
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.EXPLORING
+    assert ctx.explore_count == 1
+    
+    # 第二次请求：继续探索
+    await machine.record_request("anthropic", "item_2", success=True)
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.EXPLORING
+    assert ctx.explore_count == 2
+    
+    # 第三次请求：达到阈值，锁定
+    await machine.record_request("openai", "item_1", success=True)
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.LOCKED
+    assert ctx.locked_provider == "openai"
+    assert ctx.locked_item_id == "item_1"
+
+
+@pytest.mark.asyncio
+async def test_affinity_locked_to_exploring_on_failure():
+    """测试锁定期连续失败后重新探索"""
+    machine = RoutingAffinityStateMachine(
+        session_id="test_session_3",
+        model="gpt-4",
+        explore_threshold=2,
+        failure_threshold=3,
     )
+    
+    # 快速进入锁定期
+    await machine.record_request("openai", "item_1", success=True)
+    await machine.record_request("openai", "item_1", success=True)
+    
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.LOCKED
+    
+    # 连续失败
+    await machine.record_request("openai", "item_1", success=False)
+    await machine.record_request("openai", "item_1", success=False)
+    await machine.record_request("openai", "item_1", success=False)
+    
+    # 应该重新进入探索期
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.EXPLORING
 
-    primary, _, affinity_hit = await selector.choose([cand_other, cand_affined], messages=[{"role": "user", "content": "hi"}])
 
-    assert primary.model_id == "model_a"
-    assert affinity_hit is True
+@pytest.mark.asyncio
+async def test_affinity_should_use():
+    """测试是否应该使用亲和路由"""
+    machine = RoutingAffinityStateMachine(
+        session_id="test_session_4",
+        model="gpt-4",
+        explore_threshold=2,
+    )
+    
+    # 初始状态：不使用亲和
+    should_use, provider, item_id = await machine.should_use_affinity()
+    assert should_use is False
+    
+    # 进入锁定期
+    await machine.record_request("openai", "item_1", success=True)
+    await machine.record_request("openai", "item_1", success=True)
+    
+    # 锁定期：使用亲和
+    should_use, provider, item_id = await machine.should_use_affinity()
+    assert should_use is True
+    assert provider == "openai"
+    assert item_id == "item_1"
+
+
+@pytest.mark.asyncio
+async def test_affinity_reset():
+    """测试重置状态机"""
+    machine = RoutingAffinityStateMachine(
+        session_id="test_session_5",
+        model="gpt-4",
+        explore_threshold=2,
+    )
+    
+    # 进入锁定期
+    await machine.record_request("openai", "item_1", success=True)
+    await machine.record_request("openai", "item_1", success=True)
+    
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.LOCKED
+    
+    # 重置
+    await machine.reset()
+    
+    # 应该回到初始状态
+    ctx = await machine.get_context()
+    assert ctx.state == AffinityState.INIT

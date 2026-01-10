@@ -373,6 +373,9 @@ class UpstreamCallStep(BaseStep):
                 success=True,
                 latency_ms=latency_ms,
             )
+            
+            # 记录路由亲和成功（P1-5）
+            await self._record_affinity_success(ctx)
 
             # 亲和节省估算：仅在命中亲和且有 token 计费数据时计算
             affinity_hit = ctx.get("routing", "affinity_hit", False)
@@ -425,6 +428,7 @@ class UpstreamCallStep(BaseStep):
                 success=False,
                 latency_ms=latency_ms,
             )
+            await self._record_affinity_failure(ctx)
             raise UpstreamTimeoutError(self.config.timeout)
 
         except httpx.HTTPStatusError as e:
@@ -452,6 +456,7 @@ class UpstreamCallStep(BaseStep):
                 success=False,
                 latency_ms=latency_ms,
             )
+            await self._record_affinity_failure(ctx)
             raise UpstreamError(e.response.status_code, str(e))
 
         except Exception as e:
@@ -462,6 +467,7 @@ class UpstreamCallStep(BaseStep):
                 success=False,
                 latency_ms=None,
             )
+            await self._record_affinity_failure(ctx)
             raise
 
     async def _get_auth_headers(self, ctx: "WorkflowContext") -> dict[str, str]:
@@ -738,35 +744,6 @@ class UpstreamCallStep(BaseStep):
         """
         if not ctx.db_session:
             return
-        provider_model_id = ctx.get("routing", "provider_model_id")
-        if not provider_model_id:
-            return
-
-        repo = BanditRepository(ctx.db_session)
-        routing_config = ctx.get("routing", "routing_config") or {}
-        cost = ctx.billing.total_cost if hasattr(ctx, "billing") else None
-        try:
-            await repo.record_feedback(
-                provider_model_id=str(provider_model_id),
-                success=success,
-                latency_ms=latency_ms,
-                cost=cost,
-                reward=reward if reward is not None else (1.0 if success else 0.0),
-                routing_config=routing_config,
-            )
-        except Exception as exc:
-            logger.warning(f"Bandit feedback write failed: {exc}")
-
-        # 亲和路由：成功则刷新锚定；失败则清除（避免死黏在坏臂）
-        messages = ctx.get("conversation", "merged_messages") or ctx.get("validation", "validated", {}).get("messages")
-        if messages and ctx.db_session:
-            selector = RoutingSelector(ctx.db_session)
-            if success:
-                await selector._set_affinity_provider(messages, str(provider_model_id))
-            else:
-                await selector._clear_affinity(messages, provider_model_id=str(provider_model_id))
-        if not ctx.db_session:
-            return
         preset_item_id = ctx.selected_preset_item_id or ctx.get("routing", "preset_item_id")
         if not preset_item_id:
             return
@@ -785,6 +762,68 @@ class UpstreamCallStep(BaseStep):
             )
         except Exception as exc:
             logger.warning(f"Bandit feedback write failed: {exc}")
+
+    async def _record_affinity_success(self, ctx: "WorkflowContext") -> None:
+        """
+        记录路由亲和成功（P1-5）
+        
+        在上游调用成功后调用，更新亲和状态机。
+        """
+        affinity_machine = ctx.get("routing", "affinity_machine")
+        if not affinity_machine:
+            return
+        
+        provider = ctx.get("routing", "affinity_provider")
+        item_id = ctx.get("routing", "affinity_item_id")
+        
+        if not provider or not item_id:
+            return
+        
+        try:
+            await affinity_machine.record_request(
+                provider=provider,
+                item_id=item_id,
+                success=True,
+            )
+            logger.debug(
+                "routing_affinity_success_recorded session=%s model=%s provider=%s",
+                affinity_machine.session_id,
+                affinity_machine.model,
+                provider,
+            )
+        except Exception as exc:
+            logger.warning("routing_affinity_record_failed err=%s", exc)
+
+    async def _record_affinity_failure(self, ctx: "WorkflowContext") -> None:
+        """
+        记录路由亲和失败（P1-5）
+        
+        在上游调用失败后调用，更新亲和状态机。
+        """
+        affinity_machine = ctx.get("routing", "affinity_machine")
+        if not affinity_machine:
+            return
+        
+        provider = ctx.get("routing", "affinity_provider")
+        item_id = ctx.get("routing", "affinity_item_id")
+        
+        if not provider or not item_id:
+            return
+        
+        try:
+            await affinity_machine.record_request(
+                provider=provider,
+                item_id=item_id,
+                success=False,
+            )
+            logger.debug(
+                "routing_affinity_failure_recorded session=%s model=%s provider=%s",
+                affinity_machine.session_id,
+                affinity_machine.model,
+                provider,
+            )
+        except Exception as exc:
+            logger.warning("routing_affinity_record_failed err=%s", exc)
 
     def _is_whitelisted(self, url: str | None) -> bool:
         """检查上游域名是否在白名单中"""

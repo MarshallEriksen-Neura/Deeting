@@ -119,18 +119,27 @@ class QuotaCheckStep(BaseStep):
             return StepResult(status=StepStatus.SUCCESS, message="quota check degraded")
 
     async def _check_api_key_quota(self, ctx: "WorkflowContext", api_key_id) -> None:
-        """沿用现有 API Key 配额与 budget 检查，避免回归。"""
+        """
+        API Key 配额与预算检查（P0-2 增强）
+        
+        检查顺序：
+        1. 预算上限（budget_limit vs budget_used）- 优先从 Redis Hash 读取
+        2. 请求配额（request quota）
+        3. Token 配额（token quota）
+        """
         if not api_key_id:
             return
 
-        # 预算上限
+        # 1. 预算上限检查（优先从 Redis Hash 读取）
         budget_limit = ctx.get("external_auth", "budget_limit")
-        budget_used = ctx.get("external_auth", "budget_used") or 0.0
-        if budget_limit is not None and budget_used >= budget_limit:
-            raise QuotaExceededError("budget", float(budget_limit), float(budget_used))
+        if budget_limit is not None:
+            budget_used = await self._get_apikey_budget_used(ctx, str(api_key_id))
+            if budget_used >= float(budget_limit):
+                raise QuotaExceededError("budget", float(budget_limit), float(budget_used))
+            # 更新上下文中的 budget_used
+            ctx.set("external_auth", "budget_used", budget_used)
 
-        # 继续使用原 API Key quota 检查（Redis -> DB 回退）
-        # 这里保留现有逻辑以减少变更范围
+        # 2. 继续使用原 API Key quota 检查（Redis -> DB 回退）
         repo = self.apikey_repo or ApiKeyRepository(ctx.db_session)
         from app.models.api_key import QuotaType
         quotas = await repo.get_quotas(api_key_id, quota_type=None)
@@ -139,6 +148,92 @@ class QuotaCheckStep(BaseStep):
                 raise QuotaExceededError("apikey_request", quota.total_quota, quota.used_quota)
             if quota.quota_type == QuotaType.TOKEN and quota.total_quota > 0 and quota.used_quota >= quota.total_quota:
                 raise QuotaExceededError("apikey_token", quota.total_quota, quota.used_quota)
+
+    async def _get_apikey_budget_used(self, ctx: "WorkflowContext", api_key_id: str) -> float:
+        """
+        获取 API Key 的 budget_used（P0-2）
+        
+        优先从 Redis Hash 读取，未命中时从 DB 预热。
+        """
+        redis_client = getattr(cache, "_redis", None)
+        if not redis_client:
+            # Redis 不可用，从上下文或 DB 读取
+            budget_used = ctx.get("external_auth", "budget_used")
+            return float(budget_used) if budget_used is not None else 0.0
+
+        try:
+            key = CacheKeys.apikey_budget_hash(api_key_id)
+            full_key = cache._make_key(key)
+            
+            # 检查 Redis Hash 是否存在
+            exists = await redis_client.exists(full_key)
+            if not exists:
+                # 预热 API Key 预算到 Redis
+                await self._warm_apikey_budget_cache(ctx, redis_client, key, api_key_id)
+            
+            # 从 Redis 读取 budget_used（存储为微分单位，需要除以 1000000）
+            budget_used_micro = await redis_client.hget(full_key, "budget_used")
+            if budget_used_micro is None:
+                return 0.0
+            
+            return float(budget_used_micro) / 1000000.0
+        except Exception as exc:
+            logger.warning("get_apikey_budget_used_failed api_key=%s err=%s", api_key_id, exc)
+            # 降级到上下文或 DB
+            budget_used = ctx.get("external_auth", "budget_used")
+            return float(budget_used) if budget_used is not None else 0.0
+
+    async def _warm_apikey_budget_cache(
+        self,
+        ctx: "WorkflowContext",
+        redis_client,
+        cache_key: str,
+        api_key_id: str,
+    ) -> None:
+        """
+        预热 API Key 预算到 Redis Hash（P0-2）
+        
+        使用 SETNX 防止竞态。
+        """
+        full_key = cache._make_key(cache_key)
+        lock_key = f"{full_key}:warming"
+        
+        # 尝试获取预热锁
+        acquired = await redis_client.set(lock_key, "1", ex=5, nx=True)
+        if not acquired:
+            # 其他请求正在预热，等待后返回
+            await asyncio.sleep(0.05)
+            return
+
+        try:
+            # 从 DB 读取 API Key
+            repo = self.apikey_repo or ApiKeyRepository(ctx.db_session)
+            from sqlalchemy import select
+            from app.models.api_key import ApiKey
+            
+            stmt = select(ApiKey).where(ApiKey.id == api_key_id)
+            result = await ctx.db_session.execute(stmt)
+            api_key = result.scalars().first()
+            
+            if not api_key:
+                logger.warning("warm_apikey_budget_api_key_not_found api_key=%s", api_key_id)
+                return
+            
+            # 写入 Redis Hash（budget_used 使用微分单位存储，避免浮点精度问题）
+            budget_used_micro = int((api_key.budget_used or 0) * 1000000)
+            budget_limit_micro = int((api_key.budget_limit or 0) * 1000000) if api_key.budget_limit else 0
+            
+            payload = {
+                "budget_used": str(budget_used_micro),
+                "budget_limit": str(budget_limit_micro),
+                "version": "1",
+            }
+            await redis_client.hset(full_key, mapping=payload)
+            await redis_client.expire(full_key, 86400)
+            logger.debug("apikey_budget_cache_warmed api_key=%s", api_key_id)
+        finally:
+            # 释放预热锁
+            await redis_client.delete(lock_key)
 
     async def _estimate_cost(self, ctx: "WorkflowContext") -> float:
         """估算费用用于余额预检查（流式/非流式都可用）"""
