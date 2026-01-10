@@ -20,13 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.logging import logger
 from app.deps.auth import get_current_user
-from app.services.bridge_agent_token import (
+from app.services.mcp_bridge.bridge_agent_token import (
     BridgeAgentTokenService,
     generate_agent_id,
     normalize_agent_id,
     validate_agent_id,
 )
-from app.services.bridge_gateway_client import BridgeGatewayClient
+from app.services.mcp_bridge.bridge_gateway_client import BridgeGatewayClient
 
 router = APIRouter(prefix="/bridge", tags=["Bridge"])
 

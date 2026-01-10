@@ -13,8 +13,8 @@ from app.repositories.provider_instance_repository import (
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.services.secrets.manager import SecretManager
-from app.services.request_renderer import request_renderer
-from app.services.response_transformer import response_transformer
+from app.services.providers.request_renderer import request_renderer
+from app.services.providers.response_transformer import response_transformer
 from app.schemas.gateway import ChatCompletionRequest
 from app.schemas.tool import ToolDefinition, ToolCall
 

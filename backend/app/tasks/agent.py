@@ -4,7 +4,7 @@ import logging
 import uuid
 from celery import shared_task
 from app.core.celery_app import celery_app
-from app.services.llm import llm_service
+from app.services.providers.llm import llm_service
 from app.agent_plugins.builtins.database.plugin import DatabasePlugin
 from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
 from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin

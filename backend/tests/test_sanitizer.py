@@ -1,4 +1,4 @@
-from app.services.sanitizer import sanitizer
+from app.services.providers.sanitizer import sanitizer
 
 
 def test_mask_text_basic():

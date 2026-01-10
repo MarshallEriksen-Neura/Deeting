@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import RedirectResponse, Response
 
-from app.services.asset_storage_service import (
+from app.services.oss.asset_storage_service import (
     AssetStorageNotConfigured,
     SignedAssetUrlError,
     get_effective_asset_storage_mode,

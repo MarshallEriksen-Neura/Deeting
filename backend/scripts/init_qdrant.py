@@ -5,7 +5,7 @@ import os
 # Add backend to path
 sys.path.append(os.getcwd())
 
-from app.services.qdrant_service import system_qdrant
+from app.services.memory.qdrant_service import system_qdrant
 from loguru import logger
 
 async def main():

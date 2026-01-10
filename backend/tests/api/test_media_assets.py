@@ -5,7 +5,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import settings
-from app.services.asset_storage_service import build_signed_asset_url
+from app.services.oss.asset_storage_service import build_signed_asset_url
 
 
 @pytest.mark.asyncio

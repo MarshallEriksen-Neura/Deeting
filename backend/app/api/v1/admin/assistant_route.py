@@ -25,7 +25,7 @@ from app.schemas.assistant import (
     AssistantUpdate,
     AssistantListResponse,
 )
-from app.services.assistant_service import AssistantService
+from app.services.assistant.assistant_service import AssistantService
 
 router = APIRouter(prefix="/admin/assistants", tags=["Admin - Assistants"])
 

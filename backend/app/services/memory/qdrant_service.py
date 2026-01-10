@@ -4,7 +4,7 @@ from loguru import logger
 import httpx
 from app.core.config import settings
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
-from app.services.embedding import EmbeddingService
+from app.services.providers.embedding import EmbeddingService
 from app.models.agent_plugin import AgentPlugin
 from app.storage.qdrant_kb_collections import get_kb_system_collection_name
 

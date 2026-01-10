@@ -28,7 +28,7 @@ from app.repositories.bandit_repository import BanditRepository
 from app.services.providers.routing_selector import RoutingSelector
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
-from app.services.proxy_pool import get_proxy_pool, mask_proxy_url
+from app.services.proxy.proxy_pool import get_proxy_pool, mask_proxy_url
 from app.services.secrets.manager import SecretManager
 from app.services.workflow.steps.base import (
     BaseStep,

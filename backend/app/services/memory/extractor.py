@@ -3,10 +3,12 @@ import uuid
 from typing import List
 from loguru import logger
 
-from app.services.qdrant_service import system_qdrant
-from app.services.embedding import EmbeddingService
+from app.core.config import settings
+from app.services.memory.qdrant_service import system_qdrant
+from app.services.providers.embedding import EmbeddingService
+from app.services.providers.llm import llm_service
 from app.services.vector.qdrant_user_service import QdrantUserVectorService
-from app.services.sanitizer import sanitizer
+from app.services.providers.sanitizer import sanitizer
 
 class MemoryExtractorService:
     """

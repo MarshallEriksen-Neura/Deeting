@@ -111,6 +111,10 @@ class QuotaCheckResult:
     total: int                  # 总配额
     reset_at: datetime | None  # 下次重置时间
 
+class ApiKeyServiceError(Exception):
+    """Base exception for API Key service"""
+    pass
+
 
 # ============================================================
 # Service 实现

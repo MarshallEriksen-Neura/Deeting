@@ -14,7 +14,7 @@ from app.schemas.assistant import (
     AssistantVersionUpdate,
     AssistantListResponse,
 )
-from app.services.assistant_state import AssistantStateMachine
+from app.services.assistant.assistant_state import AssistantStateMachine
 from app.utils.time_utils import Datetime
 
 

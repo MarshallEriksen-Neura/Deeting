@@ -4,7 +4,7 @@ import uuid
 import httpx
 import pytest
 
-from app.services.vector_store import QdrantScopedClient
+from app.services.vector.qdrant_user_service import QdrantUserVectorService
 from app.storage.qdrant_kb_collections import get_kb_user_collection_name
 
 
@@ -46,7 +46,7 @@ async def test_upsert_creates_user_collection_and_writes_points():
 
     transport = httpx.MockTransport(handler)
     client = httpx.AsyncClient(transport=transport, base_url="http://qdrant.test")
-    vs_client = QdrantScopedClient(
+    vs_client = QdrantUserVectorService(
         client=client,
         plugin_id=plugin_id,
         user_id=user_id,
@@ -81,7 +81,7 @@ async def test_upsert_raises_on_vector_mismatch():
 
     transport = httpx.MockTransport(handler)
     client = httpx.AsyncClient(transport=transport, base_url="http://qdrant.test")
-    vs_client = QdrantScopedClient(
+    vs_client = QdrantUserVectorService(
         client=client,
         plugin_id=plugin_id,
         user_id=user_id,

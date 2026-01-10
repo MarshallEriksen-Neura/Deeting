@@ -7,7 +7,7 @@ from typing import Any, List
 
 import httpx
 
-from app.services.embedding import EmbeddingService
+from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_user_store import ensure_user_collection
 
 logger = logging.getLogger(__name__)
