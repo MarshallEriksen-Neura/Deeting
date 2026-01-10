@@ -1,0 +1,123 @@
+"use client";
+
+import { useState, useMemo, useCallback } from "react";
+import { CreditBalanceCard } from "@/components/dashboard/credits/credit-balance-card";
+import { CreditTransactionsTable } from "@/components/dashboard/credits/credit-transactions-table";
+import { DateRangeFilter, getDateRangeFromPreset, type DateRangePreset } from "@/components/dashboard/credits/date-range-filter";
+import { ReasonFilter, type TransactionReason } from "@/components/dashboard/credits/reason-filter";
+import { useCreditBalance, useCreditTransactions } from "@/lib/swr/use-credits";
+import { useI18n } from "@/lib/i18n-context";
+
+export function CreditsClient() {
+  const { t } = useI18n();
+
+  // 状态管理
+  const [currentPage, setCurrentPage] = useState(1);
+  const [dateRange, setDateRange] = useState<DateRangePreset>('30days');
+  const [reason, setReason] = useState<TransactionReason>('all');
+  const pageSize = 50;
+
+  // 计算日期范围参数 - 使用 useMemo 避免重复计算
+  const dateRangeParams = useMemo(() => {
+    return getDateRangeFromPreset(dateRange);
+  }, [dateRange]);
+
+  // 计算查询参数 - 使用 useMemo 避免创建新对象导致 SWR 重新请求
+  const transactionParams = useMemo(() => {
+    return {
+      limit: pageSize,
+      offset: (currentPage - 1) * pageSize,
+      ...dateRangeParams,
+      ...(reason !== 'all' && { reason })
+    };
+  }, [currentPage, pageSize, dateRangeParams, reason]);
+
+  // 获取积分余额 - 使用 frequent 缓存策略
+  const { balance, loading: balanceLoading, refresh: refreshBalance } = useCreditBalance();
+
+  // 获取积分流水 - 使用 frequent 缓存策略
+  const { 
+    transactions, 
+    loading: transactionsLoading, 
+    refresh: refreshTransactions 
+  } = useCreditTransactions(transactionParams);
+
+  // 处理页码变化
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  // 处理日期范围变化
+  const handleDateRangeChange = useCallback((preset: DateRangePreset) => {
+    setDateRange(preset);
+    setCurrentPage(1); // 重置到第一页
+  }, []);
+
+  // 处理原因过滤变化
+  const handleReasonChange = useCallback((newReason: TransactionReason) => {
+    setReason(newReason);
+    setCurrentPage(1); // 重置到第一页
+  }, []);
+
+  // 处理刷新
+  const handleRefresh = useCallback(() => {
+    refreshBalance();
+    refreshTransactions();
+  }, [refreshBalance, refreshTransactions]);
+
+  // 筛选器组件
+  const filterComponent = useMemo(() => (
+    <div className="flex gap-2">
+      <DateRangeFilter
+        value={dateRange}
+        onChange={handleDateRangeChange}
+        disabled={transactionsLoading}
+      />
+      <ReasonFilter
+        value={reason}
+        onChange={handleReasonChange}
+        disabled={transactionsLoading}
+      />
+    </div>
+  ), [dateRange, handleDateRangeChange, reason, handleReasonChange, transactionsLoading]);
+
+  // 估算总记录数（实际应该从API返回）
+  // 这里简化处理：如果返回了满页数据，假设还有更多
+  const estimatedTotal = useMemo(() => {
+    if (transactions.length < pageSize) {
+      return (currentPage - 1) * pageSize + transactions.length;
+    }
+    // 如果是满页，估算至少还有一页
+    return currentPage * pageSize + 1;
+  }, [transactions.length, currentPage, pageSize]);
+
+  return (
+    <>
+      {/* 页面标题 */}
+      <div className="space-y-1">
+        <h1 className="text-3xl font-bold">{t("credits.title")}</h1>
+        <p className="text-muted-foreground text-sm">
+          {t("credits.subtitle")}
+        </p>
+      </div>
+
+      {/* 积分余额卡片 */}
+      <CreditBalanceCard
+        balance={balance}
+        loading={balanceLoading}
+        onRefresh={handleRefresh}
+      />
+
+      {/* 积分流水表格 */}
+      <CreditTransactionsTable
+        transactions={transactions}
+        loading={transactionsLoading}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        totalRecords={estimatedTotal}
+        onPageChange={handlePageChange}
+        filterComponent={filterComponent}
+      />
+    </>
+  );
+}

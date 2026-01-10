@@ -1,0 +1,471 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Light Mode - ModelScope Inspired */
+:root {
+  color-scheme: light;
+  
+  /* 背景层次 - 极浅灰白 */
+  --background: #f8f9fa;
+  --foreground: #1a1a1a;
+
+  /* 卡片与浮层 - 纯白 */
+  --card: #ffffff;
+  --card-foreground: #1a1a1a;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a1a;
+
+  /* 品牌色 - 蓝紫渐变风格 */
+  --primary: #6366f1; /* 偏紫的蓝 */
+  --primary-foreground: #ffffff;
+
+  /* 次要元素 - 极浅灰 */
+  --secondary: #f3f4f6;
+  --secondary-foreground: #0f172a;
+
+  /* 弱化元素 */
+  --muted: #f5f6f8;
+  --muted-foreground: #6b7280;
+
+  /* 强调色 - 浅蓝紫 */
+  --accent: #e0e7ff;
+  --accent-foreground: #4338ca;
+
+  /* 警告色 */
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  /* 边框与输入 - 极浅灰 */
+  --border: #e5e7eb;
+  --input: #f3f4f6;
+  --ring: #8b5cf6;
+
+  --radius: 0.5rem;
+  /* 8px */
+
+  /* Charts - 蓝紫色系 */
+  /* 注意：图表组件使用 `hsl(var(--chart-x))`，这里需要存 HSL 三元组 */
+  /* 使用逗号分隔的旧语法，提高 `hsl(var(--chart-x))` 的浏览器兼容性 */
+  --chart-1: 239, 84%, 67%;
+  --chart-2: 258, 90%, 66%;
+  --chart-3: 189, 94%, 43%;
+  --chart-4: 160, 84%, 39%;
+  --chart-5: 38, 92%, 50%;
+
+  /* Sidebar - 浅灰白 */
+  --sidebar: #f5f6f8;
+  --sidebar-foreground: #1a1a1a;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ede9fe;
+  --sidebar-accent-foreground: #5b21b6;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #8b5cf6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: calc(var(--radius) - 1px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 2px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+.dark {
+  /* Dark Mode - ModelScope Inspired */
+  color-scheme: dark;
+  
+  /* 背景层次 - 极深黑到深灰 */
+  --background: #0f0f0f;
+  --foreground: #f5f5f5;
+  
+  /* 卡片与浮层 - 深灰层次 */
+  --card: #1a1a1a;
+  --card-foreground: #f5f5f5;
+  --popover: #1f1f1f;
+  --popover-foreground: #f5f5f5;
+  
+  /* 品牌色 - 蓝紫渐变风格 */
+  --primary: #6366f1; /* 偏紫的蓝 */
+  --primary-foreground: #ffffff;
+  
+  /* 次要元素 */
+  --secondary: #252525;
+  --secondary-foreground: #e5e5e5;
+  
+  /* 弱化元素 */
+  --muted: #2a2a2a;
+  --muted-foreground: #a0a0a0;
+  
+  /* 强调色 - 深蓝紫 */
+  --accent: #312e81;
+  --accent-foreground: #c7d2fe;
+  
+  /* 警告色 */
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  
+  /* 边框与输入 */
+  --border: #2a2a2a;
+  --input: #252525;
+  --ring: #8b5cf6;
+
+  /* Charts - 与 light 保持一致（HSL 三元组） */
+  --chart-1: 239, 84%, 67%;
+  --chart-2: 258, 90%, 66%;
+  --chart-3: 189, 94%, 43%;
+  --chart-4: 160, 84%, 39%;
+  --chart-5: 38, 92%, 50%;
+  
+  /* 侧边栏 */
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #f5f5f5;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1e1b4b;
+  --sidebar-accent-foreground: #c7d2fe;
+  --sidebar-border: #252525;
+  --sidebar-ring: #8b5cf6;
+}
+
+/* 圣诞主题 - Christmas Theme */
+html.christmas {
+  color-scheme: light;
+  /* 圣诞主题字体：用“深松绿/墨绿”替代纯黑，弱化文字用更柔和的灰绿 */
+  --foreground: #0f2a1f; /* 深松绿 */
+  --card: #ffffff;
+  --card-foreground: #0f2a1f;
+  --popover: #ffffff;
+  --popover-foreground: #0f2a1f;
+  --primary: #dc2626; /* 圣诞红 */
+  --primary-foreground: #ffffff;
+  --secondary: #16a34a; /* 圣诞绿 */
+  --secondary-foreground: #ffffff;
+  --muted: #fef2f2;
+  --muted-foreground: #3f5c4a; /* 灰绿 */
+  /* 强调色：避免大面积金黄导致对比刺眼，改为更柔和的浅红 */
+  --accent: #fee2e2;
+  --accent-foreground: #991b1b;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #fecaca;
+  --input: #fecaca;
+  --ring: #dc2626;
+  /* Charts - 圣诞主题（HSL 三元组） */
+  --chart-1: 0, 72%, 51%;
+  --chart-2: 142, 76%, 36%;
+  --chart-3: 43, 96%, 56%;
+  --chart-4: 0, 84%, 60%;
+  --chart-5: 142, 71%, 45%;
+  --sidebar: #fef2f2;
+  --sidebar-foreground: #0f2a1f;
+  --sidebar-primary: #dc2626;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fee2e2;
+  --sidebar-accent-foreground: #3f5c4a;
+  --sidebar-border: #fecaca;
+  --sidebar-ring: #dc2626;
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC",
+      Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+      "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  }
+
+  /* 圣诞主题下 body 背景透明（让 ThemeBackground 可见） */
+  html.christmas body {
+    background: transparent !important;
+  }
+
+  /*
+   * 圣诞主题下，不要让 bg-background 完全透明：
+   * Drawer / Dialog / 输入框等依赖 bg-background 的组件会变得难以阅读。
+   * 这里使用较高不透明度的浅色面板，既能透出背景图，又能保证对比度。
+   */
+  html.christmas .bg-background {
+    background: rgba(255, 255, 255, 0.86) !important;
+  }
+
+
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Minimalist Utilities */
+  .min-shadow {
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  /* 玻璃拟态效果增强 - 用于特殊主题 */
+  .glass-card {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  .dark .glass-card {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* 圣诞主题特殊效果 */
+  .christmas .glass-card {
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(220, 38, 38, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(220, 38, 38, 0.15);
+  }
+
+  /* 霓虹卡片玻璃拟态效果 */
+  .neon-glass-card {
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .dark .neon-glass-card {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .christmas .neon-glass-card {
+    background: rgba(255, 255, 255, 0.26);
+    /* 圣诞主题下稍微增加透明度 */
+  }
+
+  /* 主题卡片玻璃拟态效果 */
+  .theme-glass-card {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  .dark .theme-glass-card {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .christmas .theme-glass-card {
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(220, 38, 38, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(220, 38, 38, 0.15);
+  }
+
+
+
+  /* 霓虹对话框玻璃拟态效果 */
+  .neon-glass-dialog {
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .dark .neon-glass-dialog {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .christmas .neon-glass-dialog {
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  /* 主题对话框玻璃拟态效果 */
+  .theme-glass-dialog {
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .dark .theme-glass-dialog {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .christmas .theme-glass-dialog {
+    background: rgba(255, 255, 255, 0.26);
+  }
+
+  /* ========== 装饰系统 ========== */
+  
+  /* 圣诞装饰 - 菜单项装饰（只在圣诞主题显示） */
+  .christmas-menu-decor {
+    display: none;
+  }
+
+  .christmas .christmas-menu-decor {
+    display: block;
+  }
+
+  /* 圣诞装饰 - Sidebar 顶部/底部装饰 */
+  .christmas-sidebar-decor {
+    display: none;
+  }
+
+  .christmas .christmas-sidebar-decor {
+    display: block;
+  }
+
+  /* 圣诞装饰 - Card 装饰 */
+  .christmas-card-decor {
+    display: none;
+  }
+
+  .christmas .christmas-card-decor {
+    display: block;
+  }
+
+  /* 圣诞主题 - 主内容区玻璃拟态效果 */
+  .christmas main.glass-card {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.78) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  /* ========== 自适应组件样式 ========== */
+
+  /* 通用玻璃拟态 Sidebar - 根据主题自动调整 */
+  .theme-adaptive-sidebar [data-slot="sidebar-inner"] {
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    background: rgba(255, 255, 255, 0.05) !important;
+  }
+
+  .dark .theme-adaptive-sidebar [data-slot="sidebar-inner"] {
+    background: rgba(0, 0, 0, 0.3) !important;
+  }
+
+  .christmas .theme-adaptive-sidebar [data-slot="sidebar-inner"] {
+    background: rgba(255, 255, 255, 0.22) !important;
+  }
+
+  /* 通用玻璃拟态 Card - 根据主题自动调整 */
+  .theme-adaptive-card {
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .dark .theme-adaptive-card {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .christmas .theme-adaptive-card {
+    background: rgba(255, 255, 255, 0.26);
+  }
+
+  /* Card 霓虹灯效果 - 通过 CSS 变量控制颜色 */
+  .theme-adaptive-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(to right, transparent, var(--primary), transparent);
+    filter: blur(2px);
+    opacity: 0.85;
+  }
+
+  .theme-adaptive-card::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(to right, transparent, var(--primary), transparent);
+    filter: blur(2px);
+    opacity: 0.85;
+  }
+
+  /* Card 冰川纹理 - 只在圣诞主题显示 */
+  .christmas .theme-adaptive-card {
+    /* 冰冻噪点纹理 */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.4'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+    background-blend-mode: overlay;
+  }
+
+}
+
+  /* 霓虹卡片精致字体样式 - 香槟金 */
+  .neon-card-number {
+    font-weight: 300;
+    color: #e0c38c; /* 香槟金 */
+    text-shadow: 0 0 10px rgba(224, 195, 140, 0.3);
+    font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  /* 更细的字体变体 */
+  .neon-card-number-thin {
+    font-weight: 200;
+    color: #e0c38c;
+    text-shadow: 0 0 12px rgba(224, 195, 140, 0.4), 0 0 24px rgba(224, 195, 140, 0.2);
+    font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -0.03em;
+  }
+
+  /* 金属质感文字 */
+  .neon-card-metallic {
+    font-weight: 300;
+    background: linear-gradient(180deg, #f5e6c8 0%, #e0c38c 50%, #c9a961 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 2px 8px rgba(224, 195, 140, 0.3);
+    font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif;
+  }

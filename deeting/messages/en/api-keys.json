@@ -1,0 +1,123 @@
+{
+  "apiKeys": {
+    "title": "API Keys",
+    "subtitle": "Manage your API keys for accessing the gateway",
+    "mintNew": "Mint New Key",
+    "inactiveTitle": "Inactive Keys",
+    "empty": {
+      "title": "No API Keys Yet",
+      "description": "Create your first API key to start using the gateway"
+    },
+    "status": {
+      "active": "Active",
+      "limited": "Limited",
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "list": {
+      "name": "Name",
+      "key": "Key",
+      "usage": "Usage",
+      "lastUsed": "Last Used",
+      "actions": "Actions",
+      "never": "Never",
+      "ago": "ago",
+      "noLimit": "No limit"
+    },
+    "actions": {
+      "copy": "Copy ID",
+      "copied": "Copied!",
+      "edit": "Edit",
+      "roll": "Roll Key",
+      "revoke": "Revoke",
+      "delete": "Delete",
+      "retry": "Retry"
+    },
+    "toast": {
+      "loadFailed": "Failed to load API keys. Please try again.",
+      "createSuccess": "API key created",
+      "createFailed": "Failed to create API key",
+      "rollSuccess": "Key rolled and new secret generated",
+      "rollFailed": "Failed to roll key",
+      "revokeSuccess": "Key revoked",
+      "revokeFailed": "Failed to revoke key"
+    },
+    "create": {
+      "title": "Mint New Key",
+      "subtitle": "Create a new API key with custom permissions",
+      "steps": {
+        "basic": "Basic",
+        "constraints": "Constraints",
+        "security": "Security"
+      },
+      "basic": {
+        "title": "Basic Information",
+        "name": "Key Name",
+        "namePlaceholder": "e.g., MacBook Local Test",
+        "nameHint": "A memorable name to identify this key",
+        "expiration": "Expiration",
+        "expirationHint": "When should this key expire?",
+        "never": "Never",
+        "days7": "7 Days",
+        "days30": "30 Days",
+        "days90": "90 Days",
+        "custom": "Custom"
+      },
+      "constraints": {
+        "title": "Intelligence Constraints",
+        "description": "Set limits to protect your budget and control access",
+        "budgetLimit": "Budget Limit",
+        "budgetPlaceholder": "e.g., 10.00",
+        "budgetHint": "Monthly spending limit in USD",
+        "perMonth": "/ month",
+        "modelScope": "Model Scope",
+        "modelScopePlaceholder": "Select allowed models",
+        "modelScopeHint": "Restrict which AI models this key can access",
+        "modelScopeEmpty": "No available models yet. Please create or activate a provider instance.",
+        "modelScopeCTA": "Go to Providers",
+        "allModels": "All Models",
+        "rateLimit": "Rate Limit",
+        "rateLimitPlaceholder": "e.g., 100",
+        "rateLimitHint": "Maximum requests per minute",
+        "perMinute": "req/min"
+      },
+      "security": {
+        "title": "Security Settings",
+        "description": "Additional security constraints (optional)",
+        "allowedIPs": "Allowed IP Addresses",
+        "allowedIPsPlaceholder": "e.g., 192.168.1.1, 10.0.0.0/24",
+        "allowedIPsHint": "Leave empty to allow all IPs",
+        "enableLogging": "Enable Request Logging",
+        "enableLoggingHint": "Log all requests made with this key"
+      },
+      "cancel": "Cancel",
+      "back": "Back",
+      "next": "Next",
+      "create": "Create Key"
+    },
+    "reveal": {
+      "title": "Your API Key is Ready",
+      "warning": "Make sure to copy your API key now. You won't be able to see it again!",
+      "copyKey": "Copy Key",
+      "copied": "Copied!",
+      "done": "Done",
+      "securityNote": "This key grants access to your gateway. Keep it secure and never share it publicly."
+    },
+    "edit": {
+      "title": "Edit API Key",
+      "save": "Save Changes"
+    },
+    "revoke": {
+      "title": "Revoke API Key",
+      "description": "Are you sure you want to revoke this API key? This action cannot be undone.",
+      "confirm": "Revoke Key",
+      "cancel": "Cancel"
+    },
+    "roll": {
+      "title": "Roll API Key",
+      "description": "This will generate a new secret for this key. The old secret will stop working immediately.",
+      "confirm": "Roll Key",
+      "cancel": "Cancel"
+    }
+  }
+}

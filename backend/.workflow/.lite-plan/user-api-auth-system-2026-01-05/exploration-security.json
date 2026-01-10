@@ -1,0 +1,408 @@
+{
+  "relevant_files": [
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/deps/auth.py",
+      "relevance": "critical",
+      "rationale": "Current authentication implementation using X-User-Id header. Must be extended to support JWT-based auth while maintaining backward compatibility. Contains get_current_user() dependency that needs JWT token validation logic."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/models/user.py",
+      "relevance": "critical",
+      "rationale": "User model with hashed_password field already defined. Uses bcrypt-compatible hashing. Role-based access control (RBAC) models (User, Role, Permission, UserRole, RolePermission) are complete. Email field is unique and indexed for login lookup."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/pyproject.toml",
+      "relevance": "critical",
+      "rationale": "Security dependencies already installed: python-jose[cryptography]>=3.3.0 for JWT, passlib[bcrypt]>=1.7.4 for password hashing. No additional dependencies needed."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/core/config.py",
+      "relevance": "high",
+      "rationale": "Configuration class needs JWT-specific settings (SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS). Uses pydantic-settings for env var loading."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/.env",
+      "relevance": "critical",
+      "rationale": "Contains SECRET_KEY, JWT_PRIVATE_KEY_PATH, JWT_PUBLIC_KEY_PATH already configured. RSA keys exist at /data/AI-Higress-Gateway/backend/security/private.pem and public.pem. Production-ready JWT infrastructure present."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/core/cache.py",
+      "relevance": "high",
+      "rationale": "Redis CacheService with key prefixing, TTL support, and clear_prefix() method. Perfect for JWT blacklist (auth:access:{jti}), refresh tokens (auth:refresh:{jti}), token version tracking (auth:token_version:{user_id}), login failure counters (auth:login_fail:{email}), and captcha codes (auth:captcha:{email})."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/repositories/user_repository.py",
+      "relevance": "high",
+      "rationale": "UserRepository with get_by_id() and permission_codes() methods. Needs extension for get_by_email(), create_user(), update_password(), and email uniqueness validation."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/repositories/base.py",
+      "relevance": "medium",
+      "rationale": "BaseRepository pattern with Generic typing and async CRUD operations. Template for creating AuthRepository/TokenRepository if needed."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/schemas/base.py",
+      "relevance": "medium",
+      "rationale": "BaseSchema with from_attributes=True for ORM conversion. Base classes (IDSchema, TimestampSchema) available for user response schemas. Must exclude sensitive fields like hashed_password in DTOs."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/docs/user-api-design.md",
+      "relevance": "critical",
+      "rationale": "Comprehensive security requirements documented: JWT tokens (access 15-30min, refresh 7-30d), bcrypt/argon2 password hashing, Redis-based token blacklist (jti), login failure rate limiting, captcha on repeated failures, audit logging for security events, ban/unban workflows with token invalidation. Specifies Redis key patterns and TTLs."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/app/core/logging.py",
+      "relevance": "medium",
+      "rationale": "Loguru-based structured logging configured. Can emit JSON format for security audit events (login attempts, permission denials, password changes, role modifications). Supports async enqueue and file rotation."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/security/private.pem",
+      "relevance": "high",
+      "rationale": "RSA private key for JWT signing (RS256 algorithm). Already exists. More secure than HS256 shared secret for multi-service environments."
+    },
+    {
+      "path": "/data/AI-Higress-Gateway/backend/security/public.pem",
+      "relevance": "high",
+      "rationale": "RSA public key for JWT verification. Already exists. Enables token validation without exposing signing key."
+    }
+  ],
+  "patterns": {
+    "password_hashing": {
+      "library": "passlib[bcrypt]>=1.7.4",
+      "algorithm": "bcrypt",
+      "implementation": "Use passlib.context.CryptContext with bcrypt scheme. Configure rounds=12 for security/performance balance. Never store plaintext passwords. Validate password strength (min 8 chars, complexity) before hashing.",
+      "example_usage": "from passlib.context import CryptContext\npwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')\nhashed = pwd_context.hash(plain_password)\nverified = pwd_context.verify(plain_password, hashed_password)"
+    },
+    "jwt_token_generation": {
+      "library": "python-jose[cryptography]>=3.3.0",
+      "algorithm": "RS256 (RSA with SHA-256)",
+      "private_key_path": "/data/AI-Higress-Gateway/backend/security/private.pem",
+      "public_key_path": "/data/AI-Higress-Gateway/backend/security/public.pem",
+      "access_token_ttl": "15-30 minutes",
+      "refresh_token_ttl": "7-30 days",
+      "required_claims": {
+        "sub": "user_id (UUID as string)",
+        "jti": "unique token ID for blacklist tracking",
+        "exp": "expiration timestamp",
+        "iat": "issued at timestamp",
+        "type": "access or refresh"
+      },
+      "implementation": "from jose import jwt\nwith open(settings.JWT_PRIVATE_KEY_PATH) as f:\n    private_key = f.read()\ntoken = jwt.encode(payload, private_key, algorithm='RS256')"
+    },
+    "token_validation": {
+      "library": "python-jose[cryptography]>=3.3.0",
+      "steps": [
+        "1. Extract token from Authorization: Bearer <token> header",
+        "2. Decode and verify signature using RS256 and public key",
+        "3. Check exp claim for expiration",
+        "4. Validate jti against Redis blacklist (auth:access:{jti} or auth:refresh:{jti})",
+        "5. For refresh tokens, verify token_version matches auth:token_version:{user_id}",
+        "6. Extract user_id from sub claim and fetch user from database",
+        "7. Check user.is_active and user ban status in Redis (auth:ban:{user_id})"
+      ],
+      "error_handling": {
+        "JWTError": "401 Unauthorized - Invalid token",
+        "ExpiredSignatureError": "401 Unauthorized - Token expired",
+        "Blacklisted JTI": "401 Unauthorized - Token revoked",
+        "Version mismatch": "401 Unauthorized - Token invalidated",
+        "User inactive/banned": "403 Forbidden - Account disabled"
+      }
+    },
+    "token_blacklist_redis": {
+      "access_token_key": "auth:access:{jti}",
+      "refresh_token_key": "auth:refresh:{jti}",
+      "ttl_strategy": "Match token expiration time - access tokens 15-30min, refresh tokens 7-30 days",
+      "on_logout": "Delete both auth:access:{jti} and auth:refresh:{jti} keys. Increment auth:token_version:{user_id} to invalidate all user tokens.",
+      "on_token_refresh": "Mark old refresh token jti as used/revoked in Redis. Issue new access+refresh pair with new jti values.",
+      "implementation": "await cache.set(f'auth:access:{jti}', {'user_id': str(user_id), 'revoked': False}, ttl=access_ttl)\nawait cache.delete(f'auth:access:{jti}')  # on logout"
+    },
+    "rate_limiting_login": {
+      "redis_key": "auth:login_fail:{email}",
+      "threshold": "5 failed attempts within 10-30 minutes",
+      "ttl": "600-1800 seconds (10-30 minutes)",
+      "action": "Require captcha after threshold. Temporary ban after 10 attempts (5-15 min lockout).",
+      "implementation": "fail_count = await cache.redis.incr(f'auth:login_fail:{email}')\nawait cache.redis.expire(f'auth:login_fail:{email}', 1800)\nif fail_count >= 5: require_captcha = True\nif fail_count >= 10: raise HTTPException(429, 'Too many failed attempts')"
+    },
+    "captcha_verification": {
+      "redis_key": "auth:captcha:{email} or auth:reset_code:{email}",
+      "ttl": "300-600 seconds (5-10 minutes)",
+      "generation": "Random 6-digit numeric code or alphanumeric token",
+      "delivery": "Email via async task (Celery already configured in .env)",
+      "validation": "Single-use only - delete key after successful verification",
+      "implementation": "code = random.randint(100000, 999999)\nawait cache.set(f'auth:captcha:{email}', code, ttl=600)\n# After verification:\nawait cache.delete(f'auth:captcha:{email}')"
+    },
+    "token_version_tracking": {
+      "redis_key": "auth:token_version:{user_id}",
+      "purpose": "Invalidate all user tokens on password change, forced logout, or account compromise",
+      "ttl": "No TTL (persistent) or very long (30+ days)",
+      "increment_on": [
+        "Password change",
+        "Force logout all devices",
+        "Account unban (security measure)",
+        "Security event requiring re-authentication"
+      ],
+      "implementation": "await cache.redis.incr(f'auth:token_version:{user_id}')\n# On token validation:\ncurrent_version = await cache.get(f'auth:token_version:{user_id}') or 0\nif token_payload.get('version') != current_version: raise InvalidToken"
+    },
+    "ban_enforcement": {
+      "redis_key": "auth:ban:{user_id}",
+      "data_structure": "{'type': 'permanent|temporary', 'reason': str, 'expires_at': timestamp|null}",
+      "ttl": "For temporary bans: remaining ban duration. For permanent: None or very long (365 days).",
+      "check_location": "In get_current_user() dependency after user lookup from DB",
+      "on_ban": "1. Set Redis ban key. 2. Increment token_version to invalidate all tokens. 3. Optionally clear permission cache.",
+      "on_unban": "Delete auth:ban:{user_id} key. Clear related caches.",
+      "implementation": "ban_info = await cache.get(f'auth:ban:{user_id}')\nif ban_info:\n    if ban_info['type'] == 'permanent' or ban_info['expires_at'] > now():\n        raise HTTPException(403, 'Account banned')"
+    },
+    "permission_caching": {
+      "redis_key": "acl:perm:{user_id}",
+      "ttl": "300-900 seconds (5-15 minutes)",
+      "cache_content": "Set of permission codes or pre-computed permission flags dict",
+      "invalidation_triggers": [
+        "Role assignment/removal",
+        "Permission grant/revoke",
+        "User ban/unban",
+        "Manual cache clear via admin API"
+      ],
+      "implementation": "perm_cache_key = f'acl:perm:{user_id}'\ncached = await cache.get(perm_cache_key)\nif not cached:\n    codes = await user_repo.permission_codes(user_id)\n    await cache.set(perm_cache_key, codes, ttl=900)\n    return codes"
+    },
+    "audit_logging": {
+      "events_to_log": [
+        "Login success/failure (with IP, user agent)",
+        "Password change",
+        "Token refresh",
+        "Logout",
+        "Role/permission changes",
+        "User ban/unban",
+        "Failed permission checks (403 responses)",
+        "Captcha requests/failures",
+        "Password reset requests"
+      ],
+      "log_format": "JSON structured logging via Loguru (settings.LOG_JSON_FORMAT=true for production)",
+      "required_fields": "{'event': str, 'user_id': UUID|null, 'email': str|null, 'ip': str, 'user_agent': str, 'timestamp': ISO8601, 'result': success|failure, 'reason': str|null}",
+      "implementation": "logger.info('security_event', extra={'event': 'login_success', 'user_id': str(user.id), 'email': user.email, 'ip': request.client.host})"
+    },
+    "backward_compatibility": {
+      "strategy": "Extend get_current_user() to support both JWT (Authorization: Bearer) and legacy X-User-Id header",
+      "priority": "1. Check Authorization header for JWT token. 2. If missing, fallback to X-User-Id header. 3. If both missing, return 401.",
+      "migration_path": "Allow X-User-Id for internal/admin tools initially. Deprecate after frontend migration to JWT. Add deprecation warning in logs.",
+      "implementation": "auth_header = request.headers.get('Authorization')\nif auth_header and auth_header.startswith('Bearer '):\n    return await validate_jwt_token(auth_header[7:])\nelse:\n    x_user_id = request.headers.get('X-User-Id')\n    if x_user_id:\n        logger.warning('Using deprecated X-User-Id header')\n        return await get_user_by_header(x_user_id)\n    raise HTTPException(401, 'Missing credentials')"
+    }
+  },
+  "constraints": {
+    "security_requirements": [
+      "NEVER store plaintext passwords - always use bcrypt hashing with passlib",
+      "NEVER expose hashed_password in API responses - exclude from all Pydantic schemas",
+      "NEVER use HS256 for JWT - use RS256 with existing RSA key pair for signature verification",
+      "ALWAYS validate JWT signatures using public key before trusting claims",
+      "ALWAYS check token blacklist in Redis before accepting a token",
+      "ALWAYS increment token_version on password change to invalidate old tokens",
+      "ALWAYS log security events (login, password change, permission denial) for audit trail",
+      "NEVER allow password reset without email verification code",
+      "NEVER allow unlimited login attempts - implement rate limiting and captcha",
+      "ALWAYS use HTTPS in production (enforce via middleware or reverse proxy)"
+    ],
+    "redis_security": [
+      "Use consistent key prefixes (settings.CACHE_PREFIX='ai_gateway:') for all auth-related keys",
+      "Set appropriate TTLs to prevent Redis memory bloat - access tokens 15-30min, refresh tokens 7-30d",
+      "Use atomic operations (INCR, SETNX) for rate limiting counters to prevent race conditions",
+      "Clear sensitive keys (blacklist, captcha) immediately after use or expiration",
+      "Protect Redis with password authentication (REDIS_PASSWORD in .env already configured)"
+    ],
+    "token_design": [
+      "Access tokens MUST include jti (JWT ID) for blacklist tracking",
+      "Access tokens MUST be short-lived (15-30 minutes) to limit exposure window",
+      "Refresh tokens MUST be long-lived (7-30 days) but single-use (rotate on refresh)",
+      "Refresh tokens MUST check token_version to support forced logout",
+      "Tokens MUST include 'type' claim to prevent access token use as refresh token (token confusion attack)",
+      "Tokens MUST NOT contain sensitive data (only user_id, not email/roles)"
+    ],
+    "error_disclosure": [
+      "Use generic error messages for authentication failures - 'Invalid credentials' instead of 'Email not found' vs 'Wrong password' (prevents user enumeration)",
+      "Return same status code (401) for both invalid token and expired token",
+      "Rate limit error responses to prevent brute force timing attacks",
+      "Log detailed failure reasons server-side, but return generic messages to client"
+    ],
+    "database_queries": [
+      "Use prepared statements via SQLAlchemy ORM (already in place) - prevents SQL injection",
+      "Index email field for login lookups (already indexed in User model)",
+      "Use is_active check in every authentication flow to support soft delete/suspension",
+      "Fetch user by email case-insensitively if email provider supports it (some do, some don't)"
+    ],
+    "existing_dependencies": [
+      "MUST use existing UserRepository pattern - extend with get_by_email(), not direct ORM queries in routes",
+      "MUST use existing CacheService singleton (from app.core.cache import cache) for all Redis operations",
+      "MUST use existing HTTPException pattern for error responses - status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN",
+      "MUST follow existing async/await patterns - all database and Redis operations are async",
+      "MUST use BaseSchema with from_attributes=True for Pydantic response models"
+    ],
+    "compliance_considerations": [
+      "GDPR: Support user data export and account deletion (soft delete via is_active=False)",
+      "Password policy: Enforce minimum 8 characters, optional complexity requirements",
+      "Audit trail: Retain security event logs for compliance (configured rotation in logging.py)",
+      "Data retention: Set Redis TTLs to comply with data retention policies",
+      "Encryption in transit: Enforce HTTPS for all authentication endpoints"
+    ]
+  },
+  "clarification_needs": [
+    {
+      "question": "Should we implement multi-factor authentication (MFA) for login, or is email/password sufficient for MVP?",
+      "context": "Design doc mentions MFA (SMS/email/OTP) as optional enhancement. MFA adds security but increases implementation complexity.",
+      "options": [
+        {
+          "option": "Implement TOTP-based MFA (e.g., Google Authenticator) in MVP",
+          "pros": "Strong security, standard protocol, pyotp library available",
+          "cons": "Requires QR code generation, secret storage, recovery codes, adds API endpoints"
+        },
+        {
+          "option": "Implement email-based 2FA code in MVP",
+          "pros": "Simpler than TOTP, reuses existing email sending, good UX for non-technical users",
+          "cons": "Less secure than TOTP, requires email infrastructure"
+        },
+        {
+          "option": "Skip MFA for MVP, add in later iteration",
+          "pros": "Faster MVP delivery, focuses on core auth flow",
+          "cons": "Lower security posture, harder to add later without breaking changes"
+        }
+      ],
+      "recommended": "Skip MFA for MVP, add in later iteration",
+      "rationale": "Focus on solid JWT + password foundation first. Design token structure to support MFA claims later (add 'mfa_verified': bool). Implement in phase 2 after core auth is stable."
+    },
+    {
+      "question": "Should password reset use time-limited email links (with token in URL) or separate verification code entry?",
+      "context": "Design doc specifies 'verification code' approach. URL-based approach is more common but has different security trade-offs.",
+      "options": [
+        {
+          "option": "Email link with JWT token in URL (e.g., /reset-password?token=...)",
+          "pros": "Better UX (single click), industry standard, can embed expiration in token",
+          "cons": "Token exposed in URL/browser history/logs, vulnerable to forwarding attacks"
+        },
+        {
+          "option": "6-digit verification code entered separately",
+          "pros": "Token not in URL, can't be accidentally shared, works well with mobile apps",
+          "cons": "Extra step for user, code can be brute-forced without rate limiting"
+        },
+        {
+          "option": "Hybrid: Email link with short-lived code required on landing page",
+          "pros": "Combines security of both approaches",
+          "cons": "Most complex implementation, potentially confusing UX"
+        }
+      ],
+      "recommended": "6-digit verification code entered separately",
+      "rationale": "Matches design doc specification. Implement with 5-10min TTL in Redis (auth:reset_code:{email}), rate limit code generation to 1 per minute, delete code after use. Simple and secure."
+    },
+    {
+      "question": "Should we support refresh token rotation (issue new refresh token on each access token refresh) or single long-lived refresh token?",
+      "context": "Design doc mentions 'rotation' strategy to prevent replay attacks. Industry best practice but adds complexity.",
+      "options": [
+        {
+          "option": "Refresh token rotation (new refresh token on each refresh)",
+          "pros": "Prevents stolen refresh token replay, detects token theft, OAuth 2.0 best practice",
+          "cons": "More complex state management, need to track token families for theft detection"
+        },
+        {
+          "option": "Single long-lived refresh token (reuse until expiration)",
+          "pros": "Simpler implementation, easier client management",
+          "cons": "Stolen refresh token valid until expiration (7-30 days), harder to detect compromise"
+        },
+        {
+          "option": "Hybrid: Refresh token rotation with token family tracking",
+          "pros": "Maximum security, can detect and revoke entire token family on reuse attempt",
+          "cons": "Most complex, requires additional Redis state"
+        }
+      ],
+      "recommended": "Refresh token rotation (new refresh token on each refresh)",
+      "rationale": "Design doc explicitly mentions rotation. Implement by marking old refresh_jti as 'used' in Redis, issue new refresh token with new jti. Revoke entire token family (increment token_version) if used refresh token is reused."
+    },
+    {
+      "question": "What should be the password complexity requirements (length, character types)?",
+      "context": "Design doc mentions 'password strength validation' but doesn't specify rules. NIST recommends minimum 8 chars, no complexity requirements; others enforce mixed case/numbers/symbols.",
+      "options": [
+        {
+          "option": "NIST-style: Minimum 8 characters, no complexity requirements, check against common password list",
+          "pros": "User-friendly, prevents weak passwords via blacklist, modern security practice",
+          "cons": "Requires maintaining common password list, some compliance frameworks expect complexity"
+        },
+        {
+          "option": "Traditional complexity: Min 8 chars, must include uppercase, lowercase, number, special char",
+          "pros": "Familiar to users, meets many compliance frameworks",
+          "cons": "Annoying UX, users often just capitalize first letter and add '1!', not necessarily more secure"
+        },
+        {
+          "option": "Passphrase-style: Minimum 12 characters, no complexity requirements",
+          "pros": "Encourages longer, more memorable passwords, higher entropy than complex 8-char",
+          "cons": "Users may still pick weak passphrases without blacklist check"
+        }
+      ],
+      "recommended": "NIST-style: Minimum 8 characters, no complexity requirements, check against common password list",
+      "rationale": "Balances security and usability. Use passlib's password strength checker or simple blacklist of top 10k common passwords. Block passwords that match user's email prefix."
+    },
+    {
+      "question": "Should admin user creation (POST /api/v1/admin/users) send temporary password via email or require admin to set password manually?",
+      "context": "Design doc mentions 'random password + email notification'. Security vs usability trade-off.",
+      "options": [
+        {
+          "option": "Generate random temporary password, send via email, force change on first login",
+          "pros": "Fully automated, admin doesn't need to communicate password separately",
+          "cons": "Password sent via email (less secure), requires 'force password change' flag in User model"
+        },
+        {
+          "option": "Send password reset link via email, user sets own password",
+          "pros": "More secure (no password in email), familiar UX, reuses reset flow",
+          "cons": "Extra step for user, requires email infrastructure"
+        },
+        {
+          "option": "Return temporary password in API response, admin communicates to user via secure channel",
+          "pros": "Admin controls communication channel, no email dependency",
+          "cons": "Manual process, temporary password exposed in API response/logs"
+        }
+      ],
+      "recommended": "Send password reset link via email, user sets own password",
+      "rationale": "Most secure option. Reuses existing password reset infrastructure (auth:reset_code:{email}). User controls their own password from the start. No plaintext password in email or logs."
+    },
+    {
+      "question": "Should we implement IP-based rate limiting in addition to email-based login failure tracking?",
+      "context": "Design doc mentions 'IP + account limiting'. Protects against distributed attacks but can block legitimate users behind shared IPs (NAT, corporate proxy).",
+      "options": [
+        {
+          "option": "Email-only rate limiting (5 failures per email)",
+          "pros": "Simple, doesn't affect legitimate users on shared IPs, targeted protection",
+          "cons": "Doesn't protect against distributed brute force across many accounts"
+        },
+        {
+          "option": "IP + email combined rate limiting (e.g., 10 failures per IP per 10min, 5 per email)",
+          "pros": "Defense in depth, protects against both single-account and distributed attacks",
+          "cons": "Can block legitimate users behind NAT/proxy, requires IP extraction from X-Forwarded-For"
+        },
+        {
+          "option": "Adaptive rate limiting based on risk signals (new IP, unusual location, etc.)",
+          "pros": "Smart protection, better UX for legitimate users",
+          "cons": "Much more complex, requires geolocation/fingerprinting, can be bypassed"
+        }
+      ],
+      "recommended": "IP + email combined rate limiting (e.g., 10 failures per IP per 10min, 5 per email)",
+      "rationale": "Design doc explicitly mentions 'IP + account limiting'. Implement both auth:login_fail:{email} and auth:login_fail_ip:{ip}. Use request.client.host or X-Forwarded-For (with proxy validation)."
+    },
+    {
+      "question": "Should we implement account activation via email verification after registration, or auto-activate new accounts?",
+      "context": "Design doc mentions 'POST /api/v1/users/activate' endpoint. Email verification prevents spam/abuse but adds friction.",
+      "options": [
+        {
+          "option": "Email verification required (user starts as is_active=False, must click link/enter code)",
+          "pros": "Validates email ownership, prevents spam registrations, industry standard",
+          "cons": "Extra friction, requires reliable email delivery, user can't use account until verified"
+        },
+        {
+          "option": "Auto-activate, optional email verification for added features",
+          "pros": "Frictionless signup, faster conversion, user can start using immediately",
+          "cons": "Allows fake email registrations, no proof of email ownership"
+        },
+        {
+          "option": "Auto-activate but require email verification for sensitive operations (password reset, API key creation)",
+          "pros": "Balances UX and security, progressive security",
+          "cons": "More complex logic, can confuse users"
+        }
+      ],
+      "recommended": "Email verification required (user starts as is_active=False, must click link/enter code)",
+      "rationale": "Design doc includes /users/activate endpoint. Matches B2B use case (controlled user base). Set is_active=False on registration, store verification code in Redis (auth:activation_code:{email}, TTL 24h), activate on successful verification."
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "stats": {
+    "title": "Dashboard Stats",
+    "totalRoutes": "Total Routes",
+    "activeServices": "Active Services",
+    "securityRules": "Security Rules",
+    "activePlugins": "Active Plugins"
+  },
+  "cards": {
+    "ios": "iOS Glass Cards",
+    "defaultTitle": "Default Glass Card",
+    "defaultDesc": "Standard frosted glass effect with subtle animations",
+    "defaultBody": "This card features iOS-style glassmorphism with backdrop blur, inner borders, and top shine effect.",
+    "primaryTitle": "Primary Theme",
+    "primaryDesc": "Purple-tinted glass with matching borders",
+    "primaryBody": "Use theme variants to match your brand colors and create visual hierarchy in your interface.",
+    "tealTitle": "Teal Accent",
+    "tealDesc": "Glow effect on hover",
+    "tealBody": "This card uses the teal accent color and has a glowing hover effect instead of the default lift.",
+    "action": "Action",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "tealButton": "Teal Button"
+  },
+  "buttons": {
+    "variants": "Button Variants",
+    "primary": "Primary",
+    "secondary": "Secondary",
+    "outline": "Outline",
+    "ghost": "Ghost",
+    "destructive": "Delete",
+    "success": "Success"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "description": "Monitor and manage your API gateway",
+    "recentActivity": "Recent Activity",
+    "recentActivityDesc": "Latest changes and events",
+    "quickActions": "Quick Actions",
+    "quickActionsDesc": "Common tasks and shortcuts",
+    "viewAll": "View All",
+    "createRoute": "Create Route",
+    "addService": "Add Service",
+    "configureRules": "Configure Rules",
+    "managePlugins": "Manage Plugins"
+  },
+  "nav": {
+    "main": "Main",
+    "configuration": "Configuration",
+    "account": "Account",
+    "analytics": "Analytics",
+    "system": "System",
+    "dashboard": "Dashboard",
+    "routes": "Routes",
+    "services": "Services",
+    "plugins": "Plugins",
+    "apiKeys": "API Keys",
+    "monitoring": "Monitoring",
+    "logs": "Logs",
+    "profile": "Profile",
+    "notifications": "Notifications",
+    "statistics": "Statistics",
+    "performance": "Performance",
+    "users": "Users",
+    "roles": "Roles",
+    "security": "Security",
+    "database": "Database",
+    "settings": "Settings"
+  }
+}

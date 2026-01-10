@@ -1,0 +1,123 @@
+{
+  "apiKeys": {
+    "title": "API 密钥",
+    "subtitle": "管理您的网关访问密钥",
+    "mintNew": "铸造新密钥",
+    "inactiveTitle": "未激活密钥",
+    "empty": {
+      "title": "暂无 API 密钥",
+      "description": "创建您的第一个 API 密钥以开始使用网关"
+    },
+    "status": {
+      "active": "活跃",
+      "limited": "受限",
+      "revoked": "已撤销",
+      "expired": "已过期"
+    },
+    "list": {
+      "name": "名称",
+      "key": "密钥",
+      "usage": "用量",
+      "lastUsed": "最后使用",
+      "actions": "操作",
+      "never": "从未",
+      "ago": "前",
+      "noLimit": "无限制"
+    },
+    "actions": {
+      "copy": "复制 ID",
+      "copied": "已复制！",
+      "edit": "编辑",
+      "roll": "轮换密钥",
+      "revoke": "撤销",
+      "delete": "删除",
+      "retry": "重试"
+    },
+    "toast": {
+      "loadFailed": "加载 API 密钥失败，请稍后重试",
+      "createSuccess": "已创建新密钥",
+      "createFailed": "创建密钥失败",
+      "rollSuccess": "已生成新的密钥密文",
+      "rollFailed": "轮换密钥失败",
+      "revokeSuccess": "已撤销该密钥",
+      "revokeFailed": "撤销密钥失败"
+    },
+    "create": {
+      "title": "铸造新密钥",
+      "subtitle": "创建带有自定义权限的新 API 密钥",
+      "steps": {
+        "basic": "基础",
+        "constraints": "限制",
+        "security": "安全"
+      },
+      "basic": {
+        "title": "基础信息",
+        "name": "密钥名称",
+        "namePlaceholder": "例如：MacBook 本地测试",
+        "nameHint": "一个便于识别的名称",
+        "expiration": "有效期",
+        "expirationHint": "密钥何时过期？",
+        "never": "永不过期",
+        "days7": "7 天",
+        "days30": "30 天",
+        "days90": "90 天",
+        "custom": "自定义"
+      },
+      "constraints": {
+        "title": "智能限制",
+        "description": "设置限制以保护预算并控制访问权限",
+        "budgetLimit": "预算上限",
+        "budgetPlaceholder": "例如：10.00",
+        "budgetHint": "每月支出上限（美元）",
+        "perMonth": "/ 月",
+        "modelScope": "模型范围",
+        "modelScopePlaceholder": "选择允许的模型",
+        "modelScopeHint": "限制此密钥可访问的 AI 模型",
+        "modelScopeEmpty": "暂无可用模型，请先创建或激活 Provider 实例",
+        "modelScopeCTA": "前往创建 Provider",
+        "allModels": "所有模型",
+        "rateLimit": "速率限制",
+        "rateLimitPlaceholder": "例如：100",
+        "rateLimitHint": "每分钟最大请求数",
+        "perMinute": "次/分钟"
+      },
+      "security": {
+        "title": "安全设置",
+        "description": "额外的安全限制（可选）",
+        "allowedIPs": "允许的 IP 地址",
+        "allowedIPsPlaceholder": "例如：192.168.1.1, 10.0.0.0/24",
+        "allowedIPsHint": "留空则允许所有 IP",
+        "enableLogging": "启用请求日志",
+        "enableLoggingHint": "记录使用此密钥的所有请求"
+      },
+      "cancel": "取消",
+      "back": "上一步",
+      "next": "下一步",
+      "create": "创建密钥"
+    },
+    "reveal": {
+      "title": "您的 API 密钥已就绪",
+      "warning": "请立即复制您的 API 密钥。关闭后将无法再次查看！",
+      "copyKey": "复制密钥",
+      "copied": "已复制！",
+      "done": "完成",
+      "securityNote": "此密钥可授权访问您的网关。请妥善保管，切勿公开分享。"
+    },
+    "edit": {
+      "title": "编辑 API 密钥",
+      "save": "保存更改"
+    },
+    "revoke": {
+      "title": "撤销 API 密钥",
+      "description": "确定要撤销此 API 密钥吗？此操作无法撤消。",
+      "confirm": "撤销密钥",
+      "cancel": "取消"
+    },
+    "roll": {
+      "title": "轮换 API 密钥",
+      "description": "这将为此密钥生成新的密文。旧密文将立即失效。",
+      "confirm": "轮换密钥",
+      "cancel": "取消"
+    }
+  }
+}

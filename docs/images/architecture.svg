@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500">
+  <style>
+    .box{fill:#ffffff;stroke:#1f2937;stroke-width:2;rx:8}
+    .box-highlight{fill:#f0f9ff;stroke:#0284c7;stroke-width:2;rx:8}
+    .box-provider{fill:#fef3c7;stroke:#d97706;stroke-width:2;rx:8}
+    .title{font:bold 15px Inter, Arial; fill:#0f172a}
+    .subtitle{font:13px Inter, Arial; fill:#374151}
+    .small{font:11px Inter, Arial; fill:#6b7280}
+    .badge{font:10px Inter, Arial; fill:#ffffff}
+  </style>
+  
+  <!-- Background -->
+  <rect width="1000" height="500" rx="12" fill="#f8fafc"/>
+  
+  <!-- Client Layer -->
+  <rect x="40" y="30" width="220" height="140" rx="8" class="box"/>
+  <text x="60" y="60" class="title">客户端 / SDKs</text>
+  <text x="60" y="85" class="subtitle">多协议支持</text>
+  <text x="60" y="110" class="small">• OpenAI SDK</text>
+  <text x="60" y="130" class="small">• Anthropic SDK</text>
+  <text x="60" y="150" class="small">• 自定义客户端</text>
+  
+  <!-- Gateway Core -->
+  <rect x="320" y="20" width="340" height="200" rx="8" class="box-highlight"/>
+  <text x="350" y="50" class="title">AI-Higress Gateway (FastAPI)</text>
+  
+  <!-- Gateway Features -->
+  <rect x="340" y="70" width="140" height="60" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1"/>
+  <text x="350" y="90" class="subtitle">统一接口层</text>
+  <text x="350" y="105" class="small">• /v1/chat/completions</text>
+  <text x="350" y="117" class="small">• /v1/messages</text>
+  <text x="350" y="129" class="small">• /v1/responses</text>
+  
+  <rect x="500" y="70" width="140" height="60" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1"/>
+  <text x="510" y="90" class="subtitle">核心能力</text>
+  <text x="510" y="108" class="small">• 智能路由</text>
+  <text x="510" y="122" class="small">• 故障切换</text>
+  
+  <rect x="340" y="145" width="140" height="60" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1"/>
+  <text x="350" y="165" class="subtitle">安全与计费</text>
+  <text x="350" y="183" class="small">• JWT 鉴权</text>
+  <text x="350" y="197" class="small">• 积分系统</text>
+  
+  <rect x="500" y="145" width="140" height="60" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1"/>
+  <text x="510" y="165" class="subtitle">协议适配</text>
+  <text x="510" y="183" class="small">• OpenAI 格式</text>
+  <text x="510" y="197" class="small">• Claude 格式</text>
+  
+  <!-- Management UI -->
+  <rect x="720" y="30" width="240" height="140" rx="8" class="box"/>
+  <text x="740" y="60" class="title">管理控制台</text>
+  <text x="740" y="85" class="subtitle">Next.js + shadcn/ui</text>
+  <text x="740" y="110" class="small">• 用户管理</text>
+  <text x="740" y="130" class="small">• Provider 配置</text>
+  <text x="740" y="150" class="small">• 监控看板</text>
+  
+  <!-- Redis Cache -->
+  <rect x="40" y="260" width="220" height="140" rx="8" class="box"/>
+  <text x="60" y="290" class="title">Redis 缓存层</text>
+  <text x="60" y="315" class="subtitle">高性能存储</text>
+  <text x="60" y="340" class="small">• 模型列表缓存</text>
+  <text x="60" y="360" class="small">• 会话上下文</text>
+  <text x="60" y="380" class="small">• 健康状态</text>
+  
+  <!-- Database -->
+  <rect x="320" y="260" width="180" height="140" rx="8" class="box"/>
+  <text x="340" y="290" class="title">PostgreSQL</text>
+  <text x="340" y="315" class="subtitle">持久化存储</text>
+  <text x="340" y="340" class="small">• 用户数据</text>
+  <text x="340" y="360" class="small">• 请求历史</text>
+  <text x="340" y="380" class="small">• 积分交易</text>
+  
+  <!-- Upstream Providers -->
+  <rect x="560" y="260" width="400" height="200" rx="8" class="box-provider"/>
+  <text x="590" y="290" class="title">上游模型提供商</text>
+  <text x="590" y="315" class="subtitle">多格式协议支持</text>
+  
+  <!-- Provider Cards -->
+  <rect x="580" y="335" width="110" height="105" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="590" y="355" class="subtitle">OpenAI</text>
+  <rect x="590" y="365" width="90" height="18" rx="3" fill="#10b981"/>
+  <text x="600" y="378" class="badge">Chat 格式</text>
+  <text x="590" y="400" class="small">• GPT-4</text>
+  <text x="590" y="415" class="small">• GPT-3.5</text>
+  <text x="590" y="430" class="small">• Azure OpenAI</text>
+  
+  <rect x="710" y="335" width="110" height="105" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="720" y="355" class="subtitle">Anthropic</text>
+  <rect x="720" y="365" width="90" height="18" rx="3" fill="#8b5cf6"/>
+  <text x="725" y="378" class="badge">Claude 格式</text>
+  <text x="720" y="400" class="small">• Claude 3.5</text>
+  <text x="720" y="415" class="small">• Claude 3</text>
+  <text x="720" y="430" class="small">• Claude 2</text>
+  
+  <rect x="840" y="335" width="110" height="105" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="850" y="355" class="subtitle">Google</text>
+  <rect x="850" y="365" width="90" height="18" rx="3" fill="#3b82f6"/>
+  <text x="855" y="378" class="badge">Gemini 格式</text>
+  <text x="850" y="400" class="small">• Gemini Pro</text>
+  <text x="850" y="415" class="small">• Gemini Ultra</text>
+  <text x="850" y="430" class="small">• 自定义模型</text>
+  
+  <!-- Arrows -->
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1f2937"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#0284c7"/>
+    </marker>
+  </defs>
+  
+  <!-- Client to Gateway -->
+  <line x1="260" y1="100" x2="320" y2="100" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  
+  <!-- Gateway to UI -->
+  <line x1="660" y1="100" x2="720" y2="100" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  
+  <!-- Gateway to Redis -->
+  <line x1="320" y1="180" x2="200" y2="260" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)" stroke-dasharray="5,5"/>
+  
+  <!-- Gateway to Database -->
+  <line x1="410" y1="220" x2="410" y2="260" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  
+  <!-- Gateway to Providers -->
+  <line x1="490" y1="220" x2="650" y2="260" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="540" y1="220" x2="760" y2="260" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="590" y1="220" x2="870" y2="260" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  
+</svg>

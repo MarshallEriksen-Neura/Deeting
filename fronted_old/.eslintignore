@@ -1,0 +1,25 @@
+# 依赖和构建产物
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# 配置文件
+*.config.js
+*.config.mjs
+*.config.ts
+
+# 自定义规则目录
+eslint-rules/
+
+# 测试覆盖率
+coverage/
+
+# 类型定义
+*.d.ts
+next-env.d.ts
+
+# 临时文件
+*.log
+.DS_Store

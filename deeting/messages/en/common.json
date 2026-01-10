@@ -1,0 +1,37 @@
+{
+  "common": {
+    "brand": "AI Higress Gateway",
+    "subtitle": "Intelligent API Gateway with AI-powered routing, traffic management, and observability.",
+    "getStarted": "Get Started",
+    "docs": "Documentation",
+    "viewDemo": "View Demo",
+    "learnMore": "Learn More",
+    "language": {
+      "label": "Interface language",
+      "zhCN": "Chinese",
+      "en": "English"
+    },
+    "notFound": {
+      "title": "Page drifted away",
+      "description": "The page might be hidden in the ink mist. Check the link or head back to the homepage.",
+      "backHome": "Return Home",
+      "contact": "Contact Admin",
+      "hint": "Tip: Navigation or search can guide you to the right place."
+    },
+    "globalError": {
+      "title": "System ripple detected",
+      "description": "We are calming the waves. Please try again shortly or go back home.",
+      "primary": "Retry",
+      "secondary": "Back to Home",
+      "detailLabel": "Error detail"
+    },
+    "header": {
+      "login": "Log in",
+      "profile": "Profile",
+      "apiKeys": "API Keys",
+      "docs": "Documentation",
+      "logout": "Log out",
+      "guest": "Guest"
+    }
+  }
+}

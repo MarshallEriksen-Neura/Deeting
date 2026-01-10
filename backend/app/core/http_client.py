@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import httpx
+
+try:
+    from httpx_curl import CurlCFFITransport  # type: ignore
+
+    _curl_transport_available = True
+except Exception:  # pragma: no cover - 可选依赖缺失时兜底
+    CurlCFFITransport = None  # type: ignore
+    _curl_transport_available = False
+
+logger = logging.getLogger(__name__)
+_missing_logged = False
+
+
+def _build_curl_transport(http2: bool = True, **transport_kwargs: Any) -> httpx.AsyncBaseTransport | None:
+    """
+    创建 CurlCFFITransport，失败时返回 None（回退到 httpx 默认传输）。
+    """
+    global _missing_logged
+
+    if not _curl_transport_available:
+        if not _missing_logged:
+            logger.info("httpx-curl-cffi 未安装，回退使用 httpx 默认传输层")
+            _missing_logged = True
+        return None
+
+    try:
+        return CurlCFFITransport(http2=http2, **transport_kwargs)  # type: ignore[arg-type]
+    except Exception as exc:  # pragma: no cover - 运行时异常兜底
+        logger.warning("初始化 CurlCFFITransport 失败，回退 httpx 默认传输层: %s", exc)
+        return None
+
+
+def create_async_http_client(
+    *,
+    timeout: float | httpx.Timeout | None = None,
+    http2: bool = True,
+    transport: httpx.AsyncBaseTransport | None = None,
+    transport_kwargs: dict[str, Any] | None = None,
+    **client_kwargs: Any,
+) -> httpx.AsyncClient:
+    """
+    创建带可选 curl-cffi 传输层的 httpx.AsyncClient。
+
+    - 优先使用 httpx-curl-cffi 提供的 CurlCFFITransport（若可用）。
+    - 初始化失败或库缺失时，自动回退到 httpx 默认传输层。
+    - transport_kwargs 用于传递给 CurlCFFITransport（如 impersonate/proxies/verify）。
+    """
+    transport_kwargs = transport_kwargs or {}
+    if transport is None:
+        transport = _build_curl_transport(http2=http2, **transport_kwargs)
+
+    return httpx.AsyncClient(
+        timeout=timeout,
+        http2=http2,
+        transport=transport,
+        **client_kwargs,
+    )

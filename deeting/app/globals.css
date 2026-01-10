@@ -1,0 +1,481 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ============================================
+   Tailwind v4 dark mode variant
+   ============================================ */
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================
+   阿里巴巴普惠体 - Local Font Face
+   ============================================ */
+@font-face {
+  font-family: "AlibabaPuHuiTi";
+  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-35-Thin/AlibabaPuHuiTi-3-35-Thin.woff2") format("woff2"),
+       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-35-Thin/AlibabaPuHuiTi-3-35-Thin.woff") format("woff");
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AlibabaPuHuiTi";
+  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.woff2") format("woff2"),
+       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AlibabaPuHuiTi";
+  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.woff2") format("woff2"),
+       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.woff") format("woff");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AlibabaPuHuiTi";
+  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-85-Bold/AlibabaPuHuiTi-3-85-Bold.woff2") format("woff2"),
+       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-85-Bold/AlibabaPuHuiTi-3-85-Bold.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================
+   CSS Variables - Light Mode (Default for :root)
+   ============================================ */
+:root {
+  color-scheme: light;
+
+  /* Brand-inspired palette - Light Mode */
+  --surface: #ffffff;
+  --card: oklch(1 0 0);
+  --muted-surface: oklch(0.97 0 0);
+  --muted: oklch(0.48 0 0);
+  --border: oklch(0.922 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-soft: #a6b0ff;
+  --teal-accent: #21c9c3;
+  --gradient: linear-gradient(135deg, #8b7bff 0%, #5ec8ff 55%, #a6e1ff 100%);
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* ============================================
+   CSS Variables - Dark Mode (via .dark class on html)
+   ============================================ */
+html.dark {
+  color-scheme: dark;
+
+  --background: #0f1016;
+  --foreground: #e8ebff;
+  --surface: #161725;
+  --card: #1d1f30;
+  --muted: #b3b8d9;
+  --border: #232435;
+  --primary: #7c6dff;
+  --primary-soft: #a6b0ff;
+  --teal-accent: #21c9c3;
+  --gradient: linear-gradient(135deg, #8b7bff 0%, #5ec8ff 55%, #a6e1ff 100%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-muted: var(--muted-surface);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-teal-accent: var(--teal-accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+body {
+  font-family: "AlibabaPuHuiTi", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  transition: background-color 0.3s ease-out, color 0.3s ease-out;
+}
+
+/* Light mode frosted glass veil */
+html:not(.dark) body {
+  position: relative;
+}
+
+html:not(.dark) body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px at 15% 20%, rgba(124, 109, 255, 0.06), transparent 55%),
+    radial-gradient(900px at 85% 10%, rgba(94, 200, 255, 0.05), transparent 60%),
+    rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px) saturate(1.04);
+  -webkit-backdrop-filter: blur(8px) saturate(1.04);
+  z-index: 0;
+}
+
+
+
+/* ============================================
+   Header Component Styles - Digital Ink Theme
+   ============================================ */
+
+/* Header glassmorphism enhancement */
+header[data-slot="header"] {
+  transition: all 0.3s ease-out;
+}
+
+/* Navigation link hover effect - ink brush stroke */
+.nav-link {
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-link::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: var(--primary);
+  transform: translateX(-50%);
+  transition: width 0.3s ease-out;
+  border-radius: 9999px;
+  box-shadow: 0 0 8px var(--primary);
+}
+
+.nav-link:hover::before {
+  width: 80%;
+}
+
+/* Icon button hover glow effect */
+.icon-btn-glow {
+  transition: all 0.2s ease-out;
+}
+
+.icon-btn-glow:hover {
+  box-shadow: 0 0 12px rgba(124, 109, 255, 0.2);
+}
+
+/* Avatar ring animation on hover */
+.avatar-ring {
+  transition: all 0.2s ease-out;
+}
+
+.avatar-ring:hover {
+  box-shadow: 0 0 0 3px rgba(124, 109, 255, 0.3);
+}
+
+/* Notification dot pulse animation */
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.notification-dot {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Smooth dropdown menu appearance */
+[data-radix-popper-content-wrapper] {
+  animation: dropdown-in 0.2s ease-out;
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header scroll shadow effect - optional JavaScript enhancement */
+header.scrolled {
+  box-shadow:
+    0 4px 20px -2px rgba(124, 109, 255, 0.08),
+    0 8px 30px -4px rgba(0, 0, 0, 0.1);
+}
+
+/* Accessibility focus styles */
+[data-slot="button"]:focus-visible,
+[data-slot="avatar"]:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   iOS Glass Components - Glassmorphism Styles
+   ============================================ */
+
+/* Glass Button 额外样式 */
+[data-slot="glass-button"] {
+  /* iOS 风格的触觉反馈 */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* 按钮按压时的额外效果 */
+[data-slot="glass-button"]:active {
+  transition-duration: 50ms;
+}
+
+/* Glass Card 动画 */
+[data-slot="glass-card"] {
+  /* 优化性能 */
+  will-change: transform, box-shadow;
+  transform: translateZ(0);
+}
+
+/* Glass Card 渐进式入场动画 */
+@keyframes glass-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-glass-card-in {
+  animation: glass-card-in 0.4s ease-out forwards;
+}
+
+/* 错开入场动画 */
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 50ms; }
+.stagger-3 { animation-delay: 100ms; }
+.stagger-4 { animation-delay: 150ms; }
+.stagger-5 { animation-delay: 200ms; }
+.stagger-6 { animation-delay: 250ms; }
+.stagger-7 { animation-delay: 300ms; }
+.stagger-8 { animation-delay: 350ms; }
+.stagger-9 { animation-delay: 400ms; }
+.stagger-10 { animation-delay: 450ms; }
+
+/* iOS 风格的微光效果 */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.glass-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite;
+}
+
+/* iOS 风格的呼吸光效 */
+@keyframes ios-breathe {
+  0%, 100% {
+    box-shadow: 0 0 20px -5px rgba(124, 109, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px -5px rgba(124, 109, 255, 0.5);
+  }
+}
+
+.glass-breathe {
+  animation: ios-breathe 3s ease-in-out infinite;
+}
+
+/* iOS 风格的涟漪效果 */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.glass-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 70%);
+  transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.glass-ripple:active::after {
+  animation: ripple 0.6s ease-out;
+}
+
+/* Dark/Light mode glass card adjustments */
+html:not(.dark) [data-slot="glass-card"] {
+  --glass-border: rgba(0, 0, 0, 0.05);
+  --glass-shine: rgba(255, 255, 255, 0.5);
+}
+
+html:not(.dark) [data-slot="glass-button"][data-variant="secondary"] {
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.08),
+              inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* ============================================
+   Theme Transition Utilities
+   ============================================ */
+
+/* Radial gradient background utility */
+.bg-gradient-radial {
+  background: radial-gradient(var(--tw-gradient-stops));
+}
+
+/* ============================================
+   Scrollbar Visibility - Responsive
+   ============================================ */
+/* Hide both horizontal and vertical scrollbars on small screens; show them on tablets/desktop. */
+@media (max-width: 767px) {
+  html,
+  body {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge legacy */
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --muted-surface: oklch(0.269 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

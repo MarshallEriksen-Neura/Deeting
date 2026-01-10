@@ -1,0 +1,70 @@
+"use client"
+
+import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useTranslations } from "next-intl"
+import {
+  GlassDropdownMenu,
+  GlassDropdownMenuContent,
+  GlassDropdownMenuItem,
+  GlassDropdownMenuSeparator,
+  GlassDropdownMenuTrigger,
+  GlassDropdownUserHeader,
+} from "@/components/ui/glass-dropdown"
+
+interface UserMenuProps {
+  userName: string
+  userEmail: string
+  userAvatarSrc?: string
+  onLogout?: () => void
+}
+
+export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserMenuProps) {
+  const t = useTranslations("common.header")
+  const safeName = userName?.trim() || t("guest")
+  const initials = safeName.slice(0, 2).toUpperCase()
+
+  return (
+    <GlassDropdownMenu>
+      <GlassDropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          className="relative h-8 w-8 rounded-full p-0 hover:ring-2 hover:ring-[var(--primary)]/20 transition-all"
+        >
+          <Avatar className="size-8 border border-[var(--border)]">
+            <AvatarImage src={userAvatarSrc} alt={safeName} />
+            <AvatarFallback
+              className="text-xs font-medium"
+              style={{
+                background: "var(--gradient)",
+                color: "white",
+              }}
+            >
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+        </Button>
+      </GlassDropdownMenuTrigger>
+      <GlassDropdownMenuContent className="w-56" align="end">
+        <GlassDropdownUserHeader name={safeName} email={userEmail} />
+        <GlassDropdownMenuSeparator />
+        <GlassDropdownMenuItem>
+          {t("profile")}
+        </GlassDropdownMenuItem>
+        <GlassDropdownMenuItem>
+          {t("apiKeys")}
+        </GlassDropdownMenuItem>
+        <GlassDropdownMenuItem>
+          {t("docs")}
+        </GlassDropdownMenuItem>
+        <GlassDropdownMenuSeparator />
+        <GlassDropdownMenuItem
+          variant="destructive"
+          onSelect={() => onLogout?.()}
+        >
+          {t("logout")}
+        </GlassDropdownMenuItem>
+      </GlassDropdownMenuContent>
+    </GlassDropdownMenu>
+  )
+}
