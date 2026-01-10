@@ -10,14 +10,14 @@ BillingRepository: 计费流水管理
 from __future__ import annotations
 
 import uuid
+import asyncio
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
-from app.core.cache_invalidation import CacheInvalidator
 from app.core.cache_keys import CacheKeys
 from app.core.logging import logger
 from app.models.billing import BillingTransaction, TenantQuota, TransactionStatus, TransactionType
@@ -46,8 +46,280 @@ class BillingRepository:
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        self._invalidator = CacheInvalidator()
         self._quota_repo = QuotaRepository(session)
+
+    async def create_pending_transaction(
+        self,
+        tenant_id: str | uuid.UUID,
+        trace_id: str,
+        estimated_tokens: int = 0,
+        pricing: dict | None = None,
+        api_key_id: str | uuid.UUID | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        preset_item_id: str | uuid.UUID | None = None,
+    ) -> BillingTransaction:
+        """
+        创建 PENDING 交易（流式请求预扣，不扣余额）
+
+        - 幂等：trace_id 已存在直接返回
+        - 估算费用仅用于预检查与审计，不扣减
+        """
+        if isinstance(tenant_id, str):
+            tenant_id = uuid.UUID(tenant_id)
+        if isinstance(preset_item_id, str):
+            preset_item_id = uuid.UUID(preset_item_id)
+        if isinstance(api_key_id, str):
+            api_key_id = uuid.UUID(api_key_id)
+
+        existing = await self.get_by_trace_id(trace_id)
+        if existing:
+            return existing
+
+        estimated_cost = Decimal("0")
+        if pricing and estimated_tokens > 0:
+            input_per_1k = Decimal(str(pricing.get("input_per_1k", 0)))
+            estimated_cost = (Decimal(estimated_tokens) / 1000) * input_per_1k
+
+        quota = await self._quota_repo.get_or_create(tenant_id, commit=False)
+        balance_before = quota.balance
+
+        transaction = BillingTransaction(
+            tenant_id=tenant_id,
+            api_key_id=api_key_id,
+            trace_id=trace_id,
+            type=TransactionType.DEDUCT,
+            status=TransactionStatus.PENDING,
+            amount=estimated_cost,
+            input_tokens=0,
+            output_tokens=0,
+            input_price=Decimal("0"),
+            output_price=Decimal("0"),
+            provider=provider,
+            model=model,
+            preset_item_id=preset_item_id,
+            balance_before=balance_before,
+            balance_after=balance_before,
+            description="Stream billing (pending)",
+        )
+        self.session.add(transaction)
+        await self.session.flush()
+        return transaction
+
+    async def commit_pending_transaction(
+        self,
+        trace_id: str,
+        input_tokens: int,
+        output_tokens: int,
+        input_price: Decimal | float,
+        output_price: Decimal | float,
+        allow_negative: bool = True,
+        **_: object,
+    ) -> BillingTransaction:
+        """
+        提交 PENDING 交易：
+        - 计算实际费用
+        - 使用 Redis Lua 原子扣减
+        - 更新交易为 COMMITTED
+        """
+        tx = await self.get_by_trace_id(trace_id)
+        if not tx:
+            raise ValueError(f"Transaction not found: {trace_id}")
+        if tx.status == TransactionStatus.COMMITTED:
+            return tx
+        if tx.status != TransactionStatus.PENDING:
+            raise ValueError(f"Invalid transaction status: {tx.status}")
+
+        input_price = Decimal(str(input_price))
+        output_price = Decimal(str(output_price))
+        input_cost = (Decimal(input_tokens) / 1000) * input_price
+        output_cost = (Decimal(output_tokens) / 1000) * output_price
+        actual_cost = input_cost + output_cost
+
+        try:
+            updated_quota = await self._deduct_quota_redis(
+                tenant_id=tx.tenant_id,
+                amount=actual_cost,
+                daily_requests=1,
+                monthly_requests=1,
+                allow_negative=allow_negative,
+            )
+        except InsufficientQuotaError as e:
+            tx.status = TransactionStatus.FAILED
+            tx.description = f"Insufficient balance: {e}"
+            await self.session.flush()
+            raise InsufficientBalanceError(actual_cost, Decimal(str(e.available))) from e
+
+        tx.amount = actual_cost
+        tx.input_tokens = input_tokens
+        tx.output_tokens = output_tokens
+        tx.input_price = input_price
+        tx.output_price = output_price
+        tx.balance_after = updated_quota.balance
+        tx.status = TransactionStatus.COMMITTED
+        await self.session.flush()
+
+        await self._sync_redis_hash_after_commit(updated_quota)
+        return tx
+
+    async def record_transaction(
+        self,
+        tenant_id: str | uuid.UUID,
+        amount: Decimal | float,
+        trace_id: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        input_price: Decimal | float = Decimal("0"),
+        output_price: Decimal | float = Decimal("0"),
+        provider: str | None = None,
+        model: str | None = None,
+        preset_item_id: str | uuid.UUID | None = None,
+        api_key_id: str | uuid.UUID | None = None,
+        description: str | None = None,
+    ) -> BillingTransaction:
+        """
+        只记录交易流水，不扣减配额（P0-1）
+        
+        配额已在 QuotaCheckStep 扣减，此处只记录交易。
+        
+        Args:
+            tenant_id: 租户 ID
+            amount: 交易金额
+            trace_id: 请求追踪 ID（幂等键）
+            input_tokens: 输入 Token 数
+            output_tokens: 输出 Token 数
+            input_price: 输入价格
+            output_price: 输出价格
+            provider: 提供商
+            model: 模型名称
+            preset_item_id: 路由配置项 ID
+            api_key_id: API Key ID
+            description: 交易说明
+
+        Returns:
+            交易记录
+
+        Raises:
+            DuplicateTransactionError: 重复交易
+        """
+        if isinstance(tenant_id, str):
+            tenant_id = uuid.UUID(tenant_id)
+        if isinstance(preset_item_id, str):
+            preset_item_id = uuid.UUID(preset_item_id)
+        if isinstance(api_key_id, str):
+            api_key_id = uuid.UUID(api_key_id)
+
+        amount = Decimal(str(amount))
+        input_price = Decimal(str(input_price))
+        output_price = Decimal(str(output_price))
+
+        # 检查幂等键
+        existing = await self.get_by_trace_id(trace_id)
+        if existing:
+            if existing.status == TransactionStatus.COMMITTED:
+                logger.info(f"billing_record_idempotent_hit trace_id={trace_id}")
+                return existing
+            raise DuplicateTransactionError(trace_id)
+
+        # 获取当前余额（从 DB）
+        quota = await self._quota_repo.get_or_create(tenant_id, commit=False)
+        balance_before = quota.balance
+        balance_after = balance_before  # 不扣减余额
+
+        # 创建交易记录（直接 COMMITTED）
+        transaction = BillingTransaction(
+            tenant_id=tenant_id,
+            api_key_id=api_key_id,
+            trace_id=trace_id,
+            type=TransactionType.DEDUCT,
+            status=TransactionStatus.COMMITTED,
+            amount=amount,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            input_price=input_price,
+            output_price=output_price,
+            provider=provider,
+            model=model,
+            preset_item_id=preset_item_id,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            description=description or "Transaction recorded (quota deducted in quota_check)",
+        )
+        self.session.add(transaction)
+        await self.session.flush()
+
+        logger.info(
+            "billing_record_success tenant=%s amount=%s trace_id=%s balance=%s",
+            tenant_id,
+            amount,
+            trace_id,
+            balance_after,
+        )
+        return transaction
+
+    async def adjust_redis_balance(
+        self,
+        tenant_id: str | uuid.UUID,
+        amount_diff: Decimal | float,
+    ) -> None:
+        """
+        调整 Redis 余额差额（P0-1）
+        
+        当实际费用与预估费用有差异时，调整 Redis 中的余额。
+        
+        Args:
+            tenant_id: 租户 ID
+            amount_diff: 差额（正数表示实际费用更高，需要额外扣减；负数表示实际费用更低，需要返还）
+        """
+        if isinstance(tenant_id, str):
+            tenant_id = uuid.UUID(tenant_id)
+
+        amount_diff = Decimal(str(amount_diff))
+        if abs(float(amount_diff)) < 0.000001:
+            return  # 差额太小，忽略
+
+        redis_client = getattr(cache, "_redis", None)
+        if not redis_client:
+            logger.debug("adjust_redis_balance_skipped tenant=%s (redis unavailable)", tenant_id)
+            return
+
+        try:
+            key = CacheKeys.quota_hash(str(tenant_id))
+            full_key = cache._make_key(key)
+            
+            # 使用 Lua 脚本原子调整余额
+            lua_script = """
+            local balance = redis.call("HGET", KEYS[1], "balance")
+            if not balance then
+                return 0
+            end
+            local new_balance = tonumber(balance) - tonumber(ARGV[1])
+            redis.call("HSET", KEYS[1], "balance", tostring(new_balance))
+            local version = redis.call("HGET", KEYS[1], "version")
+            if version then
+                redis.call("HSET", KEYS[1], "version", tostring(tonumber(version) + 1))
+            end
+            return 1
+            """
+            
+            result = await redis_client.eval(lua_script, 1, full_key, str(amount_diff))
+            if result:
+                logger.debug(
+                    "adjust_redis_balance_success tenant=%s diff=%s",
+                    tenant_id,
+                    amount_diff,
+                )
+            else:
+                logger.warning(
+                    "adjust_redis_balance_failed tenant=%s (key not found)",
+                    tenant_id,
+                )
+        except Exception as exc:
+            logger.error(
+                "adjust_redis_balance_error tenant=%s err=%s",
+                tenant_id,
+                exc,
+            )
 
     async def deduct(
         self,
@@ -108,9 +380,8 @@ class BillingRepository:
         input_price = Decimal(str(input_price))
         output_price = Decimal(str(output_price))
 
-        # 0. Redis 幂等键检查 (快速拦截)
+        # 1. Redis 幂等键（快速拦截）
         redis_key = CacheKeys.billing_deduct_idempotency(str(tenant_id), trace_id)
-        # 尝试设置 NX，有效期 24 小时
         idempotent_locked = await cache.set(redis_key, "1", ttl=86400, nx=True)
         if not idempotent_locked:
             logger.warning(f"billing_redis_idempotent_hit trace_id={trace_id}")
@@ -119,35 +390,20 @@ class BillingRepository:
                 return existing
             raise DuplicateTransactionError(trace_id)
 
-        # 1. 检查幂等键 (DB)
+        # 2. DB 幂等键
         existing = await self.get_by_trace_id(trace_id)
         if existing:
             if existing.status == TransactionStatus.COMMITTED:
                 logger.info(f"billing_idempotent_hit trace_id={trace_id}")
                 return existing
-            elif existing.status == TransactionStatus.PENDING:
-                # 尝试完成之前的 PENDING 交易
-                logger.warning(f"billing_pending_retry trace_id={trace_id}")
-                return await self._commit_transaction(existing)
-            else:
-                raise DuplicateTransactionError(trace_id)
+            raise DuplicateTransactionError(trace_id)
 
-        # 2. 事务内处理：写交易 + 扣减配额（避免部分提交）
         updated_quota: TenantQuota | None = None
         try:
-            tx_ctx = self.session.begin_nested() if self.session.in_transaction() else self.session.begin()
-            async with tx_ctx:
+            async with self.session.begin_nested():
                 quota = await self._quota_repo.get_or_create(tenant_id, commit=False)
                 balance_before = quota.balance
-                effective_balance = quota.balance + quota.credit_limit
 
-                # 3. 检查余额
-                if not allow_negative and effective_balance < amount:
-                    raise InsufficientBalanceError(amount, effective_balance)
-
-                balance_after = balance_before - amount
-
-                # 4. 创建 PENDING 交易记录
                 transaction = BillingTransaction(
                     tenant_id=tenant_id,
                     api_key_id=api_key_id,
@@ -163,62 +419,165 @@ class BillingRepository:
                     model=model,
                     preset_item_id=preset_item_id,
                     balance_before=balance_before,
-                    balance_after=balance_after,
+                    balance_after=balance_before - amount,
                     description=description,
                 )
-
-                try:
-                    self.session.add(transaction)
-                    await self.session.flush()
-                except Exception:
-                    # 可能是唯一约束冲突（幂等键）
-                    existing = await self.get_by_trace_id(trace_id)
-                    if existing:
-                        logger.info(f"billing_idempotent_conflict trace_id={trace_id}")
-                        return existing
-                    raise
-
-                # 5. 扣减余额（不立即提交，交由外层事务）
-                try:
-                    updated_quota = await self._quota_repo.check_and_deduct(
-                        tenant_id=tenant_id,
-                        balance_amount=amount,
-                        daily_requests=1,
-                        monthly_requests=1,
-                        tokens=input_tokens + output_tokens,
-                        allow_negative=allow_negative,
-                        commit=False,
-                        sync_cache=False,
-                        invalidate_cache=False,
-                    )
-                except InsufficientQuotaError as e:
-                    raise InsufficientBalanceError(amount, Decimal(str(e.available))) from e
-
-                # 6. 更新交易状态为 COMMITTED
-                transaction.status = TransactionStatus.COMMITTED
-                # 将更新持久化由 context manager 负责 commit
+                self.session.add(transaction)
                 await self.session.flush()
 
+                updated_quota = await self._deduct_quota_redis(
+                    tenant_id=tenant_id,
+                    amount=amount,
+                    daily_requests=1,
+                    monthly_requests=1,
+                    allow_negative=allow_negative,
+                )
+
+                transaction.status = TransactionStatus.COMMITTED
+                transaction.balance_after = updated_quota.balance
+                await self.session.flush()
+
+        except InsufficientQuotaError as e:
+            await cache.delete(redis_key)
+            raise InsufficientBalanceError(amount, Decimal(str(e.available))) from e
         except Exception:
-            # 失败时释放幂等键，允许重试
-            if idempotent_locked:
-                try:
-                    await cache.delete(redis_key)
-                except Exception:
-                    pass
+            await cache.delete(redis_key)
             raise
 
-        # 事务提交后同步缓存/Redis
-        if updated_quota:
-            await self._quota_repo._invalidate_cache(str(tenant_id))
-            await self._quota_repo._sync_redis_hash(updated_quota)
+        await self._sync_redis_hash_after_commit(updated_quota)
 
         logger.info(
-            f"billing_deduct_success tenant={tenant_id} amount={amount} "
-            f"trace_id={trace_id} balance_after={balance_after}"
+            "billing_deduct_success tenant=%s amount=%s trace_id=%s balance_after=%s",
+            tenant_id,
+            amount,
+            trace_id,
+            updated_quota.balance if updated_quota else None,
+        )
+        return transaction
+
+    async def _deduct_quota_redis(
+        self,
+        tenant_id: uuid.UUID,
+        amount: Decimal,
+        daily_requests: int,
+        monthly_requests: int,
+        allow_negative: bool,
+    ) -> TenantQuota:
+        """使用 Lua 脚本原子扣减，失败回退 DB 实现"""
+        redis_client = getattr(cache, "_redis", None)
+        if not redis_client:
+            return await self._deduct_quota_db(tenant_id, amount, daily_requests, monthly_requests, allow_negative)
+
+        script_sha = cache.get_script_sha("quota_deduct")
+        if not script_sha:
+            await cache.preload_scripts()
+            script_sha = cache.get_script_sha("quota_deduct")
+
+        if not script_sha:
+            return await self._deduct_quota_db(tenant_id, amount, daily_requests, monthly_requests, allow_negative)
+
+        key = CacheKeys.quota_hash(str(tenant_id))
+        exists = await redis_client.exists(cache._make_key(key))
+        if not exists:
+            quota_snapshot = await self._quota_repo.get_or_create(tenant_id, commit=False)
+            await self._quota_repo._sync_redis_hash(quota_snapshot)
+
+        today = self._today_str()
+        month = self._month_str()
+
+        result = await redis_client.evalsha(
+            script_sha,
+            keys=[cache._make_key(key)],
+            args=[
+                str(amount),
+                str(daily_requests),
+                str(monthly_requests),
+                today,
+                month,
+                "1" if allow_negative else "0",
+            ],
         )
 
-        return transaction
+        if result[0] == 0:
+            err = result[1]
+            if err == "INSUFFICIENT_BALANCE":
+                raise InsufficientQuotaError("balance", float(result[2]), float(result[4]))
+            if err == "DAILY_QUOTA_EXCEEDED":
+                raise InsufficientQuotaError("daily", float(result[2]), float(result[3]))
+            if err == "MONTHLY_QUOTA_EXCEEDED":
+                raise InsufficientQuotaError("monthly", float(result[2]), float(result[3]))
+            raise InsufficientQuotaError("unknown", 0, 0)
+
+        quota = await self._quota_repo.get_or_create(tenant_id, commit=False)
+        quota.balance = Decimal(str(result[2]))
+        quota.daily_used = int(result[3])
+        quota.monthly_used = int(result[4])
+        quota.version = int(result[5])
+        await self.session.flush()
+        return quota
+
+    async def _deduct_quota_db(
+        self,
+        tenant_id: uuid.UUID,
+        amount: Decimal,
+        daily_requests: int,
+        monthly_requests: int,
+        allow_negative: bool,
+    ) -> TenantQuota:
+        """Redis 不可用时的 DB 回退"""
+        return await self._quota_repo.check_and_deduct(
+            tenant_id=tenant_id,
+            balance_amount=amount,
+            daily_requests=daily_requests,
+            monthly_requests=monthly_requests,
+            allow_negative=allow_negative,
+            commit=False,
+            sync_cache=False,
+            invalidate_cache=False,
+        )
+
+    async def _sync_redis_hash_after_commit(self, quota: TenantQuota | None) -> None:
+        """注册 after_commit 钩子确保事务成功后再同步 Redis"""
+        if quota is None:
+            return
+
+        @event.listens_for(self.session.sync_session, "after_commit", once=True)
+        def _sync(_session):  # noqa: ANN001
+            asyncio.create_task(self._sync_redis_hash(quota))
+
+    async def _sync_redis_hash(self, quota: TenantQuota) -> None:
+        """同步 Redis Hash 供 Lua 脚本使用"""
+        try:
+            redis_client = getattr(cache, "_redis", None)
+            if not redis_client:
+                return
+            key = CacheKeys.quota_hash(str(quota.tenant_id))
+            payload = {
+                "balance": str(quota.balance),
+                "credit_limit": str(quota.credit_limit),
+                "daily_quota": str(quota.daily_quota),
+                "daily_used": str(quota.daily_used),
+                "daily_date": quota.daily_reset_at.isoformat() if quota.daily_reset_at else self._today_str(),
+                "monthly_quota": str(quota.monthly_quota),
+                "monthly_used": str(quota.monthly_used),
+                "monthly_month": quota.monthly_reset_at.strftime("%Y-%m") if quota.monthly_reset_at else self._month_str(),
+                "version": str(quota.version),
+            }
+            await redis_client.hset(cache._make_key(key), mapping=payload)
+            await redis_client.expire(cache._make_key(key), 86400)
+        except Exception as exc:  # noqa: PERF203
+            logger.error(f"sync_redis_hash_failed tenant={quota.tenant_id} err={exc}")
+
+    @staticmethod
+    def _today_str() -> str:
+        from datetime import date
+        return date.today().isoformat()
+
+    @staticmethod
+    def _month_str() -> str:
+        from datetime import date
+        d = date.today()
+        return f"{d.year:04d}-{d.month:02d}"
 
     async def recharge(
         self,

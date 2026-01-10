@@ -57,6 +57,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
 from app.core.database import get_db
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import get_external_orchestrator, GatewayOrchestrator
@@ -119,7 +120,12 @@ async def _stream_billing_callback(
     accumulator: StreamTokenAccumulator,
 ) -> None:
     """
-    流式计费回调：在流完成后触发计费
+    流式计费回调：在流完成后记录流水并调整差额（P0-1 + P0-3）
+    
+    改动：
+    - 使用 BillingRepository.record_transaction 只记录流水
+    - 使用 adjust_redis_balance 调整费用差额
+    - 使用 TransactionAwareCelery 确保任务在事务提交后执行
     """
     # 获取定价配置：未配置视为免费（仅记录用量）
     pricing = ctx.get("routing", "pricing_config") or {}
@@ -128,8 +134,8 @@ async def _stream_billing_callback(
     input_tokens = ctx.billing.input_tokens
     output_tokens = ctx.billing.output_tokens
 
-    input_per_1k = Decimal(str(pricing.get("input_per_1k", 0)))
-    output_per_1k = Decimal(str(pricing.get("output_per_1k", 0)))
+    input_per_1k = Decimal(str(pricing.get("input_per_1k", 0))) if pricing else Decimal("0")
+    output_per_1k = Decimal(str(pricing.get("output_per_1k", 0))) if pricing else Decimal("0")
 
     input_cost = float((Decimal(input_tokens) / 1000) * input_per_1k) if pricing else 0.0
     output_cost = float((Decimal(output_tokens) / 1000) * output_per_1k) if pricing else 0.0
@@ -141,11 +147,17 @@ async def _stream_billing_callback(
     ctx.billing.total_cost = total_cost
     ctx.billing.currency = pricing.get("currency", "USD") if pricing else ctx.billing.currency or "USD"
 
-    # 外部通道：扣减余额
+    # 外部通道：记录流水并调整差额
     if pricing and ctx.is_external and ctx.tenant_id and ctx.db_session:
         try:
             repo = BillingRepository(ctx.db_session)
-            await repo.deduct(
+            
+            # 获取预估费用（QuotaCheckStep 中扣减的金额）
+            estimated_cost = await _get_estimated_cost_for_stream(ctx)
+            cost_diff = Decimal(str(total_cost)) - Decimal(str(estimated_cost))
+            
+            # 记录交易流水（不扣减配额）
+            await repo.record_transaction(
                 tenant_id=ctx.tenant_id,
                 amount=Decimal(str(total_cost)),
                 trace_id=ctx.trace_id,
@@ -153,36 +165,88 @@ async def _stream_billing_callback(
                 output_tokens=output_tokens,
                 input_price=input_per_1k,
                 output_price=output_per_1k,
-                provider=ctx.upstream_result.provider,
+                provider=ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
                 model=ctx.requested_model,
                 preset_item_id=ctx.get("routing", "preset_item_id"),
                 api_key_id=ctx.api_key_id,
-                allow_negative=True,  # 流式允许负值，因为已经消费
+                description="Stream billing completed",
+            )
+            
+            # 如果实际费用与预估费用有差异，调整 Redis 余额
+            if abs(float(cost_diff)) > 0.000001:
+                await repo.adjust_redis_balance(ctx.tenant_id, cost_diff)
+                logger.debug(
+                    "stream_billing_cost_adjusted tenant=%s estimated=%s actual=%s diff=%s",
+                    ctx.tenant_id,
+                    estimated_cost,
+                    total_cost,
+                    cost_diff,
+                )
+            
+            # 提交事务
+            await ctx.db_session.commit()
+            
+        except Exception as e:
+            logger.error(f"Stream billing failed trace_id={ctx.trace_id}: {e}")
+            await ctx.db_session.rollback()
+        else:
+            # 持久化 budget_used（使用 TransactionAwareCelery）
+            if ctx.api_key_id and total_cost > 0:
+                try:
+                    from app.core.transaction_celery import get_transaction_scheduler
+                    from app.tasks.apikey_sync import sync_apikey_budget_task
+                    
+                    # 更新 Redis Hash 中的 budget_used
+                    redis_client = getattr(cache, "_redis", None)
+                    if redis_client:
+                        from app.core.cache_keys import CacheKeys
+                        key = CacheKeys.apikey_budget_hash(str(ctx.api_key_id))
+                        full_key = cache._make_key(key)
+                        await redis_client.hincrby(full_key, "budget_used", int(total_cost * 1000000))  # 微分单位
+                        await redis_client.hincrby(full_key, "version", 1)
+                    
+                    # 使用事务感知调度器，在事务提交后同步到 DB
+                    scheduler = get_transaction_scheduler(ctx.db_session)
+                    scheduler.delay_after_commit(
+                        sync_apikey_budget_task,
+                        str(ctx.api_key_id),
+                    )
+                    
+                    # 更新上下文
+                    current_budget_used = float(ctx.get("external_auth", "budget_used") or 0.0)
+                    ctx.set("external_auth", "budget_used", current_budget_used + total_cost)
+                except Exception as exc:  # noqa: PERF203
+                    logger.warning(f"Stream budget_used update failed trace_id={ctx.trace_id}: {exc}")
+
+    # 记录用量（使用 TransactionAwareCelery）
+    if ctx.db_session:
+        try:
+            from app.core.transaction_celery import get_transaction_scheduler
+            
+            scheduler = get_transaction_scheduler(ctx.db_session)
+            
+            # 延迟执行用量记录任务
+            scheduler.apply_async_after_commit(
+                _record_usage_task,
+                kwargs={
+                    "tenant_id": str(ctx.tenant_id) if ctx.tenant_id else None,
+                    "api_key_id": str(ctx.api_key_id) if ctx.api_key_id else None,
+                    "trace_id": ctx.trace_id,
+                    "model": ctx.requested_model,
+                    "capability": ctx.capability,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_cost": total_cost,
+                    "currency": ctx.billing.currency,
+                    "provider": ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
+                    "latency_ms": ctx.upstream_result.latency_ms if hasattr(ctx, "upstream_result") else None,
+                    "is_stream": True,
+                    "stream_completed": accumulator.is_completed,
+                    "stream_error": accumulator.error,
+                },
             )
         except Exception as e:
-            logger.error(f"Stream billing deduct failed trace_id={ctx.trace_id}: {e}")
-
-    # 记录用量
-    try:
-        usage_repo = UsageRepository()
-        await usage_repo.create({
-            "tenant_id": ctx.tenant_id,
-            "api_key_id": ctx.api_key_id,
-            "trace_id": ctx.trace_id,
-            "model": ctx.requested_model,
-            "capability": ctx.capability,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_cost": total_cost,
-            "currency": ctx.billing.currency,
-            "provider": ctx.upstream_result.provider,
-            "latency_ms": ctx.upstream_result.latency_ms,
-            "is_stream": True,
-            "stream_completed": accumulator.is_completed,
-            "stream_error": accumulator.error,
-        })
-    except Exception as e:
-        logger.error(f"Stream usage record failed trace_id={ctx.trace_id}: {e}")
+            logger.error(f"Stream usage schedule failed trace_id={ctx.trace_id}: {e}")
 
     logger.info(
         f"Stream billing completed trace_id={ctx.trace_id} "
@@ -191,6 +255,34 @@ async def _stream_billing_callback(
         f"cost={total_cost:.6f} {ctx.billing.currency} "
         f"completed={accumulator.is_completed}"
     )
+
+
+async def _get_estimated_cost_for_stream(ctx: WorkflowContext) -> float:
+    """获取流式请求的预估费用（与 QuotaCheckStep 中的计算一致）"""
+    pricing = ctx.get("routing", "pricing_config") or {}
+    if not pricing:
+        return 0.0
+
+    request = ctx.get("validation", "request")
+    max_tokens = getattr(request, "max_tokens", 4096) if request else 4096
+    estimated_tokens = max_tokens * 2  # 输入+输出粗估
+
+    avg_price = (
+        float(pricing.get("input_per_1k", 0)) +
+        float(pricing.get("output_per_1k", 0))
+    ) / 2
+    return (estimated_tokens / 1000) * avg_price
+
+
+def _record_usage_task(**kwargs: Any) -> None:
+    """用量记录任务（同步执行）"""
+    try:
+        usage_repo = UsageRepository()
+        # 使用同步方法创建用量记录
+        import asyncio
+        asyncio.run(usage_repo.create(kwargs))
+    except Exception as e:
+        logger.error(f"Usage record failed trace_id={kwargs.get('trace_id')}: {e}")
 
 
 def _resolve_error_status(ctx: WorkflowContext) -> int:

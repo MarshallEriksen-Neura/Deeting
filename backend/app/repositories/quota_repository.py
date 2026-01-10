@@ -397,12 +397,16 @@ class QuotaRepository:
         balance_str = str(Decimal(str(quota.balance)).normalize())
         payload = {
             "balance": balance_str,
-            "daily_limit": int(quota.daily_quota),
+            "credit_limit": str(quota.credit_limit),
+            "daily_quota": int(quota.daily_quota),
             "daily_used": int(quota.daily_used),
             "daily_date": quota.daily_reset_at.isoformat() if quota.daily_reset_at else date.today().isoformat(),
-            "monthly_limit": int(quota.monthly_quota),
+            "monthly_quota": int(quota.monthly_quota),
             "monthly_used": int(quota.monthly_used),
             "monthly_month": quota.monthly_reset_at.strftime("%Y-%m") if quota.monthly_reset_at else date.today().strftime("%Y-%m"),
+            "rpm_limit": int(quota.rpm_limit),
+            "tpm_limit": int(quota.tpm_limit),
+            "version": int(quota.version),
         }
         try:
             await redis_client.hset(key, mapping=payload)

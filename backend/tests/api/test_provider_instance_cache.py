@@ -11,7 +11,7 @@ from app.repositories.provider_instance_repository import (
     ProviderModelRepository,
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
-from app.services.provider_instance_service import ProviderInstanceService
+from app.services.providers.provider_instance_service import ProviderInstanceService
 from tests.api.conftest import AsyncSessionLocal, engine
 from app.models import Base
 

@@ -48,8 +48,10 @@ class CacheService:
         script_map = {
             "sliding_window_rate_limit": scripts_dir / "sliding_window_rate_limit.lua",
             "token_bucket_rate_limit": scripts_dir / "token_bucket_rate_limit.lua",
-            "quota_check_deduct": scripts_dir / "quota_check_deduct.lua",
+            "quota_check": scripts_dir / "quota_check.lua",
+            "quota_deduct": scripts_dir / "quota_deduct.lua",
             "apikey_quota_check": scripts_dir / "apikey_quota_check.lua",
+            "apikey_budget_deduct": scripts_dir / "apikey_budget_deduct.lua",
         }
 
         for name, path in script_map.items():

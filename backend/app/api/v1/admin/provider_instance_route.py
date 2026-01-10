@@ -13,7 +13,7 @@ from app.schemas.provider_instance import (
     ProviderModelsUpsertRequest,
 )
 from app.deps.superuser import get_current_superuser
-from app.services.provider_instance_service import ProviderInstanceService
+from app.services.providers.provider_instance_service import ProviderInstanceService
 
 router = APIRouter(prefix="/admin/provider-instances", tags=["ProviderInstances"])
 

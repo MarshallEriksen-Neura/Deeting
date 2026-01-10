@@ -10,7 +10,7 @@ from app.schemas.provider_credential import (
     ProviderCredentialCreate,
     ProviderCredentialResponse,
 )
-from app.services.provider_instance_service import ProviderInstanceService
+from app.services.providers.provider_instance_service import ProviderInstanceService
 
 router = APIRouter(prefix="/admin/provider-instances", tags=["ProviderCredentials"])
 

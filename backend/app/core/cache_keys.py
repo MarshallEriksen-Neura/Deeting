@@ -138,6 +138,11 @@ class CacheKeys:
         """供 Lua 脚本使用的配额 Hash Key，避免与对象缓存冲突"""
         return f"{cls.prefix}:quota:{tenant_id}:hash"
 
+    @classmethod
+    def apikey_budget_hash(cls, api_key_id: str) -> str:
+        """API Key 预算 Hash Key（供 Lua 脚本使用）"""
+        return f"{cls.prefix}:quota:apikey:{api_key_id}"
+
     # ===== Rate Limit =====
     @classmethod
     def rate_limit_rpm(cls, subject: str, route: str) -> str:
@@ -170,6 +175,11 @@ class CacheKeys:
         prefix_fingerprint 已做哈希，避免泄露原文。
         """
         return f"{cls.prefix}:routing:affinity:{prefix_fingerprint}"
+
+    @classmethod
+    def routing_affinity_state(cls, session_id: str, model: str) -> str:
+        """路由亲和状态机 Key（会话级别）"""
+        return f"{cls.prefix}:routing:affinity:{session_id}:{model}"
 
     # ===== Security =====
     @classmethod
@@ -220,6 +230,11 @@ class CacheKeys:
     @classmethod
     def conversation_lock(cls, session_id: str) -> str:
         return f"{cls.prefix}:conv:{session_id}:lock"
+
+    @classmethod
+    def session_lock(cls, session_id: str) -> str:
+        """会话分布式锁 Key"""
+        return f"{cls.prefix}:session:{session_id}:lock"
 
     @classmethod
     def conversation_summary_job(cls, session_id: str) -> str:
