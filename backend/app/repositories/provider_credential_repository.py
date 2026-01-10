@@ -52,3 +52,11 @@ class ProviderCredentialRepository(BaseRepository[ProviderCredential]):
                 grouped[str(iid)].extend(rows)
 
         return grouped
+
+    async def get_by_alias(self, instance_id: uuid.UUID, alias: str) -> ProviderCredential | None:
+        stmt = select(ProviderCredential).where(
+            ProviderCredential.instance_id == instance_id,
+            ProviderCredential.alias == alias
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()

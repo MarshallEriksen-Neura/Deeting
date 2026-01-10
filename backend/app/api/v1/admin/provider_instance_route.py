@@ -34,7 +34,12 @@ async def verify_provider(
         preset_slug=payload.preset_slug,
         base_url=payload.base_url,
         api_key=payload.api_key,
-        model=payload.model
+        model=payload.model,
+        protocol=payload.protocol,
+        resource_name=payload.resource_name,
+        deployment_name=payload.deployment_name,
+        project_id=payload.project_id,
+        region=payload.region,
     )
     return result
 
@@ -54,6 +59,9 @@ async def create_instance(
         base_url=payload.base_url,
         icon=payload.icon,
         credentials_ref=payload.credentials_ref,
+        api_key=payload.api_key,
+        protocol=payload.protocol,
+        model_prefix=payload.model_prefix,
         channel=payload.channel,
         priority=payload.priority,
         is_enabled=payload.is_enabled,

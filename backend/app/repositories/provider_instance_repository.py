@@ -1,5 +1,6 @@
 import uuid
 from sqlalchemy import select, or_
+from sqlalchemy.orm import selectinload
 
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.core.cache import cache
@@ -20,7 +21,7 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
         cache_key = CacheKeys.provider_instance_list(user_id, include_public)
 
         async def loader() -> list[ProviderInstance]:
-            stmt = select(ProviderInstance).where(ProviderInstance.is_enabled == True)  # noqa: E712
+            stmt = select(ProviderInstance).options(selectinload(ProviderInstance.credentials)).where(ProviderInstance.is_enabled == True)  # noqa: E712
             user_uuid = None
             if user_id:
                 try:
@@ -99,3 +100,47 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             loader=loader,
             ttl=cache.jitter_ttl(settings.CACHE_DEFAULT_TTL),
         )
+
+    async def get_by_instance_id(self, instance_id: uuid.UUID) -> list[ProviderModel]:
+        stmt = select(ProviderModel).where(ProviderModel.instance_id == instance_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+        """
+        批量 Upsert 模型列表：按 instance_id + capability + model_id + upstream_path 唯一键判断。
+        """
+        from datetime import datetime
+        now = datetime.utcnow()
+        results: list[ProviderModel] = []
+
+        for payload in models_data:
+            stmt = select(ProviderModel).where(
+                ProviderModel.instance_id == instance_id,
+                ProviderModel.capability == payload["capability"],
+                ProviderModel.model_id == payload["model_id"],
+                ProviderModel.upstream_path == payload["upstream_path"],
+            )
+            result = await self.session.execute(stmt)
+            existing = result.scalars().first()
+
+            if existing:
+                # Update
+                for k, v in payload.items():
+                    setattr(existing, k, v)
+                existing.synced_at = now
+                self.session.add(existing)
+                results.append(existing)
+            else:
+                # Create
+                new_model = ProviderModel(
+                    id=uuid.uuid4(),
+                    instance_id=instance_id,
+                    synced_at=now,
+                    **payload
+                )
+                self.session.add(new_model)
+                results.append(new_model)
+
+        await self.session.commit()
+        for r in results:
+            await self.session.refresh(r)
+        return results

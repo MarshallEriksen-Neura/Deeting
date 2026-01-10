@@ -2,10 +2,11 @@ import json
 import logging
 from typing import Any, List, Optional
 
+from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.http_client import create_async_http_client
-from app.models.provider_instance import ProviderInstance, ProviderModel
+from app.models.provider_instance import ProviderInstance, ProviderModel, ProviderCredential
 from app.models.provider_preset import ProviderPreset
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
@@ -67,7 +68,7 @@ class LLMService:
             url = f"{(instance.base_url or preset.base_url).rstrip('/')}/{model_obj.upstream_path.lstrip('/')}"
             headers = preset.default_headers.copy() if getattr(preset, "default_headers", None) else {}
             headers["Content-Type"] = "application/json"
-            auth_headers = await self._get_auth_headers(preset, instance)
+            auth_headers = await self._get_auth_headers(session, preset, instance)
             headers.update(auth_headers)
 
             # 5. Execute
@@ -145,9 +146,24 @@ class LLMService:
 
         return preset, instance, model_obj
 
-    async def _get_auth_headers(self, preset: ProviderPreset, instance: ProviderInstance) -> dict:
+    async def _get_auth_headers(self, session, preset: ProviderPreset, instance: ProviderInstance) -> dict:
         secret_ref = instance.credentials_ref or preset.auth_config.get("secret_ref_id")
-        secret = await self.secret_manager.get(preset.provider, secret_ref) if secret_ref else ""
+        secret = ""
+
+        # 1. Priority: Check instance-specific credentials (eager loaded)
+        # matches if secret_ref is an alias like "default"
+        if instance.credentials and secret_ref:
+            # Handle potential legacy "db:" prefix just in case, but prefer clean alias
+            clean_ref = secret_ref.split(":", 1)[1] if secret_ref.startswith("db:") else secret_ref
+            
+            for cred in instance.credentials:
+                if cred.alias == clean_ref and cred.is_active:
+                    secret = cred.secret_ref_id
+                    break
+        
+        # 2. Fallback: Global/Env Secrets via SecretManager
+        if not secret and secret_ref:
+            secret = await self.secret_manager.get(preset.provider, secret_ref)
 
         if not secret:
             return {}

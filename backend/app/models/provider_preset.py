@@ -40,7 +40,13 @@ class ProviderPreset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     theme_color: Mapped[str] = mapped_column(
         String(20), nullable=True, comment="品牌主色调 (Hex/Tailwind class)"
     )
+    category: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="分类 (Cloud API / Local Hosted / Custom)"
+    )
     base_url: Mapped[str] = mapped_column(String(255), nullable=False, comment="上游基础 URL")
+    url_template: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="URL 模板，用于 Azure 等动态域名，如 https://{resource}.openai.azure.com"
+    )
 
     auth_type: Mapped[str] = mapped_column(String(20), nullable=False, comment="认证方式: api_key, bearer, none")
     auth_config: Mapped[dict[str, Any]] = mapped_column(JSONBCompat, nullable=False, default=dict, server_default="{}", comment="认证配置（无明文密钥）")

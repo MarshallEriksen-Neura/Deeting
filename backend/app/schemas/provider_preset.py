@@ -11,7 +11,9 @@ class ProviderPresetDTO(BaseSchema):
     slug: str | None = None
     name: str | None = None
     provider: str | None = None
+    category: str | None = None
     base_url: str | None = None
+    url_template: str | None = None
     theme_color: str | None = None
     icon: str | None = None
     is_active: bool = True
