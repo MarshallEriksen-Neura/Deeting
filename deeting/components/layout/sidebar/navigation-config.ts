@@ -87,6 +87,12 @@ export const userNavigation: NavGroup[] = [
     title: "nav.configuration",
     items: [
       {
+        id: "providers",
+        label: "nav.providers",
+        href: "/dashboard/user/providers",
+        icon: Cpu,
+      },
+      {
         id: "api-keys",
         label: "nav.apiKeys",
         href: "/dashboard/user/api-keys",
@@ -165,6 +171,12 @@ export const adminNavigation: NavGroup[] = [
   {
     title: "nav.configuration",
     items: [
+      {
+        id: "providers",
+        label: "nav.providers",
+        href: "/dashboard/user/providers",
+        icon: Cpu,
+      },
       {
         id: "api-keys",
         label: "nav.apiKeys",

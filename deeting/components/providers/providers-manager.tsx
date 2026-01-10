@@ -1,17 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { useTranslations } from "next-intl"
+// import { useTranslations } from "next-intl" // Pending i18n setup
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Activity, 
-  Circle, 
   MoreHorizontal, 
   Plus, 
-  Power, 
   Settings2, 
   Trash2, 
-  Zap,
   Server,
   Cloud,
   Cpu,
@@ -45,8 +42,23 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet"
 
+interface Channel {
+  id: string
+  name: string
+  provider: string
+  modelCount: number
+  latency: number
+  status: string
+  type: string
+  enabled: boolean
+  lastHeartbeat: number[]
+  theme: string
+  baseUrl: string
+  apiKey: string
+}
+
 // Mock Data for Active Channels
-const ACTIVE_CHANNELS = [
+const ACTIVE_CHANNELS: Channel[] = [
   {
     id: "inst_1",
     name: "Production GPT-4",
@@ -91,14 +103,14 @@ const ACTIVE_CHANNELS = [
   }
 ]
 
-export default function ProvidersPage() {
+export function ProvidersManager() {
   const router = useRouter()
   // const t = useTranslations("Providers") // Pending i18n setup
 
-  const [selectedChannel, setSelectedChannel] = React.useState<any>(null)
+  const [selectedChannel, setSelectedChannel] = React.useState<Channel | null>(null)
   const [isSheetOpen, setIsSheetOpen] = React.useState(false)
 
-  const handleConfigure = (channel: any) => {
+  const handleConfigure = (channel: Channel) => {
     setSelectedChannel(channel)
     setIsSheetOpen(true)
   }
@@ -118,7 +130,7 @@ export default function ProvidersPage() {
         <div className="flex items-center gap-3">
           <GlassButton 
             variant="outline" 
-            onClick={() => router.push("/dashboard/providers/market")}
+            onClick={() => router.push("/dashboard/user/providers/market")}
           >
             <Plus className="mr-2 size-4" />
             Connect New Provider
@@ -178,7 +190,7 @@ const THEME_MAP: Record<string, { bg: string, border: string, text: string, from
   }
 }
 
-function ConfigurationPanel({ channel, onClose }: { channel: any, onClose: () => void }) {
+function ConfigurationPanel({ channel, onClose }: { channel: Channel, onClose: () => void }) {
   const [apiKey, setApiKey] = React.useState(channel.apiKey)
   const [isValidating, setIsValidating] = React.useState(false)
   const [isValid, setIsValid] = React.useState(false)
@@ -213,7 +225,7 @@ function ConfigurationPanel({ channel, onClose }: { channel: any, onClose: () =>
         </div>
       </SheetHeader>
 
-      <div className="flex-1 py-8 space-y-8">
+      <div className="flex-1 py-8 px-4 sm:px-6 space-y-8">
         {/* Endpoint Section */}
         <div className="space-y-4">
           <Label className="text-sm font-medium text-[var(--foreground)]">API Endpoint</Label>
@@ -290,7 +302,14 @@ function ConfigurationPanel({ channel, onClose }: { channel: any, onClose: () =>
   )
 }
 
-function ChannelRow({ channel, index, onConfigure }: { channel: any, index: number, onConfigure: () => void }) {
+// Provider Icon Logic (Placeholder)
+function ProviderIcon({ provider }: { provider: string }) {
+  if (provider === "Ollama") return <Cpu className="size-5" />
+  if (provider === "Local") return <Server className="size-5" />
+  return <Cloud className="size-5" />
+}
+
+function ChannelRow({ channel, index, onConfigure }: { channel: Channel, index: number, onConfigure: () => void }) {
   const isOffline = channel.status === "offline"
   
   // Status Color Logic
@@ -299,13 +318,6 @@ function ChannelRow({ channel, index, onConfigure }: { channel: any, index: numb
     if (latency < 200) return "text-emerald-500"
     if (latency < 1000) return "text-yellow-500"
     return "text-red-500"
-  }
-
-  // Provider Icon Logic (Placeholder)
-  const ProviderIcon = ({ provider }: { provider: string }) => {
-    if (provider === "Ollama") return <Cpu className="size-5" />
-    if (provider === "Local") return <Server className="size-5" />
-    return <Cloud className="size-5" />
   }
 
   return (

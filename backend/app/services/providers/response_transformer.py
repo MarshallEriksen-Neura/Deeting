@@ -151,31 +151,73 @@ class ResponseTransformer:
         """
         Gemini Response -> OpenAI ChatCompletionResponse
         """
-        # Gemini: { "candidates": [ { "content": { "parts": [ { "text": "..." } ] } } ] }
-        choices = []
-        if raw.get("candidates"):
-            cand = raw["candidates"][0]
+        # Gemini: { "candidates": [ { "content": { "parts": [ { "text": "..." } | { "functionCall": {...}} ] }, "finishReason": "STOP" } ] }
+        choices: list[Dict] = []
+
+        candidates = raw.get("candidates") or []
+        if candidates:
+            cand = candidates[0]
             parts = cand.get("content", {}).get("parts", [])
-            
+
             text_content = ""
-            for part in parts:
+            tool_calls: list[Dict[str, Any]] = []
+
+            for idx, part in enumerate(parts):
+                # 文本片段
                 if "text" in part:
-                    text_content += part["text"]
-                # TODO: Handle function_call in parts if Gemini returns it there
-            
-            choices.append({
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": text_content
-                },
-                "finish_reason": "stop" # Simplified
-            })
-            
-        return {
-            "id": "gemini-adapt", # Gemini doesn't always return ID
+                    text_content += part.get("text", "")
+                    continue
+
+                # 函数调用 (Gemini functionCall)
+                func_call = part.get("functionCall") or part.get("function_call")
+                if func_call:
+                    tool_calls.append(
+                        {
+                            "id": f"gemini-func-{idx}",
+                            "type": "function",
+                            "function": {
+                                "name": func_call.get("name"),
+                                "arguments": json.dumps(func_call.get("args") or {}),
+                            },
+                        }
+                    )
+
+            message: Dict[str, Any] = {"role": "assistant"}
+            if text_content:
+                message["content"] = text_content
+            if tool_calls:
+                message["tool_calls"] = tool_calls
+                if "content" not in message:
+                    message["content"] = None
+
+            finish_reason = (cand.get("finishReason") or "stop").lower()
+
+            choices.append(
+                {
+                    "index": 0,
+                    "message": message,
+                    "finish_reason": finish_reason,
+                }
+            )
+
+        usage_meta = raw.get("usageMetadata", {})
+        usage = None
+        if usage_meta:
+            usage = {
+                "prompt_tokens": usage_meta.get("promptTokenCount", 0),
+                "completion_tokens": usage_meta.get("candidatesTokenCount", 0),
+                "total_tokens": usage_meta.get("totalTokenCount", 0),
+            }
+
+        result = {
+            "id": raw.get("id") or "gemini-adapt",  # Gemini 不总是返回 id
             "object": "chat.completion",
-            "choices": choices
+            "choices": choices,
         }
+
+        if usage is not None:
+            result["usage"] = usage
+
+        return result
 
 response_transformer = ResponseTransformer()

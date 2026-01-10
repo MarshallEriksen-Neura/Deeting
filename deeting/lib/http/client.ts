@@ -54,6 +54,22 @@ const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use((config) => {
   const headers = config.headers ?? {}
 
+  // 尝试从内存获取，若失败且在客户端环境，尝试从 storage 恢复（防止 SWR 请求早于 hydration）
+  if (!authToken && typeof window !== "undefined") {
+    try {
+      const stored = sessionStorage.getItem("deeting-auth-store")
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        const token = parsed.state?.accessToken
+        if (token) {
+          authToken = token
+        }
+      }
+    } catch (e) {
+      // ignore json parse error
+    }
+  }
+
   if (authToken && !headers.Authorization) {
     headers.Authorization = `Bearer ${authToken}`
   }

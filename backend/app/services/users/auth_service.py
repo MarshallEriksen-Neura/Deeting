@@ -54,7 +54,8 @@ class AuthService:
 
             # 预占邀请码窗口（与 provision 管线一致）
             provisioner = UserProvisioningService(self.db)
-            await provisioner.policy.ensure_can_register(invite_code=invite_code, provider="email")
+            # RegistrationPolicy.ensure_can_register 为同步方法，这里无需 await
+            provisioner.policy.ensure_can_register(invite_code=invite_code, provider="email")
             if invite_code and not self._is_dev_env():
                 window = await provisioner.invite_service.consume(invite_code)
                 # 记录到 Redis，便于 login_with_code 使用并最终 finalize
