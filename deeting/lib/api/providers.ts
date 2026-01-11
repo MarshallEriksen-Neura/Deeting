@@ -48,6 +48,58 @@ export const ProviderHubResponseSchema = z.object({
 })
 
 export type ProviderHubResponse = z.infer<typeof ProviderHubResponseSchema>
+// Provider Verify Schemas
+export const ProviderVerifyRequestSchema = z.object({
+  provider: z.string(),
+  config: z.record(z.any()),
+})
+
+export const ProviderVerifyResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string().optional(),
+  details: z.record(z.any()).optional(),
+})
+
+export type ProviderVerifyRequest = z.infer<typeof ProviderVerifyRequestSchema>
+export type ProviderVerifyResponse = z.infer<typeof ProviderVerifyResponseSchema>
+
+// Provider Instance Schemas
+export const ProviderInstanceCreateSchema = z.object({
+  name: z.string(),
+  provider_slug: z.string(),
+  config: z.record(z.any()),
+  is_enabled: z.boolean().default(true),
+})
+
+export const ProviderInstanceResponseSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  provider_slug: z.string(),
+  config: z.record(z.any()),
+  is_enabled: z.boolean(),
+  health_status: z.string(),
+  latency_ms: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export type ProviderInstanceCreate = z.infer<typeof ProviderInstanceCreateSchema>
+export type ProviderInstanceResponse = z.infer<typeof ProviderInstanceResponseSchema>
+
+// Provider Model Schemas
+export const ProviderModelResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  provider_instance_id: z.string().uuid(),
+  capabilities: z.array(z.string()),
+  context_length: z.number().optional(),
+  input_price_per_1k: z.number().optional(),
+  output_price_per_1k: z.number().optional(),
+  is_enabled: z.boolean(),
+  metadata: z.record(z.any()).optional(),
+})
+
+export type ProviderModelResponse = z.infer<typeof ProviderModelResponseSchema>
 
 // =====================
 // API Functions
@@ -64,4 +116,65 @@ export async function fetchProviderHub(params?: {
     params,
   })
   return ProviderHubResponseSchema.parse(data)
+}
+
+export async function fetchProviderDetail(slug: string): Promise<ProviderCard> {
+  const data = await request<ProviderCard>({
+    url: `${PROVIDERS_BASE}/presets/${slug}`,
+    method: "GET",
+  })
+  return ProviderCardSchema.parse(data)
+}
+
+export async function verifyProvider(
+  payload: ProviderVerifyRequest
+): Promise<ProviderVerifyResponse> {
+  const data = await request<ProviderVerifyResponse>({
+    url: `${PROVIDERS_BASE}/verify`,
+    method: "POST",
+    data: payload,
+  })
+  return ProviderVerifyResponseSchema.parse(data)
+}
+
+export async function createProviderInstance(
+  payload: ProviderInstanceCreate
+): Promise<ProviderInstanceResponse> {
+  const data = await request<ProviderInstanceResponse>({
+    url: PROVIDERS_BASE,
+    method: "POST",
+    data: payload,
+  })
+  return ProviderInstanceResponseSchema.parse(data)
+}
+
+export async function fetchProviderInstances(params?: {
+  include_public?: boolean
+}): Promise<ProviderInstanceResponse[]> {
+  const data = await request<ProviderInstanceResponse[]>({
+    url: `${PROVIDERS_BASE}/instances`,
+    method: "GET",
+    params,
+  })
+  return z.array(ProviderInstanceResponseSchema).parse(data)
+}
+
+export async function fetchProviderModels(
+  instanceId: string
+): Promise<ProviderModelResponse[]> {
+  const data = await request<ProviderModelResponse[]>({
+    url: `${PROVIDERS_BASE}/instances/${instanceId}/models`,
+    method: "GET",
+  })
+  return z.array(ProviderModelResponseSchema).parse(data)
+}
+
+export async function syncProviderModels(
+  instanceId: string
+): Promise<ProviderModelResponse[]> {
+  const data = await request<ProviderModelResponse[]>({
+    url: `${PROVIDERS_BASE}/instances/${instanceId}/models:sync`,
+    method: "POST",
+  })
+  return z.array(ProviderModelResponseSchema).parse(data)
 }
