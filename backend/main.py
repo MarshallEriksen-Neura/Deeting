@@ -95,9 +95,9 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.BACKEND_CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=settings.BACKEND_CORS_ALLOW_CREDENTIALS,
+        allow_methods=settings.BACKEND_CORS_ALLOW_METHODS,
+        allow_headers=settings.BACKEND_CORS_ALLOW_HEADERS,
     )
 
     # 注册路由
@@ -126,6 +126,7 @@ def register_routes(app: FastAPI) -> None:
         internal_gateway_router,
         media_router,
         users_router,
+        provider_router,
     )
 
     api_prefix = settings.API_V1_STR
@@ -158,6 +159,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(
         internal_bridge_router, prefix=f"{api_prefix}/internal", tags=["Bridge"]
     )
+    app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])
     # Metrics
     app.include_router(metrics_router, tags=["Metrics"])

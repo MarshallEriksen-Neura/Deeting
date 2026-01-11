@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -109,8 +110,38 @@ class Settings(BaseSettings):
     LOG_ROTATION: str = "500 MB"  # 日志文件大小轮转
     LOG_RETENTION: str = "10 days" # 日志保留时间
 
-    # CORS 配置
-    BACKEND_CORS_ORIGINS: list[str] = ["*"]
+    # CORS 原始字符串配置（使用 CORS_ALLOW_* 环境变量）
+    CORS_ALLOW_ORIGINS: str = "*"
+    CORS_ALLOW_METHODS: str = "*"
+    CORS_ALLOW_HEADERS: str = "*"
+    CORS_ALLOW_CREDENTIALS: bool = True
+
+    # 供代码调用的拆分后列表/布尔值
+    @property
+    def BACKEND_CORS_ORIGINS(self) -> list[str]:
+        return self._split_comma_separated(self.CORS_ALLOW_ORIGINS)
+
+    @property
+    def BACKEND_CORS_ALLOW_METHODS(self) -> list[str]:
+        return self._split_comma_separated(self.CORS_ALLOW_METHODS)
+
+    @property
+    def BACKEND_CORS_ALLOW_HEADERS(self) -> list[str]:
+        return self._split_comma_separated(self.CORS_ALLOW_HEADERS)
+
+    @property
+    def BACKEND_CORS_ALLOW_CREDENTIALS(self) -> bool:
+        return bool(self.CORS_ALLOW_CREDENTIALS)
+
+    @staticmethod
+    def _split_comma_separated(raw: str | list[str]) -> list[str]:
+        """支持字符串/逗号分隔写法，如 "http://a,http://b" 或 "*"；已为列表则直接返回。"""
+        if isinstance(raw, list):
+            return raw
+        raw = (raw or "").strip()
+        if not raw:
+            return []
+        return [item.strip() for item in raw.split(",") if item.strip()]
 
     # JWT 配置
     JWT_SECRET_KEY: str = ""  # 从 .env 读取,用于 HS256 备用

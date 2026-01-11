@@ -70,6 +70,33 @@ class ProviderModelsUpsertRequest(BaseModel):
     models: List[ProviderModelUpsert]
 
 
+class ProviderModelResponse(BaseModel):
+    id: UUID
+    instance_id: UUID
+    capability: str
+    model_id: str
+    unified_model_id: Optional[str] = None
+    display_name: Optional[str] = None
+    upstream_path: str
+    template_engine: str
+    request_template: dict[str, Any]
+    response_transform: dict[str, Any]
+    pricing_config: dict[str, Any]
+    limit_config: dict[str, Any]
+    tokenizer_config: dict[str, Any]
+    routing_config: dict[str, Any]
+    source: str
+    extra_meta: dict[str, Any]
+    weight: int
+    priority: int
+    is_active: bool
+    synced_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProviderVerifyRequest(BaseModel):
     preset_slug: str
     base_url: str

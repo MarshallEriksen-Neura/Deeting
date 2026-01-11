@@ -1,0 +1,185 @@
+from typing import List, Optional
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.deps.auth import get_current_user
+from app.schemas.provider_hub import ProviderHubResponse, ProviderCard
+from app.schemas.provider_instance import (
+    ProviderInstanceCreate,
+    ProviderInstanceResponse,
+    ProviderModelResponse,
+    ProviderModelsUpsertRequest,
+    ProviderVerifyRequest,
+    ProviderVerifyResponse,
+)
+from app.services.providers.provider_hub_service import ProviderHubService
+from app.services.providers.provider_instance_service import ProviderInstanceService
+from app.models.provider_instance import ProviderModel
+
+router = APIRouter(prefix="/providers", tags=["Providers"])
+
+
+@router.get("/hub", response_model=ProviderHubResponse)
+async def list_provider_hub(
+    category: Optional[str] = Query(None, description="cloud/local/custom/all"),
+    q: Optional[str] = Query(None, description="搜索关键字"),
+    include_public: bool = True,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    svc = ProviderHubService(db)
+    return await svc.hub(
+        user_id=str(getattr(user, "id", None)) if user else None,
+        category=category,
+        q=q,
+        include_public=include_public,
+    )
+
+
+@router.get("/presets/{slug}", response_model=ProviderCard)
+async def get_provider_detail(
+    slug: str,
+    include_public: bool = True,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    svc = ProviderHubService(db)
+    detail = await svc.detail(
+        slug=slug,
+        user_id=str(getattr(user, "id", None)) if user else None,
+        include_public=include_public,
+    )
+    if not detail:
+        raise HTTPException(status_code=404, detail="provider not found")
+    return detail
+
+
+@router.post("/verify", response_model=ProviderVerifyResponse)
+async def verify_provider(
+    payload: ProviderVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    svc = ProviderInstanceService(db)
+    result = await svc.verify_credentials(
+        preset_slug=payload.preset_slug,
+        base_url=payload.base_url,
+        api_key=payload.api_key,
+        model=payload.model,
+        protocol=payload.protocol,
+        resource_name=payload.resource_name,
+        deployment_name=payload.deployment_name,
+        project_id=payload.project_id,
+        region=payload.region,
+        api_version=payload.api_version,
+    )
+    return result
+
+
+@router.post("", response_model=ProviderInstanceResponse, status_code=status.HTTP_201_CREATED)
+async def create_instance(
+    payload: ProviderInstanceCreate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    svc = ProviderInstanceService(db)
+    instance = await svc.create_instance(
+        user_id=getattr(user, "id", None),
+        preset_slug=payload.preset_slug,
+        name=payload.name,
+        description=payload.description,
+        base_url=payload.base_url,
+        icon=payload.icon,
+        credentials_ref=payload.credentials_ref,
+        api_key=payload.api_key,
+        protocol=payload.protocol,
+        model_prefix=payload.model_prefix,
+        channel=payload.channel,
+        priority=payload.priority,
+        is_enabled=payload.is_enabled,
+        resource_name=payload.resource_name,
+        deployment_name=payload.deployment_name,
+        api_version=payload.api_version,
+        project_id=payload.project_id,
+        region=payload.region,
+    )
+    return instance
+
+
+@router.get("/instances", response_model=List[ProviderInstanceResponse])
+async def list_instances(
+    include_public: bool = True,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    svc = ProviderInstanceService(db)
+    instances = await svc.list_instances(user_id=getattr(user, "id", None), include_public=include_public)
+    return instances
+
+
+@router.get("/instances/{instance_id}/models", response_model=List[ProviderModelResponse])
+async def list_models(
+    instance_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        instance_uuid = uuid.UUID(instance_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid instance_id")
+
+    svc = ProviderInstanceService(db)
+    try:
+        models = await svc.list_models(instance_uuid, getattr(user, "id", None))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="instance not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return models
+
+
+@router.post("/instances/{instance_id}/models:sync", response_model=List[ProviderModelResponse])
+async def sync_models(
+    instance_id: str,
+    payload: ProviderModelsUpsertRequest,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        instance_uuid = uuid.UUID(instance_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid instance_id")
+
+    svc = ProviderInstanceService(db)
+    model_objs = [
+        ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=instance_uuid,
+            capability=m.capability,
+            model_id=m.model_id,
+            unified_model_id=m.unified_model_id,
+            display_name=m.display_name,
+            upstream_path=m.upstream_path,
+            template_engine=m.template_engine,
+            request_template=m.request_template,
+            response_transform=m.response_transform,
+            pricing_config=m.pricing_config,
+            limit_config=m.limit_config,
+            tokenizer_config=m.tokenizer_config,
+            routing_config=m.routing_config,
+            source=m.source,
+            extra_meta=m.extra_meta,
+            weight=m.weight,
+            priority=m.priority,
+            is_active=m.is_active,
+        )
+        for m in payload.models
+    ]
+    try:
+        results = await svc.upsert_models(instance_uuid, getattr(user, "id", None), model_objs)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return results

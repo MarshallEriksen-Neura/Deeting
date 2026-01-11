@@ -17,6 +17,7 @@ from app.api.v1.internal import bridge_router as internal_bridge_router
 from app.api.v1.internal import gateway_router as internal_gateway_router
 from app.api.v1.media_routes import router as media_router
 from app.api.v1.users_route import router as users_router
+from app.api.v1.providers_route import router as provider_router
 
 __all__ = [
     "admin_api_keys_router",
@@ -35,4 +36,5 @@ __all__ = [
     "internal_gateway_router",
     "media_router",
     "users_router",
+    "provider_router",
 ]
