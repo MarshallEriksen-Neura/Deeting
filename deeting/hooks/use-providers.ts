@@ -20,6 +20,8 @@ import {
 } from "@/lib/api/providers"
 import { type ApiError } from "@/lib/http/client"
 
+const EMPTY_ARRAY: any[] = []
+
 export const PROVIDERS_HUB_KEY = "providers/hub"
 export const PROVIDER_DETAIL_KEY = "providers/detail"
 export const PROVIDER_INSTANCES_KEY = "providers/instances"
@@ -43,7 +45,7 @@ export function useProviderHub(params?: {
 
   return {
     data,
-    providers: data?.providers || [],
+    providers: data?.providers || EMPTY_ARRAY,
     stats: data?.stats,
     isLoading,
     isError: !!error,
@@ -92,8 +94,8 @@ export function useProviderInstances(params?: {
   )
 
   return {
-    data: data || [],
-    instances: data || [],
+    data: data || EMPTY_ARRAY,
+    instances: data || EMPTY_ARRAY,
     isLoading,
     isError: !!error,
     error,
@@ -116,8 +118,8 @@ export function useProviderModels(instanceId: string | null) {
   )
 
   return {
-    data: data || [],
-    models: data || [],
+    data: data || EMPTY_ARRAY,
+    models: data || EMPTY_ARRAY,
     isLoading,
     isError: !!error,
     error,
