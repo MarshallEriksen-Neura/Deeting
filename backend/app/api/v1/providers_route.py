@@ -9,6 +9,7 @@ from app.deps.auth import get_current_user
 from app.schemas.provider_hub import ProviderHubResponse, ProviderCard
 from app.schemas.provider_instance import (
     ProviderInstanceCreate,
+    ProviderInstanceUpdate,
     ProviderInstanceResponse,
     ProviderModelResponse,
     ProviderModelsUpsertRequest,
@@ -118,6 +119,49 @@ async def list_instances(
     svc = ProviderInstanceService(db)
     instances = await svc.list_instances(user_id=getattr(user, "id", None), include_public=include_public)
     return instances
+
+
+@router.patch("/instances/{instance_id}", response_model=ProviderInstanceResponse)
+async def update_instance(
+    instance_id: str,
+    payload: ProviderInstanceUpdate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        instance_uuid = uuid.UUID(instance_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid instance_id")
+
+    svc = ProviderInstanceService(db)
+    try:
+        updated = await svc.update_instance(instance_uuid, getattr(user, "id", None), **payload.model_dump(exclude_none=True))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="instance not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return updated
+
+
+@router.delete("/instances/{instance_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_instance(
+    instance_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        instance_uuid = uuid.UUID(instance_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid instance_id")
+
+    svc = ProviderInstanceService(db)
+    try:
+        await svc.delete_instance(instance_uuid, getattr(user, "id", None))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="instance not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return None
 
 
 @router.get("/instances/{instance_id}/models", response_model=List[ProviderModelResponse])

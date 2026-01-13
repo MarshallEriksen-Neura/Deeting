@@ -12,7 +12,19 @@
 - 禁止在路由中直接操作 ORM/Session
 """
 
-from fastapi import APIRouter, Depends, Header, Request
+import os
+
+from fastapi import (
+    APIRouter,
+    Body,
+    Cookie,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -37,6 +49,50 @@ from app.services.users.oauth_linuxdo_service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+REFRESH_COOKIE_NAME = "refresh_token"
+REFRESH_COOKIE_MAX_AGE = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+# 以 API 前缀为作用域，便于前端请求自动携带
+REFRESH_COOKIE_PATH = settings.API_V1_STR
+
+
+def _refresh_cookie_secure() -> bool:
+    """
+    根据环境决定是否设置 Secure：
+    - 开发模式（DEBUG=True 或 MODE/ENVIRONMENT=development）禁用 Secure，便于 http 本地调试
+    - 其他环境启用 Secure
+    """
+    mode = os.getenv("MODE", "").lower()
+    env = (settings.ENVIRONMENT or "").lower()
+    return not (
+        settings.DEBUG
+        or mode == "development"
+        or env == "development"
+    )
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    """写入 HttpOnly refresh token，前端只需开启 withCredentials 即可自动携带。"""
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=REFRESH_COOKIE_MAX_AGE,
+        expires=REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=_refresh_cookie_secure(),
+        samesite="lax",
+        path=REFRESH_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    """删除 refresh token Cookie。"""
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        samesite="lax",
+    )
 
 
 @router.post("/login/code", response_model=MessageResponse)
@@ -63,6 +119,7 @@ async def send_login_code(
 async def login(
     request: LoginRequest,
     raw_request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> TokenPair:
     """
@@ -76,29 +133,42 @@ async def login(
         raw_request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         or (raw_request.client.host if raw_request.client else None)
     )
-    return await service.login_with_code(
+    tokens = await service.login_with_code(
         email=request.email,
         code=request.code,
         invite_code=request.invite_code,
         username=request.username,
         client_ip=client_ip,
     )
+    _set_refresh_cookie(response, tokens.refresh_token)
+    return tokens
 
 
 @router.post("/refresh", response_model=TokenPair)
 async def refresh_token(
-    request: RefreshRequest,
+    response: Response,
+    request: RefreshRequest | None = Body(default=None),
+    refresh_cookie: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ) -> TokenPair:
     """
     刷新 Token
 
-    - 验证 refresh_token
+    - 优先读取请求体 refresh_token；若缺省则回退到 HttpOnly Cookie
     - 实现轮换策略（旧 token 失效）
-    - 返回新的 token pair
+    - 返回新的 token pair 并重写 Cookie
     """
+    refresh_token_value = request.refresh_token if request else refresh_cookie
+    if not refresh_token_value:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token",
+        )
+
     service = AuthService(db)
-    return await service.refresh_tokens(request.refresh_token)
+    tokens = await service.refresh_tokens(refresh_token_value)
+    _set_refresh_cookie(response, tokens.refresh_token)
+    return tokens
 
 
 @router.get("/oauth/linuxdo/authorize", status_code=307)
@@ -117,6 +187,7 @@ async def linuxdo_authorize(invite_code: str | None = None):
 @router.post("/oauth/callback", response_model=OAuthCallbackResponse)
 async def linuxdo_callback(
     payload: OAuthCallbackRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """处理 LinuxDo OAuth 回调，返回 JWT。"""
@@ -136,6 +207,7 @@ async def linuxdo_callback(
     # 复用现有登录颁发逻辑
     auth = AuthService(db)
     tokens = await auth.create_tokens(user)
+    _set_refresh_cookie(response, tokens.refresh_token)
     return OAuthCallbackResponse(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
@@ -147,18 +219,22 @@ async def linuxdo_callback(
 
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
+    response: Response,
     user: User = Depends(get_current_user),
     authorization: str | None = Header(default=None, alias="Authorization"),
-    refresh_token: str | None = Header(default=None, alias="X-Refresh-Token"),
+    refresh_token_header: str | None = Header(default=None, alias="X-Refresh-Token"),
+    refresh_cookie: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     """
     用户登出
 
     - 将当前 access_token 加入黑名单
-    - 可选：通过 X-Refresh-Token 头传入 refresh_token 一并失效
+    - 可选：通过 X-Refresh-Token 头或 Cookie 传入 refresh_token 一并失效
     """
     service = AuthService(db)
+    refresh_token = refresh_token_header or refresh_cookie
     await service.logout_with_tokens(user.id, authorization, refresh_token)
+    _clear_refresh_cookie(response)
 
     return MessageResponse(message="Successfully logged out")

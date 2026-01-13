@@ -1,11 +1,8 @@
-import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
-from app.core.logging import logger
 from app.repositories.provider_instance_repository import ProviderInstanceRepository
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.schemas.provider_hub import (
@@ -17,15 +14,10 @@ from app.schemas.provider_hub import (
 from app.services.providers.health_monitor import HealthMonitorService
 
 
-DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "provider_presets.json"
-
-
 class ProviderHubService:
     """
     聚合系统模板 + 用户实例，输出给前端 Hub/Drawer。
     """
-
-    _preset_cache: list[dict[str, Any]] | None = None
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -33,55 +25,35 @@ class ProviderHubService:
         self.instance_repo = ProviderInstanceRepository(session)
         self.health_svc = HealthMonitorService(cache.redis)
 
-    @classmethod
-    def _load_presets(cls) -> list[dict[str, Any]]:
-        if cls._preset_cache is not None:
-            return cls._preset_cache
-        try:
-            with DATA_FILE.open("r", encoding="utf-8") as f:
-                cls._preset_cache = json.load(f)
-        except FileNotFoundError:
-            logger.warning("provider_presets_fixture_missing", extra={"path": str(DATA_FILE)})
-            cls._preset_cache = []
-        except Exception as exc:
-            logger.error("provider_presets_fixture_load_failed", extra={"error": str(exc)})
-            cls._preset_cache = []
-        return cls._preset_cache
-
     async def _merge_presets(self) -> list[dict[str, Any]]:
         """
-        将数据库活跃模板与本地 fixture 合并（以 DB 为主，缺失字段由 fixture 填充）。
+        仅使用数据库中的活跃模板作为真源。
         """
-        fixtures = {item["slug"]: item for item in self._load_presets()}
         db_presets = await self.preset_repo.get_active_presets()
         merged: list[dict[str, Any]] = []
 
-        if db_presets:
-            for preset in db_presets:
-                base = fixtures.get(preset.slug, {})
-                merged.append(
-                    {
-                        "slug": preset.slug,
-                        "name": preset.name,
-                        "provider": preset.provider,
-                        "category": preset.category or base.get("category", ""),
-                        "description": base.get("description"),
-                        "icon": preset.icon or base.get("icon"),
-                        "theme_color": preset.theme_color or base.get("theme_color"),
-                        "base_url": preset.base_url,
-                        "url_template": preset.url_template or base.get("url_template"),
-                        "auth_type": base.get("auth_type"),
-                        "auth_config": base.get("auth_config", {}),
-                        "default_headers": base.get("default_headers", {}),
-                        "default_params": base.get("default_params", {}),
-                        "tags": base.get("tags", []),
-                        "capabilities": base.get("capabilities", []),
-                        "is_popular": base.get("is_popular", False),
-                        "sort_order": base.get("sort_order", 0),
-                    }
-                )
-        else:
-            merged = list(fixtures.values())
+        for preset in db_presets:
+            merged.append(
+                {
+                    "slug": preset.slug,
+                    "name": preset.name,
+                    "provider": preset.provider,
+                    "category": preset.category or "",
+                    "description": "",
+                    "icon": preset.icon,
+                    "theme_color": preset.theme_color,
+                    "base_url": preset.base_url,
+                    "url_template": preset.url_template,
+                    "auth_type": None,
+                    "auth_config": {},
+                    "default_headers": {},
+                    "default_params": {},
+                    "tags": [],
+                    "capabilities": [],
+                    "is_popular": False,
+                    "sort_order": 0,
+                }
+            )
 
         return merged
 

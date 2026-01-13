@@ -1,0 +1,80 @@
+{
+  "providers": {
+    "market": {
+      "title": "Provider Hub",
+      "description": "Browse and connect to AI model providers.",
+      "searchPlaceholder": "Search providers…",
+      "tabs": {
+        "all": "All Providers",
+        "cloud": "Cloud API",
+        "local": "Local Hosted",
+        "custom": "Custom"
+      },
+      "error": {
+        "loadFailed": "Failed to load providers:",
+        "unknown": "Unknown error"
+      }
+    },
+    "drawer": {
+      "titleSystem": "Configure {{name}}",
+      "titleCustom": "Add Custom Endpoint",
+      "badgeOfficial": "Official",
+      "badgeSelfHosted": "Self-Hosted",
+      "secureProtocol": "Secure Protocol",
+      "protocolLabel": "Protocol Interface",
+      "endpointLabel": "Endpoint URL",
+      "pingCheck": "Ping Check",
+      "name": "Name",
+      "description": "Description",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "secretKey": "Secret Key",
+      "noAuth": "No auth required",
+      "save": "Save",
+      "saving": "Saving...",
+      "baseUrlRequired": "Base URL is required",
+      "apiKeyRequired": "API Key is required for verification",
+      "modelsHint": "Useful for Azure or custom deployments with complex model names.",
+      "advanced": "Advanced Settings",
+      "modelPrefixLabel": "Model ID Mapping Prefix",
+      "cancel": "Cancel",
+      "sendingProbe": "Sending probe...",
+      "errorSave": "Save failed",
+      "azureResource": "Azure Resource Name",
+      "azureDeployment": "Deployment Name",
+      "azureApiVersion": "API Version",
+      "azureHint": "Provide Azure resource & deployment to call Azure OpenAI endpoints.",
+      "vertexProject": "GCP Project ID",
+      "vertexRegion": "Region",
+      "vertexHint": "Replace {project} and {region} in the base URL for Vertex AI."
+    },
+    "manager": {
+      "title": "Neural Links",
+      "subtitle": "Manage your active AI provider connections and gateways.",
+      "connect": "Connect New Provider",
+      "loading": "Loading providers...",
+      "empty": "No instances yet, connect a provider to get started.",
+      "error": "Failed to load:",
+      "confirmDelete": "Are you sure you want to delete this instance?",
+      "latency": "Latency",
+      "offline": "OFFLINE",
+      "localTag": "LOCAL",
+      "edit": "Edit",
+      "enable": "Enable",
+      "disconnect": "Disconnect"
+    },
+    "list": {
+      "latency": "Latency",
+      "offline": "OFFLINE",
+      "confirmRemove": "Are you sure you want to remove this instance? This action cannot be undone.",
+      "confirmTitle": "Confirm Removal",
+      "actions": {
+        "cancel": "Cancel",
+        "enable": "Enable",
+        "disable": "Disable",
+        "edit": "Edit",
+        "remove": "Remove"
+      }
+    }
+  }
+}

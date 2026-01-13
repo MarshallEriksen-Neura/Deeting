@@ -25,6 +25,25 @@ class ProviderInstanceCreate(BaseModel):
     is_enabled: bool = Field(True, description="是否启用")
 
 
+class ProviderInstanceUpdate(BaseModel):
+    name: str | None = Field(default=None, description="实例名称")
+    description: str | None = Field(default=None, description="实例描述")
+    base_url: str | None = Field(default=None, description="基础 URL")
+    icon: str | None = Field(default=None, description="图标引用，覆盖模板 icon")
+    credentials_ref: str | None = Field(default=None, description="密钥引用 ID/环境变量名")
+    api_key: str | None = Field(default=None, description="更新默认上游 API Key (明文)，将自动存入 ProviderCredential")
+    protocol: str | None = Field(default=None, description="协议类型 (openai/anthropic)")
+    model_prefix: str | None = Field(default=None, description="模型 ID 映射前缀")
+    resource_name: str | None = Field(default=None, description="Azure OpenAI 资源名")
+    deployment_name: str | None = Field(default=None, description="Azure 部署名")
+    api_version: str | None = Field(default=None, description="Azure API 版本")
+    project_id: str | None = Field(default=None, description="Vertex 项目 ID")
+    region: str | None = Field(default=None, description="Vertex 区域")
+    channel: str | None = Field(default=None, description="internal/external/both")
+    priority: int | None = Field(default=None, description="路由优先级")
+    is_enabled: bool | None = Field(default=None, description="是否启用")
+
+
 class ProviderInstanceResponse(BaseModel):
     id: UUID
     user_id: Optional[UUID] = None

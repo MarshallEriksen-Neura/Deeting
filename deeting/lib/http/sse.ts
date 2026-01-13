@@ -1,4 +1,4 @@
-import { getAuthToken } from "./client"
+import { getAuthToken, refreshAccessToken } from "./client"
 
 export interface SSEMessage<T = string> {
   event?: string
@@ -41,7 +41,11 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
     ? anyToAbortSignal(signal, controller)
     : controller.signal
 
-  void (async () => {
+  void connectWithRetry(true)
+
+  return () => controller.abort()
+
+  async function connectWithRetry(allowRefresh: boolean) {
     try {
       const token = getAuthToken()
       const response = await fetch(url, {
@@ -51,9 +55,18 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...headers,
         },
+        credentials: "include",
         signal: mergeSignal,
         cache: "no-store",
       })
+
+      if (response.status === 401 && allowRefresh) {
+        const newToken = await refreshAccessToken().catch(() => null)
+        if (newToken) {
+          await connectWithRetry(false)
+          return
+        }
+      }
 
       if (!response.ok || !response.body) {
         throw new Error(`SSE 连接失败: ${response.status} ${response.statusText}`)
@@ -84,9 +97,7 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
       if (mergeSignal.aborted) return
       onError?.(err instanceof Error ? err : new Error(String(err)))
     }
-  })()
-
-  return () => controller.abort()
+  }
 }
 
 function parseEventChunk(chunk: string): SSEMessage<string> | null {

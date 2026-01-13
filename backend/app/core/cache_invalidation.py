@@ -201,6 +201,16 @@ class CacheInvalidator:
 
     async def on_provider_credentials_changed(self, instance_id: str | None = None) -> None:
         """
+        凭证变更后清理对应实例的凭证列表缓存。
+        """
+        keys = []
+        if instance_id:
+            keys.append(CacheKeys.provider_credentials(instance_id))
+        await self._delete_keys(keys)
+        await self.bump_version()
+
+    async def on_provider_credentials_changed(self, instance_id: str | None = None) -> None:
+        """
         多凭证变更后，失效凭证列表缓存与路由候选缓存。
         """
         keys = []

@@ -105,10 +105,11 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         stmt = select(ProviderModel).where(ProviderModel.instance_id == instance_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
-        """
-        批量 Upsert 模型列表：按 instance_id + capability + model_id + upstream_path 唯一键判断。
-        """
+
+    async def upsert_for_instance(self, instance_id: uuid.UUID, models_data: list[dict]) -> list[ProviderModel]:
+        """批量 Upsert 模型列表：按 instance_id + capability + model_id + upstream_path 唯一键判断。"""
         from datetime import datetime
+
         now = datetime.utcnow()
         results: list[ProviderModel] = []
 
@@ -123,19 +124,17 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             existing = result.scalars().first()
 
             if existing:
-                # Update
                 for k, v in payload.items():
                     setattr(existing, k, v)
                 existing.synced_at = now
                 self.session.add(existing)
                 results.append(existing)
             else:
-                # Create
                 new_model = ProviderModel(
                     id=uuid.uuid4(),
                     instance_id=instance_id,
                     synced_at=now,
-                    **payload
+                    **payload,
                 )
                 self.session.add(new_model)
                 results.append(new_model)

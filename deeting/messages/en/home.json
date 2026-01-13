@@ -54,6 +54,7 @@
     "routes": "Routes",
     "services": "Services",
     "plugins": "Plugins",
+    "providers": "Providers",
     "apiKeys": "API Keys",
     "monitoring": "Monitoring",
     "logs": "Logs",

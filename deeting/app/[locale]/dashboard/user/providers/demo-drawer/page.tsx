@@ -1,8 +1,14 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { GlassButton } from "@/components/ui/glass-button"
-import { ConnectProviderDrawer, ProviderPresetConfig } from "@/components/providers/connect-provider-drawer"
+import { ProviderPresetConfig } from "@/components/providers/connect-provider-drawer"
+
+const ConnectProviderDrawer = dynamic(
+  () => import("@/components/providers/connect-provider-drawer").then((m) => m.default),
+  { ssr: false }
+)
 
 export default function DemoDrawerPage() {
   const [isOpen, setIsOpen] = React.useState(false)
@@ -29,6 +35,7 @@ export default function DemoDrawerPage() {
       brand_color: "#3b82f6",
       icon_key: "lucide:server"
     })
+    
     setIsOpen(true)
   }
 

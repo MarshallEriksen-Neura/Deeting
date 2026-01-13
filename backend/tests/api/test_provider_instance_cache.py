@@ -219,4 +219,42 @@ async def test_provider_model_alias_match():
         candidates = await model_repo.get_candidates("chat", alias_name, user_id=None, include_public=True)
         assert len(candidates) == 1
         assert candidates[0].model_id == upstream_name
+
+
+@pytest.mark.asyncio
+async def test_provider_instance_update_and_delete_invalidate_cache_and_health():
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-to-update",
+            base_url="https://api.example.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        repo = ProviderInstanceRepository(session)
+        _ = await repo.get_available_instances(user_id=None, include_public=True)
+        list_key = cache._make_key(CacheKeys.provider_instance_list(None, True))  # type: ignore[attr-defined]
+        assert list_key in cache._redis.store  # type: ignore[attr-defined]
+
+        # 更新实例并添加 api_key -> 凭证缓存应失效
+        await svc.update_instance(inst.id, None, name="inst-updated", api_key="NEW_KEY")
+        assert list_key not in cache._redis.store  # type: ignore[attr-defined]
+
+        cred_key = cache._make_key(CacheKeys.provider_credentials(str(inst.id)))  # type: ignore[attr-defined]
+        await cache.set(cred_key, "dummy")  # type: ignore[attr-defined]
+        model_list_key = cache._make_key(CacheKeys.provider_model_list(str(inst.id)))  # type: ignore[attr-defined]
+        await cache.set(model_list_key, "dummy")  # type: ignore[attr-defined]
+        await cache.redis.hset(f"provider:health:{inst.id}", mapping={"status": "healthy", "latency": 10})  # type: ignore[attr-defined]
+        await cache.redis.rpush(f"provider:health:{inst.id}:history", 1)  # type: ignore[attr-defined]
+
+        await svc.delete_instance(inst.id, None)
+
+        assert list_key not in cache._redis.store  # type: ignore[attr-defined]
+        assert cred_key not in cache._redis.store  # type: ignore[attr-defined]
+        assert model_list_key not in cache._redis.store  # type: ignore[attr-defined]
+        assert f"provider:health:{inst.id}" not in cache._redis.store  # type: ignore[attr-defined]
+        assert f"provider:health:{inst.id}:history" not in cache._redis.store  # type: ignore[attr-defined]
         assert candidates[0].unified_model_id == alias_name

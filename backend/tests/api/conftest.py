@@ -128,6 +128,32 @@ class DummyRedis:
             bucket[k if isinstance(k, bytes) else str(k).encode()] = v
         return True
 
+    async def rpush(self, key: str, *values):
+        lst = self.store.setdefault(key, [])
+        if not isinstance(lst, list):
+            lst = []
+        lst.extend(values)
+        self.store[key] = lst
+        return len(lst)
+
+    async def lrange(self, key: str, start: int, end: int):
+        lst = self.store.get(key, [])
+        if not isinstance(lst, list):
+            return []
+        # emulate Redis end inclusive
+        if end == -1:
+            end = len(lst) - 1
+        return lst[start : end + 1]
+
+    async def ltrim(self, key: str, start: int, end: int):
+        lst = self.store.get(key, [])
+        if not isinstance(lst, list):
+            return True
+        if end == -1:
+            end = len(lst) - 1
+        self.store[key] = lst[start : end + 1]
+        return True
+
     async def hgetall(self, key: str):
         return self.hash_store.get(key, {}).copy()
 

@@ -1,0 +1,80 @@
+{
+  "providers": {
+    "market": {
+      "title": "模型服务市场",
+      "description": "浏览并接入 AI 模型服务提供商。",
+      "searchPlaceholder": "搜索服务商…",
+      "tabs": {
+        "all": "全部服务商",
+        "cloud": "云 API",
+        "local": "本地部署",
+        "custom": "自定义"
+      },
+      "error": {
+        "loadFailed": "加载模型服务商失败：",
+        "unknown": "未知错误"
+      }
+    },
+    "drawer": {
+      "titleSystem": "配置 {{name}}",
+      "titleCustom": "添加自定义端点",
+      "badgeOfficial": "官方",
+      "badgeSelfHosted": "自托管",
+      "secureProtocol": "安全协议",
+      "protocolLabel": "协议接口",
+      "endpointLabel": "Endpoint 地址",
+      "pingCheck": "连通性测试",
+      "name": "名称",
+      "description": "描述",
+      "enabled": "启用",
+      "disabled": "停用",
+      "secretKey": "密钥",
+      "noAuth": "无需认证",
+      "save": "保存",
+      "saving": "保存中...",
+      "baseUrlRequired": "请填写基础 URL",
+      "apiKeyRequired": "验证需要 API Key",
+      "modelsHint": "适用于 Azure 或自定义部署的模型名前缀。",
+      "advanced": "高级设置",
+      "modelPrefixLabel": "模型 ID 前缀",
+      "cancel": "取消",
+      "sendingProbe": "发送探测...",
+      "errorSave": "保存失败",
+      "azureResource": "Azure 资源名",
+      "azureDeployment": "部署名",
+      "azureApiVersion": "API 版本",
+      "azureHint": "填写 Azure 资源与部署信息以调用 Azure OpenAI。",
+      "vertexProject": "GCP 项目 ID",
+      "vertexRegion": "区域",
+      "vertexHint": "在 Base URL 中替换 {project} 和 {region} 以调用 Vertex AI。"
+    },
+    "manager": {
+      "title": "神经通道",
+      "subtitle": "管理已连接的 AI 提供商和网关。",
+      "connect": "连接新的服务商",
+      "loading": "加载中…",
+      "empty": "暂无实例，先去连接一个吧。",
+      "error": "加载失败：",
+      "confirmDelete": "确定要删除该实例吗？",
+      "latency": "延迟",
+      "offline": "离线",
+      "localTag": "本地",
+      "edit": "编辑",
+      "enable": "启用",
+      "disconnect": "断开连接"
+    },
+    "list": {
+      "latency": "延迟",
+      "offline": "离线",
+      "confirmRemove": "确定要删除该实例吗？操作不可撤销。",
+      "confirmTitle": "确认删除",
+      "actions": {
+        "cancel": "取消",
+        "enable": "启用",
+        "disable": "停用",
+        "edit": "编辑",
+        "remove": "删除"
+      }
+    }
+  }
+}

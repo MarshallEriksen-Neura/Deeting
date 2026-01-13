@@ -27,6 +27,8 @@ class ProviderInstanceService:
         self.model_repo = ProviderModelRepository(session)
         self.credential_repo = ProviderCredentialRepository(session)
         self._invalidator = CacheInvalidator()
+        from app.core.cache import cache
+        self.cache = cache
 
     async def verify_credentials(
         self,
@@ -277,6 +279,49 @@ class ProviderInstanceService:
         await self._invalidator.on_provider_instance_changed(str(user_id) if user_id else None)
         return instance
 
+    async def update_instance(
+        self,
+        instance_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        **fields,
+    ) -> ProviderInstance:
+        instance = await self.assert_instance_access(instance_id, user_id)
+
+        # 提取允许更新的字段
+        updatable = {}
+        meta_updates = {}
+        for key in ["name", "description", "base_url", "icon", "channel", "priority", "is_enabled", "credentials_ref"]:
+            if key in fields and fields[key] is not None:
+                updatable[key] = fields[key]
+
+        for key in ["protocol", "model_prefix", "resource_name", "deployment_name", "api_version", "project_id", "region"]:
+            if key in fields and fields[key] is not None:
+                meta_updates[key] = fields[key]
+
+        if meta_updates:
+            meta = dict(getattr(instance, "meta", {}) or {})
+            meta.update(meta_updates)
+            updatable["meta"] = meta
+
+        # 处理 api_key 更新：追加默认凭证
+        api_key = fields.get("api_key")
+        if api_key:
+            cred_data = {
+                "id": uuid.uuid4(),
+                "instance_id": instance_id,
+                "alias": "default",
+                "secret_ref_id": api_key,
+                "is_active": True,
+            }
+            await self.credential_repo.create(cred_data)
+            await self._invalidator.on_provider_credentials_changed(str(instance_id))
+
+        if updatable:
+            await self.instance_repo.update(instance, updatable)
+
+        await self._invalidator.on_provider_instance_changed(str(user_id) if user_id else None)
+        return await self.instance_repo.get(instance_id)  # refresh
+
     async def list_instances(
         self,
         user_id: uuid.UUID | None,
@@ -378,3 +423,25 @@ class ProviderInstanceService:
         
         await self.credential_repo.delete(credential_id)
         await self._invalidator.on_provider_credentials_changed(str(instance_id))
+
+    async def delete_instance(
+        self,
+        instance_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+    ) -> None:
+        instance = await self.assert_instance_access(instance_id, user_id)
+        await self.instance_repo.delete(instance_id)
+
+        # 清理健康状态缓存
+        try:
+            if self.cache.redis:
+                await self.cache.redis.unlink(
+                    f"provider:health:{instance_id}",
+                    f"provider:health:{instance_id}:history",
+                )
+        except Exception:
+            pass
+
+        await self._invalidator.on_provider_model_changed(str(instance_id))
+        await self._invalidator.on_provider_credentials_changed(str(instance_id))
+        await self._invalidator.on_provider_instance_changed(str(user_id) if user_id else None)

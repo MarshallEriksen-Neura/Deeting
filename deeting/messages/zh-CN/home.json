@@ -54,6 +54,7 @@
     "routes": "路由",
     "services": "服务",
     "plugins": "插件",
+    "providers": "模型服务",
     "apiKeys": "API 密钥",
     "monitoring": "监控",
     "logs": "日志",

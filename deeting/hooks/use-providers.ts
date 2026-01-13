@@ -1,15 +1,11 @@
 import useSWR from "swr"
-import { fetchProviderHub, type ProviderHubResponse } from "@/lib/api/providers"
-import { type ApiError } from "@/lib/http/client"
-
-export const PROVIDERS_HUB_KEY = "providers/hub"
-
-import useSWR from "swr"
 import { 
   fetchProviderHub, 
   fetchProviderDetail,
   verifyProvider,
   createProviderInstance,
+  updateProviderInstance,
+  deleteProviderInstance,
   fetchProviderInstances,
   fetchProviderModels,
   syncProviderModels,
@@ -18,6 +14,7 @@ import {
   type ProviderVerifyRequest,
   type ProviderVerifyResponse,
   type ProviderInstanceCreate,
+  type ProviderInstanceUpdate,
   type ProviderInstanceResponse,
   type ProviderModelResponse
 } from "@/lib/api/providers"
@@ -148,6 +145,28 @@ export function useCreateProviderInstance() {
 
   return {
     create,
+  }
+}
+
+// Provider Instance Update Hook (for mutations)
+export function useUpdateProviderInstance() {
+  const update = async (instanceId: string, payload: ProviderInstanceUpdate): Promise<ProviderInstanceResponse> => {
+    return await updateProviderInstance(instanceId, payload)
+  }
+
+  return {
+    update,
+  }
+}
+
+// Provider Instance Delete Hook (for mutations)
+export function useDeleteProviderInstance() {
+  const remove = async (instanceId: string): Promise<void> => {
+    await deleteProviderInstance(instanceId)
+  }
+
+  return {
+    remove,
   }
 }
 

@@ -1,7 +1,7 @@
 import { getRequestConfig } from "next-intl/server"
 import { routing } from "./routing"
 
-const namespaces = ["common", "home", "auth", "api-keys"] as const
+const namespaces = ["common", "home", "auth", "api-keys", "providers"] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {
   let locale = await requestLocale
