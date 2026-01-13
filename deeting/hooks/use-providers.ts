@@ -1,14 +1,7 @@
 import useSWR from "swr"
-import { 
-  fetchProviderHub, 
-  fetchProviderDetail,
-  verifyProvider,
-  createProviderInstance,
-  updateProviderInstance,
-  deleteProviderInstance,
-  fetchProviderInstances,
-  fetchProviderModels,
-  syncProviderModels,
+import { usePlatform } from "@/lib/platform/provider"
+import { type ApiError } from "@/lib/http/client"
+import {
   type ProviderHubResponse,
   type ProviderCard,
   type ProviderVerifyRequest,
@@ -18,7 +11,6 @@ import {
   type ProviderInstanceResponse,
   type ProviderModelResponse
 } from "@/lib/api/providers"
-import { type ApiError } from "@/lib/http/client"
 
 const EMPTY_ARRAY: any[] = []
 
@@ -32,11 +24,12 @@ export function useProviderHub(params?: {
   q?: string
   include_public?: boolean
 }) {
+  const { provider } = usePlatform()
   const queryKey = [PROVIDERS_HUB_KEY, params]
   
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderHubResponse, ApiError>(
     queryKey,
-    () => fetchProviderHub(params),
+    () => provider.getHub(params),
     {
       revalidateOnFocus: false,
       dedupingInterval: 60000, // 1 minute
@@ -57,11 +50,12 @@ export function useProviderHub(params?: {
 
 // Provider Detail Hook
 export function useProviderDetail(slug: string | null) {
+  const { provider } = usePlatform()
   const queryKey = slug ? [PROVIDER_DETAIL_KEY, slug] : null
   
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderCard, ApiError>(
     queryKey,
-    () => slug ? fetchProviderDetail(slug) : null,
+    () => slug ? provider.getDetail(slug) : null, // This might need type adjustment if getDetail returns Promise
     {
       revalidateOnFocus: false,
       dedupingInterval: 300000, // 5 minutes - provider details change less frequently
@@ -82,11 +76,12 @@ export function useProviderDetail(slug: string | null) {
 export function useProviderInstances(params?: {
   include_public?: boolean
 }) {
+  const { provider } = usePlatform()
   const queryKey = [PROVIDER_INSTANCES_KEY, params]
   
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderInstanceResponse[], ApiError>(
     queryKey,
-    () => fetchProviderInstances(params),
+    () => provider.getInstances(params),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000, // 30 seconds - instances change more frequently
@@ -106,11 +101,12 @@ export function useProviderInstances(params?: {
 
 // Provider Models Hook
 export function useProviderModels(instanceId: string | null) {
+  const { provider } = usePlatform()
   const queryKey = instanceId ? [PROVIDER_MODELS_KEY, instanceId] : null
   
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderModelResponse[], ApiError>(
     queryKey,
-    () => instanceId ? fetchProviderModels(instanceId) : null,
+    () => instanceId ? provider.getModels(instanceId) : null,
     {
       revalidateOnFocus: false,
       dedupingInterval: 120000, // 2 minutes - models change occasionally
@@ -130,8 +126,10 @@ export function useProviderModels(instanceId: string | null) {
 
 // Provider Verify Hook (for mutations)
 export function useProviderVerify() {
+  const { provider } = usePlatform()
+  
   const verify = async (payload: ProviderVerifyRequest): Promise<ProviderVerifyResponse> => {
-    return await verifyProvider(payload)
+    return await provider.verify(payload)
   }
 
   return {
@@ -141,8 +139,10 @@ export function useProviderVerify() {
 
 // Provider Instance Creation Hook (for mutations)
 export function useCreateProviderInstance() {
+  const { provider } = usePlatform()
+
   const create = async (payload: ProviderInstanceCreate): Promise<ProviderInstanceResponse> => {
-    return await createProviderInstance(payload)
+    return await provider.createInstance(payload)
   }
 
   return {
@@ -152,8 +152,10 @@ export function useCreateProviderInstance() {
 
 // Provider Instance Update Hook (for mutations)
 export function useUpdateProviderInstance() {
+  const { provider } = usePlatform()
+
   const update = async (instanceId: string, payload: ProviderInstanceUpdate): Promise<ProviderInstanceResponse> => {
-    return await updateProviderInstance(instanceId, payload)
+    return await provider.updateInstance(instanceId, payload)
   }
 
   return {
@@ -163,8 +165,10 @@ export function useUpdateProviderInstance() {
 
 // Provider Instance Delete Hook (for mutations)
 export function useDeleteProviderInstance() {
+  const { provider } = usePlatform()
+
   const remove = async (instanceId: string): Promise<void> => {
-    await deleteProviderInstance(instanceId)
+    return await provider.deleteInstance(instanceId)
   }
 
   return {
@@ -174,11 +178,13 @@ export function useDeleteProviderInstance() {
 
 // Provider Models Sync Hook (for mutations)
 export function useSyncProviderModels() {
+  const { provider } = usePlatform()
+
   const sync = async (
     instanceId: string,
     options?: { preserve_user_overrides?: boolean }
   ): Promise<ProviderModelResponse[]> => {
-    return await syncProviderModels(instanceId, options)
+    return await provider.syncModels(instanceId, options)
   }
 
   return {

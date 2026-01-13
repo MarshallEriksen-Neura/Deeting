@@ -32,43 +32,12 @@ import {
 import { cn } from "@/lib/utils"
 import { ProviderIconPicker } from "./provider-icon-picker"
 import { useProviderVerify, useCreateProviderInstance, useUpdateProviderInstance } from "@/hooks/use-providers"
+import { usePlatform } from "@/lib/platform/provider"
 import { Switch } from "@/components/ui/switch"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { getIconComponent } from "@/lib/constants/provider-icons"
 
-// Types based on backend schema
-export interface ProviderPresetConfig {
-  // 某些调用方（演示页/市场页）未传 slug，容错为可选
-  slug?: string
-  name: string
-  type: 'system' | 'custom'
-  default_endpoint?: string
-  protocol: 'openai' | 'anthropic'
-  brand_color: string // e.g., '#10a37f'
-  icon_key: string
-}
-
-interface ConnectProviderDrawerProps {
-  isOpen: boolean
-  onClose: () => void
-  preset: ProviderPresetConfig | null
-  mode?: "create" | "edit"
-  instanceId?: string | null
-  initialValues?: Partial<{
-    name: string
-    description?: string | null
-    base_url?: string
-    icon?: string | null
-    theme_color?: string | null
-    is_enabled?: boolean
-    resource_name?: string | null
-    deployment_name?: string | null
-    api_version?: string | null
-    project_id?: string | null
-    region?: string | null
-  }>
-  onSave: (data: any) => void
-}
+// ... (keep existing types)
 
 export function ConnectProviderDrawer({ 
   isOpen, 
@@ -83,71 +52,28 @@ export function ConnectProviderDrawer({
   const { verify } = useProviderVerify()
   const { create } = useCreateProviderInstance()
   const { update } = useUpdateProviderInstance()
+  const { model: modelPlatform } = usePlatform()
 
-  // State
-  const [baseUrl, setBaseUrl] = React.useState("")
-  const [apiKey, setApiKey] = React.useState("")
-  const [protocol, setProtocol] = React.useState<'openai' | 'anthropic'>('openai')
-  const [name, setName] = React.useState("")
-  const [description, setDescription] = React.useState("")
-  const [enabled, setEnabled] = React.useState(true)
-  const [icon, setIcon] = React.useState("")
-  const [customIconUrl, setCustomIconUrl] = React.useState("")
-  const [brandColor, setBrandColor] = React.useState("#3b82f6")
-  const [resourceName, setResourceName] = React.useState("")
-  const [deploymentName, setDeploymentName] = React.useState("")
-  const [apiVersion, setApiVersion] = React.useState("")
-  const [projectId, setProjectId] = React.useState("")
-  const [region, setRegion] = React.useState("")
-  const [connectionStatus, setConnectionStatus] = React.useState<'idle' | 'testing' | 'success' | 'error'>('idle')
-  const [logs, setLogs] = React.useState<string[]>([])
-  const [saving, setSaving] = React.useState(false)
-
-  // Memoized values that depend on preset
-  const presetSlug = React.useMemo(() => {
-    return preset?.slug || preset?.name || ""
-  }, [preset])
-
-  const normalizedSlug = React.useMemo(() => presetSlug.toLowerCase(), [presetSlug])
-
-  const resolvedIconId = React.useMemo(() => {
-    return (customIconUrl || icon || preset?.icon_key || "").trim()
-  }, [customIconUrl, icon, preset?.icon_key])
-
-  const HeaderIcon = React.useMemo(() => {
-    if (!preset) return Globe
-    return resolvedIconId.startsWith("http") ? null : getIconComponent(resolvedIconId) || getIconComponent(preset.icon_key) || Globe
-  }, [resolvedIconId, preset])
-
-  // Reset state when preset changes
-  React.useEffect(() => {
-    if (isOpen && preset) {
-      setBaseUrl(preset.default_endpoint || initialValues?.base_url || "")
-      setApiKey("")
-      setProtocol(preset.protocol)
-      setName(initialValues?.name || preset.name)
-      setDescription(initialValues?.description || "")
-      setEnabled(initialValues?.is_enabled ?? true)
-      setIcon(initialValues?.icon || preset.icon_key || "")
-      setCustomIconUrl("")
-      setBrandColor(initialValues?.theme_color || preset.brand_color || "#3b82f6")
-      setResourceName(initialValues?.resource_name || "")
-      setDeploymentName(initialValues?.deployment_name || "")
-      setApiVersion(initialValues?.api_version || "")
-      setProjectId(initialValues?.project_id || "")
-      setRegion(initialValues?.region || "")
-      setConnectionStatus('idle')
-      setLogs([])
-    }
-  }, [isOpen, preset, initialValues])
-
-  // If no preset, don't render (but hooks were called)
-  if (!preset) return null
-
-  const isSystem = preset.type === 'system'
+  // ... (keep existing state)
 
   const handleTestConnection = async () => {
+    // Check if it's a local provider and if we need to intercept
+    const category = preset?.slug?.toLowerCase() || ""
+    const isLocal = category.includes("local") || category.includes("ollama") || category.includes("lmstudio")
+    
+    if (isLocal) {
+      try {
+        await modelPlatform.connect(presetSlug)
+      } catch (err: any) {
+        if (err.message === 'PLATFORM_RESTRICTED') {
+          // The platform service already triggered the modal
+          return
+        }
+      }
+    }
+
     if (!baseUrl) {
+
       setLogs([`> ${t("drawer.baseUrlRequired")}`])
       setConnectionStatus('error')
       return

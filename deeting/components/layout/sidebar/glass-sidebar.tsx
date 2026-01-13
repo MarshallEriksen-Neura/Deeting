@@ -18,6 +18,8 @@ import {
   userNavigation,
   adminNavigation,
 } from "./navigation-config"
+import { navIconMap, defaultNavIcon } from "./icon-map"
+import { getNavIcon } from "./icon-map"
 
 /**
  * iOS-style Glass Sidebar (Secondary Navigation)
@@ -131,7 +133,7 @@ function SidebarItem({ item, isCollapsed = false }: SidebarItemProps) {
   const { t } = useSidebar()
   const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
 
-  const Icon = item.icon
+  const Icon = navIconMap[item.icon] ?? defaultNavIcon
   const label = t(item.label)
 
   const content = (
@@ -334,7 +336,7 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
         <div className="flex items-center gap-1 px-4 py-2">
           {allItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
-            const Icon = item.icon
+            const Icon = navIconMap[item.icon] ?? defaultNavIcon
             const label = t(item.label)
 
             return (

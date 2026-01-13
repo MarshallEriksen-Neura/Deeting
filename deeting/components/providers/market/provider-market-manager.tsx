@@ -6,10 +6,9 @@ import { useTranslations } from "next-intl"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, Loader2 } from "lucide-react"
 import { useProviderHub } from "@/hooks/use-providers"
 import ProviderGrid from "@/components/providers/provider-grid"
-import ProviderStats from "@/components/providers/provider-stats"
 import { useDebounce } from "@/hooks/use-debounce"
 import dynamic from "next/dynamic"
 import type { ProviderPresetConfig } from "@/components/providers/connect-provider-drawer"
@@ -27,7 +26,7 @@ const CATEGORY_MAPPING = {
   custom: "custom",
 } as const
 
-export default function ProviderMarketClient() {
+export function ProviderMarketManager() {
   const t = useTranslations("providers.market")
   const [selectedCategory, setSelectedCategory] = React.useState<keyof typeof CATEGORY_MAPPING>("all")
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -66,57 +65,45 @@ export default function ProviderMarketClient() {
   }
 
   return (
-    <>
-      {/* Header Section */}
-      <div className="space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight text-[var(--foreground)]">
-              {t("title")}
-            </h1>
-            <p className="text-[var(--muted)]">
-              {t("description")}
-              <ProviderStats stats={stats} />
-            </p>
-          </div>
-          
-          {/* Search */}
-          <div className="relative w-full md:w-[320px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
-            <Input 
-              placeholder={t("searchPlaceholder")} 
-              className="pl-9 bg-[var(--surface)]/50 border-white/10"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        </div>
-
+    <div className="space-y-6">
+      {/* Controls Section */}
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
         {/* Category Tabs */}
         <Tabs 
           defaultValue="all" 
           onValueChange={(value) => setSelectedCategory(value as keyof typeof CATEGORY_MAPPING)} 
-          className="w-full"
+          className="w-full md:w-auto"
         >
-          <TabsList className="bg-[var(--surface)]/50 backdrop-blur-md border border-white/5 p-1 h-auto rounded-xl">
+          <TabsList className="bg-[var(--surface)]/50 backdrop-blur-md border border-white/5 p-1 h-auto rounded-xl w-full md:w-auto grid grid-cols-4 md:flex">
             <TabsTrigger value="all" className="rounded-lg px-4 py-2 data-[state=active]:bg-[var(--card)] data-[state=active]:text-[var(--primary)] data-[state=active]:shadow-sm">
               {t("tabs.all")}
-              {stats && <span className="ml-1 text-xs opacity-70">({stats.total})</span>}
+              {!isLoading && stats && <span className="ml-1 text-xs opacity-70 hidden sm:inline">({stats.total})</span>}
             </TabsTrigger>
             <TabsTrigger value="cloud" className="rounded-lg px-4 py-2 data-[state=active]:bg-[var(--card)] data-[state=active]:text-[var(--primary)] data-[state=active]:shadow-sm">
               {t("tabs.cloud")}
-              {stats?.by_category?.["cloud api"] && <span className="ml-1 text-xs opacity-70">({stats.by_category["cloud api"]})</span>}
+              {!isLoading && stats?.by_category?.["cloud api"] && <span className="ml-1 text-xs opacity-70 hidden sm:inline">({stats.by_category["cloud api"]})</span>}
             </TabsTrigger>
             <TabsTrigger value="local" className="rounded-lg px-4 py-2 data-[state=active]:bg-[var(--card)] data-[state=active]:text-[var(--primary)] data-[state=active]:shadow-sm">
               {t("tabs.local")}
-              {stats?.by_category?.["local hosted"] && <span className="ml-1 text-xs opacity-70">({stats.by_category["local hosted"]})</span>}
+              {!isLoading && stats?.by_category?.["local hosted"] && <span className="ml-1 text-xs opacity-70 hidden sm:inline">({stats.by_category["local hosted"]})</span>}
             </TabsTrigger>
             <TabsTrigger value="custom" className="rounded-lg px-4 py-2 data-[state=active]:bg-[var(--card)] data-[state=active]:text-[var(--primary)] data-[state=active]:shadow-sm">
               {t("tabs.custom")}
-              {stats?.by_category?.custom && <span className="ml-1 text-xs opacity-70">({stats.by_category.custom})</span>}
+              {!isLoading && stats?.by_category?.custom && <span className="ml-1 text-xs opacity-70 hidden sm:inline">({stats.by_category.custom})</span>}
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {/* Search */}
+        <div className="relative w-full md:w-[320px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
+          <Input 
+            placeholder={t("searchPlaceholder")} 
+            className="pl-9 bg-[var(--surface)]/50 border-white/10"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
       </div>
 
       {/* Provider Grid */}
@@ -126,6 +113,7 @@ export default function ProviderMarketClient() {
         searchQuery={searchQuery}
         onSelect={(provider) => {
           const preset: ProviderPresetConfig = {
+            slug: provider.slug,
             name: provider.name,
             type: provider.slug === "custom" ? "custom" : "system",
             default_endpoint: provider.base_url || undefined,
@@ -144,6 +132,6 @@ export default function ProviderMarketClient() {
         preset={selectedPreset}
         onSave={() => setDrawerOpen(false)}
       />
-    </>
+    </div>
   )
 }

@@ -61,7 +61,15 @@ export function getAuthToken() {
  * - 其他场景回落到相对路径 /api（使用 Next 反向代理）
  */
 // 仅通过环境变量控制后端地址；未配置时走 Next 反向代理 `/api`
-const apiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
+const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === 'true'
+
+// In Tauri dev, we point to localhost:8000 (Python).
+// In Tauri prod, this should point to your real production API.
+// For now, we assume localhost:8000 for desktop dev.
+const desktopBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
+const webBaseURL = "/api"
+
+const apiBaseURL = isTauri ? desktopBaseURL : webBaseURL
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: apiBaseURL,
@@ -72,6 +80,21 @@ const apiClient: AxiosInstance = axios.create({
     "Content-Type": "application/json",
   },
 })
+
+// Initialize Tauri Adapter if needed
+if (isTauri && typeof window !== 'undefined') {
+  // We use an IIFE to async inject the adapter
+  (async () => {
+    try {
+       const { createTauriAdapter } = await import('./tauri-adapter');
+       const adapter = await createTauriAdapter();
+       apiClient.defaults.adapter = adapter;
+       console.log('✅ Tauri HTTP Adapter attached');
+    } catch (e) {
+       console.error('Failed to load Tauri adapter', e);
+    }
+  })();
+}
 
 apiClient.interceptors.request.use((config) => {
   const headers = config.headers ?? {}

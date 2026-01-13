@@ -11,24 +11,34 @@ import { type ApiError } from "@/lib/http"
 import { useApiKeyService } from "@/hooks/use-api-keys"
 import { useApiKeyDrawerStore } from "@/store/api-key-drawer-store"
 import { useAvailableModels } from "@/hooks/use-available-models"
-import { Container } from "@/components/ui/container"
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard, GlassCardContent } from "@/components/ui/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiKeyStrip, MintKeyDrawer, KeyRevealModal } from "@/components/api-keys"
 
-export function ApiKeysPageClient() {
+// Define the interface for the parent to pass the "Trigger" button if needed
+// Or we can just render the list here
+interface ApiKeysManagerProps {
+  // Empty for now, but good for extensibility
+}
+
+export function ApiKeysManager({}: ApiKeysManagerProps) {
   const t = useTranslations("apiKeys")
 
+  // Global UI State
   const { open, setOpen, openDrawer, closeDrawer } = useApiKeyDrawerStore()
+  
+  // Local UI State
   const [revealModalOpen, setRevealModalOpen] = React.useState(false)
   const [newKeySecret, setNewKeySecret] = React.useState<string | null>(null)
   const [newKeyName, setNewKeyName] = React.useState<string>("")
 
+  // Data & Mutations
   const { apiKeys, isLoading, error, createKey, rollKey, revokeKey, refresh, mutations } =
     useApiKeyService()
   const { models: availableModels, isLoading: modelsLoading } = useAvailableModels()
 
+  // Derived State
   const activeKeys = React.useMemo(
     () => apiKeys.filter((k) => k.status === "active" || k.status === "limited"),
     [apiKeys]
@@ -38,12 +48,14 @@ export function ApiKeysPageClient() {
     [apiKeys]
   )
 
+  // Error Handling
   React.useEffect(() => {
     if (error) {
       toast.error(error.message || t("toast.loadFailed"))
     }
   }, [error, t])
 
+  // Handlers
   const handleCreateKey = React.useCallback(
     async (data: CreateApiKeyRequest) => {
       try {
@@ -102,65 +114,48 @@ export function ApiKeysPageClient() {
   const hasKeys = apiKeys.length > 0
   const showEmpty = !isLoading && !hasKeys && !error
 
+  // Render Helpers
+  if (isLoading) return <ApiKeysSkeleton />
+  if (error) return <ErrorState onRetry={refresh} />
+  if (showEmpty) return <EmptyState onMint={openDrawer} />
+
   return (
-    <Container as="main" className="py-6 md:py-8" gutter="md">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--foreground)] md:text-3xl flex items-center gap-3">
-            <Key className="size-7 text-[var(--primary)]" />
-            {t("title")}
-          </h1>
-          <p className="mt-1 text-[var(--muted)]">{t("subtitle")}</p>
-        </div>
-        <GlassButton onClick={openDrawer} loading={mutations.create.isMutating}>
-          <Plus className="size-4" />
-          {t("mintNew")}
-        </GlassButton>
+    <>
+      <div className="space-y-8">
+        {activeKeys.length > 0 && (
+          <div className="space-y-4">
+            {activeKeys.map((key, index) => (
+              <ApiKeyStrip
+                key={key.id}
+                apiKey={key}
+                onRoll={handleRoll}
+                onRevoke={handleRevoke}
+                className={cn("animate-glass-card-in", `stagger-${index + 1}`)}
+              />
+            ))}
+          </div>
+        )}
+
+        {inactiveKeys.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-sm font-medium text-[var(--muted)] uppercase tracking-wide">
+              {t("inactiveTitle")}
+            </h2>
+            {inactiveKeys.map((key, index) => (
+              <ApiKeyStrip
+                key={key.id}
+                apiKey={key}
+                onRoll={handleRoll}
+                onRevoke={handleRevoke}
+                className={cn(
+                  "animate-glass-card-in",
+                  `stagger-${activeKeys.length + index + 1}`
+                )}
+              />
+            ))}
+          </div>
+        )}
       </div>
-
-      {isLoading ? (
-        <ApiKeysSkeleton />
-      ) : error ? (
-        <ErrorState onRetry={refresh} />
-      ) : showEmpty ? (
-        <EmptyState onMint={openDrawer} />
-      ) : (
-        <div className="space-y-8">
-          {activeKeys.length > 0 && (
-            <div className="space-y-4">
-              {activeKeys.map((key, index) => (
-                <ApiKeyStrip
-                  key={key.id}
-                  apiKey={key}
-                  onRoll={handleRoll}
-                  onRevoke={handleRevoke}
-                  className={cn("animate-glass-card-in", `stagger-${index + 1}`)}
-                />
-              ))}
-            </div>
-          )}
-
-          {inactiveKeys.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-sm font-medium text-[var(--muted)] uppercase tracking-wide">
-                {t("inactiveTitle")}
-              </h2>
-              {inactiveKeys.map((key, index) => (
-                <ApiKeyStrip
-                  key={key.id}
-                  apiKey={key}
-                  onRoll={handleRoll}
-                  onRevoke={handleRevoke}
-                  className={cn(
-                    "animate-glass-card-in",
-                    `stagger-${activeKeys.length + index + 1}`
-                  )}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       <MintKeyDrawer
         open={open}
@@ -176,10 +171,11 @@ export function ApiKeysPageClient() {
         secret={newKeySecret}
         keyName={newKeyName}
       />
-    </Container>
+    </>
   )
 }
 
+// Sub-components can stay in the same file for now as they are tightly coupled
 function EmptyState({ onMint }: { onMint: () => void }) {
   const t = useTranslations("apiKeys.empty")
 
@@ -243,5 +239,3 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
     </GlassCard>
   )
 }
-
-export default ApiKeysPageClient

@@ -3,14 +3,9 @@
 import { useCallback, useMemo } from "react"
 import useSWR from "swr"
 import useSWRMutation, { type SWRMutationResponse } from "swr/mutation"
+import { usePlatform } from "@/lib/platform/provider"
 
 import {
-  fetchApiKeys,
-  createApiKey,
-  rollApiKey,
-  revokeApiKey,
-  deleteApiKey,
-  updateApiKey,
   type ApiKey,
   type ApiKeyListResponse,
   type CreateApiKeyRequest,
@@ -50,6 +45,7 @@ export function useApiKeyService({
   pageSize = DEFAULT_PAGE_SIZE,
 }: { page?: number; pageSize?: number } = {}): UseApiKeyServiceResult {
   const { isAuthenticated } = useAuthStore()
+  const { apiKey } = usePlatform()
 
   const params = useMemo(
     () => ({
@@ -61,31 +57,33 @@ export function useApiKeyService({
 
   const shouldFetch = isAuthenticated ? [API_KEYS_QUERY_KEY, params] : null
 
+  // Use platform service for fetching
   const {
     data,
     error,
     isLoading,
     isValidating,
     mutate,
-  } = useSWR<ApiKeyListResponse, ApiError>(shouldFetch, () => fetchApiKeys(params), {
+  } = useSWR<ApiKeyListResponse, ApiError>(shouldFetch, () => apiKey.list(params), {
     keepPreviousData: true,
   })
 
+  // Use platform service for mutations
   const createMutation = useSWRMutation(API_KEYS_QUERY_KEY, (_key, { arg }: { arg: CreateApiKeyRequest }) =>
-    createApiKey(arg)
+    apiKey.create(arg)
   )
   const rollMutation = useSWRMutation(`${API_KEYS_QUERY_KEY}/roll`, (_key, { arg }: { arg: string }) =>
-    rollApiKey(arg)
+    apiKey.roll(arg)
   )
   const revokeMutation = useSWRMutation(`${API_KEYS_QUERY_KEY}/revoke`, (_key, { arg }: { arg: string }) =>
-    revokeApiKey(arg)
+    apiKey.revoke(arg)
   )
   const updateMutation = useSWRMutation(
     `${API_KEYS_QUERY_KEY}/update`,
-    (_key, { arg }: { arg: UpdateArgs }) => updateApiKey(arg.id, arg.payload)
+    (_key, { arg }: { arg: UpdateArgs }) => apiKey.update(arg.id, arg.payload)
   )
   const deleteMutation = useSWRMutation(`${API_KEYS_QUERY_KEY}/delete`, (_key, { arg }: { arg: string }) =>
-    deleteApiKey(arg)
+    apiKey.delete(arg)
   )
 
   const refresh = useCallback(() => {
@@ -93,13 +91,13 @@ export function useApiKeyService({
   }, [mutate])
 
   const appendKey = useCallback(
-    async (apiKey: ApiKey) =>
+    async (newKey: ApiKey) =>
       mutate(
         (prev) => {
           if (!prev) {
-            return { items: [apiKey], total: 1, page, page_size: pageSize }
+            return { items: [newKey], total: 1, page, page_size: pageSize }
           }
-          return { ...prev, items: [apiKey, ...prev.items], total: prev.total + 1 }
+          return { ...prev, items: [newKey, ...prev.items], total: prev.total + 1 }
         },
         false
       ),
@@ -107,13 +105,13 @@ export function useApiKeyService({
   )
 
   const replaceKey = useCallback(
-    async (apiKey: ApiKey) =>
+    async (updatedKey: ApiKey) =>
       mutate(
         (prev) => {
           if (!prev) return prev
           return {
             ...prev,
-            items: prev.items.map((item) => (item.id === apiKey.id ? apiKey : item)),
+            items: prev.items.map((item) => (item.id === updatedKey.id ? updatedKey : item)),
           }
         },
         false

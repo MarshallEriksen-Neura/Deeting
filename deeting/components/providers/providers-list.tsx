@@ -1,16 +1,19 @@
 "use client"
 
 import * as React from "react"
-import { Plus } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 
-import { GlassButton } from "@/components/ui/glass-button"
 import { useProviderHub, useProviderInstances, useUpdateProviderInstance, useDeleteProviderInstance } from "@/hooks/use-providers"
 import { ProviderHubResponse, ProviderInstanceResponse } from "@/lib/api/providers"
 import ProviderInstanceRow from "./provider-instance-row"
 import ConnectProviderDrawer from "./connect-provider-drawer"
+import { GlassCard, GlassCardContent } from "@/components/ui/glass-card"
+import { Skeleton } from "@/components/ui/skeleton"
+import { RefreshCw } from "lucide-react"
+import { GlassButton } from "@/components/ui/glass-button"
 
+// ... (keep helper functions mapFromHub, mapFromInstanceOnly, buildItems)
 const mapFromHub = (preset: ProviderHubResponse["providers"][number], inst: any) => ({
   id: inst.id as string,
   name: inst.name as string,
@@ -66,13 +69,19 @@ function buildItems(hub?: ProviderHubResponse, instances: ProviderInstanceRespon
   })
 }
 
-export function ProvidersManager() {
+export function ProvidersList() {
   const router = useRouter()
   const t = useTranslations("providers.manager")
+  
+  // Data Fetching
   const { data, isLoading, isError, error, mutate } = useProviderHub({ include_public: true })
   const { instances, mutate: mutateInstances } = useProviderInstances({ include_public: true })
+  
+  // Mutations
   const { update } = useUpdateProviderInstance()
   const { remove } = useDeleteProviderInstance()
+  
+  // Local UI State
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<string | null>(null)
 
@@ -97,32 +106,43 @@ export function ProvidersManager() {
     router.push(`/dashboard/user/providers/${id}/models`)
   }
 
-  return (
-    <div className="space-y-8 p-6 lg:p-10 max-w-[1600px] mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-[var(--foreground)]">
-            {t("title")}
-          </h1>
-          <p className="text-[var(--muted)]">
-            {t("subtitle")}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <GlassButton 
-            variant="outline" 
-            onClick={() => router.push("/dashboard/user/providers/market")}
-          >
-            <Plus className="mr-2 size-4" />
-            {t("connect")}
-          </GlassButton>
-        </div>
-      </div>
+  const handleRetry = () => {
+    mutate()
+    mutateInstances()
+  }
 
+  if (isLoading) {
+    return <ProvidersSkeleton />
+  }
+
+  if (isError) {
+    return (
+      <GlassCard className="py-12 text-center">
+        <GlassCardContent className="flex flex-col items-center gap-4">
+          <div className="flex size-12 items-center justify-center rounded-full bg-red-500/10">
+            <RefreshCw className="size-5 text-red-500" />
+          </div>
+          <p className="text-sm text-[var(--muted)]">{error?.message || t("error")}</p>
+          <GlassButton onClick={handleRetry} variant="secondary">
+            <RefreshCw className="size-4" />
+            Retry
+          </GlassButton>
+        </GlassCardContent>
+      </GlassCard>
+    )
+  }
+
+  if (!items.length) {
+    return (
+      <div className="py-12 text-center text-[var(--muted)]">
+        {t("empty")}
+      </div>
+    )
+  }
+
+  return (
+    <>
       <div className="grid gap-4">
-        {isLoading && <div className="text-sm text-[var(--muted)]">{t("loading")}</div>}
-        {isError && <div className="text-sm text-red-400">{error?.message || t("error")}</div>}
-        {!isLoading && !items.length && <div className="text-sm text-[var(--muted)]">{t("empty")}</div>}
         {items.map((item, idx) => (
           <ProviderInstanceRow
             key={item.id}
@@ -169,6 +189,25 @@ export function ProvidersManager() {
           await Promise.all([mutate(), mutateInstances()])
         }}
       />
+    </>
+  )
+}
+
+function ProvidersSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[1, 2, 3].map((i) => (
+        <GlassCard key={i} className="p-4">
+          <div className="flex items-center gap-4">
+             <Skeleton className="size-10 rounded-xl" />
+             <div className="space-y-2 flex-1">
+               <Skeleton className="h-4 w-32" />
+               <Skeleton className="h-3 w-48" />
+             </div>
+             <Skeleton className="h-8 w-20" />
+          </div>
+        </GlassCard>
+      ))}
     </div>
   )
 }

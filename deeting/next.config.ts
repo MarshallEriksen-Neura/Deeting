@@ -4,7 +4,6 @@ import nextIntlPlugin from "next-intl/plugin";
 const withNextIntl = nextIntlPlugin("./i18n/request.ts");
 
 const nextConfig: NextConfig = {
-  output: "export",
   images: {
     unoptimized: true,
   },
