@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils"
 const SIDEBAR_COOKIE_NAME = "sidebar:state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "260px"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "72px"
 
 type SidebarContext = {
@@ -137,20 +136,24 @@ const SidebarInset = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"main">
 >(({ className, ...props }, ref) => {
+  const { state, isMobile } = useSidebar()
+  const marginLeft = isMobile ? "0px" : (state === "collapsed" ? "var(--sidebar-width-icon)" : "var(--sidebar-width)")
+
   return (
     <main
       ref={ref}
       className={cn(
         "relative flex min-h-svh flex-1 flex-col transition-[margin] duration-300 ease-linear",
-        "peer-data-[state=collapsed]/sidebar-wrapper:ml-[--sidebar-width-icon]",
-        "peer-data-[state=expanded]/sidebar-wrapper:ml-[--sidebar-width]",
         "ml-0 md:peer-data-[variant=floating]:ml-0", // If we were using floating variant
-        "md:peer-data-[variant=inset]:ml-0 md:peer-data-[state=collapsed]/sidebar-wrapper:ml-0",
-         // Mobile behavior handled differently or by media queries typically
-         // For now, on mobile, we don't push content
-         "max-md:ml-0",
+        "md:peer-data-[variant=inset]:ml-0",
+        "max-md:ml-0",
         className
       )}
+      style={{
+        marginLeft,
+        width: isMobile ? "100%" : `calc(100% - ${marginLeft})`,
+        maxWidth: "100%",
+      }}
       {...props}
     />
   )

@@ -37,7 +37,48 @@ import { Switch } from "@/components/ui/switch"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { getIconComponent } from "@/lib/constants/provider-icons"
 
-// ... (keep existing types)
+export interface ProviderPresetConfig {
+  slug: string
+  name: string
+  type: "system" | "custom"
+  protocol?: string | null
+  default_endpoint?: string | null
+  brand_color?: string | null
+  icon_key?: string | null
+}
+
+interface ConnectProviderInitialValues {
+  name?: string
+  description?: string | null
+  base_url?: string
+  api_key?: string | null
+  is_enabled?: boolean
+  icon?: string | null
+  theme_color?: string | null
+  resource_name?: string | null
+  deployment_name?: string | null
+  api_version?: string | null
+  project_id?: string | null
+  region?: string | null
+  protocol?: string | null
+}
+
+export interface ConnectProviderDrawerProps {
+  isOpen: boolean
+  onClose: () => void
+  preset: ProviderPresetConfig | null
+  mode?: "create" | "edit"
+  instanceId?: string | null
+  initialValues?: ConnectProviderInitialValues
+  onSave: (payload: {
+    baseUrl: string
+    apiKey: string
+    protocol: string
+    name: string
+    description: string
+    is_enabled: boolean
+  }) => void | Promise<void>
+}
 
 export function ConnectProviderDrawer({ 
   isOpen, 
@@ -54,7 +95,50 @@ export function ConnectProviderDrawer({
   const { update } = useUpdateProviderInstance()
   const { model: modelPlatform } = usePlatform()
 
-  // ... (keep existing state)
+  const [presetSlug, setPresetSlug] = React.useState(preset?.slug || "custom")
+  const [name, setName] = React.useState(initialValues?.name || preset?.name || "")
+  const [description, setDescription] = React.useState(initialValues?.description || "")
+  const [baseUrl, setBaseUrl] = React.useState(initialValues?.base_url || preset?.default_endpoint || "")
+  const [apiKey, setApiKey] = React.useState(initialValues?.api_key || "")
+  const [protocol, setProtocol] = React.useState(initialValues?.protocol || preset?.protocol || "openai")
+  const [icon, setIcon] = React.useState(initialValues?.icon || preset?.icon_key || "lucide:server")
+  const [customIconUrl, setCustomIconUrl] = React.useState("")
+  const [brandColor, setBrandColor] = React.useState(initialValues?.theme_color || preset?.brand_color || "#3b82f6")
+  const [enabled, setEnabled] = React.useState(initialValues?.is_enabled ?? true)
+  const [connectionStatus, setConnectionStatus] = React.useState<"idle" | "testing" | "success" | "error">("idle")
+  const [logs, setLogs] = React.useState<string[]>([])
+  const [saving, setSaving] = React.useState(false)
+  const [resourceName, setResourceName] = React.useState(initialValues?.resource_name || "")
+  const [deploymentName, setDeploymentName] = React.useState(initialValues?.deployment_name || "")
+  const [apiVersion, setApiVersion] = React.useState(initialValues?.api_version || "")
+  const [projectId, setProjectId] = React.useState(initialValues?.project_id || "")
+  const [region, setRegion] = React.useState(initialValues?.region || "")
+
+  React.useEffect(() => {
+    if (!isOpen) return
+    setPresetSlug(preset?.slug || "custom")
+    setName(initialValues?.name || preset?.name || "")
+    setDescription(initialValues?.description || "")
+    setBaseUrl(initialValues?.base_url || preset?.default_endpoint || "")
+    setApiKey(initialValues?.api_key || "")
+    setProtocol(initialValues?.protocol || preset?.protocol || "openai")
+    setIcon(initialValues?.icon || preset?.icon_key || "lucide:server")
+    setCustomIconUrl("")
+    setBrandColor(initialValues?.theme_color || preset?.brand_color || "#3b82f6")
+    setEnabled(initialValues?.is_enabled ?? true)
+    setResourceName(initialValues?.resource_name || "")
+    setDeploymentName(initialValues?.deployment_name || "")
+    setApiVersion(initialValues?.api_version || "")
+    setProjectId(initialValues?.project_id || "")
+    setRegion(initialValues?.region || "")
+    setLogs([])
+    setConnectionStatus("idle")
+  }, [isOpen, preset, initialValues])
+
+  const isSystem = preset?.type === "system"
+  const normalizedSlug = (presetSlug || "").toLowerCase()
+  const resolvedIconId = (customIconUrl || icon || preset?.icon_key || "lucide:server").trim()
+  const HeaderIcon = React.useMemo(() => getIconComponent(resolvedIconId), [resolvedIconId])
 
   const handleTestConnection = async () => {
     // Check if it's a local provider and if we need to intercept
@@ -125,7 +209,7 @@ export function ConnectProviderDrawer({
       setLogs([`> ${t("drawer.baseUrlRequired")}`])
       return
     }
-    const resolvedIcon = (customIconUrl || icon || preset.icon_key || "").trim() || null
+    const resolvedIcon = (customIconUrl || icon || preset?.icon_key || "").trim() || null
     setSaving(true)
     setLogs([])
     try {
@@ -175,10 +259,7 @@ export function ConnectProviderDrawer({
   }
 
   // Visual Styles based on mode
-  const themeColor = brandColor || preset.brand_color
-  const glowStyle = isSystem 
-    ? { boxShadow: `0 0 40px -10px ${themeColor}40` }
-    : { boxShadow: `0 0 40px -10px rgba(59, 130, 246, 0.2)` } // Blue neon for custom
+  const themeColor = brandColor || preset?.brand_color || "#3b82f6"
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -187,7 +268,7 @@ export function ConnectProviderDrawer({
       >
         <VisuallyHidden>
           <SheetTitle>
-            {isSystem ? t("drawer.titleSystem", { name: preset.name }) : t("drawer.titleCustom")}
+            {isSystem ? t("drawer.titleSystem", { name: preset?.name ?? t("drawer.titleCustom") }) : t("drawer.titleCustom")}
           </SheetTitle>
           <SheetDescription>
             {t("market.description")}
@@ -251,7 +332,7 @@ export function ConnectProviderDrawer({
 
               <div>
                 <h2 className="text-2xl font-bold tracking-tight">
-                {mode === "edit" ? name : (isSystem ? t("drawer.titleSystem", { name: preset.name }) : t("drawer.titleCustom"))}
+                {mode === "edit" ? name : (isSystem ? t("drawer.titleSystem", { name: preset?.name ?? t("drawer.titleCustom") }) : t("drawer.titleCustom"))}
                 </h2>
                 <div className="flex items-center justify-center gap-2 mt-2">
                   <Badge 

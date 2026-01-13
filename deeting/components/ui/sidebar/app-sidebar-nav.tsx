@@ -52,6 +52,30 @@ const sidebarItemVariants = cva(
   }
 )
 
+const mobileNavItemVariants = cva(
+  [
+    "flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2",
+    "text-sm font-medium",
+    "transition-all duration-200 ease-out",
+  ],
+  {
+    variants: {
+      active: {
+        true: [
+          "bg-[var(--primary)]/10 text-[var(--primary)]",
+        ],
+        false: [
+          "text-[var(--muted)] hover:text-[var(--foreground)]",
+          "hover:bg-[var(--foreground)]/5",
+        ],
+      },
+    },
+    defaultVariants: {
+      active: false,
+    },
+  }
+)
+
 // ============================================================================
 // Components
 // ============================================================================
@@ -61,8 +85,38 @@ interface AppSidebarNavProps {
 }
 
 export function AppSidebarNav({ groups }: AppSidebarNavProps) {
-  const { state } = useSidebar()
+  const { state, isMobile } = useSidebar()
   const isCollapsed = state === "collapsed"
+  const t = useTranslations()
+
+  const translate = React.useCallback(
+    (key: string) => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return t(key as any)
+      } catch {
+        return key.split(".").pop() || key
+      }
+    },
+    [t]
+  )
+
+  if (isMobile) {
+    const allItems = groups.flatMap((group) => group.items)
+    return (
+      <div className="flex items-center gap-1">
+        {allItems.map((item) => (
+          <SidebarItem
+            key={item.id}
+            item={item}
+            isCollapsed={false}
+            translate={translate}
+            isMobile={true}
+          />
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className={cn("flex flex-col gap-4", isCollapsed && "gap-2")}>
@@ -89,6 +143,7 @@ function SidebarGroup({ group, isCollapsed = false }: SidebarGroupProps) {
   const translate = React.useCallback(
     (key: string) => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return t(key as any)
       } catch {
         return key.split(".").pop() || key
@@ -133,13 +188,32 @@ interface SidebarItemProps {
   item: NavItem
   isCollapsed?: boolean
   translate: (key: string) => string
+  isMobile?: boolean
 }
 
-function SidebarItem({ item, isCollapsed = false, translate }: SidebarItemProps) {
+function SidebarItem({ item, isCollapsed = false, translate, isMobile = false }: SidebarItemProps) {
   const pathname = usePathname()
   const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
   const Icon = navIconMap[item.icon] ?? defaultNavIcon
   const label = translate(item.label)
+
+  if (isMobile) {
+    return (
+      <Link
+        href={item.href}
+        className={cn(mobileNavItemVariants({ active: isActive }))}
+        aria-current={isActive ? "page" : undefined}
+      >
+        <Icon className="size-4 shrink-0" />
+        <span>{label}</span>
+        {item.badge && item.badge > 0 && (
+          <span className="flex size-4 items-center justify-center rounded-full bg-[var(--primary)] text-[9px] font-semibold text-white">
+            {item.badge > 99 ? "99+" : item.badge}
+          </span>
+        )}
+      </Link>
+    )
+  }
 
   const content = (
     <Link

@@ -66,8 +66,13 @@ const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === 'true'
 // In Tauri dev, we point to localhost:8000 (Python).
 // In Tauri prod, this should point to your real production API.
 // For now, we assume localhost:8000 for desktop dev.
-const desktopBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
-const webBaseURL = "/api"
+const envApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL
+
+const desktopBaseURL = envApiUrl || "http://localhost:8000"
+// If env var is set, use it. Otherwise use empty string to allow relative paths like /api/v1/...
+// which will work with Next.js rewrites if configured, or just hit the current domain.
+// Previous value "/api" caused double prefix (/api/api/v1/...) because our API definitions include /api.
+const webBaseURL = envApiUrl || ""
 
 const apiBaseURL = isTauri ? desktopBaseURL : webBaseURL
 

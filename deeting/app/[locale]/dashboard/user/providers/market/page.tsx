@@ -4,7 +4,7 @@ import { Globe } from "lucide-react"
 
 import { Container } from "@/components/ui/container"
 import { PageHeader } from "@/components/ui/page-header/page-header"
-import { ProviderMarketManager } from "@/components/providers/market/provider-market-manager"
+import { DashboardMarketClient } from "@/components/market/dashboard-market-client"
 
 export default async function ProviderMarketPage({
   params,
@@ -21,13 +21,13 @@ function ProviderMarketPageContent() {
   const t = useTranslations("providers.market")
 
   return (
-    <Container as="main" className="py-6 md:py-8" gutter="md">
+    <Container as="main" className="py-6 md:py-8" gutter="md" size="full">
       <PageHeader
         title={t("title")}
         description={t("description")}
         icon={Globe}
       />
-      <ProviderMarketManager />
+      <DashboardMarketClient />
     </Container>
   )
 }

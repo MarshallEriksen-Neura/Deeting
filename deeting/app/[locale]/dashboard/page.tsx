@@ -29,7 +29,12 @@ function DashboardContent() {
   const tStats = useTranslations("stats")
 
   return (
-    <Container as="main" className="py-6 md:py-8" gutter="md">
+    <Container
+      as="main"
+      gutter="md"
+      size="full"
+      className="py-6 md:py-8 !mx-0 !max-w-none"
+    >
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-[var(--foreground)] md:text-3xl">

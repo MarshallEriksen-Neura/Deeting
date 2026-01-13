@@ -142,7 +142,7 @@ export function ProvidersList() {
 
   return (
     <>
-      <div className="grid gap-4">
+      <div className="grid w-full grid-cols-1 gap-4">
         {items.map((item, idx) => (
           <ProviderInstanceRow
             key={item.id}

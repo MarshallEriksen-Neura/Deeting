@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useSidebar } from "./sidebar-context"
 import { cn } from "@/lib/utils"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { GlassButton } from "@/components/ui/glass-button"
 import { PanelLeft, PanelLeftClose } from "lucide-react"
 
@@ -28,7 +27,7 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
     },
     ref
   ) => {
-    const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+    const { isMobile, state } = useSidebar()
 
     if (collapsible === "none") {
       return (
@@ -46,31 +45,21 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
     }
 
     if (isMobile) {
-      // Mobile Drawer Implementation
+      // Mobile Horizontal Bar Implementation
       return (
-        <>
-           {/* Overlay */}
-           {openMobile && (
-            <div 
-              className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" 
-              onClick={() => setOpenMobile(false)}
-            />
+        <div
+          className={cn(
+            "sticky z-40 w-full bg-[var(--surface)]/80 backdrop-blur-xl border-b border-[var(--border)]/50 transition-all",
+            className
           )}
-          <div
-            className={cn(
-              "fixed inset-y-0 z-50 h-full w-[85%] max-w-[300px] flex-col bg-[var(--surface)] shadow-2xl transition-transform duration-300 ease-in-out",
-              side === "left" 
-                ? "left-0 border-r border-white/10" 
-                : "right-0 border-l border-white/10",
-              openMobile ? "translate-x-0" : (side === "left" ? "-translate-x-full" : "translate-x-full"),
-              className
-            )}
-            ref={ref}
-            {...props}
-          >
+          style={{
+            top: HEADER_HEIGHT,
+          }}
+          ref={ref}
+          {...props}
+        >
              {children}
-          </div>
-        </>
+        </div>
       )
     }
 
@@ -107,10 +96,16 @@ const SidebarContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
 >(({ className, ...props }, ref) => {
+  const { isMobile } = useSidebar()
+
   return (
     <div
       ref={ref}
-      className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden", className)}
+      className={cn(
+        "flex min-h-0 flex-1 gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        isMobile ? "flex-row items-center px-4 py-2 overflow-x-auto scrollbar-hide" : "flex-col",
+        className
+      )}
       {...props}
     />
   )
@@ -135,6 +130,12 @@ const SidebarFooter = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
 >(({ className, ...props }, ref) => {
+  const { isMobile } = useSidebar()
+
+  if (isMobile) {
+    return null
+  }
+
   return (
     <div
       ref={ref}

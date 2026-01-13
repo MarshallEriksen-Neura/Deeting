@@ -22,7 +22,7 @@ function ProvidersPageContent() {
   const t = useTranslations("providers.manager")
 
   return (
-    <Container as="main" className="py-6 md:py-8" gutter="md">
+    <Container as="main" className="py-6 md:py-8" gutter="md" size="full">
       <PageHeader
         title={t("title")}
         description={t("subtitle")}

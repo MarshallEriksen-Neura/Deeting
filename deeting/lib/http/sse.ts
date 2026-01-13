@@ -101,7 +101,7 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
 }
 
 function parseEventChunk(chunk: string): SSEMessage<string> | null {
-  let dataLines: string[] = []
+  const dataLines: string[] = []
   const message: SSEMessage<string> = { data: "" }
 
   for (const rawLine of chunk.split("\n")) {
