@@ -31,19 +31,14 @@ export default function ProviderCard({ provider, index, onSelect }: ProviderCard
   const rgb = React.useMemo(() => hexToRgb(themeColor), [themeColor, hexToRgb])
   const shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4)`
 
-  // Default icon based on category
-  const getDefaultIcon = React.useCallback((category: string) => {
-    const lower = (category || "").toLowerCase()
-    if (lower.includes("cloud")) return Globe
-    if (lower.includes("local")) return Terminal
-    if (lower.includes("custom")) return Box
-    return Cpu
-  }, [])
-
-  const DefaultIconComponent = React.useMemo(() => 
-    getDefaultIcon(provider.category), 
-    [provider.category, getDefaultIcon]
-  )
+  const category = (provider.category || "").toLowerCase()
+  const DefaultIcon = category.includes("cloud")
+    ? Globe
+    : category.includes("local")
+    ? Terminal
+    : category.includes("custom")
+    ? Box
+    : Cpu
 
   return (
     <motion.div
@@ -77,7 +72,7 @@ export default function ProviderCard({ provider, index, onSelect }: ProviderCard
               {provider.icon ? (
                 <Icon icon={provider.icon} className="size-8" />
               ) : (
-                <DefaultIconComponent className="size-8" />
+                <DefaultIcon className="size-8" />
               )}
             </div>
             

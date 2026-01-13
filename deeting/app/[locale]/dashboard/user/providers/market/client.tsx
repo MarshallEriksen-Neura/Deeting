@@ -15,10 +15,7 @@ import dynamic from "next/dynamic"
 import type { ProviderPresetConfig } from "@/components/providers/connect-provider-drawer"
 
 const ConnectProviderDrawer = dynamic(
-  () =>
-    import("@/components/providers/connect-provider-drawer").then(
-      (mod) => mod.ConnectProviderDrawer
-    ),
+  () => import("@/components/providers/connect-provider-drawer"),
   { ssr: false }
 )
 

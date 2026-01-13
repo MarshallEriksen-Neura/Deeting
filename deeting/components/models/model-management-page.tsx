@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { motion } from "framer-motion"
-import { ArrowLeft, Settings } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 import { cn } from "@/lib/utils"
@@ -18,6 +18,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { useProviderInstances, useProviderModels } from "@/hooks/use-providers"
+import { ProviderInstanceResponse, ProviderModelResponse } from "@/lib/api/providers"
 
 import { InstanceDashboard } from "./instance-dashboard"
 import { FilterLens } from "./filter-lens"
@@ -27,11 +29,86 @@ import { ModelEmptyState } from "./empty-state"
 import type {
   ProviderInstance,
   ProviderModel,
+  ProviderStatus,
+  ModelCapability,
   ModelFilterState,
   SyncState,
   TestMessage,
 } from "./types"
 import { getPriceTier } from "./types"
+
+const ALLOWED_CAPS = new Set<ModelCapability>(["chat", "vision", "audio", "embedding", "code", "reasoning"])
+
+const asNumber = (v: unknown, fallback = 0): number => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function mapInstance(raw: ProviderInstanceResponse, modelCount: number): ProviderInstance {
+  const status: ProviderStatus = raw.is_enabled === false
+    ? "offline"
+    : raw.health_status === "healthy"
+      ? "online"
+      : "degraded"
+
+  return {
+    id: raw.id,
+    name: raw.name,
+    provider: raw.preset_slug,
+    provider_display_name: raw.preset_slug,
+    base_url: raw.base_url,
+    status,
+    latency: raw.latency_ms ?? 0,
+    last_synced_at: null,
+    model_count: modelCount,
+    theme_color: (raw as any).theme_color || "#10a37f",
+    is_enabled: raw.is_enabled,
+    health_check_interval: undefined,
+  }
+}
+
+function mapModel(raw: ProviderModelResponse): ProviderModel {
+  const cap = (raw.capability || "chat").toLowerCase()
+  const capabilities: ModelCapability[] = ALLOWED_CAPS.has(cap as ModelCapability) ? [cap as ModelCapability] : ["chat"]
+
+  const contextWindow =
+    asNumber(raw.tokenizer_config?.context_window) ||
+    asNumber(raw.tokenizer_config?.max_input_tokens) ||
+    asNumber(raw.extra_meta?.context_window)
+
+  const pricingInput =
+    asNumber(raw.pricing_config?.input) ||
+    asNumber(raw.pricing_config?.input_per_1k_tokens) ||
+    asNumber(raw.pricing_config?.prompt)
+
+  const pricingOutput =
+    asNumber(raw.pricing_config?.output) ||
+    asNumber(raw.pricing_config?.output_per_1k_tokens) ||
+    asNumber(raw.pricing_config?.completion)
+
+  const updatedAt = raw.updated_at || raw.synced_at || new Date().toISOString()
+
+  return {
+    id: raw.unified_model_id || raw.model_id,
+    object: "model",
+    display_name: raw.display_name || raw.model_id,
+    capabilities,
+    context_window: contextWindow,
+    pricing: {
+      input: pricingInput,
+      output: pricingOutput,
+    },
+    is_active: raw.is_active,
+    updated_at: updatedAt,
+    created_at: raw.created_at || undefined,
+    family: raw.extra_meta?.family,
+    version: raw.extra_meta?.version,
+    max_output_tokens: asNumber(raw.extra_meta?.max_output_tokens),
+    supports_functions: !!raw.extra_meta?.supports_functions,
+    supports_json_mode: !!raw.extra_meta?.supports_json_mode,
+    deprecated_at: raw.extra_meta?.deprecated_at,
+  }
+}
 
 /**
  * ModelManagementPage - The Model Inventory / Registry Page
@@ -229,18 +306,44 @@ export function ModelManagementPage({
 }: ModelManagementPageProps) {
   const router = useRouter()
 
+  const { instances, isLoading: instancesLoading } = useProviderInstances({ include_public: true })
+  const { models: rawModels, isLoading: modelsLoading, isError: modelsError, error: modelsErrObj, mutate: refreshModels } =
+    useProviderModels(instanceId ?? null)
+
+  const rawInstance = React.useMemo(
+    () => instances.find((it) => it.id === instanceId),
+    [instances, instanceId]
+  )
+  const [models, setModels] = React.useState<ProviderModel[]>([])
   // State
-  const [instance] = React.useState<ProviderInstance>(MOCK_INSTANCE)
-  const [models, setModels] = React.useState<ProviderModel[]>(MOCK_MODELS)
   const [filters, setFilters] = React.useState<ModelFilterState>(DEFAULT_FILTERS)
   const [syncState, setSyncState] = React.useState<SyncState>({
     is_syncing: false,
     progress: 0,
-    last_sync: MOCK_INSTANCE.last_synced_at || null,
+    last_sync: null,
     error: null,
   })
   const [testModel, setTestModel] = React.useState<ProviderModel | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false)
+
+  const instance = React.useMemo<ProviderInstance | null>(() => {
+    if (!rawInstance) return null
+    return mapInstance(rawInstance, rawModels?.length || models.length || 0)
+  }, [rawInstance, rawModels, models.length])
+
+  // Map models data when fetched
+  React.useEffect(() => {
+    if (!rawModels) return
+    const mapped = rawModels.map(mapModel)
+    setModels(mapped)
+    const last = rawModels.reduce<string | null>((acc, m) => {
+      const ts = m.synced_at || m.updated_at || null
+      if (!ts) return acc
+      if (!acc || ts > acc) return ts
+      return acc
+    }, null)
+    setSyncState((prev) => ({ ...prev, last_sync: last }))
+  }, [rawModels])
 
   // Filter models based on current filter state
   const filteredModels = React.useMemo(() => {
@@ -281,36 +384,31 @@ export function ModelManagementPage({
 
   // Handlers
   const handleSync = async () => {
-    setSyncState((prev) => ({ ...prev, is_syncing: true, progress: 0, error: null }))
-
-    // Simulate sync progress
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      setSyncState((prev) => ({ ...prev, progress: i }))
+    if (!instanceId) return
+    setSyncState((prev) => ({ ...prev, is_syncing: true, progress: 10, error: null }))
+    try {
+      await refreshModels()
+      setSyncState((prev) => ({
+        ...prev,
+        is_syncing: false,
+        progress: 100,
+        last_sync: new Date().toISOString(),
+      }))
+    } catch (err: any) {
+      setSyncState((prev) => ({
+        ...prev,
+        is_syncing: false,
+        error: err?.message || "sync failed",
+      }))
     }
-
-    setSyncState({
-      is_syncing: false,
-      progress: 100,
-      last_sync: new Date().toISOString(),
-      error: null,
-    })
   }
 
   const handleToggleActive = (model: ProviderModel, active: boolean) => {
-    setModels((prev) =>
-      prev.map((m) =>
-        m.id === model.id ? { ...m, is_active: active } : m
-      )
-    )
+    setModels((prev) => prev.map((m) => (m.id === model.id ? { ...m, is_active: active } : m)))
   }
 
   const handleUpdateAlias = (model: ProviderModel, alias: string) => {
-    setModels((prev) =>
-      prev.map((m) =>
-        m.id === model.id ? { ...m, display_name: alias || undefined } : m
-      )
-    )
+    setModels((prev) => prev.map((m) => (m.id === model.id ? { ...m, display_name: alias || undefined } : m)))
   }
 
   const handleTestMessage = async (message: string): Promise<TestMessage> => {
@@ -326,6 +424,34 @@ export function ModelManagementPage({
       latency: Math.floor(500 + Math.random() * 1000),
       tokens: Math.floor(50 + Math.random() * 100),
     }
+  }
+
+  if (!instanceId) {
+    return null
+  }
+
+  if (!rawInstance && !instancesLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-400">
+        Provider instance not found.
+      </div>
+    )
+  }
+
+  if (instancesLoading || modelsLoading || !instance) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-[var(--muted)]">
+        Loading models...
+      </div>
+    )
+  }
+
+  if (modelsError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-400">
+        {modelsErrObj?.message || "Failed to load models"}
+      </div>
+    )
   }
 
   const isEmpty = models.length === 0

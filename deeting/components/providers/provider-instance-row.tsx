@@ -47,10 +47,11 @@ interface Props {
   index: number
   onToggle: (id: string, enabled: boolean) => Promise<void> | void
   onDelete: (id: string) => Promise<void> | void
+  onViewModels?: (id: string) => void
   onEdit?: (id: string) => void
 }
 
-export default function ProviderInstanceRow({ data, index, onToggle, onDelete, onEdit }: Props) {
+export default function ProviderInstanceRow({ data, index, onToggle, onDelete, onViewModels, onEdit }: Props) {
   const t = useTranslations("providers.list")
   const [history, setHistory] = React.useState<number[]>(data.sparkline || [])
   const [confirmOpen, setConfirmOpen] = React.useState(false)
@@ -75,12 +76,14 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
     return "#ef4444"
   }, [data.latency_ms, isOffline])
 
-  const ProviderIcon = () => {
-    const category = (data.category || "").toLowerCase()
-    if (category.includes("local")) return <Server className="size-5" />
-    if (category.includes("custom")) return <Cpu className="size-5" />
-    return <Cloud className="size-5" />
-  }
+  const category = (data.category || "").toLowerCase()
+  const iconElement = category.includes("local") ? (
+    <Server className="size-5" />
+  ) : category.includes("custom") ? (
+    <Cpu className="size-5" />
+  ) : (
+    <Cloud className="size-5" />
+  )
 
   return (
     <motion.div
@@ -99,7 +102,7 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
           {/* Identity */}
           <div className="flex items-center gap-4 min-w-[240px]">
             <div className={`relative flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 shadow-inner ${isOffline ? "text-gray-400" : "text-[var(--foreground)]"}`}>
-              <ProviderIcon />
+              {iconElement}
               {!isOffline && (
                 <span className="absolute -top-1 -right-1 flex size-3">
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75`} style={{ backgroundColor: latencyColor }}></span>
@@ -163,6 +166,12 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                     <Settings2 className="mr-2 size-4" />
                     {isEnabled ? t("actions.disable") : t("actions.enable")}
                   </DropdownMenuItem>
+                  {onViewModels && (
+                    <DropdownMenuItem onClick={() => onViewModels(data.id)}>
+                      <Server className="mr-2 size-4" />
+                      {t("actions.models")}
+                    </DropdownMenuItem>
+                  )}
                   {onEdit && (
                     <DropdownMenuItem onClick={() => onEdit(data.id)}>
                       <Settings2 className="mr-2 size-4" />

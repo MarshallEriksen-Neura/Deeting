@@ -35,6 +35,14 @@ export function useAuthService() {
   const { setSession, clearSession } = useAuthStore()
   const { lastTokenPair, setTokenPair } = useAuthServiceStore()
 
+  const applySession = useCallback(
+    (tokens: TokenPair) => {
+      setTokenPair(tokens)
+      setSession({ accessToken: tokens.access_token, tokenType: tokens.token_type })
+    },
+    [setSession, setTokenPair]
+  )
+
   const sendCodeMutation = useSWRMutation(
     ["auth/send-code"],
     (_key, { arg }: { arg: SendCodeVariables }) => authService.sendCode(arg)
@@ -47,20 +55,6 @@ export function useAuthService() {
       applySession(tokens)
       return tokens
     }
-  )
-
-  const refreshMutation = useSWRMutation(["auth/refresh"], async () => {
-    const tokens = await authService.refresh()
-    applySession(tokens)
-    return tokens
-  })
-
-  const applySession = useCallback(
-    (tokens: TokenPair) => {
-      setTokenPair(tokens)
-      setSession({ accessToken: tokens.access_token, tokenType: tokens.token_type })
-    },
-    [setSession, setTokenPair]
   )
 
   const logout = useCallback(async () => {

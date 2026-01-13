@@ -16,7 +16,7 @@
       }
     },
     "drawer": {
-      "titleSystem": "Configure {{name}}",
+      "titleSystem": "Configure {name}",
       "titleCustom": "Add Custom Endpoint",
       "badgeOfficial": "Official",
       "badgeSelfHosted": "Self-Hosted",
@@ -40,6 +40,10 @@
       "cancel": "Cancel",
       "sendingProbe": "Sending probe...",
       "errorSave": "Save failed",
+      "iconLabel": "Avatar / Icon",
+      "iconHint": "Pick a preset icon or paste a custom image URL; it will be stored in the instance icon field.",
+      "brandColor": "Theme Color",
+      "colorHint": "Used for preview and saved as theme_color for the instance.",
       "azureResource": "Azure Resource Name",
       "azureDeployment": "Deployment Name",
       "azureApiVersion": "API Version",
@@ -72,6 +76,7 @@
         "cancel": "Cancel",
         "enable": "Enable",
         "disable": "Disable",
+        "models": "Models",
         "edit": "Edit",
         "remove": "Remove"
       }

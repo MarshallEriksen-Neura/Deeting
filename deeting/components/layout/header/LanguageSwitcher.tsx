@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useCallback, useEffect, useMemo } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { Languages } from "lucide-react"
 import { useTranslations, useLocale } from "next-intl"
 import { useSearchParams } from "next/navigation"
@@ -27,11 +27,16 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
 
   const { language, hydrated, setLanguage } = useLanguageStore()
 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const activeLanguage =
-    hydrated && language ? language : (locale as AppLocale)
+    mounted && hydrated && language ? language : (locale as AppLocale)
   const query = useMemo(
     () => Object.fromEntries(searchParams.entries()),
     [searchParams]

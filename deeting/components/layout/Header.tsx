@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Menu } from "lucide-react"
 import { useTranslations } from "next-intl"
+import { useEffect, useState } from "react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -35,6 +36,11 @@ export function Header({
   const { profile } = useUserProfile()
   const { logout } = useAuthService()
   const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const navWithActive = navItems.map((item) => {
     const match =
@@ -95,7 +101,7 @@ export function Header({
           <ActionButtons />
           <LanguageSwitcher />
           <div className="mx-2 h-6 w-px bg-[var(--border)]" />
-          {isAuthenticated ? (
+          {mounted && isAuthenticated ? (
             <UserMenu
               userName={profile?.username ?? profile?.email ?? userName ?? t("guest")}
               userEmail={profile?.email ?? userEmail ?? ""}

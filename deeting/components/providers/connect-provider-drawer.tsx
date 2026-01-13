@@ -18,7 +18,7 @@ import {
   Play
 } from "lucide-react"
 
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +33,8 @@ import { cn } from "@/lib/utils"
 import { ProviderIconPicker } from "./provider-icon-picker"
 import { useProviderVerify, useCreateProviderInstance, useUpdateProviderInstance } from "@/hooks/use-providers"
 import { Switch } from "@/components/ui/switch"
+import { VisuallyHidden } from "@/components/ui/visually-hidden"
+import { getIconComponent } from "@/lib/constants/provider-icons"
 
 // Types based on backend schema
 export interface ProviderPresetConfig {
@@ -57,6 +59,7 @@ interface ConnectProviderDrawerProps {
     description?: string | null
     base_url?: string
     icon?: string | null
+    theme_color?: string | null
     is_enabled?: boolean
     resource_name?: string | null
     deployment_name?: string | null
@@ -76,36 +79,46 @@ export function ConnectProviderDrawer({
   initialValues,
   onSave 
 }: ConnectProviderDrawerProps) {
-  // If no preset, don't render (or render empty)
-  if (!preset) return null
-
   const t = useTranslations("providers")
-  const isSystem = preset.type === 'system'
   const { verify } = useProviderVerify()
   const { create } = useCreateProviderInstance()
   const { update } = useUpdateProviderInstance()
-  const presetSlug = React.useMemo(() => {
-    // 后端一般会返回 slug，这里兜底使用 name 以避免运行时空值导致 toLowerCase 报错
-    return preset.slug || preset.name || ""
-  }, [preset.slug, preset.name])
-  const normalizedSlug = React.useMemo(() => presetSlug.toLowerCase(), [presetSlug])
-  
+
   // State
-  const [baseUrl, setBaseUrl] = React.useState(preset.default_endpoint || initialValues?.base_url || "")
+  const [baseUrl, setBaseUrl] = React.useState("")
   const [apiKey, setApiKey] = React.useState("")
-  const [protocol, setProtocol] = React.useState<'openai' | 'anthropic'>(preset.protocol)
-  const [name, setName] = React.useState(initialValues?.name || preset.name)
-  const [description, setDescription] = React.useState(initialValues?.description || "")
-  const [enabled, setEnabled] = React.useState(initialValues?.is_enabled ?? true)
-  const [resourceName, setResourceName] = React.useState(initialValues?.resource_name || "")
-  const [deploymentName, setDeploymentName] = React.useState(initialValues?.deployment_name || "")
-  const [apiVersion, setApiVersion] = React.useState(initialValues?.api_version || "")
-  const [projectId, setProjectId] = React.useState(initialValues?.project_id || "")
-  const [region, setRegion] = React.useState(initialValues?.region || "")
+  const [protocol, setProtocol] = React.useState<'openai' | 'anthropic'>('openai')
+  const [name, setName] = React.useState("")
+  const [description, setDescription] = React.useState("")
+  const [enabled, setEnabled] = React.useState(true)
+  const [icon, setIcon] = React.useState("")
+  const [customIconUrl, setCustomIconUrl] = React.useState("")
+  const [brandColor, setBrandColor] = React.useState("#3b82f6")
+  const [resourceName, setResourceName] = React.useState("")
+  const [deploymentName, setDeploymentName] = React.useState("")
+  const [apiVersion, setApiVersion] = React.useState("")
+  const [projectId, setProjectId] = React.useState("")
+  const [region, setRegion] = React.useState("")
   const [connectionStatus, setConnectionStatus] = React.useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [logs, setLogs] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
-  
+
+  // Memoized values that depend on preset
+  const presetSlug = React.useMemo(() => {
+    return preset?.slug || preset?.name || ""
+  }, [preset])
+
+  const normalizedSlug = React.useMemo(() => presetSlug.toLowerCase(), [presetSlug])
+
+  const resolvedIconId = React.useMemo(() => {
+    return (customIconUrl || icon || preset?.icon_key || "").trim()
+  }, [customIconUrl, icon, preset?.icon_key])
+
+  const HeaderIcon = React.useMemo(() => {
+    if (!preset) return Globe
+    return resolvedIconId.startsWith("http") ? null : getIconComponent(resolvedIconId) || getIconComponent(preset.icon_key) || Globe
+  }, [resolvedIconId, preset])
+
   // Reset state when preset changes
   React.useEffect(() => {
     if (isOpen && preset) {
@@ -115,6 +128,9 @@ export function ConnectProviderDrawer({
       setName(initialValues?.name || preset.name)
       setDescription(initialValues?.description || "")
       setEnabled(initialValues?.is_enabled ?? true)
+      setIcon(initialValues?.icon || preset.icon_key || "")
+      setCustomIconUrl("")
+      setBrandColor(initialValues?.theme_color || preset.brand_color || "#3b82f6")
       setResourceName(initialValues?.resource_name || "")
       setDeploymentName(initialValues?.deployment_name || "")
       setApiVersion(initialValues?.api_version || "")
@@ -124,6 +140,11 @@ export function ConnectProviderDrawer({
       setLogs([])
     }
   }, [isOpen, preset, initialValues])
+
+  // If no preset, don't render (but hooks were called)
+  if (!preset) return null
+
+  const isSystem = preset.type === 'system'
 
   const handleTestConnection = async () => {
     if (!baseUrl) {
@@ -178,6 +199,7 @@ export function ConnectProviderDrawer({
       setLogs([`> ${t("drawer.baseUrlRequired")}`])
       return
     }
+    const resolvedIcon = (customIconUrl || icon || preset.icon_key || "").trim() || null
     setSaving(true)
     setLogs([])
     try {
@@ -187,7 +209,8 @@ export function ConnectProviderDrawer({
           name,
           description: description || null,
           base_url: baseUrl,
-          icon: preset.icon_key,
+          icon: resolvedIcon,
+          theme_color: brandColor || null,
           credentials_ref: apiKey ? null : "default",
           api_key: apiKey || null,
           protocol,
@@ -205,7 +228,8 @@ export function ConnectProviderDrawer({
           name,
           description: description || null,
           base_url: baseUrl,
-          icon: preset.icon_key,
+          icon: resolvedIcon,
+          theme_color: brandColor || null,
           api_key: apiKey || null,
           is_enabled: enabled,
           resource_name: resourceName || null,
@@ -225,7 +249,7 @@ export function ConnectProviderDrawer({
   }
 
   // Visual Styles based on mode
-  const themeColor = preset.brand_color
+  const themeColor = brandColor || preset.brand_color
   const glowStyle = isSystem 
     ? { boxShadow: `0 0 40px -10px ${themeColor}40` }
     : { boxShadow: `0 0 40px -10px rgba(59, 130, 246, 0.2)` } // Blue neon for custom
@@ -235,15 +259,23 @@ export function ConnectProviderDrawer({
       <SheetContent 
         className="w-full sm:max-w-md p-0 border-l border-white/10 bg-black/40 backdrop-blur-2xl text-[var(--foreground)]"
       >
+        <VisuallyHidden>
+          <SheetTitle>
+            {isSystem ? t("drawer.titleSystem", { name: preset.name }) : t("drawer.titleCustom")}
+          </SheetTitle>
+          <SheetDescription>
+            {t("market.description")}
+          </SheetDescription>
+        </VisuallyHidden>
         <div className="flex flex-col h-full relative overflow-hidden">
           
           {/* Ambient Background Glow */}
-          <div 
-            className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-64 opacity-20 pointer-events-none"
-            style={{ 
-              background: `radial-gradient(circle at 50% 0%, ${isSystem ? themeColor : '#3b82f6'}, transparent 70%)` 
-            }} 
-          />
+              <div 
+                className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-64 opacity-20 pointer-events-none"
+                style={{ 
+                  background: `radial-gradient(circle at 50% 0%, ${themeColor || '#3b82f6'}, transparent 70%)` 
+                }} 
+              />
 
           {/* Zone A: Header (Identity) */}
           <div className="flex-none p-6 pt-10 relative z-10">
@@ -260,11 +292,17 @@ export function ConnectProviderDrawer({
                   )}
                   style={isSystem ? { borderColor: `${themeColor}40` } : {}}
                 >
-                  {isSystem ? (
-                    // Placeholder for Brand Icon (using generic Globe/Cpu if icon_key fails)
+                  {resolvedIconId.startsWith("http") ? (
+                    <img
+                      src={resolvedIconId}
+                      alt="provider icon"
+                      className="size-10 object-contain rounded-lg"
+                    />
+                  ) : HeaderIcon ? (
+                    <HeaderIcon className="size-10" style={{ color: themeColor }} />
+                  ) : isSystem ? (
                     <Globe className="size-10" style={{ color: themeColor }} />
                   ) : (
-                    // Custom Icon - Maybe interactive in future
                     <Server className="size-10 text-blue-400" />
                   )}
                 </div>
@@ -333,6 +371,42 @@ export function ConnectProviderDrawer({
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
                 <span>{enabled ? t("drawer.enabled") : t("drawer.disabled")}</span>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t("drawer.iconLabel")}
+                </Label>
+                <ProviderIconPicker value={icon} onChange={setIcon} />
+                <Input
+                  value={customIconUrl}
+                  onChange={(e) => setCustomIconUrl(e.target.value)}
+                  placeholder="https://example.com/icon.png"
+                  className="bg-white/5 border-white/10 h-9 text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground/60">
+                  {t("drawer.iconHint")}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t("drawer.brandColor")}
+                </Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    type="color"
+                    value={brandColor}
+                    onChange={(e) => setBrandColor(e.target.value)}
+                    className="h-10 w-20 p-1 bg-white/5 border-white/10"
+                  />
+                  <Input
+                    value={brandColor}
+                    onChange={(e) => setBrandColor(e.target.value)}
+                    className="bg-white/5 border-white/10 h-10 text-xs font-mono"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground/60">
+                  {t("drawer.colorHint")}
+                </p>
               </div>
             </div>
             

@@ -24,7 +24,7 @@ export function ProviderIconPicker({ value, onChange, className }: ProviderIconP
   const [search, setSearch] = React.useState("");
 
   // Get current icon component
-  const CurrentIcon = getIconComponent(value) || getIconComponent("lucide:webhook")!;
+  const icon = getIconComponent(value) || getIconComponent("lucide:webhook")!;
 
   // Filter options
   const filteredOptions = React.useMemo(() => {
@@ -60,13 +60,18 @@ export function ProviderIconPicker({ value, onChange, className }: ProviderIconP
           className={cn("w-full justify-between", className)}
         >
           <span className="flex items-center gap-2">
-            <CurrentIcon className="h-4 w-4 text-muted-foreground" />
+            {React.createElement(icon, { className: "h-4 w-4 text-muted-foreground" })}
             {PROVIDER_ICON_OPTIONS.find((framework) => framework.id === value)?.label || "Select icon..."}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[320px] p-0" align="start">
+      <PopoverContent
+        className="w-[320px] p-0 z-[2147483605]"
+        align="start"
+        side="bottom"
+        sideOffset={8}
+      >
         <div className="flex items-center border-b px-3">
           <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
           <Input 
