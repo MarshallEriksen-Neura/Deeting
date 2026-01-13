@@ -374,10 +374,8 @@ class ProviderInstanceService:
         preserve_user_overrides: bool = True,
     ) -> List[ProviderModel]:
         instance = await self.assert_instance_access(instance_id, user_id)
+        # 容忍缺失的 preset：允许仅凭实例配置同步，避免 500
         preset = await self.preset_repo.get_by_slug(instance.preset_slug)
-        if not preset:
-            raise ValueError("preset_not_found")
-
         secret = await self._get_secret(preset, instance)
         models_raw = await self._fetch_models_from_upstream(preset, instance, secret)
         payloads = self._build_model_payloads(models_raw, instance)

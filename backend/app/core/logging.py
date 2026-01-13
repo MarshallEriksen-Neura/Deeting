@@ -40,7 +40,7 @@ def setup_logging():
         level=settings.LOG_LEVEL,
         format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
         serialize=settings.LOG_JSON_FORMAT,  # 如果是 True，则输出 JSON 格式，适合 ELK
-        enqueue=True, # 异步写入
+        enqueue=settings.LOG_ASYNC,  # 测试环境可关闭队列以规避 semlock 权限问题
         backtrace=True,
         diagnose=True,
     )
@@ -54,7 +54,7 @@ def setup_logging():
             level=settings.LOG_LEVEL,
             format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
             encoding="utf-8",
-            enqueue=True,
+            enqueue=settings.LOG_ASYNC,
             compression="zip", # 轮转后压缩
         )
 
@@ -64,6 +64,16 @@ def setup_logging():
     # 调整第三方库的日志级别，避免噪音
     logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
     logging.getLogger("uvicorn.error").handlers = [InterceptHandler()]
+
+    # Uvicorn debug 热重载依赖 watchfiles，会以 INFO 级别反复输出 "1 change detected"
+    # 将其日志级别提升到 WARNING，避免开发模式下刷屏
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+
+    # Uvicorn debug 热重载依赖 watchfiles，会以 INFO 级别反复输出 "1 change detected"
+    # 将其日志级别提升到 WARNING，避免开发模式下刷屏
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
 
     # 将 logging 模块的根 logger 设置为配置的级别
     logging.getLogger("root").setLevel(settings.LOG_LEVEL)

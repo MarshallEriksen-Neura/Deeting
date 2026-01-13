@@ -1,4 +1,4 @@
-import { z } from "zod"
+import * as z from "zod"
 import { request } from "@/lib/http"
 
 const PROVIDERS_BASE = "/api/v1/providers"

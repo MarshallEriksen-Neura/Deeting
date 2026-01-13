@@ -172,6 +172,11 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         }
 
         for payload in models_data:
+            # 防止重复传入 synced_at / 其它字段冲突
+            payload = dict(payload)
+            payload.pop("id", None)  # 由此处统一生成
+            synced_at = payload.pop("synced_at", now)
+
             stmt = select(ProviderModel).where(
                 ProviderModel.instance_id == instance_id,
                 ProviderModel.capability == payload["capability"],
@@ -191,14 +196,14 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
                         # 保留已有用户定制值
                         continue
                     setattr(existing, k, v)
-                existing.synced_at = now
+                existing.synced_at = synced_at
                 self.session.add(existing)
                 results.append(existing)
             else:
                 new_model = ProviderModel(
                     id=uuid.uuid4(),
                     instance_id=instance_id,
-                    synced_at=now,
+                    synced_at=synced_at,
                     **payload,
                 )
                 self.session.add(new_model)

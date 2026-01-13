@@ -1,7 +1,7 @@
 from typing import List, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -188,8 +188,8 @@ async def list_models(
 @router.post("/instances/{instance_id}/models:sync", response_model=List[ProviderModelResponse])
 async def sync_models(
     instance_id: str,
-    payload: ProviderModelsUpsertRequest | None = None,
-    preserve_user_overrides: bool = True,
+    payload: ProviderModelsUpsertRequest | None = Body(default=None),
+    preserve_user_overrides: bool = Query(True, description="保留用户自定义字段"),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -230,6 +230,13 @@ async def sync_models(
             results = await svc.sync_models_from_upstream(
                 instance_uuid, getattr(user, "id", None), preserve_user_overrides=preserve_user_overrides
             )
+    except ValueError as e:
+        message = str(e)
+        if message == "instance_not_found":
+            raise HTTPException(status_code=404, detail="instance not found")
+        if message == "preset_not_found":
+            raise HTTPException(status_code=404, detail="preset not found")
+        raise HTTPException(status_code=400, detail=message)
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")
     return results
