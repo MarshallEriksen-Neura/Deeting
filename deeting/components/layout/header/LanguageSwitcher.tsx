@@ -32,9 +32,13 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
   const { language, hydrated, setLanguage } = useLanguageStore()
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
   }, [])
 
+  // Ensure stable rendering during hydration. 
+  // On the first render (server-side and client-side hydration), we MUST use the server-provided locale.
+  // We only switch to the store-managed language after the component has mounted on the client.
   const activeLanguage =
     mounted && hydrated && language ? language : (locale as AppLocale)
   const query = useMemo(

@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useTranslations } from "next-intl"
@@ -21,7 +22,14 @@ interface UserMenuProps {
 
 export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserMenuProps) {
   const t = useTranslations("common.header")
-  const safeName = userName?.trim() || t("guest")
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true)
+  }, [])
+
+  const safeName = mounted ? (userName?.trim() || t("guest")) : t("guest")
   const initials = safeName.slice(0, 2).toUpperCase()
 
   return (
