@@ -174,8 +174,11 @@ export function useDeleteProviderInstance() {
 
 // Provider Models Sync Hook (for mutations)
 export function useSyncProviderModels() {
-  const sync = async (instanceId: string): Promise<ProviderModelResponse[]> => {
-    return await syncProviderModels(instanceId)
+  const sync = async (
+    instanceId: string,
+    options?: { preserve_user_overrides?: boolean }
+  ): Promise<ProviderModelResponse[]> => {
+    return await syncProviderModels(instanceId, options)
   }
 
   return {

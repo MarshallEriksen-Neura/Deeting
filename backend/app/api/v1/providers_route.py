@@ -188,7 +188,8 @@ async def list_models(
 @router.post("/instances/{instance_id}/models:sync", response_model=List[ProviderModelResponse])
 async def sync_models(
     instance_id: str,
-    payload: ProviderModelsUpsertRequest,
+    payload: ProviderModelsUpsertRequest | None = None,
+    preserve_user_overrides: bool = True,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -198,32 +199,37 @@ async def sync_models(
         raise HTTPException(status_code=400, detail="invalid instance_id")
 
     svc = ProviderInstanceService(db)
-    model_objs = [
-        ProviderModel(
-            id=uuid.uuid4(),
-            instance_id=instance_uuid,
-            capability=m.capability,
-            model_id=m.model_id,
-            unified_model_id=m.unified_model_id,
-            display_name=m.display_name,
-            upstream_path=m.upstream_path,
-            template_engine=m.template_engine,
-            request_template=m.request_template,
-            response_transform=m.response_transform,
-            pricing_config=m.pricing_config,
-            limit_config=m.limit_config,
-            tokenizer_config=m.tokenizer_config,
-            routing_config=m.routing_config,
-            source=m.source,
-            extra_meta=m.extra_meta,
-            weight=m.weight,
-            priority=m.priority,
-            is_active=m.is_active,
-        )
-        for m in payload.models
-    ]
     try:
-        results = await svc.upsert_models(instance_uuid, getattr(user, "id", None), model_objs)
+        if payload and payload.models:
+            model_objs = [
+                ProviderModel(
+                    id=uuid.uuid4(),
+                    instance_id=instance_uuid,
+                    capability=m.capability,
+                    model_id=m.model_id,
+                    unified_model_id=m.unified_model_id,
+                    display_name=m.display_name,
+                    upstream_path=m.upstream_path,
+                    template_engine=m.template_engine,
+                    request_template=m.request_template,
+                    response_transform=m.response_transform,
+                    pricing_config=m.pricing_config,
+                    limit_config=m.limit_config,
+                    tokenizer_config=m.tokenizer_config,
+                    routing_config=m.routing_config,
+                    source=m.source,
+                    extra_meta=m.extra_meta,
+                    weight=m.weight,
+                    priority=m.priority,
+                    is_active=m.is_active,
+                )
+                for m in payload.models
+            ]
+            results = await svc.upsert_models(instance_uuid, getattr(user, "id", None), model_objs)
+        else:
+            results = await svc.sync_models_from_upstream(
+                instance_uuid, getattr(user, "id", None), preserve_user_overrides=preserve_user_overrides
+            )
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")
     return results

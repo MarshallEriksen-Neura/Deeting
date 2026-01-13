@@ -57,6 +57,12 @@ export function useAuthService() {
     }
   )
 
+  const refreshMutation = useSWRMutation(["auth/refresh"], async () => {
+    const tokens = await authService.refresh()
+    applySession(tokens)
+    return tokens
+  })
+
   const logout = useCallback(async () => {
     clearSession()
     setTokenPair(null)

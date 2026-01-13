@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { GlassCard } from "@/components/ui/glass-card"
@@ -75,6 +76,7 @@ const PROVIDER_THEMES: Record<string, {
 
 // Status indicator components
 function StatusIndicator({ status, latency }: { status: ProviderStatus; latency: number }) {
+  const t = useTranslations('models')
   const statusConfig: Record<ProviderStatus, {
     color: string
     bgColor: string
@@ -84,25 +86,25 @@ function StatusIndicator({ status, latency }: { status: ProviderStatus; latency:
     online: {
       color: 'text-emerald-500',
       bgColor: 'bg-emerald-500',
-      label: `Online (${latency}ms)`,
+      label: t('status.online', { latency }),
       pulse: true,
     },
     offline: {
       color: 'text-red-500',
       bgColor: 'bg-red-500',
-      label: 'Offline',
+      label: t('status.offline'),
       pulse: false,
     },
     degraded: {
       color: 'text-yellow-500',
       bgColor: 'bg-yellow-500',
-      label: `Degraded (${latency}ms)`,
+      label: t('status.degraded', { latency }),
       pulse: true,
     },
     syncing: {
       color: 'text-blue-500',
       bgColor: 'bg-blue-500',
-      label: 'Syncing...',
+      label: t('status.syncing'),
       pulse: true,
     },
   }
@@ -143,6 +145,7 @@ function SyncButton({
   syncState: SyncState
   onSync: () => void
 }) {
+  const t = useTranslations('models')
   return (
     <GlassButton
       variant="secondary"
@@ -162,7 +165,7 @@ function SyncButton({
         <RefreshCw className="size-4" />
       </motion.div>
       <span>
-        {syncState.is_syncing ? "Syncing..." : "Sync Models"}
+        {syncState.is_syncing ? t('instance.syncing') : t('instance.syncModels')}
       </span>
     </GlassButton>
   )
@@ -175,20 +178,21 @@ export function InstanceDashboard({
   onSettings,
   className,
 }: InstanceDashboardProps) {
+  const t = useTranslations('models')
   const theme = PROVIDER_THEMES[instance.provider.toLowerCase()] || PROVIDER_THEMES.default
 
   // Format last synced time
   const formatLastSynced = (timestamp?: string) => {
-    if (!timestamp) return "Never synced"
+    if (!timestamp) return t('instance.neverSynced')
     const date = new Date(timestamp)
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
     const diffMins = Math.floor(diffMs / 60000)
 
-    if (diffMins < 1) return "Just now"
-    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffMins < 1) return t('instance.justNow')
+    if (diffMins < 60) return t('instance.ago', { time: `${diffMins}m` })
     const diffHours = Math.floor(diffMins / 60)
-    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffHours < 24) return t('instance.ago', { time: `${diffHours}h` })
     return date.toLocaleDateString()
   }
 
@@ -238,7 +242,7 @@ export function InstanceDashboard({
               </h1>
               {!instance.is_enabled && (
                 <Badge variant="outline" className="text-yellow-500 border-yellow-500/30">
-                  Disabled
+                  {t('instance.disabled')}
                 </Badge>
               )}
             </div>
@@ -251,13 +255,13 @@ export function InstanceDashboard({
                 •
               </span>
               <span className="text-xs text-[var(--muted)]">
-                {instance.model_count} models
+                {t('filter.modelsCount', { count: instance.model_count })}
               </span>
               <span className="text-xs text-[var(--muted)]">
                 •
               </span>
               <span className="text-xs text-[var(--muted)]">
-                Synced {formatLastSynced(instance.last_synced_at)}
+                {t('instance.synced', { time: formatLastSynced(instance.last_synced_at) })}
               </span>
             </div>
           </div>

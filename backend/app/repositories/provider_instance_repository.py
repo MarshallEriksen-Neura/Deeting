@@ -143,3 +143,68 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         for r in results:
             await self.session.refresh(r)
         return results
+
+    async def upsert_from_upstream(
+        self,
+        instance_id: uuid.UUID,
+        models_data: list[dict],
+        preserve_user_overrides: bool = True,
+    ) -> list[ProviderModel]:
+        """
+        上游同步专用 Upsert：
+        - 跳过 source=manual 的记录
+        - 可选择保护用户自定义字段
+        """
+        from datetime import datetime
+
+        now = datetime.utcnow()
+        results: list[ProviderModel] = []
+
+        protected_fields = {
+            "display_name",
+            "weight",
+            "priority",
+            "pricing_config",
+            "limit_config",
+            "tokenizer_config",
+            "routing_config",
+            "is_active",
+        }
+
+        for payload in models_data:
+            stmt = select(ProviderModel).where(
+                ProviderModel.instance_id == instance_id,
+                ProviderModel.capability == payload["capability"],
+                ProviderModel.model_id == payload["model_id"],
+                ProviderModel.upstream_path == payload["upstream_path"],
+            )
+            result = await self.session.execute(stmt)
+            existing = result.scalars().first()
+
+            if existing:
+                if preserve_user_overrides and existing.source == "manual":
+                    results.append(existing)
+                    continue
+
+                for k, v in payload.items():
+                    if preserve_user_overrides and k in protected_fields:
+                        # 保留已有用户定制值
+                        continue
+                    setattr(existing, k, v)
+                existing.synced_at = now
+                self.session.add(existing)
+                results.append(existing)
+            else:
+                new_model = ProviderModel(
+                    id=uuid.uuid4(),
+                    instance_id=instance_id,
+                    synced_at=now,
+                    **payload,
+                )
+                self.session.add(new_model)
+                results.append(new_model)
+
+        await self.session.commit()
+        for r in results:
+            await self.session.refresh(r)
+        return results

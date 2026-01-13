@@ -14,6 +14,7 @@ import {
   Copy,
   Check,
 } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { GlassButton } from "@/components/ui/glass-button"
@@ -159,6 +160,7 @@ function TypingIndicator() {
 
 // Empty state for the chat
 function EmptyChatState({ modelId }: { modelId: string }) {
+  const t = useTranslations('models')
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
       <motion.div
@@ -175,7 +177,7 @@ function EmptyChatState({ modelId }: { modelId: string }) {
         Test {modelId}
       </h3>
       <p className="text-sm text-[var(--muted)] max-w-[250px]">
-        Send a message to verify the model is working correctly.
+        {t('test.send')}
       </p>
     </div>
   )
@@ -183,6 +185,7 @@ function EmptyChatState({ modelId }: { modelId: string }) {
 
 // Error state
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  const t = useTranslations('models')
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -198,7 +201,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
           <AlertCircle className="size-5 text-red-400 shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm text-red-400 font-medium">
-              Connection Error
+              {t('test.connectionError')}
             </p>
             <p className="text-xs text-red-400/80 mt-1">{error}</p>
           </div>
@@ -209,7 +212,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
             className="text-red-400 hover:bg-red-500/10"
           >
             <RotateCcw className="size-3 mr-1" />
-            Retry
+            {t('test.retry')}
           </GlassButton>
         </div>
       </GlassCard>
@@ -224,6 +227,7 @@ export function TestDrawer({
   instanceName,
   onSendMessage,
 }: TestDrawerProps) {
+  const t = useTranslations('models')
   const [messages, setMessages] = React.useState<TestMessage[]>([])
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
@@ -320,7 +324,7 @@ export function TestDrawer({
                 variant="outline"
                 className="text-[10px] px-2 py-0.5 border-white/20"
               >
-                {CAPABILITY_META[cap].icon} {CAPABILITY_META[cap].label}
+                {CAPABILITY_META[cap].icon} {t(`capabilities.${cap}.label`)}
               </Badge>
             ))}
             <Badge
@@ -373,7 +377,7 @@ export function TestDrawer({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message..."
+                placeholder={t('test.placeholder')}
                 className="min-h-[44px] max-h-[120px] resize-none bg-white/5 border-white/10 focus:border-[var(--primary)]/50 pr-10"
                 rows={1}
               />
@@ -381,7 +385,7 @@ export function TestDrawer({
                 <button
                   onClick={handleClear}
                   className="absolute right-2 top-2 p-1 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-                  title="Clear chat"
+                  title={t('test.clearChat')}
                 >
                   <RotateCcw className="size-4" />
                 </button>
@@ -401,7 +405,7 @@ export function TestDrawer({
             </GlassButton>
           </div>
           <p className="text-[10px] text-[var(--muted)] mt-2 text-center">
-            Press Enter to send, Shift+Enter for new line
+            {t('test.hint')}
           </p>
         </div>
       </SheetContent>

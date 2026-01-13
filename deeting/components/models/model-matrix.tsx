@@ -15,6 +15,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { GlassCard } from "@/components/ui/glass-card"
@@ -63,6 +64,7 @@ interface ModelDataStripProps {
 
 // Capability icons component
 function CapabilityIcons({ capabilities }: { capabilities: ModelCapability[] }) {
+  const t = useTranslations('models')
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex items-center gap-1">
@@ -78,7 +80,7 @@ function CapabilityIcons({ capabilities }: { capabilities: ModelCapability[] }) 
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
-                {meta.label}: {meta.description}
+                {t(`capabilities.${cap}.label`)}: {t(`capabilities.${cap}.description`)}
               </TooltipContent>
             </Tooltip>
           )
@@ -95,6 +97,7 @@ function CapabilityIcons({ capabilities }: { capabilities: ModelCapability[] }) 
 
 // Context window visualizer
 function ContextWindowBar({ tokens, maxTokens = 200000 }: { tokens: number; maxTokens?: number }) {
+  const t = useTranslations('models')
   const percentage = Math.min((tokens / maxTokens) * 100, 100)
 
   // Color based on context size
@@ -123,7 +126,7 @@ function ContextWindowBar({ tokens, maxTokens = 200000 }: { tokens: number; maxT
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          Context window: {tokens.toLocaleString()} tokens
+          {t('list.tooltips.contextWindow', { tokens: tokens.toLocaleString() })}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -132,6 +135,7 @@ function ContextWindowBar({ tokens, maxTokens = 200000 }: { tokens: number; maxT
 
 // Price display with color coding
 function PriceDisplay({ input, output }: { input: number; output: number }) {
+  const t = useTranslations('models')
   const inputColor = getPriceColor(input)
   const outputColor = getPriceColor(output)
 
@@ -147,8 +151,8 @@ function PriceDisplay({ input, output }: { input: number; output: number }) {
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
           <div className="space-y-1">
-            <div>Input: {formatPrice(input)} / 1M tokens</div>
-            <div>Output: {formatPrice(output)} / 1M tokens</div>
+            <div>{t('list.tooltips.inputPrice', { price: formatPrice(input) })}</div>
+            <div>{t('list.tooltips.outputPrice', { price: formatPrice(output) })}</div>
           </div>
         </TooltipContent>
       </Tooltip>
@@ -166,6 +170,7 @@ function EditableAlias({
   modelId: string
   onSave: (alias: string) => void
 }) {
+  const t = useTranslations('models')
   const [isEditing, setIsEditing] = React.useState(false)
   const [value, setValue] = React.useState(alias || "")
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -199,7 +204,7 @@ function EditableAlias({
             if (e.key === "Escape") handleCancel()
           }}
           className="h-6 w-32 text-xs bg-white/5 border-white/20 px-2"
-          placeholder="Set alias..."
+          placeholder={t('list.actions.setAlias')}
         />
         <button
           onClick={handleSave}
@@ -223,7 +228,7 @@ function EditableAlias({
         <span className="text-xs text-[var(--muted)]">{alias}</span>
       ) : (
         <span className="text-xs text-[var(--muted)] italic opacity-50">
-          No alias
+          {t('list.actions.noAlias')}
         </span>
       )}
       <button
@@ -244,6 +249,7 @@ export function ModelDataStrip({
   onUpdateAlias,
   onDelete,
 }: ModelDataStripProps) {
+  const t = useTranslations('models')
   const isDeprecated = !!model.deprecated_at
 
   return (
@@ -270,7 +276,7 @@ export function ModelDataStrip({
         {isDeprecated && (
           <div className="absolute top-0 right-0 px-2 py-0.5 bg-yellow-500/20 text-yellow-500 text-[10px] font-medium rounded-bl-lg rounded-tr-2xl flex items-center gap-1">
             <AlertTriangle className="size-3" />
-            Deprecated
+            {t('list.actions.deprecated')}
           </div>
         )}
 
@@ -292,7 +298,7 @@ export function ModelDataStrip({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
-                    Copy model ID
+                    {t('list.actions.copyId')}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -335,7 +341,7 @@ export function ModelDataStrip({
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  {model.is_active ? "Disable model" : "Enable model"}
+                  {model.is_active ? t('list.actions.disable') : t('list.actions.enable')}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -348,7 +354,7 @@ export function ModelDataStrip({
               className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <Play className="size-3.5" />
-              <span>Test</span>
+              <span>{t('list.actions.test')}</span>
             </GlassButton>
 
             {/* More Actions */}
@@ -368,23 +374,23 @@ export function ModelDataStrip({
               >
                 <DropdownMenuItem onClick={() => navigator.clipboard.writeText(model.id)}>
                   <Copy className="mr-2 size-4" />
-                  Copy Model ID
+                  {t('list.actions.copyId')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => onTest(model)}>
                   <Play className="mr-2 size-4" />
-                  Quick Test
+                  {t('list.actions.quickTest')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => onToggleActive(model, !model.is_active)}>
                   {model.is_active ? (
                     <>
                       <EyeOff className="mr-2 size-4" />
-                      Disable Model
+                      {t('list.actions.disable')}
                     </>
                   ) : (
                     <>
                       <Eye className="mr-2 size-4" />
-                      Enable Model
+                      {t('list.actions.enable')}
                     </>
                   )}
                 </DropdownMenuItem>
@@ -396,7 +402,7 @@ export function ModelDataStrip({
                       className="text-red-500 focus:text-red-500"
                     >
                       <Trash2 className="mr-2 size-4" />
-                      Remove Model
+                      {t('list.actions.remove')}
                     </DropdownMenuItem>
                   </>
                 )}
@@ -443,15 +449,16 @@ export function ModelMatrix({
   onDelete,
   className,
 }: ModelMatrixProps) {
+  const t = useTranslations('models')
   return (
     <div className={cn("space-y-2", className)}>
       {/* Header Row */}
       <div className="hidden lg:flex items-center gap-4 px-4 py-2 text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
-        <div className="min-w-[180px] max-w-[250px]">Model ID</div>
-        <div className="min-w-[120px]">Capabilities</div>
-        <div className="min-w-[140px]">Context</div>
-        <div className="min-w-[100px]">Pricing (In/Out)</div>
-        <div className="ml-auto">Status</div>
+        <div className="min-w-[180px] max-w-[250px]">{t('list.header.id')}</div>
+        <div className="min-w-[120px]">{t('list.header.capabilities')}</div>
+        <div className="min-w-[140px]">{t('list.header.context')}</div>
+        <div className="min-w-[100px]">{t('list.header.pricing')}</div>
+        <div className="ml-auto">{t('list.header.status')}</div>
       </div>
 
       {/* Model List */}

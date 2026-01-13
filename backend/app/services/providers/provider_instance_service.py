@@ -15,7 +15,10 @@ from app.repositories.provider_instance_repository import (
     ProviderModelRepository,
 )
 from app.repositories.provider_credential_repository import ProviderCredentialRepository
+from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.core.cache_invalidation import CacheInvalidator
+from app.constants.model_capability_map import guess_capabilities, primary_capability
+from app.services.secrets.manager import SecretManager
 
 
 class ProviderInstanceService:
@@ -25,8 +28,10 @@ class ProviderInstanceService:
         self.session = session
         self.instance_repo = ProviderInstanceRepository(session)
         self.model_repo = ProviderModelRepository(session)
+        self.preset_repo = ProviderPresetRepository(session)
         self.credential_repo = ProviderCredentialRepository(session)
         self._invalidator = CacheInvalidator()
+        self.secret_manager = SecretManager()
         from app.core.cache import cache
         self.cache = cache
 
@@ -201,6 +206,187 @@ class ProviderInstanceService:
                 "latency_ms": 0,
                 "discovered_models": []
             }
+
+    async def _get_secret(self, preset, instance: ProviderInstance) -> str | None:
+        """解析实例默认凭证：先查实例内 credential，再查 SecretManager。"""
+        secret_ref = instance.credentials_ref or getattr(preset, "auth_config", {}).get("secret_ref_id")
+        if secret_ref:
+            grouped = await self.credential_repo.get_by_instance_ids([str(instance.id)])
+            creds = grouped.get(str(instance.id), [])
+            clean_ref = secret_ref.split(":", 1)[1] if secret_ref.startswith("db:") else secret_ref
+            for cred in creds:
+                if cred.alias == clean_ref and cred.is_active:
+                    return cred.secret_ref_id
+        provider = getattr(preset, "provider", None) if preset else None
+        return await self.secret_manager.get(provider, secret_ref)
+
+    def _normalize_base_url(self, preset, instance: ProviderInstance) -> str:
+        base = instance.base_url or getattr(preset, "base_url", "")
+        tpl = getattr(preset, "url_template", None)
+        meta = getattr(instance, "meta", {}) or {}
+
+        resource_name = meta.get("resource_name") or meta.get("resource") or meta.get("deployment_name")
+        if tpl and "{resource}" in tpl and resource_name:
+            base = tpl.replace("{resource}", resource_name)
+        return (base or "").rstrip("/")
+
+    async def _fetch_models_from_upstream(
+        self,
+        preset,
+        instance: ProviderInstance,
+        secret: str | None,
+    ) -> list[dict[str, Any]]:
+        """
+        调用上游 /models（或等价接口）并返回原始模型列表。
+
+        已适配：
+        - OpenAI: GET /v1/models
+        - Anthropic: GET /v1/models 需 anthropic-version 头
+        - Azure OpenAI: GET /openai/deployments?api-version=*
+        - Gemini API: GET https://generativelanguage.googleapis.com/v1beta/models?key=*
+        其余按 OpenAI 兼容路径兜底。
+        """
+        protocol = (instance.meta or {}).get("protocol") or getattr(preset, "provider", "openai")
+        provider = getattr(preset, "provider", "") or protocol
+        base_url = self._normalize_base_url(preset, instance)
+        if not base_url:
+            raise ValueError("base_url_not_configured")
+
+        headers: dict[str, str] = {}
+        params: dict[str, Any] = {}
+        url = ""
+
+        proto_lower = (protocol or "").lower()
+        provider_lower = (provider or "").lower()
+
+        if "anthropic" in (proto_lower + provider_lower):
+            url = f"{base_url}/v1/models"
+            headers["x-api-key"] = secret or ""
+            headers["anthropic-version"] = "2023-06-01"
+        elif "azure" in proto_lower or "azure" in provider_lower:
+            version = (instance.meta or {}).get("api_version") or "2023-05-15"
+            url = f"{base_url}/openai/deployments"
+            params["api-version"] = version
+            headers["api-key"] = secret or ""
+        elif "gemini" in provider_lower or "google" in provider_lower or "vertex" in provider_lower:
+            # Gemini API key 通过 header 传递，避免拼接到 URL
+            url = "https://generativelanguage.googleapis.com/v1beta/models"
+            if secret:
+                headers["x-goog-api-key"] = secret
+        else:
+            url = f"{base_url}/v1/models" if not base_url.endswith("/v1") else f"{base_url}/models"
+            if secret:
+                headers["Authorization"] = f"Bearer {secret}"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+        models: list[dict[str, Any]] = []
+        if isinstance(data, dict):
+            if isinstance(data.get("data"), list):
+                models = data["data"]
+            elif isinstance(data.get("models"), list):
+                models = data["models"]
+            elif isinstance(data.get("value"), list):  # Azure deployments
+                models = data["value"]
+        return models
+
+    def _build_model_payloads(
+        self,
+        models: list[dict[str, Any]],
+        instance: ProviderInstance,
+    ) -> list[dict[str, Any]]:
+        """
+        将上游模型列表转换为 ProviderModel 字段。
+        """
+        payloads: list[dict[str, Any]] = []
+        meta = instance.meta or {}
+        model_prefix = meta.get("model_prefix") or ""
+        proto = (meta.get("protocol") or getattr(instance, "preset_slug", "") or "").lower()
+
+        def extract_model_id(m: dict) -> str:
+            mid = m.get("id") or m.get("model") or m.get("name") or ""
+            if isinstance(mid, str) and mid.startswith("models/"):
+                mid = mid.split("/", 1)[1]
+            return str(mid)
+
+        def upstream_path_for(cap: str, model_id: str) -> str:
+            if "azure" in proto:
+                base = f"openai/deployments/{model_id}"
+                if cap == "embedding":
+                    return f"{base}/embeddings"
+                if cap == "audio":
+                    return f"{base}/audio/transcriptions"
+                return f"{base}/chat/completions"
+            if "gemini" in proto or "google" in proto or "vertex" in proto:
+                if cap == "embedding":
+                    return f"v1beta/models/{model_id}:embedContent"
+                return f"v1beta/models/{model_id}:generateContent"
+            if cap == "embedding":
+                return "embeddings"
+            if cap == "audio":
+                return "audio/transcriptions"
+            return "chat/completions"
+
+        now = datetime.utcnow()
+        for m in models:
+            raw_model_id = extract_model_id(m)
+            if not raw_model_id:
+                continue
+            model_id = f"{model_prefix}{raw_model_id}"
+            caps = guess_capabilities(model_id)
+            capability = primary_capability(caps)
+            upstream_path = upstream_path_for(capability, model_id)
+
+            payloads.append(
+                {
+                    "capability": capability,
+                    "model_id": model_id,
+                    "unified_model_id": model_id,
+                    "display_name": m.get("display_name") or m.get("model") or m.get("id") or model_id,
+                    "upstream_path": upstream_path,
+                    "template_engine": "simple_replace",
+                    "request_template": {},
+                    "response_transform": {},
+                    "pricing_config": {},
+                    "limit_config": {},
+                    "tokenizer_config": {},
+                    "routing_config": {},
+                    "source": "auto",
+                    "extra_meta": {
+                        "upstream_capabilities": caps,
+                        "raw": m,
+                    },
+                    "weight": 100,
+                    "priority": 0,
+                    "is_active": True,
+                    "synced_at": now,
+                }
+            )
+        return payloads
+
+    async def sync_models_from_upstream(
+        self,
+        instance_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        preserve_user_overrides: bool = True,
+    ) -> List[ProviderModel]:
+        instance = await self.assert_instance_access(instance_id, user_id)
+        preset = await self.preset_repo.get_by_slug(instance.preset_slug)
+        if not preset:
+            raise ValueError("preset_not_found")
+
+        secret = await self._get_secret(preset, instance)
+        models_raw = await self._fetch_models_from_upstream(preset, instance, secret)
+        payloads = self._build_model_payloads(models_raw, instance)
+
+        results = await self.model_repo.upsert_from_upstream(
+            instance_id, payloads, preserve_user_overrides=preserve_user_overrides
+        )
+        await self._invalidator.on_provider_model_changed(str(instance_id))
+        return results
 
     async def create_instance(
         self,

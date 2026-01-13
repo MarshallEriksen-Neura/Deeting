@@ -3,6 +3,7 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 import { Radar, RefreshCw, Satellite, Signal } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { GlassButton } from "@/components/ui/glass-button"
@@ -157,6 +158,7 @@ export function ModelEmptyState({
   providerName = "this provider",
   className,
 }: ModelEmptyStateProps) {
+  const t = useTranslations('models')
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -178,7 +180,7 @@ export function ModelEmptyState({
         transition={{ delay: 0.2 }}
         className="text-xl font-semibold text-[var(--foreground)] mb-2"
       >
-        {isSyncing ? "Scanning for Models..." : "No Models Detected Yet"}
+        {isSyncing ? t('list.empty.scanningTitle') : t('list.empty.title')}
       </motion.h3>
 
       <motion.p
@@ -188,8 +190,8 @@ export function ModelEmptyState({
         className="text-sm text-[var(--muted)] max-w-[320px] mb-6"
       >
         {isSyncing
-          ? `Connecting to ${providerName} and fetching available models. This may take a moment.`
-          : `Connect to ${providerName} and sync the model catalog to see available AI models.`}
+          ? t('list.empty.scanningDescription', { provider: providerName })
+          : t('list.empty.description', { provider: providerName })}
       </motion.p>
 
       {/* Action Button */}
@@ -201,7 +203,7 @@ export function ModelEmptyState({
         >
           <GlassButton onClick={onSync} size="lg" className="gap-2">
             <Radar className="size-5" />
-            Initiate Deep Scan
+            {t('list.empty.button')}
           </GlassButton>
         </motion.div>
       )}
@@ -219,7 +221,7 @@ export function ModelEmptyState({
           >
             <RefreshCw className="size-4" />
           </motion.div>
-          Fetching model catalog...
+          {t('list.empty.progress')}
         </motion.div>
       )}
     </motion.div>

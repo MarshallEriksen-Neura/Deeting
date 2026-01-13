@@ -1,0 +1,104 @@
+{
+  "models": {
+    "page": {
+      "backToProviders": "Back to Providers",
+      "loading": "Loading models...",
+      "notFound": "Provider instance not found.",
+      "failedToLoad": "Failed to load models"
+    },
+    "instance": {
+      "settings": "Instance Settings",
+      "configureConnection": "Configure connection settings for {name}",
+      "name": "Instance Name",
+      "baseUrl": "Base URL",
+      "healthCheck": "Health Check",
+      "healthCheckDesc": "Ping every {interval}s",
+      "autoSync": "Auto Sync",
+      "autoSyncDesc": "Sync models daily",
+      "save": "Save Changes",
+      "disabled": "Disabled",
+      "synced": "Synced {time}",
+      "syncing": "Syncing...",
+      "syncModels": "Sync Models",
+      "justNow": "Just now",
+      "ago": "{time} ago",
+      "neverSynced": "Never synced"
+    },
+    "status": {
+      "online": "Online ({latency}ms)",
+      "offline": "Offline",
+      "degraded": "Degraded ({latency}ms)",
+      "syncing": "Syncing..."
+    },
+    "filter": {
+      "searchPlaceholder": "Search by ID (e.g., gpt-4)...",
+      "context": "Context: {label}",
+      "activeOnly": "Active models only",
+      "priceTier": "Price Tier",
+      "clear": "Clear",
+      "advanced": "Advanced Filters",
+      "modelsCount": "{count} models",
+      "filteredCount": "{filtered} / {total} models"
+    },
+    "list": {
+      "header": {
+        "id": "Model ID",
+        "capabilities": "Capabilities",
+        "context": "Context",
+        "pricing": "Pricing (In/Out)",
+        "status": "Status"
+      },
+      "empty": {
+        "title": "No Models Detected Yet",
+        "scanningTitle": "Scanning for Models...",
+        "description": "Connect to {provider} and sync the model catalog to see available AI models.",
+        "scanningDescription": "Connecting to {provider} and fetching available models. This may take a moment.",
+        "button": "Initiate Deep Scan",
+        "progress": "Fetching model catalog..."
+      },
+      "noResults": {
+        "text": "No models match your current filters.",
+        "clear": "Clear all filters"
+      },
+      "actions": {
+        "copyId": "Copy Model ID",
+        "setAlias": "Set alias...",
+        "noAlias": "No alias",
+        "deprecated": "Deprecated",
+        "disable": "Disable model",
+        "enable": "Enable model",
+        "test": "Test",
+        "quickTest": "Quick Test",
+        "remove": "Remove Model"
+      },
+      "tooltips": {
+        "contextWindow": "Context window: {tokens} tokens",
+        "inputPrice": "Input: {price} / 1M tokens",
+        "outputPrice": "Output: {price} / 1M tokens"
+      }
+    },
+    "test": {
+      "send": "Send a message to verify the model is working correctly.",
+      "placeholder": "Type a message...",
+      "hint": "Press Enter to send, Shift+Enter for new line",
+      "connectionError": "Connection Error",
+      "retry": "Retry",
+      "clearChat": "Clear chat"
+    },
+    "capabilities": {
+      "chat": { "label": "Chat", "description": "Conversational AI capabilities" },
+      "vision": { "label": "Vision", "description": "Image understanding and analysis" },
+      "audio": { "label": "Audio", "description": "Speech recognition and synthesis" },
+      "embedding": { "label": "Embedding", "description": "Text embedding generation" },
+      "code": { "label": "Code", "description": "Code generation and understanding" },
+      "reasoning": { "label": "Reasoning", "description": "Advanced reasoning capabilities" }
+    },
+    "contextPresets": {
+      "all": "All",
+      "8k": "> 8k",
+      "32k": "> 32k",
+      "128k": "> 128k",
+      "200k": "> 200k"
+    }
+  }
+}

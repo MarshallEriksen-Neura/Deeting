@@ -266,11 +266,15 @@ export async function fetchProviderModels(
 }
 
 export async function syncProviderModels(
-  instanceId: string
+  instanceId: string,
+  options?: { preserve_user_overrides?: boolean }
 ): Promise<ProviderModelResponse[]> {
   const data = await request<ProviderModelResponse[]>({
     url: `${PROVIDERS_BASE}/instances/${instanceId}/models:sync`,
     method: "POST",
+    params: {
+      preserve_user_overrides: options?.preserve_user_overrides ?? true,
+    },
   })
   return z.array(ProviderModelResponseSchema).parse(data)
 }

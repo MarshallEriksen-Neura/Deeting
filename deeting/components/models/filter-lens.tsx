@@ -3,6 +3,7 @@
 import * as React from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Search, X, Filter, ChevronDown } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
@@ -52,6 +53,7 @@ function CapabilityTag({
   isSelected: boolean
   onClick: () => void
 }) {
+  const t = useTranslations('models')
   const meta = CAPABILITY_META[capability]
 
   return (
@@ -68,7 +70,7 @@ function CapabilityTag({
       )}
     >
       <span className="text-base">{meta.icon}</span>
-      <span>{meta.label}</span>
+      <span>{t(`capabilities.${capability}.label`)}</span>
     </motion.button>
   )
 }
@@ -81,8 +83,20 @@ function ContextWindowFilter({
   value: number | null
   onChange: (value: number | null) => void
 }) {
+  const t = useTranslations('models')
   const [isOpen, setIsOpen] = React.useState(false)
-  const selectedPreset = CONTEXT_WINDOW_PRESETS.find(p => p.value === value) || CONTEXT_WINDOW_PRESETS[0]
+
+  // Map value to translation key suffix
+  const getPresetKey = (val: number | null) => {
+    if (val === null) return 'all'
+    if (val === 8000) return '8k'
+    if (val === 32000) return '32k'
+    if (val === 128000) return '128k'
+    if (val === 200000) return '200k'
+    return 'all'
+  }
+
+  const selectedLabel = t(`contextPresets.${getPresetKey(value)}`)
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -95,7 +109,7 @@ function ContextWindowFilter({
             value ? "text-[var(--primary)]" : "text-[var(--muted)]"
           )}
         >
-          <span>Context: {selectedPreset.label}</span>
+          <span>{t('filter.context', { label: selectedLabel })}</span>
           <ChevronDown className="size-3" />
         </GlassButton>
       </PopoverTrigger>
@@ -118,7 +132,7 @@ function ContextWindowFilter({
                   : "text-[var(--foreground)] hover:bg-white/5"
               )}
             >
-              {preset.label}
+              {t(`contextPresets.${getPresetKey(preset.value)}`)}
             </button>
           ))}
         </div>
@@ -135,6 +149,7 @@ function AdvancedFilters({
   filters: ModelFilterState
   onFiltersChange: (filters: ModelFilterState) => void
 }) {
+  const t = useTranslations('models')
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -148,13 +163,13 @@ function AdvancedFilters({
       >
         <div className="space-y-4">
           <h4 className="font-medium text-[var(--foreground)]">
-            Advanced Filters
+            {t('filter.advanced')}
           </h4>
 
           {/* Active Only Toggle */}
           <div className="flex items-center justify-between">
             <Label htmlFor="active-only" className="text-sm text-[var(--muted)]">
-              Active models only
+              {t('filter.activeOnly')}
             </Label>
             <Switch
               id="active-only"
@@ -167,7 +182,7 @@ function AdvancedFilters({
 
           {/* Price Tier Filter */}
           <div className="space-y-2">
-            <Label className="text-sm text-[var(--muted)]">Price Tier</Label>
+            <Label className="text-sm text-[var(--muted)]">{t('filter.priceTier')}</Label>
             <div className="flex flex-wrap gap-1.5">
               {(['cheap', 'moderate', 'expensive', 'premium'] as PriceTier[]).map((tier) => (
                 <button
@@ -203,6 +218,7 @@ export function FilterLens({
   filteredCount,
   className,
 }: FilterLensProps) {
+  const t = useTranslations('models')
   const hasActiveFilters =
     filters.search ||
     filters.capabilities.length > 0 ||
@@ -243,7 +259,7 @@ export function FilterLens({
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[var(--muted)]" />
           <Input
-            placeholder="Search by ID (e.g., gpt-4)..."
+            placeholder={t('filter.searchPlaceholder')}
             value={filters.search}
             onChange={(e) =>
               onFiltersChange({ ...filters, search: e.target.value })
@@ -300,7 +316,7 @@ export function FilterLens({
                   className="text-[var(--muted)] hover:text-red-400"
                 >
                   <X className="size-3 mr-1" />
-                  Clear
+                  {t('filter.clear')}
                 </GlassButton>
               </motion.div>
             )}
@@ -310,13 +326,9 @@ export function FilterLens({
           <div className="h-4 w-px bg-white/10" />
           <span className="text-sm text-[var(--muted)] whitespace-nowrap">
             {filteredCount === totalModels ? (
-              <>{totalModels} models</>
+              <>{t('filter.modelsCount', { count: totalModels })}</>
             ) : (
-              <>
-                <span className="text-[var(--foreground)]">{filteredCount}</span>
-                {" / "}
-                {totalModels} models
-              </>
+              <>{t('filter.filteredCount', { filtered: filteredCount, total: totalModels })}</>
             )}
           </span>
         </div>

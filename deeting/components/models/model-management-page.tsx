@@ -4,6 +4,7 @@ import * as React from "react"
 import { motion } from "framer-motion"
 import { ArrowLeft } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { GlassButton } from "@/components/ui/glass-button"
@@ -18,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { useProviderInstances, useProviderModels } from "@/hooks/use-providers"
+import { useProviderInstances, useProviderModels, useSyncProviderModels } from "@/hooks/use-providers"
 import { ProviderInstanceResponse, ProviderModelResponse } from "@/lib/api/providers"
 
 import { InstanceDashboard } from "./instance-dashboard"
@@ -304,11 +305,13 @@ export function ModelManagementPage({
   instanceId,
   className,
 }: ModelManagementPageProps) {
+  const t = useTranslations('models')
   const router = useRouter()
 
   const { instances, isLoading: instancesLoading } = useProviderInstances({ include_public: true })
   const { models: rawModels, isLoading: modelsLoading, isError: modelsError, error: modelsErrObj, mutate: refreshModels } =
     useProviderModels(instanceId ?? null)
+  const { sync: syncProviderModels } = useSyncProviderModels()
 
   const rawInstance = React.useMemo(
     () => instances.find((it) => it.id === instanceId),
@@ -387,6 +390,8 @@ export function ModelManagementPage({
     if (!instanceId) return
     setSyncState((prev) => ({ ...prev, is_syncing: true, progress: 10, error: null }))
     try {
+      await syncProviderModels(instanceId, { preserve_user_overrides: true })
+      setSyncState((prev) => ({ ...prev, progress: 70 }))
       await refreshModels()
       setSyncState((prev) => ({
         ...prev,
@@ -433,7 +438,7 @@ export function ModelManagementPage({
   if (!rawInstance && !instancesLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-red-400">
-        Provider instance not found.
+        {t('page.notFound')}
       </div>
     )
   }
@@ -441,7 +446,7 @@ export function ModelManagementPage({
   if (instancesLoading || modelsLoading || !instance) {
     return (
       <div className="min-h-screen flex items-center justify-center text-[var(--muted)]">
-        Loading models...
+        {t('page.loading')}
       </div>
     )
   }
@@ -449,7 +454,7 @@ export function ModelManagementPage({
   if (modelsError) {
     return (
       <div className="min-h-screen flex items-center justify-center text-red-400">
-        {modelsErrObj?.message || "Failed to load models"}
+        {modelsErrObj?.message || t('page.failedToLoad')}
       </div>
     )
   }
@@ -471,7 +476,7 @@ export function ModelManagementPage({
             className="gap-2 text-[var(--muted)] hover:text-[var(--foreground)]"
           >
             <ArrowLeft className="size-4" />
-            Back to Providers
+            {t('page.backToProviders')}
           </GlassButton>
         </motion.div>
 
@@ -541,7 +546,7 @@ export function ModelManagementPage({
                 className="py-16 text-center"
               >
                 <p className="text-[var(--muted)]">
-                  No models match your current filters.
+                  {t('list.noResults.text')}
                 </p>
                 <GlassButton
                   variant="ghost"
@@ -549,7 +554,7 @@ export function ModelManagementPage({
                   onClick={() => setFilters(DEFAULT_FILTERS)}
                   className="mt-4"
                 >
-                  Clear all filters
+                  {t('list.noResults.clear')}
                 </GlassButton>
               </motion.div>
             )}
@@ -570,15 +575,15 @@ export function ModelManagementPage({
       <Sheet open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
         <SheetContent className="backdrop-blur-xl bg-[var(--background)]/90 border-l border-white/10 sm:max-w-md">
           <SheetHeader>
-            <SheetTitle>Instance Settings</SheetTitle>
+            <SheetTitle>{t('instance.settings')}</SheetTitle>
             <SheetDescription>
-              Configure connection settings for {instance.name}
+              {t('instance.configureConnection', { name: instance.name })}
             </SheetDescription>
           </SheetHeader>
 
           <div className="py-6 space-y-6">
             <div className="space-y-2">
-              <Label>Instance Name</Label>
+              <Label>{t('instance.name')}</Label>
               <Input
                 defaultValue={instance.name}
                 className="bg-white/5 border-white/10"
@@ -586,7 +591,7 @@ export function ModelManagementPage({
             </div>
 
             <div className="space-y-2">
-              <Label>Base URL</Label>
+              <Label>{t('instance.baseUrl')}</Label>
               <Input
                 defaultValue={instance.base_url}
                 className="bg-white/5 border-white/10 font-mono text-sm"
@@ -595,9 +600,9 @@ export function ModelManagementPage({
 
             <div className="flex items-center justify-between">
               <div>
-                <Label>Health Check</Label>
+                <Label>{t('instance.healthCheck')}</Label>
                 <p className="text-xs text-[var(--muted)] mt-0.5">
-                  Ping every {instance.health_check_interval || 30}s
+                  {t('instance.healthCheckDesc', { interval: instance.health_check_interval || 30 })}
                 </p>
               </div>
               <Switch defaultChecked />
@@ -605,9 +610,9 @@ export function ModelManagementPage({
 
             <div className="flex items-center justify-between">
               <div>
-                <Label>Auto Sync</Label>
+                <Label>{t('instance.autoSync')}</Label>
                 <p className="text-xs text-[var(--muted)] mt-0.5">
-                  Sync models daily
+                  {t('instance.autoSyncDesc')}
                 </p>
               </div>
               <Switch />
@@ -616,7 +621,7 @@ export function ModelManagementPage({
 
           <SheetFooter>
             <GlassButton className="w-full" onClick={() => setIsSettingsOpen(false)}>
-              Save Changes
+              {t('instance.save')}
             </GlassButton>
           </SheetFooter>
         </SheetContent>
