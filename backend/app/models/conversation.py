@@ -173,6 +173,19 @@ class ConversationMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_truncated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false", comment="是否为截断内容"
     )
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="是否被用户删除（软删除，保留审计）",
+    )
+    parent_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("conversation_message.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="源消息 ID（用于重新生成/引用）",
+    )
 
 
 class ConversationSummary(Base, UUIDPrimaryKeyMixin, TimestampMixin):

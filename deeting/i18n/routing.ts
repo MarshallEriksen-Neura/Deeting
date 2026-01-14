@@ -11,9 +11,9 @@ export const routing = defineRouting({
   // 预留路径映射（示例，可按需扩展）
   pathnames: {
     "/": "/",
-    "/overview": {
-      "zh-CN": "/overview",
-      en: "/overview",
+    "/dashboard": {
+      "zh-CN": "/dashboard",
+      en: "/dashboard",
     },
   },
 })

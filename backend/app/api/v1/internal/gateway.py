@@ -64,58 +64,12 @@ from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
     stream_with_billing,
 )
-from app.repositories.usage_repository import UsageRepository
+from app.api.v1.external.gateway import _stream_billing_callback
 from app.schemas.bandit import BanditReportResponse, BanditReportSummary
 from app.repositories.bandit_repository import BanditRepository
 
 logger = logging.getLogger(__name__)
 
-
-async def _stream_audit_callback(
-    ctx: WorkflowContext,
-    accumulator: StreamTokenAccumulator,
-) -> None:
-    """
-    流式审计回调：内部通道仅记录用量，不扣费
-
-    用途：
-    - 记录 token 用量用于成本核算
-    - 更新 billing 信息用于审计
-    """
-    # 更新 billing 信息（仅统计，不扣费）
-    ctx.billing.input_cost = 0.0
-    ctx.billing.output_cost = 0.0
-    ctx.billing.total_cost = 0.0
-
-    # 记录用量
-    try:
-        usage_repo = UsageRepository()
-        await usage_repo.create({
-            "tenant_id": ctx.tenant_id,
-            "user_id": ctx.user_id,
-            "trace_id": ctx.trace_id,
-            "model": ctx.requested_model,
-            "capability": ctx.capability,
-            "input_tokens": ctx.billing.input_tokens,
-            "output_tokens": ctx.billing.output_tokens,
-            "total_cost": 0.0,  # 内部通道不计费
-            "currency": "USD",
-            "provider": ctx.upstream_result.provider,
-            "latency_ms": ctx.upstream_result.latency_ms,
-            "is_stream": True,
-            "stream_completed": accumulator.is_completed,
-            "stream_error": accumulator.error,
-            "channel": "internal",
-        })
-    except Exception as e:
-        logger.error(f"Stream usage record failed trace_id={ctx.trace_id}: {e}")
-
-    logger.info(
-        f"Stream audit completed trace_id={ctx.trace_id} "
-        f"user={ctx.user_id} "
-        f"tokens={ctx.billing.total_tokens} "
-        f"completed={accumulator.is_completed}"
-    )
 
 
 @router.get(
@@ -189,12 +143,12 @@ async def chat_completions(
         stream = ctx.get("upstream_call", "response_stream")
         accumulator = ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
 
-        # 包装流式响应，在流完成后记录审计（不扣费）
+        # 包装流式响应，在流完成后记录计费/用量
         wrapped_stream = stream_with_billing(
             stream=stream,
             ctx=ctx,
             accumulator=accumulator,
-            on_complete=_stream_audit_callback,
+            on_complete=_stream_billing_callback,
         )
         return StreamingResponse(wrapped_stream, media_type="text/event-stream")
 

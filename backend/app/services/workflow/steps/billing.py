@@ -52,8 +52,8 @@ class BillingStep(BaseStep):
         配额已在 QuotaCheckStep 扣减，此处只创建交易记录。
         """
         pricing = ctx.get("routing", "pricing_config") or {}
-        if not pricing or not ctx.is_external or not ctx.tenant_id:
-            ctx.set("billing", "skip_reason", "no_pricing_or_internal")
+        if not pricing or not ctx.tenant_id:
+            ctx.set("billing", "skip_reason", "no_pricing_or_tenant")
             return StepResult(status=StepStatus.SUCCESS)
 
         request = ctx.get("validation", "request")
@@ -87,8 +87,8 @@ class BillingStep(BaseStep):
         如果实际费用与预估费用有差异，需要调整 Redis 余额。
         """
         pricing = ctx.get("routing", "pricing_config") or {}
-        if not pricing or not ctx.is_external or not ctx.tenant_id:
-            ctx.set("billing", "skip_reason", "no_pricing_or_internal")
+        if not pricing or not ctx.tenant_id:
+            ctx.set("billing", "skip_reason", "no_pricing_or_tenant")
             return StepResult(status=StepStatus.SUCCESS)
 
         input_tokens = ctx.billing.input_tokens

@@ -128,6 +128,7 @@ class ConversationService:
             total_tokens, _, flush_flag, turn = res
             last_turn = int(turn)
             msg["turn_index"] = last_turn
+            msg.setdefault("is_deleted", False)
             should_flush = should_flush or bool(flush_flag)
 
         await self.redis.hset(
@@ -176,6 +177,8 @@ class ConversationService:
         msgs_raw, meta_raw, summary_raw = await pipe.execute()
 
         messages = [json.loads(m.decode()) for m in msgs_raw] if msgs_raw else []
+        # 过滤软删除的消息，不影响审计
+        messages = [m for m in messages if not m.get("is_deleted")]
         meta = (
             {k.decode(): self._decode_meta_value(v) for k, v in meta_raw.items()}
             if meta_raw
@@ -202,6 +205,52 @@ class ConversationService:
             CacheKeys.conversation_meta(session_id),
             {"summarizing": 0, "summary_job_id": ""},
         )
+
+    # ===== 变更与删除操作 =====
+
+    async def delete_message(self, session_id: str, turn_index: int) -> dict[str, Any]:
+        """
+        软删除指定 turn 的消息：在 Redis 中标记 is_deleted，并回写 meta 的 token 统计。
+        """
+        msgs_key = CacheKeys.conversation_messages(session_id)
+        meta_key = CacheKeys.conversation_meta(session_id)
+        messages = await self.redis.lrange(msgs_key, 0, -1)
+
+        if not messages:
+            return {"deleted": False}
+
+        decoded = [json.loads(m.decode()) for m in messages]
+        target_idx = None
+        token_delta = 0
+        for idx, msg in enumerate(decoded):
+            if msg.get("turn_index") == turn_index and not msg.get("is_deleted"):
+                target_idx = idx
+                token_delta = int(msg.get("token_estimate", 0))
+                msg["is_deleted"] = True
+                decoded[idx] = msg
+                break
+
+        if target_idx is None:
+            return {"deleted": False}
+
+        await self.redis.lset(msgs_key, target_idx, json.dumps(decoded[target_idx]))
+        try:
+            await self.redis.hincrby(meta_key, "total_tokens", -token_delta)
+        except Exception:
+            # meta 不存在或类型不匹配时忽略
+            pass
+        await self.redis.hset(meta_key, mapping={"last_active_at": datetime.now(UTC).isoformat()})
+        return {"deleted": True, "turn_index": turn_index}
+
+    async def clear_session(self, session_id: str) -> None:
+        """
+        一键清空上下文：删除窗口消息、摘要和 meta。
+        不影响已落库的历史；新消息将按新窗口重建 meta。
+        """
+        msgs_key = CacheKeys.conversation_messages(session_id)
+        meta_key = CacheKeys.conversation_meta(session_id)
+        summary_key = CacheKeys.conversation_summary(session_id)
+        await self.redis.delete(msgs_key, meta_key, summary_key)
 
     # ===== 内部工具 =====
 

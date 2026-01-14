@@ -147,8 +147,8 @@ async def _stream_billing_callback(
     ctx.billing.total_cost = total_cost
     ctx.billing.currency = pricing.get("currency", "USD") if pricing else ctx.billing.currency or "USD"
 
-    # 外部通道：记录流水并调整差额
-    if pricing and ctx.is_external and ctx.tenant_id and ctx.db_session:
+    # 记录流水并调整差额（内外通道统一）
+    if pricing and ctx.tenant_id and ctx.db_session:
         try:
             repo = BillingRepository(ctx.db_session)
             

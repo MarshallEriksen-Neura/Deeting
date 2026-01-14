@@ -1,0 +1,51 @@
+{
+  "title": "Monitoring",
+  "description": "Tool-oriented, high-density information for troubleshooting",
+  "controlBar": {
+    "timeRange": "Time Range",
+    "models": "Models",
+    "apiKeys": "API Keys",
+    "errorCode": "Error Code",
+    "autoRefresh": "Auto Refresh",
+    "on": "On",
+    "off": "Off"
+  },
+  "performance": {
+    "heatmap": {
+      "title": "Latency Distribution Heatmap",
+      "description": "Request latency patterns over time - color intensity indicates request volume",
+      "loading": "Loading heatmap data...",
+      "legend": {
+        "label": "Request Volume",
+        "more": "More"
+      },
+      "stats": {
+        "peak": "Peak",
+        "median": "Median"
+      }
+    },
+    "percentile": {
+      "title": "P99 vs P50 Latency Trends",
+      "description": "Tail latency (P99) determines worst-case user experience",
+      "loading": "Loading trend data..."
+    }
+  },
+  "dimensional": {
+    "modelCost": {
+      "title": "Cost by Model",
+      "description": "Identify budget-consuming models",
+      "total": "Total Cost"
+    },
+    "errorDist": {
+      "title": "Error Distribution",
+      "description": "Quick fault attribution",
+      "loading": "Loading error data...",
+      "totalErrors": "Total Errors"
+    },
+    "keyActivity": {
+      "title": "Top 5 Active Keys",
+      "description": "Most active API keys by request rate",
+      "rpm": "RPM"
+    }
+  }
+}

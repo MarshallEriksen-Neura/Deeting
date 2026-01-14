@@ -42,7 +42,7 @@ export const userNavigation: NavGroup[] = [
       {
         id: "dashboard",
         label: "nav.dashboard",
-        href: "/overview",
+        href: "/dashboard",
         icon: "layoutDashboard",
       },
       {
@@ -127,7 +127,7 @@ export const adminNavigation: NavGroup[] = [
       {
         id: "dashboard",
         label: "nav.dashboard",
-        href: "/overview",
+        href: "/dashboard",
         icon: "layoutDashboard",
       },
       {

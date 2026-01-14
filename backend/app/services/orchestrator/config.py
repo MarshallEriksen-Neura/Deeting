@@ -64,18 +64,23 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     steps=[
         "validation",  # 1) 入参校验
         "conversation_load",  # 2) 会话上下文加载
-        "rate_limit",  # 3) 限流（宽松）
-        "routing",  # 4) 路由决策
-        "template_render",  # 5) 模板渲染
-        "upstream_call",  # 6) 上游调用
-        "response_transform",  # 7) 响应转换
-        "conversation_append",  # 8) 写入窗口 & 触发摘要
-        "audit_log",  # 9) 审计日志（内部）
+        "quota_check",  # 3) 配额/余额检查（与外部一致）
+        "rate_limit",  # 4) 限流
+        "routing",  # 5) 路由决策
+        "template_render",  # 6) 模板渲染
+        "upstream_call",  # 7) 上游调用
+        "response_transform",  # 8) 响应转换
+        "conversation_append",  # 9) 写入窗口 & 触发摘要
+        "sanitize",  # 10) 脱敏
+        "billing",  # 11) 计费记录
+        "audit_log",  # 12) 审计日志（内部）
     ],
     step_configs={
+        "quota_check": StepConfig(timeout=5.0),
         "rate_limit": StepConfig(timeout=2.0),
         "routing": StepConfig(timeout=10.0),
         "upstream_call": StepConfig(timeout=180.0, max_retries=2),  # 内部超时更长
+        "billing": StepConfig(timeout=10.0, max_retries=3),
     },
 )
 

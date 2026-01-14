@@ -126,6 +126,7 @@ def register_routes(app: FastAPI) -> None:
         external_gateway_router,
         internal_bridge_router,
         internal_gateway_router,
+        internal_conversation_router,
         media_router,
         users_router,
         provider_router,
@@ -161,6 +162,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         internal_bridge_router, prefix=f"{api_prefix}/internal", tags=["Bridge"]
+    )
+    app.include_router(
+        internal_conversation_router, prefix=f"{api_prefix}/internal", tags=["Conversations"]
     )
     app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])

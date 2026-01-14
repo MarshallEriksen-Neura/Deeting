@@ -59,9 +59,6 @@ class QuotaCheckStep(BaseStep):
 
     def __init__(self, config: StepConfig | None = None, quota_repo: QuotaRepository | None = None):
         super().__init__(config)
-        # 内部通道默认跳过
-        if config is None:
-            self.config.skip_on_channels = ["internal"]
         self.quota_repo = quota_repo
         self.apikey_repo: ApiKeyRepository | None = None
 
