@@ -477,6 +477,41 @@ html:not(.dark) [data-slot="glass-button"][data-variant="secondary"] {
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ============================================
+   Dashboard Animation Keyframes
+   ============================================ */
+@keyframes glass-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-glass-card-in {
+  animation: glass-card-in 0.6s ease-out;
+}
+
+/* Staggered animation delays */
+.stagger-1 {
+  animation-delay: 0ms;
+}
+
+.stagger-2 {
+  animation-delay: 100ms;
+}
+
+.stagger-3 {
+  animation-delay: 200ms;
+}
+
+.stagger-4 {
+  animation-delay: 300ms;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

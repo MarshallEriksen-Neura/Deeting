@@ -1,0 +1,10 @@
+/target
+/backend/target
+/app/target
+/app/dist
+/app/node_modules
+/app/.turbo
+/app/.vite
+/.env
+.DS_Store
+*.log

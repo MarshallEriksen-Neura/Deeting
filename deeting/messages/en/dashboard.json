@@ -1,0 +1,56 @@
+{
+  "title": "Dashboard",
+  "description": "Real-time overview of gateway metrics and system health",
+  "kpi": {
+    "financial": {
+      "label": "Monthly Spend",
+      "quotaUsed": "Quota Used",
+      "hover": "Estimated end-of-month consumption"
+    },
+    "traffic": {
+      "label": "Today's Requests"
+    },
+    "speed": {
+      "label": "Avg TTFT"
+    },
+    "health": {
+      "label": "Success Rate"
+    }
+  },
+  "tokenThroughput": {
+    "title": "Token Throughput",
+    "description": "Input and output token consumption trends",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
+    "ratio": "I/O Ratio",
+    "totalInput": "Total Input",
+    "totalOutput": "Total Output",
+    "loading": "Loading chart data..."
+  },
+  "smartRouter": {
+    "title": "Smart Router Value",
+    "description": "Performance and cost optimization metrics",
+    "cacheHitRate": "Cache Hit Rate",
+    "costSavings": "Cost Savings",
+    "thisMonth": "This month",
+    "industry": "Industry Avg",
+    "outperforming": "Outperforming!",
+    "protection": "Protected",
+    "blocked": "blocked",
+    "acceleration": "Speedup",
+    "ms": "ms"
+  },
+  "providerHealth": {
+    "title": "Provider Health",
+    "description": "Upstream model provider status and latency",
+    "noProviders": "No providers configured",
+    "priority": "Priority",
+    "latency": "latency"
+  },
+  "recentErrors": {
+    "title": "Recent Errors",
+    "description": "Latest gateway error logs",
+    "viewAll": "View All",
+    "noErrors": "No recent errors - all systems operational"
+  }
+}

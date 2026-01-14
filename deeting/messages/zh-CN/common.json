@@ -36,7 +36,7 @@
     },
     "nav": {
       "main": "主要",
-      "dashboard": "仪表盘",
+      "dashboard": "概览",
       "routes": "路由",
       "services": "服务",
       "plugins": "插件",

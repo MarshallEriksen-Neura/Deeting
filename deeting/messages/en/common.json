@@ -36,7 +36,7 @@
     },
     "nav": {
       "main": "Main",
-      "dashboard": "Dashboard",
+      "dashboard": "Overview",
       "routes": "Routes",
       "services": "Services",
       "plugins": "Plugins",

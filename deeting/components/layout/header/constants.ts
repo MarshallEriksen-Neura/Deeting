@@ -7,5 +7,5 @@ export const defaultNavItems: NavItem[] = [
   { label: "助手", href: "/assistants" },
   { label: "图片", href: "/images" },
   { label: "视频", href: "/videos" },
-  { label: "仪表盘", href: "/dashboard" },
+  { label: "概览", href: "/overview" },
 ]
