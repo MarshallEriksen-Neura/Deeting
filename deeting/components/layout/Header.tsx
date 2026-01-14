@@ -8,7 +8,7 @@ import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
 
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { GlassButton } from "@/components/ui/glass-button"
 import { Container } from "@/components/ui/container"
 import { useUserProfile } from "@/hooks/use-user"
 import { useAuthService } from "@/hooks/use-auth"
@@ -70,7 +70,7 @@ export function Header({
         {/* Left section: Logo + Navigation */}
         <div className="flex items-center gap-6">
           {/* Mobile menu button */}
-          <Button
+          <GlassButton
             variant="ghost"
             size="icon-sm"
             className="md:hidden"
@@ -78,7 +78,7 @@ export function Header({
           >
             <Menu className="size-5" />
             <span className="sr-only">Toggle menu</span>
-          </Button>
+          </GlassButton>
 
           {/* Logo */}
           <Link
@@ -110,14 +110,14 @@ export function Header({
               onLogout={logout}
             />
           ) : (
-            <Button
+            <GlassButton
               asChild
               variant="ghost"
               size="sm"
               className="h-9 px-4 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--primary)]/10"
             >
               <Link href="/login">{t("login")}</Link>
-            </Button>
+            </GlassButton>
           )}
         </div>
       </Container>

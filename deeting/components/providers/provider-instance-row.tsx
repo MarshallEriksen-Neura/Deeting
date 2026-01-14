@@ -21,11 +21,11 @@ import { GlassCard } from "@/components/ui/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+  GlassDropdownMenu,
+  GlassDropdownMenuContent,
+  GlassDropdownMenuItem,
+  GlassDropdownMenuTrigger,
+} from "@/components/ui/glass-dropdown"
 import { GlassButton } from "@/components/ui/glass-button"
 
 type InstanceRowData = {
@@ -157,8 +157,8 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                 onCheckedChange={(v) => onToggle(data.id, v)}
               />
 
-              <DropdownMenu>
-                <DropdownMenuTrigger
+              <GlassDropdownMenu>
+                <GlassDropdownMenuTrigger
                   asChild
                   id={`${menuId}-trigger`}
                   aria-controls={`${menuId}-content`}
@@ -166,41 +166,41 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                   <GlassButton variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
                     <MoreHorizontal className="size-4" />
                   </GlassButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
+                </GlassDropdownMenuTrigger>
+                <GlassDropdownMenuContent
                   align="end"
                   className="w-[160px]"
                   id={`${menuId}-content`}
                   aria-labelledby={`${menuId}-trigger`}
                 >
-                  <DropdownMenuItem onClick={() => onToggle(data.id, !isEnabled)}>
+                  <GlassDropdownMenuItem onClick={() => onToggle(data.id, !isEnabled)}>
                     <Settings2 className="mr-2 size-4" />
                     {isEnabled ? t("actions.disable") : t("actions.enable")}
-                  </DropdownMenuItem>
+                  </GlassDropdownMenuItem>
                   {onViewModels && (
-                    <DropdownMenuItem onClick={() => onViewModels(data.id)}>
+                    <GlassDropdownMenuItem onClick={() => onViewModels(data.id)}>
                       <Server className="mr-2 size-4" />
                       {t("actions.models")}
-                    </DropdownMenuItem>
+                    </GlassDropdownMenuItem>
                   )}
                   {onEdit && (
-                    <DropdownMenuItem onClick={() => onEdit(data.id)}>
+                    <GlassDropdownMenuItem onClick={() => onEdit(data.id)}>
                       <Settings2 className="mr-2 size-4" />
                       {t("actions.edit")}
-                    </DropdownMenuItem>
+                    </GlassDropdownMenuItem>
                   )}
                   <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
                     <AlertDialogTrigger asChild>
-                      <DropdownMenuItem
+                      <GlassDropdownMenuItem
                         className="text-red-600 focus:text-red-600"
                         onSelect={(e) => {
                           e.preventDefault()
                           setConfirmOpen(true)
                         }}
-                      >
-                        <Trash2 className="mr-2 size-4" />
-                        {t("actions.remove")}
-                      </DropdownMenuItem>
+                        >
+                          <Trash2 className="mr-2 size-4" />
+                          {t("actions.remove")}
+                      </GlassDropdownMenuItem>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -223,8 +223,8 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </GlassDropdownMenuContent>
+              </GlassDropdownMenu>
             </div>
           </div>
         </div>

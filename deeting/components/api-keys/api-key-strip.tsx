@@ -14,13 +14,13 @@ import {
 } from "@/lib/api/api-keys"
 import { Progress } from "@/components/ui/progress"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Button } from "@/components/ui/button"
+  GlassDropdownMenu,
+  GlassDropdownMenuContent,
+  GlassDropdownMenuItem,
+  GlassDropdownMenuSeparator,
+  GlassDropdownMenuTrigger,
+} from "@/components/ui/glass-dropdown"
+import { GlassButton } from "@/components/ui/glass-button"
 import { KeyIdenticon } from "./key-identicon"
 
 interface ApiKeyStripProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -160,51 +160,51 @@ export function ApiKeyStrip({
         </div>
 
         {/* Actions dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger
+        <GlassDropdownMenu>
+          <GlassDropdownMenuTrigger
             asChild
             id={`${menuId}-trigger`}
             aria-controls={`${menuId}-content`}
           >
-            <Button
+            <GlassButton
               variant="ghost"
               size="icon-sm"
               className="opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <MoreVertical className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
+            </GlassButton>
+          </GlassDropdownMenuTrigger>
+          <GlassDropdownMenuContent
             align="end"
             className="w-40"
             id={`${menuId}-content`}
             aria-labelledby={`${menuId}-trigger`}
           >
-            <DropdownMenuItem
+            <GlassDropdownMenuItem
               onClick={() => onEdit?.(apiKey)}
               disabled={isDisabled}
             >
               <Pencil className="size-4 mr-2" />
               {t("actions.edit")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
+            </GlassDropdownMenuItem>
+            <GlassDropdownMenuItem
               onClick={() => onRoll?.(apiKey)}
               disabled={isDisabled}
             >
               <RefreshCw className="size-4 mr-2" />
               {t("actions.roll")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
+            </GlassDropdownMenuItem>
+            <GlassDropdownMenuSeparator />
+            <GlassDropdownMenuItem
               onClick={() => onRevoke?.(apiKey)}
               disabled={isDisabled}
               className="text-red-500 focus:text-red-500"
             >
               <Trash2 className="size-4 mr-2" />
               {t("actions.revoke")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </GlassDropdownMenuItem>
+          </GlassDropdownMenuContent>
+        </GlassDropdownMenu>
       </div>
     </div>
   )

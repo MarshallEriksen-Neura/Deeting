@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 
 const ModelAccordion = dynamic(
   () => import("./model-accordion").then((m) => m.ModelAccordion),
@@ -421,12 +420,12 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setQuickAddOpen(false)} disabled={quickAddLoading}>
+            <GlassButton variant="ghost" onClick={() => setQuickAddOpen(false)} disabled={quickAddLoading}>
               {t("quickAdd.cancel")}
-            </Button>
-            <Button onClick={handleQuickAddSubmit} disabled={quickAddLoading}>
+            </GlassButton>
+            <GlassButton onClick={handleQuickAddSubmit} disabled={quickAddLoading}>
               {quickAddLoading ? t("quickAdd.submitting") : t("quickAdd.submit")}
-            </Button>
+            </GlassButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

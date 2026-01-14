@@ -2,7 +2,7 @@
 
 import { Bell, Search, Settings } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { GlassButton } from "@/components/ui/glass-button"
 import {
   Tooltip,
   TooltipContent,
@@ -15,14 +15,14 @@ export function ActionButtons() {
     <div className="flex items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
+          <GlassButton
             variant="ghost"
             size="icon-sm"
             className="text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--primary)]/10"
           >
             <Search className="size-4" />
             <span className="sr-only">Search</span>
-          </Button>
+          </GlassButton>
         </TooltipTrigger>
         <TooltipContent side="bottom">
           <p>Search</p>
@@ -31,7 +31,7 @@ export function ActionButtons() {
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
+          <GlassButton
             variant="ghost"
             size="icon-sm"
             className="relative text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--primary)]/10"
@@ -42,7 +42,7 @@ export function ActionButtons() {
               <span className="relative inline-flex size-2 rounded-full bg-[var(--teal-accent)]" />
             </span>
             <span className="sr-only">Notifications</span>
-          </Button>
+          </GlassButton>
         </TooltipTrigger>
         <TooltipContent side="bottom">
           <p>Notifications</p>
@@ -51,14 +51,14 @@ export function ActionButtons() {
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
+          <GlassButton
             variant="ghost"
             size="icon-sm"
             className="text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--primary)]/10"
           >
             <Settings className="size-4" />
             <span className="sr-only">Settings</span>
-          </Button>
+          </GlassButton>
         </TooltipTrigger>
         <TooltipContent side="bottom">
           <p>Settings</p>
@@ -76,4 +76,3 @@ export function ActionButtons() {
     </div>
   )
 }
-

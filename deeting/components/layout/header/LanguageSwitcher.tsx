@@ -5,7 +5,7 @@ import { Languages } from "lucide-react"
 import { useTranslations, useLocale } from "next-intl"
 import { useSearchParams } from "next/navigation"
 
-import { Button } from "@/components/ui/button"
+import { GlassButton } from "@/components/ui/glass-button"
 import {
   GlassDropdownMenu,
   GlassDropdownMenuContent,
@@ -98,7 +98,7 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
         id={`${menuId}-trigger`}
         aria-controls={`${menuId}-content`}
       >
-        <Button
+        <GlassButton
           variant="ghost"
           size="sm"
           className="h-9 px-2 text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--primary)]/10"
@@ -107,7 +107,7 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
           <span className="ml-2 hidden text-sm font-medium md:inline">
             {currentLanguageLabel}
           </span>
-        </Button>
+        </GlassButton>
       </GlassDropdownMenuTrigger>
       <GlassDropdownMenuContent
         className="w-48"
@@ -135,14 +135,14 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
 
 function LanguageSwitcherFallback() {
   return (
-    <Button
+    <GlassButton
       variant="ghost"
       size="sm"
       className="h-9 px-2 text-[var(--muted)]"
       disabled
     >
       <Languages className="size-4" />
-    </Button>
+    </GlassButton>
   )
 }
 

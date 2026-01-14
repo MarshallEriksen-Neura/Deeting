@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Button } from "@/components/ui/button"
+import { GlassButton } from "@/components/ui/glass-button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useTranslations } from "next-intl"
 import {
@@ -40,7 +40,7 @@ export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserM
         id={`${menuId}-trigger`}
         aria-controls={`${menuId}-content`}
       >
-        <Button
+        <GlassButton
           variant="ghost"
           className="relative h-8 w-8 rounded-full p-0 hover:ring-2 hover:ring-[var(--primary)]/20 transition-all"
         >
@@ -56,7 +56,7 @@ export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserM
               {initials}
             </AvatarFallback>
           </Avatar>
-        </Button>
+        </GlassButton>
       </GlassDropdownMenuTrigger>
       <GlassDropdownMenuContent
         className="w-56"

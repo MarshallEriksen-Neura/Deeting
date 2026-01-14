@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { GlassButton } from "@/components/ui/glass-button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -53,7 +53,7 @@ export function ProviderIconPicker({ value, onChange, className }: ProviderIconP
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
+        <GlassButton
           variant="outline"
           role="combobox"
           aria-expanded={open}
@@ -64,7 +64,7 @@ export function ProviderIconPicker({ value, onChange, className }: ProviderIconP
             {PROVIDER_ICON_OPTIONS.find((framework) => framework.id === value)?.label || "Select icon..."}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
+        </GlassButton>
       </PopoverTrigger>
       <PopoverContent
         className="w-[320px] p-0 z-[2147483605]"

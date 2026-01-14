@@ -4,7 +4,7 @@ import * as React from "react"
 import { Download, Monitor, ShieldCheck, Zap } from "lucide-react"
 import { useTranslations } from "next-intl"
 
-import { Button } from "@/components/ui/button"
+import { GlassButton } from "@/components/ui/glass-button"
 import {
   Dialog,
   DialogContent,
@@ -60,19 +60,19 @@ export function DownloadAppModal() {
           </div>
 
           <DialogFooter className="flex-col sm:flex-col gap-2 mt-4">
-            <Button 
+            <GlassButton 
               className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-6 shadow-lg hover:shadow-xl transition-all duration-300" 
               onClick={handleDownload}
             >
               Download for Desktop
-            </Button>
-            <Button 
+            </GlassButton>
+            <GlassButton 
               variant="ghost" 
               className="w-full text-muted-foreground hover:text-foreground" 
               onClick={closeDownloadModal}
             >
               Maybe Later
-            </Button>
+            </GlassButton>
           </DialogFooter>
         </div>
       </DialogContent>

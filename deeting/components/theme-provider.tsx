@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
-import { Button } from "@/components/ui/button";
+import { GlassButton } from "@/components/ui/glass-button";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/store/theme-store";
 import { ThemeTransitionOverlay } from "@/components/theme-transition-overlay";
@@ -102,7 +102,7 @@ export function ThemeToggle({
   const isDark = mounted && resolvedTheme === "dark";
 
   return (
-    <Button
+    <GlassButton
       type="button"
       variant="ghost"
       size={buttonSizes[size]}
@@ -165,12 +165,12 @@ export function ThemeToggle({
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"
+            d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"
             />
           </svg>
         </>
       )}
-    </Button>
+    </GlassButton>
   );
 }
 
@@ -218,7 +218,7 @@ export function ThemeSelector({ className }: { className?: string }) {
       `}
     >
       {options.map((option) => (
-        <Button
+        <GlassButton
           key={option.value}
           onClick={() => handleSelect(option.value)}
           disabled={isTransitioning}
@@ -237,7 +237,7 @@ export function ThemeSelector({ className }: { className?: string }) {
         >
           <span>{option.icon}</span>
           <span>{option.label}</span>
-        </Button>
+        </GlassButton>
       ))}
     </div>
   );
