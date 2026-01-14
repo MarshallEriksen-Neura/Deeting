@@ -38,7 +38,7 @@ export function useUserProfile() {
   useEffect(() => {
     if (!isAuthenticated) {
       clearProfile()
-      void mutate(null, false)
+      void mutate(undefined, false)
     }
   }, [isAuthenticated, clearProfile, mutate])
 

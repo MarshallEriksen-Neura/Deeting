@@ -1,20 +1,25 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
 import { RefreshCw, AlertCircle } from "lucide-react"
 
 import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel } from "@/hooks/use-providers"
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
-import { ModelMatrix } from "./model-matrix"
 import { ModelEmptyState } from "./empty-state"
 import { InstanceDashboard } from "./instance-dashboard"
 import { TestDrawer } from "./test-drawer"
-import type { ProviderModelResponse } from "@/lib/api/providers"
+import type { ProviderModelResponse, ProviderModelUpdate } from "@/lib/api/providers"
 import type { ProviderModel, ModelCapability } from "./types"
 import { toast } from "sonner"
 import ConnectProviderDrawer from "@/components/providers/connect-provider-drawer"
+
+const ModelAccordion = dynamic(
+  () => import("./model-accordion").then((m) => m.ModelAccordion),
+  { ssr: false }
+)
 
 interface ModelsManagerProps {
   instanceId: string
@@ -38,8 +43,22 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const [editDrawerOpen, setEditDrawerOpen] = React.useState(false)
   
   // Derived Data
-  const instance = React.useMemo(
-    () => instances.find(i => i.id === instanceId),
+  const instance = React.useMemo<import("./types").ProviderInstance | undefined>(
+    () => {
+      const raw = instances.find(i => i.id === instanceId)
+      if (!raw) return undefined
+      return {
+        ...raw,
+        provider_display_name: raw.preset_slug, // 使用 slug 作为显示名称兜底
+        status: (raw.health_status as any) || "offline",
+        latency: raw.latency_ms,
+        model_count: 0, // 暂无模型数量字段
+        last_synced_at: raw.updated_at,
+        theme_color: raw.theme_color || undefined,
+        description: raw.description || undefined,
+        icon: raw.icon || undefined
+      }
+    },
     [instances, instanceId]
   )
 
@@ -62,15 +81,21 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       )
 
       const extraMeta = (m.extra_meta || {}) as Record<string, unknown>
+      const routingConfig = (m.routing_config || {}) as Record<string, unknown>
+      const capabilitiesFromRouting = Array.isArray(routingConfig.capabilities)
+        ? routingConfig.capabilities
+        : []
       const capabilitiesFromMeta = Array.isArray(extraMeta.upstream_capabilities)
         ? extraMeta.upstream_capabilities
         : []
       const capabilities: ModelCapability[] =
-        capabilitiesFromMeta.length > 0
-          ? (capabilitiesFromMeta as ModelCapability[])
-          : m.capability
-            ? [m.capability as ModelCapability]
-            : ["chat"]
+        capabilitiesFromRouting.length > 0
+          ? (capabilitiesFromRouting as ModelCapability[])
+          : capabilitiesFromMeta.length > 0
+            ? (capabilitiesFromMeta as ModelCapability[])
+            : m.capability
+              ? [m.capability as ModelCapability]
+              : ["chat"]
 
       const tokenizerConfig = (m.tokenizer_config || {}) as Record<string, unknown>
       const rawMeta = (extraMeta.raw || {}) as Record<string, unknown>
@@ -90,6 +115,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         id: m.model_id || m.unified_model_id || m.id,
         object: "model",
         display_name: m.display_name || m.unified_model_id || m.model_id,
+        unified_model_id: m.unified_model_id || m.model_id,
         capabilities,
         context_window: contextWindow,
         pricing: {
@@ -97,11 +123,15 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           output: outputPrice,
         },
         is_active: m.is_active,
+        weight: toNumber(m.weight, 0),
+        priority: toNumber(m.priority, 0),
         updated_at: m.updated_at || m.synced_at || "",
         created_at: m.created_at || undefined,
         family: typeof rawMeta.owned_by === 'string' ? rawMeta.owned_by : undefined,
         version: m.unified_model_id || undefined,
         max_output_tokens: typeof limitConfig.max_output_tokens === 'number' ? limitConfig.max_output_tokens : undefined,
+        rpm: typeof limitConfig.rpm === 'number' ? limitConfig.rpm : undefined,
+        tpm: typeof limitConfig.tpm === 'number' ? limitConfig.tpm : undefined,
         supports_functions: !!rawMeta.supports_functions,
         supports_json_mode: !!rawMeta.supports_json_mode,
         deprecated_at: typeof rawMeta.deprecated_at === 'string' ? rawMeta.deprecated_at : undefined,
@@ -134,6 +164,20 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       toast.error(t("toast.updateFailed"))
     }
   }, [updateModel, mutateModels, t])
+
+  const handleSaveConfig = React.useCallback(
+    async (model: ProviderModel, payload: ProviderModelUpdate) => {
+      try {
+        await updateModel(model.uuid, payload)
+        await mutateModels()
+        toast.success(t("toast.updateSuccess"))
+      } catch (err) {
+        toast.error(t("toast.updateFailed"))
+        throw err
+      }
+    },
+    [mutateModels, t, updateModel]
+  )
 
   const handleSync = async () => {
     setIsSyncing(true)
@@ -232,11 +276,12 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
 
       {/* Models Matrix or Empty State */}
       {normalizedModels.length > 0 ? (
-        <ModelMatrix
+        <ModelAccordion
           models={normalizedModels}
           onTest={handleTestModel}
           onToggleActive={handleToggleActive}
           onUpdateAlias={handleUpdateAlias}
+          onSave={handleSaveConfig}
         />
       ) : (
         <ModelEmptyState 
@@ -261,8 +306,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           mode="edit"
           instanceId={instanceId}
           preset={{
-            slug: instance.preset_slug,
-            name: instance.preset_slug, // This might need mapping back to display name if lost
+            slug: instance.preset_slug || "",
+            name: instance.preset_slug || "", // This might need mapping back to display name if lost
             type: "custom", // Assuming custom for edit, or need to derive
             protocol: "openai", // Need to derive
             brand_color: instance.theme_color || "#3b82f6",
@@ -270,7 +315,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           }}
           initialValues={{
             name: instance.name,
-            description: instance.description,
+            description: instance.description || "",
             base_url: instance.base_url,
             is_enabled: instance.is_enabled,
             icon: instance.icon,

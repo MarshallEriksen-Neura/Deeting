@@ -58,7 +58,7 @@ export function useProviderDetail(slug: string | null) {
   
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderCard, ApiError>(
     queryKey,
-    () => slug ? provider.getDetail(slug) : null, // This might need type adjustment if getDetail returns Promise
+    slug ? () => provider.getDetail(slug) : null,
     {
       revalidateOnFocus: false,
       dedupingInterval: 300000, // 5 minutes - provider details change less frequently
@@ -109,7 +109,7 @@ export function useProviderModels(instanceId: string | null) {
   
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderModelResponse[], ApiError>(
     queryKey,
-    () => instanceId ? provider.getModels(instanceId) : null,
+    instanceId ? () => provider.getModels(instanceId) : null,
     {
       revalidateOnFocus: false,
       dedupingInterval: 120000, // 2 minutes - models change occasionally

@@ -4,7 +4,7 @@ import { request } from "@/lib/http"
 
 const USER_BASE = "/api/v1/users"
 
-export const PermissionFlagsSchema = z.record(z.number().int())
+export const PermissionFlagsSchema = z.record(z.string(), z.number().int())
 
 export const UserProfileSchema = z.object({
   id: z.string(),

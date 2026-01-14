@@ -16,7 +16,7 @@ interface ThemeProviderProps {
   /** 是否禁用过渡动画 */
   disableTransition?: boolean;
   /** HTML 属性名 */
-  attribute?: string;
+  attribute?: "class" | "data-theme" | "data-mode";
   /** 切换主题时是否禁用过渡 */
   disableTransitionOnChange?: boolean;
 }

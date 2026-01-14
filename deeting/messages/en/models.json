@@ -56,6 +56,47 @@
       "modelsCount": "{count} models",
       "filteredCount": "{filtered} / {total} models"
     },
+    "form": {
+      "readonly": {
+        "updated": "Last updated"
+      },
+      "capabilities": {
+        "title": "Capabilities",
+        "desc": "Manually select what this model supports to override auto-detection.",
+        "hint": "Capabilities are used for routing and UI display; adjust if auto detection is incorrect."
+      },
+      "basic": {
+        "title": "Basic",
+        "desc": "Give the model a readable name and control its availability.",
+        "displayName": "Display name",
+        "unifiedId": "External model ID (routing alias)",
+        "weight": "Routing weight",
+        "priority": "Routing priority"
+      },
+      "pricing": {
+        "title": "Pricing",
+        "desc": "Prices per 1k tokens for input/output.",
+        "input": "Input price",
+        "output": "Output price"
+      },
+      "limits": {
+        "title": "Limits",
+        "desc": "Rate and length constraints.",
+        "maxOutput": "Max output tokens",
+        "rpm": "Requests per minute (RPM)",
+        "tpm": "Tokens per minute (TPM)"
+      },
+      "tokenizer": {
+        "title": "Tokenizer",
+        "desc": "Context window and tokenizer-related limits.",
+        "context": "Context window"
+      },
+      "actions": {
+        "save": "Save",
+        "saving": "Saving...",
+        "reset": "Reset"
+      }
+    },
     "list": {
       "header": {
         "id": "Model ID",

@@ -44,7 +44,7 @@ const safeNumber = (v: unknown) => {
 export const ProviderHubStatsSchema = z.object({
   total: z.preprocess(safeNumber, z.number()),
   connected: z.preprocess(safeNumber, z.number()),
-  by_category: z.record(z.preprocess(safeNumber, z.number())),
+  by_category: z.record(z.string(), z.preprocess(safeNumber, z.number())),
 })
 
 export const ProviderHubResponseSchema = z.object({
@@ -52,6 +52,7 @@ export const ProviderHubResponseSchema = z.object({
   stats: ProviderHubStatsSchema,
 })
 
+export type ProviderHubStats = z.infer<typeof ProviderHubStatsSchema>
 export type ProviderHubResponse = z.infer<typeof ProviderHubResponseSchema>
 // Provider Verify Schemas
 export const ProviderVerifyRequestSchema = z.object({
@@ -135,14 +136,14 @@ export const ProviderModelResponseSchema = z.object({
   display_name: z.string().nullable().optional(),
   upstream_path: z.string(),
   template_engine: z.string(),
-  request_template: z.record(z.any()),
-  response_transform: z.record(z.any()),
-  pricing_config: z.record(z.any()),
-  limit_config: z.record(z.any()),
-  tokenizer_config: z.record(z.any()),
-  routing_config: z.record(z.any()),
+  request_template: z.record(z.string(), z.any()),
+  response_transform: z.record(z.string(), z.any()),
+  pricing_config: z.record(z.string(), z.any()),
+  limit_config: z.record(z.string(), z.any()),
+  tokenizer_config: z.record(z.string(), z.any()),
+  routing_config: z.record(z.string(), z.any()),
   source: z.string(),
-  extra_meta: z.record(z.any()),
+  extra_meta: z.record(z.string(), z.any()),
   weight: z.number(),
   priority: z.number(),
   is_active: z.boolean(),
@@ -159,10 +160,10 @@ export const ProviderModelUpdateSchema = z.object({
   is_active: z.boolean().optional(),
   weight: z.number().optional(),
   priority: z.number().optional(),
-  pricing_config: z.record(z.any()).optional(),
-  limit_config: z.record(z.any()).optional(),
-  tokenizer_config: z.record(z.any()).optional(),
-  routing_config: z.record(z.any()).optional(),
+  pricing_config: z.record(z.string(), z.any()).optional(),
+  limit_config: z.record(z.string(), z.any()).optional(),
+  tokenizer_config: z.record(z.string(), z.any()).optional(),
+  routing_config: z.record(z.string(), z.any()).optional(),
 })
 
 export type ProviderModelUpdate = z.infer<typeof ProviderModelUpdateSchema>
@@ -179,7 +180,7 @@ export const ProviderModelTestResponseSchema = z.object({
   latency_ms: z.number(),
   status_code: z.number(),
   upstream_url: z.string(),
-  response_body: z.record(z.any()).nullable().optional(),
+  response_body: z.record(z.string(), z.any()).nullable().optional(),
   error: z.string().nullable().optional(),
 })
 

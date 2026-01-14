@@ -77,6 +77,8 @@ const PROVIDER_THEMES: Record<string, {
 // Status indicator components
 function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency?: number }) {
   const t = useTranslations('models')
+  const safeLatency = Number.isFinite(latency ?? NaN) ? (latency as number) : 0
+
   const statusConfig: Record<ProviderStatus, {
     color: string
     bgColor: string
@@ -86,7 +88,7 @@ function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency
     online: {
       color: 'text-emerald-500',
       bgColor: 'bg-emerald-500',
-      label: t('status.online', { latency }),
+      label: t('status.online', { latency: safeLatency }),
       pulse: true,
     },
     offline: {
@@ -98,7 +100,7 @@ function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency
     degraded: {
       color: 'text-yellow-500',
       bgColor: 'bg-yellow-500',
-      label: t('status.degraded', { latency }),
+      label: t('status.degraded', { latency: safeLatency }),
       pulse: true,
     },
     syncing: {
@@ -110,7 +112,6 @@ function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency
   }
 
   const statusKey: ProviderStatus = (status ?? 'offline') as ProviderStatus
-  const safeLatency = Number.isFinite(latency ?? NaN) ? (latency as number) : 0
   const config = statusConfig[statusKey] ?? statusConfig.offline
   // 若 label 中需要延迟数值，使用安全值
   if (statusKey === 'online' || statusKey === 'degraded') {
@@ -276,7 +277,7 @@ export function InstanceDashboard({
                 •
               </span>
               <span className="text-xs text-[var(--muted)]">
-                {t('filter.modelsCount', { count: instance.model_count })}
+                {t('filter.modelsCount', { count: instance.model_count ?? 0 })}
               </span>
               <span className="text-xs text-[var(--muted)]">
                 •
@@ -330,7 +331,7 @@ export function InstanceDashboard({
         >
           <div className="flex items-center gap-2 text-sm text-red-400">
             <AlertCircle className="size-4" />
-            <span>{syncState.error}</span>
+            <span>{safeSyncState.error}</span>
           </div>
         </motion.div>
       )}

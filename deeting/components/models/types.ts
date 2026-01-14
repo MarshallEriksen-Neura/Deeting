@@ -27,6 +27,8 @@ export interface ProviderModel {
   object: 'model'
   /** User-defined display alias */
   display_name?: string
+  /** External/unified model id used for routing (alias) */
+  unified_model_id?: string
   /** Model capabilities (chat, vision, audio, embedding, etc.) */
   capabilities: ModelCapability[]
   /** Context window size in tokens: e.g., 128000 */
@@ -38,6 +40,10 @@ export interface ProviderModel {
   }
   /** Whether model is active in the gateway */
   is_active: boolean
+  /** Routing weight */
+  weight?: number
+  /** Routing priority */
+  priority?: number
   /** Last updated timestamp */
   updated_at: string
   /** Created at timestamp */
@@ -48,6 +54,10 @@ export interface ProviderModel {
   version?: string
   /** Maximum output tokens */
   max_output_tokens?: number
+  /** Requests per minute limit */
+  rpm?: number
+  /** Tokens per minute limit */
+  tpm?: number
   /** Whether model supports function calling */
   supports_functions?: boolean
   /** Whether model supports JSON mode */
@@ -83,6 +93,10 @@ export interface ProviderInstance {
   model_count?: number
   /** Brand theme color */
   theme_color?: string
+  /** Icon key */
+  icon?: string
+  /** Description */
+  description?: string
   /** Is this instance enabled */
   is_enabled: boolean
   /** Health check interval in seconds */

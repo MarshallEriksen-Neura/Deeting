@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_pagination import add_pagination
 
 from app.core import cache, settings, setup_logging
 from app.middleware.concurrency import concurrency_middleware
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
 
     # 注册路由
     register_routes(app)
+    add_pagination(app)
 
     return app
 
@@ -127,6 +129,7 @@ def register_routes(app: FastAPI) -> None:
         media_router,
         users_router,
         provider_router,
+        gateway_logs_router,
     )
 
     api_prefix = settings.API_V1_STR
@@ -161,6 +164,7 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])
+    app.include_router(gateway_logs_router, prefix=api_prefix, tags=["Logs"])
     # Metrics
     app.include_router(metrics_router, tags=["Metrics"])
 

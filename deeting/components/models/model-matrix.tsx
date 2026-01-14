@@ -12,8 +12,6 @@ import {
   MoreHorizontal,
   Copy,
   Trash2,
-  Eye,
-  EyeOff,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -30,13 +28,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import type { ProviderModel, ModelCapability } from "./types"
 import {
   CAPABILITY_META,
@@ -60,6 +51,8 @@ interface ModelDataStripProps {
   onToggleActive: (model: ProviderModel, active: boolean) => void
   onUpdateAlias: (model: ProviderModel, alias: string) => void
   onDelete?: (model: ProviderModel) => void
+  onRowClick?: (model: ProviderModel) => void
+  isExpanded?: boolean
 }
 
 // Capability icons component
@@ -247,11 +240,14 @@ export function ModelDataStrip({
   onTest,
   onToggleActive,
   onUpdateAlias,
-  onDelete,
+  onRowClick,
+  isExpanded,
 }: ModelDataStripProps) {
   const t = useTranslations('models')
   const isDeprecated = !!model.deprecated_at
-  const menuId = React.useMemo(() => `model-${model.id}-menu`, [model.id])
+  const stopPropagation = React.useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation()
+  }, [])
 
   return (
     <motion.div
@@ -259,6 +255,10 @@ export function ModelDataStrip({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.03, duration: 0.3 }}
       exit={{ opacity: 0, x: -20 }}
+      onClick={() => onRowClick?.(model)}
+      role={onRowClick ? "button" : undefined}
+      aria-expanded={isExpanded}
+      className={onRowClick ? "cursor-pointer" : undefined}
     >
       <GlassCard
         className={cn(
@@ -292,7 +292,10 @@ export function ModelDataStrip({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => navigator.clipboard.writeText(model.id)}
+                      onClick={(e) => {
+                        stopPropagation(e)
+                        navigator.clipboard.writeText(model.id)
+                      }}
                       className="p-0.5 opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--foreground)] transition-opacity"
                     >
                       <Copy className="size-3" />
@@ -331,18 +334,19 @@ export function ModelDataStrip({
 
           {/* 5. Status Toggle */}
           <div className="ml-auto flex items-center gap-3">
-            <TooltipProvider delayDuration={200}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center">
-                    <Switch
-                      checked={model.is_active}
-                      onCheckedChange={(checked) => onToggleActive(model, checked)}
-                    />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {model.is_active ? t('list.actions.disable') : t('list.actions.enable')}
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center">
+                        <Switch
+                          checked={model.is_active}
+                          onCheckedChange={(checked) => onToggleActive(model, checked)}
+                          onClick={stopPropagation}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {model.is_active ? t('list.actions.disable') : t('list.actions.enable')}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -351,70 +355,15 @@ export function ModelDataStrip({
             <GlassButton
               variant="ghost"
               size="sm"
-              onClick={() => onTest(model)}
+              onClick={(e) => {
+                stopPropagation(e)
+                onTest(model)
+              }}
               className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <Play className="size-3.5" />
               <span>{t('list.actions.test')}</span>
             </GlassButton>
-
-            {/* More Actions */}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                asChild
-                id={`${menuId}-trigger`}
-                aria-controls={`${menuId}-content`}
-              >
-                <GlassButton
-                  variant="ghost"
-                  size="icon-sm"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <MoreHorizontal className="size-4" />
-                </GlassButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-48 backdrop-blur-xl bg-[var(--background)]/90"
-                id={`${menuId}-content`}
-                aria-labelledby={`${menuId}-trigger`}
-              >
-                <DropdownMenuItem onClick={() => navigator.clipboard.writeText(model.id)}>
-                  <Copy className="mr-2 size-4" />
-                  {t('list.actions.copyId')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onTest(model)}>
-                  <Play className="mr-2 size-4" />
-                  {t('list.actions.quickTest')}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onToggleActive(model, !model.is_active)}>
-                  {model.is_active ? (
-                    <>
-                      <EyeOff className="mr-2 size-4" />
-                      {t('list.actions.disable')}
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="mr-2 size-4" />
-                      {t('list.actions.enable')}
-                    </>
-                  )}
-                </DropdownMenuItem>
-                {onDelete && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => onDelete(model)}
-                      className="text-red-500 focus:text-red-500"
-                    >
-                      <Trash2 className="mr-2 size-4" />
-                      {t('list.actions.remove')}
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
 

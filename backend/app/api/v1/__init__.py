@@ -18,6 +18,7 @@ from app.api.v1.internal import gateway_router as internal_gateway_router
 from app.api.v1.media_routes import router as media_router
 from app.api.v1.users_route import router as users_router
 from app.api.v1.providers_route import router as provider_router
+from app.api.v1.gateway_logs_route import router as gateway_logs_router
 
 __all__ = [
     "admin_api_keys_router",
@@ -37,4 +38,5 @@ __all__ = [
     "media_router",
     "users_router",
     "provider_router",
+    "gateway_logs_router",
 ]

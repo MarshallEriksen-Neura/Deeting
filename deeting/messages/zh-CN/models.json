@@ -56,6 +56,47 @@
       "modelsCount": "{count} 个模型",
       "filteredCount": "{filtered} / {total} 个模型"
     },
+    "form": {
+      "readonly": {
+        "updated": "最近更新"
+      },
+      "capabilities": {
+        "title": "模型能力",
+        "desc": "手动勾选该模型支持的能力，覆盖自动识别。",
+        "hint": "能力用于路由与前端展示，若自动识别不准确可在此修正。"
+      },
+      "basic": {
+        "title": "基础信息",
+        "desc": "为模型添加易读名称并控制启用状态。",
+        "displayName": "展示名称",
+        "unifiedId": "对外模型 ID（路由别名）",
+        "weight": "路由权重",
+        "priority": "路由优先级"
+      },
+      "pricing": {
+        "title": "定价",
+        "desc": "输入 / 输出按 1k tokens 计价。",
+        "input": "输入单价",
+        "output": "输出单价"
+      },
+      "limits": {
+        "title": "限额",
+        "desc": "配置请求/令牌速率与最大片段长度。",
+        "maxOutput": "最大输出 tokens",
+        "rpm": "请求速率 (RPM)",
+        "tpm": "令牌速率 (TPM)"
+      },
+      "tokenizer": {
+        "title": "Tokenizer",
+        "desc": "上下文窗口等 tokenizer 相关限制。",
+        "context": "上下文窗口"
+      },
+      "actions": {
+        "save": "保存",
+        "saving": "保存中...",
+        "reset": "重置"
+      }
+    },
     "list": {
       "header": {
         "id": "模型 ID",
