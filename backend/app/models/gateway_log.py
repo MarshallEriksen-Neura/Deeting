@@ -19,6 +19,7 @@ class GatewayLog(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "gateway_log"
 
     user_id: Mapped[uuid.UUID | None] = mapped_column(SA_UUID(as_uuid=True), index=True, comment="调用者用户 ID")
+    api_key_id: Mapped[uuid.UUID | None] = mapped_column(SA_UUID(as_uuid=True), index=True, comment="调用使用的 API Key ID")
     preset_id: Mapped[uuid.UUID | None] = mapped_column(SA_UUID(as_uuid=True), index=True, comment="命中的预设 ID")
 
     model: Mapped[str] = mapped_column(String(128), nullable=False, comment="请求的上游模型名称")

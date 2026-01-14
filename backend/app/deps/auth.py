@@ -20,6 +20,7 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
+from app.core.cache_keys import CacheKeys
 from app.core.database import get_db
 from app.core.logging import logger
 from app.constants.permissions import PERMISSION_CODES
@@ -66,7 +67,7 @@ async def _get_user_from_jwt(
         )
 
     # 检查 token 是否在黑名单中
-    blacklist_key = f"auth:access:{jti}"
+    blacklist_key = CacheKeys.token_blacklist(jti)
     if await cache.get(blacklist_key):
         logger.warning("token_blacklisted", extra={"jti": jti})
         raise HTTPException(
@@ -229,7 +230,7 @@ async def _fetch_permission_codes(db: AsyncSession, user: User) -> set[str]:
         return set(KNOWN_PERMISSION_CODES) if KNOWN_PERMISSION_CODES else set()
 
     # 尝试从缓存获取
-    cache_key = f"acl:perm:{user.id}"
+    cache_key = CacheKeys.permission_codes(str(user.id))
     cached = await cache.get(cache_key)
     if cached is not None:
         return set(cached)
@@ -316,6 +317,6 @@ async def get_permission_flags(
 
 async def clear_permission_cache(user_id: uuid.UUID) -> None:
     """清除用户权限缓存（角色变更时调用）"""
-    cache_key = f"acl:perm:{user_id}"
+    cache_key = CacheKeys.permission_codes(str(user_id))
     await cache.delete(cache_key)
     logger.info("permission_cache_cleared", extra={"user_id": str(user_id)})

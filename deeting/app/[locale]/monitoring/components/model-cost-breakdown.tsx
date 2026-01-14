@@ -18,9 +18,9 @@ import { cn } from "@/lib/utils"
  * Horizontal bar chart showing cost by model
  * Purpose: Identify which models are consuming the most budget
  */
-export function ModelCostBreakdown() {
+export function ModelCostBreakdown({ timeRange = "24h" }: { timeRange?: "24h" | "7d" | "30d" }) {
   const t = useTranslations("monitoring.dimensional.modelCost")
-  const { data, isLoading } = useModelCostBreakdown()
+  const { data, isLoading } = useModelCostBreakdown(timeRange)
 
   const models = data?.models || [
     { name: "gpt-4-turbo", cost: 50.25, percentage: 65 },

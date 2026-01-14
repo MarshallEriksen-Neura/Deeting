@@ -8,6 +8,7 @@ from .base import BaseSchema, IDSchema
 
 class GatewayLogBase(BaseSchema):
     user_id: UUID | None = Field(None, description="调用者用户 ID")
+    api_key_id: UUID | None = Field(None, description="调用使用的 API Key ID")
     preset_id: UUID | None = Field(None, description="命中的预设 ID")
 
     model: str = Field(..., max_length=128, description="请求的上游模型名称")

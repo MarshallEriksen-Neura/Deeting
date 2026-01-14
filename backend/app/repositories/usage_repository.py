@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
+from app.core.cache_keys import CacheKeys
 
 
 class UsageRepository:
@@ -19,6 +20,6 @@ class UsageRepository:
 
     async def create(self, usage: dict[str, Any]) -> None:
         # 简单写入缓存队列（长度不做限制）
-        items = await cache.get("usage_records") or []
+        items = await cache.get(CacheKeys.usage_records()) or []
         items.append(usage)
-        await cache.set("usage_records", items, ttl=600)
+        await cache.set(CacheKeys.usage_records(), items, ttl=600)

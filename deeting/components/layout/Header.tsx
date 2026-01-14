@@ -31,11 +31,17 @@ export function Header({
   onMenuClick,
   className,
 }: HeaderProps) {
+  const pathname = usePathname()
+  
+  // Hide header on chat routes for immersive experience
+  if (pathname?.includes("/chat")) {
+    return null
+  }
+
   const t = useTranslations("common.header")
   const { isAuthenticated } = useAuthStore()
   const { profile } = useUserProfile()
   const { logout } = useAuthService()
-  const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {

@@ -23,9 +23,15 @@ import { useErrorDistribution } from "@/lib/swr/use-error-distribution"
  *
  * Purpose: Quick fault attribution
  */
-export function ErrorDistribution() {
+export function ErrorDistribution({
+  timeRange = "24h",
+  model,
+}: {
+  timeRange?: "24h" | "7d" | "30d"
+  model?: string
+}) {
   const t = useTranslations("monitoring.dimensional.errorDist")
-  const { data, isLoading } = useErrorDistribution()
+  const { data, isLoading } = useErrorDistribution(timeRange, model)
 
   const errorData = data?.categories || [
     { category: "429", label: "Rate Limit", count: 145, color: "hsl(var(--chart-3))" },

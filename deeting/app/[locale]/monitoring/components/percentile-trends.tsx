@@ -20,9 +20,9 @@ import { usePercentileTrends } from "@/lib/swr/use-percentile-trends"
  *
  * P99 determines user experience floor
  */
-export function PercentileTrends() {
+export function PercentileTrends({ timeRange = "24h" }: { timeRange?: "24h" | "7d" | "30d" }) {
   const t = useTranslations("monitoring.performance.percentile")
-  const { data, isLoading } = usePercentileTrends()
+  const { data, isLoading } = usePercentileTrends(timeRange)
 
   const chartConfig = {
     p50: {

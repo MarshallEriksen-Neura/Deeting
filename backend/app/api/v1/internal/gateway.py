@@ -121,6 +121,7 @@ async def chat_completions(
         db_session=db,
         tenant_id=str(user.id) if user else None,
         user_id=str(user.id) if user else None,
+        api_key_id=str(user.id) if user else None,  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.set("validation", "request", request_body)
@@ -175,6 +176,7 @@ async def embeddings(
         db_session=db,
         tenant_id=str(user.id) if user else None,
         user_id=str(user.id) if user else None,
+        api_key_id=str(user.id) if user else None,  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.set("validation", "request", request_body)

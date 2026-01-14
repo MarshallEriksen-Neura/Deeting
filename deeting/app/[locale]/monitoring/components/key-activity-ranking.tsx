@@ -21,9 +21,9 @@ import { cn } from "@/lib/utils"
  *
  * Purpose: Identify who's hammering the API
  */
-export function KeyActivityRanking() {
+export function KeyActivityRanking({ timeRange = "24h" }: { timeRange?: "24h" | "7d" | "30d" }) {
   const t = useTranslations("monitoring.dimensional.keyActivity")
-  const { data, isLoading } = useKeyActivityRanking()
+  const { data, isLoading } = useKeyActivityRanking(timeRange)
 
   const topKeys = data?.keys || [
     { id: "1", name: "Production Main", maskedKey: "sk-***x7k2", rpm: 1240, trend: 12 },

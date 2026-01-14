@@ -19,7 +19,7 @@ import { PercentileTrends } from "./percentile-trends"
  * 1. Latency Heatmap - Shows request distribution over time
  * 2. P99 vs P50 Trends - Tail latency monitoring
  */
-export function PerformanceDiagnostics() {
+export function PerformanceDiagnostics({ filters }: { filters: { timeRange: "24h" | "7d" | "30d"; model?: string } }) {
   const t = useTranslations("monitoring.performance")
 
   return (
@@ -36,7 +36,7 @@ export function PerformanceDiagnostics() {
           </GlassCardDescription>
         </GlassCardHeader>
         <GlassCardContent>
-          <LatencyHeatmap />
+          <LatencyHeatmap timeRange={filters.timeRange} model={filters.model} />
         </GlassCardContent>
       </GlassCard>
 
@@ -49,7 +49,7 @@ export function PerformanceDiagnostics() {
           </GlassCardDescription>
         </GlassCardHeader>
         <GlassCardContent>
-          <PercentileTrends />
+          <PercentileTrends timeRange={filters.timeRange} />
         </GlassCardContent>
       </GlassCard>
     </div>

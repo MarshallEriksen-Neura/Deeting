@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from app.utils.time_utils import Datetime
 from typing import Any
 
 from redis.asyncio import Redis
@@ -132,7 +133,7 @@ class ConversationService:
             should_flush = should_flush or bool(flush_flag)
 
         await self.redis.hset(
-            meta_key, mapping={"last_active_at": datetime.now(UTC).isoformat()}
+            meta_key, mapping={"last_active_at": Datetime.now().isoformat()}
         )
         await self._refresh_ttl(session_id, ttl)
 
@@ -239,7 +240,7 @@ class ConversationService:
         except Exception:
             # meta 不存在或类型不匹配时忽略
             pass
-        await self.redis.hset(meta_key, mapping={"last_active_at": datetime.now(UTC).isoformat()})
+        await self.redis.hset(meta_key, mapping={"last_active_at": Datetime.now().isoformat()})
         return {"deleted": True, "turn_index": turn_index}
 
     async def clear_session(self, session_id: str) -> None:
@@ -286,8 +287,8 @@ class ConversationService:
         pipe.hsetnx(meta_key, "summarizing", 0)
         pipe.hsetnx(meta_key, "summary_job_id", "")
         pipe.hset(meta_key, "channel", channel.value)
-        pipe.hset(meta_key, "last_active_at", datetime.now(UTC).isoformat())
-        pipe.hsetnx(meta_key, "first_message_at", datetime.now(UTC).isoformat())
+        pipe.hset(meta_key, "last_active_at", Datetime.now().isoformat())
+        pipe.hsetnx(meta_key, "first_message_at", Datetime.now().isoformat())
         await pipe.execute()
 
     @staticmethod

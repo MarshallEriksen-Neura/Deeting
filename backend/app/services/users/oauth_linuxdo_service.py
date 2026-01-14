@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -21,14 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import OperationalError
 
 from app.core.cache import cache
+from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.logging import logger
 from app.models import User
 from app.models import Base
+from app.utils.time_utils import Datetime
 from app.services.users.user_provisioning_service import UserProvisioningService
 
 LINUXDO_PROVIDER = "linuxdo"
-STATE_STORAGE_KEY = "auth:oauth:linuxdo:state:{state}"
 STATE_TTL_SECONDS = 300
 
 
@@ -81,10 +81,10 @@ async def build_authorize_url(invite_code: str | None = None) -> str:
     _ensure_enabled()
     state = secrets.token_urlsafe(32)
     await cache.set(
-        STATE_STORAGE_KEY.format(state=state),
+        CacheKeys.oauth_linuxdo_state(state),
         {
             "provider": LINUXDO_PROVIDER,
-            "created_at": datetime.now(UTC),
+            "created_at": Datetime.now(),
             "invite_code": invite_code,
         },
         ttl=STATE_TTL_SECONDS,
@@ -151,8 +151,8 @@ async def complete_oauth(
 
 
 async def _consume_state(state: str) -> dict:
-    stored = await cache.get(STATE_STORAGE_KEY.format(state=state))
-    await cache.delete(STATE_STORAGE_KEY.format(state=state))
+    stored = await cache.get(CacheKeys.oauth_linuxdo_state(state))
+    await cache.delete(CacheKeys.oauth_linuxdo_state(state))
 
     if not stored or stored.get("provider") != LINUXDO_PROVIDER:
         raise LinuxDoOAuthError("state 无效或已过期")

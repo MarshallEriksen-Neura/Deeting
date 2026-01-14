@@ -200,6 +200,82 @@ class CacheKeys:
     def api_key_blacklist(cls, api_key_id: str) -> str:
         return f"{cls.prefix}:api_key:blacklist:{api_key_id}"
 
+    # ===== Dashboard =====
+    @classmethod
+    def dashboard_stats(cls, tenant_id: str | None) -> str:
+        return f"{cls.prefix}:dashboard:stats:{tenant_id or 'anonymous'}"
+
+    @classmethod
+    def dashboard_throughput(cls, tenant_id: str | None, period: str) -> str:
+        return f"{cls.prefix}:dashboard:throughput:{tenant_id or 'anonymous'}:{period}"
+
+    @classmethod
+    def dashboard_smart_router(cls, tenant_id: str | None) -> str:
+        return f"{cls.prefix}:dashboard:smart:{tenant_id or 'anonymous'}"
+
+    @classmethod
+    def dashboard_errors(cls, tenant_id: str | None, limit: int) -> str:
+        return f"{cls.prefix}:dashboard:errors:{tenant_id or 'anonymous'}:{limit}"
+
+    # ===== Monitoring =====
+    @classmethod
+    def monitoring_latency_heatmap(cls, tenant_id: str | None, time_range: str, model: str | None) -> str:
+        return f"{cls.prefix}:mon:heatmap:{tenant_id or 'anonymous'}:{time_range}:{model or 'all'}"
+
+    @classmethod
+    def monitoring_percentile(cls, tenant_id: str | None, time_range: str) -> str:
+        return f"{cls.prefix}:mon:percentile:{tenant_id or 'anonymous'}:{time_range}"
+
+    @classmethod
+    def monitoring_model_cost(cls, tenant_id: str | None, time_range: str) -> str:
+        return f"{cls.prefix}:mon:model_cost:{tenant_id or 'anonymous'}:{time_range}"
+
+    @classmethod
+    def monitoring_error_distribution(cls, tenant_id: str | None, time_range: str, model: str | None) -> str:
+        return f"{cls.prefix}:mon:err_dist:{tenant_id or 'anonymous'}:{time_range}:{model or 'all'}"
+
+    @classmethod
+    def monitoring_key_ranking(cls, tenant_id: str | None, time_range: str, limit: int) -> str:
+        return f"{cls.prefix}:mon:key_rank:{tenant_id or 'anonymous'}:{time_range}:{limit}"
+
+    # ===== Auth & ACL =====
+    @classmethod
+    def permission_codes(cls, user_id: str) -> str:
+        return f"{cls.prefix}:acl:perm:{user_id}"
+
+    @classmethod
+    def token_blacklist(cls, jti: str) -> str:
+        return f"{cls.prefix}:auth:access:{jti}"
+
+    @classmethod
+    def login_fail_email(cls, email: str) -> str:
+        return f"{cls.prefix}:auth:login_fail:{email}"
+
+    @classmethod
+    def login_fail_ip(cls, ip: str) -> str:
+        return f"{cls.prefix}:auth:login_fail_ip:{ip}"
+
+    @classmethod
+    def verify_code(cls, email: str, purpose: str) -> str:
+        return f"{cls.prefix}:auth:verify:{email}:{purpose}"
+
+    @classmethod
+    def verify_attempts_email(cls, email: str, purpose: str) -> str:
+        return f"{cls.prefix}:auth:verify_attempts:{email}:{purpose}"
+
+    @classmethod
+    def verify_attempts_ip(cls, ip: str | None, purpose: str) -> str:
+        return f"{cls.prefix}:auth:verify_attempts_ip:{ip}:{purpose}"
+
+    @classmethod
+    def oauth_linuxdo_state(cls, state: str) -> str:
+        return f"{cls.prefix}:auth:oauth:linuxdo:state:{state}"
+
+    # ===== Usage (placeholder) =====
+    @classmethod
+    def usage_records(cls) -> str:
+        return f"{cls.prefix}:usage:records"
+
     @classmethod
     def tenant_ban(cls, tenant_id: str) -> str:
         return f"{cls.prefix}:tenant:ban:{tenant_id}"

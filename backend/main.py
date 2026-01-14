@@ -131,6 +131,8 @@ def register_routes(app: FastAPI) -> None:
         users_router,
         provider_router,
         gateway_logs_router,
+        dashboard_router,
+        monitoring_router,
     )
 
     api_prefix = settings.API_V1_STR
@@ -169,6 +171,8 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])
     app.include_router(gateway_logs_router, prefix=api_prefix, tags=["Logs"])
+    app.include_router(dashboard_router, prefix=api_prefix, tags=["Dashboard"])
+    app.include_router(monitoring_router, prefix=api_prefix, tags=["Monitoring"])
     # Metrics
     app.include_router(metrics_router, tags=["Metrics"])
 

@@ -13,17 +13,21 @@ import { KeyActivityRanking } from "./key-activity-ranking"
  * 2. Error Distribution - Quick fault attribution
  * 3. Key Activity - Top 5 most active API keys
  */
-export function DimensionalBreakdown() {
+export function DimensionalBreakdown({
+  filters,
+}: {
+  filters: { timeRange: "24h" | "7d" | "30d"; model?: string; apiKey?: string; errorCode?: string }
+}) {
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       {/* Left: Model Cost */}
-      <ModelCostBreakdown />
+      <ModelCostBreakdown timeRange={filters.timeRange} />
 
       {/* Center: Error Distribution */}
-      <ErrorDistribution />
+      <ErrorDistribution timeRange={filters.timeRange} model={filters.model} />
 
       {/* Right: Key Activity */}
-      <KeyActivityRanking />
+      <KeyActivityRanking timeRange={filters.timeRange} />
     </div>
   )
 }

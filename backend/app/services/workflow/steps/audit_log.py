@@ -94,6 +94,7 @@ class AuditLogStep(BaseStep):
                 "total_tokens": ctx.billing.total_tokens,
                 "cost_user": ctx.billing.total_cost,
                 "preset_id": str(ctx.selected_preset_id) if ctx.selected_preset_id else None,
+                "api_key_id": str(ctx.api_key_id) if getattr(ctx, "api_key_id", None) else None,
                 "error_code": ctx.error_code,
                 "upstream_url": upstream_url,
                 "retry_count": ctx.upstream_result.retry_count,

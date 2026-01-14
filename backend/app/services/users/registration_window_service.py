@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from app.utils.time_utils import Datetime
 from typing import Iterable
 from uuid import UUID
 
@@ -42,7 +43,7 @@ def _ensure_utc(dt: datetime) -> datetime:
 
 
 def _now(now: datetime | None = None) -> datetime:
-    return _ensure_utc(now or datetime.now(UTC))
+    return _ensure_utc(now or Datetime.now())
 
 
 def _select_active_window_stmt(now: datetime) -> Select[tuple[RegistrationWindow]]:

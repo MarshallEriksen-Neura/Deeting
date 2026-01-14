@@ -79,7 +79,7 @@ const MONITORING_BASE = "/api/v1/monitoring"
  */
 export async function fetchLatencyHeatmap(
   params?: {
-    timeRange?: string
+    timeRange?: "24h" | "7d" | "30d"
     model?: string
   }
 ): Promise<LatencyHeatmap> {
@@ -96,7 +96,7 @@ export async function fetchLatencyHeatmap(
  */
 export async function fetchPercentileTrends(
   params?: {
-    timeRange?: string
+    timeRange?: "24h" | "7d" | "30d"
   }
 ): Promise<PercentileTrends> {
   const data = await request<PercentileTrends>({
@@ -110,10 +110,13 @@ export async function fetchPercentileTrends(
 /**
  * Fetch model cost breakdown
  */
-export async function fetchModelCostBreakdown(): Promise<ModelCostBreakdown> {
+export async function fetchModelCostBreakdown(
+  params?: { timeRange?: "24h" | "7d" | "30d" }
+): Promise<ModelCostBreakdown> {
   const data = await request<ModelCostBreakdown>({
     url: `${MONITORING_BASE}/model-cost-breakdown`,
     method: "GET",
+    params,
   })
   return ModelCostBreakdownSchema.parse(data)
 }
@@ -121,10 +124,13 @@ export async function fetchModelCostBreakdown(): Promise<ModelCostBreakdown> {
 /**
  * Fetch error distribution
  */
-export async function fetchErrorDistribution(): Promise<ErrorDistribution> {
+export async function fetchErrorDistribution(
+  params?: { timeRange?: "24h" | "7d" | "30d"; model?: string }
+): Promise<ErrorDistribution> {
   const data = await request<ErrorDistribution>({
     url: `${MONITORING_BASE}/error-distribution`,
     method: "GET",
+    params,
   })
   return ErrorDistributionSchema.parse(data)
 }
@@ -134,6 +140,7 @@ export async function fetchErrorDistribution(): Promise<ErrorDistribution> {
  */
 export async function fetchKeyActivityRanking(
   params?: {
+    timeRange?: "24h" | "7d" | "30d"
     limit?: number
   }
 ): Promise<KeyActivityRanking> {
@@ -141,6 +148,7 @@ export async function fetchKeyActivityRanking(
     url: `${MONITORING_BASE}/key-activity-ranking`,
     method: "GET",
     params: {
+      timeRange: params?.timeRange,
       limit: params?.limit || 5,
     },
   })

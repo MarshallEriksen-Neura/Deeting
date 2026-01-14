@@ -20,6 +20,8 @@ from app.api.v1.media_routes import router as media_router
 from app.api.v1.users_route import router as users_router
 from app.api.v1.providers_route import router as provider_router
 from app.api.v1.gateway_logs_route import router as gateway_logs_router
+from app.api.v1.dashboard_route import router as dashboard_router
+from app.api.v1.monitoring_route import router as monitoring_router
 
 __all__ = [
     "admin_api_keys_router",
@@ -41,4 +43,6 @@ __all__ = [
     "users_router",
     "provider_router",
     "gateway_logs_router",
+    "dashboard_router",
+    "monitoring_router",
 ]

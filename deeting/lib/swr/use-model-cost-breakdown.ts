@@ -5,10 +5,10 @@ import type { ModelCostBreakdown } from "@/lib/api/monitoring"
 /**
  * SWR hook for fetching model cost breakdown
  */
-export function useModelCostBreakdown() {
+export function useModelCostBreakdown(timeRange: "24h" | "7d" | "30d" = "24h") {
   const { data, error, isLoading, mutate } = useSWR<ModelCostBreakdown>(
-    "/api/v1/monitoring/model-cost-breakdown",
-    fetchModelCostBreakdown,
+    ["/api/v1/monitoring/model-cost-breakdown", timeRange],
+    () => fetchModelCostBreakdown({ timeRange }),
     {
       refreshInterval: 60000, // Refresh every 60s
       revalidateOnFocus: true,

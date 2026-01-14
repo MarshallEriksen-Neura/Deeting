@@ -8,7 +8,7 @@ import type { LatencyHeatmap } from "@/lib/api/monitoring"
  * @param timeRange - Time range filter
  * @param model - Model filter
  */
-export function useLatencyHeatmap(timeRange?: string, model?: string) {
+export function useLatencyHeatmap(timeRange: "24h" | "7d" | "30d" = "24h", model?: string) {
   const { data, error, isLoading, mutate } = useSWR<LatencyHeatmap>(
     ["/api/v1/monitoring/latency-heatmap", timeRange, model],
     () => fetchLatencyHeatmap({ timeRange, model }),

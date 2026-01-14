@@ -222,7 +222,7 @@ class AuthService:
     async def logout(self, access_jti: str, refresh_jti: str | None = None) -> None:
         """登出：将 token 加入黑名单"""
         # 将 access token 加入黑名单
-        blacklist_key = f"auth:access:{access_jti}"
+        blacklist_key = CacheKeys.token_blacklist(access_jti)
         await cache.set(
             blacklist_key,
             {"revoked": True},
@@ -279,7 +279,7 @@ class AuthService:
 
     async def is_token_blacklisted(self, jti: str) -> bool:
         """检查 token 是否在黑名单中"""
-        blacklist_key = f"auth:access:{jti}"
+        blacklist_key = CacheKeys.token_blacklist(jti)
         data = await cache.get(blacklist_key)
         return data is not None
 
@@ -287,8 +287,8 @@ class AuthService:
 
     async def check_login_rate_limit(self, email: str, client_ip: str | None = None) -> None:
         """检查登录限流（邮箱 + IP 双维度）"""
-        fail_key_email = f"auth:login_fail:{email}"
-        fail_key_ip = f"auth:login_fail_ip:{client_ip}" if client_ip else None
+        fail_key_email = CacheKeys.login_fail_email(email)
+        fail_key_ip = CacheKeys.login_fail_ip(client_ip) if client_ip else None
 
         fail_count_email = await cache.get(fail_key_email) or 0
         fail_count_ip = await cache.get(fail_key_ip) if fail_key_ip else 0
@@ -305,8 +305,8 @@ class AuthService:
 
     async def increment_login_failure(self, email: str, client_ip: str | None = None) -> int:
         """记录登录失败（邮箱 + IP）"""
-        fail_key_email = f"auth:login_fail:{email}"
-        fail_key_ip = f"auth:login_fail_ip:{client_ip}" if client_ip else None
+        fail_key_email = CacheKeys.login_fail_email(email)
+        fail_key_ip = CacheKeys.login_fail_ip(client_ip) if client_ip else None
 
         fail_count_email = (await cache.get(fail_key_email)) or 0
         fail_count_email += 1
@@ -321,7 +321,7 @@ class AuthService:
 
     async def reset_login_failures(self, email: str) -> None:
         """重置登录失败计数"""
-        fail_key = f"auth:login_fail:{email}"
+        fail_key = CacheKeys.login_fail_email(email)
         await cache.delete(fail_key)
 
     # ========== 验证码 ==========
@@ -329,7 +329,7 @@ class AuthService:
     async def send_verification_code(self, email: str, purpose: str, client_ip: str | None = None) -> str:
         """发送验证码（测试环境固定 123456，其他环境随机）。"""
         code = "123456" if self._is_dev_env() else generate_verification_code()
-        code_key = f"auth:verify:{email}:{purpose}"
+        code_key = CacheKeys.verify_code(email, purpose)
         await cache.set(code_key, code, ttl=settings.VERIFICATION_CODE_TTL_SECONDS)  # 10 分钟有效
 
         # TODO: 接入真实邮件服务；当前仅记录发送动作，不输出验证码
@@ -342,9 +342,9 @@ class AuthService:
 
     async def verify_code(self, email: str, code: str, purpose: str, client_ip: str | None = None) -> bool:
         """验证验证码（含 IP 级重试限制）"""
-        code_key = f"auth:verify:{email}:{purpose}"
-        attempt_key = f"auth:verify_attempts:{email}:{purpose}"
-        attempt_key_ip = f"auth:verify_attempts_ip:{client_ip}:{purpose}" if client_ip else None
+        code_key = CacheKeys.verify_code(email, purpose)
+        attempt_key = CacheKeys.verify_attempts_email(email, purpose)
+        attempt_key_ip = CacheKeys.verify_attempts_ip(client_ip, purpose) if client_ip else None
 
         attempts = await cache.incr(attempt_key, ttl=settings.VERIFICATION_CODE_TTL_SECONDS)
         attempts_ip = 0
@@ -399,7 +399,7 @@ class AuthService:
             "reason": reason,
             "tenant_id": str(tenant_id) if tenant_id else None,
             "expires_at": (
-                (datetime.now(UTC) + timedelta(hours=duration_hours)).isoformat()
+                (Datetime.now() + timedelta(hours=duration_hours)).isoformat()
                 if duration_hours
                 else None
             ),
@@ -452,7 +452,7 @@ class AuthService:
             "reason": reason,
             "tenant_id": str(tenant_id),
             "expires_at": (
-                (datetime.now(UTC) + timedelta(hours=duration_hours)).isoformat()
+                (Datetime.now() + timedelta(hours=duration_hours)).isoformat()
                 if duration_hours
                 else None
             ),
@@ -504,7 +504,7 @@ class AuthService:
         # 检查临时封禁是否已过期
         if ban_data.get("type") == "temporary" and ban_data.get("expires_at"):
             expires_at = datetime.fromisoformat(ban_data["expires_at"])
-            if datetime.now(UTC) > expires_at:
+            if Datetime.now() > expires_at:
                 await cache.delete(ban_key)
                 return None
 

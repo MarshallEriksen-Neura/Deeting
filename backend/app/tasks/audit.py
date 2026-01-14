@@ -19,6 +19,8 @@ def record_audit_log_task(log_data: dict[str, Any]) -> str:
         # 转换 UUID 字段
         if log_data.get("user_id") and isinstance(log_data["user_id"], str):
             log_data["user_id"] = uuid.UUID(log_data["user_id"])
+        if log_data.get("api_key_id") and isinstance(log_data["api_key_id"], str):
+            log_data["api_key_id"] = uuid.UUID(log_data["api_key_id"])
         if log_data.get("preset_id") and isinstance(log_data["preset_id"], str):
             log_data["preset_id"] = uuid.UUID(log_data["preset_id"])
 

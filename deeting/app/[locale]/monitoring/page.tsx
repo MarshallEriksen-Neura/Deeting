@@ -2,7 +2,8 @@ import { useTranslations } from "next-intl"
 import { setRequestLocale } from "next-intl/server"
 
 import { Container } from "@/components/ui/container"
-import { MonitoringControlBar } from "./components/monitoring-control-bar"
+import { useState } from "react"
+import { MonitoringControlBar, type MonitoringFilters } from "./components/monitoring-control-bar"
 import { PerformanceDiagnostics } from "./components/performance-diagnostics"
 import { DimensionalBreakdown } from "./components/dimensional-breakdown"
 
@@ -19,6 +20,12 @@ export default async function MonitoringPage({
 
 function MonitoringContent() {
   const t = useTranslations("monitoring")
+  const [filters, setFilters] = useState<MonitoringFilters>({
+    timeRange: "24h",
+    model: undefined,
+    apiKey: undefined,
+    errorCode: undefined,
+  })
 
   return (
     <Container
@@ -36,13 +43,13 @@ function MonitoringContent() {
       </div>
 
       {/* Top: Global Control Bar */}
-      <MonitoringControlBar />
+      <MonitoringControlBar value={filters} onChange={setFilters} />
 
       {/* Core Area 1: Performance Diagnostics - Vertical Layout */}
-      <PerformanceDiagnostics />
+      <PerformanceDiagnostics filters={filters} />
 
       {/* Core Area 2: Dimensional Breakdown - Three Column Layout */}
-      <DimensionalBreakdown />
+      <DimensionalBreakdown filters={filters} />
     </Container>
   )
 }

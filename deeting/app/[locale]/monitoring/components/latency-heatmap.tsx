@@ -16,9 +16,15 @@ import { cn } from "@/lib/utils"
  * - Scattered dots at top = some requests extremely slow
  * - Entire block moving up = overall slowdown
  */
-export function LatencyHeatmap() {
+export function LatencyHeatmap({
+  timeRange = "24h",
+  model,
+}: {
+  timeRange?: "24h" | "7d" | "30d"
+  model?: string
+}) {
   const t = useTranslations("monitoring.performance.heatmap")
-  const { data, isLoading } = useLatencyHeatmap()
+  const { data, isLoading } = useLatencyHeatmap(timeRange, model)
 
   if (isLoading) {
     return (

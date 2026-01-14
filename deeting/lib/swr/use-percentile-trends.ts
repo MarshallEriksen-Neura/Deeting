@@ -7,7 +7,7 @@ import type { PercentileTrends } from "@/lib/api/monitoring"
  *
  * @param timeRange - Time range filter
  */
-export function usePercentileTrends(timeRange?: string) {
+export function usePercentileTrends(timeRange: "24h" | "7d" | "30d" = "24h") {
   const { data, error, isLoading, mutate } = useSWR<PercentileTrends>(
     ["/api/v1/monitoring/percentile-trends", timeRange],
     () => fetchPercentileTrends({ timeRange }),

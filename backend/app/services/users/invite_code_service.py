@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from app.utils.time_utils import Datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,7 +19,7 @@ from app.services.users.registration_window_service import (
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return Datetime.now()
 
 
 class InviteCodeService:
