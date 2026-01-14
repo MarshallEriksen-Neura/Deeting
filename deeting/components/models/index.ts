@@ -15,4 +15,4 @@ export { TestDrawer } from "./test-drawer"
 export { ModelEmptyState } from "./empty-state"
 
 // Main page component
-export { ModelManagementPage } from "./model-management-page"
+export { ModelsManager } from "./models-manager"

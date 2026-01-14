@@ -68,6 +68,8 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
   const isEnabled = data.is_enabled !== false
   const isOffline = (data.health_status || "").toLowerCase() === "down" || !isEnabled
 
+  const menuId = React.useMemo(() => `provider-${data.id}-menu`, [data.id])
+
   const latencyColor = React.useMemo(() => {
     if (isOffline) return "#ef4444"
     const lat = data.latency_ms ?? 0
@@ -92,15 +94,15 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
       transition={{ delay: index * 0.05, duration: 0.35 }}
     >
       <GlassCard
-        className={`group relative overflow-hidden transition-all duration-300 hover:shadow-lg ${isOffline ? "opacity-75 grayscale-[0.3]" : ""}`}
+        className={`group relative w-full overflow-hidden transition-all duration-300 hover:shadow-lg ${isOffline ? "opacity-75 grayscale-[0.3]" : ""}`}
         padding="none"
         innerBorder={false}
       >
         <div className="absolute inset-0 border-2 border-transparent transition-colors duration-300 group-hover:border-[var(--primary)]/20 rounded-2xl pointer-events-none" />
 
-        <div className="flex flex-col md:flex-row items-center p-4 gap-6">
+        <div className="flex flex-row flex-wrap md:flex-nowrap items-center p-4 gap-4 md:gap-6">
           {/* Identity */}
-          <div className="flex items-center gap-4 min-w-[240px]">
+          <div className="flex items-center gap-4 min-w-[180px] sm:min-w-[200px] md:min-w-[240px] flex-1">
             <div className={`relative flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 shadow-inner ${isOffline ? "text-gray-400" : "text-[var(--foreground)]"}`}>
               {iconElement}
               {!isOffline && (
@@ -124,7 +126,7 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
           </div>
 
           {/* Sparkline */}
-          <div className="flex-1 h-[40px] w-full min-w-[120px] opacity-60 group-hover:opacity-100 transition-opacity">
+          <div className="flex-1 h-[40px] w-full min-w-[160px] opacity-60 group-hover:opacity-100 transition-opacity">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={history.map((val, i) => ({ i, val }))}>
                 <Line
@@ -140,7 +142,7 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
           </div>
 
           {/* Metrics & Actions */}
-          <div className="flex items-center gap-6 md:ml-auto">
+          <div className="flex w-full md:w-auto items-center gap-4 md:gap-6 md:ml-auto justify-between md:justify-end">
             <div className="flex flex-col items-end min-w-[90px]">
               <div className="flex items-center gap-1.5 text-sm font-medium" style={{ color: latencyColor }}>
                 <Activity className="size-3.5" />
@@ -156,12 +158,21 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
               />
 
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+                <DropdownMenuTrigger
+                  asChild
+                  id={`${menuId}-trigger`}
+                  aria-controls={`${menuId}-content`}
+                >
                   <GlassButton variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
                     <MoreHorizontal className="size-4" />
                   </GlassButton>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-[160px]">
+                <DropdownMenuContent
+                  align="end"
+                  className="w-[160px]"
+                  id={`${menuId}-content`}
+                  aria-labelledby={`${menuId}-trigger`}
+                >
                   <DropdownMenuItem onClick={() => onToggle(data.id, !isEnabled)}>
                     <Settings2 className="mr-2 size-4" />
                     {isEnabled ? t("actions.disable") : t("actions.enable")}

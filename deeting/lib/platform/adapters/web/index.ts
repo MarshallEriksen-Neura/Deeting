@@ -35,6 +35,8 @@ export const webPlatform: IPlatform = {
     deleteInstance: providerApi.deleteProviderInstance,
     getModels: providerApi.fetchProviderModels,
     syncModels: providerApi.syncProviderModels,
+    updateModel: providerApi.updateProviderModel,
+    testModel: providerApi.testProviderModel,
   },
 
   apiKey: {

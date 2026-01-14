@@ -89,6 +89,17 @@ class ProviderModelsUpsertRequest(BaseModel):
     models: List[ProviderModelUpsert]
 
 
+class ProviderModelUpdate(BaseModel):
+    display_name: Optional[str] = None
+    is_active: Optional[bool] = None
+    weight: Optional[int] = None
+    priority: Optional[int] = None
+    pricing_config: Optional[dict[str, Any]] = None
+    limit_config: Optional[dict[str, Any]] = None
+    tokenizer_config: Optional[dict[str, Any]] = None
+    routing_config: Optional[dict[str, Any]] = None
+
+
 class ProviderModelResponse(BaseModel):
     id: UUID
     instance_id: UUID
@@ -114,6 +125,19 @@ class ProviderModelResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProviderModelTestRequest(BaseModel):
+    prompt: str = Field("ping", description="用于探测的测试内容，默认 ping")
+
+
+class ProviderModelTestResponse(BaseModel):
+    success: bool
+    latency_ms: int
+    status_code: int
+    upstream_url: str
+    response_body: dict[str, Any] | None = None
+    error: str | None = None
 
 
 class ProviderVerifyRequest(BaseModel):

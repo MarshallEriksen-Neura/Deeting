@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useTranslations } from "next-intl"
@@ -23,6 +23,7 @@ interface UserMenuProps {
 export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserMenuProps) {
   const t = useTranslations("common.header")
   const [mounted, setMounted] = useState(false)
+  const menuId = useMemo(() => `user-menu-${userEmail || userName || "guest"}`, [userEmail, userName])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -34,7 +35,11 @@ export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserM
 
   return (
     <GlassDropdownMenu>
-      <GlassDropdownMenuTrigger asChild>
+      <GlassDropdownMenuTrigger
+        asChild
+        id={`${menuId}-trigger`}
+        aria-controls={`${menuId}-content`}
+      >
         <Button
           variant="ghost"
           className="relative h-8 w-8 rounded-full p-0 hover:ring-2 hover:ring-[var(--primary)]/20 transition-all"
@@ -53,7 +58,12 @@ export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserM
           </Avatar>
         </Button>
       </GlassDropdownMenuTrigger>
-      <GlassDropdownMenuContent className="w-56" align="end">
+      <GlassDropdownMenuContent
+        className="w-56"
+        align="end"
+        id={`${menuId}-content`}
+        aria-labelledby={`${menuId}-trigger`}
+      >
         <GlassDropdownUserHeader name={safeName} email={userEmail} />
         <GlassDropdownMenuSeparator />
         <GlassDropdownMenuItem>

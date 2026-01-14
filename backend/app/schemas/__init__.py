@@ -12,6 +12,9 @@ from .provider_instance import (
     ProviderInstanceResponse,
     ProviderModelResponse,
     ProviderModelsUpsertRequest,
+    ProviderModelUpdate,
+    ProviderModelTestRequest,
+    ProviderModelTestResponse,
 )
 from .provider_preset import (
     ProviderPresetBase,
@@ -82,6 +85,9 @@ __all__ = [
     "ProviderInstanceResponse",
     "ProviderModelResponse",
     "ProviderModelsUpsertRequest",
+    "ProviderModelUpdate",
+    "ProviderModelTestRequest",
+    "ProviderModelTestResponse",
     "RefreshRequest",
     "SendLoginCodeRequest",
     "RoleAssignment",

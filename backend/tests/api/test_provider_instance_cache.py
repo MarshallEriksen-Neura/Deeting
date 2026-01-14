@@ -222,6 +222,118 @@ async def test_provider_model_alias_match():
 
 
 @pytest.mark.asyncio
+async def test_provider_model_list_cache_and_update_invalidate():
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-cache",
+            base_url="https://api.example.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        model = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capability="chat",
+            model_id="gpt-4o",
+            display_name="gpt-4o",
+            upstream_path="chat/completions",
+            template_engine="simple_replace",
+            request_template={},
+            response_transform={},
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        await svc.upsert_models(inst.id, None, [model])
+
+        models = await svc.list_models(inst.id, None)
+        assert len(models) == 1
+        cache_key = cache._make_key(CacheKeys.provider_model_list(str(inst.id)))  # type: ignore[attr-defined]
+        assert cache_key in cache._redis.store  # type: ignore[attr-defined]
+
+        updated = await svc.update_model(model.id, None, is_active=False)
+        assert updated.is_active is False
+        assert cache_key not in cache._redis.store  # type: ignore[attr-defined]
+
+        models = await svc.list_models(inst.id, None)
+        assert models[0].is_active is False
+
+
+@pytest.mark.asyncio
+async def test_provider_model_test_ping(monkeypatch):
+    class FakeResp:
+        def __init__(self):
+            self.status_code = 200
+            self._json = {"ok": True}
+            self.text = "{}"
+
+        def json(self):
+            return self._json
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return FakeResp()
+
+    monkeypatch.setattr("app.services.providers.provider_instance_service.httpx.AsyncClient", FakeClient)
+
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-test",
+            base_url="https://api.example.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+            api_key="sk-test",
+        )
+        model = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capability="chat",
+            model_id="gpt-4o",
+            display_name="gpt-4o",
+            upstream_path="chat/completions",
+            template_engine="simple_replace",
+            request_template={},
+            response_transform={},
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        await svc.upsert_models(inst.id, None, [model])
+
+        result = await svc.test_model(model.id, None, prompt="ping")
+        assert result["success"] is True
+        assert result["status_code"] == 200
+
+
+@pytest.mark.asyncio
 async def test_provider_instance_update_and_delete_invalidate_cache_and_health():
     async with AsyncSessionLocal() as session:
         svc = ProviderInstanceService(session)
@@ -257,4 +369,3 @@ async def test_provider_instance_update_and_delete_invalidate_cache_and_health()
         assert model_list_key not in cache._redis.store  # type: ignore[attr-defined]
         assert f"provider:health:{inst.id}" not in cache._redis.store  # type: ignore[attr-defined]
         assert f"provider:health:{inst.id}:history" not in cache._redis.store  # type: ignore[attr-defined]
-        assert candidates[0].unified_model_id == alias_name

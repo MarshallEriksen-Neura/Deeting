@@ -25,26 +25,24 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen bg-[var(--background)]">
-        
-        {/* The Sidebar Shell */}
-        <Sidebar collapsible="icon">
+      <div className="grid min-h-screen w-full grid-cols-1 bg-[var(--background)] md:grid-cols-[auto_1fr]">
+        {/* Sidebar Column */}
+        <Sidebar collapsible="icon" className="md:h-[calc(100vh-56px)]">
           <SidebarContent className="p-4">
-             <AppSidebarNav groups={navigation} />
+            <AppSidebarNav groups={navigation} />
           </SidebarContent>
           
-          {/* Footer with Collapse Trigger */}
           <SidebarFooter>
-             <div className="w-full flex items-center justify-start group-data-[collapsible=icon]:justify-center">
-                <SidebarTrigger className="w-full justify-start gap-2 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center px-2">
-                   <span className="group-data-[collapsible=icon]:hidden truncate">Collapse Sidebar</span>
-                </SidebarTrigger>
-             </div>
+            <div className="w-full flex items-center justify-start group-data-[collapsible=icon]:justify-center">
+              <SidebarTrigger className="w-full justify-start gap-2 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center px-2">
+                <span className="group-data-[collapsible=icon]:hidden truncate">Collapse Sidebar</span>
+              </SidebarTrigger>
+            </div>
           </SidebarFooter>
         </Sidebar>
 
-        {/* The Main Content Area - Automatically adjusts margin */}
-        <SidebarInset>
+        {/* Main Column */}
+        <SidebarInset className="w-full">
           {children}
         </SidebarInset>
       </div>

@@ -63,13 +63,14 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
       )
     }
 
-    // Desktop Implementation
+    // Desktop Implementation (non-fixed, participates in layout grid/flex)
     return (
       <div
         ref={ref}
         className={cn(
           "group peer hidden md:block text-[var(--foreground)]",
-          "fixed z-30 bg-[var(--card)]/60 backdrop-blur-xl border-r border-white/10 shadow-[4px_0_16px_-4px_rgba(0,0,0,0.05)]",
+          "relative md:sticky md:top-[56px]", // header height
+          "bg-[var(--card)]/60 backdrop-blur-xl border-r border-white/10 shadow-[4px_0_16px_-4px_rgba(0,0,0,0.05)]",
           "transition-[width] duration-300 ease-linear",
           state === "collapsed" ? "w-[--sidebar-width-icon]" : "w-[--sidebar-width]",
           className
@@ -79,7 +80,6 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
         data-variant={variant}
         data-side={side}
         style={{
-            top: HEADER_HEIGHT,
             height: `calc(100vh - ${HEADER_HEIGHT}px)`,
         }}
       >

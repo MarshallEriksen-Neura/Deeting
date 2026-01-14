@@ -50,6 +50,7 @@ export function ApiKeyStrip({
 }: ApiKeyStripProps) {
   const t = useTranslations("apiKeys")
   const [copied, setCopied] = React.useState(false)
+  const menuId = React.useMemo(() => `apikey-${apiKey.id}-menu`, [apiKey.id])
   const statusColors = getStatusColor(apiKey.status)
   const budgetPercentage = calculateBudgetPercentage(apiKey.budget_used, apiKey.budget_limit)
   const relativeTime = formatRelativeTime(apiKey.last_used_at)
@@ -160,7 +161,11 @@ export function ApiKeyStrip({
 
         {/* Actions dropdown */}
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+          <DropdownMenuTrigger
+            asChild
+            id={`${menuId}-trigger`}
+            aria-controls={`${menuId}-content`}
+          >
             <Button
               variant="ghost"
               size="icon-sm"
@@ -169,7 +174,12 @@ export function ApiKeyStrip({
               <MoreVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuContent
+            align="end"
+            className="w-40"
+            id={`${menuId}-content`}
+            aria-labelledby={`${menuId}-trigger`}
+          >
             <DropdownMenuItem
               onClick={() => onEdit?.(apiKey)}
               disabled={isDisabled}

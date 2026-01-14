@@ -1,5 +1,21 @@
 {
   "models": {
+    "title": "模型列表",
+    "subtitle": "管理当前提供商的已同步模型",
+    "error": {
+      "title": "加载模型失败",
+      "unknown": "加载模型时出现未知错误"
+    },
+    "actions": {
+      "retry": "重试"
+    },
+    "toast": {
+      "syncSuccess": "模型同步成功",
+      "syncFailed": "模型同步失败",
+      "updateSuccess": "模型更新成功",
+      "updateFailed": "模型更新失败"
+    },
+    "confirmDelete": "确定要删除该提供商实例吗？",
     "page": {
       "backToProviders": "返回模型列表",
       "loading": "加载模型中...",

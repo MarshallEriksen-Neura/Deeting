@@ -15,6 +15,10 @@ interface ThemeProviderProps {
   enableSystem?: boolean;
   /** 是否禁用过渡动画 */
   disableTransition?: boolean;
+  /** HTML 属性名 */
+  attribute?: string;
+  /** 切换主题时是否禁用过渡 */
+  disableTransitionOnChange?: boolean;
 }
 
 /**
@@ -26,13 +30,15 @@ export function ThemeProvider({
   defaultTheme = "system",
   enableSystem = true,
   disableTransition = false,
+  attribute = "class",
+  disableTransitionOnChange = false,
 }: ThemeProviderProps) {
   return (
     <NextThemesProvider
-      attribute="class"
+      attribute={attribute}
       defaultTheme={defaultTheme}
       enableSystem={enableSystem}
-      disableTransitionOnChange={false}
+      disableTransitionOnChange={disableTransitionOnChange}
       storageKey="deeting-theme"
     >
       {children}

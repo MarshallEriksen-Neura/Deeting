@@ -128,6 +128,7 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
 
   return {
     step,
+    setStep,
     email,
     inviteCode,
     showInviteCode,

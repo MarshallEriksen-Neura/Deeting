@@ -19,7 +19,6 @@ import {
   adminNavigation,
 } from "./navigation-config"
 import { navIconMap, defaultNavIcon } from "./icon-map"
-import { getNavIcon } from "./icon-map"
 
 /**
  * iOS-style Glass Sidebar (Secondary Navigation)

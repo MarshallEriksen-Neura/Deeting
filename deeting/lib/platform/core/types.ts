@@ -1,6 +1,7 @@
 import type { 
   ProviderHubResponse, ProviderCard, ProviderVerifyRequest, ProviderVerifyResponse,
-  ProviderInstanceCreate, ProviderInstanceResponse, ProviderInstanceUpdate, ProviderModelResponse
+  ProviderInstanceCreate, ProviderInstanceResponse, ProviderInstanceUpdate, ProviderModelResponse,
+  ProviderModelUpdate, ProviderModelTestRequest, ProviderModelTestResponse
 } from '@/lib/api/providers';
 import type {
   ApiKeyListResponse, ApiKey, CreateApiKeyRequest, CreateApiKeyResponse,
@@ -19,7 +20,7 @@ export interface IModelService {
    * 获取模型列表
    * 两端都需要，但数据源不同
    */
-  getList(): Promise<any[]>;
+  getList(): Promise<unknown[]>;
 }
 
 export interface IProviderService {
@@ -32,6 +33,8 @@ export interface IProviderService {
   deleteInstance(id: string): Promise<void>;
   getModels(instanceId: string): Promise<ProviderModelResponse[]>;
   syncModels(instanceId: string, options?: { preserve_user_overrides?: boolean }): Promise<ProviderModelResponse[]>;
+  updateModel(modelId: string, payload: ProviderModelUpdate): Promise<ProviderModelResponse>;
+  testModel(modelId: string, payload?: ProviderModelTestRequest): Promise<ProviderModelTestResponse>;
 }
 
 export interface IApiKeyService {

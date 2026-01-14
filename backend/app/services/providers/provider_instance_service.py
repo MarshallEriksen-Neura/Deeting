@@ -10,6 +10,7 @@ from google.oauth2 import service_account
 import google.auth.transport.requests
 
 from app.models.provider_instance import ProviderInstance, ProviderModel, ProviderCredential
+from app.core.config import settings
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
@@ -391,10 +392,10 @@ class ProviderInstanceService:
         user_id: uuid.UUID | None,
         preset_slug: str,
         name: str,
-        description: str | None,
         base_url: str,
-        icon: str | None,
         credentials_ref: str | None,
+        description: str | None = None,
+        icon: str | None = None,
         api_key: str | None = None,
         protocol: str | None = None,
         model_prefix: str | None = None,
@@ -536,10 +537,13 @@ class ProviderInstanceService:
         models_data = []
         for m in models:
             # Handle both dict and object
-            d = m.model_dump() if hasattr(m, "model_dump") else m.__dict__
+            if hasattr(m, "model_dump"):
+                d = m.model_dump()
+            else:
+                # copy to avoid mutating ORM instance __dict__
+                d = dict(vars(m))
             # Clean up SQLAlchemy internal state
             d.pop("_sa_instance_state", None)
-            d.pop("id", None) # Let repo handle ID or reuse logic
             d.pop("synced_at", None)
             models_data.append(d)
 
@@ -553,7 +557,157 @@ class ProviderInstanceService:
         user_id: uuid.UUID | None,
     ) -> List[ProviderModel]:
         await self.assert_instance_access(instance_id, user_id)
-        return await self.model_repo.get_by_instance_id(instance_id)
+        from app.core.cache_keys import CacheKeys
+
+        cache_key = CacheKeys.provider_model_list(str(instance_id))
+
+        async def loader():
+            return await self.model_repo.get_by_instance_id(instance_id)
+
+        cached = await self.cache.get_or_set_singleflight(
+            cache_key,
+            loader=loader,
+            ttl=self.cache.jitter_ttl(settings.CACHE_DEFAULT_TTL),
+        )
+        return cached
+
+    async def update_model(
+        self,
+        model_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        **fields,
+    ) -> ProviderModel:
+        model = await self.model_repo.get(model_id)
+        if not model:
+            raise ValueError("model_not_found")
+
+        # 权限校验
+        await self.assert_instance_access(model.instance_id, user_id)
+
+        updatable_fields = {
+            "display_name",
+            "is_active",
+            "weight",
+            "priority",
+            "pricing_config",
+            "limit_config",
+            "tokenizer_config",
+            "routing_config",
+        }
+        updates = {k: v for k, v in fields.items() if k in updatable_fields and v is not None}
+        if not updates:
+            return model
+
+        updated = await self.model_repo.update_fields(model, updates)
+        await self._invalidator.on_provider_model_changed(
+            str(model.instance_id),
+            capability=model.capability,
+            model_id=model.model_id,
+        )
+        return updated
+
+    def _build_upstream_url(
+        self,
+        base_url: str,
+        upstream_path: str,
+        protocol: str | None,
+        instance: ProviderInstance,
+    ) -> tuple[str, dict]:
+        params: dict[str, Any] = {}
+        path = (upstream_path or "").lstrip("/")
+        base = (base_url or "").rstrip("/")
+        proto = (protocol or "").lower()
+
+        # Azure 追加 api-version
+        if "azure" in proto:
+            version = (instance.meta or {}).get("api_version") or "2023-05-15"
+            params["api-version"] = version
+            return f"{base}/{path}", params
+
+        # Google/Gemini 直接拼路径
+        if "gemini" in proto or "google" in proto or "vertex" in proto:
+            return f"{base}/{path}", params
+
+        # OpenAI 兼容
+        if base.endswith("/v1"):
+            return f"{base}/{path}", params
+        return f"{base}/v1/{path}", params
+
+    async def test_model(
+        self,
+        model_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        prompt: str = "ping",
+    ) -> dict:
+        model = await self.model_repo.get(model_id)
+        if not model:
+            raise ValueError("model_not_found")
+        instance = await self.assert_instance_access(model.instance_id, user_id)
+        preset = await self.preset_repo.get_by_slug(instance.preset_slug)
+        protocol = (instance.meta or {}).get("protocol") or getattr(preset, "provider", "openai")
+
+        secret = await self._get_secret(preset, instance)
+        if not secret:
+            raise ValueError("secret_not_found")
+
+        base_url = self._normalize_base_url(preset, instance)
+        url, params = self._build_upstream_url(base_url, model.upstream_path, protocol, instance)
+
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        proto_lower = (protocol or "").lower()
+        if "anthropic" in proto_lower:
+            headers["x-api-key"] = secret
+            headers["anthropic-version"] = "2023-06-01"
+        elif "azure" in proto_lower:
+            headers["api-key"] = secret
+        elif "gemini" in proto_lower or "google" in proto_lower or "vertex" in proto_lower:
+            headers["x-goog-api-key"] = secret
+        else:
+            headers["Authorization"] = f"Bearer {secret}"
+
+        capability = (model.capability or "chat").lower()
+        if capability in {"embedding"}:
+            payload = {"model": model.model_id, "input": prompt}
+        elif capability in {"audio"}:
+            payload = {"model": model.model_id, "input": prompt, "response_format": "json"}
+        else:
+            payload = {
+                "model": model.model_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 16,
+            }
+
+        start = time.time()
+        status_code = 0
+        body = None
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, headers=headers, params=params, json=payload)
+            status_code = resp.status_code
+            try:
+                body = resp.json()
+            except Exception:
+                body = {"text": resp.text[:500]}
+            success = 200 <= resp.status_code < 300
+            latency_ms = int((time.time() - start) * 1000)
+            return {
+                "success": success,
+                "latency_ms": latency_ms,
+                "status_code": status_code,
+                "upstream_url": url,
+                "response_body": body,
+                "error": None if success else body.get("error") if isinstance(body, dict) else resp.text[:200],
+            }
+        except Exception as exc:
+            latency_ms = int((time.time() - start) * 1000)
+            return {
+                "success": False,
+                "latency_ms": latency_ms,
+                "status_code": status_code or 0,
+                "upstream_url": url,
+                "response_body": body,
+                "error": str(exc),
+            }
 
     async def list_credentials(
         self,

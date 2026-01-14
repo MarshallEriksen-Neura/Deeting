@@ -18,13 +18,14 @@ elif "+asyncpg" in sync_database_url: # Generic fallback for other variations
 
 # 创建同步引擎
 # 注意：Celery worker 是多进程模型，每个进程会创建自己的 Engine
-engine = create_engine(
-    sync_database_url,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    echo=False, # Celery 日志中尽量少打 SQL
-)
+_engine_kwargs = {
+    "pool_pre_ping": True,
+    "echo": False,  # Celery 日志中尽量少打 SQL
+}
+if not sync_database_url.startswith("sqlite"):
+    _engine_kwargs.update(pool_size=10, max_overflow=20)
+
+engine = create_engine(sync_database_url, **_engine_kwargs)
 
 # 创建同步 Session 工厂
 SessionLocal = sessionmaker(

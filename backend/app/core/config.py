@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     LOG_FILE_PATH: str = "logs/app.log"
     LOG_ROTATION: str = "500 MB"  # 日志文件大小轮转
     LOG_RETENTION: str = "10 days" # 日志保留时间
-    LOG_ASYNC: bool = True  # 测试环境可设为 False 以避免 multiprocessing 队列
+    LOG_ASYNC: bool = False  # 默认关闭队列；需要异步写盘时可在生产环境显式打开
 
     # CORS 原始字符串配置（使用 CORS_ALLOW_* 环境变量）
     CORS_ALLOW_ORIGINS: str = "*"

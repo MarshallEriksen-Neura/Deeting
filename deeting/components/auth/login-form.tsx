@@ -66,6 +66,7 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
 
   const {
     step,
+    setStep,
     email,
     inviteCode,
     showInviteCode,

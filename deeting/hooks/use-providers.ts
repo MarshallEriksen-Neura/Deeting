@@ -9,10 +9,13 @@ import {
   type ProviderInstanceCreate,
   type ProviderInstanceUpdate,
   type ProviderInstanceResponse,
-  type ProviderModelResponse
+  type ProviderModelResponse,
+  type ProviderModelUpdate,
+  type ProviderModelTestRequest,
+  type ProviderModelTestResponse
 } from "@/lib/api/providers"
 
-const EMPTY_ARRAY: any[] = []
+const EMPTY_ARRAY: never[] = []
 
 export const PROVIDERS_HUB_KEY = "providers/hub"
 export const PROVIDER_DETAIL_KEY = "providers/detail"
@@ -190,4 +193,32 @@ export function useSyncProviderModels() {
   return {
     sync,
   }
+}
+
+// Provider Model Update Hook
+export function useUpdateProviderModel() {
+  const { provider } = usePlatform()
+
+  const update = async (
+    modelId: string,
+    payload: ProviderModelUpdate
+  ): Promise<ProviderModelResponse> => {
+    return await provider.updateModel(modelId, payload)
+  }
+
+  return { update }
+}
+
+// Provider Model Test Hook
+export function useTestProviderModel() {
+  const { provider } = usePlatform()
+
+  const test = async (
+    modelId: string,
+    payload?: ProviderModelTestRequest
+  ): Promise<ProviderModelTestResponse> => {
+    return await provider.testModel(modelId, payload)
+  }
+
+  return { test }
 }

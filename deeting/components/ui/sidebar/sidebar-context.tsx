@@ -137,7 +137,8 @@ const SidebarInset = React.forwardRef<
   React.ComponentProps<"main">
 >(({ className, ...props }, ref) => {
   const { state, isMobile } = useSidebar()
-  const marginLeft = isMobile ? "0px" : (state === "collapsed" ? "var(--sidebar-width-icon)" : "var(--sidebar-width)")
+  // With non-fixed sidebar, main area no longer needs margin compensation
+  const marginLeft = "0px"
 
   return (
     <main
@@ -151,7 +152,8 @@ const SidebarInset = React.forwardRef<
       )}
       style={{
         marginLeft,
-        width: isMobile ? "100%" : `calc(100% - ${marginLeft})`,
+        paddingLeft: 0,
+        width: "100%",
         maxWidth: "100%",
       }}
       {...props}

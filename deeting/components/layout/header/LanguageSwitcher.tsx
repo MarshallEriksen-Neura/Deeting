@@ -28,6 +28,7 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
+  const menuId = useMemo(() => `lang-switcher-${locale}`, [locale])
 
   const { language, hydrated, setLanguage } = useLanguageStore()
 
@@ -92,7 +93,11 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
 
   return (
     <GlassDropdownMenu>
-      <GlassDropdownMenuTrigger asChild>
+      <GlassDropdownMenuTrigger
+        asChild
+        id={`${menuId}-trigger`}
+        aria-controls={`${menuId}-content`}
+      >
         <Button
           variant="ghost"
           size="sm"
@@ -104,7 +109,12 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
           </span>
         </Button>
       </GlassDropdownMenuTrigger>
-      <GlassDropdownMenuContent className="w-48" align="end">
+      <GlassDropdownMenuContent
+        className="w-48"
+        align="end"
+        id={`${menuId}-content`}
+        aria-labelledby={`${menuId}-trigger`}
+      >
         <GlassDropdownMenuLabel>
           {tCommon("language.label")}
         </GlassDropdownMenuLabel>

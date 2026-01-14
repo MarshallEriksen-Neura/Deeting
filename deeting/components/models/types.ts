@@ -19,6 +19,8 @@ export type PriceTier = 'free' | 'cheap' | 'moderate' | 'expensive' | 'premium'
  * The core data structure for the Model Matrix
  */
 export interface ProviderModel {
+  /** Internal Database UUID */
+  uuid: string
   /** Unique model ID from provider: e.g., "gpt-4-1106-preview" */
   id: string
   /** OpenAI-compatible object type */
@@ -64,19 +66,21 @@ export interface ProviderInstance {
   /** User-defined name: e.g., "Production GPT-4" */
   name: string
   /** Provider type: e.g., "openai", "anthropic", "ollama" */
-  provider: string
+  provider?: string
   /** Provider display name */
   provider_display_name: string
+  /** Preset slug (for theme fallback) */
+  preset_slug?: string
   /** API base URL */
   base_url: string
   /** Current status */
-  status: ProviderStatus
+  status?: ProviderStatus
   /** Last ping latency in ms */
-  latency: number
+  latency?: number
   /** Last sync timestamp */
   last_synced_at?: string
   /** Number of models available */
-  model_count: number
+  model_count?: number
   /** Brand theme color */
   theme_color?: string
   /** Is this instance enabled */

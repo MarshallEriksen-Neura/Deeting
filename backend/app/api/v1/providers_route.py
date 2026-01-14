@@ -13,6 +13,9 @@ from app.schemas.provider_instance import (
     ProviderInstanceResponse,
     ProviderModelResponse,
     ProviderModelsUpsertRequest,
+    ProviderModelUpdate,
+    ProviderModelTestRequest,
+    ProviderModelTestResponse,
     ProviderVerifyRequest,
     ProviderVerifyResponse,
 )
@@ -183,6 +186,58 @@ async def list_models(
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")
     return models
+
+
+@router.patch("/models/{model_id}", response_model=ProviderModelResponse)
+async def update_model(
+    model_id: str,
+    payload: ProviderModelUpdate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        model_uuid = uuid.UUID(model_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid model_id")
+
+    svc = ProviderInstanceService(db)
+    try:
+        updated = await svc.update_model(model_uuid, getattr(user, "id", None), **payload.model_dump(exclude_none=True))
+    except ValueError as e:
+        if str(e) == "model_not_found":
+            raise HTTPException(status_code=404, detail="model not found")
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return updated
+
+
+@router.post("/models/{model_id}/test", response_model=ProviderModelTestResponse)
+async def test_model(
+    model_id: str,
+    payload: ProviderModelTestRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        model_uuid = uuid.UUID(model_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid model_id")
+
+    svc = ProviderInstanceService(db)
+    prompt = (payload.prompt if payload else "ping")
+    try:
+        result = await svc.test_model(model_uuid, getattr(user, "id", None), prompt=prompt)
+    except ValueError as e:
+        message = str(e)
+        if message == "model_not_found":
+            raise HTTPException(status_code=404, detail="model not found")
+        if message == "secret_not_found":
+            raise HTTPException(status_code=400, detail="secret not configured")
+        raise HTTPException(status_code=400, detail=message)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return ProviderModelTestResponse(**result)
 
 
 @router.post("/instances/{instance_id}/models:sync", response_model=List[ProviderModelResponse])

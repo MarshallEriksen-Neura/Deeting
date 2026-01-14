@@ -106,6 +106,15 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def update_fields(self, model: ProviderModel, fields: dict) -> ProviderModel:
+        """部分字段更新，保持 commit/refresh 一致性。"""
+        for k, v in fields.items():
+            setattr(model, k, v)
+        self.session.add(model)
+        await self.session.commit()
+        await self.session.refresh(model)
+        return model
+
     async def upsert_for_instance(self, instance_id: uuid.UUID, models_data: list[dict]) -> list[ProviderModel]:
         """批量 Upsert 模型列表：按 instance_id + capability + model_id + upstream_path 唯一键判断。"""
         from datetime import datetime
@@ -114,6 +123,13 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         results: list[ProviderModel] = []
 
         for payload in models_data:
+            payload = dict(payload)
+            payload.pop("_sa_instance_state", None)
+            # 避免重复传入 instance_id
+            payload.pop("instance_id", None)
+            # 允许外部传入 id 以便后续按 id 操作（测试/管理场景）
+            incoming_id = payload.pop("id", None)
+
             stmt = select(ProviderModel).where(
                 ProviderModel.instance_id == instance_id,
                 ProviderModel.capability == payload["capability"],
@@ -131,7 +147,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
                 results.append(existing)
             else:
                 new_model = ProviderModel(
-                    id=uuid.uuid4(),
+                    id=incoming_id or uuid.uuid4(),
                     instance_id=instance_id,
                     synced_at=now,
                     **payload,

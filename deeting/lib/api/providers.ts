@@ -1,5 +1,5 @@
-import * as z from "zod"
-import { request } from "@/lib/http"
+import { z } from "zod"
+import { ApiError, request } from "@/lib/http"
 
 const PROVIDERS_BASE = "/api/v1/providers"
 
@@ -153,18 +153,61 @@ export const ProviderModelResponseSchema = z.object({
 
 export type ProviderModelResponse = z.infer<typeof ProviderModelResponseSchema>
 
+// Provider Model Update
+export const ProviderModelUpdateSchema = z.object({
+  display_name: z.string().nullable().optional(),
+  is_active: z.boolean().optional(),
+  weight: z.number().optional(),
+  priority: z.number().optional(),
+  pricing_config: z.record(z.any()).optional(),
+  limit_config: z.record(z.any()).optional(),
+  tokenizer_config: z.record(z.any()).optional(),
+  routing_config: z.record(z.any()).optional(),
+})
+
+export type ProviderModelUpdate = z.infer<typeof ProviderModelUpdateSchema>
+
+// Provider Model Test
+export const ProviderModelTestRequestSchema = z.object({
+  prompt: z.string().optional(),
+})
+
+export type ProviderModelTestRequest = z.infer<typeof ProviderModelTestRequestSchema>
+
+export const ProviderModelTestResponseSchema = z.object({
+  success: z.boolean(),
+  latency_ms: z.number(),
+  status_code: z.number(),
+  upstream_url: z.string(),
+  response_body: z.record(z.any()).nullable().optional(),
+  error: z.string().nullable().optional(),
+})
+
+export type ProviderModelTestResponse = z.infer<typeof ProviderModelTestResponseSchema>
+
+function parseModelsPayload(stage: string, data: unknown): ProviderModelResponse[] {
+  // 为避免 zod 在未知情况下访问 _zod 抛错，直接对数组快速回退，保证 UI 不崩溃
+  if (Array.isArray(data)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return data as any as ProviderModelResponse[]
+  }
+  throw new ApiError("模型数据格式异常", { data })
+}
+
 // =====================
 // API Functions
 // =====================
 
-function normalizeHubStats(raw: any): ProviderHubResponse["stats"] {
+function normalizeHubStats(raw: unknown): ProviderHubResponse["stats"] {
   const toNum = (v: unknown) => {
     const n = Number(v)
     return Number.isFinite(n) ? n : 0
   }
 
   const by_category: Record<string, number> = {}
-  const rawBy = raw?.by_category
+  const rawObj = raw as Record<string, unknown> | null
+  const rawBy = rawObj?.by_category
+  
   if (rawBy && typeof rawBy === "object") {
     for (const [k, v] of Object.entries(rawBy)) {
       by_category[k] = toNum(v)
@@ -172,8 +215,8 @@ function normalizeHubStats(raw: any): ProviderHubResponse["stats"] {
   }
 
   return {
-    total: toNum(raw?.total),
-    connected: toNum(raw?.connected),
+    total: toNum(rawObj?.total),
+    connected: toNum(rawObj?.connected),
     by_category,
   }
 }
@@ -183,7 +226,7 @@ export async function fetchProviderHub(params?: {
   q?: string
   include_public?: boolean
 }): Promise<ProviderHubResponse> {
-  const data = await request<any>({
+  const data = await request<{ providers?: ProviderCard[]; stats?: unknown }>({
     url: `${PROVIDERS_BASE}/hub`,
     method: "GET",
     params,
@@ -262,7 +305,7 @@ export async function fetchProviderModels(
     url: `${PROVIDERS_BASE}/instances/${instanceId}/models`,
     method: "GET",
   })
-  return z.array(ProviderModelResponseSchema).parse(data)
+  return parseModelsPayload("fetch", data)
 }
 
 export async function syncProviderModels(
@@ -276,5 +319,29 @@ export async function syncProviderModels(
       preserve_user_overrides: options?.preserve_user_overrides ?? true,
     },
   })
-  return z.array(ProviderModelResponseSchema).parse(data)
+  return parseModelsPayload("sync", data)
+}
+
+export async function updateProviderModel(
+  modelId: string,
+  payload: ProviderModelUpdate
+): Promise<ProviderModelResponse> {
+  const data = await request<ProviderModelResponse>({
+    url: `${PROVIDERS_BASE}/models/${modelId}`,
+    method: "PATCH",
+    data: payload,
+  })
+  return ProviderModelResponseSchema.parse(data)
+}
+
+export async function testProviderModel(
+  modelId: string,
+  payload?: ProviderModelTestRequest
+): Promise<ProviderModelTestResponse> {
+  const data = await request<ProviderModelTestResponse>({
+    url: `${PROVIDERS_BASE}/models/${modelId}/test`,
+    method: "POST",
+    data: payload,
+  })
+  return ProviderModelTestResponseSchema.parse(data)
 }

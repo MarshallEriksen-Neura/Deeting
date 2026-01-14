@@ -1,5 +1,21 @@
 {
   "models": {
+    "title": "Models",
+    "subtitle": "Manage synced models for this provider",
+    "error": {
+      "title": "Failed to load models",
+      "unknown": "Something went wrong while loading models."
+    },
+    "actions": {
+      "retry": "Retry"
+    },
+    "toast": {
+      "syncSuccess": "Models synced successfully",
+      "syncFailed": "Failed to sync models",
+      "updateSuccess": "Model updated successfully",
+      "updateFailed": "Failed to update model"
+    },
+    "confirmDelete": "Are you sure you want to delete this provider instance?",
     "page": {
       "backToProviders": "Back to Providers",
       "loading": "Loading models...",

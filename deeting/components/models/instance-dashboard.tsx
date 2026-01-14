@@ -30,9 +30,9 @@ import type { ProviderInstance, ProviderStatus, SyncState } from "./types"
 
 interface InstanceDashboardProps {
   instance: ProviderInstance
-  syncState: SyncState
+  syncState?: SyncState
   onSync: () => void
-  onSettings: () => void
+  onSettings?: () => void
   className?: string
 }
 
@@ -75,7 +75,7 @@ const PROVIDER_THEMES: Record<string, {
 }
 
 // Status indicator components
-function StatusIndicator({ status, latency }: { status: ProviderStatus; latency: number }) {
+function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency?: number }) {
   const t = useTranslations('models')
   const statusConfig: Record<ProviderStatus, {
     color: string
@@ -109,7 +109,13 @@ function StatusIndicator({ status, latency }: { status: ProviderStatus; latency:
     },
   }
 
-  const config = statusConfig[status]
+  const statusKey: ProviderStatus = (status ?? 'offline') as ProviderStatus
+  const safeLatency = Number.isFinite(latency ?? NaN) ? (latency as number) : 0
+  const config = statusConfig[statusKey] ?? statusConfig.offline
+  // 若 label 中需要延迟数值，使用安全值
+  if (statusKey === 'online' || statusKey === 'degraded') {
+    config.label = t(statusKey === 'online' ? 'status.online' : 'status.degraded', { latency: safeLatency })
+  }
 
   return (
     <div className="flex items-center gap-2">
@@ -179,7 +185,22 @@ export function InstanceDashboard({
   className,
 }: InstanceDashboardProps) {
   const t = useTranslations('models')
-  const theme = PROVIDER_THEMES[instance.provider.toLowerCase()] || PROVIDER_THEMES.default
+  const providerKey =
+    instance?.provider ??
+    instance?.provider_display_name ??
+    instance?.preset_slug ??
+    instance?.name ??
+    "default"
+  const theme = PROVIDER_THEMES[providerKey?.toLowerCase?.() ?? "default"] || PROVIDER_THEMES.default
+
+  // 防御：确保 syncState 可用，避免 undefined 访问
+  const safeSyncState: SyncState = syncState ?? {
+    is_syncing: false,
+    progress: 0,
+    last_sync: null,
+    error: null,
+  }
+  const handleSettings = onSettings ?? (() => {})
 
   // Format last synced time
   const formatLastSynced = (timestamp?: string) => {
@@ -270,29 +291,29 @@ export function InstanceDashboard({
         {/* Right: Core Actions */}
         <div className="flex items-center gap-3">
           {/* Sync Progress (when syncing) */}
-          {syncState.is_syncing && (
+          {safeSyncState.is_syncing && (
             <div className="flex items-center gap-2 mr-4">
               <div className="h-1.5 w-24 bg-white/10 rounded-full overflow-hidden">
                 <motion.div
                   className="h-full rounded-full"
                   style={{ backgroundColor: theme.color }}
                   initial={{ width: 0 }}
-                  animate={{ width: `${syncState.progress}%` }}
+                  animate={{ width: `${safeSyncState.progress}%` }}
                   transition={{ duration: 0.3 }}
                 />
               </div>
               <span className="text-xs text-[var(--muted)]">
-                {syncState.progress}%
+                {safeSyncState.progress}%
               </span>
             </div>
           )}
 
-          <SyncButton syncState={syncState} onSync={onSync} />
+          <SyncButton syncState={safeSyncState} onSync={onSync} />
 
           <GlassButton
             variant="ghost"
             size="icon"
-            onClick={onSettings}
+            onClick={handleSettings}
             className="hover:bg-white/5"
           >
             <Settings className="size-4" />
@@ -301,7 +322,7 @@ export function InstanceDashboard({
       </div>
 
       {/* Sync Error Banner */}
-      {syncState.error && (
+      {safeSyncState.error && (
         <motion.div
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}

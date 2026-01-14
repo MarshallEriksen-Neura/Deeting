@@ -187,13 +187,6 @@ async def get_current_user(
         token = authorization[7:]  # 移除 "Bearer " 前缀
         return await _get_user_from_jwt(token, db)
 
-    # X-User-Id 已废弃：明确拒绝，保持向后兼容的安全性
-    if x_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-User-Id header is deprecated, use Authorization bearer token",
-        )
-
     # 两者都没有
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

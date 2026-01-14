@@ -251,6 +251,7 @@ export function ModelDataStrip({
 }: ModelDataStripProps) {
   const t = useTranslations('models')
   const isDeprecated = !!model.deprecated_at
+  const menuId = React.useMemo(() => `model-${model.id}-menu`, [model.id])
 
   return (
     <motion.div
@@ -359,7 +360,11 @@ export function ModelDataStrip({
 
             {/* More Actions */}
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+              <DropdownMenuTrigger
+                asChild
+                id={`${menuId}-trigger`}
+                aria-controls={`${menuId}-content`}
+              >
                 <GlassButton
                   variant="ghost"
                   size="icon-sm"
@@ -371,6 +376,8 @@ export function ModelDataStrip({
               <DropdownMenuContent
                 align="end"
                 className="w-48 backdrop-blur-xl bg-[var(--background)]/90"
+                id={`${menuId}-content`}
+                aria-labelledby={`${menuId}-trigger`}
               >
                 <DropdownMenuItem onClick={() => navigator.clipboard.writeText(model.id)}>
                   <Copy className="mr-2 size-4" />

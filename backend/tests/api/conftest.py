@@ -24,11 +24,15 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from app.core.config import settings
 from app.core.cache import cache
 from app.core.database import get_db
 from app.models import Base, User
 from app.utils.security import get_password_hash
 from main import app
+
+# 测试环境禁止连接真实 Redis，确保使用 DummyRedis
+settings.REDIS_URL = ""
 
 # ---- 内存 Redis 替身 ----
 
@@ -256,12 +260,21 @@ def event_loop():
     """独立事件循环，避免与 pytest 默认循环冲突"""
     loop = asyncio.new_event_loop()
     yield loop
-    # 先关闭测试内的全局异步引擎，避免 aiosqlite 工作线程在关闭事件循环后仍在运行
     try:
         loop.run_until_complete(engine.dispose())
+        # 关闭缓存连接（若为 redis asyncio 客户端）
+        try:
+            loop.run_until_complete(cache.close())
+        except Exception:
+            pass
+        # 确保异步生成器与后台任务优雅收尾，避免 pytest 卡住退出
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:
+            pass
     finally:
+        asyncio.set_event_loop(None)
         loop.close()
-    loop.close()
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
