@@ -32,6 +32,7 @@ export const desktopPlatform: IPlatform = {
     deleteInstance: providerApi.deleteProviderInstance,
     getModels: providerApi.fetchProviderModels,
     syncModels: providerApi.syncProviderModels,
+    quickAddModels: providerApi.quickAddProviderModels,
     updateModel: providerApi.updateProviderModel,
     testModel: providerApi.testProviderModel,
   },

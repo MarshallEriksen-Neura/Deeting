@@ -144,6 +144,7 @@ dependencies = [
     { name = "curl-cffi" },
     { name = "django" },
     { name = "fastapi" },
+    { name = "fastapi-pagination" },
     { name = "google-genai" },
     { name = "html2text" },
     { name = "httpx", extra = ["socks"] },
@@ -169,6 +170,7 @@ dependencies = [
     { name = "qdrant-client" },
     { name = "redis" },
     { name = "ruff" },
+    { name = "sqlakeyset" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -187,6 +189,7 @@ requires-dist = [
     { name = "curl-cffi", specifier = ">=0.7.0" },
     { name = "django", specifier = ">=5.2.8" },
     { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "fastapi-pagination", specifier = ">=0.12.0" },
     { name = "google-genai", specifier = ">=1.52.0" },
     { name = "html2text", specifier = ">=2024.2.26" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.27.0" },
@@ -212,6 +215,7 @@ requires-dist = [
     { name = "qdrant-client", specifier = ">=1.16.2" },
     { name = "redis", specifier = ">=5.0.0" },
     { name = "ruff", specifier = ">=0.14.7" },
+    { name = "sqlakeyset", specifier = ">=2.0.168" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
@@ -866,6 +870,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/52/08/8c8508db6c7b9aae8f7175046af41baad690771c9bcde676419965e338c7/fastapi-0.128.0.tar.gz", hash = "sha256:1cc179e1cef10a6be60ffe429f79b829dce99d8de32d7acb7e6c8dfdf7f2645a", size = 365682, upload-time = "2025-12-27T15:21:13.714Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/05/5cbb59154b093548acd0f4c7c474a118eda06da25aa75c616b72d8fcd92a/fastapi-0.128.0-py3-none-any.whl", hash = "sha256:aebd93f9716ee3b4f4fcfe13ffb7cf308d99c9f3ab5622d8877441072561582d", size = 103094, upload-time = "2025-12-27T15:21:12.154Z" },
+]
+
+[[package]]
+name = "fastapi-pagination"
+version = "0.15.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a0/da/ad34e0fc98ca9731b0f76d07faeb39d525cb80440ac5814e270cb379d92a/fastapi_pagination-0.15.6.tar.gz", hash = "sha256:c59ca1aa056dccee3526953357c2d1128f988f83d3034d95ddb8de6f5a68e9f8", size = 573720, upload-time = "2026-01-11T22:15:36.385Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/28/0cf3b51115e98c0b84553b9e11ec07f59ae580bf8585eb7876fa9afe4c7a/fastapi_pagination-0.15.6-py3-none-any.whl", hash = "sha256:5c44bfaa78c1c968ca6f027b01a27c1805194c7cc8776eb84ec78235abcdaece", size = 59624, upload-time = "2026-01-11T22:15:37.746Z" },
 ]
 
 [[package]]
@@ -2770,6 +2788,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/89/23/adf3796d740536d63a6fbda113d07e60c734b6ed5d3058d1e47fc0495e47/soupsieve-2.8.1.tar.gz", hash = "sha256:4cf733bc50fa805f5df4b8ef4740fc0e0fa6218cf3006269afd3f9d6d80fd350", size = 117856, upload-time = "2025-12-18T13:50:34.655Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/48/f3/b67d6ea49ca9154453b6d70b34ea22f3996b9fa55da105a79d8732227adc/soupsieve-2.8.1-py3-none-any.whl", hash = "sha256:a11fe2a6f3d76ab3cf2de04eb339c1be5b506a8a47f2ceb6d139803177f85434", size = 36710, upload-time = "2025-12-18T13:50:33.267Z" },
+]
+
+[[package]]
+name = "sqlakeyset"
+version = "2.0.1762907931"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "python-dateutil" },
+    { name = "sqlalchemy" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/42/53e772e4194da1eb3f3857769a6f556d9386ea3e8b3e8ccc27499f408e75/sqlakeyset-2.0.1762907931.tar.gz", hash = "sha256:80b1ab1d8813b7c91fd7b45de4448978be2cedb3c75fff3fd192b0f9cf91508d", size = 113872, upload-time = "2025-11-12T00:38:53.396Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/06/ee0374e12f225142fa843bf5963a32b377773b13184637bf8a7b6792d1ca/sqlakeyset-2.0.1762907931-py3-none-any.whl", hash = "sha256:3fda94510bfc63eded6dc064eb007343d9582c1605517d28651128381dbbb9ae", size = 27154, upload-time = "2025-11-12T00:38:52.416Z" },
 ]
 
 [[package]]

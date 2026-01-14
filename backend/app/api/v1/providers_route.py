@@ -13,6 +13,7 @@ from app.schemas.provider_instance import (
     ProviderInstanceResponse,
     ProviderModelResponse,
     ProviderModelsUpsertRequest,
+    ProviderModelsQuickAddRequest,
     ProviderModelUpdate,
     ProviderModelTestRequest,
     ProviderModelTestResponse,
@@ -291,6 +292,36 @@ async def sync_models(
             raise HTTPException(status_code=404, detail="instance not found")
         if message == "preset_not_found":
             raise HTTPException(status_code=404, detail="preset not found")
+        raise HTTPException(status_code=400, detail=message)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return results
+
+
+@router.post("/instances/{instance_id}/models:quick-add", response_model=List[ProviderModelResponse])
+async def quick_add_models(
+    instance_id: str,
+    payload: ProviderModelsQuickAddRequest,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        instance_uuid = uuid.UUID(instance_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid instance_id")
+
+    svc = ProviderInstanceService(db)
+    try:
+        results = await svc.quick_add_models(
+            instance_uuid,
+            getattr(user, "id", None),
+            model_ids=payload.models,
+            capability=payload.capability,
+        )
+    except ValueError as e:
+        message = str(e)
+        if message == "empty_models":
+            raise HTTPException(status_code=400, detail="models_required")
         raise HTTPException(status_code=400, detail=message)
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")

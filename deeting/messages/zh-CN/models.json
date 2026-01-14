@@ -156,6 +156,20 @@
       "32k": "> 32k",
       "128k": "> 128k",
       "200k": "> 200k"
+    },
+    "quickAdd": {
+      "cta": "快速添加",
+      "subtitle": "懒人模式：只填模型名，其余默认值自动补齐",
+      "title": "快速添加模型",
+      "description": "粘贴模型名称（换行/逗号分隔）。我们会自动猜测能力并填充默认路径、模板与定价字段。",
+      "placeholder": "gpt-4o\nclaude-3.5-sonnet\ntext-embedding-3-large",
+      "hint": "无需手写 JSON，稍后可在列表中完善别名、定价和限额。",
+      "submit": "自动生成并添加",
+      "submitting": "正在添加...",
+      "cancel": "取消",
+      "errorEmpty": "请先输入至少一个模型名称",
+      "toastSuccess": "已添加 {count} 个模型",
+      "toastFailed": "添加失败，请稍后重试"
     }
   }
 }

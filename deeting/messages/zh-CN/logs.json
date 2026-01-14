@@ -1,0 +1,54 @@
+{
+  "logs": {
+    "title": "日志审计",
+    "subtitle": "全链路监控 API 调用详情、耗时分析与成本审计",
+    "filters": {
+      "model": "按模型名精确筛选",
+      "status": "状态码",
+      "statusAll": "全部状态",
+      "cacheAll": "缓存：全部",
+      "cacheHit": "仅命中",
+      "cacheMiss": "未命中",
+      "errorCode": "错误码",
+      "start": "开始",
+      "end": "结束",
+      "refresh": "刷新"
+    },
+    "table": {
+      "time": "时间",
+      "status": "状态",
+      "model": "模型",
+      "latency": "耗时 (TTFT)",
+      "tokens": "Tokens",
+      "cost": "成本",
+      "ttft": "TTFT: {value}ms",
+      "totalTokens": "Σ {value}",
+      "cached": "命中缓存",
+      "noData": "暂无日志记录，调整筛选条件再试试。"
+    },
+    "pagination": {
+      "pageInfo": "每页 {pageSize} 条 · 本页 {count} 条",
+      "prev": "上一页",
+      "next": "下一页"
+    },
+    "detail": {
+      "title": "请求详情",
+      "id": "ID: {id}",
+      "status": "状态",
+      "duration": "总耗时",
+      "ttft": "TTFT (首字延迟)",
+      "cache": "缓存命中",
+      "tokenStats": "Token 统计",
+      "costAnalysis": "成本分析",
+      "costUser": "用户扣费",
+      "costUpstream": "上游成本",
+      "callUser": "调用者 ID",
+      "preset": "预设 ID",
+      "error": "错误码",
+      "upstreamModel": "上游模型"
+    },
+    "error": {
+      "loadFailed": "加载日志失败：{message}"
+    }
+  }
+}

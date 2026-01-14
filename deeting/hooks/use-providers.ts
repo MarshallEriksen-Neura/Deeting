@@ -195,6 +195,20 @@ export function useSyncProviderModels() {
   }
 }
 
+// Provider Models Quick Add Hook
+export function useQuickAddProviderModels() {
+  const { provider } = usePlatform()
+
+  const quickAdd = async (
+    instanceId: string,
+    payload: { models: string[]; capability?: string }
+  ): Promise<ProviderModelResponse[]> => {
+    return await provider.quickAddModels(instanceId, payload)
+  }
+
+  return { quickAdd }
+}
+
 // Provider Model Update Hook
 export function useUpdateProviderModel() {
   const { provider } = usePlatform()

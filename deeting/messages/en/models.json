@@ -156,6 +156,20 @@
       "32k": "> 32k",
       "128k": "> 128k",
       "200k": "> 200k"
+    },
+    "quickAdd": {
+      "cta": "Quick Add",
+      "subtitle": "Lazy mode: paste model names, we fill defaults automatically.",
+      "title": "Quick Add Models",
+      "description": "Paste model names (comma or newline separated). We'll guess capabilities and fill default paths/templates/pricing.",
+      "placeholder": "gpt-4o\nclaude-3.5-sonnet\ntext-embedding-3-large",
+      "hint": "No JSON needed. You can refine aliases, pricing, and limits later in the list.",
+      "submit": "Generate & Add",
+      "submitting": "Adding...",
+      "cancel": "Cancel",
+      "errorEmpty": "Please enter at least one model name",
+      "toastSuccess": "{count} models added",
+      "toastFailed": "Failed to add models, please try again"
     }
   }
 }

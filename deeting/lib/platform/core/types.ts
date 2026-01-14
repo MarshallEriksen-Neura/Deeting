@@ -33,6 +33,7 @@ export interface IProviderService {
   deleteInstance(id: string): Promise<void>;
   getModels(instanceId: string): Promise<ProviderModelResponse[]>;
   syncModels(instanceId: string, options?: { preserve_user_overrides?: boolean }): Promise<ProviderModelResponse[]>;
+  quickAddModels(instanceId: string, payload: { models: string[]; capability?: string }): Promise<ProviderModelResponse[]>;
   updateModel(modelId: string, payload: ProviderModelUpdate): Promise<ProviderModelResponse>;
   testModel(modelId: string, payload?: ProviderModelTestRequest): Promise<ProviderModelTestResponse>;
 }

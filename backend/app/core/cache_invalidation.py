@@ -197,6 +197,7 @@ class CacheInvalidator:
             keys.append(CacheKeys.provider_model_list(instance_id))
         await self._delete_keys(keys)
         await self._clear_prefix(f"{CacheKeys.prefix}:pm:cand:")
+        await self._clear_prefix(f"{CacheKeys.prefix}:pi:list:")
         await self.bump_version()
 
     async def on_provider_credentials_changed(self, instance_id: str | None = None) -> None:

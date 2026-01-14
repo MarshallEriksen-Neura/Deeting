@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import selectinload
 
 from app.models.provider_instance import ProviderInstance, ProviderModel
@@ -21,7 +21,21 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
         cache_key = CacheKeys.provider_instance_list(user_id, include_public)
 
         async def loader() -> list[ProviderInstance]:
-            stmt = select(ProviderInstance).options(selectinload(ProviderInstance.credentials)).where(ProviderInstance.is_enabled == True)  # noqa: E712
+            model_count_sq = (
+                select(
+                    ProviderModel.instance_id,
+                    func.count(ProviderModel.id).label("model_count"),
+                )
+                .group_by(ProviderModel.instance_id)
+                .subquery()
+            )
+
+            stmt = (
+                select(ProviderInstance, model_count_sq.c.model_count)
+                .options(selectinload(ProviderInstance.credentials))
+                .join(model_count_sq, ProviderInstance.id == model_count_sq.c.instance_id, isouter=True)
+                .where(ProviderInstance.is_enabled == True)  # noqa: E712
+            )
             user_uuid = None
             if user_id:
                 try:
@@ -39,7 +53,13 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
                 # 无用户且不包含公共则返回空
                 return []
             result = await self.session.execute(stmt)
-            return list(result.scalars().all())
+            rows = result.all()
+            instances: list[ProviderInstance] = []
+            for inst, count in rows:
+                # 挂载模型数量，未命中则为 0
+                inst.model_count = int(count or 0)  # type: ignore[attr-defined]
+                instances.append(inst)
+            return instances
 
         return await cache.get_or_set_singleflight(
             cache_key,

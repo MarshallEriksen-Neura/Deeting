@@ -3,7 +3,6 @@ from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint, DateTime, text
 from sqlalchemy import UUID as SA_UUID
-from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

@@ -117,6 +117,7 @@ export const ProviderInstanceResponseSchema = z.object({
   health_status: z.string().optional().nullable(),
   latency_ms: z.number().optional(),
   sparkline: z.array(z.number()).optional(),
+  model_count: z.number().optional(),
 })
 
 export type ProviderInstanceCreate = z.infer<typeof ProviderInstanceCreateSchema>
@@ -185,6 +186,12 @@ export const ProviderModelTestResponseSchema = z.object({
 })
 
 export type ProviderModelTestResponse = z.infer<typeof ProviderModelTestResponseSchema>
+
+// Quick Add Models
+export interface ProviderModelsQuickAddRequest {
+  models: string[]
+  capability?: string
+}
 
 function parseModelsPayload(stage: string, data: unknown): ProviderModelResponse[] {
   // 为避免 zod 在未知情况下访问 _zod 抛错，直接对数组快速回退，保证 UI 不崩溃
@@ -321,6 +328,18 @@ export async function syncProviderModels(
     },
   })
   return parseModelsPayload("sync", data)
+}
+
+export async function quickAddProviderModels(
+  instanceId: string,
+  payload: ProviderModelsQuickAddRequest
+): Promise<ProviderModelResponse[]> {
+  const data = await request<ProviderModelResponse[]>({
+    url: `${PROVIDERS_BASE}/instances/${instanceId}/models:quick-add`,
+    method: "POST",
+    data: payload,
+  })
+  return parseModelsPayload("quick-add", data)
 }
 
 export async function updateProviderModel(

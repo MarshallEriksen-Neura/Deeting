@@ -3,9 +3,9 @@
 import * as React from "react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
-import { RefreshCw, AlertCircle } from "lucide-react"
+import { RefreshCw, AlertCircle, Sparkles } from "lucide-react"
 
-import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel } from "@/hooks/use-providers"
+import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels } from "@/hooks/use-providers"
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
 import { ModelEmptyState } from "./empty-state"
@@ -15,6 +15,17 @@ import type { ProviderModelResponse, ProviderModelUpdate } from "@/lib/api/provi
 import type { ProviderModel, ModelCapability } from "./types"
 import { toast } from "sonner"
 import ConnectProviderDrawer from "@/components/providers/connect-provider-drawer"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 const ModelAccordion = dynamic(
   () => import("./model-accordion").then((m) => m.ModelAccordion),
@@ -36,11 +47,15 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const { sync } = useSyncProviderModels()
   const { update: updateModel } = useUpdateProviderModel()
   const { test: testModelApi } = useTestProviderModel()
+  const { quickAdd } = useQuickAddProviderModels()
 
   // State
   const [isSyncing, setIsSyncing] = React.useState(false)
   const [testModel, setTestModel] = React.useState<ProviderModel | null>(null)
   const [editDrawerOpen, setEditDrawerOpen] = React.useState(false)
+  const [quickAddOpen, setQuickAddOpen] = React.useState(false)
+  const [quickAddInput, setQuickAddInput] = React.useState("")
+  const [quickAddLoading, setQuickAddLoading] = React.useState(false)
   
   // Derived Data
   const instance = React.useMemo<import("./types").ProviderInstance | undefined>(
@@ -52,7 +67,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         provider_display_name: raw.preset_slug, // 使用 slug 作为显示名称兜底
         status: (raw.health_status as any) || "offline",
         latency: raw.latency_ms,
-        model_count: 0, // 暂无模型数量字段
+        model_count: typeof raw.model_count === "number" ? raw.model_count : 0,
         last_synced_at: raw.updated_at,
         theme_color: raw.theme_color || undefined,
         description: raw.description || undefined,
@@ -196,6 +211,33 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     setTestModel(model)
   }
 
+  const parseModelsInput = React.useCallback((value: string) => {
+    return value
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }, [])
+
+  const handleQuickAddSubmit = async () => {
+    const modelsInput = parseModelsInput(quickAddInput)
+    if (modelsInput.length === 0) {
+      toast.error(t("quickAdd.errorEmpty"))
+      return
+    }
+    setQuickAddLoading(true)
+    try {
+      const res = await quickAdd(instanceId, { models: modelsInput })
+      await mutateModels()
+      toast.success(t("quickAdd.toastSuccess", { count: res.length }))
+      setQuickAddOpen(false)
+      setQuickAddInput("")
+    } catch (err) {
+      toast.error(t("quickAdd.toastFailed"))
+    } finally {
+      setQuickAddLoading(false)
+    }
+  }
+
   const handleSendTestMessage = React.useCallback(async (message: string) => {
     if (!testModel) return {
       id: "error",
@@ -274,6 +316,20 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         />
       )}
 
+      {/* Quick Add entry */}
+      <GlassCard className="p-4 flex flex-wrap items-center justify-between gap-3 border-white/5 bg-[var(--surface)]/60">
+        <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
+          <Sparkles className="size-4 text-[var(--primary)]" />
+          <span>{t("quickAdd.subtitle")}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <GlassButton onClick={() => setQuickAddOpen(true)} className="gap-2">
+            <Sparkles className="size-4" />
+            {t("quickAdd.cta")}
+          </GlassButton>
+        </div>
+      </GlassCard>
+
       {/* Models Matrix or Empty State */}
       {normalizedModels.length > 0 ? (
         <ModelAccordion
@@ -287,6 +343,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         <ModelEmptyState 
           onSync={handleSync} 
           isSyncing={isSyncing} 
+          onQuickAdd={() => setQuickAddOpen(true)}
         />
       )}
 
@@ -327,6 +384,52 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           }}
         />
       )}
+
+      {/* Quick Add Dialog */}
+      <Dialog open={quickAddOpen} onOpenChange={setQuickAddOpen}>
+        <DialogContent className="max-w-lg bg-[var(--surface)]/80 border-white/10">
+          <DialogHeader>
+            <DialogTitle>{t("quickAdd.title")}</DialogTitle>
+            <DialogDescription className="text-sm text-[var(--muted)]">
+              {t("quickAdd.description")}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <Textarea
+              rows={5}
+              value={quickAddInput}
+              onChange={(e) => setQuickAddInput(e.target.value)}
+              placeholder={t("quickAdd.placeholder")}
+              className="font-mono bg-black/20 border-white/10"
+            />
+            <div className="flex flex-wrap gap-2">
+              {["gpt-4o", "claude-3.5-sonnet", "text-embedding-3-large", "deepseek-chat"].map((m) => (
+                <Badge
+                  key={m}
+                  variant="outline"
+                  className="cursor-pointer hover:bg-white/10"
+                  onClick={() => setQuickAddInput((prev) => (prev ? `${prev.trim()}\n${m}` : m))}
+                >
+                  + {m}
+                </Badge>
+              ))}
+            </div>
+            <p className="text-xs text-[var(--muted)]">
+              {t("quickAdd.hint")}
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setQuickAddOpen(false)} disabled={quickAddLoading}>
+              {t("quickAdd.cancel")}
+            </Button>
+            <Button onClick={handleQuickAddSubmit} disabled={quickAddLoading}>
+              {quickAddLoading ? t("quickAdd.submitting") : t("quickAdd.submit")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

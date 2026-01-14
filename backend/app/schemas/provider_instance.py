@@ -61,6 +61,7 @@ class ProviderInstanceResponse(BaseModel):
     health_status: str | None = "unknown"
     latency_ms: int | None = 0
     sparkline: List[int] = Field(default_factory=list)
+    model_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,6 +88,13 @@ class ProviderModelUpsert(BaseModel):
 
 class ProviderModelsUpsertRequest(BaseModel):
     models: List[ProviderModelUpsert]
+
+
+class ProviderModelsQuickAddRequest(BaseModel):
+    """懒人模式：仅提供模型名，后端自动填充默认配置。"""
+
+    models: List[str] = Field(..., min_length=1, description="模型名称列表，支持批量")
+    capability: str | None = Field(default=None, description="可选：强制指定能力 chat/embedding 等，默认为自动猜测")
 
 
 class ProviderModelUpdate(BaseModel):

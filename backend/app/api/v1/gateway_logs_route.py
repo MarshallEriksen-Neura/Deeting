@@ -1,8 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from fastapi_pagination import CursorPage
-from fastapi_pagination.cursor import CursorParams
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db

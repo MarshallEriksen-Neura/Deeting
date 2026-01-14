@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { motion } from "framer-motion"
-import { Radar, RefreshCw, Satellite, Signal } from "lucide-react"
+import { RefreshCw, Satellite, Signal } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
@@ -20,6 +20,7 @@ interface ModelEmptyStateProps {
   isSyncing?: boolean
   providerName?: string
   className?: string
+  onQuickAdd?: () => void
 }
 
 // Radar scan animation
@@ -157,6 +158,7 @@ export function ModelEmptyState({
   isSyncing = false,
   providerName = "this provider",
   className,
+  onQuickAdd,
 }: ModelEmptyStateProps) {
   const t = useTranslations('models')
   return (
@@ -195,15 +197,16 @@ export function ModelEmptyState({
       </motion.p>
 
       {/* Action Button */}
-      {!isSyncing && (
+      {!isSyncing && onQuickAdd && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.4 }}
+          className="flex flex-col sm:flex-row gap-3 items-center"
         >
-          <GlassButton onClick={onSync} size="lg" className="gap-2">
-            <Radar className="size-5" />
-            {t('list.empty.button')}
+          <GlassButton onClick={onQuickAdd} variant="secondary" size="lg" className="gap-2">
+            <Signal className="size-5" />
+            {t('quickAdd.cta')}
           </GlassButton>
         </motion.div>
       )}

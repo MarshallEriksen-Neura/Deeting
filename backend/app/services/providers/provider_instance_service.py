@@ -298,6 +298,7 @@ class ProviderInstanceService:
         self,
         models: list[dict[str, Any]],
         instance: ProviderInstance,
+        forced_capability: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         将上游模型列表转换为 ProviderModel 字段。
@@ -338,7 +339,7 @@ class ProviderInstanceService:
                 continue
             model_id = f"{model_prefix}{raw_model_id}"
             caps = guess_capabilities(model_id)
-            capability = primary_capability(caps)
+            capability = forced_capability or primary_capability(caps)
             upstream_path = upstream_path_for(capability, model_id)
 
             payloads.append(
@@ -384,6 +385,32 @@ class ProviderInstanceService:
         results = await self.model_repo.upsert_from_upstream(
             instance_id, payloads, preserve_user_overrides=preserve_user_overrides
         )
+        await self._invalidator.on_provider_model_changed(str(instance_id))
+        return results
+
+    async def quick_add_models(
+        self,
+        instance_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        model_ids: list[str],
+        capability: str | None = None,
+    ) -> List[ProviderModel]:
+        instance = await self.assert_instance_access(instance_id, user_id)
+        # 清洗 + 去重
+        cleaned = []
+        seen: set[str] = set()
+        for mid in model_ids:
+            mid_clean = (mid or "").strip()
+            if not mid_clean or mid_clean in seen:
+                continue
+            seen.add(mid_clean)
+            cleaned.append(mid_clean)
+        if not cleaned:
+            raise ValueError("empty_models")
+
+        raw_models = [{"id": mid} for mid in cleaned]
+        payloads = self._build_model_payloads(raw_models, instance, forced_capability=capability)
+        results = await self.model_repo.upsert_for_instance(instance_id, payloads)
         await self._invalidator.on_provider_model_changed(str(instance_id))
         return results
 

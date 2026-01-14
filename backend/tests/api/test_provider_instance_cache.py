@@ -270,6 +270,78 @@ async def test_provider_model_list_cache_and_update_invalidate():
 
 
 @pytest.mark.asyncio
+async def test_provider_instance_model_count_updates_with_models():
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-count",
+            base_url="https://api.openai.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        repo = ProviderInstanceRepository(session)
+        instances = await repo.get_available_instances(user_id=None, include_public=True)
+        assert len(instances) == 1
+        assert getattr(instances[0], "model_count", 0) == 0
+
+        payload = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capability="chat",
+            model_id="gpt-4o",
+            display_name="gpt-4o",
+            upstream_path="/v1/chat/completions",
+            template_engine="simple_replace",
+            request_template={},
+            response_transform={},
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        await svc.upsert_models(inst.id, None, [payload])
+
+        # 再次获取实例列表，模型数量应为 1，且缓存已被失效
+        instances = await repo.get_available_instances(user_id=None, include_public=True)
+        assert len(instances) == 1
+        assert getattr(instances[0], "model_count", 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_quick_add_models_defaults_and_upstream_path():
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-quick",
+            base_url="https://api.openai.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        results = await svc.quick_add_models(inst.id, None, ["gpt-4o", "text-embedding-3-small"])
+        assert len(results) == 2
+
+        models = await svc.list_models(inst.id, None)
+        by_id = {m.model_id: m for m in models}
+        assert "gpt-4o" in by_id
+        assert "text-embedding-3-small" in by_id
+        # chat 默认路径
+        assert by_id["gpt-4o"].upstream_path.endswith("chat/completions")
+        # embedding 路径
+        assert "embeddings" in by_id["text-embedding-3-small"].upstream_path
+
+
+@pytest.mark.asyncio
 async def test_provider_model_test_ping(monkeypatch):
     class FakeResp:
         def __init__(self):

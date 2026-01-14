@@ -1,0 +1,54 @@
+{
+  "logs": {
+    "title": "Log Audit",
+    "subtitle": "End-to-end observability for API calls, latency, and cost.",
+    "filters": {
+      "model": "Filter by model",
+      "status": "Status",
+      "statusAll": "All statuses",
+      "cacheAll": "Cache: all",
+      "cacheHit": "Cache hit only",
+      "cacheMiss": "Cache miss only",
+      "errorCode": "Error code",
+      "start": "Start",
+      "end": "End",
+      "refresh": "Refresh"
+    },
+    "table": {
+      "time": "Time",
+      "status": "Status",
+      "model": "Model",
+      "latency": "Latency (TTFT)",
+      "tokens": "Tokens",
+      "cost": "Cost",
+      "ttft": "TTFT: {value}ms",
+      "totalTokens": "Σ {value}",
+      "cached": "Cached",
+      "noData": "No logs yet. Adjust filters and try again."
+    },
+    "pagination": {
+      "pageInfo": "{pageSize} per page · {count} on this page",
+      "prev": "Previous",
+      "next": "Next"
+    },
+    "detail": {
+      "title": "Request Detail",
+      "id": "ID: {id}",
+      "status": "Status",
+      "duration": "Duration",
+      "ttft": "TTFT",
+      "cache": "Cache Hit",
+      "tokenStats": "Token Stats",
+      "costAnalysis": "Cost Analysis",
+      "costUser": "User cost",
+      "costUpstream": "Upstream cost",
+      "callUser": "Caller ID",
+      "preset": "Preset ID",
+      "error": "Error code",
+      "upstreamModel": "Upstream model"
+    },
+    "error": {
+      "loadFailed": "Failed to load logs: {message}"
+    }
+  }
+}
