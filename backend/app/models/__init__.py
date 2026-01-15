@@ -40,6 +40,12 @@ from .conversation import (
     ConversationSummary,
 )
 from .gateway_log import GatewayLog
+from .notification import (
+    Notification,
+    NotificationLevel,
+    NotificationReceipt,
+    NotificationType,
+)
 from .provider_preset import ProviderPreset
 from .provider_instance import ProviderInstance, ProviderModel, ProviderCredential
 from .secretary import SecretaryPhase, UserSecretary
@@ -56,6 +62,10 @@ __all__ = [
     "ProviderModel",
     "ProviderCredential",
     "GatewayLog",
+    "Notification",
+    "NotificationReceipt",
+    "NotificationType",
+    "NotificationLevel",
     "Assistant",
     "AssistantVersion",
     "AssistantVisibility",

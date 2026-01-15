@@ -106,7 +106,7 @@ export const userNavigation: NavGroup[] = [
       {
         id: "profile",
         label: "nav.profile",
-        href: "/profile",
+        href: "/dashboard/user/profile",
         icon: "userCog",
       },
       {

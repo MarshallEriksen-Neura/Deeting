@@ -5,6 +5,7 @@ import useSWR from "swr"
 
 import { fetchCurrentUser, type UserProfile } from "@/lib/api/user"
 import { ApiError } from "@/lib/http"
+import { useShallow } from "zustand/react/shallow"
 import { useAuthStore } from "@/store/auth-store"
 import { useUserStore } from "@/store/user-store"
 
@@ -16,8 +17,15 @@ const USER_PROFILE_KEY = "/api/v1/users/me"
  * - 未登录时清空本地缓存
  */
 export function useUserProfile() {
-  const { isAuthenticated } = useAuthStore()
-  const { profile, setProfile, clearProfile } = useUserStore()
+  const isAuthenticated = useAuthStore(useShallow((state) => state.isAuthenticated))
+  
+  const { profile, setProfile, clearProfile } = useUserStore(
+    useShallow((state) => ({
+      profile: state.profile,
+      setProfile: state.setProfile,
+      clearProfile: state.clearProfile,
+    }))
+  )
 
   const shouldFetch = isAuthenticated ? USER_PROFILE_KEY : null
 

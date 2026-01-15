@@ -1,0 +1,52 @@
+{
+  "profile": {
+    "title": "User Profile",
+    "description": "Manage your digital identity and AI OS preferences",
+    "idCard": {
+      "uid": "UID",
+      "registered": "Registered",
+      "region": "Region",
+      "viewPublic": "View Public Profile",
+      "regenerateAvatar": "Re-generate with AI"
+    },
+    "basicInfo": {
+      "title": "Basic Information",
+      "description": "Manage your public identity in Deeting OS",
+      "displayName": "Display Name",
+      "email": "Email Address",
+      "bio": "Bio / System Prompt",
+      "bioPlaceholder": "Describe yourself to help the AI understand your context better...",
+      "bioHint": "* This description serves as part of the base context for AI interactions.",
+      "save": "Save Changes"
+    },
+    "apiVault": {
+      "title": "API Key Vault",
+      "description": "Secure management of upstream AI service keys",
+      "syncStatus": "Sync Status",
+      "connect": "Connect",
+      "update": "Update",
+      "manageAll": "Manage all connection settings"
+    },
+    "memoryCore": {
+      "title": "Neural Memory (Memory Core)",
+      "description": "Control how AI accesses and retains your personal data",
+      "longTermMemory": "Long-term Memory",
+      "longTermMemoryDesc": "Allow AI to remember your preferences and conversation history across sessions.",
+      "indexing": "Local Knowledge Indexing",
+      "indexingDesc": "Enable AI to scan and index authorized local folders to enhance response accuracy.",
+      "activeClusters": "Active Memory Clusters",
+      "fragmentsStored": "{count} memory fragments stored securely",
+      "reviewEdit": "Review & Edit"
+    },
+    "security": {
+      "title": "Security & Access",
+      "description": "Protect your Digital ID and management credentials",
+      "password": "Password",
+      "passwordDesc": "Last changed {time}",
+      "twoFactor": "Two-Factor Authentication",
+      "twoFactorEnabled": "Enabled (Authenticator App)",
+      "update": "Update",
+      "manage": "Manage"
+    }
+  }
+}

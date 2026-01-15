@@ -38,6 +38,11 @@ from .assistant import (
     AssistantPublishRequest,
     AssistantListResponse,
 )
+from .notification import (
+    NotificationPublishAllRequest,
+    NotificationPublishResponse,
+    NotificationPublishUserRequest,
+)
 from .user import (
     BanRequest,
     PermissionRead,
@@ -63,6 +68,9 @@ __all__ = [
     "LoginRequest",
     "MessageResponse",
     "PermissionRead",
+    "NotificationPublishAllRequest",
+    "NotificationPublishResponse",
+    "NotificationPublishUserRequest",
     "AssistantBase",
     "AssistantCreate",
     "AssistantDTO",

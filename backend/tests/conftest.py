@@ -6,14 +6,37 @@
 """
 from __future__ import annotations
 
+import faulthandler
 import os
+import threading
 from typing import Any
 
 from app.core.cache import cache
 from app.core.config import settings
 
-# 确保测试环境不读取外部 Redis
+_HANG_DEBUG_ENV = "PYTEST_HANG_DEBUG"
+_HANG_DEBUG_TIMEOUT = 30
+
+
+def pytest_sessionstart(session):  # type: ignore[unused-argument]
+    if os.getenv(_HANG_DEBUG_ENV, "") == "1":
+        faulthandler.dump_traceback_later(_HANG_DEBUG_TIMEOUT, repeat=True)
+
+
+def pytest_sessionfinish(session, exitstatus):  # type: ignore[unused-argument]
+    if os.getenv(_HANG_DEBUG_ENV, "") == "1":
+        try:
+            faulthandler.cancel_dump_traceback_later()
+        except Exception:
+            pass
+        # 仅打印线程名，避免日志过重
+        threads = ", ".join(t.name for t in threading.enumerate())
+        print(f"[pytest-hang-debug] threads={threads}")
+
+# 确保测试环境不读取外部 Redis/Celery
 os.environ.setdefault("REDIS_URL", "")
+os.environ.setdefault("CELERY_BROKER_URL", "")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "")
 settings.REDIS_URL = ""
 
 

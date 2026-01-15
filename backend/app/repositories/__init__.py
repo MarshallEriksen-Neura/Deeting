@@ -10,6 +10,7 @@ from .usage_repository import UsageRepository
 from .user_repository import UserRepository
 from .invite_code import InviteCodeRepository
 from .assistant_repository import AssistantRepository, AssistantVersionRepository
+from .notification_repository import NotificationReceiptRepository, NotificationRepository
 
 __all__ = [
     "ApiKeyRepository",
@@ -28,4 +29,6 @@ __all__ = [
     "UsageRepository",
     "UserRepository",
     "InviteCodeRepository",
+    "NotificationRepository",
+    "NotificationReceiptRepository",
 ]

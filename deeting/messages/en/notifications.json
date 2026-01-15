@@ -1,0 +1,39 @@
+{
+  "title": "System Events",
+  "today": "Today", 
+  "yesterday": "Yesterday",
+  "older": "Earlier",
+  "noNotifications": "No notifications",
+  "markAllRead": "Mark all as read",
+  "clear": "Clear",
+  "settings": "Notification Settings",
+  "types": {
+    "info": "Info",
+    "success": "Success",
+    "warning": "Warning",
+    "error": "Error"
+  },
+  "events": {
+    "modelConnected": "Model Connected",
+    "modelConnectedDesc": "System has automatically switched you to the latest {model} model, click to test the conversation.",
+    "balanceWarning": "Balance Warning",
+    "balanceWarningDesc": "Your token balance is below {threshold} ({amount}). We recommend topping up soon to avoid service interruption.",
+    "taskCompleted": "Task Completed",
+    "taskCompletedDesc": "{task} completed in {duration}.",
+    "taskFailed": "Task Failed", 
+    "taskFailedDesc": "{task} failed: {error}",
+    "systemUpdate": "System Update",
+    "systemUpdateDesc": "System updated to v{version} with {count} improvements.",
+    "connectionError": "Connection Lost",
+    "connectionErrorDesc": "Unable to connect to {service} interface",
+    "imageGenerated": "Image Generated",
+    "imageGeneratedDesc": "Completed in {duration} · Click to view result"
+  },
+  "actions": {
+    "view": "View",
+    "recharge": "Recharge",
+    "retry": "Retry", 
+    "dismiss": "Dismiss",
+    "test": "Test Chat"
+  }
+}

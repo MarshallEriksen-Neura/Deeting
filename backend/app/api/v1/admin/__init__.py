@@ -9,6 +9,7 @@ from app.api.v1.admin.discovery_route import router as discovery_router
 from app.api.v1.admin.provider_instance_route import router as provider_instance_router
 from app.api.v1.admin.provider_credential_route import router as provider_credential_router
 from app.api.v1.admin.provider_preset_route import router as provider_preset_router
+from app.api.v1.admin.notification_route import router as notification_router
 
 __all__ = [
     "api_keys_router",
@@ -19,4 +20,5 @@ __all__ = [
     "provider_instance_router",
     "provider_credential_router",
     "provider_preset_router",
+    "notification_router",
 ]

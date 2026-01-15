@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Search, Settings } from "lucide-react"
+import { Search, Settings } from "lucide-react"
 
 import { GlassButton } from "@/components/ui/glass-button"
 import {
@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme-provider"
+import { NotificationBell } from "@/components/notifications/notification-center"
 
 export function ActionButtons() {
   return (
@@ -31,18 +32,10 @@ export function ActionButtons() {
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <GlassButton
-            variant="ghost"
-            size="icon-sm"
-            className="relative text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--primary)]/10"
-          >
-            <Bell className="size-4" />
-            <span className="absolute right-1.5 top-1.5 flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--teal-accent)] opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-[var(--teal-accent)]" />
-            </span>
+          <div className="relative">
+            <NotificationBell />
             <span className="sr-only">Notifications</span>
-          </GlassButton>
+          </div>
         </TooltipTrigger>
         <TooltipContent side="bottom">
           <p>Notifications</p>

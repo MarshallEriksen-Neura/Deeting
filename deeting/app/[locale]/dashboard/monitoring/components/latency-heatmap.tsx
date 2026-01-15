@@ -1,8 +1,29 @@
 "use client"
 
+import { useMemo } from "react"
 import { useTranslations } from "next-intl"
+import { CartesianGrid, Scatter, ScatterChart, XAxis, YAxis } from "recharts"
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import { useLatencyHeatmap } from "@/lib/swr/use-latency-heatmap"
-import { cn } from "@/lib/utils"
+
+const LATENCY_MAX_MS = 2000
+const LATENCY_TICKS = [0, 500, 1000, 1500, 2000]
+const TIME_TICKS = [0, 6, 12, 18, 24]
+const DEFAULT_CELL_SIZE = 12
+
+type HeatmapCellData = {
+  intensity: number
+  count: number
+}
+
+type HeatmapPoint = {
+  hour: number
+  latency: number
+  intensity: number
+  count: number
+  timeLabel: string
+  size: number
+}
 
 /**
  * Latency Heatmap Component
@@ -28,6 +49,9 @@ export function LatencyHeatmap({
   const { data, isLoading } = useLatencyHeatmap(timeRange, model)
   const formatMs = (value: number) => tUnits("msValue", { value })
   const formatRequests = (count: number) => t("requests", { count })
+  const chartConfig = {
+    intensity: { label: t("legend.label"), color: "hsl(var(--primary))" },
+  }
 
   if (isLoading) {
     return (
@@ -39,47 +63,63 @@ export function LatencyHeatmap({
 
   // Sample data structure - would be replaced with real API data
   const heatmapData = data?.grid || generateSampleHeatmap()
+  const heatmapPoints = useMemo(
+    () => buildHeatmapPoints(heatmapData, DEFAULT_CELL_SIZE),
+    [heatmapData]
+  )
 
   return (
     <div className="space-y-4">
-      {/* Heatmap Canvas */}
-      <div className="relative h-[400px] overflow-x-auto overflow-y-hidden rounded-lg border border-[var(--border)] bg-[var(--background)]">
-        <div className="relative h-full min-w-[720px]">
-          {/* Y-axis labels (Latency) */}
-          <div className="absolute left-0 top-0 bottom-0 flex w-16 flex-col justify-between py-8 pr-2 text-right text-xs text-[var(--muted)]">
-            <span>{formatMs(2000)}</span>
-            <span>{formatMs(1500)}</span>
-            <span>{formatMs(1000)}</span>
-            <span>{formatMs(500)}</span>
-            <span>{formatMs(0)}</span>
-          </div>
-
-          {/* Heatmap Grid */}
-          <div className="ml-16 h-full p-4">
-            <div className="grid h-full grid-cols-24 gap-1">
-              {heatmapData.map((column, colIndex) => (
-                <div key={colIndex} className="flex flex-col-reverse gap-1">
-                  {column.map((cell, rowIndex) => (
-                    <HeatmapCell
-                      key={rowIndex}
-                      intensity={cell.intensity}
-                      count={cell.count}
-                      formatRequests={formatRequests}
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* X-axis labels (Time) */}
-          <div className="absolute bottom-0 left-16 right-0 flex justify-between px-4 pb-2 text-xs text-[var(--muted)]">
-            <span>00:00</span>
-            <span>06:00</span>
-            <span>12:00</span>
-            <span>18:00</span>
-            <span>24:00</span>
-          </div>
+      <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
+        <div className="min-w-[720px]">
+          <ChartContainer config={chartConfig} className="h-[360px] w-full">
+            <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(var(--border))"
+                opacity={0.3}
+                vertical={false}
+              />
+              <XAxis
+                type="number"
+                dataKey="hour"
+                domain={[0, 24]}
+                ticks={TIME_TICKS}
+                tickFormatter={formatHourLabel}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                allowDecimals={false}
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+              />
+              <YAxis
+                type="number"
+                dataKey="latency"
+                domain={[0, LATENCY_MAX_MS]}
+                ticks={LATENCY_TICKS}
+                tickFormatter={(value) => formatMs(value)}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                allowDecimals={false}
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <HeatmapTooltip
+                    formatMs={formatMs}
+                    formatRequests={formatRequests}
+                  />
+                }
+              />
+              <Scatter
+                data={heatmapPoints}
+                shape={<HeatmapCellShape />}
+                isAnimationActive={false}
+              />
+            </ScatterChart>
+          </ChartContainer>
         </div>
       </div>
 
@@ -121,28 +161,63 @@ export function LatencyHeatmap({
   )
 }
 
-function HeatmapCell({
-  intensity,
-  count,
+function HeatmapCellShape({
+  cx,
+  cy,
+  payload,
+}: {
+  cx?: number
+  cy?: number
+  payload?: HeatmapPoint
+}) {
+  if (cx === undefined || cy === undefined || !payload) {
+    return null
+  }
+
+  const size = payload.size || DEFAULT_CELL_SIZE
+  const intensity = Math.max(0.05, payload.intensity)
+
+  return (
+    <rect
+      x={cx - size / 2}
+      y={cy - size / 2}
+      width={size}
+      height={size}
+      rx={2}
+      ry={2}
+      fill={`hsl(var(--primary) / ${intensity})`}
+      stroke="hsl(var(--border))"
+      strokeOpacity={0.25}
+    />
+  )
+}
+
+function HeatmapTooltip({
+  active,
+  payload,
+  formatMs,
   formatRequests,
 }: {
-  intensity: number
-  count: number
+  active?: boolean
+  payload?: Array<{ payload?: HeatmapPoint }>
+  formatMs: (value: number) => string
   formatRequests: (count: number) => string
 }) {
+  if (!active || !payload?.length) {
+    return null
+  }
+
+  const point = payload[0]?.payload
+  if (!point) {
+    return null
+  }
+
   return (
-    <div
-      className={cn(
-        "group relative h-full w-full rounded-sm transition-all hover:ring-2 hover:ring-[var(--primary)]"
-      )}
-      style={{
-        backgroundColor: `hsl(var(--primary) / ${Math.max(0.05, intensity)})`,
-      }}
-      title={formatRequests(count)}
-    >
-      {/* Tooltip on hover */}
-      <div className="pointer-events-none absolute left-1/2 bottom-full mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-[var(--foreground)] px-2 py-1 text-xs text-[var(--background)] group-hover:block">
-        {formatRequests(count)}
+    <div className="border-border/50 bg-background grid min-w-[8rem] gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl">
+      <div className="font-medium">{point.timeLabel}</div>
+      <div className="text-muted-foreground">{formatMs(point.latency)}</div>
+      <div className="text-foreground font-mono font-medium tabular-nums">
+        {formatRequests(point.count)}
       </div>
     </div>
   )
@@ -167,4 +242,29 @@ function generateSampleHeatmap() {
     grid.push(column)
   }
   return grid
+}
+
+function buildHeatmapPoints(grid: HeatmapCellData[][], cellSize: number): HeatmapPoint[] {
+  if (!grid.length) {
+    return []
+  }
+
+  const rows = grid[0].length
+  const latencyStep = rows > 1 ? LATENCY_MAX_MS / (rows - 1) : LATENCY_MAX_MS
+
+  return grid.flatMap((column, colIndex) =>
+    column.map((cell, rowIndex) => ({
+      hour: colIndex,
+      latency: Math.round(rowIndex * latencyStep),
+      intensity: cell.intensity,
+      count: cell.count,
+      timeLabel: formatHourLabel(colIndex),
+      size: cellSize,
+    }))
+  )
+}
+
+function formatHourLabel(hour: number) {
+  const normalized = Math.min(24, Math.max(0, Math.round(hour)))
+  return `${String(normalized).padStart(2, "0")}:00`
 }

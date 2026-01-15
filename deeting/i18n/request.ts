@@ -12,6 +12,7 @@ const namespaces = [
   "dashboard",
   "credits",
   "monitoring",
+  "profile",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

@@ -4,6 +4,7 @@ import * as React from "react";
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
 import { GlassButton } from "@/components/ui/glass-button";
 import { cn } from "@/lib/utils";
+import { useShallow } from "zustand/react/shallow";
 import { useThemeStore } from "@/store/theme-store";
 import { ThemeTransitionOverlay } from "@/components/theme-transition-overlay";
 
@@ -59,7 +60,13 @@ export function ThemeToggle({
   size?: "sm" | "default" | "lg";
 }) {
   const { setTheme, resolvedTheme } = useTheme();
-  const { isTransitioning, startTransition, endTransition } = useThemeStore();
+  const { isTransitioning, startTransition, endTransition } = useThemeStore(
+    useShallow((state) => ({
+      isTransitioning: state.isTransitioning,
+      startTransition: state.startTransition,
+      endTransition: state.endTransition,
+    }))
+  );
   const [mounted, setMounted] = React.useState(false);
 
   // 避免 SSR 不匹配
@@ -180,7 +187,13 @@ export function ThemeToggle({
  */
 export function ThemeSelector({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme();
-  const { isTransitioning, startTransition, endTransition } = useThemeStore();
+  const { isTransitioning, startTransition, endTransition } = useThemeStore(
+    useShallow((state) => ({
+      isTransitioning: state.isTransitioning,
+      startTransition: state.startTransition,
+      endTransition: state.endTransition,
+    }))
+  );
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {

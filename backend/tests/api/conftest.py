@@ -6,6 +6,7 @@
 - 用内存 Redis 替身挂载到 CacheService
 - 通过登录接口获取真实 JWT 作为测试 token
 """
+import os
 import asyncio
 import sys
 from collections.abc import AsyncGenerator
@@ -23,6 +24,11 @@ from sqlalchemy.pool import StaticPool
 BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+# 测试环境禁用真实 Redis/Celery 连接，避免进程退出卡住
+os.environ.setdefault("REDIS_URL", "")
+os.environ.setdefault("CELERY_BROKER_URL", "")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "")
 
 from app.core.config import settings
 from app.core.cache import cache
@@ -261,20 +267,32 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     try:
-        loop.run_until_complete(engine.dispose())
+        try:
+            loop.run_until_complete(asyncio.wait_for(engine.dispose(), timeout=5))
+        except Exception:
+            pass
         # 关闭缓存连接（若为 redis asyncio 客户端）
         try:
-            loop.run_until_complete(cache.close())
+            loop.run_until_complete(asyncio.wait_for(cache.close(), timeout=5))
         except Exception:
             pass
         # 确保异步生成器与后台任务优雅收尾，避免 pytest 卡住退出
         try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.run_until_complete(asyncio.wait_for(loop.shutdown_asyncgens(), timeout=5))
         except Exception:
             pass
     finally:
         asyncio.set_event_loop(None)
         loop.close()
+
+
+def pytest_sessionfinish(session, exitstatus):  # type: ignore[unused-argument]
+    try:
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(asyncio.wait_for(engine.dispose(), timeout=5))
+        loop.close()
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)

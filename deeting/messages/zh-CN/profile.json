@@ -1,0 +1,52 @@
+{
+  "profile": {
+    "title": "个人资料",
+    "description": "管理您的数字身份和 AI OS 偏好设置",
+    "idCard": {
+      "uid": "识别码",
+      "registered": "注册于",
+      "region": "区域",
+      "viewPublic": "查看公开个人资料",
+      "regenerateAvatar": "使用 AI 重新生成头像"
+    },
+    "basicInfo": {
+      "title": "基础信息",
+      "description": "管理您在 Deeting OS 中的公开身份",
+      "displayName": "显示名称",
+      "email": "邮箱地址",
+      "bio": "个人简介 / 系统提示词",
+      "bioPlaceholder": "描述你自己，帮助 AI 更好地了解你的背景...",
+      "bioHint": "* 此描述将作为 AI 交互的基础上下文之一。",
+      "save": "保存更改"
+    },
+    "apiVault": {
+      "title": "API 密钥库",
+      "description": "安全管理上游 AI 服务密钥",
+      "syncStatus": "同步状态",
+      "connect": "连接",
+      "update": "更新",
+      "manageAll": "管理所有连接设置"
+    },
+    "memoryCore": {
+      "title": "神经记忆 (Memory Core)",
+      "description": "控制 AI 如何访问和保留您的个人数据",
+      "longTermMemory": "长期记忆",
+      "longTermMemoryDesc": "允许 AI 跨会话记住您的偏好和对话历史。",
+      "indexing": "本地知识库索引",
+      "indexingDesc": "允许 AI 扫描并索引授权的本地文件夹以增强回答准确性。",
+      "activeClusters": "活跃记忆簇",
+      "fragmentsStored": "已安全存储 {count} 个记忆片段",
+      "reviewEdit": "查看与编辑"
+    },
+    "security": {
+      "title": "安全与访问",
+      "description": "保护您的数字 ID 和管理凭据",
+      "password": "密码",
+      "passwordDesc": "上次更改于 {time}",
+      "twoFactor": "双重身份验证",
+      "twoFactorEnabled": "已启用 (身份验证器应用)",
+      "update": "更新",
+      "manage": "管理"
+    }
+  }
+}

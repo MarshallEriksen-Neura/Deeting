@@ -1,0 +1,39 @@
+{
+  "title": "系统事件",
+  "today": "今天",
+  "yesterday": "昨天",
+  "older": "更早",
+  "noNotifications": "暂无通知",
+  "markAllRead": "全部标记为已读",
+  "clear": "清空",
+  "settings": "通知设置",
+  "types": {
+    "info": "信息",
+    "success": "成功",
+    "warning": "警告", 
+    "error": "错误"
+  },
+  "events": {
+    "modelConnected": "模型接入成功",
+    "modelConnectedDesc": "系统已自动为你切换到最新的 {model} 模型，点击测试对话。",
+    "balanceWarning": "余额不足预警",
+    "balanceWarningDesc": "你的 Token 余额已低于 {threshold} ({amount})。建议及时充值以避免服务中断。",
+    "taskCompleted": "任务完成",
+    "taskCompletedDesc": "{task} 已完成，耗时 {duration}。",
+    "taskFailed": "任务失败",
+    "taskFailedDesc": "{task} 执行失败：{error}",
+    "systemUpdate": "系统更新",
+    "systemUpdateDesc": "系统已更新到 v{version}，包含 {count} 项改进。",
+    "connectionError": "连接断开",
+    "connectionErrorDesc": "无法连接到 {service} 接口",
+    "imageGenerated": "图片生成完毕",
+    "imageGeneratedDesc": "耗时 {duration} · 点击查看结果"
+  },
+  "actions": {
+    "view": "查看",
+    "recharge": "去充值",
+    "retry": "重试",
+    "dismiss": "忽略",
+    "test": "测试对话"
+  }
+}

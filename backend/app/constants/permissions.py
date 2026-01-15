@@ -24,6 +24,7 @@ PERMISSION_REGISTRY: List[PermissionItem] = [
     PermissionItem("api_key.manage", "API Key 管理：创建/禁用/限流", ("admin",)),
     PermissionItem("api_key.view", "API Key 查看：读取密钥与配额", ("admin",)),
     PermissionItem("assistant.manage", "助手管理：创建/发布/更新助手", ("admin",)),
+    PermissionItem("notification.manage", "通知管理：发布系统/业务通知", ("admin",)),
 ]
 
 # 默认角色定义（需要可扩展可在此补充）
