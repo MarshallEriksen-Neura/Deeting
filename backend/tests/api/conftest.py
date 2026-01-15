@@ -184,6 +184,77 @@ class DummyRedis:
         bucket[b"version"] = str(version + 1)
         return [1, "OK", new_balance, new_daily_used, new_monthly_used, version + 1]
 
+    async def eval(self, script, numkeys, *keys_and_args):
+        keys = list(keys_and_args[:numkeys])
+        args = list(keys_and_args[numkeys:])
+        if "HGET" in script or "HSET" in script:
+            if not keys or not args:
+                return 0
+            key = keys[0]
+            bucket = self.hash_store.get(key)
+            if not bucket:
+                return 0
+            balance_raw = bucket.get(b"balance")
+            if balance_raw is None:
+                return 0
+            if isinstance(balance_raw, (bytes, bytearray)):
+                try:
+                    balance_val = float(balance_raw.decode())
+                except Exception:
+                    balance_val = 0.0
+            else:
+                try:
+                    balance_val = float(balance_raw)
+                except Exception:
+                    balance_val = 0.0
+            try:
+                diff = float(args[0])
+            except Exception:
+                diff = 0.0
+            new_balance = balance_val - diff
+            bucket[b"balance"] = str(new_balance)
+            version_raw = bucket.get(b"version")
+            if version_raw is not None:
+                if isinstance(version_raw, (bytes, bytearray)):
+                    try:
+                        version_val = int(float(version_raw.decode()))
+                    except Exception:
+                        version_val = 0
+                else:
+                    try:
+                        version_val = int(float(version_raw))
+                    except Exception:
+                        version_val = 0
+                bucket[b"version"] = str(version_val + 1)
+            return 1
+
+        if not keys:
+            return 0
+        key = keys[0]
+        if "expire" in script:
+            if len(args) < 2:
+                return 0
+            lock_val = str(args[0])
+            stored = self.store.get(key)
+            if stored is None:
+                return 0
+            stored_val = stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+            if stored_val != lock_val:
+                return 0
+            return 1
+
+        if not args:
+            return 0
+        lock_val = str(args[0])
+        stored = self.store.get(key)
+        if stored is None:
+            return 0
+        stored_val = stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+        if stored_val != lock_val:
+            return 0
+        await self.delete(key)
+        return 1
+
     async def zremrangebyscore(self, key: str, min_score, max_score):
         items = self.zset_store.get(key, [])
         self.zset_store[key] = [(m, s) for (m, s) in items if s < min_score or s > max_score]

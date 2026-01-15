@@ -46,6 +46,9 @@ from .assistant_market import (
     AssistantSummaryVersion,
     AssistantSubmitReviewRequest,
     AssistantReviewDecisionRequest,
+    AssistantTagDTO,
+    AssistantTagCreateRequest,
+    AssistantPreviewRequest,
 )
 from .assistant_rating import AssistantRatingRequest, AssistantRatingResponse
 from .review import ReviewTaskDTO
@@ -57,6 +60,12 @@ from .notification import (
     NotificationSnapshot,
     NotificationWSInbound,
     NotificationWSOutbound,
+)
+from .media_asset import (
+    AssetUploadCompleteRequest,
+    AssetUploadCompleteResponse,
+    AssetUploadInitRequest,
+    AssetUploadInitResponse,
 )
 from .user import (
     BanRequest,
@@ -90,6 +99,10 @@ __all__ = [
     "NotificationSnapshot",
     "NotificationWSInbound",
     "NotificationWSOutbound",
+    "AssetUploadCompleteRequest",
+    "AssetUploadCompleteResponse",
+    "AssetUploadInitRequest",
+    "AssetUploadInitResponse",
     "AssistantBase",
     "AssistantCreate",
     "AssistantDTO",
@@ -107,6 +120,9 @@ __all__ = [
     "AssistantSummaryVersion",
     "AssistantSubmitReviewRequest",
     "AssistantReviewDecisionRequest",
+    "AssistantTagDTO",
+    "AssistantTagCreateRequest",
+    "AssistantPreviewRequest",
     "AssistantRatingRequest",
     "AssistantRatingResponse",
     "ReviewTaskDTO",

@@ -18,6 +18,7 @@ class WorkflowTemplate(str, Enum):
     EXTERNAL_EMBEDDINGS = "external_embeddings"  # 外部 Embeddings
     INTERNAL_CHAT = "internal_chat"  # 内部 Chat 简化流程
     INTERNAL_DEBUG = "internal_debug"  # 内部调试模式
+    INTERNAL_PREVIEW = "internal_preview"  # 内部助手体验（无会话落库）
 
 
 @dataclass
@@ -84,10 +85,28 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     },
 )
 
+INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
+    template=WorkflowTemplate.INTERNAL_PREVIEW,
+    steps=[
+        "validation",  # 1) 入参校验
+        "quota_check",  # 2) 配额/余额检查（与内部一致）
+        "rate_limit",  # 3) 限流
+        "routing",  # 4) 路由决策
+        "template_render",  # 5) 模板渲染
+        "upstream_call",  # 6) 上游调用
+        "response_transform",  # 7) 响应转换
+        "sanitize",  # 8) 脱敏
+        "billing",  # 9) 计费记录
+        "audit_log",  # 10) 审计日志（内部）
+    ],
+    step_configs=dict(INTERNAL_CHAT_WORKFLOW.step_configs),
+)
+
 # 模板注册表
 WORKFLOW_TEMPLATES: dict[WorkflowTemplate, WorkflowConfig] = {
     WorkflowTemplate.EXTERNAL_CHAT: EXTERNAL_CHAT_WORKFLOW,
     WorkflowTemplate.INTERNAL_CHAT: INTERNAL_CHAT_WORKFLOW,
+    WorkflowTemplate.INTERNAL_PREVIEW: INTERNAL_PREVIEW_WORKFLOW,
 }
 
 

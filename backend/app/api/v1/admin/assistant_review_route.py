@@ -12,9 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.deps.auth import get_current_user, require_permissions
 from app.models import User
-from app.repositories import ReviewTaskRepository
-from app.schemas import AssistantReviewDecisionRequest, ReviewTaskDTO
+from app.repositories import ReviewTaskRepository, AssistantTagRepository, AssistantTagLinkRepository
+from app.schemas import (
+    AssistantReviewDecisionRequest,
+    ReviewTaskDTO,
+    AssistantTagDTO,
+    AssistantTagCreateRequest,
+    MessageResponse,
+)
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
+from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.services.review.review_service import ReviewService
 
 router = APIRouter(prefix="/admin/assistant-reviews", tags=["Admin - Assistant Reviews"])
@@ -27,6 +34,13 @@ def get_review_service(db: AsyncSession = Depends(get_db)) -> ReviewService:
 
 def get_review_repo(db: AsyncSession = Depends(get_db)) -> ReviewTaskRepository:
     return ReviewTaskRepository(db)
+
+
+def get_tag_service(db: AsyncSession = Depends(get_db)) -> AssistantTagService:
+    return AssistantTagService(
+        AssistantTagRepository(db),
+        AssistantTagLinkRepository(db),
+    )
 
 
 @router.get(
@@ -87,3 +101,44 @@ async def reject_assistant_review(
         return ReviewTaskDTO.model_validate(task)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get(
+    "/tags",
+    response_model=list[AssistantTagDTO],
+    dependencies=[Depends(require_permissions(["assistant.manage"]))],
+)
+async def list_tags(
+    service: AssistantTagService = Depends(get_tag_service),
+) -> list[AssistantTagDTO]:
+    tags = await service.list_tags()
+    return [AssistantTagDTO.model_validate(tag) for tag in tags]
+
+
+@router.post(
+    "/tags",
+    response_model=AssistantTagDTO,
+    dependencies=[Depends(require_permissions(["assistant.manage"]))],
+)
+async def create_tag(
+    payload: AssistantTagCreateRequest,
+    service: AssistantTagService = Depends(get_tag_service),
+) -> AssistantTagDTO:
+    try:
+        tag = await service.create_tag(payload.name)
+        return AssistantTagDTO.model_validate(tag)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.delete(
+    "/tags/{tag_id}",
+    response_model=MessageResponse,
+    dependencies=[Depends(require_permissions(["assistant.manage"]))],
+)
+async def delete_tag(
+    tag_id: UUID,
+    service: AssistantTagService = Depends(get_tag_service),
+) -> MessageResponse:
+    await service.delete_tag(tag_id)
+    return MessageResponse(message="tag deleted")

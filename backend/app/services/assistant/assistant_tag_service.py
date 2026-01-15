@@ -56,3 +56,19 @@ class AssistantTagService:
 
     async def list_tags_for_assistants(self, assistant_ids: list[UUID]) -> dict[UUID, list[str]]:
         return await self.link_repo.list_tag_names_for_assistants(assistant_ids)
+
+    async def list_tags(self):
+        return await self.tag_repo.list_all()
+
+    async def create_tag(self, name: str):
+        normalized = self.normalize_tags([name])
+        if not normalized:
+            raise ValueError("标签不能为空")
+        existing = await self.tag_repo.get_by_names(normalized)
+        if existing:
+            return existing[0]
+        return await self.tag_repo.create({"name": normalized[0]})
+
+    async def delete_tag(self, tag_id: UUID) -> None:
+        await self.link_repo.delete_links_by_tag(tag_id)
+        await self.tag_repo.delete(tag_id)

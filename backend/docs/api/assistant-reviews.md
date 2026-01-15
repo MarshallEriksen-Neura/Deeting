@@ -31,7 +31,28 @@
   ```
 - 响应：`ReviewTaskDTO`
 
+## 标签列表（管理员）
+
+- `GET /admin/assistant-reviews/tags`
+- 响应：`AssistantTagDTO[]`
+
+## 创建标签（管理员）
+
+- `POST /admin/assistant-reviews/tags`
+- Body：
+  ```json
+  {
+    "name": "#Python"
+  }
+  ```
+- 响应：`AssistantTagDTO`
+
+## 删除标签（管理员）
+
+- `DELETE /admin/assistant-reviews/tags/{tag_id}`
+- 响应：`MessageResponse`
+
 ---
 
 变更记录
-- 2026-01-15：新增助手审核列表/通过/拒绝接口。
+- 2026-01-15：新增助手审核列表/通过/拒绝/标签管理接口。

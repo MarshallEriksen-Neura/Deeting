@@ -12,6 +12,12 @@ from .base import BaseRepository
 class AssistantTagRepository(BaseRepository[AssistantTag]):
     model = AssistantTag
 
+    async def list_all(self) -> list[AssistantTag]:
+        result = await self.session.execute(
+            select(AssistantTag).order_by(AssistantTag.name.asc())
+        )
+        return list(result.scalars().all())
+
     async def get_by_names(self, names: list[str]) -> list[AssistantTag]:
         if not names:
             return []
@@ -48,6 +54,12 @@ class AssistantTagLinkRepository(BaseRepository[AssistantTagLink]):
             self.session.add(
                 AssistantTagLink(assistant_id=assistant_id, tag_id=tag_id)
             )
+        await self.session.commit()
+
+    async def delete_links_by_tag(self, tag_id: UUID) -> None:
+        await self.session.execute(
+            delete(AssistantTagLink).where(AssistantTagLink.tag_id == tag_id)
+        )
         await self.session.commit()
 
     async def list_tag_names_for_assistants(self, assistant_ids: list[UUID]) -> dict[UUID, list[str]]:

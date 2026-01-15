@@ -50,6 +50,7 @@ from .notification import (
     NotificationReceipt,
     NotificationType,
 )
+from .media_asset import MediaAsset
 from .provider_preset import ProviderPreset
 from .provider_instance import ProviderInstance, ProviderModel, ProviderCredential
 from .secretary import SecretaryPhase, UserSecretary
@@ -70,6 +71,7 @@ __all__ = [
     "NotificationReceipt",
     "NotificationType",
     "NotificationLevel",
+    "MediaAsset",
     "Assistant",
     "AssistantVersion",
     "AssistantVisibility",

@@ -45,6 +45,11 @@ class UserSecretary(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Persona / Customization
     name: Mapped[str] = mapped_column(String(50), default="My Secretary", nullable=False, comment="Secretary Name")
     custom_instructions: Mapped[str | None] = mapped_column(Text, comment="User-defined system prompt additions")
+    model_name: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="秘书使用的模型名称",
+    )
     
     # Metadata for UI or Extensions
     ui_preferences: Mapped[dict | None] = mapped_column(JSON, comment="UI specific settings (avatar, theme)")

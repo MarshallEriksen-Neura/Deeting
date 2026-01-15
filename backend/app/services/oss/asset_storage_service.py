@@ -157,6 +157,14 @@ class StoredAsset:
     size_bytes: int
 
 
+@dataclass(frozen=True)
+class AssetObjectMeta:
+    size_bytes: int
+    content_type: str
+    etag: str | None
+    metadata: dict[str, str]
+
+
 async def store_asset_bytes(
     data: bytes,
     *,
@@ -261,6 +269,26 @@ def _hmac_signature(object_key: str, expires_at: int) -> str:
     return hmac.new(secret, msg, sha256).hexdigest()
 
 
+def _build_upload_headers(*, content_type: str, content_hash: str | None = None) -> dict[str, str]:
+    headers = {"Content-Type": content_type}
+    if content_hash:
+        if _oss_backend_kind() == "aliyun_oss":
+            headers["x-oss-meta-sha256"] = content_hash
+        else:
+            headers["x-amz-meta-sha256"] = content_hash
+    return headers
+
+
+def _extract_metadata_from_headers(headers: dict[str, Any]) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for key, value in headers.items():
+        lower_key = str(key).lower()
+        if lower_key.startswith("x-oss-meta-"):
+            meta_key = lower_key.replace("x-oss-meta-", "", 1)
+            metadata[meta_key] = str(value)
+    return metadata
+
+
 def build_signed_asset_url(
     object_key: str,
     *,
@@ -297,6 +325,53 @@ def verify_signed_asset_request(object_key: str, *, expires: int, sig: str) -> N
         raise SignedAssetUrlError("invalid object key prefix")
 
 
+async def head_asset_object(object_key: str) -> AssetObjectMeta:
+    if get_effective_asset_storage_mode() == "local":
+        raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持获取对象元信息")
+    if not _oss_is_configured():
+        raise AssetStorageNotConfigured("OSS_* 未配置，无法获取对象元信息")
+
+    def _head_oss() -> AssetObjectMeta:
+        bucket = _create_oss_bucket()
+        if hasattr(bucket, "head_object"):
+            result = bucket.head_object(object_key)
+        else:
+            result = bucket.get_object_meta(object_key)
+        headers = getattr(result, "headers", None)
+        header_map: dict[str, Any] = {}
+        if isinstance(headers, dict):
+            header_map = {str(k).lower(): v for k, v in headers.items()}
+        content_length = getattr(result, "content_length", None) or header_map.get("content-length")
+        content_type = getattr(result, "content_type", None) or header_map.get("content-type") or ""
+        etag = getattr(result, "etag", None) or header_map.get("etag")
+        metadata = _extract_metadata_from_headers(header_map)
+        return AssetObjectMeta(
+            size_bytes=int(content_length or 0),
+            content_type=str(content_type or ""),
+            etag=str(etag).strip('"') if etag else None,
+            metadata=metadata,
+        )
+
+    def _head_s3() -> AssetObjectMeta:
+        client = _create_s3_client()
+        result = client.head_object(Bucket=_resolve_bucket(), Key=object_key)
+        metadata = {
+            str(key).lower(): str(val)
+            for key, val in (result.get("Metadata") or {}).items()
+        }
+        etag = str(result.get("ETag") or "").strip('"') or None
+        return AssetObjectMeta(
+            size_bytes=int(result.get("ContentLength") or 0),
+            content_type=str(result.get("ContentType") or ""),
+            etag=etag,
+            metadata=metadata,
+        )
+
+    if _oss_backend_kind() == "aliyun_oss":
+        return await anyio.to_thread.run_sync(_head_oss)
+    return await anyio.to_thread.run_sync(_head_s3)
+
+
 async def presign_asset_get_url(object_key: str, *, expires_seconds: int) -> str:
     if get_effective_asset_storage_mode() == "local":
         raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持生成预签名 URL")
@@ -324,8 +399,12 @@ async def presign_asset_get_url(object_key: str, *, expires_seconds: int) -> str
 
 
 async def presign_asset_put_url(
-    *, content_type: str, kind: str | None = None, expires_seconds: int = 3600
-) -> tuple[str, str, int]:
+    *,
+    content_type: str,
+    kind: str | None = None,
+    expires_seconds: int = 3600,
+    content_hash: str | None = None,
+) -> tuple[str, str, int, dict[str, str]]:
     if get_effective_asset_storage_mode() == "local":
         raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持生成上传预签名 URL")
     if not _oss_is_configured():
@@ -337,13 +416,15 @@ async def presign_asset_put_url(
     ext = _guess_ext(content_type)
     object_key = _build_object_key(ext=ext, kind=kind)
 
+    upload_headers = _build_upload_headers(content_type=content_type, content_hash=content_hash)
+
     def _sign_oss() -> str:
         bucket = _create_oss_bucket()
         return bucket.sign_url(
             "PUT",
             object_key,
             ttl,
-            headers={"Content-Type": content_type},
+            headers=upload_headers,
         )
 
     def _sign_s3() -> str:
@@ -354,6 +435,7 @@ async def presign_asset_put_url(
                 "Bucket": _resolve_bucket(),
                 "Key": object_key,
                 "ContentType": content_type,
+                "Metadata": {"sha256": content_hash} if content_hash else {},
             },
             ExpiresIn=ttl,
         )
@@ -363,15 +445,17 @@ async def presign_asset_put_url(
     else:
         url = await anyio.to_thread.run_sync(_sign_s3)
 
-    return object_key, str(url), ttl
+    return object_key, str(url), ttl, upload_headers
 
 
 __all__ = [
     "AssetStorageNotConfigured",
     "SignedAssetUrlError",
     "StoredAsset",
+    "AssetObjectMeta",
     "build_signed_asset_url",
     "get_effective_asset_storage_mode",
+    "head_asset_object",
     "load_asset_bytes",
     "presign_asset_get_url",
     "presign_asset_put_url",

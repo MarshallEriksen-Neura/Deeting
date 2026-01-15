@@ -76,7 +76,39 @@
 - 响应：`MessageResponse`
 - 说明：需满足 `visibility=public` 且 `status=published`。
 
+## 评分
+
+- `POST /assistants/{assistant_id}/rating`
+- Body：
+  ```json
+  {
+    "rating": 4.9
+  }
+  ```
+- 响应：`AssistantRatingResponse`
+- 说明：需要先安装助手。
+
+## 助手体验（预览）
+
+- `POST /assistants/{assistant_id}/preview`
+- Body：
+  ```json
+  {
+    "message": "你好，帮我总结一下这段内容",
+    "stream": false,
+    "temperature": 0.7,
+    "max_tokens": 256
+  }
+  ```
+- 响应：`ChatCompletionResponse`
+- 说明：使用用户的秘书模型进行体验；system_prompt 直接取助手当前版本内容；不写入历史聊天记录；未配置秘书模型将返回 400。
+
+## 获取标签列表
+
+- `GET /assistants/tags`
+- 响应：`AssistantTagDTO[]`
+
 ---
 
 变更记录
-- 2026-01-15：新增助手市场/安装/提交审核 API。
+- 2026-01-15：新增助手市场/安装/提交审核/评分/标签列表/体验预览 API。

@@ -55,6 +55,21 @@ class AssistantInstallUpdate(BaseSchema):
     sort_order: int | None = None
 
 
+class AssistantTagDTO(IDSchema, TimestampSchema):
+    name: str
+
+
+class AssistantTagCreateRequest(BaseSchema):
+    name: str = Field(..., max_length=50)
+
+
+class AssistantPreviewRequest(BaseSchema):
+    message: str = Field(..., min_length=1, description="体验输入内容")
+    stream: bool = Field(default=False, description="是否流式输出")
+    temperature: float | None = Field(None, description="采样温度")
+    max_tokens: int | None = Field(None, description="输出 Token 上限")
+
+
 class AssistantSubmitReviewRequest(BaseSchema):
     payload: dict | None = None
 

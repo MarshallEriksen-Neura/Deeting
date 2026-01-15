@@ -25,6 +25,31 @@ from app.services.assistant.assistant_tag_service import AssistantTagService
 ASSISTANT_MARKET_ENTITY = "assistant_market"
 
 
+async def ensure_assistant_access(
+    *,
+    assistant: Assistant,
+    user_id: UUID,
+    review_repo: ReviewTaskRepository,
+    action: str,
+) -> None:
+    if assistant.owner_user_id == user_id:
+        return
+    visibility = assistant.visibility.value if isinstance(assistant.visibility, AssistantVisibility) else assistant.visibility
+    status = assistant.status.value if isinstance(assistant.status, AssistantStatus) else assistant.status
+    if visibility != AssistantVisibility.PUBLIC.value:
+        raise ValueError(f"助手未公开，无法{action}")
+    if status != AssistantStatus.PUBLISHED.value:
+        raise ValueError(f"助手未发布，无法{action}")
+
+    if assistant.owner_user_id is None:
+        return
+
+    review = await review_repo.get_by_entity(ASSISTANT_MARKET_ENTITY, assistant.id)
+    review_status = review.status.value if review and isinstance(review.status, ReviewStatus) else (review.status if review else None)
+    if not review or review_status != ReviewStatus.APPROVED.value:
+        raise ValueError(f"助手未通过审核，无法{action}")
+
+
 class AssistantMarketService:
     def __init__(
         self,
@@ -256,22 +281,12 @@ class AssistantMarketService:
         )
 
     async def _ensure_installable(self, assistant: Assistant, user_id: UUID) -> None:
-        if assistant.owner_user_id == user_id:
-            return
-        visibility = assistant.visibility.value if isinstance(assistant.visibility, AssistantVisibility) else assistant.visibility
-        status = assistant.status.value if isinstance(assistant.status, AssistantStatus) else assistant.status
-        if visibility != AssistantVisibility.PUBLIC.value:
-            raise ValueError("助手未公开，无法安装")
-        if status != AssistantStatus.PUBLISHED.value:
-            raise ValueError("助手未发布，无法安装")
-
-        if assistant.owner_user_id is None:
-            return
-
-        review = await self.review_repo.get_by_entity(ASSISTANT_MARKET_ENTITY, assistant.id)
-        review_status = review.status.value if review and isinstance(review.status, ReviewStatus) else (review.status if review else None)
-        if not review or review_status != ReviewStatus.APPROVED.value:
-            raise ValueError("助手未通过审核，无法安装")
+        await ensure_assistant_access(
+            assistant=assistant,
+            user_id=user_id,
+            review_repo=self.review_repo,
+            action="安装",
+        )
 
     async def _refresh_install_count(self, assistant_id: UUID) -> None:
         count = await self.install_repo.count_by_assistant(assistant_id)
