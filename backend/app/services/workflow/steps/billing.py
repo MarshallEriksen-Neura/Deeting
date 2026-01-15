@@ -3,8 +3,8 @@ BillingStep: 只记录流水，不扣减配额（P0-1 核心改动）
 
 关键点：
 - 流式：创建 PENDING 交易，流完成后提交（调用 BillingRepository.record_transaction）
-- 非流式：直接记录流水（调用 BillingRepository.record_transaction）
-- 配额扣减已在 QuotaCheckStep 完成，此处只记录交易
+- 非流式：默认记录流水（BillingRepository.record_transaction），QuotaCheck 未扣减时回退 BillingRepository.deduct
+- 配额扣减通常在 QuotaCheckStep 完成，此处主要记录交易
 - 如果实际费用与预估费用有差异，调整 Redis 余额差额
 """
 
@@ -14,7 +14,7 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from app.repositories.billing_repository import BillingRepository
+from app.repositories.billing_repository import BillingRepository, InsufficientBalanceError
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepConfig, StepResult, StepStatus
@@ -91,8 +91,8 @@ class BillingStep(BaseStep):
             ctx.set("billing", "skip_reason", "no_pricing_or_tenant")
             return StepResult(status=StepStatus.SUCCESS)
 
-        input_tokens = ctx.billing.input_tokens
-        output_tokens = ctx.billing.output_tokens
+        input_tokens = ctx.billing.input_tokens or 0
+        output_tokens = ctx.billing.output_tokens or 0
         input_cost = self._calculate_cost(input_tokens, pricing.get("input_per_1k", 0))
         output_cost = self._calculate_cost(output_tokens, pricing.get("output_per_1k", 0))
         total_cost = input_cost + output_cost
@@ -106,11 +106,41 @@ class BillingStep(BaseStep):
 
         try:
             repo = BillingRepository(ctx.db_session)
-            
+
             # 获取 QuotaCheckStep 中扣减的预估费用
             estimated_cost = await self._get_estimated_cost(ctx)
             cost_diff = Decimal(str(total_cost)) - Decimal(str(estimated_cost))
-            
+
+            # 若 QuotaCheck 未扣减（降级/缺失），则在此执行真实扣费，确保余额校验
+            if (
+                ctx.get("quota_check", "remaining_balance") is None
+                and ctx.get("quota_check", "daily_remaining") is None
+                and ctx.get("quota_check", "monthly_remaining") is None
+            ):
+                tx = await repo.deduct(
+                    tenant_id=ctx.tenant_id,
+                    amount=Decimal(str(total_cost)),
+                    trace_id=ctx.trace_id,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    input_price=Decimal(str(pricing.get("input_per_1k", 0))),
+                    output_price=Decimal(str(pricing.get("output_per_1k", 0))),
+                    provider=ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
+                    model=ctx.requested_model,
+                    preset_item_id=ctx.get("routing", "provider_model_id"),
+                    api_key_id=ctx.api_key_id,
+                )
+                ctx.set("billing", "balance_after", float(tx.balance_after))
+                return StepResult(
+                    status=StepStatus.SUCCESS,
+                    data={
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_cost": total_cost,
+                        "currency": currency,
+                    },
+                )
+
             # 记录交易流水（不扣减配额）
             tx = await repo.record_transaction(
                 tenant_id=ctx.tenant_id,
@@ -125,7 +155,7 @@ class BillingStep(BaseStep):
                 preset_item_id=ctx.get("routing", "provider_model_id"),
                 api_key_id=ctx.api_key_id,
             )
-            
+
             # 如果实际费用与预估费用有差异，调整 Redis 余额
             if abs(float(cost_diff)) > 0.000001:
                 await repo.adjust_redis_balance(ctx.tenant_id, cost_diff)
@@ -136,7 +166,7 @@ class BillingStep(BaseStep):
                     total_cost,
                     cost_diff,
                 )
-            
+
             ctx.set("billing", "balance_after", float(tx.balance_after))
             return StepResult(
                 status=StepStatus.SUCCESS,
@@ -147,6 +177,9 @@ class BillingStep(BaseStep):
                     "currency": currency,
                 },
             )
+        except InsufficientBalanceError as exc:
+            ctx.mark_error(ErrorSource.GATEWAY, "INSUFFICIENT_BALANCE", str(exc))
+            return StepResult(status=StepStatus.FAILED, message="insufficient balance")
         except Exception as exc:  # noqa: PERF203
             logger.error(f"billing_failed trace_id={ctx.trace_id} err={exc}")
             return StepResult(status=StepStatus.FAILED, message="billing failed")
@@ -158,7 +191,7 @@ class BillingStep(BaseStep):
             return 0.0
 
         request = ctx.get("validation", "request")
-        max_tokens = getattr(request, "max_tokens", 4096) if request else 4096
+        max_tokens = (getattr(request, "max_tokens", None) if request else None) or 4096
         estimated_tokens = max_tokens * 2  # 输入+输出粗估
 
         avg_price = (
@@ -167,8 +200,8 @@ class BillingStep(BaseStep):
         ) / 2
         return (estimated_tokens / 1000) * avg_price
 
-    def _calculate_cost(self, tokens: int, price_per_1k: float) -> float:
-        if tokens <= 0 or price_per_1k <= 0:
+    def _calculate_cost(self, tokens: int | None, price_per_1k: float | None) -> float:
+        if not tokens or not price_per_1k or tokens <= 0 or price_per_1k <= 0:
             return 0.0
         tokens_dec = Decimal(str(tokens))
         price_dec = Decimal(str(price_per_1k))

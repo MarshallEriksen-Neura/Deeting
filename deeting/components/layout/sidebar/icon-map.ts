@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  Bot,
   Coins,
   Cpu,
   Database,
@@ -44,6 +45,7 @@ export const navIconMap = {
   userCog: UserCog,
   panelLeft: PanelLeft,
   panelLeftClose: PanelLeftClose,
+  Bot: Bot,
 } satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof navIconMap

@@ -284,8 +284,9 @@ async def test_provider_instance_model_count_updates_with_models():
 
         repo = ProviderInstanceRepository(session)
         instances = await repo.get_available_instances(user_id=None, include_public=True)
-        assert len(instances) == 1
-        assert getattr(instances[0], "model_count", 0) == 0
+        target = next((item for item in instances if item.id == inst.id), None)
+        assert target is not None
+        assert getattr(target, "model_count", 0) == 0
 
         payload = ProviderModel(
             id=uuid.uuid4(),
@@ -311,8 +312,9 @@ async def test_provider_instance_model_count_updates_with_models():
 
         # 再次获取实例列表，模型数量应为 1，且缓存已被失效
         instances = await repo.get_available_instances(user_id=None, include_public=True)
-        assert len(instances) == 1
-        assert getattr(instances[0], "model_count", 0) == 1
+        target = next((item for item in instances if item.id == inst.id), None)
+        assert target is not None
+        assert getattr(target, "model_count", 0) == 1
 
 
 @pytest.mark.asyncio

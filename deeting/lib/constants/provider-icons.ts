@@ -1,19 +1,5 @@
 
-import { 
-  Webhook, Cpu, BrainCircuit, Bot, Sparkles, Zap, Globe, Code2,
-  Terminal, Server, HardDrive, Laptop, CloudOff,
-  Rocket, Gamepad2, Ghost, Sword, 
-  LucideIcon
-} from "lucide-react";
-
-export interface ProviderIconOption {
-  id: string; // 将被存入 provider_instance.icon
-  label: string;
-  icon: LucideIcon; 
-  category: 'generic' | 'hardware' | 'fun';
-}
-
-export const import { 
+import {
   // Generic & AI
   Webhook, Cpu, BrainCircuit, Bot, Sparkles, Zap, Globe, Code2,
   Search, Languages, Fingerprint, Share2, Lightbulb, Brain,
@@ -99,19 +85,10 @@ export const PROVIDER_ICON_OPTIONS: ProviderIconOption[] = [
 ];
 
 export const getIconComponent = (iconId: string | null | undefined): LucideIcon | null => {
-    if (!iconId) return null;
-    if (iconId.startsWith("lucide:")) {
-        const found = PROVIDER_ICON_OPTIONS.find(opt => opt.id === iconId);
-        return found ? found.icon : Webhook; // Default fallback
-    }
-    return null;
+  if (!iconId) return null;
+  if (iconId.startsWith("lucide:")) {
+    const found = PROVIDER_ICON_OPTIONS.find(opt => opt.id === iconId);
+    return found ? found.icon : Webhook; // Default fallback
+  }
+  return null;
 };
-
-export const getIconComponent = (iconId: string | null | undefined): LucideIcon | null => {
-    if (!iconId) return null;
-    if (iconId.startsWith("lucide:")) {
-        const found = PROVIDER_ICON_OPTIONS.find(opt => opt.id === iconId);
-        return found ? found.icon : Webhook; // Default fallback
-    }
-    return null;
-}

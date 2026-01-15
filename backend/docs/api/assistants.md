@@ -13,6 +13,7 @@
     "visibility": "private",
     "status": "draft",
     "share_slug": null,
+    "summary": "两行以内的简介文本",
     "icon_id": "lucide:bot",
     "version": {
       "version": "0.1.0",
@@ -48,11 +49,13 @@
     "visibility": "public",
     "status": "published",
     "share_slug": "default-assistant",
+    "summary": "两行以内的简介文本",
     "current_version_id": "00000000-0000-0000-0000-000000000000",
     "icon_id": "lucide:sparkles"
   }
   ```
 - 响应：`AssistantDTO`
+  - `install_count` / `rating_avg` / `rating_count` 为系统维护字段（只读）
 
 ## 发布助手（可选切换版本）
 

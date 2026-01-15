@@ -5,10 +5,11 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { cva } from "class-variance-authority"
-import { ChevronDown, PanelLeftClose, PanelLeft } from "lucide-react"
+import { ChevronDown, PanelLeftClose, PanelLeft, Bot } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useMarketStore } from "@/store/market-store"
 import { GlassButton } from "@/components/ui/glass-button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -247,6 +248,26 @@ interface DesktopSidebarProps {
 
 function DesktopSidebar({ navigation }: DesktopSidebarProps) {
   const { isCollapsed, setIsCollapsed } = useSidebar()
+  const installedAgents = useMarketStore((state) => state.installedAgents)
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Construct My Agents group
+  const myAgentsGroup: NavGroup | null = React.useMemo(() => {
+    if (!mounted || installedAgents.length === 0) return null
+    return {
+      title: "My Agents",
+      items: installedAgents.map(agent => ({
+        id: `agent-${agent.id}`,
+        label: agent.name,
+        href: `/chat/${agent.id}`, // 假设安装后的助手跳转到 chat 页面
+        icon: "Bot" as const, // 使用 Bot 图标，需要在 icon-map 中确保有映射或直接在这里处理图标
+      }))
+    }
+  }, [mounted, installedAgents])
 
   return (
     <aside
@@ -282,6 +303,29 @@ function DesktopSidebar({ navigation }: DesktopSidebarProps) {
               isCollapsed={isCollapsed}
             />
           ))}
+          
+          {/* My Agents Group */}
+          {myAgentsGroup && (
+             <div className="flex flex-col gap-1 pt-4 border-t border-white/5">
+                {!isCollapsed && (
+                  <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]/70">
+                    My Agents
+                  </div>
+                )}
+                {isCollapsed && <div className="mx-auto my-2 h-px w-6 bg-[var(--border)]/50" />}
+                
+                <div className="flex flex-col gap-0.5">
+                  {myAgentsGroup.items.map((item) => (
+                    // 这里直接复用 SidebarItem，但要注意 icon 映射
+                    // 由于 SidebarItem 内部用了 navIconMap，我们需要确保 Bot 图标能正常显示
+                    // 或者我们这里为了简单，手动渲染一下，或者临时修改 navIconMap
+                    // 鉴于 SidebarItem 的 icon 属性是 string，我们需要在 icon-map.ts 里加一个 Bot
+                    // 或者我们在 SidebarItem 里增加对未知 icon 的 fallback
+                    <SidebarItem key={item.id} item={item} isCollapsed={isCollapsed} />
+                  ))}
+                </div>
+             </div>
+          )}
         </div>
       </ScrollArea>
 
@@ -318,9 +362,26 @@ interface MobileSecondaryNavProps {
 function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
   const pathname = usePathname()
   const { t } = useSidebar()
+  const installedAgents = useMarketStore((state) => state.installedAgents)
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Flatten all nav items for horizontal display
   const allItems = navigation.flatMap((group) => group.items)
+
+  // Append installed agents if mounted
+  const finalItems = mounted && installedAgents.length > 0 
+    ? [...allItems, ...installedAgents.map(agent => ({
+        id: `agent-${agent.id}`,
+        label: agent.name,
+        href: `/chat/${agent.id}`,
+        icon: "Bot" as const,
+        badge: 0
+      }))]
+    : allItems
 
   return (
     <div
@@ -333,10 +394,10 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
     >
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex items-center gap-1 px-4 py-2">
-          {allItems.map((item) => {
+          {finalItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
-            const Icon = navIconMap[item.icon] ?? defaultNavIcon
-            const label = t(item.label)
+            const Icon = navIconMap[item.icon as keyof typeof navIconMap] ?? defaultNavIcon
+            const label = item.id.startsWith('agent-') ? item.label : t(item.label)
 
             return (
               <Link

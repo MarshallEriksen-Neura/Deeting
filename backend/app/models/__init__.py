@@ -31,6 +31,10 @@ from .assistant import (
     AssistantVisibility,
     AssistantStatus,
 )
+from .assistant_install import AssistantInstall
+from .assistant_tag import AssistantTag, AssistantTagLink
+from .assistant_rating import AssistantRating
+from .review import ReviewTask, ReviewStatus
 from .conversation import (
     ConversationChannel,
     ConversationMessage,
@@ -70,6 +74,12 @@ __all__ = [
     "AssistantVersion",
     "AssistantVisibility",
     "AssistantStatus",
+    "AssistantInstall",
+    "AssistantTag",
+    "AssistantTagLink",
+    "AssistantRating",
+    "ReviewTask",
+    "ReviewStatus",
     "Identity",
     "RegistrationWindow",
     "RegistrationWindowStatus",

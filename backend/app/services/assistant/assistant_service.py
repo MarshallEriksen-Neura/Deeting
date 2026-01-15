@@ -7,6 +7,7 @@ from app.repositories.assistant_repository import (
     AssistantRepository,
     AssistantVersionRepository,
 )
+from app.repositories.assistant_tag_repository import AssistantTagRepository, AssistantTagLinkRepository
 from app.schemas.assistant import (
     AssistantCreate,
     AssistantUpdate,
@@ -15,7 +16,9 @@ from app.schemas.assistant import (
     AssistantListResponse,
 )
 from app.services.assistant.assistant_state import AssistantStateMachine
+from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.utils.time_utils import Datetime
+from app.repositories.assistant_tag_repository import AssistantTagRepository, AssistantTagLinkRepository
 
 
 class AssistantService:
@@ -34,6 +37,10 @@ class AssistantService:
     ):
         self.assistant_repo = assistant_repo
         self.version_repo = version_repo
+        self.tag_service = AssistantTagService(
+            AssistantTagRepository(assistant_repo.session),
+            AssistantTagLinkRepository(assistant_repo.session),
+        )
 
     async def list_assistants(
         self,
@@ -86,11 +93,13 @@ class AssistantService:
             "visibility": payload.visibility.value if isinstance(payload.visibility, AssistantVisibility) else payload.visibility,
             "status": payload.status.value if isinstance(payload.status, AssistantStatus) else payload.status,
             "share_slug": payload.share_slug,
+            "summary": payload.summary,
             "icon_id": payload.icon_id,
         }
         assistant = await self.assistant_repo.create(assistant_data)
 
         version = await self._create_version_internal(assistant.id, payload.version)
+        await self.tag_service.sync_assistant_tags(assistant.id, version.tags)
 
         # 设定当前版本
         assistant.current_version_id = version.id
@@ -127,6 +136,8 @@ class AssistantService:
             )
         if payload.share_slug is not None:
             update_data["share_slug"] = payload.share_slug
+        if payload.summary is not None:
+            update_data["summary"] = payload.summary
         if payload.current_version_id is not None:
             update_data["current_version_id"] = payload.current_version_id
         if payload.icon_id is not None:
@@ -197,8 +208,12 @@ class AssistantService:
             raise ValueError("版本不存在或不属于该助手")
 
         update_data = payload.model_dump(exclude_unset=True)
+        if "tags" in update_data:
+            update_data["tags"] = self.tag_service.normalize_tags(update_data.get("tags"))
         # published_at 由外部决定; 此处仅更新提供的字段
         version = await self.version_repo.update(version, update_data)
+        if payload.tags is not None:
+            await self.tag_service.sync_assistant_tags(assistant_id, payload.tags)
         return version
 
     # ===== 内部工具 =====
@@ -208,6 +223,8 @@ class AssistantService:
         payload: AssistantVersionCreate,
     ):
         version_data = payload.model_dump()
+        if "tags" in version_data:
+            version_data["tags"] = self.tag_service.normalize_tags(version_data.get("tags"))
         version_data["assistant_id"] = assistant_id
         if "published_at" not in version_data:
             version_data["published_at"] = None

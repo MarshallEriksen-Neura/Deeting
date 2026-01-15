@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -146,29 +147,16 @@ async def test_key_activity_ranking(AsyncSessionLocal):
                     api_key_id=api_key_id,
                     model="gpt-4o",
                     status_code=200,
-                    duration_ms=100,
-                    ttft_ms=10,
+                    duration_ms=100 + i,
+                    ttft_ms=10 + i,
                     input_tokens=10,
                     output_tokens=5,
                     total_tokens=15,
                     cost_user=0.1,
                     cost_upstream=0.05,
-                    created_at=now,
-                ),
-                GatewayLog(
-                    user_id=user_id,
-                    api_key_id=api_key_id,
-                    model="gpt-4o",
-                    status_code=200,
-                    duration_ms=120,
-                    ttft_ms=12,
-                    input_tokens=10,
-                    output_tokens=5,
-                    total_tokens=15,
-                    cost_user=0.1,
-                    cost_upstream=0.05,
-                    created_at=now,
-                ),
+                    created_at=now - timedelta(seconds=i),
+                )
+                for i in range(20)
             ]
         )
         await session.commit()

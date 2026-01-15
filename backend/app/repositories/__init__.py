@@ -10,12 +10,22 @@ from .usage_repository import UsageRepository
 from .user_repository import UserRepository
 from .invite_code import InviteCodeRepository
 from .assistant_repository import AssistantRepository, AssistantVersionRepository
+from .assistant_install_repository import AssistantInstallRepository
+from .assistant_market_repository import AssistantMarketRepository
+from .assistant_tag_repository import AssistantTagLinkRepository, AssistantTagRepository
+from .assistant_rating_repository import AssistantRatingRepository
 from .notification_repository import NotificationReceiptRepository, NotificationRepository
+from .review_repository import ReviewTaskRepository
 
 __all__ = [
     "ApiKeyRepository",
     "AssistantRepository",
     "AssistantVersionRepository",
+    "AssistantInstallRepository",
+    "AssistantMarketRepository",
+    "AssistantTagRepository",
+    "AssistantTagLinkRepository",
+    "AssistantRatingRepository",
     "AuditRepository",
     "BanditRepository",
     "BaseRepository",
@@ -31,4 +41,5 @@ __all__ = [
     "InviteCodeRepository",
     "NotificationRepository",
     "NotificationReceiptRepository",
+    "ReviewTaskRepository",
 ]

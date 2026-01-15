@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_EXTERNAL_TPM: int = 100000
     RATE_LIMIT_INTERNAL_TPM: int = 1000000
     RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_IP_DEFAULT_RPM: int = 600
 
     # 缓存配置
     CACHE_PREFIX: str = "ai_gateway:"

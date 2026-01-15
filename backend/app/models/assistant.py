@@ -17,6 +17,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    Float,
     String,
     Text,
     UniqueConstraint,
@@ -77,10 +79,36 @@ class Assistant(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         comment="分享访问标识（unlisted/public 使用）",
     )
+    summary: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+        comment="助手简介（两行展示）",
+    )
     icon_id: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="助手图标 ID（如 lucide:bot）",
+    )
+    install_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="安装量",
+    )
+    rating_avg: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+        server_default="0.0",
+        comment="评分均值",
+    )
+    rating_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="评分数量",
     )
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),

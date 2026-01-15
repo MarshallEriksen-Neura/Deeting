@@ -38,6 +38,17 @@ from .assistant import (
     AssistantPublishRequest,
     AssistantListResponse,
 )
+from .assistant_market import (
+    AssistantInstallItem,
+    AssistantInstallUpdate,
+    AssistantMarketItem,
+    AssistantSummary,
+    AssistantSummaryVersion,
+    AssistantSubmitReviewRequest,
+    AssistantReviewDecisionRequest,
+)
+from .assistant_rating import AssistantRatingRequest, AssistantRatingResponse
+from .review import ReviewTaskDTO
 from .notification import (
     NotificationInboxItem,
     NotificationPublishAllRequest,
@@ -89,6 +100,16 @@ __all__ = [
     "AssistantVersionUpdate",
     "AssistantPublishRequest",
     "AssistantListResponse",
+    "AssistantInstallItem",
+    "AssistantInstallUpdate",
+    "AssistantMarketItem",
+    "AssistantSummary",
+    "AssistantSummaryVersion",
+    "AssistantSubmitReviewRequest",
+    "AssistantReviewDecisionRequest",
+    "AssistantRatingRequest",
+    "AssistantRatingResponse",
+    "ReviewTaskDTO",
     "ProviderPresetBase",
     "ProviderPresetCreate",
     "ProviderPresetDTO",

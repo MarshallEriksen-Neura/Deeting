@@ -149,6 +149,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             payload.pop("instance_id", None)
             # 允许外部传入 id 以便后续按 id 操作（测试/管理场景）
             incoming_id = payload.pop("id", None)
+            payload.pop("synced_at", None)
 
             stmt = select(ProviderModel).where(
                 ProviderModel.instance_id == instance_id,

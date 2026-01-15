@@ -5,6 +5,7 @@ v1 路由聚合
 from app.api.v1.admin import api_keys_router as admin_api_keys_router
 from app.api.v1.admin import users_router as admin_users_router
 from app.api.v1.admin import assistants_router as admin_assistants_router
+from app.api.v1.admin import assistant_reviews_router as admin_assistant_reviews_router
 from app.api.v1.admin import registration_router as admin_registration_router
 from app.api.v1.admin import provider_instance_router as admin_provider_instance_router
 from app.api.v1.admin import provider_credential_router as admin_provider_credential_router
@@ -12,6 +13,7 @@ from app.api.v1.admin import provider_preset_router as admin_provider_preset_rou
 from app.api.v1.admin import discovery_router as admin_discovery_router
 from app.api.v1.admin import notification_router as admin_notification_router
 from app.api.v1.auth_route import router as auth_router
+from app.api.v1.assistants_route import router as assistants_router
 from app.api.v1.notification_ws_route import router as notification_ws_router
 from app.api.v1.user_api_keys_route import router as user_api_keys_router, models_router as available_models_router
 from app.api.v1.external.gateway import router as external_gateway_router
@@ -30,6 +32,7 @@ __all__ = [
     "admin_api_keys_router",
     "admin_users_router",
     "admin_assistants_router",
+    "admin_assistant_reviews_router",
     "admin_registration_router",
     "admin_provider_instance_router",
     "admin_provider_credential_router",
@@ -37,6 +40,7 @@ __all__ = [
     "admin_discovery_router",
     "admin_notification_router",
     "auth_router",
+    "assistants_router",
     "notification_ws_router",
     "user_api_keys_router",
     "available_models_router",
