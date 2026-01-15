@@ -143,6 +143,19 @@ class CacheKeys:
         """API Key 预算 Hash Key（供 Lua 脚本使用）"""
         return f"{cls.prefix}:quota:apikey:{api_key_id}"
 
+    # ===== Credits =====
+    @classmethod
+    def credits_balance(cls, tenant_id: str) -> str:
+        return f"{cls.prefix}:credits:balance:{tenant_id}"
+
+    @classmethod
+    def credits_consumption(cls, tenant_id: str, days: int) -> str:
+        return f"{cls.prefix}:credits:consumption:{tenant_id}:{days}"
+
+    @classmethod
+    def credits_model_usage(cls, tenant_id: str, days: int) -> str:
+        return f"{cls.prefix}:credits:model_usage:{tenant_id}:{days}"
+
     # ===== Rate Limit =====
     @classmethod
     def rate_limit_rpm(cls, subject: str, route: str) -> str:

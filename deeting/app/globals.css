@@ -89,6 +89,12 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Global scrollbar palette (light by default) */
+  --scrollbar-track: color-mix(in oklch, var(--surface) 88%, transparent);
+  --scrollbar-thumb: color-mix(in oklch, var(--foreground) 22%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 32%, transparent);
+  --scrollbar-thumb-active: color-mix(in oklch, var(--foreground) 42%, transparent);
 }
 
 /* ============================================
@@ -425,10 +431,61 @@ html:not(.dark) [data-slot="glass-button"][data-variant="secondary"] {
 /* ============================================
    Scrollbar Visibility - Responsive
    ============================================ */
+/* Global scrollbar styling - tablets/desktop only */
+@media (min-width: 768px) {
+  html,
+  body {
+    scrollbar-gutter: stable;
+  }
+
+  html,
+  body,
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  html::-webkit-scrollbar-track,
+  body::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 999px;
+  }
+
+  html::-webkit-scrollbar-thumb,
+  body::-webkit-scrollbar-thumb,
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  html::-webkit-scrollbar-thumb:hover,
+  body::-webkit-scrollbar-thumb:hover,
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  html::-webkit-scrollbar-thumb:active,
+  body::-webkit-scrollbar-thumb:active,
+  *::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-active);
+  }
+}
+
 /* Hide both horizontal and vertical scrollbars on small screens; show them on tablets/desktop. */
 @media (max-width: 767px) {
   html,
-  body {
+  body,
+  * {
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE/Edge legacy */
   }

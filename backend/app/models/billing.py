@@ -233,13 +233,21 @@ class BillingTransaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # 交易信息
     type: Mapped[TransactionType] = mapped_column(
-        SAEnum(TransactionType, name="transaction_type"),
+        SAEnum(
+            TransactionType,
+            name="transaction_type",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         default=TransactionType.DEDUCT,
         nullable=False,
         comment="交易类型",
     )
     status: Mapped[TransactionStatus] = mapped_column(
-        SAEnum(TransactionStatus, name="transaction_status"),
+        SAEnum(
+            TransactionStatus,
+            name="transaction_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         default=TransactionStatus.PENDING,
         nullable=False,
         index=True,

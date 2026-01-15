@@ -4,14 +4,17 @@ import { useTranslations } from "next-intl"
 import { Zap, Plus } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Button } from "@/components/ui/button"
+import { useCreditsBalance } from "@/lib/swr/use-credits-balance"
 
 export function BalanceReactorCard() {
   const t = useTranslations("credits")
+  const { data, isLoading } = useCreditsBalance()
 
-  // Mock data - replace with real API call
-  const balance = 1240500
-  const balanceUSD = (balance * 0.00001).toFixed(2)
-  const percentage = 76 // Used percentage
+  const balance = data?.balance ?? 0
+  const monthlySpent = data?.monthlySpent ?? 0
+  const percentage = Math.min(100, Math.max(0, data?.usedPercent ?? 0))
+  const formatAmount = (value: number) =>
+    value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 
   return (
     <GlassCard
@@ -34,10 +37,7 @@ export function BalanceReactorCard() {
               {t("balance.title")}
             </h3>
             <p className="text-4xl font-bold text-[var(--foreground)] tracking-tight">
-              {balance.toLocaleString()}
-            </p>
-            <p className="text-xs text-[var(--muted)] mt-1 font-mono">
-              ≈ ${balanceUSD}
+              {isLoading ? "—" : formatAmount(balance)}
             </p>
           </div>
 
@@ -80,6 +80,7 @@ export function BalanceReactorCard() {
           <Button
             size="sm"
             className="flex-1 bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
+            disabled
           >
             <Plus className="w-4 h-4 mr-2" />
             {t("balance.recharge")}
@@ -88,6 +89,7 @@ export function BalanceReactorCard() {
             size="sm"
             variant="outline"
             className="flex-1 border-[var(--muted)]/20 hover:bg-[var(--muted)]/5"
+            disabled
           >
             {t("balance.autoRecharge")}
           </Button>
@@ -98,13 +100,13 @@ export function BalanceReactorCard() {
           <div>
             <p className="text-xs text-[var(--muted)]">{t("balance.used")}</p>
             <p className="text-lg font-semibold text-[var(--foreground)] mt-1">
-              {(percentage * 10000).toLocaleString()}
+              {isLoading ? "—" : formatAmount(monthlySpent)}
             </p>
           </div>
           <div>
             <p className="text-xs text-[var(--muted)]">{t("balance.remaining")}</p>
             <p className="text-lg font-semibold text-emerald-500 dark:text-emerald-400 mt-1">
-              {balance.toLocaleString()}
+              {isLoading ? "—" : formatAmount(balance)}
             </p>
           </div>
         </div>

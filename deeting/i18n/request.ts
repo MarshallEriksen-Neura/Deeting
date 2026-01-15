@@ -10,6 +10,7 @@ const namespaces = [
   "models",
   "logs",
   "dashboard",
+  "credits",
   "monitoring",
 ] as const
 

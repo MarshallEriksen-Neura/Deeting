@@ -5,41 +5,39 @@ import { useMemo } from "react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
+import { useCreditsConsumption } from "@/lib/swr/use-credits-consumption"
 
 export function ConsumptionTrendChart() {
   const t = useTranslations("credits")
+  const { data } = useCreditsConsumption(30)
 
-  // Generate mock data for last 30 days
+  const palette = ["#06b6d4", "#8b5cf6", "#f59e0b", "#10b981", "#f97316", "#ef4444"]
+  const models = data?.models ?? []
+
   const chartData = useMemo(() => {
-    const data = []
-    const today = new Date()
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date(today)
-      date.setDate(date.getDate() - i)
-      data.push({
-        date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        "GPT-4o": Math.floor(Math.random() * 5000) + 2000,
-        "Claude 3.5": Math.floor(Math.random() * 3000) + 1000,
-        "Gemini Pro": Math.floor(Math.random() * 2000) + 500,
-      })
-    }
-    return data
-  }, [])
+    const timeline = data?.timeline ?? []
+    return timeline.map((point) => {
+      const date = new Date(point.date)
+      return {
+        date: Number.isNaN(date.getTime())
+          ? point.date
+          : date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        ...point.tokensByModel,
+      }
+    })
+  }, [data])
 
-  const chartConfig = {
-    "GPT-4o": {
-      label: "GPT-4o",
-      color: "#06b6d4", // cyan-500
-    },
-    "Claude 3.5": {
-      label: "Claude 3.5",
-      color: "#8b5cf6", // violet-500
-    },
-    "Gemini Pro": {
-      label: "Gemini Pro",
-      color: "#f59e0b", // amber-500
-    },
-  }
+  const chartConfig = useMemo(() => {
+    return Object.fromEntries(
+      models.map((model, index) => [
+        model,
+        {
+          label: model,
+          color: palette[index % palette.length],
+        },
+      ])
+    )
+  }, [models])
 
   return (
     <GlassCard blur="lg" theme="default" hover="none" className="h-full">
@@ -59,18 +57,12 @@ export function ConsumptionTrendChart() {
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="colorGPT" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorClaude" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorGemini" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                </linearGradient>
+                {models.map((model, index) => (
+                  <linearGradient id={`color-${index}`} x1="0" y1="0" x2="0" y2="1" key={model}>
+                    <stop offset="5%" stopColor={palette[index % palette.length]} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={palette[index % palette.length]} stopOpacity={0} />
+                  </linearGradient>
+                ))}
               </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
@@ -97,27 +89,16 @@ export function ConsumptionTrendChart() {
                 content={<ChartTooltipContent />}
                 cursor={{ stroke: "currentColor", strokeWidth: 1, strokeDasharray: "4 4" }}
               />
-              <Area
-                type="monotone"
-                dataKey="GPT-4o"
-                stroke="#06b6d4"
-                strokeWidth={2}
-                fill="url(#colorGPT)"
-              />
-              <Area
-                type="monotone"
-                dataKey="Claude 3.5"
-                stroke="#8b5cf6"
-                strokeWidth={2}
-                fill="url(#colorClaude)"
-              />
-              <Area
-                type="monotone"
-                dataKey="Gemini Pro"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                fill="url(#colorGemini)"
-              />
+              {models.map((model, index) => (
+                <Area
+                  key={model}
+                  type="monotone"
+                  dataKey={model}
+                  stroke={palette[index % palette.length]}
+                  strokeWidth={2}
+                  fill={`url(#color-${index})`}
+                />
+              ))}
             </AreaChart>
           </ResponsiveContainer>
         </ChartContainer>

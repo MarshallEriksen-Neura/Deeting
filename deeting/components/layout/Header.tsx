@@ -105,9 +105,9 @@ export function Header({
             <Image
               src={logoSrc}
               alt={logoText}
-              width={160}
-              height={32}
-              className="h-8 w-auto object-contain"
+              width={200}
+              height={40}
+              className="h-7 w-auto object-contain sm:h-8 lg:h-9 xl:h-10"
               priority
             />
           </Link>

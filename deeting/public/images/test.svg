@@ -1,0 +1,59 @@
+<svg width="512" height="512" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7B2CF5" />
+      <stop offset="100%" stop-color="#3F0EA8" />
+    </linearGradient>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD95A" />
+      <stop offset="100%" stop-color="#C89310" />
+    </linearGradient>
+    <linearGradient id="purpleGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8A2BE2" />
+      <stop offset="100%" stop-color="#4B0082" />
+    </linearGradient>
+  </defs>
+
+  <circle
+    cx="300"
+    cy="300"
+    r="248"
+    fill="none"
+    stroke="url(#ringGradient)"
+    stroke-width="18"
+  />
+  <circle
+    cx="300"
+    cy="300"
+    r="212"
+    fill="none"
+    stroke="#4B1FB8"
+    stroke-width="6"
+    opacity="0.35"
+  />
+
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path
+      d="M326 176 C 408 188 468 252 468 326 C 468 388 434 440 382 468"
+      stroke="url(#purpleGradient)"
+      stroke-width="18"
+    />
+    <path
+      d="M246 232 Q 220 260 220 296 Q 220 370 292 394 Q 360 416 360 476"
+      stroke="url(#goldGradient)"
+      stroke-width="20"
+    />
+    <path
+      d="M300 214 L 300 448"
+      stroke="url(#goldGradient)"
+      stroke-width="16"
+    />
+    <path
+      d="M300 214 L 382 120 L 318 206"
+      fill="url(#goldGradient)"
+      stroke="none"
+      opacity="0.95"
+    />
+    <circle cx="270" cy="268" r="12" fill="#00D4FF" />
+  </g>
+</svg>

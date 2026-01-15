@@ -8,11 +8,10 @@ import { Button } from "@/components/ui/button"
 export function MembershipPlanCard() {
   const t = useTranslations("credits")
 
-  // Mock data - replace with real API call
   const plan = {
-    name: "Pro Plan",
-    renewDate: "2026-02-14",
-    usagePercent: 70,
+    name: "—",
+    renewDate: "—",
+    usagePercent: 0,
   }
 
   return (
@@ -71,6 +70,7 @@ export function MembershipPlanCard() {
           size="sm"
           variant="outline"
           className="w-full border-[var(--teal-accent)]/30 text-[var(--teal-accent)] hover:bg-[var(--teal-accent)]/10"
+          disabled
         >
           {t("plan.upgrade")}
         </Button>
