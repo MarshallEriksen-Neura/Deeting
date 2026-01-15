@@ -8,139 +8,142 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { AgentCard } from "@/components/assistants/agent-card"
 import { InfiniteList } from "@/components/ui/infinite-list"
 import { CreateAgentModal } from "@/components/assistants/create-agent-modal"
-import { useMarketStore, type Agent } from "@/store/market-store"
-
-// 基础模拟数据
-const BASE_AGENTS: Agent[] = [
-  {
-    id: "1",
-    name: "全栈架构师",
-    desc: "精通 React, Node.js, Rust。能帮你重构代码并解释设计模式。无论是微服务架构还是前端性能优化，都能提供专业建议。",
-    tags: ["Coding", "Architecture", "Rust"],
-    installs: "12.5k",
-    rating: 4.9,
-    author: "Deeting Team",
-    color: "from-blue-500 to-cyan-500"
-  },
-  {
-    id: "2",
-    name: "小红书爆款写手",
-    desc: "熟知种草逻辑，自动生成 Emoji，标题党专家。只需输入关键词，即可生成吸引眼球的文案。",
-    tags: ["Social", "Copywriting", "Marketing"],
-    installs: "8.2k",
-    rating: 4.7,
-    author: "Community",
-    color: "from-pink-500 to-rose-500"
-  },
-  {
-    id: "3",
-    name: "数据分析师",
-    desc: "擅长 Python Pandas, SQL。上传 CSV，立刻生成可视化图表建议和数据洞察。",
-    tags: ["Data", "Python", "Analysis"],
-    installs: "5.1k",
-    rating: 4.8,
-    author: "DataWizard",
-    color: "from-emerald-500 to-teal-500"
-  },
-  {
-    id: "4",
-    name: "塔罗牌占卜",
-    desc: "神秘学专家，为你解读每日运势。支持牌阵分析和心理咨询。",
-    tags: ["Fun", "Mystic"],
-    installs: "15k",
-    rating: 4.6,
-    author: "Luna",
-    color: "from-violet-500 to-purple-500"
-  },
-  {
-    id: "5",
-    name: "英语口语私教",
-    desc: "模拟雅思口语考试场景，实时纠正语法错误，提供更地道的表达方式。",
-    tags: ["Education", "Language"],
-    installs: "3.2k",
-    rating: 4.9,
-    author: "EduTech",
-    color: "from-orange-400 to-amber-500"
-  },
-  {
-    id: "6",
-    name: "UX 设计顾问",
-    desc: "提供用户体验改进建议，分析界面交互流程，支持 Material Design 和 iOS HIG 规范。",
-    tags: ["Design", "UX/UI"],
-    installs: "4.5k",
-    rating: 4.8,
-    author: "DesignLab",
-    color: "from-fuchsia-500 to-pink-500"
-  }
-]
-
-// 生成更多模拟数据以演示滚动
-const SAMPLE_AGENTS = Array.from({ length: 30 }).map((_, i) => ({
-  ...BASE_AGENTS[i % BASE_AGENTS.length],
-  id: `${i}`, // 确保 ID 唯一
-  name: `${BASE_AGENTS[i % BASE_AGENTS.length].name} ${Math.floor(i / 6) + 1}`,
-}))
+import { installAssistant } from "@/lib/api"
+import { useAssistantMarket } from "@/lib/swr/use-assistant-market"
+import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
+import { useAssistantOwned } from "@/lib/swr/use-assistant-owned"
+import type { AssistantCardData } from "@/components/assistants/types"
 
 const PAGE_SIZE = 8
+const COLOR_OPTIONS = [
+  "from-blue-500 to-cyan-500",
+  "from-pink-500 to-rose-500",
+  "from-emerald-500 to-teal-500",
+  "from-violet-500 to-purple-500",
+  "from-orange-400 to-amber-500",
+  "from-fuchsia-500 to-pink-500",
+]
+
+const pickColor = (id: string) => {
+  let hash = 0
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) % 10000
+  }
+  return COLOR_OPTIONS[hash % COLOR_OPTIONS.length]
+}
+
+const normalizeTags = (tags: string[] = []) =>
+  tags
+    .map((tag) => tag.replace(/^#/, "").trim())
+    .filter(Boolean)
+
+const matchesQuery = (agent: AssistantCardData, query: string) => {
+  if (!query) return true
+  const q = query.toLowerCase()
+  return (
+    agent.name.toLowerCase().includes(q) ||
+    agent.tags.some((tag) => tag.toLowerCase().includes(q))
+  )
+}
 
 export default function AssistantsPage() {
   const [searchQuery, setSearchQuery] = React.useState("")
-  const [displayedAgents, setDisplayedAgents] = React.useState<Agent[]>([])
-  const [page, setPage] = React.useState(1)
-  const [isLoading, setIsLoading] = React.useState(true)
-  const [hasMore, setHasMore] = React.useState(true)
-  const [isInitialLoading, setIsInitialLoading] = React.useState(true)
+  const [selectedTags, setSelectedTags] = React.useState<string[]>([])
 
-  const createdAgents = useMarketStore((state) => state.createdAgents)
-  const [mounted, setMounted] = React.useState(false)
-  React.useEffect(() => setMounted(true), [])
+  const {
+    items: marketItems,
+    hasMore,
+    isLoading,
+    isLoadingMore,
+    error,
+    loadMore,
+    reset,
+    mutate: mutateMarket,
+  } = useAssistantMarket({
+    q: searchQuery,
+    tags: selectedTags,
+    size: PAGE_SIZE,
+  })
 
-  // 模拟初始加载 (合并用户创建的助手)
+  const { items: ownedItems, isLoading: ownedLoading, mutate: mutateOwned } = useAssistantOwned(20)
+  const { tags: marketTags } = useAssistantTags()
+
   React.useEffect(() => {
-    if (!mounted) return
+    reset()
+  }, [searchQuery, selectedTags, reset])
 
-    const timer = setTimeout(() => {
-      // 初始数据 = 用户创建的 + 市场第一页
-      setDisplayedAgents([...createdAgents, ...SAMPLE_AGENTS.slice(0, PAGE_SIZE)])
-      setIsLoading(false)
-      setIsInitialLoading(false)
-    }, 1500)
-    return () => clearTimeout(timer)
-  }, [mounted, createdAgents])
+  const ownedCards = React.useMemo<AssistantCardData[]>(() => {
+    return ownedItems
+      .map((assistant) => {
+        const current =
+          assistant.versions.find((v) => v.id === assistant.current_version_id) ||
+          assistant.versions[0]
+        if (!current) return null
+        return {
+          id: assistant.id,
+          name: current.name,
+          description: assistant.summary || current.description || "",
+          tags: normalizeTags(current.tags),
+          installCount: assistant.install_count || 0,
+          ratingAvg: assistant.rating_avg || 0,
+          installed: true,
+          iconId: assistant.icon_id,
+          ownerUserId: assistant.owner_user_id,
+          summary: assistant.summary,
+          author: assistant.owner_user_id ? "Me" : "System",
+          color: pickColor(assistant.id),
+        }
+      })
+      .filter(Boolean) as AssistantCardData[]
+  }, [ownedItems])
 
-  // 模拟加载更多
-  const loadMore = React.useCallback(() => {
-    if (isLoading || !hasMore) return
+  const marketCards = React.useMemo<AssistantCardData[]>(() => {
+    return marketItems.map((item) => ({
+      id: item.assistant_id,
+      name: item.version.name,
+      description: item.summary || item.version.description || "",
+      tags: normalizeTags(item.tags.length ? item.tags : item.version.tags),
+      installCount: item.install_count || 0,
+      ratingAvg: item.rating_avg || 0,
+      installed: item.installed || false,
+      iconId: item.icon_id,
+      ownerUserId: item.owner_user_id,
+      summary: item.summary,
+      author: item.owner_user_id ? "Community" : "System",
+      color: pickColor(item.assistant_id),
+    }))
+  }, [marketItems])
 
-    setIsLoading(true)
-    setTimeout(() => {
-      const nextPage = page + 1
-      const start = (nextPage - 1) * PAGE_SIZE
-      const newAgents = SAMPLE_AGENTS.slice(start, start + PAGE_SIZE)
-      
-      if (newAgents.length === 0) {
-        setHasMore(false)
-      } else {
-        setDisplayedAgents(prev => [...prev, ...newAgents])
-        setPage(nextPage)
-      }
-      setIsLoading(false)
-    }, 1000)
-  }, [page, isLoading, hasMore])
+  const ownedIds = React.useMemo(
+    () => new Set(ownedCards.map((agent) => agent.id)),
+    [ownedCards]
+  )
 
-  // 搜索过滤 (涵盖所有数据)
-  const filteredAgents = React.useMemo(() => {
-    if (!searchQuery) return displayedAgents
-    
-    // 搜索时，我们需要在 "用户创建的" + "所有市场模拟数据" 中搜索
-    const allSource = [...createdAgents, ...SAMPLE_AGENTS]
-    return allSource.filter(agent => 
-      agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
-  }, [searchQuery, displayedAgents, createdAgents])
+  const filteredOwned = React.useMemo(
+    () =>
+      ownedCards.filter(
+        (agent) =>
+          matchesQuery(agent, searchQuery) &&
+          (selectedTags.length === 0 ||
+            agent.tags.some((tag) => selectedTags.includes(tag)))
+      ),
+    [ownedCards, searchQuery, selectedTags]
+  )
 
-  const isSearching = !!searchQuery
+  const mergedAgents = React.useMemo(() => {
+    const marketOnly = marketCards.filter((agent) => !ownedIds.has(agent.id))
+    return [...filteredOwned, ...marketOnly]
+  }, [filteredOwned, marketCards, ownedIds])
+
+  const isInitialLoading = (isLoading || ownedLoading) && mergedAgents.length === 0
+
+  const handleInstall = React.useCallback(
+    async (assistantId: string) => {
+      await installAssistant(assistantId)
+      await mutateMarket()
+    },
+    [mutateMarket]
+  )
 
   return (
     <div className="min-h-screen bg-muted/20 p-8 space-y-8 animate-in fade-in duration-700">
@@ -158,7 +161,7 @@ export default function AssistantsPage() {
 
         {/* Create Button */}
         <div className="flex justify-center mt-4">
-           <CreateAgentModal />
+           <CreateAgentModal onCreated={() => mutateOwned()} />
         </div>
 
         <div className="relative group max-w-lg mx-auto mt-8">
@@ -175,17 +178,34 @@ export default function AssistantsPage() {
         </div>
 
         <div className="flex justify-center gap-2 pt-4 flex-wrap">
-           <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80 px-3 py-1 transition-colors">🔥 Trending</Badge>
-           <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80 px-3 py-1 transition-colors">💻 Development</Badge>
-           <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80 px-3 py-1 transition-colors">🎨 Design</Badge>
-           <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80 px-3 py-1 transition-colors">📈 Productivity</Badge>
+          {marketTags.slice(0, 12).map((tag) => {
+            const label = tag.name.replace(/^#/, "")
+            const active = selectedTags.includes(label)
+            return (
+              <Badge
+                key={tag.id}
+                variant={active ? "default" : "secondary"}
+                className="cursor-pointer hover:bg-secondary/80 px-3 py-1 transition-colors"
+                onClick={() => {
+                  setSelectedTags((prev) =>
+                    prev.includes(label)
+                      ? prev.filter((t) => t !== label)
+                      : [...prev, label]
+                  )
+                }}
+              >
+                #{label}
+              </Badge>
+            )
+          })}
         </div>
       </div>
 
       {/* 2. 助手网格 (使用 InfiniteList) */}
       <InfiniteList
-        isLoading={isLoading}
-        hasMore={!isSearching && hasMore}
+        isLoading={isLoadingMore}
+        isError={!!error}
+        hasMore={hasMore}
         onLoadMore={loadMore}
         useScrollArea={false} // 使用 Body 滚动
         className="pb-20"
@@ -207,8 +227,8 @@ export default function AssistantsPage() {
               </div>
             ))
           ) : (
-            filteredAgents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} />
+            mergedAgents.map((agent) => (
+              <AgentCard key={agent.id} agent={agent} onInstall={handleInstall} />
             ))
           )}
         </div>

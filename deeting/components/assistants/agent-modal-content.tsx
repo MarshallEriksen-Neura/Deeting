@@ -7,55 +7,101 @@ import { Input } from "@/components/ui/input"
 import { DialogContent } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { useMarketStore, type Agent } from "@/store/market-store"
+import { previewAssistant } from "@/lib/api"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { getIconComponent } from "@/lib/constants/provider-icons"
+import type { AssistantCardData } from "./types"
 
 interface AgentModalContentProps {
-  agent: Agent
+  agent: AssistantCardData
+  onInstall?: (assistantId: string) => Promise<void>
+  onPreview?: (assistantId: string, message: string) => Promise<string>
 }
 
-export function AgentModalContent({ agent }: AgentModalContentProps) {
-  const installAgent = useMarketStore((state) => state.installAgent)
-  const isInstalled = useMarketStore((state) => state.isInstalled(agent.id))
+const normalizePreviewContent = (content: unknown) => {
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+      .join("\n")
+  }
+  if (content == null) return ""
+  return JSON.stringify(content)
+}
+
+export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalContentProps) {
+  const isInstalled = agent.installed
   const [inputValue, setInputValue] = React.useState("")
+  const [isSending, setIsSending] = React.useState(false)
+  const Icon = getIconComponent(agent.iconId || "lucide:bot")
+  const isImageIcon = Boolean(
+    agent.iconId && (agent.iconId.startsWith("http") || agent.iconId.startsWith("data:"))
+  )
   const [messages, setMessages] = React.useState<{role: 'user' | 'assistant', content: string}[]>([
-    { role: 'assistant', content: `你好！我是${agent.name}。${agent.desc} 有什么我可以帮你的吗？` }
+    { role: 'assistant', content: `你好！我是${agent.name}。${agent.description} 有什么我可以帮你的吗？` }
   ])
 
-  const handleSendMessage = () => {
-    if (!inputValue.trim()) return
+  React.useEffect(() => {
+    setMessages([{ role: "assistant", content: `你好！我是${agent.name}。${agent.description} 有什么我可以帮你的吗？` }])
+    setInputValue("")
+  }, [agent.id])
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isSending) return
     
     // 添加用户消息
     setMessages(prev => [...prev, { role: 'user', content: inputValue }])
     const currentInput = inputValue
     setInputValue("")
+    setIsSending(true)
 
-    // 模拟回复延迟
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: `[模拟回复] 针对 "${currentInput}"，${agent.name} 会给出专业的建议。这是一个预览模式。` 
-      }])
-    }, 1000)
+    try {
+      if (onPreview) {
+        const reply = await onPreview(agent.id, currentInput)
+        setMessages(prev => [...prev, { role: 'assistant', content: reply || "（未返回内容）" }])
+      } else {
+        const response = await previewAssistant(agent.id, { message: currentInput })
+        const content = normalizePreviewContent(response?.choices?.[0]?.message?.content)
+        setMessages(prev => [...prev, { role: 'assistant', content: content || "（未返回内容）" }])
+      }
+    } catch (error) {
+      toast.error("预览失败", {
+        description: "请先配置秘书模型或稍后重试",
+      })
+      setMessages(prev => [...prev, { role: 'assistant', content: "抱歉，预览暂时不可用。" }])
+    } finally {
+      setIsSending(false)
+    }
   }
 
-  const handleInstall = () => {
-    if (isInstalled) return
-    installAgent(agent)
-    toast.success(`${agent.name} 已就绪`, {
-      description: "该助手已添加到您的侧边栏",
-      icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
-    })
+  const handleInstall = async () => {
+    if (isInstalled || !onInstall) return
+    try {
+      await onInstall(agent.id)
+      toast.success(`${agent.name} 已就绪`, {
+        description: "该助手已添加到您的侧边栏",
+        icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
+      })
+    } catch (error) {
+      toast.error("安装失败", {
+        description: "请稍后重试",
+      })
+    }
   }
 
   return (
     <DialogContent className="max-w-4xl h-[80vh] flex p-0 overflow-hidden rounded-2xl gap-0 border-none sm:max-w-4xl">
          {/* 左侧：信息区 */}
          <div className="w-1/3 bg-muted/30 p-6 border-r flex flex-col hidden md:flex">
-            <div className={cn("w-16 h-16 rounded-xl bg-gradient-to-r mb-4 shrink-0", agent.color)} />
+            <Avatar className={cn("w-16 h-16 rounded-xl mb-4 bg-gradient-to-r", agent.color)}>
+              {isImageIcon ? <AvatarImage src={agent.iconId || ""} /> : null}
+              <AvatarFallback className="rounded-xl">
+                {Icon ? <Icon className="h-6 w-6" /> : "AI"}
+              </AvatarFallback>
+            </Avatar>
             <h2 className="text-2xl font-bold">{agent.name}</h2>
-            <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{agent.desc}</p>
+            <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{agent.description}</p>
             
             <div className="mt-6 space-y-4">
               <div className="text-sm font-medium text-foreground/80">能力标签</div>
@@ -71,7 +117,7 @@ export function AgentModalContent({ agent }: AgentModalContentProps) {
             <div className="mt-auto pt-6">
                <Button 
                  onClick={handleInstall}
-                 disabled={isInstalled}
+                 disabled={isInstalled || !onInstall}
                  className={cn("w-full transition-all", isInstalled && "bg-green-600 hover:bg-green-700")}
                >
                   {isInstalled ? (
@@ -96,8 +142,10 @@ export function AgentModalContent({ agent }: AgentModalContentProps) {
                       <Avatar className="w-8 h-8 shrink-0">
                         {msg.role === 'assistant' ? (
                           <>
-                             <AvatarImage src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.name}`} />
-                             <AvatarFallback>AI</AvatarFallback>
+                             {isImageIcon ? <AvatarImage src={agent.iconId || ""} /> : null}
+                             <AvatarFallback>
+                               {Icon ? <Icon className="h-4 w-4" /> : "AI"}
+                             </AvatarFallback>
                           </>
                         ) : (
                           <AvatarFallback>U</AvatarFallback>
@@ -129,9 +177,10 @@ export function AgentModalContent({ agent }: AgentModalContentProps) {
                    size="icon" 
                    variant="ghost" 
                    onClick={handleSendMessage}
+                   disabled={isSending}
                    className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-muted-foreground hover:text-primary"
                  >
-                   <Send className="h-4 w-4" />
+                   <Send className={cn("h-4 w-4", isSending && "opacity-60")} />
                  </Button>
                </div>
             </div>

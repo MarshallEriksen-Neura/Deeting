@@ -20,6 +20,7 @@ from app.schemas.assistant_market import (
     AssistantSummaryVersion,
 )
 from app.services.review.review_service import ReviewService
+from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService, AutoReviewResult
 from app.services.assistant.assistant_tag_service import AssistantTagService
 
 ASSISTANT_MARKET_ENTITY = "assistant_market"
@@ -57,12 +58,14 @@ class AssistantMarketService:
         install_repo: AssistantInstallRepository,
         review_repo: ReviewTaskRepository,
         market_repo: AssistantMarketRepository,
+        auto_review_service: AssistantAutoReviewService | None = None,
     ):
         self.assistant_repo = assistant_repo
         self.install_repo = install_repo
         self.review_repo = review_repo
         self.market_repo = market_repo
         self.review_service = ReviewService(review_repo)
+        self.auto_review_service = auto_review_service
         self.tag_service = AssistantTagService(
             AssistantTagRepository(assistant_repo.session),
             AssistantTagLinkRepository(assistant_repo.session),
@@ -232,7 +235,7 @@ class AssistantMarketService:
         user_id: UUID,
         assistant_id: UUID,
         payload: dict | None = None,
-    ):
+    ) -> AutoReviewResult | None:
         assistant = await self.assistant_repo.get(assistant_id)
         if not assistant:
             raise ValueError("助手不存在")
@@ -245,12 +248,31 @@ class AssistantMarketService:
         if status != AssistantStatus.PUBLISHED.value:
             raise ValueError("请先将助手状态设置为 published")
 
-        return await self.review_service.submit(
+        await self.review_service.submit(
             entity_type=ASSISTANT_MARKET_ENTITY,
             entity_id=assistant_id,
             submitter_user_id=user_id,
             payload=payload,
         )
+        if not self.auto_review_service:
+            return None
+
+        result = await self.auto_review_service.auto_review(assistant_id)
+        if result.status == ReviewStatus.APPROVED:
+            await self.review_service.approve(
+                entity_type=ASSISTANT_MARKET_ENTITY,
+                entity_id=assistant_id,
+                reviewer_user_id=result.reviewer_user_id,
+                reason=result.reason,
+            )
+        elif result.status == ReviewStatus.REJECTED:
+            await self.review_service.reject(
+                entity_type=ASSISTANT_MARKET_ENTITY,
+                entity_id=assistant_id,
+                reviewer_user_id=result.reviewer_user_id,
+                reason=result.reason,
+            )
+        return result
 
     async def approve_review(
         self,

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models import User
+from app.models.review import ReviewStatus
 from app.repositories import (
     AssistantRepository,
     AssistantVersionRepository,
@@ -22,6 +23,7 @@ from app.repositories import (
     AssistantTagLinkRepository,
     UserSecretaryRepository,
     ReviewTaskRepository,
+    UserRepository,
 )
 from app.schemas import (
     AssistantCreate,
@@ -43,6 +45,7 @@ from app.services.orchestrator.config import INTERNAL_PREVIEW_WORKFLOW
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import GatewayOrchestrator
 from app.services.workflow.steps.upstream_call import StreamTokenAccumulator, stream_with_billing
+from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService
 from app.services.assistant.assistant_market_service import AssistantMarketService
 from app.services.assistant.assistant_preview_service import AssistantPreviewService
 from app.services.assistant.assistant_rating_service import AssistantRatingService
@@ -64,7 +67,19 @@ def get_market_service(db: AsyncSession = Depends(get_db)) -> AssistantMarketSer
     install_repo = AssistantInstallRepository(db)
     review_repo = ReviewTaskRepository(db)
     market_repo = AssistantMarketRepository(db)
-    return AssistantMarketService(assistant_repo, install_repo, review_repo, market_repo)
+    auto_review_service = AssistantAutoReviewService(
+        assistant_repo=assistant_repo,
+        user_repo=UserRepository(db),
+        secretary_repo=UserSecretaryRepository(db),
+        version_repo=AssistantVersionRepository(db),
+    )
+    return AssistantMarketService(
+        assistant_repo,
+        install_repo,
+        review_repo,
+        market_repo,
+        auto_review_service=auto_review_service,
+    )
 
 
 def get_rating_service(db: AsyncSession = Depends(get_db)) -> AssistantRatingService:
@@ -304,11 +319,18 @@ async def submit_assistant_for_review(
     service: AssistantMarketService = Depends(get_market_service),
 ) -> MessageResponse:
     try:
-        await service.submit_for_review(
+        result = await service.submit_for_review(
             user_id=current_user.id,
             assistant_id=assistant_id,
             payload=payload.payload,
         )
+        if not result:
+            return MessageResponse(message="assistant submitted for review")
+        if result.status == ReviewStatus.APPROVED:
+            return MessageResponse(message="assistant auto approved")
+        if result.status == ReviewStatus.REJECTED:
+            reason = f": {result.reason}" if result.reason else ""
+            return MessageResponse(message=f"assistant auto rejected{reason}")
         return MessageResponse(message="assistant submitted for review")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

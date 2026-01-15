@@ -46,6 +46,17 @@ class UserRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_primary_superuser(self) -> User | None:
+        """获取首个超级用户（作为系统默认审核人）"""
+        stmt = (
+            select(User)
+            .where(User.is_superuser.is_(True))
+            .order_by(User.created_at.asc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create_user(
         self,
         email: str,

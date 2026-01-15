@@ -35,7 +35,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useMarketStore } from "@/store/market-store"
+import { createAssistant } from "@/lib/api"
+import { ProviderIconPicker } from "@/components/providers/provider-icon-picker"
 
 const formSchema = z.object({
   name: z.string().min(2, {
@@ -50,6 +51,9 @@ const formSchema = z.object({
   tags: z.string().min(2, {
      message: "Add at least one tag."
   }),
+  iconId: z.string().min(1, {
+    message: "Select an icon.",
+  }),
   color: z.string(),
 })
 
@@ -62,9 +66,12 @@ const COLOR_OPTIONS = [
   { label: "Neon Fuchsia", value: "from-fuchsia-500 to-pink-500" },
 ]
 
-export function CreateAgentModal() {
+interface CreateAgentModalProps {
+  onCreated?: () => void
+}
+
+export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
   const [open, setOpen] = React.useState(false)
-  const createAgent = useMarketStore((state) => state.createAgent)
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -73,34 +80,39 @@ export function CreateAgentModal() {
       desc: "",
       systemPrompt: "",
       tags: "",
+      iconId: "lucide:bot",
       color: "from-blue-500 to-cyan-500",
     },
   })
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    // Simulate network request
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        const tagsArray = values.tags.split(/[,，\s]+/).filter(Boolean)
-        
-        createAgent({
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    const tagsArray = values.tags.split(/[,，\s]+/).filter(Boolean)
+    try {
+      await createAssistant({
+        visibility: "private",
+        status: "draft",
+        summary: values.desc.slice(0, 200),
+        icon_id: values.iconId,
+        version: {
           name: values.name,
-          desc: values.desc,
-          systemPrompt: values.systemPrompt,
+          description: values.desc,
+          system_prompt: values.systemPrompt,
           tags: tagsArray,
-          color: values.color,
-        })
+        },
+      })
 
-        toast.success("Assistant Created", {
-          description: `${values.name} has been added to your sidebar and the market.`,
-          icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
-        })
-        
-        setOpen(false)
-        form.reset()
-        resolve()
-      }, 1000)
-    })
+      toast.success("Assistant Created", {
+        description: `${values.name} 已创建，可在“我的助手”中管理。`,
+        icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
+      })
+      setOpen(false)
+      form.reset()
+      onCreated?.()
+    } catch (error) {
+      toast.error("创建失败", {
+        description: "请稍后重试或检查输入内容",
+      })
+    }
   }
 
   return (
@@ -175,6 +187,23 @@ export function CreateAgentModal() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="iconId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Icon</FormLabel>
+                  <FormControl>
+                    <ProviderIconPicker value={field.value} onChange={field.onChange} />
+                  </FormControl>
+                  <FormDescription>
+                    Choose an icon to represent your assistant.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
