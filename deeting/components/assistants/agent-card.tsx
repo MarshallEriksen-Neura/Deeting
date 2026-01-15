@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Download, Star, Plus, Play, Sparkles } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CardContent, CardFooter, CardHeader } from "@/components/ui/card"
@@ -27,6 +28,7 @@ const formatCount = (count: number) => {
 }
 
 export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
+  const t = useTranslations("assistants")
   const isInstalled = agent.installed
   const [isInstalling, setIsInstalling] = React.useState(false)
   const Icon = getIconComponent(agent.iconId || "lucide:bot")
@@ -41,13 +43,13 @@ export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
     setIsInstalling(true)
     try {
       await onInstall(agent.id)
-      toast.success(`${agent.name} 已就绪`, {
-        description: "该助手已添加到您的侧边栏",
+      toast.success(t("toast.installedTitle", { name: agent.name }), {
+        description: t("toast.installedDesc"),
         icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
       })
     } catch (error) {
-      toast.error("安装失败", {
-        description: "请稍后重试",
+      toast.error(t("toast.installFailedTitle"), {
+        description: t("toast.installFailedDesc"),
       })
     } finally {
       setIsInstalling(false)
@@ -74,7 +76,9 @@ export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
            <div className="flex justify-between items-start">
               <div className="space-y-1">
                 <h3 className="font-bold text-lg leading-none">{agent.name}</h3>
-                <p className="text-xs text-muted-foreground">by {agent.author || "Community"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t("card.by", { author: agent.author || t("author.community") })}
+                </p>
               </div>
               {/* 这里的 DialogTrigger 触发详情预览 */}
               <DialogTrigger asChild>
@@ -115,11 +119,11 @@ export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
              )}
            >
               {isInstalling ? (
-                <>Adding...</>
+                <>{t("card.adding")}</>
               ) : isInstalled ? (
-                <>Installed</>
+                <>{t("card.installed")}</>
               ) : (
-                <><Plus size={14} className="mr-1" /> Install</>
+                <><Plus size={14} className="mr-1" /> {t("card.install")}</>
               )}
            </Button>
         </CardFooter>

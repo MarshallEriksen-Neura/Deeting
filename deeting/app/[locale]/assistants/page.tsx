@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Search } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -47,6 +48,7 @@ const matchesQuery = (agent: AssistantCardData, query: string) => {
 }
 
 export default function AssistantsPage() {
+  const t = useTranslations("assistants")
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedTags, setSelectedTags] = React.useState<string[]>([])
 
@@ -90,12 +92,12 @@ export default function AssistantsPage() {
           iconId: assistant.icon_id,
           ownerUserId: assistant.owner_user_id,
           summary: assistant.summary,
-          author: assistant.owner_user_id ? "Me" : "System",
+          author: assistant.owner_user_id ? t("author.me") : t("author.system"),
           color: pickColor(assistant.id),
         }
       })
       .filter(Boolean) as AssistantCardData[]
-  }, [ownedItems])
+  }, [ownedItems, t])
 
   const marketCards = React.useMemo<AssistantCardData[]>(() => {
     return marketItems.map((item) => ({
@@ -109,10 +111,10 @@ export default function AssistantsPage() {
       iconId: item.icon_id,
       ownerUserId: item.owner_user_id,
       summary: item.summary,
-      author: item.owner_user_id ? "Community" : "System",
+      author: item.owner_user_id ? t("author.community") : t("author.system"),
       color: pickColor(item.assistant_id),
     }))
-  }, [marketItems])
+  }, [marketItems, t])
 
   const ownedIds = React.useMemo(
     () => new Set(ownedCards.map((agent) => agent.id)),
@@ -153,10 +155,13 @@ export default function AssistantsPage() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[150%] bg-gradient-to-r from-primary/20 via-purple-500/20 to-pink-500/20 blur-3xl -z-10 opacity-50 rounded-full pointer-events-none" />
         
         <h1 className="text-3xl font-bold tracking-tight text-foreground">
-          发现你的下一个 <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600">数字伙伴</span>
+          {t("page.hero.titlePrefix")}{" "}
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600">
+            {t("page.hero.titleHighlight")}
+          </span>
         </h1>
         <p className="text-muted-foreground text-lg">
-          不仅仅是 Prompt，而是具有独特人格和技能的智能体
+          {t("page.hero.subtitle")}
         </p>
 
         {/* Create Button */}
@@ -170,7 +175,7 @@ export default function AssistantsPage() {
              <Search className="ml-4 text-muted-foreground" />
              <Input 
                className="border-none shadow-none focus-visible:ring-0 text-lg py-6 bg-transparent" 
-               placeholder="搜索助手能力 (e.g. Python, 写作...)" 
+               placeholder={t("page.search.placeholder")}
                value={searchQuery}
                onChange={(e) => setSearchQuery(e.target.value)}
              />

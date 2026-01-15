@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Plus, Loader2, Sparkles } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -38,32 +39,13 @@ import {
 import { createAssistant } from "@/lib/api"
 import { ProviderIconPicker } from "@/components/providers/provider-icon-picker"
 
-const formSchema = z.object({
-  name: z.string().min(2, {
-    message: "Name must be at least 2 characters.",
-  }),
-  desc: z.string().min(10, {
-    message: "Description must be at least 10 characters.",
-  }),
-  systemPrompt: z.string().min(20, {
-    message: "System prompt must be meaningful (at least 20 characters).",
-  }),
-  tags: z.string().min(2, {
-     message: "Add at least one tag."
-  }),
-  iconId: z.string().min(1, {
-    message: "Select an icon.",
-  }),
-  color: z.string(),
-})
-
 const COLOR_OPTIONS = [
-  { label: "Ocean Blue", value: "from-blue-500 to-cyan-500" },
-  { label: "Sunset Pink", value: "from-pink-500 to-rose-500" },
-  { label: "Emerald Green", value: "from-emerald-500 to-teal-500" },
-  { label: "Mystic Purple", value: "from-violet-500 to-purple-500" },
-  { label: "Amber Orange", value: "from-orange-400 to-amber-500" },
-  { label: "Neon Fuchsia", value: "from-fuchsia-500 to-pink-500" },
+  { key: "ocean", value: "from-blue-500 to-cyan-500" },
+  { key: "sunset", value: "from-pink-500 to-rose-500" },
+  { key: "emerald", value: "from-emerald-500 to-teal-500" },
+  { key: "mystic", value: "from-violet-500 to-purple-500" },
+  { key: "amber", value: "from-orange-400 to-amber-500" },
+  { key: "neon", value: "from-fuchsia-500 to-pink-500" },
 ]
 
 interface CreateAgentModalProps {
@@ -71,7 +53,30 @@ interface CreateAgentModalProps {
 }
 
 export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
+  const t = useTranslations("assistants")
   const [open, setOpen] = React.useState(false)
+  const formSchema = React.useMemo(
+    () =>
+      z.object({
+        name: z.string().min(2, {
+          message: t("create.validation.nameMin"),
+        }),
+        desc: z.string().min(10, {
+          message: t("create.validation.descMin"),
+        }),
+        systemPrompt: z.string().min(20, {
+          message: t("create.validation.promptMin"),
+        }),
+        tags: z.string().min(2, {
+          message: t("create.validation.tagsMin"),
+        }),
+        iconId: z.string().min(1, {
+          message: t("create.validation.iconRequired"),
+        }),
+        color: z.string(),
+      }),
+    [t]
+  )
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -101,16 +106,16 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
         },
       })
 
-      toast.success("Assistant Created", {
-        description: `${values.name} 已创建，可在“我的助手”中管理。`,
+      toast.success(t("toast.assistantCreatedTitle"), {
+        description: t("toast.assistantCreatedDesc", { name: values.name }),
         icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
       })
       setOpen(false)
       form.reset()
       onCreated?.()
     } catch (error) {
-      toast.error("创建失败", {
-        description: "请稍后重试或检查输入内容",
+      toast.error(t("toast.createFailedTitle"), {
+        description: t("toast.createFailedDesc"),
       })
     }
   }
@@ -119,14 +124,14 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg border-0">
-          <Plus className="mr-2 h-4 w-4" /> Create Assistant
+          <Plus className="mr-2 h-4 w-4" /> {t("create.trigger")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Persona</DialogTitle>
+          <DialogTitle>{t("create.title")}</DialogTitle>
           <DialogDescription>
-            Design a custom AI assistant. It will be installed locally and submitted to the market.
+            {t("create.description")}
           </DialogDescription>
         </DialogHeader>
         
@@ -138,9 +143,9 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Name</FormLabel>
+                  <FormLabel>{t("create.nameLabel")}</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Python Guru" {...field} />
+                    <Input placeholder={t("create.namePlaceholder")} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -152,12 +157,12 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
               name="desc"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Short Description</FormLabel>
+                  <FormLabel>{t("create.descLabel")}</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Expert in Python optimization and debugging..." {...field} />
+                    <Input placeholder={t("create.descPlaceholder")} {...field} />
                   </FormControl>
                   <FormDescription>
-                    Displayed on the agent card in the marketplace.
+                    {t("create.descHelp")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -169,11 +174,11 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
               name="color"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Theme</FormLabel>
+                  <FormLabel>{t("create.themeLabel")}</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a theme color" />
+                        <SelectValue placeholder={t("create.themePlaceholder")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -181,7 +186,7 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
                         <SelectItem key={color.value} value={color.value}>
                           <div className="flex items-center gap-2">
                             <div className={`w-4 h-4 rounded-full bg-gradient-to-r ${color.value}`} />
-                            {color.label}
+                            {t(`create.colors.${color.key}`)}
                           </div>
                         </SelectItem>
                       ))}
@@ -197,12 +202,12 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
               name="iconId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Icon</FormLabel>
+                  <FormLabel>{t("create.iconLabel")}</FormLabel>
                   <FormControl>
                     <ProviderIconPicker value={field.value} onChange={field.onChange} />
                   </FormControl>
                   <FormDescription>
-                    Choose an icon to represent your assistant.
+                    {t("create.iconHelp")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -214,12 +219,12 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
               name="tags"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tags</FormLabel>
+                  <FormLabel>{t("create.tagsLabel")}</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Coding, Python, Debugging" {...field} />
+                    <Input placeholder={t("create.tagsPlaceholder")} {...field} />
                   </FormControl>
                   <FormDescription>
-                    Comma separated keywords.
+                    {t("create.tagsHelp")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -231,16 +236,16 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
               name="systemPrompt"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>System Prompt (Personality)</FormLabel>
+                  <FormLabel>{t("create.systemPromptLabel")}</FormLabel>
                   <FormControl>
                     <Textarea 
-                      placeholder="You are an expert Python developer with a sarcastic tone..." 
+                      placeholder={t("create.systemPromptPlaceholder")} 
                       className="min-h-[150px] font-mono text-sm"
                       {...field} 
                     />
                   </FormControl>
                   <FormDescription>
-                    This defines how your assistant behaves and answers.
+                    {t("create.systemPromptHelp")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -252,10 +257,10 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
                 {form.formState.isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
+                    {t("create.submitting")}
                   </>
                 ) : (
-                  "Create & Install"
+                  t("create.submit")
                 )}
               </Button>
             </DialogFooter>

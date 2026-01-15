@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Send, Check, Sparkles } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DialogContent } from "@/components/ui/dialog"
@@ -31,6 +32,7 @@ const normalizePreviewContent = (content: unknown) => {
 }
 
 export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalContentProps) {
+  const t = useTranslations("assistants")
   const isInstalled = agent.installed
   const [inputValue, setInputValue] = React.useState("")
   const [isSending, setIsSending] = React.useState(false)
@@ -38,14 +40,18 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
   const isImageIcon = Boolean(
     agent.iconId && (agent.iconId.startsWith("http") || agent.iconId.startsWith("data:"))
   )
+  const greeting = React.useMemo(
+    () => t("preview.greeting", { name: agent.name, description: agent.description || "" }),
+    [agent.description, agent.name, t]
+  )
   const [messages, setMessages] = React.useState<{role: 'user' | 'assistant', content: string}[]>([
-    { role: 'assistant', content: `你好！我是${agent.name}。${agent.description} 有什么我可以帮你的吗？` }
+    { role: 'assistant', content: greeting }
   ])
 
   React.useEffect(() => {
-    setMessages([{ role: "assistant", content: `你好！我是${agent.name}。${agent.description} 有什么我可以帮你的吗？` }])
+    setMessages([{ role: "assistant", content: greeting }])
     setInputValue("")
-  }, [agent.id])
+  }, [agent.id, greeting])
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isSending) return
@@ -59,17 +65,17 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
     try {
       if (onPreview) {
         const reply = await onPreview(agent.id, currentInput)
-        setMessages(prev => [...prev, { role: 'assistant', content: reply || "（未返回内容）" }])
+        setMessages(prev => [...prev, { role: 'assistant', content: reply || t("preview.emptyReply") }])
       } else {
         const response = await previewAssistant(agent.id, { message: currentInput })
         const content = normalizePreviewContent(response?.choices?.[0]?.message?.content)
-        setMessages(prev => [...prev, { role: 'assistant', content: content || "（未返回内容）" }])
+        setMessages(prev => [...prev, { role: 'assistant', content: content || t("preview.emptyReply") }])
       }
     } catch (error) {
-      toast.error("预览失败", {
-        description: "请先配置秘书模型或稍后重试",
+      toast.error(t("toast.previewFailedTitle"), {
+        description: t("toast.previewFailedDesc"),
       })
-      setMessages(prev => [...prev, { role: 'assistant', content: "抱歉，预览暂时不可用。" }])
+      setMessages(prev => [...prev, { role: 'assistant', content: t("toast.previewUnavailable") }])
     } finally {
       setIsSending(false)
     }
@@ -79,13 +85,13 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
     if (isInstalled || !onInstall) return
     try {
       await onInstall(agent.id)
-      toast.success(`${agent.name} 已就绪`, {
-        description: "该助手已添加到您的侧边栏",
+      toast.success(t("toast.installedTitle", { name: agent.name }), {
+        description: t("toast.installedDesc"),
         icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
       })
     } catch (error) {
-      toast.error("安装失败", {
-        description: "请稍后重试",
+      toast.error(t("toast.installFailedTitle"), {
+        description: t("toast.installFailedDesc"),
       })
     }
   }
@@ -104,7 +110,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
             <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{agent.description}</p>
             
             <div className="mt-6 space-y-4">
-              <div className="text-sm font-medium text-foreground/80">能力标签</div>
+              <div className="text-sm font-medium text-foreground/80">{t("modal.tagsTitle")}</div>
               <div className="flex flex-wrap gap-2">
                 {agent.tags.map(tag => (
                   <span key={tag} className="text-xs bg-background border px-2 py-1 rounded-md text-muted-foreground">
@@ -121,9 +127,9 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
                  className={cn("w-full transition-all", isInstalled && "bg-green-600 hover:bg-green-700")}
                >
                   {isInstalled ? (
-                    <><Check className="mr-2 h-4 w-4" /> 已添加到侧边栏</>
+                    <><Check className="mr-2 h-4 w-4" /> {t("modal.installedButton")}</>
                   ) : (
-                    "确认安装到侧边栏"
+                    t("modal.installButton")
                   )}
                </Button>
             </div>
@@ -132,7 +138,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
          {/* 右侧：Playground */}
          <div className="flex-1 bg-background flex flex-col relative w-full">
             <div className="p-4 border-b text-center text-sm text-muted-foreground bg-background/80 backdrop-blur absolute w-full top-0 z-10 flex items-center justify-center">
-               <Sparkles className="w-3 h-3 mr-2 text-primary" /> Preview Mode
+               <Sparkles className="w-3 h-3 mr-2 text-primary" /> {t("modal.previewMode")}
             </div>
             
             <ScrollArea className="flex-1 p-0 pt-16">
@@ -170,7 +176,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
                    value={inputValue}
                    onChange={(e) => setInputValue(e.target.value)}
                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                   placeholder={`试着和 ${agent.name} 聊聊...`} 
+                   placeholder={t("modal.inputPlaceholder", { name: agent.name })} 
                    className="rounded-full pr-12" 
                  />
                  <Button 
