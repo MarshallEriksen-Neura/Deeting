@@ -279,3 +279,40 @@ fn now_rfc3339() -> String {
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_buffer_eviction_keeps_latest() {
+        let mut buffer = LogBuffer::new(3);
+        buffer.push(McpLogEntry {
+            timestamp: "t1".to_string(),
+            stream: McpLogStream::Event,
+            message: "one".to_string(),
+        });
+        buffer.push(McpLogEntry {
+            timestamp: "t2".to_string(),
+            stream: McpLogStream::Event,
+            message: "two".to_string(),
+        });
+        buffer.push(McpLogEntry {
+            timestamp: "t3".to_string(),
+            stream: McpLogStream::Event,
+            message: "three".to_string(),
+        });
+        buffer.push(McpLogEntry {
+            timestamp: "t4".to_string(),
+            stream: McpLogStream::Event,
+            message: "four".to_string(),
+        });
+
+        let messages: Vec<_> = buffer
+            .entries
+            .iter()
+            .map(|entry| entry.message.as_str())
+            .collect();
+        assert_eq!(messages, vec!["two", "three", "four"]);
+    }
+}

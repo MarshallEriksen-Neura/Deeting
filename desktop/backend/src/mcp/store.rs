@@ -23,9 +23,6 @@ impl McpStore {
         Ok(Self { pool })
     }
 
-    pub fn pool(&self) -> &SqlitePool {
-        &self.pool
-    }
 
     pub async fn init(&self) -> Result<(), McpError> {
         sqlx::query(
@@ -266,20 +263,6 @@ impl McpStore {
         row.map(|row| row_to_tool(&row)).transpose()
     }
 
-    pub async fn get_tool_config_json(&self, id: &str) -> Result<Option<String>, McpError> {
-        let row = sqlx::query(
-            r#"
-            SELECT config_json
-            FROM mcp_tools
-            WHERE id = ?;
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(row.and_then(|row| row.try_get::<String, _>("config_json").ok()))
-    }
 
     pub async fn get_pending_config_json(&self, id: &str) -> Result<Option<String>, McpError> {
         let row = sqlx::query(
@@ -346,7 +329,7 @@ impl McpStore {
             .find_tool_id_by_source_name(tool.source_id.as_str(), &tool.name)
             .await?
         {
-            self.update_tool(existing_id, tool).await?;
+            self.update_tool(&existing_id, tool.clone()).await?;
             let updated = self
                 .get_tool(&existing_id)
                 .await?
@@ -354,7 +337,7 @@ impl McpStore {
             return Ok(updated);
         }
 
-        self.insert_tool(tool).await?;
+        self.insert_tool(tool.clone()).await?;
         let created = self
             .find_tool_id_by_source_name(tool.source_id.as_str(), &tool.name)
             .await?
@@ -390,28 +373,6 @@ impl McpStore {
         Ok(())
     }
 
-    pub async fn apply_pending_update(&self, id: &str) -> Result<(), McpError> {
-        let now = now_rfc3339()?;
-        sqlx::query(
-            r#"
-            UPDATE mcp_tools
-            SET config_json = COALESCE(pending_config_json, config_json),
-                config_hash = COALESCE(pending_config_hash, config_hash),
-                pending_config_json = NULL,
-                pending_config_hash = NULL,
-                conflict_status = ?,
-                updated_at = ?
-            WHERE id = ?;
-            "#,
-        )
-        .bind(McpConflictStatus::None.as_str())
-        .bind(now)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
 
     pub async fn mark_tool_pending_update(
         &self,
@@ -567,7 +528,7 @@ impl McpStore {
         Ok(())
     }
 
-    async fn update_tool(&self, id: String, tool: ToolUpsert) -> Result<(), McpError> {
+    async fn update_tool(&self, id: &str, tool: ToolUpsert) -> Result<(), McpError> {
         let now = now_rfc3339()?;
         sqlx::query(
             r#"
@@ -615,6 +576,7 @@ pub struct NewSource {
     pub is_read_only: bool,
 }
 
+#[derive(Clone)]
 pub struct ToolUpsert {
     pub id: Option<String>,
     pub source_id: String,
@@ -714,4 +676,117 @@ where
 
 fn now_rfc3339() -> Result<String, McpError> {
     Ok(time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn detects_name_conflict_with_local() {
+        let store = McpStore::new("sqlite::memory:").await.unwrap();
+        store.init().await.unwrap();
+        let local = store.ensure_local_source().await.unwrap();
+        let remote = store
+            .insert_source(NewSource {
+                name: "ModelScope".to_string(),
+                source_type: McpSourceType::Modelscope,
+                path_or_url: "https://example.com/mcp.json".to_string(),
+                trust_level: McpTrustLevel::Community,
+                status: McpSourceStatus::Active,
+                last_synced_at: None,
+                is_read_only: true,
+            })
+            .await
+            .unwrap();
+
+        let config = json!({"name": "alpha", "command": "echo"});
+        let hash = store.compute_config_hash(&config).unwrap();
+        let tool = ToolUpsert {
+            id: None,
+            source_id: local.id.clone(),
+            name: "alpha".to_string(),
+            source_type: McpSourceType::Local,
+            status: McpToolStatus::Stopped,
+            ping_ms: None,
+            capabilities: vec![],
+            description: "local tool".to_string(),
+            error: None,
+            command: Some("echo".to_string()),
+            args: None,
+            env: None,
+            config_json: serde_json::to_string(&config).unwrap(),
+            config_hash: hash,
+            pending_config_json: None,
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: false,
+        };
+        store.upsert_tool(tool).await.unwrap();
+
+        let conflict = store
+            .has_name_conflict("alpha", &remote.id)
+            .await
+            .unwrap();
+        assert!(conflict);
+    }
+
+    #[tokio::test]
+    async fn marks_pending_update_for_synced_tool() {
+        let store = McpStore::new("sqlite::memory:").await.unwrap();
+        store.init().await.unwrap();
+        let source = store
+            .insert_source(NewSource {
+                name: "ModelScope".to_string(),
+                source_type: McpSourceType::Modelscope,
+                path_or_url: "https://example.com/mcp.json".to_string(),
+                trust_level: McpTrustLevel::Community,
+                status: McpSourceStatus::Active,
+                last_synced_at: None,
+                is_read_only: true,
+            })
+            .await
+            .unwrap();
+
+        let config = json!({"name": "beta", "command": "echo", "args": ["hello"]});
+        let hash = store.compute_config_hash(&config).unwrap();
+        let tool = ToolUpsert {
+            id: None,
+            source_id: source.id.clone(),
+            name: "beta".to_string(),
+            source_type: McpSourceType::Modelscope,
+            status: McpToolStatus::Stopped,
+            ping_ms: None,
+            capabilities: vec![],
+            description: "remote tool".to_string(),
+            error: None,
+            command: Some("echo".to_string()),
+            args: Some(vec!["hello".to_string()]),
+            env: None,
+            config_json: serde_json::to_string(&config).unwrap(),
+            config_hash: hash,
+            pending_config_json: None,
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: true,
+        };
+        let created = store.upsert_tool(tool).await.unwrap();
+
+        let updated_config = json!({"name": "beta", "command": "echo", "args": ["world"]});
+        let updated_hash = store.compute_config_hash(&updated_config).unwrap();
+        store
+            .mark_tool_pending_update(
+                &created.id,
+                serde_json::to_string(&updated_config).unwrap(),
+                updated_hash.clone(),
+                McpConflictStatus::UpdateAvailable,
+            )
+            .await
+            .unwrap();
+
+        let updated = store.get_tool(&created.id).await.unwrap().unwrap();
+        assert_eq!(updated.pending_config_hash, Some(updated_hash));
+        assert_eq!(updated.conflict_status, McpConflictStatus::UpdateAvailable);
+    }
 }

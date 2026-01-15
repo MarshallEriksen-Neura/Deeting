@@ -27,3 +27,18 @@ pub fn hash_json(value: &Value) -> Result<String, serde_json::Error> {
     let digest = Sha256::digest(serialized.as_bytes());
     Ok(hex::encode(digest))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn hash_is_stable_for_key_order() {
+        let first = json!({"b": 1, "a": {"x": 2, "y": 3}});
+        let second = json!({"a": {"y": 3, "x": 2}, "b": 1});
+        let first_hash = hash_json(&first).unwrap();
+        let second_hash = hash_json(&second).unwrap();
+        assert_eq!(first_hash, second_hash);
+    }
+}

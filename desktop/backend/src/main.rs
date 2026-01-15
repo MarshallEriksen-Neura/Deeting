@@ -51,10 +51,8 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!("desktop-backend listening on http://{}", addr);
-    axum::serve(
-        axum::Server::bind(&addr),
-        router.into_make_service_with_connect_info::<SocketAddr>(),
-    )
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
     .with_graceful_shutdown(shutdown_signal())
     .await?;
 
