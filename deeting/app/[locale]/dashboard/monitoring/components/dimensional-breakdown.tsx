@@ -1,6 +1,5 @@
 "use client"
 
-import { useTranslations } from "next-intl"
 import { ModelCostBreakdown } from "./model-cost-breakdown"
 import { ErrorDistribution } from "./error-distribution"
 import { KeyActivityRanking } from "./key-activity-ranking"

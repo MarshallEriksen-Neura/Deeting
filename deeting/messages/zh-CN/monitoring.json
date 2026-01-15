@@ -1,51 +1,90 @@
 {
-  "title": "监控",
-  "description": "工具化、高密度信息、可交互、排查导向",
-  "controlBar": {
-    "timeRange": "时间范围",
-    "models": "模型",
-    "apiKeys": "API 密钥",
-    "errorCode": "错误码",
-    "autoRefresh": "自动刷新",
-    "on": "开启",
-    "off": "关闭"
-  },
-  "performance": {
-    "heatmap": {
-      "title": "延迟分布热力图",
-      "description": "请求延迟随时间的分布模式 - 颜色深浅代表请求数量",
-      "loading": "加载热力图数据中...",
-      "legend": {
-        "label": "请求量",
-        "more": "更多"
+  "monitoring": {
+    "title": "监控",
+    "description": "工具化、高密度信息、可交互、排查导向",
+    "controlBar": {
+      "timeRange": "时间范围",
+      "models": "模型",
+      "apiKeys": "API 密钥",
+      "errorCode": "错误码",
+      "autoRefresh": "自动刷新",
+      "on": "开启",
+      "off": "关闭",
+      "timeRangeOptions": {
+        "24h": "近 24 小时",
+        "7d": "近 7 天",
+        "30d": "近 30 天"
       },
-      "stats": {
-        "peak": "峰值",
-        "median": "中位数"
+      "modelOptions": {
+        "all": "全部模型",
+        "gpt4": "GPT-4",
+        "claude": "Claude",
+        "deepseek": "DeepSeek"
+      },
+      "apiKeyOptions": {
+        "all": "全部密钥",
+        "production": "生产环境",
+        "development": "开发环境",
+        "testing": "测试环境"
+      },
+      "errorOptions": {
+        "all": "全部错误",
+        "client4xx": "4xx 客户端",
+        "server5xx": "5xx 服务端",
+        "rateLimit429": "429 限流"
       }
     },
-    "percentile": {
-      "title": "P99 vs P50 延迟趋势",
-      "description": "尾部延迟 (P99) 决定用户体验下限",
-      "loading": "加载趋势数据中..."
-    }
-  },
-  "dimensional": {
-    "modelCost": {
-      "title": "按模型消耗",
-      "description": "识别吞金兽模型",
-      "total": "总成本"
+    "performance": {
+      "heatmap": {
+        "title": "延迟分布热力图",
+        "description": "请求延迟随时间的分布模式 - 颜色深浅代表请求数量",
+        "loading": "加载热力图数据中...",
+        "legend": {
+          "label": "请求量",
+          "more": "更多"
+        },
+        "stats": {
+          "peak": "峰值",
+          "median": "中位数"
+        },
+        "requests": "{count} 次请求"
+      },
+      "percentile": {
+        "title": "P99 vs P50 延迟趋势",
+        "description": "尾部延迟 (P99) 决定用户体验下限",
+        "loading": "加载趋势数据中...",
+        "legend": {
+          "p50": "P50（中位数）",
+          "p99": "P99（长尾）"
+        }
+      }
     },
-    "errorDist": {
-      "title": "错误分布",
-      "description": "快速定责",
-      "loading": "加载错误数据中...",
-      "totalErrors": "总错误数"
+    "dimensional": {
+      "modelCost": {
+        "title": "按模型消耗",
+        "description": "识别吞金兽模型",
+        "total": "总成本"
+      },
+      "errorDist": {
+        "title": "错误分布",
+        "description": "快速定责",
+        "loading": "加载错误数据中...",
+        "totalErrors": "总错误数",
+        "labels": {
+          "rateLimit": "限流",
+          "serverError": "服务端错误",
+          "clientError": "客户端错误"
+        }
+      },
+      "keyActivity": {
+        "title": "Key 活跃度 Top 5",
+        "description": "按请求速率排名的最活跃 API 密钥",
+        "rpm": "每分钟请求数"
+      }
     },
-    "keyActivity": {
-      "title": "Key 活跃度 Top 5",
-      "description": "按请求速率排名的最活跃 API 密钥",
-      "rpm": "每分钟请求数"
+    "units": {
+      "ms": "毫秒",
+      "msValue": "{value}毫秒"
     }
   }
 }

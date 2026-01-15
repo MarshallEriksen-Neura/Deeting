@@ -33,18 +33,27 @@ export function ErrorDistribution({
   const t = useTranslations("monitoring.dimensional.errorDist")
   const { data, isLoading } = useErrorDistribution(timeRange, model)
 
-  const errorData = data?.categories || [
-    { category: "429", label: "Rate Limit", count: 145, color: "hsl(var(--chart-3))" },
-    { category: "5xx", label: "Server Error", count: 89, color: "hsl(var(--chart-1))" },
-    { category: "4xx", label: "Client Error", count: 56, color: "hsl(var(--chart-4))" },
+  const errorLabelMap: Record<string, string> = {
+    "429": t("labels.rateLimit"),
+    "5xx": t("labels.serverError"),
+    "4xx": t("labels.clientError"),
+  }
+  const defaultErrorData = [
+    { category: "429", count: 145, color: "hsl(var(--chart-3))" },
+    { category: "5xx", count: 89, color: "hsl(var(--chart-1))" },
+    { category: "4xx", count: 56, color: "hsl(var(--chart-4))" },
   ]
+  const errorData = (data?.categories ?? defaultErrorData).map((item) => ({
+    ...item,
+    label: errorLabelMap[item.category] ?? item.label ?? item.category,
+  }))
 
   const totalErrors = errorData.reduce((sum, e) => sum + e.count, 0)
 
   const chartConfig = {
-    "429": { label: "Rate Limit", color: "hsl(var(--chart-3))" },
-    "5xx": { label: "Server Error", color: "hsl(var(--chart-1))" },
-    "4xx": { label: "Client Error", color: "hsl(var(--chart-4))" },
+    "429": { label: errorLabelMap["429"], color: "hsl(var(--chart-3))" },
+    "5xx": { label: errorLabelMap["5xx"], color: "hsl(var(--chart-1))" },
+    "4xx": { label: errorLabelMap["4xx"], color: "hsl(var(--chart-4))" },
   }
 
   return (

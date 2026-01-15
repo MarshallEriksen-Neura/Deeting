@@ -1,51 +1,90 @@
 {
-  "title": "Monitoring",
-  "description": "Tool-oriented, high-density information for troubleshooting",
-  "controlBar": {
-    "timeRange": "Time Range",
-    "models": "Models",
-    "apiKeys": "API Keys",
-    "errorCode": "Error Code",
-    "autoRefresh": "Auto Refresh",
-    "on": "On",
-    "off": "Off"
-  },
-  "performance": {
-    "heatmap": {
-      "title": "Latency Distribution Heatmap",
-      "description": "Request latency patterns over time - color intensity indicates request volume",
-      "loading": "Loading heatmap data...",
-      "legend": {
-        "label": "Request Volume",
-        "more": "More"
+  "monitoring": {
+    "title": "Monitoring",
+    "description": "Tool-oriented, high-density information for troubleshooting",
+    "controlBar": {
+      "timeRange": "Time Range",
+      "models": "Models",
+      "apiKeys": "API Keys",
+      "errorCode": "Error Code",
+      "autoRefresh": "Auto Refresh",
+      "on": "On",
+      "off": "Off",
+      "timeRangeOptions": {
+        "24h": "Past 24 Hours",
+        "7d": "Past 7 Days",
+        "30d": "Past 30 Days"
       },
-      "stats": {
-        "peak": "Peak",
-        "median": "Median"
+      "modelOptions": {
+        "all": "All Models",
+        "gpt4": "GPT-4",
+        "claude": "Claude",
+        "deepseek": "DeepSeek"
+      },
+      "apiKeyOptions": {
+        "all": "All Keys",
+        "production": "Production",
+        "development": "Development",
+        "testing": "Testing"
+      },
+      "errorOptions": {
+        "all": "All Errors",
+        "client4xx": "4xx Client",
+        "server5xx": "5xx Server",
+        "rateLimit429": "429 Rate Limit"
       }
     },
-    "percentile": {
-      "title": "P99 vs P50 Latency Trends",
-      "description": "Tail latency (P99) determines worst-case user experience",
-      "loading": "Loading trend data..."
-    }
-  },
-  "dimensional": {
-    "modelCost": {
-      "title": "Cost by Model",
-      "description": "Identify budget-consuming models",
-      "total": "Total Cost"
+    "performance": {
+      "heatmap": {
+        "title": "Latency Distribution Heatmap",
+        "description": "Request latency patterns over time - color intensity indicates request volume",
+        "loading": "Loading heatmap data...",
+        "legend": {
+          "label": "Request Volume",
+          "more": "More"
+        },
+        "stats": {
+          "peak": "Peak",
+          "median": "Median"
+        },
+        "requests": "{count} requests"
+      },
+      "percentile": {
+        "title": "P99 vs P50 Latency Trends",
+        "description": "Tail latency (P99) determines worst-case user experience",
+        "loading": "Loading trend data...",
+        "legend": {
+          "p50": "P50 (Median)",
+          "p99": "P99 (Tail)"
+        }
+      }
     },
-    "errorDist": {
-      "title": "Error Distribution",
-      "description": "Quick fault attribution",
-      "loading": "Loading error data...",
-      "totalErrors": "Total Errors"
+    "dimensional": {
+      "modelCost": {
+        "title": "Cost by Model",
+        "description": "Identify budget-consuming models",
+        "total": "Total Cost"
+      },
+      "errorDist": {
+        "title": "Error Distribution",
+        "description": "Quick fault attribution",
+        "loading": "Loading error data...",
+        "totalErrors": "Total Errors",
+        "labels": {
+          "rateLimit": "Rate Limit",
+          "serverError": "Server Error",
+          "clientError": "Client Error"
+        }
+      },
+      "keyActivity": {
+        "title": "Top 5 Active Keys",
+        "description": "Most active API keys by request rate",
+        "rpm": "RPM"
+      }
     },
-    "keyActivity": {
-      "title": "Top 5 Active Keys",
-      "description": "Most active API keys by request rate",
-      "rpm": "RPM"
+    "units": {
+      "ms": "ms",
+      "msValue": "{value}ms"
     }
   }
 }

@@ -10,6 +10,7 @@ const namespaces = [
   "models",
   "logs",
   "dashboard",
+  "monitoring",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

@@ -22,15 +22,16 @@ import { usePercentileTrends } from "@/lib/swr/use-percentile-trends"
  */
 export function PercentileTrends({ timeRange = "24h" }: { timeRange?: "24h" | "7d" | "30d" }) {
   const t = useTranslations("monitoring.performance.percentile")
+  const tUnits = useTranslations("monitoring.units")
   const { data, isLoading } = usePercentileTrends(timeRange)
 
   const chartConfig = {
     p50: {
-      label: "P50 (Median)",
+      label: t("legend.p50"),
       color: "hsl(var(--chart-2))",
     },
     p99: {
-      label: "P99 (Tail)",
+      label: t("legend.p99"),
       color: "hsl(var(--chart-1))",
     },
   }
@@ -80,7 +81,7 @@ export function PercentileTrends({ timeRange = "24h" }: { timeRange?: "24h" | "7
           axisLine={false}
           tickMargin={8}
           tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-          tickFormatter={(value) => `${value}ms`}
+          tickFormatter={(value) => tUnits("msValue", { value })}
         />
         <ChartTooltip content={<ChartTooltipContent />} />
         {/* P50 - Dashed line */}
