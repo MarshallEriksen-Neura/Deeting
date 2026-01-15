@@ -258,7 +258,10 @@ async fn sync_source_inner(
                     response.status()
                 )));
             }
-            response.json::<McpConfigPayload>().await?
+            response
+                .json::<McpConfigPayload>()
+                .await
+                .map_err(|err| McpError::Process(err.to_string()))?
         }
     };
 
