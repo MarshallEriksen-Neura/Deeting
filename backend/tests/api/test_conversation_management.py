@@ -1,10 +1,11 @@
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from app.deps.auth import get_current_user
 from app.core.database import get_db
-from app.main import app
+from main import app
 from app.api.v1.internal import conversation_route
+from app.services.orchestrator.orchestrator import get_internal_orchestrator
 
 
 class _DummyUser:
@@ -48,6 +49,7 @@ class _DummyOrchestrator:
 
 @pytest.fixture(autouse=True)
 def _override_auth(monkeypatch):
+    prev_overrides = app.dependency_overrides.copy()
     app.dependency_overrides[get_current_user] = lambda: _DummyUser()
 
     async def _fake_db():
@@ -56,12 +58,13 @@ def _override_auth(monkeypatch):
     app.dependency_overrides[get_db] = _fake_db
     yield
     app.dependency_overrides.clear()
+    app.dependency_overrides.update(prev_overrides)
 
 
 @pytest.mark.asyncio
 async def test_delete_message(monkeypatch):
     monkeypatch.setattr(conversation_route, "ConversationService", _DummyConversationService)
-    async with AsyncClient(app=app, base_url="http://testserver") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.delete("/api/v1/internal/conversations/s1/messages/3")
         assert resp.status_code == 200
         body = resp.json()
@@ -72,7 +75,7 @@ async def test_delete_message(monkeypatch):
 @pytest.mark.asyncio
 async def test_clear_conversation(monkeypatch):
     monkeypatch.setattr(conversation_route, "ConversationService", _DummyConversationService)
-    async with AsyncClient(app=app, base_url="http://testserver") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post("/api/v1/internal/conversations/s1/clear")
         assert resp.status_code == 200
         assert resp.json()["cleared"] is True
@@ -81,8 +84,8 @@ async def test_clear_conversation(monkeypatch):
 @pytest.mark.asyncio
 async def test_regenerate(monkeypatch):
     monkeypatch.setattr(conversation_route, "ConversationService", _DummyConversationService)
-    monkeypatch.setattr(conversation_route, "get_internal_orchestrator", lambda: _DummyOrchestrator())
-    async with AsyncClient(app=app, base_url="http://testserver") as client:
+    app.dependency_overrides[get_internal_orchestrator] = lambda: _DummyOrchestrator()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/api/v1/internal/conversations/s1/regenerate",
             json={"model": "gpt-4o-mini"},

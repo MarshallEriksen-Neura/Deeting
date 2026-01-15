@@ -77,6 +77,11 @@ class Assistant(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         comment="分享访问标识（unlisted/public 使用）",
     )
+    icon_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="助手图标 ID（如 lucide:bot）",
+    )
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),
         ForeignKey("assistant_version.id", ondelete="SET NULL"),

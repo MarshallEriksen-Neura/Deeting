@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import uuid
 from decimal import Decimal
 from typing import Dict, Iterable, List, Tuple
 
@@ -33,21 +34,28 @@ class CreditsService:
         self.billing_repo = BillingRepository(session)
         self._dialect = getattr(getattr(session, "bind", None), "dialect", None)
 
+    @staticmethod
+    def _normalize_tenant_id(tenant_id: str | uuid.UUID) -> tuple[str, uuid.UUID]:
+        if isinstance(tenant_id, uuid.UUID):
+            return str(tenant_id), tenant_id
+        return tenant_id, uuid.UUID(tenant_id)
+
     async def get_balance(self, tenant_id: str | None) -> CreditsBalanceResponse:
         if not tenant_id:
             return CreditsBalanceResponse(balance=0, monthly_spent=0, used_percent=0)
 
-        cache_key = CacheKeys.credits_balance(tenant_id)
+        tenant_id_str, tenant_uuid = self._normalize_tenant_id(tenant_id)
+        cache_key = CacheKeys.credits_balance(tenant_id_str)
         cached = await cache.get(cache_key)
         if cached:
             return cached
 
-        quota = await self.quota_repo.get_or_create(tenant_id)
+        quota = await self.quota_repo.get_or_create(tenant_uuid)
         balance = float(quota.balance)
 
         now = Datetime.now()
         start_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        monthly_spent = await self._sum_amount(start_month, now, tenant_id)
+        monthly_spent = await self._sum_amount(start_month, now, tenant_uuid)
 
         denominator = monthly_spent + balance
         used_percent = round((monthly_spent / denominator) * 100, 2) if denominator > 0 else 0.0
@@ -65,7 +73,8 @@ class CreditsService:
         if not tenant_id:
             return self._empty_consumption(days)
 
-        cache_key = CacheKeys.credits_consumption(tenant_id, days)
+        tenant_id_str, tenant_uuid = self._normalize_tenant_id(tenant_id)
+        cache_key = CacheKeys.credits_consumption(tenant_id_str, days)
         cached = await cache.get(cache_key)
         if cached:
             return cached
@@ -86,7 +95,7 @@ class CreditsService:
             .where(
                 BillingTransaction.created_at >= start_date,
                 BillingTransaction.created_at <= now,
-                BillingTransaction.tenant_id == tenant_id,
+                BillingTransaction.tenant_id == tenant_uuid,
                 BillingTransaction.status == TransactionStatus.COMMITTED,
                 BillingTransaction.type == TransactionType.DEDUCT,
             )
@@ -120,7 +129,8 @@ class CreditsService:
         if not tenant_id:
             return CreditsModelUsageResponse(total_tokens=0, models=[])
 
-        cache_key = CacheKeys.credits_model_usage(tenant_id, days)
+        tenant_id_str, tenant_uuid = self._normalize_tenant_id(tenant_id)
+        cache_key = CacheKeys.credits_model_usage(tenant_id_str, days)
         cached = await cache.get(cache_key)
         if cached:
             return cached
@@ -138,7 +148,7 @@ class CreditsService:
             .where(
                 BillingTransaction.created_at >= start_date,
                 BillingTransaction.created_at <= now,
-                BillingTransaction.tenant_id == tenant_id,
+                BillingTransaction.tenant_id == tenant_uuid,
                 BillingTransaction.status == TransactionStatus.COMMITTED,
                 BillingTransaction.type == TransactionType.DEDUCT,
             )
@@ -226,7 +236,7 @@ class CreditsService:
             timeline=timeline,
         )
 
-    async def _sum_amount(self, start, end, tenant_id: str) -> float:
+    async def _sum_amount(self, start, end, tenant_id: uuid.UUID) -> float:
         stmt = (
             select(func.sum(BillingTransaction.amount))
             .where(

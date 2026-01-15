@@ -64,6 +64,7 @@ class AssistantBase(BaseSchema):
         description="发布状态: draft/published/archived",
     )
     share_slug: str | None = Field(None, max_length=64, description="分享访问标识（unlisted/public 使用）")
+    icon_id: str | None = Field(None, max_length=255, description="图标 ID（如 lucide:bot）")
 
 
 class AssistantCreate(AssistantBase):
@@ -75,6 +76,7 @@ class AssistantUpdate(BaseSchema):
     status: AssistantStatus | None = None
     share_slug: str | None = Field(None, max_length=64)
     current_version_id: UUID | None = None
+    icon_id: str | None = Field(None, max_length=255)
 
 
 class AssistantDTO(AssistantBase, IDSchema, TimestampSchema):

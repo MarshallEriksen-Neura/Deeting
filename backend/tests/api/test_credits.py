@@ -9,44 +9,47 @@ from sqlalchemy import delete, select
 from app.models import User
 from app.models.billing import BillingTransaction, TenantQuota, TransactionStatus, TransactionType
 from app.utils.time_utils import Datetime
-from tests.api.conftest import AsyncSessionLocal
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 
-async def _get_test_user_id() -> UUID:
-    async with AsyncSessionLocal() as session:
+async def _get_test_user_id(session_factory: async_sessionmaker[AsyncSession]) -> UUID:
+    async with session_factory() as session:
         result = await session.execute(select(User).where(User.email == "testuser@example.com"))
         user = result.scalar_one()
         return user.id
 
 
-async def _clear_user_data(user_id: UUID) -> None:
-    async with AsyncSessionLocal() as session:
+async def _clear_user_data(session_factory: async_sessionmaker[AsyncSession], user_id: UUID) -> None:
+    async with session_factory() as session:
         await session.execute(delete(BillingTransaction).where(BillingTransaction.tenant_id == user_id))
         await session.execute(delete(TenantQuota).where(TenantQuota.tenant_id == user_id))
         await session.commit()
 
 
-async def _seed_quota(user_id: UUID, balance: Decimal) -> None:
-    async with AsyncSessionLocal() as session:
+async def _seed_quota(session_factory: async_sessionmaker[AsyncSession], user_id: UUID, balance: Decimal) -> None:
+    async with session_factory() as session:
         quota = TenantQuota(tenant_id=user_id, balance=balance)
         session.add(quota)
         await session.commit()
 
 
-async def _seed_transactions(transactions: list[BillingTransaction]) -> None:
-    async with AsyncSessionLocal() as session:
+async def _seed_transactions(
+    session_factory: async_sessionmaker[AsyncSession], transactions: list[BillingTransaction]
+) -> None:
+    async with session_factory() as session:
         session.add_all(transactions)
         await session.commit()
 
 
 @pytest.mark.asyncio
-async def test_credits_balance(client: AsyncClient, auth_tokens: dict) -> None:
-    user_id = await _get_test_user_id()
-    await _clear_user_data(user_id)
-    await _seed_quota(user_id, Decimal("12.5"))
+async def test_credits_balance(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
+    user_id = await _get_test_user_id(AsyncSessionLocal)
+    await _clear_user_data(AsyncSessionLocal, user_id)
+    await _seed_quota(AsyncSessionLocal, user_id, Decimal("12.5"))
 
     now = Datetime.now()
     await _seed_transactions(
+        AsyncSessionLocal,
         [
             BillingTransaction(
                 tenant_id=user_id,
@@ -54,6 +57,8 @@ async def test_credits_balance(client: AsyncClient, auth_tokens: dict) -> None:
                 type=TransactionType.DEDUCT,
                 status=TransactionStatus.COMMITTED,
                 amount=Decimal("3.5"),
+                balance_before=Decimal("12.5"),
+                balance_after=Decimal("9.0"),
                 input_tokens=100,
                 output_tokens=50,
                 model="gpt-4o",
@@ -65,6 +70,8 @@ async def test_credits_balance(client: AsyncClient, auth_tokens: dict) -> None:
                 type=TransactionType.DEDUCT,
                 status=TransactionStatus.COMMITTED,
                 amount=Decimal("9.9"),
+                balance_before=Decimal("9.0"),
+                balance_after=Decimal("-0.9"),
                 input_tokens=10,
                 output_tokens=5,
                 model="gpt-4o",
@@ -85,13 +92,14 @@ async def test_credits_balance(client: AsyncClient, auth_tokens: dict) -> None:
 
 
 @pytest.mark.asyncio
-async def test_credits_consumption_and_model_usage(client: AsyncClient, auth_tokens: dict) -> None:
-    user_id = await _get_test_user_id()
-    await _clear_user_data(user_id)
-    await _seed_quota(user_id, Decimal("5.0"))
+async def test_credits_consumption_and_model_usage(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
+    user_id = await _get_test_user_id(AsyncSessionLocal)
+    await _clear_user_data(AsyncSessionLocal, user_id)
+    await _seed_quota(AsyncSessionLocal, user_id, Decimal("5.0"))
 
     now = Datetime.now()
     await _seed_transactions(
+        AsyncSessionLocal,
         [
             BillingTransaction(
                 tenant_id=user_id,
@@ -99,6 +107,8 @@ async def test_credits_consumption_and_model_usage(client: AsyncClient, auth_tok
                 type=TransactionType.DEDUCT,
                 status=TransactionStatus.COMMITTED,
                 amount=Decimal("1.0"),
+                balance_before=Decimal("5.0"),
+                balance_after=Decimal("4.0"),
                 input_tokens=120,
                 output_tokens=30,
                 model="gpt-4o",
@@ -110,6 +120,8 @@ async def test_credits_consumption_and_model_usage(client: AsyncClient, auth_tok
                 type=TransactionType.DEDUCT,
                 status=TransactionStatus.COMMITTED,
                 amount=Decimal("0.6"),
+                balance_before=Decimal("4.0"),
+                balance_after=Decimal("3.4"),
                 input_tokens=60,
                 output_tokens=40,
                 model="claude-3.5",
@@ -143,13 +155,14 @@ async def test_credits_consumption_and_model_usage(client: AsyncClient, auth_tok
 
 
 @pytest.mark.asyncio
-async def test_credits_transactions_pagination(client: AsyncClient, auth_tokens: dict) -> None:
-    user_id = await _get_test_user_id()
-    await _clear_user_data(user_id)
-    await _seed_quota(user_id, Decimal("2.0"))
+async def test_credits_transactions_pagination(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
+    user_id = await _get_test_user_id(AsyncSessionLocal)
+    await _clear_user_data(AsyncSessionLocal, user_id)
+    await _seed_quota(AsyncSessionLocal, user_id, Decimal("2.0"))
 
     now = Datetime.now()
     await _seed_transactions(
+        AsyncSessionLocal,
         [
             BillingTransaction(
                 tenant_id=user_id,
@@ -157,6 +170,8 @@ async def test_credits_transactions_pagination(client: AsyncClient, auth_tokens:
                 type=TransactionType.DEDUCT,
                 status=TransactionStatus.COMMITTED,
                 amount=Decimal("0.2"),
+                balance_before=Decimal("2.0"),
+                balance_after=Decimal("1.8"),
                 input_tokens=10,
                 output_tokens=10,
                 model="gpt-4o",
@@ -168,6 +183,8 @@ async def test_credits_transactions_pagination(client: AsyncClient, auth_tokens:
                 type=TransactionType.DEDUCT,
                 status=TransactionStatus.COMMITTED,
                 amount=Decimal("0.3"),
+                balance_before=Decimal("1.8"),
+                balance_after=Decimal("1.5"),
                 input_tokens=20,
                 output_tokens=10,
                 model="gpt-4o",
@@ -179,6 +196,8 @@ async def test_credits_transactions_pagination(client: AsyncClient, auth_tokens:
                 type=TransactionType.DEDUCT,
                 status=TransactionStatus.COMMITTED,
                 amount=Decimal("0.4"),
+                balance_before=Decimal("1.5"),
+                balance_after=Decimal("1.1"),
                 input_tokens=30,
                 output_tokens=10,
                 model="gpt-4o",

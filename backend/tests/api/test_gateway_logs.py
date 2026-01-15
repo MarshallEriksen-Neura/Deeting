@@ -7,7 +7,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import GatewayLog, User
-from tests.api.conftest import AsyncSessionLocal
 
 
 async def _get_test_user_id(session: AsyncSession) -> UUID:
@@ -43,7 +42,7 @@ async def _seed_logs(session: AsyncSession, user_id, total: int = 3) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_gateway_logs_only_current_user(client: AsyncClient, auth_tokens: dict) -> None:
+async def test_list_gateway_logs_only_current_user(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
     async with AsyncSessionLocal() as session:
         user_id = await _get_test_user_id(session)
         await _clear_logs(session)
@@ -62,7 +61,7 @@ async def test_list_gateway_logs_only_current_user(client: AsyncClient, auth_tok
 
 
 @pytest.mark.asyncio
-async def test_list_gateway_logs_cursor_pagination(client: AsyncClient, auth_tokens: dict) -> None:
+async def test_list_gateway_logs_cursor_pagination(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
     async with AsyncSessionLocal() as session:
         user_id = await _get_test_user_id(session)
         await _clear_logs(session)

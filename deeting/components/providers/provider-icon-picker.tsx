@@ -38,6 +38,7 @@ export function ProviderIconPicker({ value, onChange, className }: ProviderIconP
   // Group options
   const groupedOptions = React.useMemo(() => {
     const groups: Record<string, ProviderIconOption[]> = {
+      assistant: [],
       generic: [],
       hardware: [],
       fun: []
@@ -88,7 +89,7 @@ export function ProviderIconPicker({ value, onChange, className }: ProviderIconP
               return (
                 <div key={category}>
                   <div className="mb-2 px-2 text-xs font-semibold text-muted-foreground capitalize">
-                    {category === 'hardware' ? 'Hardware / Local' : category}
+                    {category === 'hardware' ? 'Hardware / Local' : category === 'assistant' ? 'Assistant / Persona' : category}
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     {options.map((option) => (

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import timedelta
+from datetime import UTC, timedelta
 from statistics import median
 from typing import Iterable
 
@@ -73,6 +73,8 @@ class MonitoringService:
         if rows:
             bucket_width = window_seconds / bucket_count
             for created_at, ttft_ms, duration_ms in rows:
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=UTC)
                 latency = float(ttft_ms or duration_ms or 0)
                 latencies.append(latency)
                 delta = (created_at - since).total_seconds()
@@ -161,6 +163,8 @@ class MonitoringService:
             rows = (await self.session.execute(stmt)).all()
             buckets: list[list[float]] = [[] for _ in range(bucket_count)]
             for created_at, ttft_ms in rows:
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=UTC)
                 latency = float(ttft_ms or 0)
                 delta = (created_at - since).total_seconds()
                 idx = int(min(bucket_count - 1, max(0, math.floor(delta / bucket_width))))

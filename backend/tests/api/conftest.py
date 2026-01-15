@@ -32,6 +32,7 @@ os.environ.setdefault("CELERY_RESULT_BACKEND", "")
 
 from app.core.config import settings
 from app.core.cache import cache
+from app.core.cache_keys import CacheKeys
 from app.core.database import get_db
 from app.models import Base, User
 from app.utils.security import get_password_hash
@@ -242,8 +243,8 @@ async def _seed_users():
         await session.commit()
 
         # 预置验证码
-        await cache.set("auth:verify:pending@example.com:activate", "123456", ex=600)
-        await cache.set("auth:verify:resetuser@example.com:reset_password", "654321", ex=600)
+        await cache.set(CacheKeys.verify_code("pending@example.com", "activate"), "123456", ex=600)
+        await cache.set(CacheKeys.verify_code("resetuser@example.com", "reset_password"), "654321", ex=600)
         # 统一登录验证码，便于测试
         for email in [
             "admin@example.com",
@@ -253,7 +254,7 @@ async def _seed_users():
             "pending@example.com",
             "resetuser@example.com",
         ]:
-            await cache.set(f"auth:verify:{email}:login", "123456", ex=600)
+            await cache.set(CacheKeys.verify_code(email, "login"), "123456", ex=600)
 
         # 预置封禁
         BANNED_USER_ID = str(banned.id)
@@ -389,8 +390,8 @@ async def reset_cache_between_tests():
     # 重新放入默认封禁
     if BANNED_USER_ID:
         await cache.set(f"auth:ban:{BANNED_USER_ID}", {"reason": "banned"}, ex=None)
-    await cache.set("auth:verify:pending@example.com:activate", "123456", ex=600)
-    await cache.set("auth:verify:resetuser@example.com:reset_password", "654321", ex=600)
+    await cache.set(CacheKeys.verify_code("pending@example.com", "activate"), "123456", ex=600)
+    await cache.set(CacheKeys.verify_code("resetuser@example.com", "reset_password"), "654321", ex=600)
     for email in [
         "admin@example.com",
         "testuser@example.com",
@@ -399,7 +400,7 @@ async def reset_cache_between_tests():
         "pending@example.com",
         "resetuser@example.com",
     ]:
-        await cache.set(f"auth:verify:{email}:login", "123456", ex=600)
+        await cache.set(CacheKeys.verify_code(email, "login"), "123456", ex=600)
 
 
 @pytest_asyncio.fixture

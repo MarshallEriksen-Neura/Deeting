@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from app.core.cache import cache
@@ -135,11 +137,13 @@ async def test_model_cost_and_error_distribution(AsyncSessionLocal):
 async def test_key_activity_ranking(AsyncSessionLocal):
     async with AsyncSessionLocal() as session:
         now = Datetime.now()
+        user_id = uuid4()
+        api_key_id = uuid4()
         session.add_all(
             [
                 GatewayLog(
-                    user_id="00000000-0000-0000-0000-0000000000aa",
-                    api_key_id="11111111-1111-1111-1111-111111111111",
+                    user_id=user_id,
+                    api_key_id=api_key_id,
                     model="gpt-4o",
                     status_code=200,
                     duration_ms=100,
@@ -152,8 +156,8 @@ async def test_key_activity_ranking(AsyncSessionLocal):
                     created_at=now,
                 ),
                 GatewayLog(
-                    user_id="00000000-0000-0000-0000-0000000000aa",
-                    api_key_id="11111111-1111-1111-1111-111111111111",
+                    user_id=user_id,
+                    api_key_id=api_key_id,
                     model="gpt-4o",
                     status_code=200,
                     duration_ms=120,

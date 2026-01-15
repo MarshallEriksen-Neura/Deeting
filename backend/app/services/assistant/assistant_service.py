@@ -86,6 +86,7 @@ class AssistantService:
             "visibility": payload.visibility.value if isinstance(payload.visibility, AssistantVisibility) else payload.visibility,
             "status": payload.status.value if isinstance(payload.status, AssistantStatus) else payload.status,
             "share_slug": payload.share_slug,
+            "icon_id": payload.icon_id,
         }
         assistant = await self.assistant_repo.create(assistant_data)
 
@@ -128,6 +129,8 @@ class AssistantService:
             update_data["share_slug"] = payload.share_slug
         if payload.current_version_id is not None:
             update_data["current_version_id"] = payload.current_version_id
+        if payload.icon_id is not None:
+            update_data["icon_id"] = payload.icon_id
 
         if payload.status is not None:
             AssistantStateMachine.apply(assistant, payload.status)

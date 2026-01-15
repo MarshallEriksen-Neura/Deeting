@@ -5,7 +5,7 @@ from datetime import UTC, timedelta
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import func, select, cast, Float
+from sqlalchemy import func, select, cast, Float, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -152,7 +152,7 @@ class DashboardService:
         stmt = select(
             func.avg(GatewayLog.ttft_ms),
             func.count(),
-            func.sum(func.case((GatewayLog.status_code < 400, 1), else_=0)),
+            func.sum(case((GatewayLog.status_code < 400, 1), else_=0)),
         ).where(GatewayLog.created_at >= since)
         if tenant_id:
             stmt = stmt.where(GatewayLog.user_id == tenant_id)

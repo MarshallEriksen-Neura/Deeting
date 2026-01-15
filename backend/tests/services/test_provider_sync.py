@@ -1,8 +1,7 @@
 import uuid
 import pytest
 
-from app.models import Base
-from app.models.provider_instance import ProviderModel, ProviderInstance, ProviderPreset
+from app.models import Base, ProviderModel, ProviderInstance, ProviderPreset
 from app.services.providers.provider_instance_service import ProviderInstanceService
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from tests.api.conftest import AsyncSessionLocal, engine
