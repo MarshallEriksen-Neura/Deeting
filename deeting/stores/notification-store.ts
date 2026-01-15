@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import { devtools, subscribeWithSelector } from "zustand/middleware"
+import { useShallow } from "zustand/react/shallow"
 import { NotificationItem } from "@/components/notifications/notification-center"
 import { normalizeNotificationTimestamp, type NotificationTimestamp } from "@/components/notifications/notification-utils"
 
@@ -11,6 +12,11 @@ type NotificationInput = Omit<NotificationItem, "id" | "read" | "timestamp"> & {
 
 const getUnreadCount = (notifications: NotificationItem[]) =>
   notifications.reduce((count, notification) => count + (notification.read ? 0 : 1), 0)
+
+const normalizeNotification = (notification: NotificationItem): NotificationItem => ({
+  ...notification,
+  timestamp: normalizeNotificationTimestamp(notification.timestamp),
+})
 
 interface NotificationState {
   // Sheet状态
@@ -24,6 +30,9 @@ interface NotificationState {
   toggleNotificationSheet: () => void
   
   addNotification: (notification: NotificationInput) => void
+  setNotifications: (notifications: NotificationItem[], unreadCount?: number) => void
+  upsertNotification: (notification: NotificationItem, unreadCount?: number) => void
+  setUnreadCount: (count: number) => void
   trimNotifications: (max: number) => void
   markAsRead: (id: string) => void
   markAllAsRead: () => void
@@ -70,6 +79,47 @@ export const useNotificationStore = create<NotificationState>()(
             unreadCount: getUnreadCount(notifications),
           }
         })
+      },
+
+      setNotifications: (incoming, explicitUnreadCount) => {
+        const notifications = incoming.map(normalizeNotification).slice(0, 50)
+        set({
+          notifications,
+          unreadCount: typeof explicitUnreadCount === "number"
+            ? Math.max(0, explicitUnreadCount)
+            : getUnreadCount(notifications),
+        })
+      },
+
+      upsertNotification: (incoming, explicitUnreadCount) => {
+        const normalized = normalizeNotification(incoming)
+        set((state) => {
+          const existingIndex = state.notifications.findIndex(
+            (notification) => notification.id === normalized.id
+          )
+          let notifications = state.notifications
+          if (existingIndex >= 0) {
+            notifications = [
+              ...state.notifications.slice(0, existingIndex),
+              normalized,
+              ...state.notifications.slice(existingIndex + 1),
+            ]
+          } else {
+            notifications = [normalized, ...state.notifications]
+          }
+          notifications = notifications.slice(0, 50)
+
+          return {
+            notifications,
+            unreadCount: typeof explicitUnreadCount === "number"
+              ? Math.max(0, explicitUnreadCount)
+              : getUnreadCount(notifications),
+          }
+        })
+      },
+
+      setUnreadCount: (count) => {
+        set({ unreadCount: Math.max(0, count) })
       },
 
       trimNotifications: (max) => {
@@ -130,11 +180,13 @@ export const useNotificationStore = create<NotificationState>()(
 
 // 选择器hooks
 export const useNotificationSheet = () => {
-  return useNotificationStore(state => ({
-    isOpen: state.isNotificationSheetOpen,
-    setOpen: state.setNotificationSheetOpen,
-    toggle: state.toggleNotificationSheet
-  }))
+  return useNotificationStore(
+    useShallow((state) => ({
+      isOpen: state.isNotificationSheetOpen,
+      setOpen: state.setNotificationSheetOpen,
+      toggle: state.toggleNotificationSheet,
+    }))
+  )
 }
 
 export const useNotificationsList = () => {
@@ -146,12 +198,17 @@ export const useUnreadCount = () => {
 }
 
 export const useNotificationActions = () => {
-  return useNotificationStore(state => ({
-    add: state.addNotification,
-    trim: state.trimNotifications,
-    markAsRead: state.markAsRead,
-    markAllAsRead: state.markAllAsRead,
-    clear: state.clearNotifications,
-    remove: state.removeNotification
-  }))
+  return useNotificationStore(
+    useShallow((state) => ({
+      add: state.addNotification,
+      setList: state.setNotifications,
+      upsert: state.upsertNotification,
+      setUnreadCount: state.setUnreadCount,
+      trim: state.trimNotifications,
+      markAsRead: state.markAsRead,
+      markAllAsRead: state.markAllAsRead,
+      clear: state.clearNotifications,
+      remove: state.removeNotification,
+    }))
+  )
 }

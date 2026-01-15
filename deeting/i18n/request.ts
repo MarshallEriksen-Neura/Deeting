@@ -12,6 +12,7 @@ const namespaces = [
   "dashboard",
   "credits",
   "monitoring",
+  "notifications",
   "profile",
 ] as const
 

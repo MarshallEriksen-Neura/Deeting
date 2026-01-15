@@ -51,3 +51,95 @@
   "message": "Notification scheduled for all users"
 }
 ```
+
+---
+
+# 通知 WebSocket
+
+用于前端实时订阅通知收件箱（用户侧）。
+
+## WebSocket /notifications/ws
+
+鉴权方式（二选一）：
+- Header：`Authorization: Bearer <token>`
+- Query：`/notifications/ws?token=<token>`（浏览器环境）
+
+服务端首次连接会推送快照：
+```json
+{
+  "type": "snapshot",
+  "data": {
+    "items": [
+      {
+        "id": "c4cba3de-6ff3-4e22-9194-9f76c3a1a2d4",
+        "notification_id": "c4cba3de-6ff3-4e22-9194-9f76c3a1a2d4",
+        "title": "System Notice",
+        "content": "Hello everyone",
+        "type": "system",
+        "level": "info",
+        "payload": {},
+        "source": "system",
+        "created_at": "2025-01-15T12:00:00+00:00",
+        "read_at": null,
+        "archived_at": null,
+        "read": false
+      }
+    ],
+    "unread_count": 1
+  }
+}
+```
+
+新通知推送：
+```json
+{
+  "type": "notification",
+  "data": {
+    "item": {
+      "id": "0e4e2c2f-9b6a-4c7a-a7a7-6bdf2d2ffb2a",
+      "notification_id": "0e4e2c2f-9b6a-4c7a-a7a7-6bdf2d2ffb2a",
+      "title": "Admin Notice",
+      "content": "Hello user",
+      "type": "system",
+      "level": "info",
+      "payload": {},
+      "source": null,
+      "created_at": "2025-01-15T12:01:00+00:00",
+      "read_at": null,
+      "archived_at": null,
+      "read": false
+    },
+    "unread_count": 2
+  }
+}
+```
+
+客户端发送消息：
+- 心跳：
+```json
+{ "type": "ping" }
+```
+- 标记已读：
+```json
+{ "type": "mark_read", "notification_id": "0e4e2c2f-9b6a-4c7a-a7a7-6bdf2d2ffb2a" }
+```
+- 全部已读：
+```json
+{ "type": "mark_all_read" }
+```
+- 清空（归档）：
+```json
+{ "type": "clear" }
+```
+
+服务端 Ack 示例：
+```json
+{
+  "type": "ack",
+  "data": {
+    "action": "mark_read",
+    "notification_id": "0e4e2c2f-9b6a-4c7a-a7a7-6bdf2d2ffb2a",
+    "unread_count": 0
+  }
+}
+```

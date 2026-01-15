@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, Iterable
 
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification, NotificationReceipt
+from app.utils.time_utils import Datetime
 
 
 class NotificationRepository:
@@ -62,3 +65,87 @@ class NotificationReceiptRepository:
         else:
             await self.session.flush()
         return receipts
+
+    async def list_user_notifications(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int = 50,
+        since: datetime | None = None,
+        order_desc: bool = True,
+    ) -> list[tuple[NotificationReceipt, Notification]]:
+        now = Datetime.now()
+        stmt = (
+            select(NotificationReceipt, Notification)
+            .join(Notification, Notification.id == NotificationReceipt.notification_id)
+            .where(NotificationReceipt.user_id == user_id)
+            .where(NotificationReceipt.archived_at.is_(None))
+            .where(Notification.is_active.is_(True))
+            .where(or_(Notification.expires_at.is_(None), Notification.expires_at > now))
+        )
+        if since:
+            stmt = stmt.where(NotificationReceipt.created_at >= since)
+
+        order_by = NotificationReceipt.created_at.desc() if order_desc else NotificationReceipt.created_at.asc()
+        stmt = stmt.order_by(order_by).limit(limit)
+
+        result = await self.session.execute(stmt)
+        return list(result.all())
+
+    async def count_unread(
+        self,
+        user_id: uuid.UUID,
+    ) -> int:
+        now = Datetime.now()
+        stmt = (
+            select(func.count(NotificationReceipt.id))
+            .join(Notification, Notification.id == NotificationReceipt.notification_id)
+            .where(NotificationReceipt.user_id == user_id)
+            .where(NotificationReceipt.read_at.is_(None))
+            .where(NotificationReceipt.archived_at.is_(None))
+            .where(Notification.is_active.is_(True))
+            .where(or_(Notification.expires_at.is_(None), Notification.expires_at > now))
+        )
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
+
+    async def mark_read(
+        self,
+        user_id: uuid.UUID,
+        notification_id: uuid.UUID,
+    ) -> int:
+        stmt = (
+            update(NotificationReceipt)
+            .where(NotificationReceipt.user_id == user_id)
+            .where(NotificationReceipt.notification_id == notification_id)
+            .where(NotificationReceipt.read_at.is_(None))
+            .values(read_at=Datetime.now())
+        )
+        result = await self.session.execute(stmt)
+        return int(result.rowcount or 0)
+
+    async def mark_all_read(
+        self,
+        user_id: uuid.UUID,
+    ) -> int:
+        stmt = (
+            update(NotificationReceipt)
+            .where(NotificationReceipt.user_id == user_id)
+            .where(NotificationReceipt.read_at.is_(None))
+            .values(read_at=Datetime.now())
+        )
+        result = await self.session.execute(stmt)
+        return int(result.rowcount or 0)
+
+    async def archive_all(
+        self,
+        user_id: uuid.UUID,
+    ) -> int:
+        stmt = (
+            update(NotificationReceipt)
+            .where(NotificationReceipt.user_id == user_id)
+            .where(NotificationReceipt.archived_at.is_(None))
+            .values(archived_at=Datetime.now())
+        )
+        result = await self.session.execute(stmt)
+        return int(result.rowcount or 0)

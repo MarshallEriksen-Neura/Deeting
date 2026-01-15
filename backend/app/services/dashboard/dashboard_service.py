@@ -244,26 +244,35 @@ class DashboardService:
             base_stmt = base_stmt.where(GatewayLog.user_id == tenant_id)
         base_stmt = base_stmt.where(GatewayLog.created_at >= since)
 
+        base_subq = base_stmt.subquery()
+
         # 缓存命中率
-        stmt_hit = select(func.count()).select_from(base_stmt.subquery()).where(GatewayLog.is_cached == True)  # noqa: E712
+        stmt_hit = select(func.count()).select_from(base_subq).where(base_subq.c.is_cached == True)  # noqa: E712
         hit = (await self.session.execute(stmt_hit)).scalar() or 0
-        total = (await self.session.execute(select(func.count()).select_from(base_stmt.subquery()))).scalar() or 0
+        total = (await self.session.execute(select(func.count()).select_from(base_subq))).scalar() or 0
         cache_hit_rate = round((hit / total) * 100, 2) if total else 0.0
 
         # 成本节省
-        stmt_cost = select(func.sum(GatewayLog.cost_user - GatewayLog.cost_upstream)).select_from(base_stmt.subquery())
+        stmt_cost = select(func.sum(base_subq.c.cost_user - base_subq.c.cost_upstream)).select_from(base_subq)
         cost_savings = float((await self.session.execute(stmt_cost)).scalar() or 0.0)
         cost_savings = max(cost_savings, 0.0)
 
         # 拦截请求（error_code 风控/限流）
-        blocked_stmt = select(func.count()).select_from(base_stmt.subquery()).where(
-            GatewayLog.error_code.in_(["RATE_LIMITED", "BLOCKED", "SECURITY_DENY"])
+        blocked_stmt = select(func.count()).select_from(base_subq).where(
+            base_subq.c.error_code.in_(["RATE_LIMITED", "BLOCKED", "SECURITY_DENY"])
         )
         requests_blocked = int((await self.session.execute(blocked_stmt)).scalar() or 0)
 
         # 平均加速：使用 meta.routing.affinity_saved_tokens_est 估算
-        routing_saved_tokens = cast(GatewayLog.meta["routing"]["affinity_saved_tokens_est"], Float)
-        stmt_speed = select(func.avg(routing_saved_tokens)).select_from(base_stmt.subquery())
+        dialect = self.session.bind.dialect.name if getattr(self.session, "bind", None) else None
+        meta_expr = base_subq.c.meta["routing"]["affinity_saved_tokens_est"]
+        if dialect == "postgresql":
+            meta_text = meta_expr.astext
+            is_numeric = meta_text.op("~")(r"^-?\d+(\.\d+)?$")
+            routing_saved_tokens = func.case((is_numeric, cast(meta_text, Float)), else_=None)
+        else:
+            routing_saved_tokens = cast(meta_expr, Float)
+        stmt_speed = select(func.avg(routing_saved_tokens)).select_from(base_subq)
         saved_tokens = float((await self.session.execute(stmt_speed)).scalar() or 0.0)
         avg_speedup = round(saved_tokens * 3, 2) if saved_tokens > 0 else 0.0  # 约 3ms/Token 估算
 

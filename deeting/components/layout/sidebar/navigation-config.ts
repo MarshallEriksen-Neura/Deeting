@@ -104,12 +104,6 @@ export const userNavigation: NavGroup[] = [
     title: "nav.account",
     items: [
       {
-        id: "profile",
-        label: "nav.profile",
-        href: "/dashboard/user/profile",
-        icon: "userCog",
-      },
-      {
         id: "notifications",
         label: "nav.notifications",
         href: "/notifications",

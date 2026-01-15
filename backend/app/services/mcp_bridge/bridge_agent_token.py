@@ -168,6 +168,28 @@ class BridgeAgentTokenService:
 
         return BridgeAgentTokenResult(token=token, expires_at=record.expires_at, version=record.version)
 
+    async def list_tokens(self, *, user_id: uuid.UUID) -> list[BridgeAgentToken]:
+        stmt = select(BridgeAgentToken).where(BridgeAgentToken.user_id == user_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def revoke_token(self, *, user_id: uuid.UUID, agent_id: str) -> bool:
+        record = await self._fetch_record(user_id=user_id, agent_id=agent_id)
+        if not record:
+            return False
+        
+        await self.session.delete(record)
+        await self.session.commit()
+        
+        # 清除缓存
+        if self.redis:
+            try:
+                await self.redis.delete(self._redis_key(user_id=user_id, agent_id=agent_id))
+            except Exception:
+                pass
+                
+        return True
+
 
 __all__ = [
     "BridgeAgentTokenResult",

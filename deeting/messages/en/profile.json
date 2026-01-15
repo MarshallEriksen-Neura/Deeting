@@ -27,6 +27,17 @@
       "update": "Update",
       "manageAll": "Manage all connection settings"
     },
+    "deviceManagement": {
+      "title": "Connected Terminals",
+      "description": "Manage authorized Bridge Agents and MCP Clients",
+      "agentId": "Agent ID",
+      "lastActive": "Last Issued",
+      "expiresAt": "Expires",
+      "revoke": "Revoke",
+      "status": "Status",
+      "active": "Active",
+      "expired": "Expired"
+    },
     "memoryCore": {
       "title": "Neural Memory (Memory Core)",
       "description": "Control how AI accesses and retains your personal data",

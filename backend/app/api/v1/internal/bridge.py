@@ -83,6 +83,37 @@ async def issue_agent_token(
     }
 
 
+@router.get("/agent-tokens")
+async def list_agent_tokens(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    service = BridgeAgentTokenService(session=db)
+    tokens = await service.list_tokens(user_id=uuid.UUID(str(user.id)))
+    return [
+        {
+            "agent_id": t.agent_id,
+            "version": t.version,
+            "issued_at": t.issued_at.isoformat(),
+            "expires_at": t.expires_at.isoformat(),
+        }
+        for t in tokens
+    ]
+
+
+@router.delete("/agent-tokens/{agent_id}")
+async def revoke_agent_token(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict[str, Any]:
+    service = BridgeAgentTokenService(session=db)
+    success = await service.revoke_token(user_id=uuid.UUID(str(user.id)), agent_id=agent_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Agent token not found")
+    return {"message": "Agent token revoked"}
+
+
 @router.post("/invoke")
 async def invoke_tool(payload: dict[str, Any]) -> dict[str, Any]:
     client = BridgeGatewayClient()

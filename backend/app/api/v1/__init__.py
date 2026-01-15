@@ -12,6 +12,7 @@ from app.api.v1.admin import provider_preset_router as admin_provider_preset_rou
 from app.api.v1.admin import discovery_router as admin_discovery_router
 from app.api.v1.admin import notification_router as admin_notification_router
 from app.api.v1.auth_route import router as auth_router
+from app.api.v1.notification_ws_route import router as notification_ws_router
 from app.api.v1.user_api_keys_route import router as user_api_keys_router, models_router as available_models_router
 from app.api.v1.external.gateway import router as external_gateway_router
 from app.api.v1.internal import bridge_router as internal_bridge_router
@@ -36,6 +37,7 @@ __all__ = [
     "admin_discovery_router",
     "admin_notification_router",
     "auth_router",
+    "notification_ws_router",
     "user_api_keys_router",
     "available_models_router",
     "external_gateway_router",

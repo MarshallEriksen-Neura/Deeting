@@ -121,6 +121,7 @@ def register_routes(app: FastAPI) -> None:
         admin_provider_instance_router,
         admin_discovery_router,
         admin_notification_router,
+        notification_ws_router,
         auth_router,
         user_api_keys_router,
         available_models_router,
@@ -148,6 +149,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(admin_assistants_router, prefix=api_prefix, tags=["Admin - Assistants"])
     app.include_router(admin_registration_router, prefix=api_prefix, tags=["Admin - Registration"])
     app.include_router(admin_notification_router, prefix=api_prefix, tags=["Admin - Notifications"])
+    app.include_router(notification_ws_router, prefix=api_prefix, tags=["Notifications"])
     app.include_router(
         admin_provider_credential_router, prefix=api_prefix, tags=["Admin - Provider Credentials"]
     )

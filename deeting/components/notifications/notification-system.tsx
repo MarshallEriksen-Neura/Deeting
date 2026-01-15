@@ -5,6 +5,7 @@ import { GlassPillToaster } from "@/components/ui/glass-pill-toaster"
 import { NotificationCenter } from "@/components/notifications/notification-center"
 import { AmbientIndicator } from "@/components/ui/ambient-indicator"
 import { useNotifications } from "@/components/contexts/notification-context"
+import { useNotificationRealtime } from "@/components/notifications/use-notification-realtime"
 
 interface NotificationSystemProps {
   // 环境光指示器目标元素ID
@@ -19,6 +20,7 @@ export function NotificationSystem({
     trimNotifications,
     processingState 
   } = useNotifications()
+  const { sendMarkRead, sendMarkAllRead, sendClear } = useNotificationRealtime()
 
   // 自动清理旧通知（保留最近50条）
   useEffect(() => {
@@ -42,7 +44,11 @@ export function NotificationSystem({
       )}
       
       {/* 持久通知中心 - 现在通过Zustand控制，不需要传props */}
-      <NotificationCenter />
+      <NotificationCenter
+        onMarkRead={sendMarkRead}
+        onMarkAllRead={sendMarkAllRead}
+        onClear={sendClear}
+      />
     </>
   )
 }

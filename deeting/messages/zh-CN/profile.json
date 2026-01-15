@@ -27,6 +27,17 @@
       "update": "更新",
       "manageAll": "管理所有连接设置"
     },
+    "deviceManagement": {
+      "title": "已连接终端",
+      "description": "管理已授权的 Bridge Agents 和 MCP 客户端",
+      "agentId": "Agent ID",
+      "lastActive": "最近签发",
+      "expiresAt": "过期时间",
+      "revoke": "撤销授权",
+      "status": "状态",
+      "active": "活跃",
+      "expired": "已过期"
+    },
     "memoryCore": {
       "title": "神经记忆 (Memory Core)",
       "description": "控制 AI 如何访问和保留您的个人数据",

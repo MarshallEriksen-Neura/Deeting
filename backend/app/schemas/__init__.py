@@ -39,9 +39,13 @@ from .assistant import (
     AssistantListResponse,
 )
 from .notification import (
+    NotificationInboxItem,
     NotificationPublishAllRequest,
     NotificationPublishResponse,
     NotificationPublishUserRequest,
+    NotificationSnapshot,
+    NotificationWSInbound,
+    NotificationWSOutbound,
 )
 from .user import (
     BanRequest,
@@ -71,6 +75,10 @@ __all__ = [
     "NotificationPublishAllRequest",
     "NotificationPublishResponse",
     "NotificationPublishUserRequest",
+    "NotificationInboxItem",
+    "NotificationSnapshot",
+    "NotificationWSInbound",
+    "NotificationWSOutbound",
     "AssistantBase",
     "AssistantCreate",
     "AssistantDTO",

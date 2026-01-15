@@ -196,6 +196,28 @@ async def get_current_user(
     )
 
 
+async def get_current_user_from_token(
+    token: str,
+    db: AsyncSession,
+) -> User:
+    """通过 JWT token 获取用户（供 WebSocket 等非 HTTP 场景使用）"""
+    return await _get_user_from_jwt(token, db)
+
+
+async def get_current_active_user_from_token(
+    token: str,
+    db: AsyncSession,
+) -> User:
+    """通过 JWT token 获取已激活用户（供 WebSocket 等非 HTTP 场景使用）"""
+    user = await get_current_user_from_token(token, db)
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is not activated",
+        )
+    return user
+
+
 async def get_current_active_user(
     user: User = Depends(get_current_user),
 ) -> User:

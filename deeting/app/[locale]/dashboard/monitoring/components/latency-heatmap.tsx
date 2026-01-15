@@ -53,6 +53,13 @@ export function LatencyHeatmap({
     intensity: { label: t("legend.label"), color: "hsl(var(--primary))" },
   }
 
+  // Sample data structure - would be replaced with real API data
+  const heatmapData = data?.grid || generateSampleHeatmap()
+  const heatmapPoints = useMemo(
+    () => buildHeatmapPoints(heatmapData, DEFAULT_CELL_SIZE),
+    [heatmapData]
+  )
+
   if (isLoading) {
     return (
       <div className="flex h-[400px] items-center justify-center">
@@ -60,13 +67,6 @@ export function LatencyHeatmap({
       </div>
     )
   }
-
-  // Sample data structure - would be replaced with real API data
-  const heatmapData = data?.grid || generateSampleHeatmap()
-  const heatmapPoints = useMemo(
-    () => buildHeatmapPoints(heatmapData, DEFAULT_CELL_SIZE),
-    [heatmapData]
-  )
 
   return (
     <div className="space-y-4">

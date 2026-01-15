@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -66,9 +67,11 @@ export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserM
       >
         <GlassDropdownUserHeader name={safeName} email={userEmail} />
         <GlassDropdownMenuSeparator />
-        <GlassDropdownMenuItem>
-          {t("profile")}
-        </GlassDropdownMenuItem>
+        <Link href="/profile" passHref legacyBehavior>
+          <GlassDropdownMenuItem>
+            {t("profile")}
+          </GlassDropdownMenuItem>
+        </Link>
         <GlassDropdownMenuItem>
           {t("apiKeys")}
         </GlassDropdownMenuItem>

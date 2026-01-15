@@ -129,3 +129,45 @@ async def test_provider_health_uses_redis(client, auth_tokens, AsyncSessionLocal
         assert len(res) == 1
         assert res[0].status == "active"
         assert res[0].sparkline == [10, 20, 30]
+
+
+@pytest.mark.asyncio
+async def test_smart_router_stats_handles_non_numeric_meta(client, auth_tokens, AsyncSessionLocal):
+    async with AsyncSessionLocal() as session:
+        now = Datetime.now()
+        logs = [
+            GatewayLog(
+                user_id=None,
+                model="gpt-4o",
+                status_code=200,
+                duration_ms=100,
+                ttft_ms=20,
+                input_tokens=10,
+                output_tokens=5,
+                total_tokens=15,
+                cost_user=0.01,
+                cost_upstream=0.005,
+                created_at=now,
+                meta={"routing": {"affinity_saved_tokens_est": "not-a-number"}},
+            ),
+            GatewayLog(
+                user_id=None,
+                model="gpt-4o",
+                status_code=200,
+                duration_ms=120,
+                ttft_ms=25,
+                input_tokens=12,
+                output_tokens=6,
+                total_tokens=18,
+                cost_user=0.012,
+                cost_upstream=0.006,
+                created_at=now - timedelta(minutes=1),
+                meta={"routing": {"affinity_saved_tokens_est": "5"}},
+            ),
+        ]
+        session.add_all(logs)
+        await session.commit()
+
+        svc = DashboardService(session)
+        resp = await svc.get_smart_router_stats(None)
+        assert resp.avg_speedup >= 0

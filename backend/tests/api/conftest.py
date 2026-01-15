@@ -204,6 +204,11 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 )
 
 
+@pytest.fixture(name="AsyncSessionLocal")
+def _async_session_local_fixture():
+    return AsyncSessionLocal
+
+
 async def _init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

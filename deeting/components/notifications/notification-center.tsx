@@ -30,6 +30,7 @@ import {
   useNotificationSheet,
   useNotificationsList,
   useNotificationActions,
+  useUnreadCount,
 } from "@/stores/notification-store"
 import { normalizeNotificationTimestamp } from "@/components/notifications/notification-utils"
 
@@ -40,12 +41,18 @@ export interface NotificationItem {
   type: NotificationType
   title: string
   description: string
-  timestamp: Date
+  timestamp: Date | string | number
   read: boolean
   action?: {
     label: string
     onClick: () => void
   }
+}
+
+interface NotificationCenterProps {
+  onMarkRead?: (notificationId: string) => void
+  onMarkAllRead?: () => void
+  onClear?: () => void
 }
 
 const iconMap = {
@@ -69,7 +76,11 @@ const badgeColorMap = {
   info: "bg-blue-500/10 text-blue-700 border-blue-200",
 }
 
-export function NotificationCenter() {
+export function NotificationCenter({
+  onMarkRead,
+  onMarkAllRead,
+  onClear,
+}: NotificationCenterProps) {
   const t = useTranslations("notifications")
   const locale = useLocale()
   const dateLocale = locale === "zh-CN" ? zhCN : enUS
@@ -78,9 +89,7 @@ export function NotificationCenter() {
   const notifications = useNotificationsList()
   const { markAsRead, markAllAsRead, clear } = useNotificationActions()
   
-  const unreadCount = useMemo(() => 
-    notifications.filter(n => !n.read).length, [notifications]
-  )
+  const unreadCount = useUnreadCount()
 
   const groupedNotifications = useMemo(() => {
     const now = new Date()
@@ -111,6 +120,7 @@ export function NotificationCenter() {
   const handleNotificationClick = (notification: NotificationItem) => {
     if (!notification.read) {
       markAsRead(notification.id)
+      onMarkRead?.(notification.id)
     }
     notification.action?.onClick()
   }
@@ -201,7 +211,10 @@ export function NotificationCenter() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={markAllAsRead}
+                  onClick={() => {
+                    markAllAsRead()
+                    onMarkAllRead?.()
+                  }}
                   className="text-xs text-gray-600 hover:text-gray-900"
                 >
                   <CheckCheck size={14} className="mr-1" />
@@ -211,7 +224,10 @@ export function NotificationCenter() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={clear}
+                onClick={() => {
+                  clear()
+                  onClear?.()
+                }}
                 className="text-xs text-gray-600 hover:text-gray-900"
               >
                 <Trash2 size={14} className="mr-1" />
@@ -283,9 +299,7 @@ export function NotificationCenter() {
 // 单独的铃铛触发按钮组件
 export function NotificationBell() {
   const { toggle } = useNotificationSheet()
-  const notifications = useNotificationsList()
-  
-  const unreadCount = notifications.filter(n => !n.read).length
+  const unreadCount = useUnreadCount()
 
   return (
     <GlassButton
