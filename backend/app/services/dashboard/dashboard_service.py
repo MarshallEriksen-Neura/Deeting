@@ -5,7 +5,7 @@ from datetime import UTC, timedelta
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -262,8 +262,8 @@ class DashboardService:
         requests_blocked = int((await self.session.execute(blocked_stmt)).scalar() or 0)
 
         # 平均加速：使用 meta.routing.affinity_saved_tokens_est 估算
-        stmt_speed = select(func.avg((GatewayLog.meta["routing"].as_object().op('->>')('affinity_saved_tokens_est')).cast(float)))
-        stmt_speed = stmt_speed.select_from(base_stmt.subquery())
+        routing_saved_tokens = cast(GatewayLog.meta["routing"]["affinity_saved_tokens_est"], Float)
+        stmt_speed = select(func.avg(routing_saved_tokens)).select_from(base_stmt.subquery())
         saved_tokens = float((await self.session.execute(stmt_speed)).scalar() or 0.0)
         avg_speedup = round(saved_tokens * 3, 2) if saved_tokens > 0 else 0.0  # 约 3ms/Token 估算
 

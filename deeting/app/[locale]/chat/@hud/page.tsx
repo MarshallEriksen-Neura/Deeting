@@ -4,12 +4,15 @@ import { Link } from '@/i18n/routing';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
+import { HistorySidebar } from '../components/history-sidebar';
 
 export default function HUD() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const { setTheme, theme } = useTheme();
 
   return (
+    <>
     <nav className="flex flex-col items-center gap-2 px-1 py-1 animate-in fade-in slide-in-from-top-4 duration-700 pointer-events-auto relative z-50">
       
       {/* 1. Minimal Status Capsule */}
@@ -28,9 +31,13 @@ export default function HUD() {
 
           <span className="text-black/10 dark:text-white/10 text-xs">|</span>
 
-          {/* Session Title (Center) */}
-          <div className="flex items-center gap-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors cursor-pointer group">
+          {/* Session Title (Center) - CLICK TO OPEN HISTORY */}
+          <div 
+             onClick={() => setIsHistoryOpen(true)}
+             className="flex items-center gap-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors cursor-pointer group"
+          >
              <span className="text-xs font-medium truncate max-w-[150px]">Project Deeting OS</span>
+             <ChevronDown className="w-3 h-3 text-black/30 dark:text-white/30 group-hover:text-black/60 dark:group-hover:text-white/60 transition-transform group-hover:rotate-180" />
           </div>
 
           <span className="text-black/10 dark:text-white/10 text-xs">|</span>
@@ -97,6 +104,10 @@ export default function HUD() {
       </AnimatePresence>
 
     </nav>
+    
+    {/* Global History Sidebar managed by HUD state */}
+    <HistorySidebar isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
+    </>
   );
 }
 
