@@ -281,6 +281,66 @@ impl McpStore {
         Ok(row.and_then(|row| row.try_get::<String, _>("config_json").ok()))
     }
 
+    pub async fn get_pending_config_json(&self, id: &str) -> Result<Option<String>, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT pending_config_json
+            FROM mcp_tools
+            WHERE id = ?;
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.and_then(|row| row.try_get::<String, _>("pending_config_json").ok()))
+    }
+
+    pub async fn get_tool_by_source_name(
+        &self,
+        source_id: &str,
+        name: &str,
+    ) -> Result<Option<McpTool>, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, source_id, name, source_type, status, ping_ms, capabilities, description,
+                   error, command, args, env, config_hash, pending_config_hash, conflict_status,
+                   is_read_only, created_at, updated_at
+            FROM mcp_tools
+            WHERE source_id = ? AND name = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(source_id)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(|row| row_to_tool(&row)).transpose()
+    }
+
+    pub async fn has_name_conflict(
+        &self,
+        name: &str,
+        source_id: &str,
+    ) -> Result<bool, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT COUNT(*) as count
+            FROM mcp_tools
+            WHERE name = ? AND source_id != ? AND source_type = ?;
+            "#,
+        )
+        .bind(name)
+        .bind(source_id)
+        .bind(McpSourceType::Local.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+
+        let count: i64 = row.try_get("count")?;
+        Ok(count > 0)
+    }
+
     pub async fn upsert_tool(&self, tool: ToolUpsert) -> Result<McpTool, McpError> {
         if let Some(existing_id) = self
             .find_tool_id_by_source_name(tool.source_id.as_str(), &tool.name)

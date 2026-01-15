@@ -1,4 +1,6 @@
 pub mod hash;
+pub mod process;
+pub mod routes;
 pub mod store;
 pub mod types;
 
@@ -9,6 +11,7 @@ use thiserror::Error;
 
 pub use store::{ExtractedToolFields, McpStore, NewSource, ToolUpsert};
 pub use types::*;
+pub use process::ProcessManager;
 
 #[derive(Debug, Error)]
 pub enum McpError {
@@ -18,6 +21,8 @@ pub enum McpError {
     Serialization(#[from] serde_json::Error),
     #[error("time format error: {0}")]
     Time(#[from] time::error::Format),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
     #[error("validation error: {0}")]
     Validation(String),
     #[error("not found: {0}")]
