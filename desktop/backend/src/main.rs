@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{
     extract::State,
@@ -11,10 +11,10 @@ use serde::Serialize;
 use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
 
-#[derive(Clone)]
-struct AppState {
-    version: &'static str,
-}
+mod mcp;
+mod state;
+
+use crate::state::AppState;
 
 #[derive(Serialize)]
 struct HealthPayload {
@@ -24,6 +24,7 @@ struct HealthPayload {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
     init_tracing();
 
     let port = std::env::var("PORT")
@@ -31,12 +32,21 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(3000);
 
-    let state = AppState { version: env!("CARGO_PKG_VERSION") };
+    let database_url = resolve_database_url()?;
+    let store = std::sync::Arc::new(mcp::McpStore::new(&database_url).await?);
+    store.init().await?;
+    let _ = store.ensure_local_source().await?;
 
+    let state = AppState {
+        version: env!("CARGO_PKG_VERSION"),
+        store: store.clone(),
+        process_manager: mcp::ProcessManager::new(store),
+    };
     let router = Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
         .route("/version", get(version))
+        .nest("/mcp", mcp::routes::router())
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -110,4 +120,35 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = terminate => {},
     }
+}
+
+fn resolve_database_url() -> anyhow::Result<String> {
+    let db_path = std::env::var("DESKTOP_DB_PATH").unwrap_or_else(|_| default_db_path());
+    if db_path == ":memory:" {
+        return Ok("sqlite::memory:".to_string());
+    }
+    if db_path.starts_with("sqlite:") {
+        return Ok(db_path);
+    }
+    let expanded = expand_path(&db_path);
+    if let Some(parent) = expanded.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(format!("sqlite://{}", expanded.to_string_lossy()))
+}
+
+fn default_db_path() -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        return format!("{home}/.config/deeting/mcp.db");
+    }
+    "mcp.db".to_string()
+}
+
+fn expand_path(path: &str) -> PathBuf {
+    if let Some(stripped) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(stripped);
+        }
+    }
+    PathBuf::from(path)
 }
