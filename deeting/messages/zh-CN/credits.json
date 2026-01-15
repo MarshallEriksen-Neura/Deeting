@@ -1,0 +1,53 @@
+{
+  "credits": {
+    "title": "积分控制台",
+    "description": "实时监控您的积分余额和消费流水",
+    "balance": {
+      "title": "可用积分",
+      "recharge": "立即充值",
+      "autoRecharge": "自动充值设置",
+      "used": "本月已用",
+      "remaining": "剩余"
+    },
+    "plan": {
+      "title": "当前计划",
+      "nextRenewal": "下次续费",
+      "monthlyQuota": "本月额度使用",
+      "upgrade": "升级套餐"
+    },
+    "modelUsage": {
+      "title": "模型使用分布"
+    },
+    "consumption": {
+      "title": "30 天消费趋势",
+      "subtitle": "不同 AI 模型的 Token 消耗趋势"
+    },
+    "actions": {
+      "title": "快速操作",
+      "subtitle": "常用功能和提醒",
+      "export": "导出 CSV",
+      "alerts": "配置提醒",
+      "settings": "计费设置",
+      "alert": {
+        "title": "用量提醒",
+        "message": "您已使用本月 70% 的额度，建议升级套餐。"
+      }
+    },
+    "transactions": {
+      "title": "交易流水",
+      "subtitle": "近期 API 调用和积分消耗记录",
+      "exportCSV": "导出 CSV",
+      "status": "状态",
+      "model": "模型 / 操作",
+      "time": "时间",
+      "tokens": "Tokens",
+      "cost": "费用",
+      "details": {
+        "requestId": "请求 ID",
+        "duration": "耗时",
+        "prompt": "提示词",
+        "response": "响应"
+      }
+    }
+  }
+}

@@ -24,20 +24,24 @@ const sidebarItemVariants = cva(
   [
     "group relative flex items-center gap-3 rounded-xl px-3 py-2.5",
     "text-sm font-medium",
+    // iOS-style smooth transitions
     "transition-all duration-200 ease-out",
-    "outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/50",
-    "w-full", // ensure full width
+    "outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50",
+    "w-full",
   ],
   {
     variants: {
       active: {
         true: [
-          "bg-[var(--primary)]/10 text-[var(--primary)]",
-          "shadow-[0_0_0_1px_rgba(124,109,255,0.2),inset_0_1px_0_rgba(255,255,255,0.05)]",
+          // iOS-style active state - soft blue background
+          "bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400",
+          "shadow-[0_0_0_1px_rgba(59,130,246,0.15),inset_0_1px_0_rgba(255,255,255,0.1)]",
         ],
         false: [
-          "text-[var(--muted)] hover:text-[var(--foreground)]",
-          "hover:bg-[var(--foreground)]/5",
+          // iOS-style inactive state
+          "text-slate-600 dark:text-slate-300",
+          "hover:bg-slate-100/80 dark:hover:bg-slate-800/80",
+          "active:scale-[0.98]", // iOS-style press feedback
         ],
       },
       collapsed: {
@@ -54,19 +58,23 @@ const sidebarItemVariants = cva(
 
 const mobileNavItemVariants = cva(
   [
-    "flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2",
+    "flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2",
     "text-sm font-medium",
+    // iOS-style smooth transitions
     "transition-all duration-200 ease-out",
+    "active:scale-95", // iOS-style press feedback
   ],
   {
     variants: {
       active: {
         true: [
-          "bg-[var(--primary)]/10 text-[var(--primary)]",
+          // iOS-style active state
+          "bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400",
         ],
         false: [
-          "text-[var(--muted)] hover:text-[var(--foreground)]",
-          "hover:bg-[var(--foreground)]/5",
+          // iOS-style inactive state
+          "text-slate-600 dark:text-slate-300",
+          "hover:bg-slate-100/80 dark:hover:bg-slate-800/80",
         ],
       },
     },
@@ -157,7 +165,7 @@ function SidebarGroup({ group, isCollapsed = false }: SidebarGroupProps) {
       {!isCollapsed && (
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]/70 transition-colors hover:text-[var(--muted)]"
+          className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 transition-all duration-200 ease-out hover:text-slate-700 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100/50 dark:hover:bg-slate-800/50"
         >
           <ChevronDown
             className={cn(
@@ -224,7 +232,7 @@ function SidebarItem({ item, isCollapsed = false, translate, isMobile = false }:
       {/* Active indicator */}
       {isActive && (
         <span
-          className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[var(--primary)]"
+          className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-blue-500 dark:bg-blue-400"
           aria-hidden
         />
       )}
@@ -232,7 +240,7 @@ function SidebarItem({ item, isCollapsed = false, translate, isMobile = false }:
       <Icon
         className={cn(
           "size-5 shrink-0 transition-transform duration-200",
-          isActive && "text-[var(--primary)]",
+          isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400",
           "group-hover:scale-105"
         )}
       />

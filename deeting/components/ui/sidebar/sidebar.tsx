@@ -69,9 +69,14 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
         ref={ref}
         className={cn(
           "group peer hidden md:block text-[var(--foreground)]",
-          "relative md:sticky md:top-[56px]", // header height
-          "bg-[var(--card)]/60 backdrop-blur-xl border-r border-white/10 shadow-[4px_0_16px_-4px_rgba(0,0,0,0.05)]",
-          "transition-[width] duration-300 ease-linear",
+          "relative md:sticky md:top-[88px]", // iOS floating header: top-4 (16px) + h-16 (64px) + gap-2 (8px) = 88px
+          // iOS-style glassmorphism
+          "bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl",
+          // iOS-style border and shadow
+          "border-r border-black/5 dark:border-white/10",
+          "shadow-[4px_0_24px_-8px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_24px_-8px_rgba(0,0,0,0.3)]",
+          // Smooth transitions
+          "transition-[width] duration-300 ease-out",
           state === "collapsed" ? "w-[--sidebar-width-icon]" : "w-[--sidebar-width]",
           className
         )}
@@ -80,7 +85,7 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
         data-variant={variant}
         data-side={side}
         style={{
-            height: `calc(100vh - ${HEADER_HEIGHT}px)`,
+            height: `calc(100vh - 88px)`, // Match top offset
         }}
       >
         <div className="flex h-full w-full flex-col">

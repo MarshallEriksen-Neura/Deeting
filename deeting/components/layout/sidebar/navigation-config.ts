@@ -81,6 +81,12 @@ export const userNavigation: NavGroup[] = [
         icon: "key",
       },
       {
+        id: "credits",
+        label: "nav.credits",
+        href: "/dashboard/credits",
+        icon: "coins",
+      },
+      {
         id: "monitoring",
         label: "nav.monitoring",
         href: "/dashboard/monitoring",
@@ -164,6 +170,12 @@ export const adminNavigation: NavGroup[] = [
         label: "nav.apiKeys",
         href: "/dashboard/user/api-keys",
         icon: "key",
+      },
+      {
+        id: "credits",
+        label: "nav.credits",
+        href: "/dashboard/credits",
+        icon: "coins",
       },
       {
         id: "monitoring",

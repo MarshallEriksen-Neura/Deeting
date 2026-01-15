@@ -38,7 +38,8 @@ export function Header({
     return null
   }
 
-  const t = useTranslations("common.header")
+  const tHeader = useTranslations("common.header")
+  const tNav = useTranslations("common.headerNav")
   const { isAuthenticated } = useAuthStore()
   const { profile } = useUserProfile()
   const { logout } = useAuthService()
@@ -54,25 +55,35 @@ export function Header({
       pathname === item.href ||
       pathname.startsWith(`${item.href}/`)
     const isActive = item.isActive ?? match
+    const label = (() => {
+      try {
+        return tNav(item.label as any)
+      } catch {
+        return item.label
+      }
+    })()
 
-    return { ...item, isActive }
+    return { ...item, label, isActive }
   })
 
   return (
     <header
       className={cn(
-        // Base layout
-        "sticky top-0 z-50 w-full",
-        // Glassmorphism effect - Digital Ink style
-        "bg-[var(--surface)]/80 backdrop-blur-xl",
-        // Subtle bottom border
-        "border-b border-[var(--border)]/50",
-        // Diffuse shadow
-        "shadow-[0_4px_20px_-2px_rgba(124,109,255,0.05)]",
+        // iOS-style floating header
+        "fixed top-4 left-4 right-4 z-50",
+        // Glassmorphism effect - iOS frosted glass
+        "bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl",
+        // iOS-style border and shadow
+        "border border-black/5 dark:border-white/10",
+        "shadow-[0_8px_32px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.4)]",
+        // Rounded corners (iOS style)
+        "rounded-2xl",
+        // Smooth transitions
+        "transition-all duration-300 ease-out",
         className
       )}
     >
-      <Container className="flex h-14 items-center justify-between" gutter="md">
+      <Container className="flex h-16 items-center justify-between px-6" gutter="none">
         {/* Left section: Logo + Navigation */}
         <div className="flex items-center gap-6">
           {/* Mobile menu button */}
@@ -89,14 +100,14 @@ export function Header({
           {/* Logo */}
           <Link
             href="/"
-            className="flex items-center transition-opacity hover:opacity-80"
+            className="flex items-center transition-all duration-200 ease-out hover:opacity-75 active:scale-95"
           >
             <Image
               src={logoSrc}
               alt={logoText}
               width={160}
               height={32}
-              className="h-32 w-auto object-contain"
+              className="h-8 w-auto object-contain"
               priority
             />
           </Link>
@@ -104,13 +115,13 @@ export function Header({
           <NavLinks items={navWithActive} />
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <ActionButtons />
           <LanguageSwitcher />
-          <div className="mx-2 h-6 w-px bg-[var(--border)]" />
+          <div className="mx-1 h-5 w-px bg-black/10 dark:bg-white/10" />
           {mounted && isAuthenticated ? (
             <UserMenu
-              userName={profile?.username ?? profile?.email ?? userName ?? t("guest")}
+              userName={profile?.username ?? profile?.email ?? userName ?? tHeader("guest")}
               userEmail={profile?.email ?? userEmail ?? ""}
               userAvatarSrc={userAvatarSrc}
               onLogout={logout}
@@ -120,9 +131,9 @@ export function Header({
               asChild
               variant="ghost"
               size="sm"
-              className="h-9 px-4 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--primary)]/10"
+              className="h-9 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-all duration-200 ease-out active:scale-95"
             >
-              <Link href="/login">{t("login")}</Link>
+              <Link href="/login">{tHeader("login")}</Link>
             </GlassButton>
           )}
         </div>

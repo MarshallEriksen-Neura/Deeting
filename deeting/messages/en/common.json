@@ -34,6 +34,13 @@
       "logout": "Log out",
       "guest": "Guest"
     },
+    "headerNav": {
+      "home": "Home",
+      "assistants": "Assistants",
+      "images": "Images",
+      "videos": "Videos",
+      "dashboard": "Dashboard"
+    },
     "nav": {
       "main": "Main",
       "dashboard": "Overview",
@@ -43,6 +50,7 @@
       "configuration": "Configuration",
       "providers": "Providers",
       "apiKeys": "API Keys",
+      "credits": "Credits",
       "monitoring": "Monitoring",
       "logs": "Logs",
       "account": "Account",

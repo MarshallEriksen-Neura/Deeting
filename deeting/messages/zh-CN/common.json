@@ -34,6 +34,13 @@
       "logout": "退出登录",
       "guest": "访客"
     },
+    "headerNav": {
+      "home": "首页",
+      "assistants": "助手",
+      "images": "图片",
+      "videos": "视频",
+      "dashboard": "仪表盘"
+    },
     "nav": {
       "main": "主要",
       "dashboard": "概览",
@@ -43,6 +50,7 @@
       "configuration": "配置",
       "providers": "模型服务",
       "apiKeys": "API 密钥",
+      "credits": "积分流水",
       "monitoring": "监控",
       "logs": "日志",
       "account": "账户",

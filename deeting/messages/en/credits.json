@@ -1,0 +1,53 @@
+{
+  "credits": {
+    "title": "Credits Dashboard",
+    "description": "Monitor your credit balance and spending history in real-time",
+    "balance": {
+      "title": "Available Credits",
+      "recharge": "Recharge Now",
+      "autoRecharge": "Auto Recharge",
+      "used": "Used This Month",
+      "remaining": "Remaining"
+    },
+    "plan": {
+      "title": "Current Plan",
+      "nextRenewal": "Next Renewal",
+      "monthlyQuota": "Monthly Quota Used",
+      "upgrade": "Upgrade Plan"
+    },
+    "modelUsage": {
+      "title": "Model Usage Distribution"
+    },
+    "consumption": {
+      "title": "30-Day Consumption Trend",
+      "subtitle": "Token consumption across different AI models"
+    },
+    "actions": {
+      "title": "Quick Actions",
+      "subtitle": "Common operations and alerts",
+      "export": "Export CSV",
+      "alerts": "Configure Alerts",
+      "settings": "Billing Settings",
+      "alert": {
+        "title": "Usage Alert",
+        "message": "You've used 70% of your monthly quota. Consider upgrading your plan."
+      }
+    },
+    "transactions": {
+      "title": "Transaction History",
+      "subtitle": "Recent API calls and credit usage",
+      "exportCSV": "Export CSV",
+      "status": "Status",
+      "model": "Model / Action",
+      "time": "Time",
+      "tokens": "Tokens",
+      "cost": "Cost",
+      "details": {
+        "requestId": "Request ID",
+        "duration": "Duration",
+        "prompt": "Prompt",
+        "response": "Response"
+      }
+    }
+  }
+}

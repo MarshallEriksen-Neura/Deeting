@@ -35,7 +35,10 @@ export default async function LocaleLayout({
         userName="Admin"
         userEmail="admin@higress.ai"
       />
-      {children}
+      {/* iOS-style floating header padding compensation: top-4 (header position) + h-16 (header height) + gap-4 (spacing) = pt-24 */}
+      <div className="pt-24">
+        {children}
+      </div>
       {auth}
     </NextIntlClientProvider>
   )
