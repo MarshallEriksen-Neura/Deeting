@@ -259,11 +259,13 @@ class RoutingStep(BaseStep):
                 affinity_hit = True
 
         selector = RoutingSelector(session)
+        include_public = ctx.get("routing", "include_public", True)
         candidates = await selector.load_candidates(
             capability=capability,
             model=model,
             channel=channel,
             user_id=str(ctx.user_id) if hasattr(ctx, "user_id") else None,
+            include_public=include_public,
             allowed_providers=allowed_providers,
         )
 

@@ -52,6 +52,7 @@ from .assistant_market import (
 )
 from .assistant_rating import AssistantRatingRequest, AssistantRatingResponse
 from .review import ReviewTaskDTO
+from .secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
 from .notification import (
     NotificationInboxItem,
     NotificationPublishAllRequest,
@@ -126,6 +127,8 @@ __all__ = [
     "AssistantRatingRequest",
     "AssistantRatingResponse",
     "ReviewTaskDTO",
+    "UserSecretaryDTO",
+    "UserSecretaryUpdateRequest",
     "ProviderPresetBase",
     "ProviderPresetCreate",
     "ProviderPresetDTO",

@@ -20,9 +20,20 @@ from app.deps.auth import get_current_active_user, get_permission_flags
 from app.models import User
 from app.schemas.auth import MessageResponse
 from app.schemas.user import UserRead, UserUpdate, UserWithPermissions
+from app.schemas.secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
+from app.repositories import ProviderModelRepository, SecretaryPhaseRepository, UserSecretaryRepository
+from app.services.secretary.secretary_service import UserSecretaryService
 from app.services.users import UserService
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+def get_secretary_service(db: AsyncSession = Depends(get_db)) -> UserSecretaryService:
+    return UserSecretaryService(
+        UserSecretaryRepository(db),
+        SecretaryPhaseRepository(db),
+        ProviderModelRepository(db),
+    )
 
 
 @router.post("/reset-password", response_model=MessageResponse, include_in_schema=False)
@@ -67,6 +78,28 @@ async def update_current_user(
     """
     service = UserService(db)
     return await service.update_profile(user, request)
+
+
+@router.get("/me/secretary", response_model=UserSecretaryDTO)
+async def get_user_secretary(
+    user: User = Depends(get_current_active_user),
+    service: UserSecretaryService = Depends(get_secretary_service),
+) -> UserSecretaryDTO:
+    secretary = await service.get_or_create(user.id)
+    return UserSecretaryDTO.model_validate(secretary)
+
+
+@router.patch("/me/secretary", response_model=UserSecretaryDTO)
+async def update_user_secretary(
+    payload: UserSecretaryUpdateRequest,
+    user: User = Depends(get_current_active_user),
+    service: UserSecretaryService = Depends(get_secretary_service),
+) -> UserSecretaryDTO:
+    try:
+        secretary = await service.update_model(user_id=user.id, model_name=payload.model_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return UserSecretaryDTO.model_validate(secretary)
 
 
 @router.post("/me/change-password", response_model=MessageResponse, include_in_schema=False)

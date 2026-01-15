@@ -214,6 +214,7 @@ async def preview_assistant(
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.set("validation", "request", preview_request)
+    ctx.set("routing", "include_public", False)
 
     orchestrator = GatewayOrchestrator(workflow_config=INTERNAL_PREVIEW_WORKFLOW)
     result = await orchestrator.execute(ctx)

@@ -12,22 +12,22 @@ interface SyncSourceCardProps {
   onSync?: (id: string) => void
 }
 
+const TrustBadge = ({ trustLevel }: { trustLevel?: MCPSource['trustLevel'] }) => {
+    switch(trustLevel) {
+        case 'official':
+            return <Badge variant="secondary" className="h-5 px-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-100 gap-1"><ShieldCheck size={10} /> Official</Badge>
+        case 'community':
+            return <Badge variant="secondary" className="h-5 px-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-100 gap-1"><AlertTriangle size={10} /> Community</Badge>
+        case 'private':
+            return <Badge variant="secondary" className="h-5 px-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200 gap-1"><Lock size={10} /> Private</Badge>
+        default:
+            return null
+    }
+}
+
 export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
   const isModelScope = source.type === 'modelscope'
   const isLocal = source.type === 'local'
-
-  const TrustBadge = () => {
-      switch(source.trustLevel) {
-          case 'official':
-              return <Badge variant="secondary" className="h-5 px-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-100 gap-1"><ShieldCheck size={10} /> Official</Badge>
-          case 'community':
-              return <Badge variant="secondary" className="h-5 px-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-100 gap-1"><AlertTriangle size={10} /> Community</Badge>
-          case 'private':
-              return <Badge variant="secondary" className="h-5 px-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200 gap-1"><Lock size={10} /> Private</Badge>
-          default:
-              return null
-      }
-  }
 
   return (
     <Card className={cn(
@@ -53,7 +53,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
               </div>
            </div>
            
-           <TrustBadge />
+           <TrustBadge trustLevel={source.trustLevel} />
        </div>
 
        <div className="flex justify-between items-center pt-2 border-t border-gray-50">

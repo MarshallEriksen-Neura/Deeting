@@ -6,7 +6,6 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
-  SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -90,18 +89,12 @@ export function ServerLogsSheet({ tool, open, onOpenChange }: ServerLogsSheetPro
                         <TabsContent value="stdout" className="h-full m-0 p-0">
                              <ScrollArea className="h-full w-full p-4">
                                 <div className="whitespace-pre-wrap">
-                                    <span className="text-gray-500 select-none">12:30:01</span> [INFO] Server started on port 3000{'
-'}
-                                    <span className="text-gray-500 select-none">12:30:02</span> [INFO] Connected to stdio transport{'
-'}
-                                    <span className="text-gray-500 select-none">12:30:02</span> [INFO] Capabilities: read_file, list_dir{'
-'}
-                                    <span className="text-gray-500 select-none">12:30:05</span> <span className="text-green-400">[DEBUG] Incoming request: list_tools</span>{'
-'}
-                                    <span className="text-gray-500 select-none">12:30:05</span> <span className="text-green-400">[DEBUG] Sending response: 2 tools found</span>{'
-'}
-                                    <span className="text-gray-500 select-none">12:30:15</span> [INFO] Heartbeat received (ping: {tool.ping}){'
-'}
+                                    <span className="text-gray-500 select-none">12:30:01</span> [INFO] Server started on port 3000{"\n"}
+                                    <span className="text-gray-500 select-none">12:30:02</span> [INFO] Connected to stdio transport{"\n"}
+                                    <span className="text-gray-500 select-none">12:30:02</span> [INFO] Capabilities: read_file, list_dir{"\n"}
+                                    <span className="text-gray-500 select-none">12:30:05</span> <span className="text-green-400">[DEBUG] Incoming request: list_tools</span>{"\n"}
+                                    <span className="text-gray-500 select-none">12:30:05</span> <span className="text-green-400">[DEBUG] Sending response: 2 tools found</span>{"\n"}
+                                    <span className="text-gray-500 select-none">12:30:15</span> [INFO] Heartbeat received (ping: {tool.ping}){"\n"}
                                     {/* Simulated log tail */}
                                 </div>
                              </ScrollArea>
@@ -110,12 +103,9 @@ export function ServerLogsSheet({ tool, open, onOpenChange }: ServerLogsSheetPro
                              <ScrollArea className="h-full w-full p-4">
                                  {tool.status === 'crashed' || tool.error ? (
                                      <div className="text-red-400 whitespace-pre-wrap">
-                                        <span className="text-gray-500 select-none">12:35:00</span> [FATAL] Process exited with code 1{'
-'}
-                                        <span className="text-gray-500 select-none">12:35:00</span> Error: {tool.error || "Unknown error occurred"}{'
-'}
-                                        at Server.handleRequest (server.js:120:5){'
-'}
+                                        <span className="text-gray-500 select-none">12:35:00</span> [FATAL] Process exited with code 1{"\n"}
+                                        <span className="text-gray-500 select-none">12:35:00</span> Error: {tool.error || "Unknown error occurred"}{"\n"}
+                                        at Server.handleRequest (server.js:120:5){"\n"}
                                         at Transport.onMessage (transport.js:45:12)
                                      </div>
                                  ) : (

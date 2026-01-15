@@ -1,6 +1,6 @@
 "use client"
 
-import { Terminal, Lock, Settings, AlertCircle, Play, Square } from "lucide-react"
+import { Terminal, Lock, Settings, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -16,27 +16,27 @@ interface ServerCardProps {
   onResolveConflict?: () => void
 }
 
+const StatusIndicator = ({ status }: { status: MCPToolStatus }) => {
+    switch(status) {
+        case 'running': 
+          return <div className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+          </div>
+        case 'degraded': return <div className="h-2 w-2 rounded-full bg-orange-400" />
+        case 'crashed': return <div className="h-2 w-2 rounded-full bg-red-500" />
+        case 'starting': return <div className="h-2 w-2 rounded-full bg-yellow-400 animate-pulse" />
+        case 'updating': return <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+        case 'stopped': 
+        default:
+          return <div className="h-2 w-2 rounded-full border border-gray-300" />
+    }
+}
+
 export function ServerCard({ tool, onToggle, onClick, onResolveConflict }: ServerCardProps) {
   const isSynced = tool.source !== 'local'
   const isRunning = tool.status === 'running' || tool.status === 'degraded'
   
-  const StatusIndicator = ({ status }: { status: MCPToolStatus }) => {
-      switch(status) {
-          case 'running': 
-            return <div className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </div>
-          case 'degraded': return <div className="h-2 w-2 rounded-full bg-orange-400" />
-          case 'crashed': return <div className="h-2 w-2 rounded-full bg-red-500" />
-          case 'starting': return <div className="h-2 w-2 rounded-full bg-yellow-400 animate-pulse" />
-          case 'updating': return <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-          case 'stopped': 
-          default:
-            return <div className="h-2 w-2 rounded-full border border-gray-300" />
-      }
-  }
-
   return (
     <Card 
       onClick={(e) => {

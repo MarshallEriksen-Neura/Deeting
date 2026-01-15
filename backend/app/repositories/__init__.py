@@ -14,7 +14,7 @@ from .assistant_install_repository import AssistantInstallRepository
 from .assistant_market_repository import AssistantMarketRepository
 from .assistant_tag_repository import AssistantTagLinkRepository, AssistantTagRepository
 from .assistant_rating_repository import AssistantRatingRepository
-from .secretary_repository import UserSecretaryRepository
+from .secretary_repository import UserSecretaryRepository, SecretaryPhaseRepository
 from .notification_repository import NotificationReceiptRepository, NotificationRepository
 from .review_repository import ReviewTaskRepository
 from .media_asset_repository import MediaAssetRepository
@@ -29,6 +29,7 @@ __all__ = [
     "AssistantTagLinkRepository",
     "AssistantRatingRepository",
     "UserSecretaryRepository",
+    "SecretaryPhaseRepository",
     "AuditRepository",
     "BanditRepository",
     "BaseRepository",
