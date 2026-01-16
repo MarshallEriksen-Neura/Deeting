@@ -43,6 +43,8 @@ Gateway 请求/响应 Schema
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -59,6 +61,12 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = Field(default=False)
     temperature: float | None = None
     max_tokens: int | None = None
+    provider_model_id: str | None = Field(
+        default=None, description="指定 provider model ID（可选，绕过负载均衡）"
+    )
+    assistant_id: UUID | None = Field(
+        default=None, description="助手 ID（内部通道可选）"
+    )
     session_id: str | None = Field(
         default=None, description="会话 ID（可选，不传则自动生成）"
     )
@@ -133,12 +141,38 @@ class EmbeddingsResponse(BaseModel):
     usage: UsageInfo | None = None
 
 
+class RoutingTestRequest(BaseModel):
+    model: str = Field(..., description="目标模型")
+    capability: str = Field(default="chat", description="能力类型: chat/embedding 等")
+
+
+class RoutingTestResponse(BaseModel):
+    model: str
+    capability: str
+    provider: str | None = None
+    preset_id: int | None = None
+    preset_item_id: int | None = None
+    instance_id: str | None = None
+    provider_model_id: str | None = None
+    upstream_url: str | None = None
+    template_engine: str | None = None
+    routing_config: dict | None = None
+    limit_config: dict | None = None
+    pricing_config: dict | None = None
+    affinity_hit: bool | None = None
+
+
+class StepRegistryResponse(BaseModel):
+    steps: list[str]
+
+
 class ModelInfo(BaseModel):
     id: str
     object: str = "model"
     owned_by: str = "system"
     icon: str | None = None
     upstream_model_id: str | None = None
+    provider_model_id: str | None = None
 
 
 class ModelListResponse(BaseModel):

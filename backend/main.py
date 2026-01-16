@@ -172,6 +172,10 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(
         internal_gateway_router, prefix=f"{api_prefix}/internal", tags=["Gateway"]
     )
+    # 兼容文档所用的内部通道前缀 `/internal/v1`
+    app.include_router(
+        internal_gateway_router, prefix="/internal/v1", tags=["Gateway"]
+    )
     app.include_router(
         internal_bridge_router, prefix=f"{api_prefix}/internal", tags=["Bridge"]
     )

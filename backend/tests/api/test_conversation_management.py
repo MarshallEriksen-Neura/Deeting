@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -36,6 +38,28 @@ class _DummyConversationService:
         }
 
 
+class _DummyConversationSessionService:
+    def __init__(self):
+        self.called_with = None
+
+    async def list_user_sessions(self, *args, **kwargs):
+        self.called_with = kwargs
+        return {
+            "items": [
+                {
+                    "session_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+                    "title": "Test Session",
+                    "summary_text": "summary",
+                    "message_count": 3,
+                    "first_message_at": "2026-01-16T09:20:11+08:00",
+                    "last_active_at": "2026-01-16T09:42:01+08:00",
+                }
+            ],
+            "next_page": None,
+            "previous_page": None,
+        }
+
+
 class _DummyOrchestrator:
     async def execute(self, ctx):
         ctx.set(
@@ -69,6 +93,27 @@ async def test_delete_message(monkeypatch):
         assert resp.status_code == 200
         body = resp.json()
         assert body["deleted"] is True
+
+
+async def test_list_conversations(monkeypatch):
+    prev_overrides = _override_auth(monkeypatch)
+    service = _DummyConversationSessionService()
+    app.dependency_overrides[
+        conversation_route.get_conversation_session_service
+    ] = lambda: service
+    try:
+        assistant_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get(
+                f"/api/v1/internal/conversations?assistant_id={assistant_id}"
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["items"][0]["session_id"] == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+            assert service.called_with["assistant_id"] == UUID(assistant_id)
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(prev_overrides)
         assert body["turn_index"] == 3
 
 

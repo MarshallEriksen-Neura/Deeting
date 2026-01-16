@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import math
 import random
+import uuid
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -184,6 +185,125 @@ class RoutingSelector:
                     )
 
         # 填充 bandit 状态
+        if results:
+            states = await self.bandit_repo.get_states_map([c.model_id for c in results])
+            for c in results:
+                c.bandit_state = states.get(c.model_id)
+
+        return results
+
+    async def load_candidates_by_provider_model_id(
+        self,
+        provider_model_id: str,
+        capability: str | None,
+        channel: str,
+        user_id: str | None = None,
+        include_public: bool = True,
+        allowed_providers: set[str] | None = None,
+    ) -> list[RoutingCandidate]:
+        results: list[RoutingCandidate] = []
+
+        try:
+            model_uuid = uuid.UUID(str(provider_model_id))
+        except Exception:
+            return results
+
+        model = await self.model_repo.get(model_uuid)
+        if not model or not model.is_active:
+            return results
+        if capability and model.capability != capability:
+            return results
+
+        instance = await self.instance_repo.get(model.instance_id)
+        if not instance or not instance.is_enabled:
+            return results
+
+        if channel == "external" and instance.channel not in {"external", "both"}:
+            return results
+        if channel == "internal" and instance.channel not in {"internal", "both"}:
+            return results
+
+        if user_id is not None:
+            try:
+                user_uuid = uuid.UUID(str(user_id))
+            except Exception:
+                user_uuid = None
+            if user_uuid:
+                if include_public:
+                    if instance.user_id not in {user_uuid, None}:
+                        return results
+                else:
+                    if instance.user_id != user_uuid:
+                        return results
+
+        preset = await self.preset_repo.get_by_slug(instance.preset_slug)
+        if not preset or not preset.is_active:
+            return results
+        if allowed_providers and preset.provider not in allowed_providers:
+            return results
+
+        credentials_map = await self.credential_repo.get_by_instance_ids([str(instance.id)])
+        cred_entries: list[dict] = []
+        if instance.credentials_ref:
+            cred_entries.append(
+                {
+                    "id": None,
+                    "alias": "default",
+                    "secret_ref": instance.credentials_ref,
+                    "weight": 0,
+                    "priority": 0,
+                }
+            )
+        extra_creds = credentials_map.get(str(instance.id), [])
+        for cred in extra_creds:
+            cred_entries.append(
+                {
+                    "id": str(cred.id),
+                    "alias": cred.alias,
+                    "secret_ref": cred.secret_ref_id,
+                    "weight": int(cred.weight or 0),
+                    "priority": int(cred.priority or 0),
+                }
+            )
+
+        if not cred_entries:
+            return results
+
+        base_url = instance.base_url or ""
+        upstream_url = f"{base_url.rstrip('/')}/{model.upstream_path.lstrip('/')}"
+
+        for cred in cred_entries:
+            auth_config = dict((preset.auth_config or {})) if preset else {}
+            auth_config["secret_ref_id"] = cred["secret_ref"]
+            auth_config["provider"] = preset.provider if preset else None
+
+            results.append(
+                RoutingCandidate(
+                    preset_id=str(preset.id) if preset else None,
+                    instance_id=str(instance.id),
+                    preset_item_id=None,
+                    model_id=str(model.id),
+                    provider=preset.provider if preset else "custom",
+                    upstream_url=upstream_url,
+                    channel=instance.channel or "external",
+                    template_engine=model.template_engine or "simple_replace",
+                    request_template=model.request_template or {},
+                    response_transform=model.response_transform or {},
+                    pricing_config=model.pricing_config or {},
+                    limit_config=model.limit_config or {},
+                    auth_type=preset.auth_type if preset else "bearer",
+                    auth_config=auth_config,
+                    default_headers=preset.default_headers if preset else {},
+                    default_params=preset.default_params if preset else {},
+                    routing_config=model.routing_config or {},
+                    weight=int(model.weight or 0) + int(cred["weight"] or 0),
+                    priority=int(model.priority or 0) + int(cred["priority"] or 0),
+                    credential_id=cred["id"],
+                    credential_alias=cred["alias"],
+                    bandit_state=None,
+                )
+            )
+
         if results:
             states = await self.bandit_repo.get_states_map([c.model_id for c in results])
             for c in results:

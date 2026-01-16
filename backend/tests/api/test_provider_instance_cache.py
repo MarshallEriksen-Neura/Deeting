@@ -135,6 +135,68 @@ async def test_provider_model_candidates_cache_and_invalidate():
 
 
 @pytest.mark.asyncio
+async def test_provider_model_list_returns_all():
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-list",
+            base_url="https://api.example.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        model_a = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capability="chat",
+            model_id="gpt-4",
+            display_name="GPT-4",
+            upstream_path="/v1/chat",
+            template_engine="simple_replace",
+            request_template={},
+            response_transform={},
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        model_b = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capability="chat",
+            model_id="gpt-3.5",
+            display_name="GPT-3.5",
+            upstream_path="/v1/chat-35",
+            template_engine="simple_replace",
+            request_template={},
+            response_transform={},
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        await svc.upsert_models(inst.id, None, [model_a, model_b])
+
+        model_repo = ProviderModelRepository(session)
+        all_models = await model_repo.list()
+        ids = {m.id for m in all_models}
+        assert model_a.id in ids
+        assert model_b.id in ids
+
+
+@pytest.mark.asyncio
 async def test_provider_preset_cache_and_invalidate():
     async with AsyncSessionLocal() as session:
         repo = ProviderPresetRepository(session)

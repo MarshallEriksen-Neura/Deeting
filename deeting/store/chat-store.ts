@@ -2,6 +2,9 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { createChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat";
+import { fetchConversationWindow } from "@/lib/api/conversations";
+import type { ModelInfo } from "@/lib/api/models";
 
 export type MessageRole = "user" | "assistant" | "system";
 
@@ -10,6 +13,45 @@ export interface Message {
   role: MessageRole;
   content: string;
   createdAt: number;
+}
+
+export interface ChatAssistant {
+  id: string;
+  name: string;
+  desc: string;
+  color: string;
+  systemPrompt?: string;
+}
+
+const SESSION_STORAGE_PREFIX = "deeting-chat-session";
+
+function sessionKeyForAssistant(assistantId: string) {
+  return `${SESSION_STORAGE_PREFIX}:${assistantId}`;
+}
+
+function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessage[] {
+  const mapped = history.map((msg) => ({
+    role: msg.role,
+    content: msg.content,
+  })) as ChatMessage[];
+
+  const trimmedPrompt = systemPrompt?.trim();
+  if (trimmedPrompt && !mapped.some((msg) => msg.role === "system")) {
+    mapped.unshift({ role: "system", content: trimmedPrompt });
+  }
+
+  return mapped;
+}
+
+function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
+  const filtered = rawMessages.filter((msg) => msg.role === "user" || msg.role === "assistant");
+  const total = filtered.length;
+  return filtered.map((msg, index) => ({
+    id: `conv-${msg.turn_index ?? index}`,
+    role: msg.role === "assistant" ? "assistant" : "user",
+    content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? ""),
+    createdAt: Date.now() - (total - index) * 1000,
+  }));
 }
 
 interface ChatConfig {
@@ -24,13 +66,28 @@ interface ChatState {
   messages: Message[];
   isLoading: boolean;
   config: ChatConfig;
+  assistants: ChatAssistant[];
+  models: ModelInfo[];
+  activeAssistantId?: string;
+  sessionId?: string;
+  streamEnabled: boolean;
 }
 
 interface ChatActions {
   setInput: (input: string) => void;
   setConfig: (config: Partial<ChatConfig>) => void;
+  setAssistants: (assistants: ChatAssistant[]) => void;
+  setModels: (models: ModelInfo[]) => void;
+  setActiveAssistantId: (assistantId?: string) => void;
+  setSessionId: (sessionId?: string) => void;
+  setStreamEnabled: (enabled: boolean) => void;
+  setMessages: (messages: Message[]) => void;
+  updateMessage: (id: string, content: string) => void;
   addMessage: (role: MessageRole, content: string) => void;
   clearMessages: () => void;
+  resetSession: () => void;
+  loadHistory: (assistantId?: string) => Promise<void>;
+  loadHistoryBySession: (sessionId: string) => Promise<void>;
   sendMessage: () => Promise<void>;
 }
 
@@ -46,10 +103,32 @@ export const useChatStore = create<ChatState & ChatActions>()(
         topP: 1.0,
         maxTokens: 2048,
       },
+      assistants: [],
+      models: [],
+      activeAssistantId: undefined,
+      sessionId: undefined,
+      streamEnabled: false,
 
       setInput: (input) => set({ input }),
-      
+
       setConfig: (newConfig) => set((state) => ({ config: { ...state.config, ...newConfig } })),
+
+      setAssistants: (assistants) => set({ assistants }),
+
+      setModels: (models) => set({ models }),
+
+      setActiveAssistantId: (assistantId) => set({ activeAssistantId: assistantId }),
+
+      setSessionId: (sessionId) => set({ sessionId }),
+
+      setStreamEnabled: (enabled) => set({ streamEnabled: enabled }),
+
+      setMessages: (messages) => set({ messages }),
+
+      updateMessage: (id, content) =>
+        set((state) => ({
+          messages: state.messages.map((msg) => (msg.id === id ? { ...msg, content } : msg)),
+        })),
 
       addMessage: (role, content) => {
         const newMessage: Message = {
@@ -63,25 +142,126 @@ export const useChatStore = create<ChatState & ChatActions>()(
 
       clearMessages: () => set({ messages: [] }),
 
-      sendMessage: async () => {
-        const { input, addMessage, setInput } = get();
-        if (!input.trim()) return;
+      resetSession: () => {
+        const activeAssistantId = get().activeAssistantId;
+        if (typeof window !== "undefined" && activeAssistantId) {
+          localStorage.removeItem(sessionKeyForAssistant(activeAssistantId));
+        }
+        set({ messages: [], sessionId: undefined });
+      },
 
-        // 1. Add user message
-        addMessage("user", input);
-        setInput(""); // Clear input immediately for responsiveness
-        set({ isLoading: true });
+      loadHistory: async (assistantId) => {
+        if (typeof window === "undefined") return;
+        const targetAssistantId = assistantId ?? get().activeAssistantId;
+        if (!targetAssistantId) return;
+        const storageKey = sessionKeyForAssistant(targetAssistantId);
+        const storedSessionId = localStorage.getItem(storageKey);
+        if (!storedSessionId) {
+          set({ messages: [], sessionId: undefined });
+          return;
+        }
+        try {
+          await get().loadHistoryBySession(storedSessionId);
+        } catch {
+          set({ messages: [], sessionId: undefined });
+        }
+      },
+
+      loadHistoryBySession: async (sessionId) => {
+        if (!sessionId) return;
+        try {
+          const windowState = await fetchConversationWindow(sessionId);
+          const mapped = mapConversationMessages(windowState.messages ?? []);
+          set({ messages: mapped, sessionId });
+          const activeAssistantId = get().activeAssistantId;
+          if (typeof window !== "undefined" && activeAssistantId) {
+            localStorage.setItem(sessionKeyForAssistant(activeAssistantId), sessionId);
+          }
+        } catch {
+          set({ messages: [], sessionId: undefined });
+        }
+      },
+
+      sendMessage: async () => {
+        const {
+          input,
+          messages,
+          config,
+          models,
+          assistants,
+          activeAssistantId,
+          sessionId,
+          streamEnabled,
+          updateMessage,
+          setSessionId,
+        } = get();
+        const trimmedInput = input.trim();
+        if (!trimmedInput) return;
+
+        const selectedModel = models.find((model) => model.id === config.model) ?? models[0];
+        const activeAssistant = assistants.find((assistant) => assistant.id === activeAssistantId);
+        if (!selectedModel || !activeAssistant) return;
+
+        const userMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: trimmedInput,
+          createdAt: Date.now(),
+        };
+        const assistantMessageId = crypto.randomUUID();
+        const assistantMessage: Message = {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+        };
+
+        set((state) => ({
+          messages: [...state.messages, userMessage, assistantMessage],
+          input: "",
+          isLoading: true,
+        }));
+
+        const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant.systemPrompt);
+        const payload = {
+          model: selectedModel.id,
+          provider_model_id: selectedModel.provider_model_id ?? undefined,
+          messages: requestMessages,
+          temperature: config.temperature,
+          max_tokens: config.maxTokens,
+          assistant_id: activeAssistant?.id ?? undefined,
+          session_id: sessionId ?? undefined,
+        };
+
+        const storageKey = sessionKeyForAssistant(activeAssistant.id);
 
         try {
-          // TODO: Replace with actual API call
-          // await api.sendMessage(input);
-          
-          // Mock response
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          addMessage("assistant", "This is a simulated response. Connect your API in chat-store.ts!");
+          if (streamEnabled) {
+            await streamChatCompletion(payload, {
+              onDelta: (_delta, snapshot) => {
+                updateMessage(assistantMessageId, snapshot);
+              },
+              onMessage: (data) => {
+                const session = (data as { session_id?: string | null })?.session_id ?? undefined;
+                if (session) {
+                  setSessionId(session);
+                  localStorage.setItem(storageKey, session);
+                }
+              },
+            });
+          } else {
+            const response = await createChatCompletion({ ...payload, stream: false });
+            const reply = response?.choices?.[0]?.message?.content ?? "";
+            updateMessage(assistantMessageId, reply);
+            const session = response?.session_id ?? undefined;
+            if (session) {
+              setSessionId(session);
+              localStorage.setItem(storageKey, session);
+            }
+          }
         } catch (error) {
-          console.error("Failed to send message", error);
-          // Optional: Add error message to chat
+          const message = error instanceof Error && error.message ? error.message : "";
+          updateMessage(assistantMessageId, message);
         } finally {
           set({ isLoading: false });
         }
@@ -90,7 +270,12 @@ export const useChatStore = create<ChatState & ChatActions>()(
     {
       name: "deeting-chat-store",
       storage: createJSONStorage(() => sessionStorage),
-      partialize: (state) => ({ messages: state.messages, config: state.config }), // Persist messages and config
+      partialize: (state) => ({
+        messages: state.messages,
+        config: state.config,
+        activeAssistantId: state.activeAssistantId,
+        streamEnabled: state.streamEnabled,
+      }), // Persist messages and config
     }
   )
 );

@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +22,8 @@ from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models import User
 from app.schemas.gateway import ChatCompletionRequest, ChatCompletionResponse, GatewayError
+from app.schemas.conversation import ConversationSessionItem
+from app.services.conversation.session_service import ConversationSessionService
 from app.services.conversation.service import ConversationService
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import (
@@ -28,6 +32,12 @@ from app.services.orchestrator.orchestrator import (
 )
 
 router = APIRouter(tags=["Conversations"])
+
+
+def get_conversation_session_service(
+    db: AsyncSession = Depends(get_db),
+) -> ConversationSessionService:
+    return ConversationSessionService(db)
 
 
 class RegenerateRequest(BaseModel):
@@ -47,6 +57,21 @@ class DeleteResponse(BaseModel):
     deleted: bool
 
 
+class ConversationMessage(BaseModel):
+    role: str
+    content: Any | None = None
+    turn_index: int | None = None
+    is_truncated: bool | None = None
+    name: str | None = None
+
+
+class ConversationWindowResponse(BaseModel):
+    session_id: str
+    messages: list[ConversationMessage] = []
+    meta: dict | None = None
+    summary: dict | None = None
+
+
 def _build_error(ctx: WorkflowContext) -> JSONResponse:
     return JSONResponse(
         status_code=400,
@@ -58,6 +83,41 @@ def _build_error(ctx: WorkflowContext) -> JSONResponse:
             upstream_status=ctx.upstream_result.status_code,
             upstream_code=ctx.upstream_result.error_code,
         ).model_dump(),
+    )
+
+
+@router.get(
+    "/conversations",
+    response_model=CursorPage[ConversationSessionItem],
+)
+async def list_conversations(
+    params: CursorParams = Depends(),
+    assistant_id: UUID | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    service: ConversationSessionService = Depends(get_conversation_session_service),
+) -> CursorPage[ConversationSessionItem]:
+    return await service.list_user_sessions(
+        user_id=user.id,
+        params=params,
+        assistant_id=assistant_id,
+    )
+
+
+@router.get(
+    "/conversations/{session_id}",
+    response_model=ConversationWindowResponse,
+)
+async def get_conversation_window(
+    session_id: str,
+    user: User = Depends(get_current_user),
+) -> ConversationWindowResponse:
+    svc = ConversationService()
+    window = await svc.load_window(session_id)
+    return ConversationWindowResponse(
+        session_id=session_id,
+        messages=window.get("messages", []) or [],
+        meta=window.get("meta"),
+        summary=window.get("summary"),
     )
 
 

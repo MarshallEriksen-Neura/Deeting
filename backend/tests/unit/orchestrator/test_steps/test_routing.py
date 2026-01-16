@@ -29,6 +29,7 @@ def _fake_routing_result():
             "priority": 1,
         },
         [],
+        False,
     )
 
 
@@ -49,6 +50,29 @@ async def test_routing_success_populates_context(monkeypatch):
     assert ctx.get("routing", "preset_id") == 1
     assert ctx.get("routing", "candidates")[0]["provider"] == "fake"
     assert ctx.routing_weight == 1
+
+
+@pytest.mark.asyncio
+async def test_routing_with_provider_model_id(monkeypatch):
+    class DummyRequest:
+        def __init__(self):
+            self.model = "gpt-4"
+            self.provider_model_id = "11111111-1111-1111-1111-111111111111"
+
+    ctx = WorkflowContext(
+        channel=Channel.EXTERNAL,
+        requested_model="gpt-4",
+        db_session=AsyncMock(spec=AsyncSession),
+    )
+    ctx.set("validation", "request", DummyRequest())
+
+    step = RoutingStep()
+    monkeypatch.setattr(step, "_select_by_provider_model_id", AsyncMock(return_value=_fake_routing_result()))
+
+    result = await step.execute(ctx)
+
+    assert result.status == StepStatus.SUCCESS
+    assert ctx.selected_upstream == "https://api.fake.com"
 
 
 @pytest.mark.asyncio

@@ -50,6 +50,7 @@ from .assistant_market import (
     AssistantTagCreateRequest,
     AssistantPreviewRequest,
 )
+from .conversation import ConversationSessionItem
 from .assistant_rating import AssistantRatingRequest, AssistantRatingResponse
 from .review import ReviewTaskDTO
 from .secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
@@ -96,6 +97,7 @@ from .user import (
 __all__ = [
     "BanRequest",
     "BaseSchema",
+    "ConversationSessionItem",
     "GatewayLogBase",
     "GatewayLogCreate",
     "GatewayLogDTO",

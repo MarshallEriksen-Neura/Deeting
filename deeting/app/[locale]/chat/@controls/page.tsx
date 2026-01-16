@@ -9,19 +9,25 @@ import { useChatStore } from '@/store/chat-store';
 export default function DefaultControls() {
   const [showMenu, setShowMenu] = useState(false);
   
-  const { input, setInput, sendMessage, isLoading } = useChatStore(
+  const { input, setInput, sendMessage, isLoading, activeAssistantId, models } = useChatStore(
     useShallow((state) => ({
       input: state.input,
       setInput: state.setInput,
       sendMessage: state.sendMessage,
       isLoading: state.isLoading,
+      activeAssistantId: state.activeAssistantId,
+      models: state.models,
     }))
   );
+
+  const canSend = Boolean(activeAssistantId) && models.length > 0 && input.trim().length > 0 && !isLoading;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (canSend) {
+        sendMessage();
+      }
     }
   };
 
@@ -84,11 +90,11 @@ export default function DefaultControls() {
       {/* 3. Send Action */}
       <button 
         onClick={() => sendMessage()}
-        disabled={isLoading || !input.trim()}
+        disabled={!canSend}
         className={`
           bg-black text-white dark:bg-white/10 dark:text-white rounded-full w-10 h-10 flex items-center justify-center 
           hover:bg-gray-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
-          ${(isLoading || !input.trim()) ? 'opacity-50 cursor-not-allowed' : ''}
+          ${!canSend ? 'opacity-50 cursor-not-allowed' : ''}
         `}
       >
         <ArrowUp className="w-5 h-5" />

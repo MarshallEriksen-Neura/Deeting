@@ -1,0 +1,52 @@
+{
+  "header": {
+    "online": "在线",
+    "stream": "流式",
+    "streamOn": "逐字生成",
+    "streamOff": "整段输出"
+  },
+  "model": {
+    "label": "模型",
+    "placeholder": "选择模型"
+  },
+  "empty": {
+    "notFoundTitle": "未找到该助手",
+    "notFoundDesc": "该助手可能未安装或已移除。",
+    "backToList": "返回助手列表",
+    "loading": "正在加载助手..."
+  },
+  "greeting": {
+    "content": "你好！我是 **{name}**。\n{desc}\n\n准备好开始协作了吗？"
+  },
+  "status": {
+    "thinking": "{name} 正在思考..."
+  },
+  "input": {
+    "placeholder": "给 {name} 发消息..."
+  },
+  "history": {
+    "title": "历史记录",
+    "searchPlaceholder": "搜索会话...",
+    "emptyTitle": "暂无会话",
+    "emptyDesc": "开始新的对话后会显示在这里。",
+    "loading": "加载中...",
+    "loadFailed": "加载会话失败。",
+    "retry": "重试",
+    "noMore": "没有更多会话",
+    "untitled": "未命名会话",
+    "viewArchived": "查看归档",
+    "groups": {
+      "today": "今天",
+      "yesterday": "昨天",
+      "last7Days": "近 7 天",
+      "earlier": "更早"
+    }
+  },
+  "footer": {
+    "disclaimer": "AI 生成内容可能不准确。"
+  },
+  "error": {
+    "requestFailed": "请求失败，请稍后重试。",
+    "modelUnavailable": "暂无可用模型，请先配置提供商。"
+  }
+}

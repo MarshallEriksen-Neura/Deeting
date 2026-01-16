@@ -86,6 +86,12 @@ async def test_market_install_flow_marks_installed():
 
         await market_service.install_assistant(user_id=user.id, assistant_id=assistant.id)
 
+        install_page = await market_service.list_installs(
+            user_id=user.id,
+            params=CursorParams(size=10),
+        )
+        assert install_page.items[0].assistant.version.system_prompt == "You are a helpful assistant."
+
         page_after = await market_service.list_market(
             user_id=user.id,
             params=CursorParams(size=10),
@@ -104,3 +110,4 @@ async def test_market_install_flow_marks_installed():
         assert install_item.alias == "My Assistant"
         assert install_item.pinned_version_id == assistant.current_version_id
         assert install_item.follow_latest is False
+        assert install_item.assistant.version.system_prompt == "You are a helpful assistant."

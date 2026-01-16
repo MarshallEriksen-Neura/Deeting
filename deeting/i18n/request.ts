@@ -16,6 +16,7 @@ const namespaces = [
   "profile",
   "assistants",
   "mcp",
+  "chat",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

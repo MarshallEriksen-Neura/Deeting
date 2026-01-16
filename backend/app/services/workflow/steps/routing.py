@@ -84,6 +84,8 @@ class RoutingStep(BaseStep):
         """执行路由决策"""
         model = ctx.requested_model or ctx.get("validation", "model")
         capability = ctx.capability or "chat"
+        raw_request = ctx.get("validation", "request")
+        provider_model_id = self._extract_provider_model_id(raw_request)
 
         if not model:
             return StepResult(
@@ -106,16 +108,25 @@ class RoutingStep(BaseStep):
         )
 
         try:
-            routing_result, backups, affinity_hit = await self._select_upstream(
-                session=ctx.db_session,
-                capability=capability,
-                model=model,
-                channel=ctx.channel.value,
-                ctx=ctx,
-                allowed_providers=allowed_providers,
-                allowed_presets=allowed_presets,
-                allowed_preset_items=allowed_preset_items,
-            )
+            if provider_model_id:
+                routing_result, backups, affinity_hit = await self._select_by_provider_model_id(
+                    session=ctx.db_session,
+                    provider_model_id=provider_model_id,
+                    channel=ctx.channel.value,
+                    ctx=ctx,
+                    allowed_providers=allowed_providers,
+                )
+            else:
+                routing_result, backups, affinity_hit = await self._select_upstream(
+                    session=ctx.db_session,
+                    capability=capability,
+                    model=model,
+                    channel=ctx.channel.value,
+                    ctx=ctx,
+                    allowed_providers=allowed_providers,
+                    allowed_presets=allowed_presets,
+                    allowed_preset_items=allowed_preset_items,
+                )
 
             # 写入上下文
             ctx.set("routing", "preset_id", routing_result["preset_id"])
@@ -203,6 +214,68 @@ class RoutingStep(BaseStep):
         ctx.selected_provider_model_id = None
         ctx.routing_weight = fallback["weight"]
         return StepResult(status=StepStatus.SUCCESS, data=fallback)
+
+    def _extract_provider_model_id(self, raw_request) -> str | None:
+        if raw_request is None:
+            return None
+        if isinstance(raw_request, dict):
+            return raw_request.get("provider_model_id")
+        return getattr(raw_request, "provider_model_id", None)
+
+    async def _select_by_provider_model_id(
+        self,
+        session: AsyncSession,
+        provider_model_id: str,
+        channel: str,
+        ctx: "WorkflowContext",
+        allowed_providers: set[str] | None = None,
+    ) -> tuple[dict, list[dict], bool]:
+        from app.services.providers.routing_selector import RoutingSelector
+
+        selector = RoutingSelector(session)
+        include_public = ctx.get("routing", "include_public", True)
+        candidates = await selector.load_candidates_by_provider_model_id(
+            provider_model_id=provider_model_id,
+            capability=ctx.capability or "chat",
+            channel=channel,
+            user_id=str(ctx.user_id) if hasattr(ctx, "user_id") else None,
+            include_public=include_public,
+            allowed_providers=allowed_providers,
+        )
+
+        if not candidates:
+            raise NoAvailableUpstreamError(
+                f"No upstream available for provider_model_id={provider_model_id}"
+            )
+
+        messages = ctx.get("conversation", "merged_messages") or ctx.get("validation", "validated", {}).get("messages")
+        primary, backups, _ = await selector.choose(candidates, messages=messages)
+
+        def to_dict(c):
+            return {
+                "preset_id": c.preset_id,
+                "preset_item_id": c.preset_item_id,
+                "instance_id": c.instance_id,
+                "provider_model_id": c.model_id,
+                "upstream_url": c.upstream_url,
+                "provider": c.provider,
+                "template_engine": c.template_engine,
+                "request_template": c.request_template,
+                "response_transform": c.response_transform,
+                "pricing_config": c.pricing_config,
+                "limit_config": c.limit_config,
+                "auth_type": c.auth_type,
+                "auth_config": c.auth_config,
+                "default_headers": c.default_headers,
+                "default_params": c.default_params,
+                "routing_config": c.routing_config,
+                "weight": c.weight,
+                "priority": c.priority,
+                "credential_id": c.credential_id,
+                "credential_alias": c.credential_alias,
+            }
+
+        return to_dict(primary), [to_dict(b) for b in backups], False
 
     async def _select_upstream(
         self,

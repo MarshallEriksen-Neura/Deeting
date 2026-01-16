@@ -5,6 +5,7 @@ import { X, Code, PenTool, Sparkles, MessageSquare, Plus, Pencil } from 'lucide-
 import { useTranslations } from 'next-intl';
 import { CreateAgentModal } from '@/components/assistants/create-agent-modal';
 import { useMarketStore } from '@/store/market-store';
+import { useChatService } from '@/hooks/use-chat-service';
 
 export default function SelectAgentModal() {
   const router = useRouter();
@@ -13,16 +14,37 @@ export default function SelectAgentModal() {
   const localAssistants = useMarketStore((state) => state.localAssistants);
   const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants);
   const loaded = useMarketStore((state) => state.loaded);
+  const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
+  const { assistants: cloudAssistants } = useChatService({ enabled: !isTauri });
 
   React.useEffect(() => {
-    if (loaded) return;
+    if (loaded || !isTauri) return;
     void loadLocalAssistants();
-  }, [loaded, loadLocalAssistants]);
+  }, [isTauri, loaded, loadLocalAssistants]);
 
   const assistantMap = React.useMemo(
-    () => new Map(localAssistants.map((assistant) => [assistant.id, assistant])),
-    [localAssistants]
+    () => (isTauri ? new Map(localAssistants.map((assistant) => [assistant.id, assistant])) : new Map()),
+    [isTauri, localAssistants]
   );
+
+  const cloudAgents = React.useMemo(
+    () =>
+      cloudAssistants.map((assistant) => ({
+        id: assistant.id,
+        name: assistant.name,
+        desc: assistant.desc,
+        icon: "lucide:bot",
+        tags: [],
+        author: "system",
+        installs: "",
+        rating: 0,
+        color: assistant.color,
+        systemPrompt: assistant.systemPrompt,
+      })),
+    [cloudAssistants]
+  );
+
+  const displayAgents = isTauri ? installedAgents : cloudAgents;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center animate-in fade-in duration-200">
@@ -60,7 +82,7 @@ export default function SelectAgentModal() {
               />
             }
           />
-          {installedAgents.map((agent) => {
+          {displayAgents.map((agent) => {
             const record = assistantMap.get(agent.id);
             return (
               <AgentCard
@@ -83,6 +105,9 @@ export default function SelectAgentModal() {
                     }}
                     onUpdated={(assistantId) => {
                       router.replace(`/chat/${assistantId}`);
+                    }}
+                    onDeleted={() => {
+                      router.replace('/chat/select-agent');
                     }}
                     trigger={
                       <button

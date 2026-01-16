@@ -41,6 +41,10 @@ interface InfiniteListProps {
    */
   loadingIndicator?: React.ReactNode
   /**
+   * 没有更多数据时显示的内容
+   */
+  noMoreDisplay?: React.ReactNode
+  /**
    * 容器类名，通常用于设置高度
    */
   className?: string
@@ -60,6 +64,7 @@ export function InfiniteList({
   emptyDisplay,
   errorDisplay,
   loadingIndicator,
+  noMoreDisplay,
   className,
   useScrollArea = true,
 }: InfiniteListProps) {
@@ -161,7 +166,7 @@ export function InfiniteList({
           {/* 没有更多数据提示 (可选，通常不用太显眼) */}
           {!hasMore && !isEmpty && !isLoading && !isError && (
             <div className="py-4 text-xs text-muted-foreground text-center opacity-50">
-              - 没有更多了 -
+              {noMoreDisplay || "- 没有更多了 -"}
             </div>
           )}
         </div>

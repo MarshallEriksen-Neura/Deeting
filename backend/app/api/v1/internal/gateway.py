@@ -47,10 +47,13 @@ from app.core.cache_keys import CacheKeys
 from app.core.distributed_lock import distributed_lock
 from app.core.database import get_db
 from app.services.orchestrator.context import Channel, WorkflowContext
-from app.services.orchestrator.orchestrator import get_internal_orchestrator
+from app.services.orchestrator.config import INTERNAL_DEBUG_WORKFLOW
+from app.services.orchestrator.orchestrator import GatewayOrchestrator, get_internal_orchestrator
+from app.services.orchestrator.registry import step_registry
 from app.deps.auth import get_current_user
 from app.models.conversation import ConversationChannel
 from app.services.conversation.service import ConversationService
+from app.services.conversation.session_service import ConversationSessionService
 from app.schemas.gateway import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -58,6 +61,9 @@ from app.schemas.gateway import (
     EmbeddingsResponse,
     ModelListResponse,
     GatewayError,
+    RoutingTestRequest,
+    RoutingTestResponse,
+    StepRegistryResponse,
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.repositories.provider_instance_repository import (
@@ -117,6 +123,7 @@ async def _append_stream_conversation(
 
     req = ctx.get("validation", "validated") or {}
     user_messages: list[dict[str, Any]] = req.get("messages", []) or []
+    assistant_id = req.get("assistant_id")
     assistant_msg = (
         {"role": "assistant", "content": assistant_text}
         if assistant_text
@@ -142,11 +149,36 @@ async def _append_stream_conversation(
             )
             return
 
-        await conv_service.append_messages(
+        result = await conv_service.append_messages(
             session_id=session_id,
             messages=msgs_to_append,
             channel=ConversationChannel.INTERNAL,
         )
+
+        if ctx.db_session is not None:
+            try:
+                from uuid import UUID
+
+                session_uuid = UUID(session_id)
+                user_uuid = UUID(ctx.user_id) if ctx.user_id else None
+                tenant_uuid = UUID(ctx.tenant_id) if ctx.tenant_id else None
+                assistant_uuid = UUID(str(assistant_id)) if assistant_id else None
+                message_count = result.get("last_turn") if isinstance(result, dict) else None
+                session_service = ConversationSessionService(ctx.db_session)
+                await session_service.touch_session(
+                    session_id=session_uuid,
+                    user_id=user_uuid,
+                    tenant_id=tenant_uuid,
+                    assistant_id=assistant_uuid,
+                    channel=ConversationChannel.INTERNAL,
+                    message_count=message_count,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "conversation_session_touch_failed session=%s exc=%s",
+                    session_id,
+                    exc,
+                )
 
 
 async def _stream_internal_callback(
@@ -186,6 +218,72 @@ async def bandit_report(
     )
 
     return BanditReportResponse(summary=summary, items=items)
+
+
+@router.get(
+    "/debug/step-registry",
+    response_model=StepRegistryResponse,
+)
+async def step_registry_debug(
+    user: User = Depends(get_current_user),
+) -> StepRegistryResponse:
+    return StepRegistryResponse(steps=step_registry.list_all())
+
+
+@router.post(
+    "/debug/test-routing",
+    response_model=RoutingTestResponse | GatewayError,
+)
+async def test_routing(
+    request: Request,
+    request_body: RoutingTestRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RoutingTestResponse | JSONResponse:
+    ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        capability=request_body.capability,
+        requested_model=request_body.model,
+        db_session=db,
+        tenant_id=str(user.id) if user else None,
+        user_id=str(user.id) if user else None,
+        api_key_id=str(user.id) if user else None,
+        trace_id=getattr(request.state, "trace_id", None) if request else None,
+    )
+    ctx.set("validation", "request", request_body)
+
+    orchestrator = GatewayOrchestrator(workflow_config=INTERNAL_DEBUG_WORKFLOW)
+    result = await orchestrator.execute(ctx)
+    if not result.success or not ctx.is_success:
+        return JSONResponse(
+            status_code=400,
+            content=GatewayError(
+                code=ctx.error_code or "GATEWAY_ERROR",
+                message=ctx.error_message or "Request failed",
+                source=ctx.error_source.value if ctx.error_source else "gateway",
+                trace_id=ctx.trace_id,
+                upstream_status=ctx.upstream_result.status_code,
+                upstream_code=ctx.upstream_result.error_code,
+            ).model_dump(),
+        )
+
+    instance_id = ctx.get("routing", "instance_id")
+    provider_model_id = ctx.get("routing", "provider_model_id")
+    return RoutingTestResponse(
+        model=ctx.requested_model or request_body.model,
+        capability=ctx.capability or request_body.capability,
+        provider=ctx.get("routing", "provider"),
+        preset_id=ctx.get("routing", "preset_id"),
+        preset_item_id=ctx.get("routing", "preset_item_id"),
+        instance_id=str(instance_id) if instance_id is not None else None,
+        provider_model_id=str(provider_model_id) if provider_model_id is not None else None,
+        upstream_url=ctx.get("routing", "upstream_url"),
+        template_engine=ctx.get("routing", "template_engine"),
+        routing_config=ctx.get("routing", "routing_config"),
+        limit_config=ctx.get("routing", "limit_config"),
+        pricing_config=ctx.get("routing", "pricing_config"),
+        affinity_hit=ctx.get("routing", "affinity_hit"),
+    )
 
 
 @router.post(
@@ -319,6 +417,7 @@ async def list_models(
                 "owned_by": preset.provider,
                 "icon": icon,
                 "upstream_model_id": m.model_id,
+                "provider_model_id": str(m.id),
             }
         )
 

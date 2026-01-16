@@ -102,11 +102,23 @@ INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
     step_configs=dict(INTERNAL_CHAT_WORKFLOW.step_configs),
 )
 
+INTERNAL_DEBUG_WORKFLOW = WorkflowConfig(
+    template=WorkflowTemplate.INTERNAL_DEBUG,
+    steps=[
+        "validation",
+        "routing",
+    ],
+    step_configs={
+        "routing": StepConfig(timeout=10.0),
+    },
+)
+
 # 模板注册表
 WORKFLOW_TEMPLATES: dict[WorkflowTemplate, WorkflowConfig] = {
     WorkflowTemplate.EXTERNAL_CHAT: EXTERNAL_CHAT_WORKFLOW,
     WorkflowTemplate.INTERNAL_CHAT: INTERNAL_CHAT_WORKFLOW,
     WorkflowTemplate.INTERNAL_PREVIEW: INTERNAL_PREVIEW_WORKFLOW,
+    WorkflowTemplate.INTERNAL_DEBUG: INTERNAL_DEBUG_WORKFLOW,
 }
 
 

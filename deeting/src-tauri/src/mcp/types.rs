@@ -347,3 +347,26 @@ pub struct CreateAssistantMessageRequest {
     pub role: String,
     pub content: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalChatInputMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalChatRequest {
+    pub assistant_id: Option<String>,
+    pub model: String,
+    pub messages: Vec<LocalChatInputMessage>,
+    pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalChatResponse {
+    pub content: String,
+}

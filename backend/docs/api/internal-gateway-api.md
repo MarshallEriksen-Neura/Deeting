@@ -11,7 +11,8 @@
 - 内部服务调用
 - 开发调试
 
-**基础路径**: `/internal/v1`
+**基础路径**: `/internal/v1`  
+兼容路径: `/api/v1/internal`
 
 **特点**:
 - JWT Token 认证（无需签名）
@@ -79,6 +80,8 @@ Content-Type: application/json
   "stream": false,
   "temperature": 0.7,
   "max_tokens": 1000,
+  "provider_model_id": "optional-provider-model-id",
+  "assistant_id": "optional-assistant-id",
   "session_id": "optional-session-id"
 }
 ```
@@ -92,6 +95,8 @@ Content-Type: application/json
 | `stream` | boolean | 否 | 是否流式返回，默认 `false` |
 | `temperature` | float | 否 | 温度参数 (0-2) |
 | `max_tokens` | integer | 否 | 最大生成 token 数 |
+| `provider_model_id` | string | 否 | 指定 provider model ID（可选，绕过负载均衡） |
+| `assistant_id` | string | 否 | 助手 ID（用于会话归属） |
 | `session_id` | string | 否 | 会话 ID（用于上下文管理） |
 
 #### 响应体（非流式）
@@ -130,6 +135,105 @@ data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delt
 data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"content":"!"}}]}
 
 data: [DONE]
+```
+
+---
+
+### 2. Models
+
+获取内部通道可用的模型列表（按提供商输出）。
+
+**端点**: `GET /models`
+
+#### 响应体
+
+```json
+{
+  "data": [
+    {
+      "id": "gpt-4o",
+      "object": "model",
+      "owned_by": "openai",
+      "icon": "openai",
+      "upstream_model_id": "gpt-4o",
+      "provider_model_id": "7a0f2c3e-6b7d-4b9c-8a66-93c59f0a3c23"
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 模型 ID（可能为统一别名） |
+| `owned_by` | string | 提供商标识 |
+| `icon` | string | 提供商图标（可选） |
+| `upstream_model_id` | string | 上游模型 ID |
+| `provider_model_id` | string | provider model 唯一 ID（用于指定路由） |
+
+---
+
+### 3. Conversation Window
+
+获取会话列表（内部通道，滚动加载）。
+
+**端点**: `GET /conversations`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### Query 参数
+
+- `cursor`：游标（可空）
+- `size`：单页数量（默认 20）
+- `assistant_id`：助手 ID（仅返回该助手的会话）
+
+#### 响应体
+
+```json
+{
+  "items": [
+    {
+      "session_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+      "title": "API 调试",
+      "summary_text": "用户在排查请求失败原因……",
+      "message_count": 18,
+      "first_message_at": "2026-01-16T09:20:11+08:00",
+      "last_active_at": "2026-01-16T09:42:01+08:00"
+    }
+  ],
+  "next_page": "cursor:...",
+  "previous_page": null
+}
+```
+
+**端点**: `GET /conversations/{session_id}`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 响应体
+
+```json
+{
+  "session_id": "session-xyz",
+  "messages": [
+    { "role": "user", "content": "Hello", "turn_index": 1 },
+    { "role": "assistant", "content": "Hi!", "turn_index": 2 }
+  ],
+  "meta": {
+    "total_tokens": 128,
+    "last_active_at": "2026-01-16T00:00:00Z"
+  },
+  "summary": {
+    "content": "..."
+  }
+}
 ```
 
 #### 请求示例
@@ -198,6 +302,72 @@ print(response.json())
 **端点**: `GET /models`
 
 #### 响应体
+
+---
+
+### 4. Debug: Test Routing
+
+测试路由决策，不实际调用上游。
+
+**端点**: `POST /debug/test-routing`
+
+#### 请求体
+
+```json
+{
+  "model": "gpt-4",
+  "capability": "chat"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `model` | string | 是 | 模型名称 |
+| `capability` | string | 否 | 能力类型，默认 `chat` |
+
+#### 响应体
+
+```json
+{
+  "model": "gpt-4",
+  "capability": "chat",
+  "provider": "openai",
+  "preset_id": 1,
+  "preset_item_id": 2,
+  "instance_id": "b8b8fdfd-8b6f-4f7d-8d3e-2b1c9c3c6e1a",
+  "provider_model_id": "3a5e9c7f-2f18-4d3c-9e87-15b1c6b3f2a1",
+  "upstream_url": "https://api.openai.com",
+  "template_engine": "simple_replace",
+  "routing_config": {},
+  "limit_config": {},
+  "pricing_config": {},
+  "affinity_hit": false
+}
+```
+
+#### 错误响应
+
+当无可用上游或路由失败时，返回 `GatewayError`。
+
+---
+
+### 5. Debug: Step Registry
+
+查看已注册的编排步骤。
+
+**端点**: `GET /debug/step-registry`
+
+#### 响应体
+
+```json
+{
+  "steps": [
+    "validation",
+    "routing",
+    "upstream_call"
+  ]
+}
+```
 
 ```json
 {

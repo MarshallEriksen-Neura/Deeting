@@ -61,6 +61,7 @@ class ConversationSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_conversation_session_tenant_id", "tenant_id"),
         Index("ix_conversation_session_user_id", "user_id"),
+        Index("ix_conversation_session_assistant_id", "assistant_id"),
         Index("ix_conversation_session_channel", "channel"),
         Index("ix_conversation_session_status", "status"),
         Index(
@@ -82,6 +83,12 @@ class ConversationSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         ForeignKey("user_account.id", ondelete="SET NULL"),
         nullable=True,
         comment="用户/服务账号 ID（内部通道）",
+    )
+    assistant_id: Mapped[uuid.UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("assistant.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="助手 ID（内部通道）",
     )
     channel: Mapped[ConversationChannel] = mapped_column(
         String(20),

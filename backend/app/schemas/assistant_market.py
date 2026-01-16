@@ -11,6 +11,7 @@ class AssistantSummaryVersion(BaseSchema):
     version: str
     name: str
     description: str | None = None
+    system_prompt: str | None = None
     tags: list[str] = Field(default_factory=list)
     published_at: datetime | None = None
 

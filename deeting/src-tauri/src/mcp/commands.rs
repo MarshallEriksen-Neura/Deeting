@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Deserialize;
+use serde_json::{Map, Value};
 use tauri::{AppHandle, State};
 
 use crate::mcp::error::McpError;
@@ -10,10 +11,11 @@ use crate::mcp::process::ProcessManager;
 use crate::mcp::store::{expand_path, ExtractedToolFields, McpStore, NewSource, ToolUpsert};
 use crate::mcp::types::{
     CreateAssistantMessageRequest, CreateLocalAssistantRequest, CreateSourceRequest,
-    ImportConfigRequest, LocalAssistant, LocalAssistantMessage, McpConfigPayload, McpConflictStatus,
-    McpLogEntry, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
-    McpToolStatus, McpTrustLevel, ResolveConflictRequest, SyncSourceRequest,
-    UpdateLocalAssistantRequest, UpdateToolConfigRequest,
+    ImportConfigRequest, LocalAssistant, LocalAssistantMessage, LocalChatInputMessage,
+    LocalChatRequest, LocalChatResponse, McpConfigPayload, McpConflictStatus, McpLogEntry,
+    McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
+    McpTrustLevel, ResolveConflictRequest, SyncSourceRequest, UpdateLocalAssistantRequest,
+    UpdateToolConfigRequest,
 };
 use crate::mcp::McpRuntimeState;
 
@@ -194,6 +196,91 @@ pub async fn append_assistant_message(
         .append_assistant_message(payload)
         .await
         .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn local_chat_complete(
+    state: State<'_, McpRuntimeState>,
+    payload: LocalChatRequest,
+) -> Result<LocalChatResponse, String> {
+    let model = payload.model.trim().to_string();
+    if model.is_empty() {
+        return Err(to_string(McpError::validation("model is required")));
+    }
+    if payload.messages.is_empty() {
+        return Err(to_string(McpError::validation("messages is required")));
+    }
+
+    let base_url = payload.base_url.unwrap_or_default();
+    if base_url.trim().is_empty() {
+        return Err(to_string(McpError::validation("base_url is required")));
+    }
+
+    let mut messages = payload.messages;
+    if let Some(assistant_id) = payload.assistant_id.as_deref() {
+        let assistant = state
+            .store
+            .get_local_assistant(assistant_id)
+            .await
+            .map_err(to_string)?
+            .ok_or_else(|| {
+                to_string(McpError::NotFound(format!(
+                    "assistant {assistant_id} not found"
+                )))
+            })?;
+        let system_prompt = assistant.system_prompt.trim().to_string();
+        if !system_prompt.is_empty()
+            && !messages.iter().any(|msg| msg.role == "system")
+        {
+            messages.insert(
+                0,
+                LocalChatInputMessage {
+                    role: "system".to_string(),
+                    content: system_prompt,
+                },
+            );
+        }
+    }
+
+    let request_body = build_chat_payload(
+        model,
+        messages,
+        payload.temperature,
+        payload.top_p,
+        payload.max_tokens,
+    )?;
+    let endpoint = build_chat_endpoint(&base_url);
+
+    let mut request = state.client.post(&endpoint).json(&request_body);
+    if let Some(api_key) = payload.api_key {
+        let header_value = normalize_bearer_token(&api_key);
+        if !header_value.is_empty() {
+            request = request.header("Authorization", header_value);
+        }
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|err| McpError::Network(err.to_string()))
+        .map_err(to_string)?;
+    let status = response.status();
+    let response_json: Value = response
+        .json()
+        .await
+        .map_err(|err| McpError::Network(err.to_string()))
+        .map_err(to_string)?;
+
+    if !status.is_success() {
+        let message = extract_error_message(&response_json)
+            .unwrap_or_else(|| format!("upstream error: {}", status));
+        return Err(message);
+    }
+
+    let content = extract_chat_content(&response_json)
+        .ok_or_else(|| to_string(McpError::Process("empty response content".to_string())))?;
+
+    Ok(LocalChatResponse { content })
 }
 
 #[tauri::command]

@@ -1,27 +1,34 @@
 'use client';
 import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon, Cpu, Thermometer, Zap, Check, Sliders, Sparkles, User, ArrowRight, Bot, Search, Plus } from 'lucide-react';
 import { Link } from '@/i18n/routing';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { HistorySidebar } from '../components/history-sidebar';
 import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
+import { useChatService } from '@/hooks/use-chat-service';
+import type { ModelInfo } from '@/lib/api/models';
 
-const AVAILABLE_MODELS = [
-  { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', icon: Zap, color: 'text-emerald-500' },
-  { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', icon: Cpu, color: 'text-orange-500' },
-  { id: 'deepseek-v3', name: 'DeepSeek V3', provider: 'DeepSeek', icon: Cpu, color: 'text-blue-500' },
-];
+type ModelVisual = {
+  icon: typeof Cpu;
+  color: string;
+  indicator: string;
+};
 
-const RECENT_AGENTS = [
-  { id: '1', name: 'Marketing Pro', avatar: '📈', color: 'bg-blue-500/10 text-blue-500' },
-  { id: '2', name: 'Code Master', avatar: '💻', color: 'bg-purple-500/10 text-purple-500' },
-  { id: '3', name: 'Creative Writer', avatar: '✍️', color: 'bg-orange-500/10 text-orange-500' },
-  { id: '4', name: 'Data Analyst', avatar: '📊', color: 'bg-green-500/10 text-green-500' },
-  { id: '5', name: 'Translator', avatar: '🌍', color: 'bg-indigo-500/10 text-indigo-500' },
-  { id: '6', name: 'HR Assistant', avatar: '🤝', color: 'bg-pink-500/10 text-pink-500' },
-];
+function resolveModelVisual(model?: ModelInfo): ModelVisual {
+  const ownedBy = model?.owned_by?.toLowerCase() ?? "";
+  if (ownedBy.includes("openai")) {
+    return { icon: Zap, color: "text-emerald-500", indicator: "bg-emerald-500" };
+  }
+  if (ownedBy.includes("anthropic") || ownedBy.includes("claude")) {
+    return { icon: Cpu, color: "text-orange-500", indicator: "bg-orange-500" };
+  }
+  if (ownedBy.includes("deepseek")) {
+    return { icon: Cpu, color: "text-blue-500", indicator: "bg-blue-500" };
+  }
+  return { icon: Cpu, color: "text-black/40 dark:text-white/40", indicator: "bg-black/30 dark:bg-white/30" };
+}
 
 export default function HUD() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -30,14 +37,69 @@ export default function HUD() {
   
   const { setTheme, theme } = useTheme();
   
-  const { config, setConfig } = useChatStore(
+  const {
+    config,
+    setConfig,
+    assistants,
+    models,
+    activeAssistantId,
+    setAssistants,
+    setModels,
+    setActiveAssistantId,
+    loadHistory,
+  } = useChatStore(
     useShallow((state) => ({
       config: state.config,
       setConfig: state.setConfig,
+      assistants: state.assistants,
+      models: state.models,
+      activeAssistantId: state.activeAssistantId,
+      setAssistants: state.setAssistants,
+      setModels: state.setModels,
+      setActiveAssistantId: state.setActiveAssistantId,
+      loadHistory: state.loadHistory,
     }))
   );
 
-  const activeModel = AVAILABLE_MODELS.find(m => m.id === config.model) || AVAILABLE_MODELS[0];
+  const { assistants: serviceAssistants, models: serviceModels } = useChatService({ enabled: true });
+
+  useEffect(() => {
+    if (serviceAssistants.length) {
+      setAssistants(serviceAssistants);
+    }
+  }, [serviceAssistants, setAssistants]);
+
+  useEffect(() => {
+    if (serviceModels.length) {
+      setModels(serviceModels);
+    }
+  }, [serviceModels, setModels]);
+
+  useEffect(() => {
+    if (!activeAssistantId && assistants.length) {
+      setActiveAssistantId(assistants[0].id);
+    }
+  }, [activeAssistantId, assistants, setActiveAssistantId]);
+
+  useEffect(() => {
+    if (!models.length) return;
+    const exists = models.some((model) => model.id === config.model);
+    if (!exists) {
+      setConfig({ model: models[0].id });
+    }
+  }, [config.model, models, setConfig]);
+
+  useEffect(() => {
+    if (!activeAssistantId) return;
+    void loadHistory(activeAssistantId);
+  }, [activeAssistantId, loadHistory]);
+
+  const activeAssistant = useMemo(
+    () => assistants.find((assistant) => assistant.id === activeAssistantId),
+    [assistants, activeAssistantId]
+  );
+  const activeModel = models.find((model) => model.id === config.model) ?? models[0];
+  const activeModelVisual = resolveModelVisual(activeModel);
 
   return (
     <>
@@ -55,13 +117,13 @@ export default function HUD() {
             className="flex items-center gap-2 cursor-pointer transition-all hover:scale-105"
           >
             <div className="relative flex h-2.5 w-2.5">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${activeModel.color.replace('text-', 'bg-')}`}></span>
-                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${activeModel.color.replace('text-', 'bg-')}`}></span>
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${activeModelVisual.indicator}`}></span>
+                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${activeModelVisual.indicator}`}></span>
             </div>
             <div className="flex flex-col items-start leading-none">
                 <span className="text-[10px] font-bold text-black/40 dark:text-white/40 uppercase tracking-tighter">Active Agent</span>
                 <span className="text-xs font-bold text-black dark:text-white flex items-center gap-1">
-                    {activeModel.name}
+                    {activeAssistant?.name ?? activeModel?.id ?? ""}
                     <ChevronDown className={`w-3 h-3 text-black/30 dark:text-white/30 transition-transform duration-300 ${isControlCenterOpen ? 'rotate-180' : ''}`} />
                 </span>
             </div>
@@ -130,14 +192,24 @@ export default function HUD() {
                                 <span className="text-[10px] font-bold text-black/40 dark:text-white/40 truncate w-full text-center group-hover/agent:text-black/60 dark:group-hover/agent:text-white/60">New</span>
                             </Link>
 
-                            {RECENT_AGENTS.map((agent) => (
-                                <div key={agent.id} className="flex flex-col items-center gap-2 group/agent cursor-pointer min-w-[3.5rem] snap-start">
-                                    <div className={`w-14 h-14 rounded-2xl ${agent.color} flex items-center justify-center text-2xl shadow-sm group-hover/agent:scale-105 transition-all duration-300 ring-2 ring-transparent group-hover/agent:ring-black/5 dark:group-hover/agent:ring-white/10`}>
-                                        {agent.avatar}
+                            {assistants.map((agent) => {
+                                const isActive = agent.id === activeAssistantId;
+                                const initial = agent.name?.trim().slice(0, 1).toUpperCase() || "A";
+                                return (
+                                  <div
+                                    key={agent.id}
+                                    className="flex flex-col items-center gap-2 group/agent cursor-pointer min-w-[3.5rem] snap-start"
+                                    onClick={() => setActiveAssistantId(agent.id)}
+                                  >
+                                    <div
+                                      className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${agent.color} flex items-center justify-center text-white text-lg shadow-sm group-hover/agent:scale-105 transition-all duration-300 ring-2 ${isActive ? "ring-black/10 dark:ring-white/20" : "ring-transparent"} group-hover/agent:ring-black/5 dark:group-hover/agent:ring-white/10`}
+                                    >
+                                      {initial}
                                     </div>
                                     <span className="text-[10px] font-bold text-black/60 dark:text-white/60 truncate w-full text-center">{agent.name}</span>
-                                </div>
-                            ))}
+                                  </div>
+                                );
+                            })}
                         </div>
                         {/* Fade Gradients for Scroll Hint */}
                         <div className="absolute top-0 bottom-4 left-0 w-4 bg-gradient-to-r from-white/80 dark:from-[#0a0a0a]/90 to-transparent pointer-events-none" />
@@ -155,19 +227,24 @@ export default function HUD() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        {AVAILABLE_MODELS.map((model) => (
-                            <button
+                        {models.map((model) => {
+                            const visual = resolveModelVisual(model);
+                            const Icon = visual.icon;
+                            const label = model.owned_by ? `${model.owned_by} · ${model.id}` : model.id;
+                            return (
+                              <button
                                 key={model.id}
                                 onClick={() => setConfig({ model: model.id })}
                                 className={`
                                     flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[10px] font-bold transition-all
                                     ${config.model === model.id ? 'bg-white dark:bg-black text-black dark:text-white shadow-md' : 'text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/5'}
                                 `}
-                            >
-                                <model.icon className={`w-3 h-3 ${config.model === model.id ? model.color : 'text-current'}`} />
-                                {model.name.split(' ')[0]}
-                            </button>
-                        ))}
+                              >
+                                <Icon className={`w-3 h-3 ${config.model === model.id ? visual.color : 'text-current'}`} />
+                                {label}
+                              </button>
+                            );
+                        })}
                     </div>
 
                     {/* Sliders */}

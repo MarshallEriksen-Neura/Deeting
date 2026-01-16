@@ -9,6 +9,7 @@ export const AssistantSummaryVersionSchema = z.object({
   version: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
+  system_prompt: z.string().nullable().optional(),
   tags: z.array(z.string()).optional().default([]),
   published_at: z.string().nullable().optional(),
 })
@@ -29,13 +30,48 @@ export const AssistantMarketItemSchema = z.object({
   installed: z.boolean().optional().default(false),
 })
 
+export const AssistantSummarySchema = z.object({
+  assistant_id: z.string().uuid(),
+  owner_user_id: z.string().uuid().nullable().optional(),
+  icon_id: z.string().nullable().optional(),
+  share_slug: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  published_at: z.string().nullable().optional(),
+  current_version_id: z.string().uuid().nullable().optional(),
+  install_count: z.number().optional().default(0),
+  rating_avg: z.number().optional().default(0),
+  rating_count: z.number().optional().default(0),
+  tags: z.array(z.string()).default([]),
+  version: AssistantSummaryVersionSchema,
+})
+
 export const CursorPageSchema = z.object({
   items: z.array(AssistantMarketItemSchema),
   next_page: z.string().nullable().optional(),
   previous_page: z.string().nullable().optional(),
 })
 
+export const AssistantInstallItemSchema = z.object({
+  id: z.string().uuid(),
+  assistant_id: z.string().uuid(),
+  alias: z.string().nullable().optional(),
+  icon_override: z.string().nullable().optional(),
+  pinned_version_id: z.string().uuid().nullable().optional(),
+  follow_latest: z.boolean().optional(),
+  is_enabled: z.boolean().optional(),
+  sort_order: z.number().optional(),
+  assistant: AssistantSummarySchema,
+})
+
+export const AssistantInstallPageSchema = z.object({
+  items: z.array(AssistantInstallItemSchema),
+  next_page: z.string().nullable().optional(),
+  previous_page: z.string().nullable().optional(),
+})
+
 export type AssistantMarketItem = z.infer<typeof AssistantMarketItemSchema>
+export type AssistantInstallItem = z.infer<typeof AssistantInstallItemSchema>
+export type AssistantInstallPage = z.infer<typeof AssistantInstallPageSchema>
 
 export const AssistantVersionSchema = z.object({
   id: z.string().uuid(),
@@ -93,6 +129,15 @@ export async function fetchAssistantMarket(query: AssistantMarketQuery) {
     params: query,
   })
   return CursorPageSchema.parse(data)
+}
+
+export async function fetchAssistantInstalls(params: { cursor?: string | null; size?: number }) {
+  const data = await request({
+    url: `${ASSISTANTS_BASE}/installs`,
+    method: "GET",
+    params,
+  })
+  return AssistantInstallPageSchema.parse(data)
 }
 
 export async function fetchAssistantTags() {

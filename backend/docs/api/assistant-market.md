@@ -19,6 +19,7 @@
 - `GET /assistants/installs`
 - Query：`cursor` / `size`
 - 响应：`CursorPage[AssistantInstallItem]`
+- 说明：安装相关响应包含 `assistant.version.system_prompt`（系统提示词）。
 
 ## 安装助手
 

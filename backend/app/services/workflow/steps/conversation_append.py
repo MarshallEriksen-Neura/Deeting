@@ -10,9 +10,11 @@ ConversationAppendStep: 会话窗口追加
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from app.models.conversation import ConversationChannel
+from app.services.conversation.session_service import ConversationSessionService
 from app.services.conversation.service import ConversationService
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
@@ -55,6 +57,7 @@ class ConversationAppendStep(BaseStep):
 
         req = ctx.get("validation", "validated") or {}
         user_messages: list[dict[str, Any]] = req.get("messages", []) or []
+        assistant_id = req.get("assistant_id")
         assistant_msg = self._extract_assistant_message(
             ctx.get("response_transform", "response") or {}
         )
@@ -95,6 +98,30 @@ class ConversationAppendStep(BaseStep):
                 messages=msgs_to_append,
                 channel=channel,
             )
+            if ctx.db_session is not None:
+                try:
+                    session_uuid = uuid.UUID(session_id)
+                    user_uuid = uuid.UUID(ctx.user_id) if ctx.user_id else None
+                    tenant_uuid = uuid.UUID(ctx.tenant_id) if ctx.tenant_id else None
+                    assistant_uuid = (
+                        uuid.UUID(str(assistant_id)) if assistant_id else None
+                    )
+                    message_count = result.get("last_turn") if isinstance(result, dict) else None
+                    session_service = ConversationSessionService(ctx.db_session)
+                    await session_service.touch_session(
+                        session_id=session_uuid,
+                        user_id=user_uuid,
+                        tenant_id=tenant_uuid,
+                        assistant_id=assistant_uuid,
+                        channel=channel,
+                        message_count=message_count,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "conversation_session_touch_failed session=%s exc=%s",
+                        session_id,
+                        exc,
+                    )
 
         # 将 session_id 透传到响应
         response = ctx.get("response_transform", "response") or {}

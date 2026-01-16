@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from sqlalchemy import select, or_, func
 from sqlalchemy.orm import selectinload
@@ -70,6 +72,10 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
 
 class ProviderModelRepository(BaseRepository[ProviderModel]):
     model = ProviderModel
+
+    async def list(self) -> list[ProviderModel]:
+        result = await self.session.execute(select(ProviderModel))
+        return list(result.scalars().all())
 
     async def get_candidates(
         self,
