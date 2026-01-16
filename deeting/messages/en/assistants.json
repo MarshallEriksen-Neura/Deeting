@@ -1,85 +1,87 @@
 {
-  "page": {
-    "hero": {
-      "titlePrefix": "Discover your next",
-      "titleHighlight": "digital companion",
-      "subtitle": "Not just prompts — agents with distinct personalities and skills"
+  "assistants": {
+    "page": {
+      "hero": {
+        "titlePrefix": "Discover your next",
+        "titleHighlight": "digital companion",
+        "subtitle": "Not just prompts — agents with distinct personalities and skills"
+      },
+      "search": {
+        "placeholder": "Search assistant skills (e.g. Python, writing...)"
+      }
     },
-    "search": {
-      "placeholder": "Search assistant skills (e.g. Python, writing...)"
-    }
-  },
-  "author": {
-    "me": "Me",
-    "community": "Community",
-    "system": "System"
-  },
-  "card": {
-    "by": "by {author}",
-    "install": "Install",
-    "installed": "Installed",
-    "adding": "Installing...",
-    "preview": "Preview"
-  },
-  "toast": {
-    "installedTitle": "{name} is ready",
-    "installedDesc": "This assistant has been added to your sidebar",
-    "installFailedTitle": "Install failed",
-    "installFailedDesc": "Please try again later",
-    "previewFailedTitle": "Preview failed",
-    "previewFailedDesc": "Configure your secretary model or try again later",
-    "previewUnavailable": "Sorry, preview is not available right now.",
-    "assistantCreatedTitle": "Assistant created",
-    "assistantCreatedDesc": "{name} created. Manage it in “My Assistants”.",
-    "createFailedTitle": "Creation failed",
-    "createFailedDesc": "Please try again later or check your input"
-  },
-  "modal": {
-    "tagsTitle": "Tags",
-    "installButton": "Add to sidebar",
-    "installedButton": "Added to sidebar",
-    "previewMode": "Preview Mode",
-    "inputPlaceholder": "Try chatting with {name}..."
-  },
-  "preview": {
-    "greeting": "Hi! I'm {name}. {description} How can I help?",
-    "emptyReply": "(No content returned)"
-  },
-  "create": {
-    "trigger": "Create Assistant",
-    "title": "Create New Persona",
-    "description": "Design a custom AI assistant. It will be installed locally and submitted to the market.",
-    "nameLabel": "Name",
-    "namePlaceholder": "e.g. Python Guru",
-    "descLabel": "Short Description",
-    "descPlaceholder": "e.g. Expert in Python optimization and debugging...",
-    "descHelp": "Displayed on the agent card in the marketplace.",
-    "themeLabel": "Theme",
-    "themePlaceholder": "Select a theme color",
-    "iconLabel": "Icon",
-    "iconHelp": "Choose an icon to represent your assistant.",
-    "tagsLabel": "Tags",
-    "tagsPlaceholder": "e.g. Coding, Python, Debugging",
-    "tagsHelp": "Comma separated keywords.",
-    "systemPromptLabel": "System Prompt (Personality)",
-    "systemPromptPlaceholder": "You are an expert Python developer with a witty tone...",
-    "systemPromptHelp": "This defines how your assistant behaves and answers.",
-    "submit": "Create & Install",
-    "submitting": "Creating...",
-    "colors": {
-      "ocean": "Ocean Blue",
-      "sunset": "Sunset Pink",
-      "emerald": "Emerald Green",
-      "mystic": "Mystic Purple",
-      "amber": "Amber Orange",
-      "neon": "Neon Fuchsia"
+    "author": {
+      "me": "Me",
+      "community": "Community",
+      "system": "System"
     },
-    "validation": {
-      "nameMin": "Name must be at least 2 characters.",
-      "descMin": "Description must be at least 10 characters.",
-      "promptMin": "System prompt must be meaningful (at least 20 characters).",
-      "tagsMin": "Add at least one tag.",
-      "iconRequired": "Select an icon."
+    "card": {
+      "by": "by {author}",
+      "install": "Install",
+      "installed": "Installed",
+      "adding": "Installing...",
+      "preview": "Preview"
+    },
+    "toast": {
+      "installedTitle": "{name} is ready",
+      "installedDesc": "This assistant has been added to your sidebar",
+      "installFailedTitle": "Install failed",
+      "installFailedDesc": "Please try again later",
+      "previewFailedTitle": "Preview failed",
+      "previewFailedDesc": "Configure your secretary model or try again later",
+      "previewUnavailable": "Sorry, preview is not available right now.",
+      "assistantCreatedTitle": "Assistant created",
+      "assistantCreatedDesc": "{name} created. Manage it in “My Assistants”.",
+      "createFailedTitle": "Creation failed",
+      "createFailedDesc": "Please try again later or check your input"
+    },
+    "modal": {
+      "tagsTitle": "Tags",
+      "installButton": "Add to sidebar",
+      "installedButton": "Added to sidebar",
+      "previewMode": "Preview Mode",
+      "inputPlaceholder": "Try chatting with {name}..."
+    },
+    "preview": {
+      "greeting": "Hi! I'm {name}. {description} How can I help?",
+      "emptyReply": "(No content returned)"
+    },
+    "create": {
+      "trigger": "Create Assistant",
+      "title": "Create New Persona",
+      "description": "Design a custom AI assistant. It will be installed locally and submitted to the market.",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Python Guru",
+      "descLabel": "Short Description",
+      "descPlaceholder": "e.g. Expert in Python optimization and debugging...",
+      "descHelp": "Displayed on the agent card in the marketplace.",
+      "themeLabel": "Theme",
+      "themePlaceholder": "Select a theme color",
+      "iconLabel": "Icon",
+      "iconHelp": "Choose an icon to represent your assistant.",
+      "tagsLabel": "Tags",
+      "tagsPlaceholder": "e.g. Coding, Python, Debugging",
+      "tagsHelp": "Comma separated keywords.",
+      "systemPromptLabel": "System Prompt (Personality)",
+      "systemPromptPlaceholder": "You are an expert Python developer with a witty tone...",
+      "systemPromptHelp": "This defines how your assistant behaves and answers.",
+      "submit": "Create & Install",
+      "submitting": "Creating...",
+      "colors": {
+        "ocean": "Ocean Blue",
+        "sunset": "Sunset Pink",
+        "emerald": "Emerald Green",
+        "mystic": "Mystic Purple",
+        "amber": "Amber Orange",
+        "neon": "Neon Fuchsia"
+      },
+      "validation": {
+        "nameMin": "Name must be at least 2 characters.",
+        "descMin": "Description must be at least 10 characters.",
+        "promptMin": "System prompt must be meaningful (at least 20 characters).",
+        "tagsMin": "Add at least one tag.",
+        "iconRequired": "Select an icon."
+      }
     }
   }
 }

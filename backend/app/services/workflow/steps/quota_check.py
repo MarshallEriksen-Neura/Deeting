@@ -72,12 +72,7 @@ class QuotaCheckStep(BaseStep):
 
         if not tenant_id and not api_key_id:
             if ctx.is_external:
-                ctx.mark_error(
-                    ErrorSource.GATEWAY,
-                    "QUOTA_NO_TENANT",
-                    "Tenant or API key required for external requests",
-                )
-                return StepResult(status=StepStatus.FAILED, message="No tenant or API key provided")
+                return StepResult(status=StepStatus.SUCCESS, message="skip_external_no_identity")
             return StepResult(status=StepStatus.SUCCESS)
 
         try:

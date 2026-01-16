@@ -213,6 +213,19 @@ class CacheKeys:
     def api_key_blacklist(cls, api_key_id: str) -> str:
         return f"{cls.prefix}:api_key:blacklist:{api_key_id}"
 
+    # ===== Feature Rollout =====
+    @classmethod
+    def feature_rollout_enabled(cls, feature: str) -> str:
+        return f"{cls.prefix}:feature:{feature}:enabled"
+
+    @classmethod
+    def feature_rollout_ratio(cls, feature: str) -> str:
+        return f"{cls.prefix}:feature:{feature}:ratio"
+
+    @classmethod
+    def feature_rollout_allowlist(cls, feature: str) -> str:
+        return f"{cls.prefix}:feature:{feature}:allowlist"
+
     # ===== Dashboard =====
     @classmethod
     def dashboard_stats(cls, tenant_id: str | None) -> str:

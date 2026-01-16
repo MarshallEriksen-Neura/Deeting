@@ -107,37 +107,47 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
   }
 
   return (
-    <div className="p-8 min-h-screen bg-white space-y-12 max-w-7xl mx-auto">
-      
-      <RegistryHeader />
+    <div className="relative min-h-screen bg-[var(--background)] px-6 py-12 lg:px-8">
+      {/* Background decorative elements */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-[10%] -left-[10%] h-[40%] w-[40%] rounded-full bg-[var(--primary)]/5 blur-[120px]" />
+        <div className="absolute top-[20%] -right-[5%] h-[35%] w-[35%] rounded-full bg-[var(--teal-accent)]/5 blur-[100px]" />
+      </div>
 
-      <SupplyChainSection 
-        sources={sources} 
-        onSync={handleSyncSource} 
-      />
+      <div className="relative mx-auto max-w-7xl space-y-16">
+        <div className="animate-glass-card-in stagger-1">
+          <RegistryHeader />
+        </div>
 
-      <RuntimeGridSection 
-        tools={tools} 
-        onToggleTool={handleToggleTool}
-        onShowLogs={handleShowLogs}
-        onResolveConflict={handleResolveConflict}
-      />
-      
+        <div className="animate-glass-card-in stagger-2">
+          <SupplyChainSection sources={sources} onSync={handleSyncSource} />
+        </div>
+
+        <div className="animate-glass-card-in stagger-3">
+          <RuntimeGridSection
+            tools={tools}
+            onToggleTool={handleToggleTool}
+            onShowLogs={handleShowLogs}
+            onResolveConflict={handleResolveConflict}
+          />
+        </div>
+      </div>
+
       {/* Logs Drawer */}
-      <ServerLogsSheet 
-          tool={selectedTool} 
-          open={logsOpen} 
-          onOpenChange={setLogsOpen} 
+      <ServerLogsSheet
+        tool={selectedTool}
+        open={logsOpen}
+        onOpenChange={setLogsOpen}
       />
 
       {/* Conflict Dialog */}
-      <ConflictResolutionDialog 
-         tool={conflictTool}
-         open={conflictOpen}
-         onOpenChange={setConflictOpen}
-         onResolve={onConflictResolved}
+      <ConflictResolutionDialog
+        tool={conflictTool}
+        open={conflictOpen}
+        onOpenChange={setConflictOpen}
+        onResolve={onConflictResolved}
       />
-
     </div>
   )
 }
+

@@ -1,85 +1,87 @@
 {
-  "page": {
-    "hero": {
-      "titlePrefix": "发现你的下一个",
-      "titleHighlight": "数字伙伴",
-      "subtitle": "不仅仅是 Prompt，而是具有独特人格和技能的智能体"
+  "assistants": {
+    "page": {
+      "hero": {
+        "titlePrefix": "发现你的下一个",
+        "titleHighlight": "数字伙伴",
+        "subtitle": "不仅仅是 Prompt，而是具有独特人格和技能的智能体"
+      },
+      "search": {
+        "placeholder": "搜索助手能力 (e.g. Python, 写作...)"
+      }
     },
-    "search": {
-      "placeholder": "搜索助手能力 (e.g. Python, 写作...)"
-    }
-  },
-  "author": {
-    "me": "我",
-    "community": "社区",
-    "system": "系统"
-  },
-  "card": {
-    "by": "来自 {author}",
-    "install": "安装",
-    "installed": "已安装",
-    "adding": "安装中...",
-    "preview": "试用"
-  },
-  "toast": {
-    "installedTitle": "{name} 已就绪",
-    "installedDesc": "该助手已添加到您的侧边栏",
-    "installFailedTitle": "安装失败",
-    "installFailedDesc": "请稍后重试",
-    "previewFailedTitle": "预览失败",
-    "previewFailedDesc": "请先配置秘书模型或稍后重试",
-    "previewUnavailable": "抱歉，预览暂时不可用。",
-    "assistantCreatedTitle": "助手已创建",
-    "assistantCreatedDesc": "{name} 已创建，可在“我的助手”中管理。",
-    "createFailedTitle": "创建失败",
-    "createFailedDesc": "请稍后重试或检查输入内容"
-  },
-  "modal": {
-    "tagsTitle": "能力标签",
-    "installButton": "确认安装到侧边栏",
-    "installedButton": "已添加到侧边栏",
-    "previewMode": "预览模式",
-    "inputPlaceholder": "试着和 {name} 聊聊..."
-  },
-  "preview": {
-    "greeting": "你好！我是{name}。{description} 有什么我可以帮你的吗？",
-    "emptyReply": "（未返回内容）"
-  },
-  "create": {
-    "trigger": "创建助手",
-    "title": "创建新角色",
-    "description": "设计一个自定义 AI 助手。它会安装到本地并提交至市场。",
-    "nameLabel": "名称",
-    "namePlaceholder": "例如：Python Guru",
-    "descLabel": "简短介绍",
-    "descPlaceholder": "例如：擅长 Python 优化与调试...",
-    "descHelp": "显示在市场卡片上。",
-    "themeLabel": "主题",
-    "themePlaceholder": "选择主题色",
-    "iconLabel": "图标",
-    "iconHelp": "选择一个代表助手的图标。",
-    "tagsLabel": "标签",
-    "tagsPlaceholder": "例如：Coding, Python, Debugging",
-    "tagsHelp": "使用逗号分隔关键词。",
-    "systemPromptLabel": "系统提示词（人格）",
-    "systemPromptPlaceholder": "你是一个资深 Python 开发者，语气略带幽默...",
-    "systemPromptHelp": "定义助手的行为和回答方式。",
-    "submit": "创建并安装",
-    "submitting": "创建中...",
-    "colors": {
-      "ocean": "海洋蓝",
-      "sunset": "落日粉",
-      "emerald": "祖母绿",
-      "mystic": "神秘紫",
-      "amber": "琥珀橙",
-      "neon": "霓虹粉"
+    "author": {
+      "me": "我",
+      "community": "社区",
+      "system": "系统"
     },
-    "validation": {
-      "nameMin": "名称至少 2 个字符。",
-      "descMin": "简介至少 10 个字符。",
-      "promptMin": "系统提示词至少 20 个字符。",
-      "tagsMin": "至少填写一个标签。",
-      "iconRequired": "请选择一个图标。"
+    "card": {
+      "by": "来自 {author}",
+      "install": "安装",
+      "installed": "已安装",
+      "adding": "安装中...",
+      "preview": "试用"
+    },
+    "toast": {
+      "installedTitle": "{name} 已就绪",
+      "installedDesc": "该助手已添加到您的侧边栏",
+      "installFailedTitle": "安装失败",
+      "installFailedDesc": "请稍后重试",
+      "previewFailedTitle": "预览失败",
+      "previewFailedDesc": "请先配置秘书模型或稍后重试",
+      "previewUnavailable": "抱歉，预览暂时不可用。",
+      "assistantCreatedTitle": "助手已创建",
+      "assistantCreatedDesc": "{name} 已创建，可在“我的助手”中管理。",
+      "createFailedTitle": "创建失败",
+      "createFailedDesc": "请稍后重试或检查输入内容"
+    },
+    "modal": {
+      "tagsTitle": "能力标签",
+      "installButton": "确认安装到侧边栏",
+      "installedButton": "已添加到侧边栏",
+      "previewMode": "预览模式",
+      "inputPlaceholder": "试着和 {name} 聊聊..."
+    },
+    "preview": {
+      "greeting": "你好！我是{name}。{description} 有什么我可以帮你的吗？",
+      "emptyReply": "（未返回内容）"
+    },
+    "create": {
+      "trigger": "创建助手",
+      "title": "创建新角色",
+      "description": "设计一个自定义 AI 助手。它会安装到本地并提交至市场。",
+      "nameLabel": "名称",
+      "namePlaceholder": "例如：Python Guru",
+      "descLabel": "简短介绍",
+      "descPlaceholder": "例如：擅长 Python 优化与调试...",
+      "descHelp": "显示在市场卡片上。",
+      "themeLabel": "主题",
+      "themePlaceholder": "选择主题色",
+      "iconLabel": "图标",
+      "iconHelp": "选择一个代表助手的图标。",
+      "tagsLabel": "标签",
+      "tagsPlaceholder": "例如：Coding, Python, Debugging",
+      "tagsHelp": "使用逗号分隔关键词。",
+      "systemPromptLabel": "系统提示词（人格）",
+      "systemPromptPlaceholder": "你是一个资深 Python 开发者，语气略带幽默...",
+      "systemPromptHelp": "定义助手的行为和回答方式。",
+      "submit": "创建并安装",
+      "submitting": "创建中...",
+      "colors": {
+        "ocean": "海洋蓝",
+        "sunset": "落日粉",
+        "emerald": "祖母绿",
+        "mystic": "神秘紫",
+        "amber": "琥珀橙",
+        "neon": "霓虹粉"
+      },
+      "validation": {
+        "nameMin": "名称至少 2 个字符。",
+        "descMin": "简介至少 10 个字符。",
+        "promptMin": "系统提示词至少 20 个字符。",
+        "tagsMin": "至少填写一个标签。",
+        "iconRequired": "请选择一个图标。"
+      }
     }
   }
 }

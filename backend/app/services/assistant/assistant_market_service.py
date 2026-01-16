@@ -6,6 +6,7 @@ from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi_pagination.ext.sqlalchemy import paginate
 
 from app.models.assistant import Assistant, AssistantStatus, AssistantVisibility
+from app.models.notification import NotificationLevel, NotificationType
 from app.models.review import ReviewStatus
 from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 from app.repositories.assistant_install_repository import AssistantInstallRepository
@@ -20,6 +21,7 @@ from app.schemas.assistant_market import (
     AssistantSummaryVersion,
 )
 from app.services.review.review_service import ReviewService
+from app.services.notifications.notification_service import NotificationService
 from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService, AutoReviewResult
 from app.services.assistant.assistant_tag_service import AssistantTagService
 
@@ -66,6 +68,7 @@ class AssistantMarketService:
         self.market_repo = market_repo
         self.review_service = ReviewService(review_repo)
         self.auto_review_service = auto_review_service
+        self.notification_service = NotificationService(assistant_repo.session)
         self.tag_service = AssistantTagService(
             AssistantTagRepository(assistant_repo.session),
             AssistantTagLinkRepository(assistant_repo.session),
@@ -265,11 +268,23 @@ class AssistantMarketService:
                 reviewer_user_id=result.reviewer_user_id,
                 reason=result.reason,
             )
+            await self._notify_review_result(
+                assistant_id=assistant_id,
+                user_id=user_id,
+                status=result.status,
+                reason=result.reason,
+            )
         elif result.status == ReviewStatus.REJECTED:
             await self.review_service.reject(
                 entity_type=ASSISTANT_MARKET_ENTITY,
                 entity_id=assistant_id,
                 reviewer_user_id=result.reviewer_user_id,
+                reason=result.reason,
+            )
+            await self._notify_review_result(
+                assistant_id=assistant_id,
+                user_id=user_id,
+                status=result.status,
                 reason=result.reason,
             )
         return result
@@ -281,12 +296,19 @@ class AssistantMarketService:
         reviewer_user_id: UUID | None,
         reason: str | None = None,
     ):
-        return await self.review_service.approve(
+        task = await self.review_service.approve(
             entity_type=ASSISTANT_MARKET_ENTITY,
             entity_id=assistant_id,
             reviewer_user_id=reviewer_user_id,
             reason=reason,
         )
+        await self._notify_review_result(
+            assistant_id=assistant_id,
+            user_id=task.submitter_user_id,
+            status=ReviewStatus.APPROVED,
+            reason=reason,
+        )
+        return task
 
     async def reject_review(
         self,
@@ -295,11 +317,63 @@ class AssistantMarketService:
         reviewer_user_id: UUID | None,
         reason: str | None = None,
     ):
-        return await self.review_service.reject(
+        task = await self.review_service.reject(
             entity_type=ASSISTANT_MARKET_ENTITY,
             entity_id=assistant_id,
             reviewer_user_id=reviewer_user_id,
             reason=reason,
+        )
+        await self._notify_review_result(
+            assistant_id=assistant_id,
+            user_id=task.submitter_user_id,
+            status=ReviewStatus.REJECTED,
+            reason=reason,
+        )
+        return task
+
+    async def _notify_review_result(
+        self,
+        *,
+        assistant_id: UUID,
+        user_id: UUID | None,
+        status: ReviewStatus,
+        reason: str | None = None,
+    ) -> None:
+        if not user_id:
+            return
+        if status not in {ReviewStatus.APPROVED, ReviewStatus.REJECTED}:
+            return
+
+        assistant = await self.assistant_repo.get(assistant_id)
+        if not assistant or not assistant.current_version_id:
+            return
+
+        version_repo = AssistantVersionRepository(self.assistant_repo.session)
+        version = await version_repo.get_for_assistant(assistant_id, assistant.current_version_id)
+        assistant_name = version.name if version else "助手"
+
+        if status == ReviewStatus.APPROVED:
+            title = "助手审核通过"
+            content = f"你的助手「{assistant_name}」已通过审核，现已上架市场。"
+            level = NotificationLevel.INFO
+        else:
+            title = "助手审核未通过"
+            reason_text = reason or "请根据提示修改后重新提交"
+            content = f"你的助手「{assistant_name}」未通过审核：{reason_text}"
+            level = NotificationLevel.WARN
+
+        await self.notification_service.publish_to_user(
+            user_id=user_id,
+            title=title,
+            content=content,
+            notification_type=NotificationType.SYSTEM,
+            level=level,
+            payload={
+                "assistant_id": str(assistant_id),
+                "status": status.value,
+                "reason": reason,
+            },
+            source="assistant_review",
         )
 
     async def _ensure_installable(self, assistant: Assistant, user_id: UUID) -> None:

@@ -33,6 +33,18 @@ Output ONLY a valid JSON list of strings. If no facts are found, output an empty
 ]
 """
 
+# 用于判断单条用户消息是否应写入长期记忆
+MEMORY_PERSIST_DECISION_SYSTEM_PROMPT = """
+You are the user's personal secretary. Decide whether the user's message should be stored as long-term memory.
+
+Rules:
+- Save long-term facts, preferences, identity, work info, habits, plans, family or health details.
+- Do NOT save temporary requests, casual chat, or questions that do not describe the user.
+
+Output ONLY a JSON object:
+{"save": true/false, "confidence": 0.0-1.0}
+"""
+
 # 用于对提取出的事实进行二次分类或打标签的 Prompt (可选扩展)
 MEMORY_TAGGING_PROMPT = """
 Categorize the following fact into one of these tags: [Work, Personal, Preference, Health, Finance, Other].

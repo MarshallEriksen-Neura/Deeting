@@ -5,6 +5,7 @@ from .base import BaseRepository
 from .billing_repository import BillingRepository, DuplicateTransactionError, InsufficientBalanceError
 from .gateway_log_repository import GatewayLogRepository
 from .provider_preset_repository import ProviderPresetRepository
+from .provider_instance_repository import ProviderInstanceRepository, ProviderModelRepository
 from .quota_repository import InsufficientQuotaError, QuotaRepository
 from .usage_repository import UsageRepository
 from .user_repository import UserRepository
@@ -39,6 +40,8 @@ __all__ = [
     "InsufficientBalanceError",
     "InsufficientQuotaError",
     "ProviderPresetRepository",
+    "ProviderInstanceRepository",
+    "ProviderModelRepository",
     "QuotaRepository",
     "UsageRepository",
     "UserRepository",

@@ -1,0 +1,24 @@
+__label__fact 我住在上海
+__label__fact 我喜欢喝拿铁
+__label__fact 我生日是5月12日
+__label__fact 我计划下个月去成都
+__label__fact 我叫张伟
+__label__fact 我家里有两只猫
+__label__fact 我在阿里巴巴工作
+__label__fact 我常用的邮箱是 foo@example.com
+__label__fact 我每天早上六点起床
+__label__fact 我不吃辣
+__label__fact 我女儿今年上小学
+__label__fact 我买了一辆特斯拉
+__label__chat 你好
+__label__chat 今天天气怎么样
+__label__chat 帮我写一段 Python 代码
+__label__chat 给我讲个笑话
+__label__chat 你是谁
+__label__chat 解释一下量子纠缠
+__label__chat 帮我翻译这句话
+__label__chat 现在几点了
+__label__chat 写一首诗
+__label__chat 计算一下 2+2
+__label__chat 介绍一下微服务
+__label__chat 帮我总结这篇文章

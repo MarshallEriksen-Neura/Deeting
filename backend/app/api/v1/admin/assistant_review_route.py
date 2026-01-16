@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.deps.auth import get_current_user, require_permissions
 from app.models import User
-from app.repositories import ReviewTaskRepository, AssistantTagRepository, AssistantTagLinkRepository
+from app.repositories import (
+    AssistantInstallRepository,
+    AssistantMarketRepository,
+    AssistantRepository,
+    AssistantTagRepository,
+    AssistantTagLinkRepository,
+    ReviewTaskRepository,
+)
 from app.schemas import (
     AssistantReviewDecisionRequest,
     ReviewTaskDTO,
@@ -20,16 +27,23 @@ from app.schemas import (
     AssistantTagCreateRequest,
     MessageResponse,
 )
-from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
+from app.services.assistant.assistant_market_service import AssistantMarketService, ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_tag_service import AssistantTagService
-from app.services.review.review_service import ReviewService
 
 router = APIRouter(prefix="/admin/assistant-reviews", tags=["Admin - Assistant Reviews"])
 
 
-def get_review_service(db: AsyncSession = Depends(get_db)) -> ReviewService:
+def get_market_service(db: AsyncSession = Depends(get_db)) -> AssistantMarketService:
+    assistant_repo = AssistantRepository(db)
+    install_repo = AssistantInstallRepository(db)
     review_repo = ReviewTaskRepository(db)
-    return ReviewService(review_repo)
+    market_repo = AssistantMarketRepository(db)
+    return AssistantMarketService(
+        assistant_repo,
+        install_repo,
+        review_repo,
+        market_repo,
+    )
 
 
 def get_review_repo(db: AsyncSession = Depends(get_db)) -> ReviewTaskRepository:
@@ -66,12 +80,11 @@ async def approve_assistant_review(
     assistant_id: UUID,
     payload: AssistantReviewDecisionRequest,
     current_user: User = Depends(get_current_user),
-    service: ReviewService = Depends(get_review_service),
+    service: AssistantMarketService = Depends(get_market_service),
 ) -> ReviewTaskDTO:
     try:
-        task = await service.approve(
-            entity_type=ASSISTANT_MARKET_ENTITY,
-            entity_id=assistant_id,
+        task = await service.approve_review(
+            assistant_id=assistant_id,
             reviewer_user_id=current_user.id,
             reason=payload.reason,
         )
@@ -89,12 +102,11 @@ async def reject_assistant_review(
     assistant_id: UUID,
     payload: AssistantReviewDecisionRequest,
     current_user: User = Depends(get_current_user),
-    service: ReviewService = Depends(get_review_service),
+    service: AssistantMarketService = Depends(get_market_service),
 ) -> ReviewTaskDTO:
     try:
-        task = await service.reject(
-            entity_type=ASSISTANT_MARKET_ENTITY,
-            entity_id=assistant_id,
+        task = await service.reject_review(
+            assistant_id=assistant_id,
             reviewer_user_id=current_user.id,
             reason=payload.reason,
         )

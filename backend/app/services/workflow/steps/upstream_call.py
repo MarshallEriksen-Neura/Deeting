@@ -13,7 +13,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -69,10 +69,15 @@ class StreamTokenAccumulator:
     error: str | None = None
     finish_reason: str | None = None
     model: str | None = None
+    assistant_content: list[str] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
+
+    @property
+    def assistant_text(self) -> str:
+        return "".join(self.assistant_content)
 
     def parse_sse_chunk(self, chunk: bytes) -> None:
         """
@@ -108,6 +113,10 @@ class StreamTokenAccumulator:
                             choice = data["choices"][0]
                             if choice.get("finish_reason"):
                                 self.finish_reason = choice["finish_reason"]
+                            delta = choice.get("delta") or choice.get("message") or {}
+                            content = delta.get("content")
+                            if isinstance(content, str) and content:
+                                self.assistant_content.append(content)
 
                         # 提取 usage（通常在最后一个块）
                         if "usage" in data:

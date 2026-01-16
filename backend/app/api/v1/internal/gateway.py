@@ -33,6 +33,7 @@
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -42,10 +43,14 @@ from fastapi import Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache_keys import CacheKeys
+from app.core.distributed_lock import distributed_lock
 from app.core.database import get_db
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import get_internal_orchestrator
 from app.deps.auth import get_current_user
+from app.models.conversation import ConversationChannel
+from app.services.conversation.service import ConversationService
 from app.schemas.gateway import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -70,6 +75,86 @@ from app.repositories.bandit_repository import BanditRepository
 
 logger = logging.getLogger(__name__)
 
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, int(len(text) / 4)) if text else 1
+
+
+def _with_tokens(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for msg in messages:
+        token_est = msg.get("token_estimate")
+        content = msg.get("content", "")
+        enriched.append(
+            {
+                **msg,
+                "token_estimate": token_est
+                if token_est is not None
+                else _estimate_tokens(str(content)),
+            }
+        )
+    return enriched
+
+
+async def _append_stream_conversation(
+    ctx: WorkflowContext,
+    assistant_text: str | None,
+) -> None:
+    if ctx.capability != "chat" or ctx.is_external:
+        return
+
+    session_id = ctx.get("conversation", "session_id") or (
+        (ctx.get("validation", "validated") or {}).get("session_id")
+    )
+    if not session_id:
+        return
+
+    try:
+        conv_service = ConversationService()
+    except Exception as exc:
+        logger.warning(f"ConversationAppend skipped (redis unavailable): {exc}")
+        return
+
+    req = ctx.get("validation", "validated") or {}
+    user_messages: list[dict[str, Any]] = req.get("messages", []) or []
+    assistant_msg = (
+        {"role": "assistant", "content": assistant_text}
+        if assistant_text
+        else None
+    )
+
+    msgs_to_append: list[dict[str, Any]] = []
+    if user_messages:
+        msgs_to_append.extend(_with_tokens(user_messages))
+    if assistant_msg:
+        msgs_to_append.append(_with_tokens([assistant_msg])[0])
+
+    if not msgs_to_append:
+        return
+
+    lock_key = CacheKeys.session_lock(session_id)
+    async with distributed_lock(lock_key, ttl=10, retry_times=3) as acquired:
+        if not acquired:
+            logger.warning(
+                "conversation_append_lock_failed session=%s trace=%s",
+                session_id,
+                ctx.trace_id,
+            )
+            return
+
+        await conv_service.append_messages(
+            session_id=session_id,
+            messages=msgs_to_append,
+            channel=ConversationChannel.INTERNAL,
+        )
+
+
+async def _stream_internal_callback(
+    ctx: WorkflowContext,
+    accumulator: StreamTokenAccumulator,
+) -> None:
+    await _stream_billing_callback(ctx, accumulator)
+    await _append_stream_conversation(ctx, accumulator.assistant_text)
 
 
 @router.get(
@@ -149,7 +234,7 @@ async def chat_completions(
             stream=stream,
             ctx=ctx,
             accumulator=accumulator,
-            on_complete=_stream_billing_callback,
+            on_complete=_stream_internal_callback,
         )
         return StreamingResponse(wrapped_stream, media_type="text/event-stream")
 

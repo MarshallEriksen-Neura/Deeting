@@ -3,24 +3,10 @@
 
 职责：
 - 处理第三方客户端的 AI 请求
-- 使用外部通道编排流程（完整的签名、配额、限流、脱敏）
-- 严格计费和审计
+- 使用外部通道编排流程（限流、脱敏、计费、审计）
 
 依赖：
 - GatewayOrchestrator: 编排器
-- get_external_principal: 外部鉴权（签名校验）
-- QuotaService: 配额检查
-- BillingService: 计费扣费
-
-请求头要求:
-- X-API-Key: API 密钥
-- X-Timestamp: 请求时间戳（秒）
-- X-Nonce: 请求唯一标识
-- X-Signature: HMAC-SHA256 签名
-
-签名算法:
-  message = f"{api_key}{timestamp}{nonce}{request_body_hash}"
-  signature = HMAC-SHA256(secret, message)
 
 接口：
 - POST /v1/chat/completions
@@ -48,7 +34,9 @@
 - 504: 上游服务超时
 """
 
+import asyncio
 import logging
+import uuid
 from decimal import Decimal
 from typing import Any
 
@@ -58,10 +46,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
+from app.core.config import settings
 from app.core.database import get_db
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import get_external_orchestrator, GatewayOrchestrator
-from app.deps.external_auth import ExternalPrincipal, get_external_principal
+from app.deps.external_auth import ExternalPrincipal
 from app.schemas.gateway import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -77,6 +66,13 @@ from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
+from app.repositories.api_key import ApiKeyRepository
+from app.services.memory.external_memory import (
+    derive_external_user_id,
+    extract_user_message,
+    persist_external_memory,
+)
+from app.services.providers.api_key import ApiKeyService
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
     stream_with_billing,
@@ -113,6 +109,119 @@ def _parse_provider_scopes(scopes: list[str] | None) -> tuple[set[str], set[str]
             case "preset_item":
                 preset_items.add(scope_value)
     return providers, presets, preset_items
+
+
+def _extract_bearer_token(value: str | None) -> str | None:
+    if not value:
+        return None
+    prefix = "bearer "
+    lowered = value.strip()
+    if lowered.lower().startswith(prefix):
+        return lowered[len(prefix):].strip()
+    return None
+
+
+def _pick_header(request: Request, header_name: str) -> str | None:
+    return request.headers.get(header_name) if request else None
+
+
+def _resolve_external_key(request: Request, path: str) -> str | None:
+    if not request:
+        return None
+
+    if path.endswith("/messages"):
+        candidates = [
+            _pick_header(request, "x-api-key"),
+            _pick_header(request, "anthropic-api-key"),
+            _extract_bearer_token(_pick_header(request, "authorization")),
+            _pick_header(request, "x-goog-api-key"),
+        ]
+    else:
+        candidates = [
+            _extract_bearer_token(_pick_header(request, "authorization")),
+            _pick_header(request, "x-api-key"),
+            _pick_header(request, "x-goog-api-key"),
+            _pick_header(request, "anthropic-api-key"),
+        ]
+
+    for item in candidates:
+        if item:
+            return item
+    return None
+
+
+async def _resolve_external_user_id(
+    request: Request,
+    path: str,
+    db: AsyncSession,
+) -> str | None:
+    raw_key = _resolve_external_key(request, path)
+    if not raw_key:
+        return None
+    if raw_key.startswith((ApiKeyService.PREFIX_EXTERNAL, ApiKeyService.PREFIX_INTERNAL)):
+        try:
+            repo = ApiKeyRepository(db)
+            service = ApiKeyService(
+                repository=repo,
+                redis_client=getattr(cache, "_redis", None),
+                secret_key=settings.JWT_SECRET_KEY or "dev-secret",
+            )
+            principal = await service.validate_key(raw_key)
+            if principal and principal.user_id:
+                return str(principal.user_id)
+        except Exception as exc:
+            logger.warning("external_user_id_resolve_failed err=%s", exc)
+    return str(derive_external_user_id(raw_key))
+
+
+async def _persist_external_memory(ctx: WorkflowContext) -> None:
+    if not ctx.is_success or ctx.capability != "chat":
+        return
+    user_id = ctx.get("external_memory", "user_id")
+    if not user_id:
+        return
+    try:
+        user_uuid = uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        return
+    text = extract_user_message(ctx.get("validation", "request"))
+    if not text:
+        return
+    await persist_external_memory(
+        user_id=user_uuid,
+        text=text,
+        db_session=ctx.db_session,
+        path=ctx.get("external_memory", "path"),
+    )
+
+
+def _schedule_external_memory(ctx: WorkflowContext) -> None:
+    if not ctx.is_success or ctx.capability != "chat":
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(_persist_external_memory(ctx))
+
+    def _log_task_error(t: asyncio.Task) -> None:
+        try:
+            exc = t.exception()
+        except Exception as err:
+            logger.warning("external_memory_task_exception trace_id=%s err=%s", ctx.trace_id, err)
+            return
+        if exc:
+            logger.warning("external_memory_task_failed trace_id=%s err=%s", ctx.trace_id, exc)
+
+    task.add_done_callback(_log_task_error)
+
+
+async def _stream_external_callback(
+    ctx: WorkflowContext,
+    accumulator: StreamTokenAccumulator,
+) -> None:
+    await _stream_billing_callback(ctx, accumulator)
+    _schedule_external_memory(ctx)
 
 
 async def _stream_billing_callback(
@@ -301,10 +410,11 @@ def _resolve_error_status(ctx: WorkflowContext) -> int:
 def build_external_context(
     request: Request,
     request_body: BaseModel,
-    principal: ExternalPrincipal,
+    principal: ExternalPrincipal | None,
     db: AsyncSession,
     capability: str = "chat",
     adapter_vendor: str | None = None,
+    user_id: str | None = None,
 ) -> WorkflowContext:
     """
     构建外部通道工作流上下文
@@ -315,33 +425,46 @@ def build_external_context(
     - 签名参数 (Timestamp, Nonce, Signature)
     - 请求体 (Request Body / Adapter)
     """
+    forwarded_for = request.headers.get("x-forwarded-for") if request else None
+    client_ip = (
+        forwarded_for.split(",")[0].strip()
+        if forwarded_for
+        else (request.client.host if request and request.client else None)
+    )
+    client_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+
     ctx = WorkflowContext(
         channel=Channel.EXTERNAL,
         capability=capability,
         requested_model=getattr(request_body, "model", ""),
         db_session=db,
-        tenant_id=principal.tenant_id,
-        api_key_id=principal.api_key_id,
-        client_ip=principal.client_ip,
+        tenant_id=principal.tenant_id if principal else None,
+        api_key_id=principal.api_key_id if principal else None,
+        client_ip=principal.client_ip if principal else client_ip,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
+    ctx.user_id = user_id
     
     # 鉴权与配置
-    ctx.set("auth", "scopes", principal.scopes)
-    ctx.set("external_auth", "allowed_models", principal.allowed_models)
-    ctx.set("external_auth", "allowed_ips", principal.allowed_ips)
-    ctx.set("external_auth", "rate_limit_rpm", principal.rate_limit_rpm)
-    ctx.set("external_auth", "budget_limit", principal.budget_limit)
-    ctx.set("external_auth", "budget_used", principal.budget_used)
-    ctx.set("external_auth", "enable_logging", principal.enable_logging)
+    if principal:
+        ctx.set("auth", "scopes", principal.scopes)
+        ctx.set("external_auth", "allowed_models", principal.allowed_models)
+        ctx.set("external_auth", "allowed_ips", principal.allowed_ips)
+        ctx.set("external_auth", "rate_limit_rpm", principal.rate_limit_rpm)
+        ctx.set("external_auth", "budget_limit", principal.budget_limit)
+        ctx.set("external_auth", "budget_used", principal.budget_used)
+        ctx.set("external_auth", "enable_logging", principal.enable_logging)
     
     # 签名校验参数
-    ctx.set("signature_verify", "timestamp", principal.timestamp)
-    ctx.set("signature_verify", "nonce", principal.nonce)
-    ctx.set("signature_verify", "signature", principal.signature)
-    ctx.set("signature_verify", "api_key", principal.api_key)
-    ctx.set("signature_verify", "api_secret", principal.api_secret)
-    ctx.set("signature_verify", "client_host", principal.client_host)
+    if principal:
+        ctx.set("signature_verify", "timestamp", principal.timestamp)
+        ctx.set("signature_verify", "nonce", principal.nonce)
+        ctx.set("signature_verify", "signature", principal.signature)
+        ctx.set("signature_verify", "api_key", principal.api_key)
+        ctx.set("signature_verify", "api_secret", principal.api_secret)
+        ctx.set("signature_verify", "client_host", principal.client_host)
+    else:
+        ctx.set("signature_verify", "client_host", client_host)
     
     # 路由配置
     ctx.set("routing", "allow_fallback", True)
@@ -394,7 +517,7 @@ def handle_workflow_result(ctx: WorkflowContext) -> JSONResponse | StreamingResp
             stream=stream,
             ctx=ctx,
             accumulator=accumulator,
-            on_complete=_stream_billing_callback,
+            on_complete=_stream_external_callback,
         )
         return StreamingResponse(wrapped_stream, media_type="text/event-stream")
 
@@ -423,17 +546,22 @@ def handle_workflow_result(ctx: WorkflowContext) -> JSONResponse | StreamingResp
 async def chat_completions(
     request: Request,
     request_body: ChatCompletionRequest,
-    principal: ExternalPrincipal = Depends(get_external_principal),
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
+    path = request.url.path if request else ""
+    user_id = await _resolve_external_user_id(request, path, db)
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=principal,
+        principal=None,
         db=db,
         capability="chat",
+        user_id=user_id,
     )
+    if user_id:
+        ctx.set("external_memory", "user_id", user_id)
+    ctx.set("external_memory", "path", path)
     await orchestrator.execute(ctx)
     return handle_workflow_result(ctx)
 
@@ -445,18 +573,23 @@ async def chat_completions(
 async def messages(
     request: Request,
     request_body: AnthropicMessagesRequest,
-    principal: ExternalPrincipal = Depends(get_external_principal),
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
+    path = request.url.path if request else ""
+    user_id = await _resolve_external_user_id(request, path, db)
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=principal,
+        principal=None,
         db=db,
         capability="chat",
         adapter_vendor="anthropic",
+        user_id=user_id,
     )
+    if user_id:
+        ctx.set("external_memory", "user_id", user_id)
+    ctx.set("external_memory", "path", path)
     await orchestrator.execute(ctx)
     return handle_workflow_result(ctx)
 
@@ -468,18 +601,23 @@ async def messages(
 async def responses(
     request: Request,
     request_body: ResponsesRequest,
-    principal: ExternalPrincipal = Depends(get_external_principal),
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
+    path = request.url.path if request else ""
+    user_id = await _resolve_external_user_id(request, path, db)
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=principal,
+        principal=None,
         db=db,
         capability="chat",
         adapter_vendor="responses",
+        user_id=user_id,
     )
+    if user_id:
+        ctx.set("external_memory", "user_id", user_id)
+    ctx.set("external_memory", "path", path)
     await orchestrator.execute(ctx)
     return handle_workflow_result(ctx)
 
@@ -491,27 +629,31 @@ async def responses(
 async def embeddings(
     request: Request,
     request_body: EmbeddingsRequest,
-    principal: ExternalPrincipal = Depends(get_external_principal),
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
+    path = request.url.path if request else ""
+    user_id = await _resolve_external_user_id(request, path, db)
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=principal,
+        principal=None,
         db=db,
         capability="embedding",
+        user_id=user_id,
     )
+    if user_id:
+        ctx.set("external_memory", "user_id", user_id)
+    ctx.set("external_memory", "path", path)
     await orchestrator.execute(ctx)
     return handle_workflow_result(ctx)
 
 
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
-    principal: ExternalPrincipal = Depends(get_external_principal),
     db: AsyncSession = Depends(get_db),
 ) -> ModelListResponse:
-    allowed_providers, _, _ = _parse_provider_scopes(principal.scopes)
+    allowed_providers, _, _ = _parse_provider_scopes(None)
 
     preset_repo = ProviderPresetRepository(db)
     instance_repo = ProviderInstanceRepository(db)
