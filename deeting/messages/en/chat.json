@@ -1,52 +1,54 @@
 {
-  "header": {
-    "online": "Online",
-    "stream": "Stream",
-    "streamOn": "Live output",
-    "streamOff": "Full response"
-  },
-  "model": {
-    "label": "Model",
-    "placeholder": "Select model"
-  },
-  "empty": {
-    "notFoundTitle": "Assistant not found",
-    "notFoundDesc": "This assistant may be uninstalled or removed.",
-    "backToList": "Back to assistants",
-    "loading": "Loading assistant..."
-  },
-  "greeting": {
-    "content": "Hi! I'm **{name}**.\n{desc}\n\nReady to collaborate?"
-  },
-  "status": {
-    "thinking": "{name} is thinking..."
-  },
-  "input": {
-    "placeholder": "Message {name}..."
-  },
-  "history": {
-    "title": "History",
-    "searchPlaceholder": "Search conversations...",
-    "emptyTitle": "No conversations yet",
-    "emptyDesc": "Start a new chat to see it here.",
-    "loading": "Loading...",
-    "loadFailed": "Failed to load conversations.",
-    "retry": "Retry",
-    "noMore": "No more conversations",
-    "untitled": "Untitled conversation",
-    "viewArchived": "View archived",
-    "groups": {
-      "today": "Today",
-      "yesterday": "Yesterday",
-      "last7Days": "Previous 7 days",
-      "earlier": "Earlier"
+  "chat": {
+    "header": {
+      "online": "Online",
+      "stream": "Stream",
+      "streamOn": "Live output",
+      "streamOff": "Full response"
+    },
+    "model": {
+      "label": "Model",
+      "placeholder": "Select model"
+    },
+    "empty": {
+      "notFoundTitle": "Assistant not found",
+      "notFoundDesc": "This assistant may be uninstalled or removed.",
+      "backToList": "Back to assistants",
+      "loading": "Loading assistant..."
+    },
+    "greeting": {
+      "content": "Hi! I'm **{name}**.\n{desc}\n\nReady to collaborate?"
+    },
+    "status": {
+      "thinking": "{name} is thinking..."
+    },
+    "input": {
+      "placeholder": "Message {name}..."
+    },
+    "history": {
+      "title": "History",
+      "searchPlaceholder": "Search conversations...",
+      "emptyTitle": "No conversations yet",
+      "emptyDesc": "Start a new chat to see it here.",
+      "loading": "Loading...",
+      "loadFailed": "Failed to load conversations.",
+      "retry": "Retry",
+      "noMore": "No more conversations",
+      "untitled": "Untitled conversation",
+      "viewArchived": "View archived",
+      "groups": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "last7Days": "Previous 7 days",
+        "earlier": "Earlier"
+      }
+    },
+    "footer": {
+      "disclaimer": "AI generated content may be inaccurate."
+    },
+    "error": {
+      "requestFailed": "Request failed. Please try again.",
+      "modelUnavailable": "No available models. Please configure a provider."
     }
-  },
-  "footer": {
-    "disclaimer": "AI generated content may be inaccurate."
-  },
-  "error": {
-    "requestFailed": "Request failed. Please try again.",
-    "modelUnavailable": "No available models. Please configure a provider."
   }
 }

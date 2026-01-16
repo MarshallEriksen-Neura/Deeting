@@ -48,7 +48,7 @@ function mapConversationMessages(rawMessages: Array<{ role?: string; content?: u
   const total = filtered.length;
   return filtered.map((msg, index) => ({
     id: `conv-${msg.turn_index ?? index}`,
-    role: msg.role === "assistant" ? "assistant" : "user",
+    role: (msg.role === "assistant" ? "assistant" : "user") as MessageRole,
     content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? ""),
     createdAt: Date.now() - (total - index) * 1000,
   }));
@@ -71,6 +71,7 @@ interface ChatState {
   activeAssistantId?: string;
   sessionId?: string;
   streamEnabled: boolean;
+  errorMessage: string | null;
 }
 
 interface ChatActions {
@@ -81,6 +82,7 @@ interface ChatActions {
   setActiveAssistantId: (assistantId?: string) => void;
   setSessionId: (sessionId?: string) => void;
   setStreamEnabled: (enabled: boolean) => void;
+  setErrorMessage: (error: string | null) => void;
   setMessages: (messages: Message[]) => void;
   updateMessage: (id: string, content: string) => void;
   addMessage: (role: MessageRole, content: string) => void;
@@ -108,6 +110,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
       activeAssistantId: undefined,
       sessionId: undefined,
       streamEnabled: false,
+      errorMessage: null,
 
       setInput: (input) => set({ input }),
 
@@ -122,6 +125,8 @@ export const useChatStore = create<ChatState & ChatActions>()(
       setSessionId: (sessionId) => set({ sessionId }),
 
       setStreamEnabled: (enabled) => set({ streamEnabled: enabled }),
+
+      setErrorMessage: (errorMessage) => set({ errorMessage }),
 
       setMessages: (messages) => set({ messages }),
 
@@ -260,8 +265,9 @@ export const useChatStore = create<ChatState & ChatActions>()(
             }
           }
         } catch (error) {
-          const message = error instanceof Error && error.message ? error.message : "";
+          const message = error instanceof Error && error.message ? error.message : "Request failed";
           updateMessage(assistantMessageId, message);
+          set({ errorMessage: message });
         } finally {
           set({ isLoading: false });
         }

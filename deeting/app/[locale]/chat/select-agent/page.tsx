@@ -1,10 +1,11 @@
-import SelectAgentModal from '../(.)select-agent/page';
+import { Suspense } from 'react';
+import { SelectAgentContainer } from '../components/select-agent-container';
+import { SelectAgentSkeleton } from '../components/select-agent-skeleton';
 
-export default function Page() {
+export default function SelectAgentPage() {
   return (
-    <div className="min-h-screen w-full bg-black relative">
-       {/* Ensure the modal content renders */}
-       <SelectAgentModal />
-    </div>
-  );
+    <Suspense fallback={<SelectAgentSkeleton />}>
+      <SelectAgentContainer />
+    </Suspense>
+  )
 }
