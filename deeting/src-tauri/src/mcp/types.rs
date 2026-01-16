@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -219,6 +220,7 @@ pub struct McpTool {
     pub pending_config_hash: Option<String>,
     pub conflict_status: McpConflictStatus,
     pub is_read_only: bool,
+    pub is_new: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -283,4 +285,65 @@ pub enum McpLogStream {
     Stdout,
     Stderr,
     Event,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistant {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub avatar: Option<String>,
+    pub system_prompt: String,
+    pub model_config: Option<Value>,
+    pub tags: Vec<String>,
+    pub visibility: String,
+    pub source: String,
+    pub cloud_id: Option<String>,
+    pub is_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateLocalAssistantRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub avatar: Option<String>,
+    pub system_prompt: String,
+    pub model_config: Option<Value>,
+    pub tags: Option<Vec<String>>,
+    pub visibility: Option<String>,
+    pub source: Option<String>,
+    pub cloud_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateLocalAssistantRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub avatar: Option<String>,
+    pub system_prompt: Option<String>,
+    pub model_config: Option<Value>,
+    pub tags: Option<Vec<String>>,
+    pub visibility: Option<String>,
+    pub source: Option<String>,
+    pub cloud_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantMessage {
+    pub id: String,
+    pub assistant_id: String,
+    pub role: String,
+    pub content: String,
+    pub is_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAssistantMessageRequest {
+    pub assistant_id: String,
+    pub role: String,
+    pub content: String,
 }

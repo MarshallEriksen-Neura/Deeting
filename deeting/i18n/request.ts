@@ -15,6 +15,7 @@ const namespaces = [
   "notifications",
   "profile",
   "assistants",
+  "mcp",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

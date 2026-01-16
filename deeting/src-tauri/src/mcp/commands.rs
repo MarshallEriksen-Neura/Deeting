@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -9,9 +9,11 @@ use crate::mcp::error::McpError;
 use crate::mcp::process::ProcessManager;
 use crate::mcp::store::{expand_path, ExtractedToolFields, McpStore, NewSource, ToolUpsert};
 use crate::mcp::types::{
-    CreateSourceRequest, ImportConfigRequest, McpConfigPayload, McpConflictStatus, McpLogEntry,
-    McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
-    McpTrustLevel, ResolveConflictRequest, SyncSourceRequest, UpdateToolConfigRequest,
+    CreateAssistantMessageRequest, CreateLocalAssistantRequest, CreateSourceRequest,
+    ImportConfigRequest, LocalAssistant, LocalAssistantMessage, McpConfigPayload, McpConflictStatus,
+    McpLogEntry, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
+    McpToolStatus, McpTrustLevel, ResolveConflictRequest, SyncSourceRequest,
+    UpdateLocalAssistantRequest, UpdateToolConfigRequest,
 };
 use crate::mcp::McpRuntimeState;
 
@@ -127,6 +129,86 @@ pub async fn list_mcp_tools(state: State<'_, McpRuntimeState>) -> Result<Vec<Mcp
 }
 
 #[tauri::command]
+pub async fn list_local_assistants(
+    state: State<'_, McpRuntimeState>,
+) -> Result<Vec<LocalAssistant>, String> {
+    state.store.list_local_assistants().await.map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_assistant(
+    state: State<'_, McpRuntimeState>,
+    payload: CreateLocalAssistantRequest,
+) -> Result<String, String> {
+    state
+        .store
+        .create_local_assistant(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_assistant(
+    state: State<'_, McpRuntimeState>,
+    id: String,
+    payload: UpdateLocalAssistantRequest,
+) -> Result<LocalAssistant, String> {
+    state
+        .store
+        .update_local_assistant(&id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_assistant(
+    state: State<'_, McpRuntimeState>,
+    id: String,
+) -> Result<(), String> {
+    state
+        .store
+        .delete_local_assistant(&id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_assistant_messages(
+    state: State<'_, McpRuntimeState>,
+    assistant_id: String,
+) -> Result<Vec<LocalAssistantMessage>, String> {
+    state
+        .store
+        .list_assistant_messages(&assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn append_assistant_message(
+    state: State<'_, McpRuntimeState>,
+    payload: CreateAssistantMessageRequest,
+) -> Result<LocalAssistantMessage, String> {
+    state
+        .store
+        .append_assistant_message(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_assistant_messages(
+    state: State<'_, McpRuntimeState>,
+    assistant_id: String,
+) -> Result<(), String> {
+    state
+        .store
+        .delete_assistant_messages(&assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn import_mcp_config(
     state: State<'_, McpRuntimeState>,
     payload: ImportConfigRequest,
@@ -178,7 +260,7 @@ pub async fn start_mcp_tool(
 
     state
         .process_manager
-        .start_tool(tool.clone())
+        .start_tool(tool.clone(), true)
         .await
         .map_err(to_string)?;
     let updated = state
@@ -207,6 +289,15 @@ pub async fn stop_mcp_tool(
         .map_err(to_string)?
         .ok_or_else(|| to_string(McpError::NotFound(format!("tool {tool_id} not found"))))?;
     Ok(updated)
+}
+
+#[tauri::command]
+pub async fn update_mcp_tool_env(
+    state: State<'_, McpRuntimeState>,
+    tool_id: String,
+    env: Option<HashMap<String, String>>,
+) -> Result<McpTool, String> {
+    state.store.update_tool_env(&tool_id, env).await.map_err(to_string)
 }
 
 #[tauri::command]
@@ -350,7 +441,7 @@ pub async fn sync_cloud_subscriptions(
                     identifier: Some(tool.identifier.clone()),
                     name: extracted.name,
                     source_type: McpSourceType::Cloud,
-                    status: McpToolStatus::Pending,
+                    status: McpToolStatus::Stopped,
                     ping_ms: None,
                     capabilities: extracted.capabilities,
                     description: extracted.description,
@@ -368,6 +459,7 @@ pub async fn sync_cloud_subscriptions(
                         McpConflictStatus::None
                     },
                     is_read_only: true,
+                    is_new: true,
                 };
                 state.store.upsert_tool(tool_upsert).await.map_err(to_string)?;
             }
@@ -393,7 +485,7 @@ pub async fn sync_cloud_subscriptions(
     state.store.list_tools().await.map_err(to_string)
 }
 
-async fn sync_source_inner(
+pub(crate) async fn sync_source_inner(
     state: &McpRuntimeState,
     source: McpSource,
     auth_token: Option<String>,
@@ -507,6 +599,7 @@ async fn apply_config_payload(
                                 McpConflictStatus::None
                             },
                             is_read_only,
+                            is_new: existing_tool.is_new,
                         })
                         .await?
                 }
@@ -537,6 +630,7 @@ async fn apply_config_payload(
                         McpConflictStatus::None
                     },
                     is_read_only,
+                    is_new: true,
                 })
                 .await?,
         };
@@ -597,6 +691,7 @@ async fn apply_pending_update(
             pending_config_hash: None,
             conflict_status: McpConflictStatus::None,
             is_read_only: tool.is_read_only,
+            is_new: tool.is_new,
         })
         .await?;
 

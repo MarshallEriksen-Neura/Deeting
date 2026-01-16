@@ -32,8 +32,14 @@
       "previewUnavailable": "Sorry, preview is not available right now.",
       "assistantCreatedTitle": "Assistant created",
       "assistantCreatedDesc": "{name} created. Manage it in “My Assistants”.",
+      "assistantUpdatedTitle": "Assistant updated",
+      "assistantUpdatedDesc": "{name} updated.",
+      "assistantDeletedTitle": "Assistant deleted",
+      "assistantDeletedDesc": "{name} deleted.",
       "createFailedTitle": "Creation failed",
-      "createFailedDesc": "Please try again later or check your input"
+      "createFailedDesc": "Please try again later or check your input",
+      "deleteFailedTitle": "Deletion failed",
+      "deleteFailedDesc": "Please try again later"
     },
     "modal": {
       "tagsTitle": "Tags",
@@ -49,7 +55,7 @@
     "create": {
       "trigger": "Create Assistant",
       "title": "Create New Persona",
-      "description": "Design a custom AI assistant. It will be installed locally and submitted to the market.",
+      "description": "Design a custom AI assistant. It will be installed locally.",
       "nameLabel": "Name",
       "namePlaceholder": "e.g. Python Guru",
       "descLabel": "Short Description",
@@ -82,6 +88,19 @@
         "tagsMin": "Add at least one tag.",
         "iconRequired": "Select an icon."
       }
+    },
+    "edit": {
+      "trigger": "Edit",
+      "title": "Edit Assistant",
+      "description": "Update the assistant’s profile and system prompt.",
+      "submit": "Save Changes",
+      "submitting": "Saving...",
+      "delete": "Delete",
+      "deleting": "Deleting...",
+      "deleteConfirmTitle": "Delete assistant?",
+      "deleteConfirmDesc": "This will remove {name} from your local list. This action cannot be undone.",
+      "deleteConfirmAction": "Delete",
+      "deleteConfirmCancel": "Cancel"
     }
   }
 }

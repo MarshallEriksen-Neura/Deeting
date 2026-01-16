@@ -28,7 +28,9 @@
       "connectionError": "连接断开",
       "connectionErrorDesc": "无法连接到 {service} 接口",
       "imageGenerated": "图片生成完毕",
-      "imageGeneratedDesc": "耗时 {duration} · 点击查看结果"
+      "imageGeneratedDesc": "耗时 {duration} · 点击查看结果",
+      "mcpCrashed": "MCP 工具已崩溃：{name}",
+      "mcpCrashedDesc": "已停止自动重试，请检查日志。原因：{error}"
     },
     "actions": {
       "view": "查看",

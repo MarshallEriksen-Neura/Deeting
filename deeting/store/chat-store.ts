@@ -12,14 +12,23 @@ export interface Message {
   createdAt: number;
 }
 
+interface ChatConfig {
+  model: string;
+  temperature: number;
+  topP: number;
+  maxTokens: number;
+}
+
 interface ChatState {
   input: string;
   messages: Message[];
   isLoading: boolean;
+  config: ChatConfig;
 }
 
 interface ChatActions {
   setInput: (input: string) => void;
+  setConfig: (config: Partial<ChatConfig>) => void;
   addMessage: (role: MessageRole, content: string) => void;
   clearMessages: () => void;
   sendMessage: () => Promise<void>;
@@ -31,8 +40,16 @@ export const useChatStore = create<ChatState & ChatActions>()(
       input: "",
       messages: [],
       isLoading: false,
+      config: {
+        model: "gpt-4o",
+        temperature: 0.7,
+        topP: 1.0,
+        maxTokens: 2048,
+      },
 
       setInput: (input) => set({ input }),
+      
+      setConfig: (newConfig) => set((state) => ({ config: { ...state.config, ...newConfig } })),
 
       addMessage: (role, content) => {
         const newMessage: Message = {
@@ -73,7 +90,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
     {
       name: "deeting-chat-store",
       storage: createJSONStorage(() => sessionStorage),
-      partialize: (state) => ({ messages: state.messages }), // Persist messages but not input/loading
+      partialize: (state) => ({ messages: state.messages, config: state.config }), // Persist messages and config
     }
   )
 );

@@ -8,8 +8,9 @@ use uuid::Uuid;
 
 use crate::mcp::error::McpError;
 use crate::mcp::types::{
+    CreateAssistantMessageRequest, CreateLocalAssistantRequest, LocalAssistant, LocalAssistantMessage,
     McpConflictStatus, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
-    McpToolStatus, McpTrustLevel,
+    McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest,
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
@@ -72,10 +73,62 @@ impl McpStore {
               pending_config_hash TEXT,
               conflict_status TEXT NOT NULL,
               is_read_only INTEGER NOT NULL,
+              is_new INTEGER NOT NULL,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               FOREIGN KEY (source_id) REFERENCES mcp_sources(id)
             );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS assistants (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              description TEXT,
+              avatar TEXT,
+              system_prompt TEXT NOT NULL,
+              model_config TEXT,
+              tags TEXT,
+              visibility TEXT NOT NULL,
+              source TEXT NOT NULL,
+              cloud_id TEXT,
+              is_deleted INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS assistant_messages (
+              id TEXT PRIMARY KEY,
+              assistant_id TEXT NOT NULL,
+              role TEXT NOT NULL,
+              content TEXT NOT NULL,
+              is_deleted INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (assistant_id) REFERENCES assistants(id)
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_assistant_messages_assistant_id_created_at
+            ON assistant_messages(assistant_id, created_at);
             "#,
         )
         .execute(&self.pool)
@@ -100,6 +153,13 @@ impl McpStore {
             "mcp_tools",
             "pending_config_hash",
             "ALTER TABLE mcp_tools ADD COLUMN pending_config_hash TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "mcp_tools",
+            "is_new",
+            "ALTER TABLE mcp_tools ADD COLUMN is_new INTEGER NOT NULL DEFAULT 0;",
         )
         .await?;
 
@@ -307,7 +367,7 @@ impl McpStore {
             r#"
             SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
-                   pending_config_hash, conflict_status, is_read_only, created_at, updated_at
+                   pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
             ORDER BY created_at ASC;
             "#,
@@ -328,7 +388,7 @@ impl McpStore {
             r#"
             SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
-                   pending_config_hash, conflict_status, is_read_only, created_at, updated_at
+                   pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
             WHERE id = ?;
             "#,
@@ -366,7 +426,7 @@ impl McpStore {
             r#"
             SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
-                   pending_config_hash, conflict_status, is_read_only, created_at, updated_at
+                   pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
             WHERE source_id = ? AND name = ?
             LIMIT 1;
@@ -390,7 +450,7 @@ impl McpStore {
             r#"
             SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
-                   pending_config_hash, conflict_status, is_read_only, created_at, updated_at
+                   pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
             WHERE source_id = ? AND identifier = ?
             LIMIT 1;
@@ -469,6 +529,49 @@ impl McpStore {
         .bind(status.as_str())
         .bind(ping_ms)
         .bind(error)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn update_tool_env(
+        &self,
+        id: &str,
+        env: Option<HashMap<String, String>>,
+    ) -> Result<McpTool, McpError> {
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE mcp_tools
+            SET env = ?, is_new = 0, updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(serialize_json(&env)?)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_tool(id)
+            .await?
+            .ok_or_else(|| McpError::NotFound("tool missing after env update".to_string()))
+    }
+
+    pub async fn set_tool_new_flag(&self, id: &str, is_new: bool) -> Result<(), McpError> {
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE mcp_tools
+            SET is_new = ?, updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(if is_new { 1 } else { 0 })
         .bind(now)
         .bind(id)
         .execute(&self.pool)
@@ -643,8 +746,8 @@ impl McpStore {
             INSERT INTO mcp_tools
               (id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
                error, command, args, env, config_json, config_hash, pending_config_json,
-               pending_config_hash, conflict_status, is_read_only, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+               pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#,
         )
         .bind(&id)
@@ -666,6 +769,7 @@ impl McpStore {
         .bind(tool.pending_config_hash)
         .bind(tool.conflict_status.as_str())
         .bind(if tool.is_read_only { 1 } else { 0 })
+        .bind(if tool.is_new { 1 } else { 0 })
         .bind(&now)
         .bind(&now)
         .execute(&self.pool)
@@ -682,7 +786,7 @@ impl McpStore {
             SET source_id = ?, identifier = ?, name = ?, source_type = ?, status = ?, ping_ms = ?,
                 capabilities = ?, description = ?, error = ?, command = ?, args = ?, env = ?,
                 config_json = ?, config_hash = ?, pending_config_json = ?, pending_config_hash = ?,
-                conflict_status = ?, is_read_only = ?, updated_at = ?
+                conflict_status = ?, is_read_only = ?, is_new = ?, updated_at = ?
             WHERE id = ?;
             "#,
         )
@@ -704,8 +808,292 @@ impl McpStore {
         .bind(tool.pending_config_hash)
         .bind(tool.conflict_status.as_str())
         .bind(if tool.is_read_only { 1 } else { 0 })
+        .bind(if tool.is_new { 1 } else { 0 })
         .bind(&now)
         .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn list_local_assistants(&self) -> Result<Vec<LocalAssistant>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, name, description, avatar, system_prompt, model_config, tags,
+                   visibility, source, cloud_id, is_deleted, created_at, updated_at
+            FROM assistants
+            WHERE is_deleted = 0
+            ORDER BY updated_at DESC;
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut assistants = Vec::with_capacity(rows.len());
+        for row in rows {
+            assistants.push(row_to_assistant(&row)?);
+        }
+        Ok(assistants)
+    }
+
+    pub async fn get_local_assistant(
+        &self,
+        id: &str,
+    ) -> Result<Option<LocalAssistant>, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, name, description, avatar, system_prompt, model_config, tags,
+                   visibility, source, cloud_id, is_deleted, created_at, updated_at
+            FROM assistants
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        match row {
+            Some(row) => Ok(Some(row_to_assistant(&row)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn create_local_assistant(
+        &self,
+        payload: CreateLocalAssistantRequest,
+    ) -> Result<String, McpError> {
+        let name = payload.name.trim().to_string();
+        if name.is_empty() {
+            return Err(McpError::validation("assistant name is required"));
+        }
+        let system_prompt = payload.system_prompt.trim().to_string();
+        if system_prompt.is_empty() {
+            return Err(McpError::validation("system_prompt is required"));
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let now = now_rfc3339()?;
+        let visibility = payload
+            .visibility
+            .unwrap_or_else(|| "private".to_string());
+        let source = payload.source.unwrap_or_else(|| "local".to_string());
+        let tags = payload.tags.unwrap_or_default();
+        let tags_json = serialize_json(&Some(tags))?;
+        let model_config_json = serialize_json(&payload.model_config)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO assistants
+              (id, name, description, avatar, system_prompt, model_config, tags, visibility, source,
+               cloud_id, is_deleted, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(&id)
+        .bind(&name)
+        .bind(payload.description)
+        .bind(payload.avatar)
+        .bind(&system_prompt)
+        .bind(model_config_json)
+        .bind(tags_json)
+        .bind(visibility)
+        .bind(source)
+        .bind(payload.cloud_id)
+        .bind(0)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(id)
+    }
+
+    pub async fn update_local_assistant(
+        &self,
+        id: &str,
+        payload: UpdateLocalAssistantRequest,
+    ) -> Result<LocalAssistant, McpError> {
+        let existing = self
+            .get_local_assistant(id)
+            .await?
+            .ok_or_else(|| McpError::NotFound("assistant not found".to_string()))?;
+
+        if existing.is_deleted {
+            return Err(McpError::validation("assistant already deleted"));
+        }
+
+        let LocalAssistant {
+            name: existing_name,
+            description: existing_description,
+            avatar: existing_avatar,
+            system_prompt: existing_system_prompt,
+            model_config: existing_model_config,
+            tags: existing_tags,
+            visibility: existing_visibility,
+            source: existing_source,
+            cloud_id: existing_cloud_id,
+            ..
+        } = existing;
+
+        let name = payload.name.unwrap_or(existing_name);
+        if name.trim().is_empty() {
+            return Err(McpError::validation("assistant name is required"));
+        }
+        let system_prompt = payload.system_prompt.unwrap_or(existing_system_prompt);
+        if system_prompt.trim().is_empty() {
+            return Err(McpError::validation("system_prompt is required"));
+        }
+
+        let description = payload.description.or(existing_description);
+        let avatar = payload.avatar.or(existing_avatar);
+        let model_config = payload.model_config.or(existing_model_config);
+        let tags = payload.tags.unwrap_or(existing_tags);
+        let visibility = payload.visibility.unwrap_or(existing_visibility);
+        let source = payload.source.unwrap_or(existing_source);
+        let cloud_id = payload.cloud_id.or(existing_cloud_id);
+        let now = now_rfc3339()?;
+
+        let tags_json = serialize_json(&Some(tags))?;
+        let model_config_json = serialize_json(&model_config)?;
+
+        sqlx::query(
+            r#"
+            UPDATE assistants
+            SET name = ?, description = ?, avatar = ?, system_prompt = ?, model_config = ?,
+                tags = ?, visibility = ?, source = ?, cloud_id = ?, updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(name)
+        .bind(description)
+        .bind(avatar)
+        .bind(system_prompt)
+        .bind(model_config_json)
+        .bind(tags_json)
+        .bind(visibility)
+        .bind(source)
+        .bind(cloud_id)
+        .bind(&now)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_local_assistant(id)
+            .await?
+            .ok_or_else(|| McpError::NotFound("assistant missing after update".to_string()))
+    }
+
+    pub async fn delete_local_assistant(&self, id: &str) -> Result<(), McpError> {
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE assistants
+            SET is_deleted = 1, updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(&now)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound("assistant not found".to_string()));
+        }
+        self.delete_assistant_messages(id).await?;
+        Ok(())
+    }
+
+    pub async fn list_assistant_messages(
+        &self,
+        assistant_id: &str,
+    ) -> Result<Vec<LocalAssistantMessage>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, assistant_id, role, content, is_deleted, created_at, updated_at
+            FROM assistant_messages
+            WHERE assistant_id = ? AND is_deleted = 0
+            ORDER BY created_at ASC;
+            "#,
+        )
+        .bind(assistant_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut messages = Vec::with_capacity(rows.len());
+        for row in rows {
+            messages.push(row_to_assistant_message(&row)?);
+        }
+        Ok(messages)
+    }
+
+    pub async fn append_assistant_message(
+        &self,
+        payload: CreateAssistantMessageRequest,
+    ) -> Result<LocalAssistantMessage, McpError> {
+        let role = payload.role.trim();
+        if role.is_empty() {
+            return Err(McpError::validation("role is required"));
+        }
+        let content = payload.content.trim().to_string();
+        if content.is_empty() {
+            return Err(McpError::validation("content is required"));
+        }
+        if payload.assistant_id.trim().is_empty() {
+            return Err(McpError::validation("assistant_id is required"));
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let now = now_rfc3339()?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO assistant_messages
+              (id, assistant_id, role, content, is_deleted, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(&id)
+        .bind(&payload.assistant_id)
+        .bind(role)
+        .bind(&content)
+        .bind(0)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(LocalAssistantMessage {
+            id,
+            assistant_id: payload.assistant_id,
+            role: role.to_string(),
+            content,
+            is_deleted: false,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    pub async fn delete_assistant_messages(&self, assistant_id: &str) -> Result<(), McpError> {
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE assistant_messages
+            SET is_deleted = 1, updated_at = ?
+            WHERE assistant_id = ?;
+            "#,
+        )
+        .bind(&now)
+        .bind(assistant_id)
         .execute(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -765,6 +1153,7 @@ pub struct ToolUpsert {
     pub pending_config_hash: Option<String>,
     pub conflict_status: McpConflictStatus,
     pub is_read_only: bool,
+    pub is_new: bool,
 }
 
 pub struct ExtractedToolFields {
@@ -821,6 +1210,39 @@ fn row_to_tool(row: &SqliteRow) -> Result<McpTool, McpError> {
         pending_config_hash: row.try_get("pending_config_hash")?,
         conflict_status: conflict_status.parse().map_err(McpError::validation)?,
         is_read_only: row.try_get::<i64, _>("is_read_only")? != 0,
+        is_new: row.try_get::<i64, _>("is_new")? != 0,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn row_to_assistant(row: &SqliteRow) -> Result<LocalAssistant, McpError> {
+    let tags: Option<Vec<String>> = deserialize_json(row.try_get("tags")?)?;
+    let model_config: Option<serde_json::Value> = deserialize_json(row.try_get("model_config")?)?;
+    Ok(LocalAssistant {
+        id: row.try_get("id")?,
+        name: row.try_get("name")?,
+        description: row.try_get("description")?,
+        avatar: row.try_get("avatar")?,
+        system_prompt: row.try_get("system_prompt")?,
+        model_config,
+        tags: tags.unwrap_or_default(),
+        visibility: row.try_get("visibility")?,
+        source: row.try_get("source")?,
+        cloud_id: row.try_get("cloud_id")?,
+        is_deleted: row.try_get::<i64, _>("is_deleted")? != 0,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn row_to_assistant_message(row: &SqliteRow) -> Result<LocalAssistantMessage, McpError> {
+    Ok(LocalAssistantMessage {
+        id: row.try_get("id")?,
+        assistant_id: row.try_get("assistant_id")?,
+        role: row.try_get("role")?,
+        content: row.try_get("content")?,
+        is_deleted: row.try_get::<i64, _>("is_deleted")? != 0,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

@@ -28,7 +28,9 @@
       "connectionError": "Connection Lost",
       "connectionErrorDesc": "Unable to connect to {service} interface",
       "imageGenerated": "Image Generated",
-      "imageGeneratedDesc": "Completed in {duration} · Click to view result"
+      "imageGeneratedDesc": "Completed in {duration} · Click to view result",
+      "mcpCrashed": "MCP tool crashed: {name}",
+      "mcpCrashedDesc": "Auto-retry stopped. Check logs. Reason: {error}"
     },
     "actions": {
       "view": "View",

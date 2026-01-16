@@ -2,9 +2,11 @@ mod mcp;
 
 use std::sync::Arc;
 
+use log::warn;
 use crate::mcp::error::McpError;
 use crate::mcp::process::ProcessManager;
 use crate::mcp::store::{expand_path, McpStore};
+use crate::mcp::types::McpSourceStatus;
 use crate::mcp::McpRuntimeState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,7 +37,36 @@ pub fn run() {
         ))
       })
       .map_err(|err| Box::<dyn std::error::Error>::from(err))?;
+      let sync_state = state.clone();
       app.manage(state);
+      tauri::async_runtime::spawn(async move {
+        let source = match sync_state.store.ensure_local_source().await {
+          Ok(source) => source,
+          Err(err) => {
+            warn!("mcp auto sync skipped: {}", err);
+            return;
+          }
+        };
+        let _ = sync_state
+          .store
+          .update_source_status(&source.id, McpSourceStatus::Syncing, None)
+          .await;
+        match crate::mcp::commands::sync_source_inner(&sync_state, source.clone(), None).await {
+          Ok(_) => {
+            let _ = sync_state
+              .store
+              .update_source_status(&source.id, McpSourceStatus::Active, Some(now_rfc3339()))
+              .await;
+          }
+          Err(err) => {
+            let _ = sync_state
+              .store
+              .update_source_status(&source.id, McpSourceStatus::Error, None)
+              .await;
+            warn!("mcp auto sync failed: {}", err);
+          }
+        }
+      });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -44,9 +75,17 @@ pub fn run() {
       crate::mcp::commands::create_mcp_source,
       crate::mcp::commands::sync_mcp_source,
       crate::mcp::commands::list_mcp_tools,
+      crate::mcp::commands::list_local_assistants,
+      crate::mcp::commands::create_local_assistant,
+      crate::mcp::commands::update_local_assistant,
+      crate::mcp::commands::delete_local_assistant,
+      crate::mcp::commands::list_assistant_messages,
+      crate::mcp::commands::append_assistant_message,
+      crate::mcp::commands::delete_assistant_messages,
       crate::mcp::commands::import_mcp_config,
       crate::mcp::commands::start_mcp_tool,
       crate::mcp::commands::stop_mcp_tool,
+      crate::mcp::commands::update_mcp_tool_env,
       crate::mcp::commands::apply_pending_config,
       crate::mcp::commands::resolve_mcp_conflict,
       crate::mcp::commands::get_mcp_logs,
@@ -75,12 +114,18 @@ fn resolve_database_url() -> Result<String, McpError> {
 
 fn default_db_path() -> String {
   if let Ok(home) = std::env::var("HOME") {
-    return format!("{home}/.config/deeting/mcp.db");
+    return format!("{home}/.config/deeting/deeting.db");
   }
-  "mcp.db".to_string()
+  "deeting.db".to_string()
 }
 
 fn resolve_cloud_base_url() -> String {
   std::env::var("NEXT_PUBLIC_API_BASE_URL")
     .unwrap_or_else(|_| "http://127.0.0.1:8000".to_string())
+}
+
+fn now_rfc3339() -> String {
+  time::OffsetDateTime::now_utc()
+    .format(&time::format_description::well_known::Rfc3339)
+    .unwrap_or_else(|_| "".to_string())
 }

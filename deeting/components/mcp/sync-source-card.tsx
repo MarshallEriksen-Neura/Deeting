@@ -6,38 +6,42 @@ import { GlassCard } from "@/components/ui/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { MCPSource } from "@/types/mcp"
+import { useTranslations } from "next-intl"
 
 interface SyncSourceCardProps {
   source: MCPSource
-  onSync?: (id: string) => void
+  onSync?: () => void
 }
 
 const TrustBadge = ({ trustLevel }: { trustLevel?: MCPSource['trustLevel'] }) => {
+    const t = useTranslations("mcp")
     switch(trustLevel) {
         case 'official':
-            return <Badge variant="secondary" className="h-6 px-2 bg-gradient-to-r from-blue-50 to-cyan-50 text-blue-700 hover:bg-blue-100 border-blue-200/50 gap-1.5 shadow-sm"><ShieldCheck size={11} /> Official</Badge>
+            return <Badge variant="secondary" className="h-6 px-2 bg-gradient-to-r from-blue-50 to-cyan-50 text-blue-700 hover:bg-blue-100 border-blue-200/50 gap-1.5 shadow-sm"><ShieldCheck size={11} /> {t("source.trust.official")}</Badge>
         case 'community':
-            return <Badge variant="secondary" className="h-6 px-2 bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-700 hover:bg-amber-100 border-amber-200/50 gap-1.5 shadow-sm"><AlertTriangle size={11} /> Community</Badge>
+            return <Badge variant="secondary" className="h-6 px-2 bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-700 hover:bg-amber-100 border-amber-200/50 gap-1.5 shadow-sm"><AlertTriangle size={11} /> {t("source.trust.community")}</Badge>
         case 'private':
-            return <Badge variant="secondary" className="h-6 px-2 bg-gradient-to-r from-gray-50 to-slate-50 text-gray-600 hover:bg-gray-200 border-gray-200/50 gap-1.5 shadow-sm"><Lock size={11} /> Private</Badge>
+            return <Badge variant="secondary" className="h-6 px-2 bg-gradient-to-r from-gray-50 to-slate-50 text-gray-600 hover:bg-gray-200 border-gray-200/50 gap-1.5 shadow-sm"><Lock size={11} /> {t("source.trust.private")}</Badge>
         default:
             return null
     }
 }
 
 export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
+  const t = useTranslations("mcp")
   const isModelScope = source.type === "modelscope"
+  const isCloud = source.type === "cloud"
   const isLocal = source.type === "local"
 
   return (
     <GlassCard
       blur="lg"
-      theme={isModelScope ? "primary" : "default"}
+      theme={isModelScope || isCloud ? "primary" : "default"}
       hover="lift"
       padding="none"
       className={cn(
         "transition-all duration-300",
-        isModelScope && "ring-1 ring-[var(--primary)]/20"
+        (isModelScope || isCloud) && "ring-1 ring-[var(--primary)]/20"
       )}
     >
       <div className="p-5 flex flex-col gap-3">
@@ -46,13 +50,15 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
             <div
               className={cn(
                 "flex size-10 items-center justify-center rounded-xl border shadow-sm",
-                isModelScope
+                isModelScope || isCloud
                   ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
                   : "bg-[var(--surface)] border-[var(--border)]/50 text-[var(--muted)]"
               )}
             >
               {isModelScope ? (
                 <span className="text-xs font-bold">MS</span>
+              ) : isCloud ? (
+                <Globe size={18} />
               ) : isLocal ? (
                 <Server size={18} />
               ) : (
@@ -75,19 +81,19 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
           <TrustBadge trustLevel={source.trustLevel} />
         </div>
 
-        <div className="flex items-center justify-between border-t border-[var(--border)]/30 pt-2">
+          <div className="flex items-center justify-between border-t border-[var(--border)]/30 pt-2">
           <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
-            {isModelScope ? (
+            {isModelScope || isCloud || source.type === "github" || source.type === "url" ? (
               <>
                 <Globe size={12} />
                 <span className={cn(source.status === "syncing" && "animate-pulse")}>
-                  {source.status === "syncing" ? "Syncing..." : source.lastSynced || "Auto-Sync On"}
+                  {source.status === "syncing" ? t("source.status.syncing") : source.lastSynced || t("source.status.autoSync")}
                 </span>
               </>
             ) : (
               <span className="flex items-center gap-1.5">
                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />{" "}
-                Active Local
+                {t("source.status.activeLocal")}
               </span>
             )}
           </div>
@@ -97,7 +103,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
               size="icon-sm"
               variant="ghost"
               className="text-[var(--muted)] hover:text-[var(--foreground)]"
-              onClick={() => onSync?.(source.id)}
+              onClick={() => onSync?.()}
               disabled={source.status === "syncing"}
             >
               <RefreshCw

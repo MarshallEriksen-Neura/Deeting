@@ -32,8 +32,14 @@
       "previewUnavailable": "抱歉，预览暂时不可用。",
       "assistantCreatedTitle": "助手已创建",
       "assistantCreatedDesc": "{name} 已创建，可在“我的助手”中管理。",
+      "assistantUpdatedTitle": "助手已更新",
+      "assistantUpdatedDesc": "{name} 已更新。",
+      "assistantDeletedTitle": "助手已删除",
+      "assistantDeletedDesc": "{name} 已删除。",
       "createFailedTitle": "创建失败",
-      "createFailedDesc": "请稍后重试或检查输入内容"
+      "createFailedDesc": "请稍后重试或检查输入内容",
+      "deleteFailedTitle": "删除失败",
+      "deleteFailedDesc": "请稍后重试"
     },
     "modal": {
       "tagsTitle": "能力标签",
@@ -49,7 +55,7 @@
     "create": {
       "trigger": "创建助手",
       "title": "创建新角色",
-      "description": "设计一个自定义 AI 助手。它会安装到本地并提交至市场。",
+      "description": "设计一个自定义 AI 助手，将安装到本地。",
       "nameLabel": "名称",
       "namePlaceholder": "例如：Python Guru",
       "descLabel": "简短介绍",
@@ -82,6 +88,19 @@
         "tagsMin": "至少填写一个标签。",
         "iconRequired": "请选择一个图标。"
       }
+    },
+    "edit": {
+      "trigger": "编辑",
+      "title": "编辑助手",
+      "description": "更新助手资料与系统提示词。",
+      "submit": "保存修改",
+      "submitting": "保存中...",
+      "delete": "删除",
+      "deleting": "删除中...",
+      "deleteConfirmTitle": "确认删除助手？",
+      "deleteConfirmDesc": "这会从本地移除 {name}，且无法恢复。",
+      "deleteConfirmAction": "确认删除",
+      "deleteConfirmCancel": "取消"
     }
   }
 }

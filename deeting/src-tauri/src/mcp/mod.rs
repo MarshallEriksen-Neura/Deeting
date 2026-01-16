@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 use crate::mcp::process::ProcessManager;
 use crate::mcp::store::McpStore;
 
+#[derive(Clone)]
 pub struct McpRuntimeState {
     pub store: Arc<McpStore>,
     pub process_manager: ProcessManager,

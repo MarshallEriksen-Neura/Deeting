@@ -1,0 +1,161 @@
+{
+  "header": {
+    "title": "MCP Registry",
+    "description": "Manage Model Context Protocol services and upstream sync sources with Deeting OS runtime.",
+    "addManual": "Add Manual Server"
+  },
+  "supplyChain": {
+    "title": "The Supply Chain",
+    "addSource": "Add Source"
+  },
+  "runtime": {
+    "title": "The Runtime Grid",
+    "tabs": {
+      "all": "All Servers",
+      "running": "Running",
+      "stopped": "Stopped",
+      "conflicts": "Conflicts"
+    },
+    "empty": "No servers found for this filter."
+  },
+  "source": {
+    "trust": {
+      "official": "Official",
+      "community": "Community",
+      "private": "Private"
+    },
+    "status": {
+      "syncing": "Syncing...",
+      "autoSync": "Auto-Sync On",
+      "activeLocal": "Active Local"
+    }
+  },
+  "tool": {
+    "badges": {
+      "new": "New",
+      "conflict": "Conflict",
+      "update": "Update",
+      "synced": "Synced",
+      "local": "Local"
+    },
+    "labels": {
+      "id": "ID",
+      "error": "Error",
+      "status": "Status",
+      "latency": "Latency"
+    },
+    "status": {
+      "pending": "pending",
+      "stopped": "stopped",
+      "starting": "starting",
+      "healthy": "healthy",
+      "degraded": "degraded",
+      "crashed": "crashed",
+      "updating": "updating",
+      "error": "error",
+      "orphaned": "orphaned"
+    }
+  },
+  "logs": {
+    "title": "Log Viewer",
+    "autoScroll": "Auto-scroll",
+    "copy": "Copy",
+    "download": "Download",
+    "clear": "Clear",
+    "tabs": {
+      "stdout": "stdout",
+      "stderr": "stderr",
+      "events": "Events"
+    },
+    "empty": "No logs yet.",
+    "emptyErrors": "No errors captured.",
+    "copied": "Logs copied",
+    "downloaded": "Logs exported",
+    "cleared": "Logs cleared"
+  },
+  "conflict": {
+    "title": "Configuration Conflict Detected",
+    "description": "The upstream configuration for {name} has changed. Review the differences below.",
+    "current": "Current",
+    "incoming": "Incoming",
+    "local": "Local",
+    "upstream": "Upstream",
+    "argsLabel": "Args",
+    "warningTitle": "Security Warning",
+    "warningDescription": "Incoming configuration modifies sensitive runtime parameters.",
+    "keep": "Keep Local Version",
+    "update": "Update & Restart"
+  },
+  "addSource": {
+    "title": "Add Sync Source",
+    "description": "Connect to an external MCP configuration source.",
+    "nameLabel": "Source Name",
+    "typeLabel": "Source Type",
+    "urlLabel": "Source URL or Collection ID",
+    "tokenLabel": "Access Token (Optional)",
+    "placeholders": {
+      "name": "e.g. ModelScope Hub",
+      "type": "Select source type",
+      "url": "https://gist.github.com/... or ModelScope Collection ID",
+      "token": "For private collections"
+    },
+    "types": {
+      "modelscope": "ModelScope",
+      "github": "GitHub",
+      "url": "URL"
+    },
+    "submit": "Add Source"
+  },
+  "addServer": {
+    "title": "Add Manual Server",
+    "description": "Configure a new MCP server manually.",
+    "tabs": {
+      "wizard": "Wizard",
+      "json": "JSON"
+    },
+    "fields": {
+      "name": "Name",
+      "transport": "Transport",
+      "command": "Command",
+      "args": "Arguments",
+      "env": "Environment Variables",
+      "json": "MCP Configuration JSON"
+    },
+    "placeholders": {
+      "name": "e.g. My Local Tool",
+      "command": "e.g. npx, python, docker",
+      "args": "e.g. -y @modelcontextprotocol/server-filesystem",
+      "env": "KEY=VALUE",
+      "json": "{\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/Users/me/Desktop\"]\n    }\n  }\n}"
+    },
+    "save": "Save Server",
+    "transport": {
+      "stdio": "Stdio",
+      "sse": "SSE"
+    }
+  },
+  "config": {
+    "title": "Runtime Configuration",
+    "description": "Configure environment variables for this MCP tool.",
+    "envPlaceholder": "KEY=VALUE",
+    "save": "Save Configuration",
+    "cancel": "Cancel"
+  },
+  "actions": {
+    "start": "Start",
+    "stop": "Stop",
+    "configure": "Configure",
+    "sync": "Sync",
+    "applyUpdate": "Apply Update"
+  },
+  "toast": {
+    "desktopOnly": "This action is available on desktop only.",
+    "missingFields": "Please fill in required fields.",
+    "missingToken": "Missing access token.",
+    "syncFailed": "Sync failed",
+    "loadFailed": "Failed to load MCP data",
+    "saveFailed": "Failed to save configuration",
+    "startFailed": "Failed to start tool",
+    "stopFailed": "Failed to stop tool"
+  }
+}

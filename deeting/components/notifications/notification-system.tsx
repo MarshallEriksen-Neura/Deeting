@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect } from "react"
+import { listen, UnlistenFn } from "@tauri-apps/api/event"
+import { useTranslations } from "next-intl"
 import { GlassPillToaster } from "@/components/ui/glass-pill-toaster"
 import { NotificationCenter } from "@/components/notifications/notification-center"
 import { AmbientIndicator } from "@/components/ui/ambient-indicator"
@@ -18,14 +20,37 @@ export function NotificationSystem({
   const { 
     notifications, 
     trimNotifications,
-    processingState 
+    processingState,
+    addNotification,
   } = useNotifications()
   const { sendMarkRead, sendMarkAllRead, sendClear } = useNotificationRealtime()
+  const t = useTranslations("notifications")
 
   // 自动清理旧通知（保留最近50条）
   useEffect(() => {
     trimNotifications(50)
   }, [notifications, trimNotifications])
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") return
+    let unlisten: UnlistenFn | null = null
+    listen<{ tool_id: string; tool_name: string; message: string }>("mcp-supervisor", (event) => {
+      const payload = event.payload
+      addNotification({
+        type: "error",
+        title: t("events.mcpCrashed", { name: payload.tool_name || payload.tool_id }),
+        description: t("events.mcpCrashedDesc", { error: payload.message }),
+        timestamp: Date.now(),
+      })
+    }).then((stop) => {
+      unlisten = stop
+    })
+    return () => {
+      if (unlisten) {
+        unlisten()
+      }
+    }
+  }, [addNotification, t])
 
   const targetElement = ambientTargetId ? document.getElementById(ambientTargetId) : undefined
 

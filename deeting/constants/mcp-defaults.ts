@@ -3,27 +3,54 @@ import { MCPSource, MCPTool } from "@/types/mcp"
 export const INITIAL_TOOLS: MCPTool[] = [
   {
     id: "filesystem",
+    identifier: "mcp/filesystem",
     name: "Local Filesystem",
     source: "local",
-    status: "running",
+    status: "healthy",
     ping: "2ms",
+    pingMs: 2,
     capabilities: ["read_file", "write_file", "list_dir"],
     description: "Allows AI to read and write files in the specified local directory.",
     command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Desktop"]
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Desktop"],
+    env: {},
+    configJson: JSON.stringify({
+      name: "Local Filesystem",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Desktop"],
+      description: "Allows AI to read and write files in the specified local directory.",
+    }),
+    configHash: "local-demo-hash",
+    conflictStatus: "none",
+    isReadOnly: false,
+    isNew: false,
   },
   {
     id: "modelscope-search",
+    identifier: "mcp/modelscope-search",
     name: "ModelScope Search",
     source: "modelscope",
-    status: "running",
+    status: "healthy",
     ping: "45ms",
+    pingMs: 45,
     capabilities: ["web_search", "news_retrieval"],
     description: "Synced from ModelScope: Web search enhancement capabilities.",
-    sourceId: "ms-official"
+    sourceId: "ms-official",
+    env: {},
+    configJson: JSON.stringify({
+      name: "ModelScope Search",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-modelscope-search"],
+      description: "Synced from ModelScope: Web search enhancement capabilities.",
+    }),
+    configHash: "modelscope-demo-hash",
+    conflictStatus: "none",
+    isReadOnly: true,
+    isNew: false,
   },
   {
     id: "postgres-db",
+    identifier: "mcp/postgres-db",
     name: "Production DB",
     source: "local",
     status: "error",
@@ -32,7 +59,18 @@ export const INITIAL_TOOLS: MCPTool[] = [
     description: "Local PostgreSQL database connector.",
     error: "Connection refused on port 5432",
     command: "docker",
-    args: ["run", "--rm", "-i", "postgres-mcp"]
+    args: ["run", "--rm", "-i", "postgres-mcp"],
+    env: {},
+    configJson: JSON.stringify({
+      name: "Production DB",
+      command: "docker",
+      args: ["run", "--rm", "-i", "postgres-mcp"],
+      description: "Local PostgreSQL database connector.",
+    }),
+    configHash: "postgres-demo-hash",
+    conflictStatus: "none",
+    isReadOnly: false,
+    isNew: false,
   }
 ]
 
@@ -43,7 +81,8 @@ export const INITIAL_SOURCES: MCPSource[] = [
     type: "local",
     pathOrUrl: "~/.config/deeting/mcp.json",
     status: "active",
-    isReadOnly: false
+    isReadOnly: false,
+    trustLevel: "private",
   },
   {
     id: "ms-official",
@@ -52,6 +91,7 @@ export const INITIAL_SOURCES: MCPSource[] = [
     pathOrUrl: "modelscope.cn/my-collection",
     status: "active",
     lastSynced: "2m ago",
-    isReadOnly: true
+    isReadOnly: true,
+    trustLevel: "official",
   }
 ]

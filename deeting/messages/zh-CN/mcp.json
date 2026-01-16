@@ -1,0 +1,161 @@
+{
+  "header": {
+    "title": "MCP 注册表",
+    "description": "在 Deeting OS 运行时中管理 MCP 服务与上游同步源。",
+    "addManual": "添加手动服务"
+  },
+  "supplyChain": {
+    "title": "供应链",
+    "addSource": "添加来源"
+  },
+  "runtime": {
+    "title": "运行矩阵",
+    "tabs": {
+      "all": "全部",
+      "running": "运行中",
+      "stopped": "已停止",
+      "conflicts": "待处理"
+    },
+    "empty": "当前筛选条件下没有找到服务。"
+  },
+  "source": {
+    "trust": {
+      "official": "官方",
+      "community": "社区",
+      "private": "私有"
+    },
+    "status": {
+      "syncing": "同步中...",
+      "autoSync": "自动同步已开启",
+      "activeLocal": "本地可用"
+    }
+  },
+  "tool": {
+    "badges": {
+      "new": "新",
+      "conflict": "冲突",
+      "update": "可更新",
+      "synced": "已同步",
+      "local": "本地"
+    },
+    "labels": {
+      "id": "ID",
+      "error": "错误",
+      "status": "状态",
+      "latency": "延迟"
+    },
+    "status": {
+      "pending": "待配置",
+      "stopped": "已停止",
+      "starting": "启动中",
+      "healthy": "健康",
+      "degraded": "降级",
+      "crashed": "崩溃",
+      "updating": "更新中",
+      "error": "异常",
+      "orphaned": "孤立"
+    }
+  },
+  "logs": {
+    "title": "日志面板",
+    "autoScroll": "自动滚动",
+    "copy": "复制",
+    "download": "导出",
+    "clear": "清空",
+    "tabs": {
+      "stdout": "stdout",
+      "stderr": "stderr",
+      "events": "事件"
+    },
+    "empty": "暂无日志。",
+    "emptyErrors": "暂无错误输出。",
+    "copied": "已复制日志",
+    "downloaded": "已导出日志",
+    "cleared": "已清空日志"
+  },
+  "conflict": {
+    "title": "检测到配置冲突",
+    "description": "上游配置已变更：{name}。请确认差异后再继续。",
+    "current": "当前",
+    "incoming": "新增",
+    "local": "本地",
+    "upstream": "上游",
+    "argsLabel": "参数",
+    "warningTitle": "安全提醒",
+    "warningDescription": "新增配置可能修改敏感运行参数。",
+    "keep": "保留本地版本",
+    "update": "更新并重启"
+  },
+  "addSource": {
+    "title": "添加同步来源",
+    "description": "连接到外部 MCP 配置源。",
+    "nameLabel": "来源名称",
+    "typeLabel": "来源类型",
+    "urlLabel": "来源 URL 或集合 ID",
+    "tokenLabel": "访问令牌（可选）",
+    "placeholders": {
+      "name": "例如：ModelScope Hub",
+      "type": "选择来源类型",
+      "url": "https://gist.github.com/... 或 ModelScope 集合 ID",
+      "token": "用于私有集合"
+    },
+    "types": {
+      "modelscope": "ModelScope",
+      "github": "GitHub",
+      "url": "URL"
+    },
+    "submit": "添加来源"
+  },
+  "addServer": {
+    "title": "添加手动服务",
+    "description": "手动配置一个 MCP 服务。",
+    "tabs": {
+      "wizard": "向导",
+      "json": "JSON"
+    },
+    "fields": {
+      "name": "名称",
+      "transport": "传输方式",
+      "command": "命令",
+      "args": "参数",
+      "env": "环境变量",
+      "json": "MCP 配置 JSON"
+    },
+    "placeholders": {
+      "name": "例如：本地工具",
+      "command": "例如：npx、python、docker",
+      "args": "例如：-y @modelcontextprotocol/server-filesystem",
+      "env": "KEY=VALUE",
+      "json": "{\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/Users/me/Desktop\"]\n    }\n  }\n}"
+    },
+    "save": "保存服务",
+    "transport": {
+      "stdio": "Stdio",
+      "sse": "SSE"
+    }
+  },
+  "config": {
+    "title": "运行配置",
+    "description": "为该 MCP 工具填写运行所需的环境变量。",
+    "envPlaceholder": "KEY=VALUE",
+    "save": "保存配置",
+    "cancel": "取消"
+  },
+  "actions": {
+    "start": "启动",
+    "stop": "停止",
+    "configure": "配置",
+    "sync": "同步",
+    "applyUpdate": "应用更新"
+  },
+  "toast": {
+    "desktopOnly": "该操作仅在桌面端可用。",
+    "missingFields": "请先填写必填项。",
+    "missingToken": "缺少访问令牌。",
+    "syncFailed": "同步失败",
+    "loadFailed": "加载 MCP 数据失败",
+    "saveFailed": "保存配置失败",
+    "startFailed": "启动失败",
+    "stopFailed": "停止失败"
+  }
+}

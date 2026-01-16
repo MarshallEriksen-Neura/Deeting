@@ -1,9 +1,28 @@
 'use client';
+import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Code, PenTool, Sparkles, MessageSquare } from 'lucide-react';
+import { X, Code, PenTool, Sparkles, MessageSquare, Plus, Pencil } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { CreateAgentModal } from '@/components/assistants/create-agent-modal';
+import { useMarketStore } from '@/store/market-store';
 
 export default function SelectAgentModal() {
   const router = useRouter();
+  const t = useTranslations('assistants');
+  const installedAgents = useMarketStore((state) => state.installedAgents);
+  const localAssistants = useMarketStore((state) => state.localAssistants);
+  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants);
+  const loaded = useMarketStore((state) => state.loaded);
+
+  React.useEffect(() => {
+    if (loaded) return;
+    void loadLocalAssistants();
+  }, [loaded, loadLocalAssistants]);
+
+  const assistantMap = React.useMemo(
+    () => new Map(localAssistants.map((assistant) => [assistant.id, assistant])),
+    [localAssistants]
+  );
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center animate-in fade-in duration-200">
@@ -26,10 +45,64 @@ export default function SelectAgentModal() {
         <p className="text-white/40 mb-8 font-light">Choose the specialized intelligence for your task.</p>
 
         <div className="grid grid-cols-2 gap-4">
+          <CreateAgentModal
+            mode="local"
+            onCreated={(assistantId) => {
+              if (assistantId) {
+                router.replace(`/chat/${assistantId}`)
+              }
+            }}
+            trigger={
+              <AgentCard
+                icon={<Plus className="w-6 h-6 text-emerald-400" />}
+                name="Create"
+                desc="Build your own assistant. Private by default."
+              />
+            }
+          />
+          {installedAgents.map((agent) => {
+            const record = assistantMap.get(agent.id);
+            return (
+              <AgentCard
+                key={agent.id}
+                icon={<MessageSquare className="w-6 h-6 text-blue-400" />}
+                name={agent.name}
+                desc={record?.description ?? agent.desc ?? ''}
+                onClick={() => router.replace(`/chat/${agent.id}`)}
+                action={
+                  <CreateAgentModal
+                    mode="local"
+                    assistant={{
+                      id: agent.id,
+                      name: agent.name,
+                      desc: record?.description ?? agent.desc ?? '',
+                      systemPrompt: record?.system_prompt ?? agent.systemPrompt ?? '',
+                      tags: record?.tags ?? agent.tags ?? [],
+                      iconId: record?.avatar ?? agent.icon ?? 'lucide:bot',
+                      color: agent.color,
+                    }}
+                    onUpdated={(assistantId) => {
+                      router.replace(`/chat/${assistantId}`);
+                    }}
+                    trigger={
+                      <button
+                        type="button"
+                        className="h-8 w-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-colors flex items-center justify-center"
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={t('edit.trigger')}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    }
+                  />
+                }
+              />
+            );
+          })}
           <AgentCard 
-            icon={<Code className="w-6 h-6 text-green-400" />}
-            name="Coder"
-            desc="Python, JS, Rust expert. Capabilities: Execution, Debugging."
+            icon={<Code className="w-6 h-6 text-green-400" />} 
+            name="Coder" 
+            desc="Python, JS, Rust expert. Capabilities: Execution, Debugging." 
             onClick={() => router.replace('/chat/coder')} 
           />
           <AgentCard 
@@ -56,17 +129,29 @@ export default function SelectAgentModal() {
   )
 }
 
-function AgentCard({ icon, name, desc, onClick }: any) {
+function AgentCard({ icon, name, desc, onClick, action }: any) {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
-    <button 
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="flex flex-col text-left p-5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-all hover:scale-[1.01] hover:shadow-xl group"
+      onKeyDown={handleKeyDown}
+      className="relative flex flex-col text-left p-5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-all hover:scale-[1.01] hover:shadow-xl group cursor-pointer"
     >
+      {action ? <div className="absolute top-4 right-4 z-10">{action}</div> : null}
       <div className="mb-4 p-3 bg-white/5 rounded-xl w-fit group-hover:bg-white/10 transition-colors shadow-inner">
         {icon}
       </div>
       <h3 className="text-lg font-semibold text-white mb-1 group-hover:text-white/90">{name}</h3>
       <p className="text-sm text-white/50 leading-relaxed font-light">{desc}</p>
-    </button>
+    </div>
   )
 }

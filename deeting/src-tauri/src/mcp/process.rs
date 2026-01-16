@@ -1,7 +1,7 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -13,6 +13,18 @@ use crate::mcp::store::McpStore;
 use crate::mcp::types::{McpLogEntry, McpLogStream, McpTool, McpToolStatus};
 
 const DEFAULT_LOG_BUFFER_SIZE: usize = 1000;
+const CRASH_WINDOW: Duration = Duration::from_secs(5);
+const BACKOFF_DELAYS: [Duration; 3] = [
+    Duration::from_secs(0),
+    Duration::from_secs(10),
+    Duration::from_secs(30),
+];
+
+#[derive(Clone)]
+struct CrashBackoff {
+    attempts: u32,
+    last_start: Instant,
+}
 
 #[derive(Clone)]
 pub struct ProcessManager {
@@ -20,6 +32,8 @@ pub struct ProcessManager {
     app_handle: AppHandle,
     processes: Arc<RwLock<HashMap<String, ProcessHandle>>>,
     logs: Arc<RwLock<HashMap<String, LogBuffer>>>,
+    backoff: Arc<RwLock<HashMap<String, CrashBackoff>>>,
+    stop_requests: Arc<RwLock<HashSet<String>>>,
     log_buffer_size: usize,
 }
 
@@ -30,11 +44,13 @@ impl ProcessManager {
             app_handle,
             processes: Arc::new(RwLock::new(HashMap::new())),
             logs: Arc::new(RwLock::new(HashMap::new())),
+            backoff: Arc::new(RwLock::new(HashMap::new())),
+            stop_requests: Arc::new(RwLock::new(HashSet::new())),
             log_buffer_size: DEFAULT_LOG_BUFFER_SIZE,
         }
     }
 
-    pub async fn start_tool(&self, tool: McpTool) -> Result<(), McpError> {
+    pub async fn start_tool(&self, tool: McpTool, reset_backoff: bool) -> Result<(), McpError> {
         let mut processes = self.processes.write().await;
         if processes.contains_key(&tool.id) {
             return Err(McpError::Process(format!(
@@ -60,6 +76,7 @@ impl ProcessManager {
         self.store
             .set_tool_status(&tool.id, McpToolStatus::Starting, None, None)
             .await?;
+        self.record_start(&tool.id, reset_backoff).await;
 
         let mut child = cmd
             .spawn()
@@ -109,6 +126,9 @@ impl ProcessManager {
         self.store
             .set_tool_status(&tool.id, McpToolStatus::Healthy, None, None)
             .await?;
+        if reset_backoff {
+            let _ = self.store.set_tool_new_flag(&tool.id, false).await;
+        }
         self.emit_log(&tool.id, McpLogStream::Event, "process started".to_string())
             .await;
 
@@ -118,6 +138,7 @@ impl ProcessManager {
     }
 
     pub async fn stop_tool(&self, tool_id: &str) -> Result<(), McpError> {
+        self.request_stop(tool_id).await;
         let handle = {
             let processes = self.processes.read().await;
             processes.get(tool_id).cloned()
@@ -127,6 +148,7 @@ impl ProcessManager {
             self.store
                 .set_tool_status(tool_id, McpToolStatus::Stopped, None, None)
                 .await?;
+            self.clear_backoff(tool_id).await;
             return Ok(());
         };
 
@@ -140,6 +162,7 @@ impl ProcessManager {
             .await?;
         self.emit_log(tool_id, McpLogStream::Event, "process stopped".to_string())
             .await;
+        self.clear_backoff(tool_id).await;
 
         Ok(())
     }
@@ -154,6 +177,70 @@ impl ProcessManager {
     pub async fn clear_logs(&self, tool_id: &str) {
         let mut logs = self.logs.write().await;
         logs.insert(tool_id.to_string(), LogBuffer::new(self.log_buffer_size));
+    }
+
+    async fn record_start(&self, tool_id: &str, reset_backoff: bool) {
+        let mut backoff = self.backoff.write().await;
+        let entry = backoff.entry(tool_id.to_string()).or_insert(CrashBackoff {
+            attempts: 0,
+            last_start: Instant::now(),
+        });
+        if reset_backoff {
+            entry.attempts = 0;
+        }
+        entry.last_start = Instant::now();
+        let mut stop_requests = self.stop_requests.write().await;
+        stop_requests.remove(tool_id);
+    }
+
+    async fn request_stop(&self, tool_id: &str) {
+        let mut stop_requests = self.stop_requests.write().await;
+        stop_requests.insert(tool_id.to_string());
+    }
+
+    async fn consume_stop_request(&self, tool_id: &str) -> bool {
+        let mut stop_requests = self.stop_requests.write().await;
+        stop_requests.remove(tool_id)
+    }
+
+    async fn clear_backoff(&self, tool_id: &str) {
+        let mut backoff = self.backoff.write().await;
+        backoff.remove(tool_id);
+        let mut stop_requests = self.stop_requests.write().await;
+        stop_requests.remove(tool_id);
+    }
+
+    async fn restart_tool(&self, tool_id: &str) -> Result<(), McpError> {
+        let tool = self
+            .store
+            .get_tool(tool_id)
+            .await?
+            .ok_or_else(|| McpError::NotFound(format!("tool {tool_id} not found")))?;
+        self.start_tool(tool, false).await
+    }
+
+    async fn notify_crash(&self, tool_id: &str, message: String) {
+        #[derive(serde::Serialize)]
+        struct SupervisorPayload {
+            tool_id: String,
+            tool_name: String,
+            message: String,
+        }
+
+        let tool_name = self
+            .store
+            .get_tool(tool_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|tool| tool.name)
+            .unwrap_or_else(|| tool_id.to_string());
+        let payload = SupervisorPayload {
+            tool_id: tool_id.to_string(),
+            tool_name,
+            message,
+        };
+        let _ = self.app_handle.emit_all("mcp-supervisor", payload);
     }
 
     async fn ensure_log_buffer(&self, tool_id: &str) {
@@ -189,20 +276,105 @@ impl ProcessManager {
                 match child_guard.try_wait() {
                     Ok(Some(status)) => {
                         let exit_code = status.code().unwrap_or(-1);
+                        manager.processes.write().await.remove(&tool_id);
+                        if manager.consume_stop_request(&tool_id).await {
+                            manager.clear_backoff(&tool_id).await;
+                            break;
+                        }
+
+                        let uptime = {
+                            let backoff = manager.backoff.read().await;
+                            backoff
+                                .get(&tool_id)
+                                .map(|entry| entry.last_start.elapsed())
+                                .unwrap_or_default()
+                        };
+
+                        if exit_code == 0 {
+                            let message = format!("process exited with code {exit_code}");
+                            manager
+                                .emit_log(&tool_id, McpLogStream::Event, message.clone())
+                                .await;
+                            let _ = manager
+                                .store
+                                .set_tool_status(&tool_id, McpToolStatus::Stopped, None, Some(message))
+                                .await;
+                            manager.clear_backoff(&tool_id).await;
+                            break;
+                        }
+
+                        if uptime <= CRASH_WINDOW {
+                            let attempt = {
+                                let mut backoff = manager.backoff.write().await;
+                                let entry = backoff.entry(tool_id.clone()).or_insert(CrashBackoff {
+                                    attempts: 0,
+                                    last_start: Instant::now(),
+                                });
+                                entry.attempts += 1;
+                                entry.attempts
+                            };
+
+                            if attempt as usize > BACKOFF_DELAYS.len() {
+                                let message = format!("process exited with code {exit_code}; crash loop detected");
+                                manager
+                                    .emit_log(&tool_id, McpLogStream::Event, message.clone())
+                                    .await;
+                                let _ = manager
+                                    .store
+                                    .set_tool_status(&tool_id, McpToolStatus::Crashed, None, Some(message.clone()))
+                                    .await;
+                                manager.notify_crash(&tool_id, message).await;
+                                manager.clear_backoff(&tool_id).await;
+                                break;
+                            }
+
+                            let delay = BACKOFF_DELAYS[(attempt - 1) as usize];
+                            let message = format!(
+                                "process exited with code {exit_code}; restarting in {}s (attempt {}/{})",
+                                delay.as_secs(),
+                                attempt,
+                                BACKOFF_DELAYS.len()
+                            );
+                            manager
+                                .emit_log(&tool_id, McpLogStream::Event, message.clone())
+                                .await;
+                            let _ = manager
+                                .store
+                                .set_tool_status(&tool_id, McpToolStatus::Starting, None, Some(message))
+                                .await;
+
+                            let manager_clone = manager.clone();
+                            let tool_id_clone = tool_id.clone();
+                            tokio::spawn(async move {
+                                if delay > Duration::ZERO {
+                                    tokio::time::sleep(delay).await;
+                                }
+                                if let Err(err) = manager_clone.restart_tool(&tool_id_clone).await {
+                                    let message = format!("restart failed: {err}");
+                                    manager_clone
+                                        .emit_log(&tool_id_clone, McpLogStream::Event, message.clone())
+                                        .await;
+                                    let _ = manager_clone
+                                        .store
+                                        .set_tool_status(&tool_id_clone, McpToolStatus::Crashed, None, Some(message.clone()))
+                                        .await;
+                                    manager_clone.notify_crash(&tool_id_clone, message).await;
+                                    manager_clone.clear_backoff(&tool_id_clone).await;
+                                }
+                            });
+                            break;
+                        }
+
                         let message = format!("process exited with code {exit_code}");
                         manager
                             .emit_log(&tool_id, McpLogStream::Event, message.clone())
                             .await;
-                        let status = if exit_code == 0 {
-                            McpToolStatus::Stopped
-                        } else {
-                            McpToolStatus::Crashed
-                        };
                         let _ = manager
                             .store
-                            .set_tool_status(&tool_id, status, None, Some(message))
+                            .set_tool_status(&tool_id, McpToolStatus::Crashed, None, Some(message.clone()))
                             .await;
-                        manager.processes.write().await.remove(&tool_id);
+                        manager.notify_crash(&tool_id, message).await;
+                        manager.clear_backoff(&tool_id).await;
                         break;
                     }
                     Ok(None) => continue,

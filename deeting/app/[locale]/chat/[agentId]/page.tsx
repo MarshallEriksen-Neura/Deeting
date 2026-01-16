@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { use } from "react"
+import { invoke } from "@tauri-apps/api/core"
 import { useRouter } from "next/navigation"
 import { Send, Bot, User, Sparkles, ArrowLeft } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -22,33 +23,118 @@ interface Message {
   createdAt: number
 }
 
+interface LocalAssistantMessageRecord {
+  id: string
+  assistant_id: string
+  role: string
+  content: string
+  created_at: string
+}
+
 export default function AgentChatPage({ params }: ChatPageProps) {
   // Unwrap params using React.use()
   const { agentId } = use(params)
   
   const router = useRouter()
   const installedAgents = useMarketStore((state) => state.installedAgents)
+  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
+  const loaded = useMarketStore((state) => state.loaded)
   const agent = installedAgents.find(a => a.id === agentId)
+  const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
 
   // 简单的本地消息状态
   const [messages, setMessages] = React.useState<Message[]>([])
   const [inputValue, setInputValue] = React.useState("")
   const [isTyping, setIsTyping] = React.useState(false)
+  const [historyLoaded, setHistoryLoaded] = React.useState(false)
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
-  // 初始问候语
   React.useEffect(() => {
-    if (agent && messages.length === 0) {
-      setMessages([
-        {
-          id: 'init',
-          role: 'assistant',
-          content: `你好！我是 **${agent.name}**。\n${agent.desc}\n\n准备好开始协作了吗？`,
-          createdAt: Date.now()
-        }
-      ])
+    setMessages([])
+    setInputValue("")
+    setIsTyping(false)
+    setHistoryLoaded(false)
+  }, [agentId])
+
+  // 初始问候语 / 本地历史
+  React.useEffect(() => {
+    if (!agent) return
+
+    const greeting: Message = {
+      id: 'init',
+      role: 'assistant',
+      content: `你好！我是 **${agent.name}**。\n${agent.desc}\n\n准备好开始协作了吗？`,
+      createdAt: Date.now()
     }
-  }, [agent, messages.length])
+
+    if (!isTauri) {
+      if (!historyLoaded) {
+        setMessages([greeting])
+        setHistoryLoaded(true)
+      }
+      return
+    }
+
+    if (historyLoaded) return
+
+    let cancelled = false
+
+    const loadHistory = async () => {
+      try {
+        const records = await invoke<LocalAssistantMessageRecord[]>(
+          "list_assistant_messages",
+          { assistant_id: agent.id }
+        )
+        if (cancelled) return
+
+        if (records.length > 0) {
+          setMessages(
+            records.map((record) => {
+              const parsed = Date.parse(record.created_at)
+              return {
+                id: record.id,
+                role: record.role === 'user' ? 'user' : 'assistant',
+                content: record.content,
+                createdAt: Number.isNaN(parsed) ? Date.now() : parsed
+              }
+            })
+          )
+          setHistoryLoaded(true)
+          return
+        }
+
+        setMessages([greeting])
+        try {
+          await invoke("append_assistant_message", {
+            assistant_id: agent.id,
+            role: "assistant",
+            content: greeting.content
+          })
+        } catch (error) {
+          // ignore persist errors
+        }
+        if (!cancelled) {
+          setHistoryLoaded(true)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMessages([greeting])
+          setHistoryLoaded(true)
+        }
+      }
+    }
+
+    void loadHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [agent, historyLoaded, isTauri])
+
+  React.useEffect(() => {
+    if (loaded) return
+    void loadLocalAssistants()
+  }, [loaded, loadLocalAssistants])
 
   // 自动滚动到底部
   React.useEffect(() => {
@@ -73,12 +159,13 @@ export default function AgentChatPage({ params }: ChatPageProps) {
   }
 
   const handleSendMessage = () => {
-    if (!inputValue.trim()) return
+    if (!inputValue.trim() || !agent) return
 
+    const userContent = inputValue.trim()
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: inputValue,
+      content: userContent,
       createdAt: Date.now()
     }
 
@@ -86,16 +173,31 @@ export default function AgentChatPage({ params }: ChatPageProps) {
     setInputValue("")
     setIsTyping(true)
 
+    if (isTauri) {
+      void invoke("append_assistant_message", {
+        assistant_id: agent.id,
+        role: "user",
+        content: userContent
+      }).catch(() => undefined)
+    }
+
     // 模拟 AI 回复
     setTimeout(() => {
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `[${agent.name} 正在思考...]\n\n这是一个模拟回复。在真实场景中，这里会调用 LLM API，根据 "${agent.systemPrompt || '系统提示词'}" 进行回答。\n\n针对你的输入: "${userMsg.content}"`,
+        content: `[${agent.name} 正在思考...]\n\n这是一个模拟回复。在真实场景中，这里会调用 LLM API，根据 "${agent.systemPrompt || '系统提示词'}" 进行回答。\n\n针对你的输入: "${userContent}"`,
         createdAt: Date.now()
       }
       setMessages(prev => [...prev, aiMsg])
       setIsTyping(false)
+      if (isTauri) {
+        void invoke("append_assistant_message", {
+          assistant_id: agent.id,
+          role: "assistant",
+          content: aiMsg.content
+        }).catch(() => undefined)
+      }
     }, 1500)
   }
 

@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AgentCard } from "@/components/assistants/agent-card"
 import { InfiniteList } from "@/components/ui/infinite-list"
-import { CreateAgentModal } from "@/components/assistants/create-agent-modal"
 import { installAssistant } from "@/lib/api"
 import { useAssistantMarket } from "@/lib/swr/use-assistant-market"
 import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
@@ -67,7 +66,7 @@ export default function AssistantsPage() {
     size: PAGE_SIZE,
   })
 
-  const { items: ownedItems, isLoading: ownedLoading, mutate: mutateOwned } = useAssistantOwned(20)
+  const { items: ownedItems, isLoading: ownedLoading } = useAssistantOwned(20)
   const { tags: marketTags } = useAssistantTags()
 
   React.useEffect(() => {
@@ -164,10 +163,7 @@ export default function AssistantsPage() {
           {t("page.hero.subtitle")}
         </p>
 
-        {/* Create Button */}
-        <div className="flex justify-center mt-4">
-           <CreateAgentModal onCreated={() => mutateOwned()} />
-        </div>
+        {/* Create Button moved to Chat */}
 
         <div className="relative group max-w-lg mx-auto mt-8">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>

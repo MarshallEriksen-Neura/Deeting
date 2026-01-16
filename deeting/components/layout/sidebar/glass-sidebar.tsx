@@ -249,11 +249,18 @@ interface DesktopSidebarProps {
 function DesktopSidebar({ navigation }: DesktopSidebarProps) {
   const { isCollapsed, setIsCollapsed } = useSidebar()
   const installedAgents = useMarketStore((state) => state.installedAgents)
+  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
+  const loaded = useMarketStore((state) => state.loaded)
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
+
+  React.useEffect(() => {
+    if (!mounted || loaded) return
+    void loadLocalAssistants()
+  }, [mounted, loaded, loadLocalAssistants])
 
   // Construct My Agents group
   const myAgentsGroup: NavGroup | null = React.useMemo(() => {
@@ -363,11 +370,18 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
   const pathname = usePathname()
   const { t } = useSidebar()
   const installedAgents = useMarketStore((state) => state.installedAgents)
+  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
+  const loaded = useMarketStore((state) => state.loaded)
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
+
+  React.useEffect(() => {
+    if (!mounted || loaded) return
+    void loadLocalAssistants()
+  }, [mounted, loaded, loadLocalAssistants])
 
   // Flatten all nav items for horizontal display
   const allItems = navigation.flatMap((group) => group.items)
