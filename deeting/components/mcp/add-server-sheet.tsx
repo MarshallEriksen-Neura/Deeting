@@ -1,6 +1,6 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
+import { GlassButton } from "@/components/ui/glass-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -22,14 +22,14 @@ export function AddServerSheet({ children }: { children: React.ReactNode }) {
         {children}
       </SheetTrigger>
       <SheetContent className="sm:max-w-md">
-        <SheetHeader>
+        <SheetHeader className="px-6 sm:px-8">
           <SheetTitle>Add Manual Server</SheetTitle>
           <SheetDescription>
             Configure a new MCP server manually.
           </SheetDescription>
         </SheetHeader>
         
-        <Tabs defaultValue="wizard" className="mt-6">
+        <Tabs defaultValue="wizard" className="mt-6 px-6 sm:px-8">
             <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="wizard">Wizard</TabsTrigger>
                 <TabsTrigger value="json">JSON</TabsTrigger>
@@ -44,8 +44,8 @@ export function AddServerSheet({ children }: { children: React.ReactNode }) {
                 <div className="space-y-2">
                     <Label>Transport</Label>
                     <div className="flex gap-2">
-                        <Button variant="outline" className="flex-1 bg-primary/5 border-primary text-primary">Stdio</Button>
-                        <Button variant="outline" className="flex-1 text-muted-foreground">SSE</Button>
+                        <GlassButton className="flex-1">Stdio</GlassButton>
+                        <GlassButton variant="secondary" className="flex-1 text-muted-foreground">SSE</GlassButton>
                     </div>
                 </div>
 
@@ -83,8 +83,8 @@ export function AddServerSheet({ children }: { children: React.ReactNode }) {
             </TabsContent>
         </Tabs>
 
-        <SheetFooter>
-            <Button type="submit" className="w-full">Save Server</Button>
+        <SheetFooter className="px-6 sm:px-8">
+            <GlassButton type="submit" className="w-full">Save Server</GlassButton>
         </SheetFooter>
       </SheetContent>
     </Sheet>

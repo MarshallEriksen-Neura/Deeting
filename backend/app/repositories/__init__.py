@@ -19,6 +19,7 @@ from .secretary_repository import UserSecretaryRepository, SecretaryPhaseReposit
 from .notification_repository import NotificationReceiptRepository, NotificationRepository
 from .review_repository import ReviewTaskRepository
 from .media_asset_repository import MediaAssetRepository
+from .mcp_market_repository import McpMarketRepository
 
 __all__ = [
     "ApiKeyRepository",
@@ -50,4 +51,5 @@ __all__ = [
     "NotificationReceiptRepository",
     "ReviewTaskRepository",
     "MediaAssetRepository",
+    "McpMarketRepository",
 ]

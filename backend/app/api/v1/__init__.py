@@ -27,6 +27,7 @@ from app.api.v1.gateway_logs_route import router as gateway_logs_router
 from app.api.v1.dashboard_route import router as dashboard_router
 from app.api.v1.monitoring_route import router as monitoring_router
 from app.api.v1.credits_route import router as credits_router
+from app.api.v1.mcp_route import router as mcp_router
 
 __all__ = [
     "admin_api_keys_router",
@@ -55,4 +56,5 @@ __all__ = [
     "dashboard_router",
     "monitoring_router",
     "credits_router",
+    "mcp_router",
 ]

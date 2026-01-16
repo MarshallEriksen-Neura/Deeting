@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import { NextIntlClientProvider } from "next-intl"
 import { getMessages, getTranslations, setRequestLocale } from "next-intl/server"
-import { Header } from "@/components/layout/Header"
+import { HeaderShell } from "@/components/layout/HeaderShell"
 import { defaultNavItems } from "@/components/layout/header/constants"
 import { routing, type AppLocale } from "@/i18n/routing"
 import { NotificationProvider } from "@/components/contexts/notification-context"
@@ -32,16 +32,14 @@ export default async function LocaleLayout({
   return (
     <NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC">
       <NotificationProvider>
-        <Header
+        <HeaderShell
           logoText={t("brand")}
           navItems={defaultNavItems}
           userName="Admin"
           userEmail="admin@higress.ai"
-        />
-        {/* iOS-style floating header padding compensation: top-4 (header position) + h-16 (header height) + gap-4 (spacing) = pt-24 */}
-        <div className="pt-24">
+        >
           {children}
-        </div>
+        </HeaderShell>
         {auth}
         {/* 全局通知系统 */}
         <NotificationSystem />

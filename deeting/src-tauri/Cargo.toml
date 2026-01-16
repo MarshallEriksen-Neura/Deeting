@@ -25,5 +25,11 @@ tauri = { version = "2.9.5" }
 tauri-plugin-log = "2"
 tauri-plugin-http = "2.5.5"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process", "io-util", "fs"] }
 futures-util = "0.3"
+sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
+thiserror = "1.0"
+sha2 = "0.10"
+hex = "0.4"

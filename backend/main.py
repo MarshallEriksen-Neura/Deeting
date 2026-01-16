@@ -138,6 +138,7 @@ def register_routes(app: FastAPI) -> None:
         dashboard_router,
         monitoring_router,
         credits_router,
+        mcp_router,
     )
 
     api_prefix = settings.API_V1_STR
@@ -183,6 +184,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(dashboard_router, prefix=api_prefix, tags=["Dashboard"])
     app.include_router(monitoring_router, prefix=api_prefix, tags=["Monitoring"])
     app.include_router(credits_router, prefix=api_prefix, tags=["Credits"])
+    app.include_router(mcp_router, prefix=api_prefix, tags=["MCP"])
     # Metrics
     app.include_router(metrics_router, tags=["Metrics"])
 

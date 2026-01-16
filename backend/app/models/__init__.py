@@ -58,6 +58,7 @@ from .identity import Identity
 from .registration_window import RegistrationWindow, RegistrationWindowStatus
 from .invite_code import InviteCode, InviteCodeStatus
 from .user import Permission, Role, RolePermission, User, UserRole
+from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 
 __all__ = [
     "Base",
@@ -123,4 +124,7 @@ __all__ = [
     "BillingQuotaResetPeriod",
     # Bridge / MCP
     "BridgeAgentToken",
+    "McpMarketTool",
+    "McpToolCategory",
+    "UserMcpSubscription",
 ]

@@ -68,6 +68,16 @@ from .media_asset import (
     AssetUploadInitRequest,
     AssetUploadInitResponse,
 )
+from .mcp_market import (
+    McpEnvVarSchema,
+    McpInstallManifest,
+    McpMarketToolDetail,
+    McpMarketToolSummary,
+    McpRuntimeType,
+    McpSubscriptionCreateRequest,
+    McpSubscriptionItem,
+    McpToolCategory,
+)
 from .user import (
     BanRequest,
     PermissionRead,
@@ -158,4 +168,12 @@ __all__ = [
     "UserUpdate",
     "UserWithPermissions",
     "UserWithRoles",
+    "McpEnvVarSchema",
+    "McpInstallManifest",
+    "McpMarketToolDetail",
+    "McpMarketToolSummary",
+    "McpRuntimeType",
+    "McpSubscriptionCreateRequest",
+    "McpSubscriptionItem",
+    "McpToolCategory",
 ]
