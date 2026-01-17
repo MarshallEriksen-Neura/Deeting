@@ -21,7 +21,7 @@ from app.models import (
     ConversationSummary,
 )
 from app.services.conversation.service import get_conversation_service
-from app.services.summarizer import SummarizerService
+from app.services.conversation.summarizer import SummarizerService
 
 
 @celery_app.task(name="conversation.summarize")

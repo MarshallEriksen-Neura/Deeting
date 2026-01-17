@@ -369,3 +369,8 @@ class CacheKeys:
     @classmethod
     def cfg_updated_at(cls) -> str:
         return f"{cls.prefix}:cfg:updated_at"
+
+    # ===== System Settings =====
+    @classmethod
+    def system_embedding_model(cls) -> str:
+        return f"{cls.prefix}:settings:embedding:model"

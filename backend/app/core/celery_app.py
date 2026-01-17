@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import beat_init, worker_process_init
 
 from app.core.config import settings
@@ -53,6 +54,22 @@ celery_app.conf.update(
             "task": "app.tasks.periodic.daily_cleanup_task",
             "schedule": 86400.0,  # 每 24 小时执行一次 (也可以使用 crontab)
         },
+        # Sync tasks (merged from celery_beat_config.py)
+        "sync-all-quotas": {
+            "task": "quota_sync.sync_all_quotas",
+            "schedule": 300.0,  # 5 minutes
+            "options": {"expires": 240},
+        },
+        "sync-all-apikey-budgets": {
+            "task": "apikey_sync.sync_all_apikey_budgets",
+            "schedule": 600.0,  # 10 minutes
+            "options": {"expires": 540},
+        },
+        "sync-all-quotas-hourly": {
+            "task": "quota_sync.sync_all_quotas",
+            "schedule": crontab(minute=0),  # Hourly
+            "options": {"expires": 3300},
+        },
     },
     # 任务路由配置
     task_routes={
@@ -68,7 +85,7 @@ celery_app.conf.update(
 )
 
 # 自动发现 app.tasks 下的任务
-celery_app.autodiscover_tasks(["app.tasks"])
+celery_app.autodiscover_tasks(["app"])
 
 
 @worker_process_init.connect

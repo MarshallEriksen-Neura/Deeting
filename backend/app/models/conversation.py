@@ -42,6 +42,7 @@ class ConversationChannel(str, enum.Enum):
 class ConversationStatus(str, enum.Enum):
     ACTIVE = "active"
     CLOSED = "closed"
+    ARCHIVED = "archived"
 
 
 class ConversationRole(str, enum.Enum):

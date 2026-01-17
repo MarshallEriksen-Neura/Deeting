@@ -14,6 +14,7 @@ const namespaces = [
   "monitoring",
   "notifications",
   "profile",
+  "settings",
   "assistants",
   "mcp",
   "chat",

@@ -12,7 +12,7 @@ import { ModelEmptyState } from "./empty-state"
 import { InstanceDashboard } from "./instance-dashboard"
 import { TestDrawer } from "./test-drawer"
 import type { ProviderModelResponse, ProviderModelUpdate } from "@/lib/api/providers"
-import type { ProviderModel, ModelCapability } from "./types"
+import type { ProviderModel, ModelCapability, ProviderStatus } from "./types"
 import { toast } from "sonner"
 import ConnectProviderDrawer from "@/components/providers/connect-provider-drawer"
 import {
@@ -55,6 +55,15 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const [quickAddOpen, setQuickAddOpen] = React.useState(false)
   const [quickAddInput, setQuickAddInput] = React.useState("")
   const [quickAddLoading, setQuickAddLoading] = React.useState(false)
+
+  const normalizeStatus = React.useCallback((value?: string | null): ProviderStatus => {
+    const status = (value ?? "").toLowerCase()
+    if (status === "online" || status === "healthy" || status === "up" || status === "ok") return "online"
+    if (status === "degraded" || status === "warning") return "degraded"
+    if (status === "syncing") return "syncing"
+    if (status === "offline" || status === "down") return "offline"
+    return "unknown"
+  }, [])
   
   // Derived Data
   const instance = React.useMemo<import("./types").ProviderInstance | undefined>(
@@ -64,7 +73,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       return {
         ...raw,
         provider_display_name: raw.preset_slug, // 使用 slug 作为显示名称兜底
-        status: (raw.health_status as any) || "offline",
+        status: normalizeStatus(raw.health_status),
         latency: raw.latency_ms,
         model_count: typeof raw.model_count === "number" ? raw.model_count : 0,
         last_synced_at: raw.updated_at,
@@ -73,7 +82,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         icon: raw.icon || undefined
       }
     },
-    [instances, instanceId]
+    [instances, instanceId, normalizeStatus]
   )
 
   // Normalization helpers to provide UI-ready safe defaults

@@ -16,6 +16,7 @@ from app.repositories import UserRepository
 from app.repositories.api_key import ApiKeyRepository
 from app.schemas.auth import TokenPair
 from app.services.providers.api_key import ApiKeyService
+from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.users.user_provisioning_service import UserProvisioningService
 from app.utils.security import (
     create_access_token,
@@ -104,6 +105,7 @@ class AuthService:
             # 首登自动激活
             if not user.is_active:
                 user = await self.user_repo.activate_user(user.id)
+                await self._ensure_default_assistant(user)
 
             # 完成邀请码占用
             if invite_code and cached_invite.get("window_id"):
@@ -113,6 +115,7 @@ class AuthService:
         # 已有用户直接登录
         if not user.is_active:
             user = await self.user_repo.activate_user(user.id)
+            await self._ensure_default_assistant(user)
 
         await self.reset_login_failures(email)
         tokens = await self.create_tokens(user)
@@ -565,8 +568,15 @@ class AuthService:
             )
 
         user = await self.user_repo.activate_user(user.id)
+        await self._ensure_default_assistant(user)
         logger.info("user_activated", extra={"user_id": str(user.id), "email": email})
         return user
+
+    async def _ensure_default_assistant(self, user: User) -> None:
+        if not user.is_active:
+            return
+        service = DefaultAssistantService(self.db)
+        await service.ensure_installed(user.id)
 
     async def request_password_reset(self, email: str) -> None:  # pragma: no cover - 已废弃
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Password login removed")

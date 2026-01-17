@@ -1,0 +1,66 @@
+{
+  "settings": {
+    "title": "设置",
+    "subtitle": "统一管理云端与桌面端的 Embedding 配置。",
+    "env": {
+      "currentLabel": "当前环境",
+      "cloud": "云端",
+      "desktop": "桌面端",
+      "web": "Web"
+    },
+    "role": {
+      "currentLabel": "当前角色",
+      "admin": "管理员",
+      "user": "用户",
+      "guest": "访客",
+      "loading": "加载中..."
+    },
+    "auth": {
+      "requiredTitle": "需要登录",
+      "requiredDesc": "登录后可查看并保存配置。"
+    },
+    "alert": {
+      "consistencyTitle": "云端向量维度一致性",
+      "consistencyDesc": "云端统一使用管理员配置的 embedding 模型，避免跨模型维度不一致导致检索失败。",
+      "dimensionHint": "维度随模型而定",
+      "versionHint": "模型版本变更需评估迁移"
+    },
+    "cloud": {
+      "title": "云端 Embedding（管理员统一）",
+      "description": "所有云端请求共享同一 embedding 模型。",
+      "editableHint": "管理员可编辑云端模型",
+      "readonlyHint": "仅管理员可修改",
+      "modelLabel": "云端模型",
+      "modelPlaceholder": "选择云端 embedding 模型",
+      "modelHelp": "用于保障云端向量维度一致。",
+      "scopeLabel": "生效范围",
+      "scopeValue": "全体云端请求",
+      "scopeBadge": "统一配置"
+    },
+    "desktop": {
+      "title": "桌面 Embedding（本地仅你可见）",
+      "description": "仅影响本地桌面端检索，不影响云端。",
+      "editableHint": "桌面端可独立配置",
+      "readonlyHint": "需在桌面端配置",
+      "modelLabel": "本地模型",
+      "modelPlaceholder": "选择本地 embedding 模型",
+      "modelHelp": "本地选择不会影响云端维度。",
+      "unavailableTitle": "当前为 Web 端",
+      "unavailableDesc": "请在桌面端配置本地 embedding 模型。",
+      "download": "前往获取桌面端",
+      "scopeBadge": "仅本地"
+    },
+    "actions": {
+      "hint": "云端与桌面设置互不影响，请按需保存。",
+      "reset": "重置",
+      "save": "保存配置",
+      "saving": "保存中..."
+    },
+    "toast": {
+      "saveSuccess": "设置已保存",
+      "saveFailed": "保存失败，请稍后重试。",
+      "unauthenticated": "请先登录",
+      "noPermission": "当前账号无权限保存配置"
+    }
+  }
+}

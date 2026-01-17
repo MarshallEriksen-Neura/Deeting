@@ -40,11 +40,12 @@ export function useConversationSessions(
             cursor,
             size: pageSize,
             assistant_id: query.assistant_id ?? undefined,
+            status: query.status ?? undefined,
           },
         },
       ]
     },
-    [options.enabled, pageSize, query.assistant_id, query.cursor]
+    [options.enabled, pageSize, query.assistant_id, query.status, query.cursor]
   )
 
   const {

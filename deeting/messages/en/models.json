@@ -44,7 +44,8 @@
       "online": "Online ({latency}ms)",
       "offline": "Offline",
       "degraded": "Degraded ({latency}ms)",
-      "syncing": "Syncing..."
+      "syncing": "Syncing...",
+      "unknown": "Location / Pending"
     },
     "filter": {
       "searchPlaceholder": "Search by ID (e.g., gpt-4)...",

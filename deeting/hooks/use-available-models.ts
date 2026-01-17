@@ -2,18 +2,14 @@
 
 import useSWR from "swr"
 
-import { request } from "@/lib/http"
+import { fetchAvailableModels, type AvailableModelsResponse } from "@/lib/api/models"
 
-const MODELS_ENDPOINT = "/api/v1/models/available"
-
-export interface AvailableModelsResponse {
-  items: string[]
-}
+const AVAILABLE_MODELS_QUERY_KEY = "/api/v1/models/available"
 
 export function useAvailableModels() {
   const { data, error, isLoading, mutate, isValidating } = useSWR<AvailableModelsResponse>(
-    MODELS_ENDPOINT,
-    () => request<AvailableModelsResponse>({ url: MODELS_ENDPOINT, method: "GET" }),
+    AVAILABLE_MODELS_QUERY_KEY,
+    fetchAvailableModels,
     {
       revalidateOnFocus: false,
     }

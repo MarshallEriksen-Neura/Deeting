@@ -90,3 +90,19 @@ class ConversationSessionRepository(BaseRepository[ConversationSession]):
         await self.session.commit()
         await self.session.refresh(session_obj)
         return session_obj
+
+    async def get_by_user(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID,
+        channel: ConversationChannel = ConversationChannel.INTERNAL,
+    ) -> ConversationSession | None:
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id,
+            ConversationSession.user_id == user_id,
+        )
+        if channel:
+            stmt = stmt.where(ConversationSession.channel == channel)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()

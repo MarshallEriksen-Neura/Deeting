@@ -32,14 +32,17 @@
       "emptyDesc": "开始新的对话后会显示在这里。",
       "loading": "加载中...",
       "loadFailed": "加载会话失败。",
-      "retry": "重试",
-      "noMore": "没有更多会话",
-      "untitled": "未命名会话",
-      "viewArchived": "查看归档",
-      "groups": {
-        "today": "今天",
-        "yesterday": "昨天",
-        "last7Days": "近 7 天",
+    "retry": "重试",
+    "noMore": "没有更多会话",
+    "untitled": "未命名会话",
+    "viewArchived": "查看归档",
+    "viewActive": "查看进行中",
+    "archive": "归档",
+    "unarchive": "取消归档",
+    "groups": {
+      "today": "今天",
+      "yesterday": "昨天",
+      "last7Days": "近 7 天",
         "earlier": "更早"
       }
     },

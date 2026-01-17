@@ -9,6 +9,8 @@ import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
 import type { ModelInfo } from '@/lib/api/models';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useI18n } from '@/hooks/use-i18n';
 
 type ModelVisual = {
   icon: typeof Cpu;
@@ -34,6 +36,7 @@ export default function HUD() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
+  const t = useI18n('chat');
   
   const { setTheme, theme } = useTheme();
   
@@ -70,9 +73,7 @@ export default function HUD() {
   }, [serviceAssistants, setAssistants]);
 
   useEffect(() => {
-    if (serviceModels.length) {
-      setModels(serviceModels);
-    }
+    setModels(serviceModels);
   }, [serviceModels, setModels]);
 
   useEffect(() => {
@@ -121,7 +122,9 @@ export default function HUD() {
                 <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${activeModelVisual.indicator}`}></span>
             </div>
             <div className="flex flex-col items-start leading-none">
-                <span className="text-[10px] font-bold text-black/40 dark:text-white/40 uppercase tracking-tighter">Active Agent</span>
+                <span className="text-[10px] font-bold text-black/40 dark:text-white/40 uppercase tracking-tighter">
+                  {t("hud.activeAgent")}
+                </span>
                 <span className="text-xs font-bold text-black dark:text-white flex items-center gap-1">
                     {activeAssistant?.name ?? activeModel?.id ?? ""}
                     <ChevronDown className={`w-3 h-3 text-black/30 dark:text-white/30 transition-transform duration-300 ${isControlCenterOpen ? 'rotate-180' : ''}`} />
@@ -136,7 +139,7 @@ export default function HUD() {
              onClick={() => setIsHistoryOpen(true)}
              className="flex items-center gap-1.5 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors cursor-pointer group/session"
           >
-             <span className="text-xs font-semibold truncate max-w-[120px]">Deeting OS</span>
+             <span className="text-xs font-semibold truncate max-w-[120px]">{t("hud.sessionTitle")}</span>
              <div className="w-5 h-5 rounded-md bg-black/5 dark:bg-white/5 flex items-center justify-center group-hover/session:bg-black/10 dark:group-hover/session:bg-white/10 transition-colors">
                 <ChevronDown className="w-3 h-3 text-black/30 dark:text-white/30 transition-transform group-hover/session:rotate-180" />
              </div>
@@ -170,13 +173,15 @@ export default function HUD() {
                 {/* Agent Quick Switch Section */}
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between px-1">
-                        <span className="text-[11px] font-black text-black/30 dark:text-white/30 uppercase tracking-[0.2em]">Select Agent</span>
+                        <span className="text-[11px] font-black text-black/30 dark:text-white/30 uppercase tracking-[0.2em]">
+                          {t("hud.selectAgent")}
+                        </span>
                         <div className="flex gap-2">
                              <Link href="/chat/select-agent" scroll={false} className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors">
                                 <Search className="w-3 h-3" />
                              </Link>
                              <Link href="/market" scroll={false} className="text-[10px] font-bold text-indigo-500 hover:underline flex items-center gap-1">
-                                Market <ArrowRight className="w-2.5 h-2.5" />
+                                {t("hud.market")} <ArrowRight className="w-2.5 h-2.5" />
                             </Link>
                         </div>
                     </div>
@@ -189,7 +194,9 @@ export default function HUD() {
                                 <div className="w-14 h-14 rounded-2xl border-2 border-dashed border-black/10 dark:border-white/10 flex items-center justify-center text-black/20 dark:text-white/20 group-hover/agent:border-black/30 dark:group-hover/agent:border-white/30 group-hover/agent:text-black/50 dark:group-hover/agent:text-white/50 transition-all duration-300">
                                     <Plus className="w-5 h-5" />
                                 </div>
-                                <span className="text-[10px] font-bold text-black/40 dark:text-white/40 truncate w-full text-center group-hover/agent:text-black/60 dark:group-hover/agent:text-white/60">New</span>
+                                <span className="text-[10px] font-bold text-black/40 dark:text-white/40 truncate w-full text-center group-hover/agent:text-black/60 dark:group-hover/agent:text-white/60">
+                                  {t("hud.newAgent")}
+                                </span>
                             </Link>
 
                             {assistants.map((agent) => {
@@ -220,31 +227,49 @@ export default function HUD() {
                 {/* Model & Runtime Section */}
                 <div className="flex flex-col gap-4 bg-black/5 dark:bg-white/5 rounded-[2rem] p-4 border border-black/5 dark:border-white/5">
                     <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-black text-black/30 dark:text-white/30 uppercase tracking-[0.2em]">Engine</span>
+                        <span className="text-[11px] font-black text-black/30 dark:text-white/30 uppercase tracking-[0.2em]">
+                          {t("hud.engine")}
+                        </span>
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[9px] font-bold">
-                            OPTIMIZED
+                            {t("hud.optimized")}
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                        {models.map((model) => {
-                            const visual = resolveModelVisual(model);
-                            const Icon = visual.icon;
-                            const label = model.owned_by ? `${model.owned_by} · ${model.id}` : model.id;
-                            return (
-                              <button
-                                key={model.id}
-                                onClick={() => setConfig({ model: model.id })}
-                                className={`
-                                    flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[10px] font-bold transition-all
-                                    ${config.model === model.id ? 'bg-white dark:bg-black text-black dark:text-white shadow-md' : 'text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/5'}
-                                `}
-                              >
-                                <Icon className={`w-3 h-3 ${config.model === model.id ? visual.color : 'text-current'}`} />
-                                {label}
-                              </button>
-                            );
-                        })}
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                            <span className="text-[10px] font-bold text-black/50 dark:text-white/50">
+                              {t("model.label")}
+                            </span>
+                            {models.length > 0 && (
+                              <span className="text-[10px] font-mono text-black/30 dark:text-white/30">
+                                {models.length}
+                              </span>
+                            )}
+                        </div>
+                        <Select
+                          value={config.model ?? ""}
+                          onValueChange={(value) => setConfig({ model: value })}
+                          disabled={models.length === 0}
+                        >
+                          <SelectTrigger className="h-9 rounded-xl border-0 bg-white/70 dark:bg-black/40 text-[11px] font-semibold text-black/70 dark:text-white/70 shadow-sm focus:ring-0">
+                            <SelectValue placeholder={t("model.placeholder")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {models.map((model) => {
+                              const label = model.owned_by ? `${model.owned_by} · ${model.id}` : model.id;
+                              return (
+                                <SelectItem key={model.id} value={model.id}>
+                                  {label}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                        {models.length === 0 && (
+                          <div className="text-[10px] text-black/40 dark:text-white/40 px-1">
+                            {t("error.modelUnavailable")}
+                          </div>
+                        )}
                     </div>
 
                     {/* Sliders */}
@@ -252,7 +277,7 @@ export default function HUD() {
                         <div className="space-y-2">
                             <div className="flex justify-between items-center px-1">
                                 <label className="text-[10px] font-bold text-black/50 dark:text-white/50 flex items-center gap-1.5">
-                                    <Thermometer className="w-3 h-3" /> Temperature
+                                    <Thermometer className="w-3 h-3" /> {t("hud.temperature")}
                                 </label>
                                 <span className="text-[10px] font-mono font-bold">{config.temperature}</span>
                             </div>
@@ -265,7 +290,7 @@ export default function HUD() {
                         <div className="space-y-2">
                             <div className="flex justify-between items-center px-1">
                                 <label className="text-[10px] font-bold text-black/50 dark:text-white/50 flex items-center gap-1.5">
-                                    <Zap className="w-3 h-3" /> Top P
+                                    <Zap className="w-3 h-3" /> {t("hud.topP")}
                                 </label>
                                 <span className="text-[10px] font-mono font-bold">{config.topP}</span>
                             </div>
@@ -299,16 +324,18 @@ export default function HUD() {
                         AD
                     </div>
                     <div className="flex flex-col">
-                        <span className="text-xs font-black text-black/90 dark:text-white/90">Admin User</span>
-                        <span className="text-[10px] font-medium text-black/40 dark:text-white/40 italic">System Integrity: 100%</span>
+                        <span className="text-xs font-black text-black/90 dark:text-white/90">{t("hud.system.userName")}</span>
+                        <span className="text-[10px] font-medium text-black/40 dark:text-white/40 italic">
+                          {t("hud.system.integrity", { value: "100%" })}
+                        </span>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                    <MenuLink href="/" icon={<Home className="w-4 h-4" />} label="Home" />
-                    <MenuLink href="/dashboard" icon={<LayoutDashboard className="w-4 h-4" />} label="OS Dashboard" />
-                    <MenuLink href="/market" icon={<ShoppingBag className="w-4 h-4" />} label="Registry" />
-                    <MenuLink href="/settings" icon={<Settings className="w-4 h-4" />} label="Preferences" />
+                    <MenuLink href="/" icon={<Home className="w-4 h-4" />} label={t("hud.menu.home")} />
+                    <MenuLink href="/dashboard" icon={<LayoutDashboard className="w-4 h-4" />} label={t("hud.menu.dashboard")} />
+                    <MenuLink href="/market" icon={<ShoppingBag className="w-4 h-4" />} label={t("hud.menu.registry")} />
+                    <MenuLink href="/settings" icon={<Settings className="w-4 h-4" />} label={t("hud.menu.preferences")} />
                 </div>
 
                 <div className="flex flex-col gap-1 mt-1">
@@ -318,14 +345,14 @@ export default function HUD() {
                      >
                         <div className="flex items-center gap-3">
                             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                            <span>Interface Mode</span>
+                            <span>{t("hud.menu.interfaceMode")}</span>
                         </div>
                         <span className="text-[9px] opacity-40 uppercase">{theme}</span>
                      </button>
                      
                      <Link href="/login" className="flex items-center gap-3 p-3 rounded-2xl hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-bold">
                         <LogOut className="w-4 h-4" />
-                        <span>Terminate Session</span>
+                        <span>{t("hud.menu.terminateSession")}</span>
                      </Link>
                 </div>
             </motion.div>

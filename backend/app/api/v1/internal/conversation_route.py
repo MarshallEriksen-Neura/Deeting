@@ -23,6 +23,7 @@ from app.deps.auth import get_current_user
 from app.models import User
 from app.schemas.gateway import ChatCompletionRequest, ChatCompletionResponse, GatewayError
 from app.schemas.conversation import ConversationSessionItem
+from app.models.conversation import ConversationStatus
 from app.services.conversation.session_service import ConversationSessionService
 from app.services.conversation.service import ConversationService
 from app.services.orchestrator.context import Channel, WorkflowContext
@@ -55,6 +56,11 @@ class DeleteResponse(BaseModel):
     session_id: str
     turn_index: int
     deleted: bool
+
+
+class ArchiveResponse(BaseModel):
+    session_id: str
+    status: ConversationStatus
 
 
 class ConversationMessage(BaseModel):
@@ -93,14 +99,52 @@ def _build_error(ctx: WorkflowContext) -> JSONResponse:
 async def list_conversations(
     params: CursorParams = Depends(),
     assistant_id: UUID | None = Query(default=None),
+    status: ConversationStatus = Query(default=ConversationStatus.ACTIVE),
     user: User = Depends(get_current_user),
     service: ConversationSessionService = Depends(get_conversation_session_service),
 ) -> CursorPage[ConversationSessionItem]:
     return await service.list_user_sessions(
         user_id=user.id,
         params=params,
+        status=status,
         assistant_id=assistant_id,
     )
+
+
+@router.post(
+    "/conversations/{session_id}/archive",
+    response_model=ArchiveResponse,
+)
+async def archive_conversation(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    service: ConversationSessionService = Depends(get_conversation_session_service),
+) -> ArchiveResponse:
+    session_uuid = UUID(session_id)
+    session_obj = await service.update_session_status(
+        session_id=session_uuid,
+        user_id=user.id,
+        status=ConversationStatus.ARCHIVED,
+    )
+    return ArchiveResponse(session_id=str(session_obj.id), status=session_obj.status)
+
+
+@router.post(
+    "/conversations/{session_id}/unarchive",
+    response_model=ArchiveResponse,
+)
+async def unarchive_conversation(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    service: ConversationSessionService = Depends(get_conversation_session_service),
+) -> ArchiveResponse:
+    session_uuid = UUID(session_id)
+    session_obj = await service.update_session_status(
+        session_id=session_uuid,
+        user_id=user.id,
+        status=ConversationStatus.ACTIVE,
+    )
+    return ArchiveResponse(session_id=str(session_obj.id), status=session_obj.status)
 
 
 @router.get(

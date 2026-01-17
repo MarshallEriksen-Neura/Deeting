@@ -122,6 +122,7 @@ def register_routes(app: FastAPI) -> None:
         admin_provider_instance_router,
         admin_discovery_router,
         admin_notification_router,
+        admin_settings_router,
         notification_ws_router,
         auth_router,
         assistants_router,
@@ -139,6 +140,7 @@ def register_routes(app: FastAPI) -> None:
         monitoring_router,
         credits_router,
         mcp_router,
+        settings_router,
     )
 
     api_prefix = settings.API_V1_STR
@@ -154,6 +156,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(admin_assistant_reviews_router, prefix=api_prefix, tags=["Admin - Assistant Reviews"])
     app.include_router(admin_registration_router, prefix=api_prefix, tags=["Admin - Registration"])
     app.include_router(admin_notification_router, prefix=api_prefix, tags=["Admin - Notifications"])
+    app.include_router(admin_settings_router, prefix=api_prefix, tags=["Admin - Settings"])
     app.include_router(notification_ws_router, prefix=api_prefix, tags=["Notifications"])
     app.include_router(
         admin_provider_credential_router, prefix=api_prefix, tags=["Admin - Provider Credentials"]
@@ -189,6 +192,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(monitoring_router, prefix=api_prefix, tags=["Monitoring"])
     app.include_router(credits_router, prefix=api_prefix, tags=["Credits"])
     app.include_router(mcp_router, prefix=api_prefix, tags=["MCP"])
+    app.include_router(settings_router, prefix=api_prefix, tags=["Settings"])
     # Metrics
     app.include_router(metrics_router, tags=["Metrics"])
 

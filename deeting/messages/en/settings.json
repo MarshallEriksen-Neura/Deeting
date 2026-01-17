@@ -1,0 +1,66 @@
+{
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage cloud and desktop embedding configuration in one place.",
+    "env": {
+      "currentLabel": "Current environment",
+      "cloud": "Cloud",
+      "desktop": "Desktop",
+      "web": "Web"
+    },
+    "role": {
+      "currentLabel": "Current role",
+      "admin": "Admin",
+      "user": "User",
+      "guest": "Guest",
+      "loading": "Loading..."
+    },
+    "auth": {
+      "requiredTitle": "Sign in required",
+      "requiredDesc": "Sign in to view and save settings."
+    },
+    "alert": {
+      "consistencyTitle": "Cloud embedding consistency",
+      "consistencyDesc": "Cloud uses the admin-selected embedding model to avoid dimension mismatches across requests.",
+      "dimensionHint": "Dimensions follow the model",
+      "versionHint": "Review migrations on model changes"
+    },
+    "cloud": {
+      "title": "Cloud Embedding (Admin Unified)",
+      "description": "All cloud requests share the same embedding model.",
+      "editableHint": "Admins can edit the cloud model",
+      "readonlyHint": "Admin-only setting",
+      "modelLabel": "Cloud model",
+      "modelPlaceholder": "Select a cloud embedding model",
+      "modelHelp": "Ensures consistent vector dimensions in cloud.",
+      "scopeLabel": "Scope",
+      "scopeValue": "All cloud requests",
+      "scopeBadge": "Unified"
+    },
+    "desktop": {
+      "title": "Desktop Embedding (Local Only)",
+      "description": "Only affects local desktop search, not cloud.",
+      "editableHint": "Desktop can be configured locally",
+      "readonlyHint": "Configure on desktop",
+      "modelLabel": "Local model",
+      "modelPlaceholder": "Select a local embedding model",
+      "modelHelp": "Local choice does not affect cloud dimensions.",
+      "unavailableTitle": "You are on Web",
+      "unavailableDesc": "Configure local embedding models in the desktop app.",
+      "download": "Get the desktop app",
+      "scopeBadge": "Local only"
+    },
+    "actions": {
+      "hint": "Cloud and desktop settings are independent. Save as needed.",
+      "reset": "Reset",
+      "save": "Save settings",
+      "saving": "Saving..."
+    },
+    "toast": {
+      "saveSuccess": "Settings saved",
+      "saveFailed": "Save failed. Please try again.",
+      "unauthenticated": "Please sign in first",
+      "noPermission": "You don’t have permission to save settings"
+    }
+  }
+}

@@ -189,6 +189,7 @@ Authorization: Bearer <access_token>
 - `cursor`：游标（可空）
 - `size`：单页数量（默认 20）
 - `assistant_id`：助手 ID（仅返回该助手的会话）
+- `status`：会话状态（默认 `active`，可选 `archived`/`closed`）
 
 #### 响应体
 
@@ -250,6 +251,46 @@ response = httpx.post(
     headers={"Authorization": f"Bearer {access_token}"}
 )
 print(response.json())
+```
+
+---
+
+### 4. Conversation Archive
+
+归档 / 取消归档会话（内部通道）。
+
+**端点**: `POST /conversations/{session_id}/archive`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 响应体
+
+```json
+{
+  "session_id": "session-xyz",
+  "status": "archived"
+}
+```
+
+**端点**: `POST /conversations/{session_id}/unarchive`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 响应体
+
+```json
+{
+  "session_id": "session-xyz",
+  "status": "active"
+}
 ```
 
 ---

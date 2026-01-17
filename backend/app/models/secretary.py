@@ -50,6 +50,11 @@ class UserSecretary(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         comment="秘书使用的模型名称",
     )
+    embedding_model: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="秘书向量使用的 embedding 模型名称",
+    )
     
     # Metadata for UI or Extensions
     ui_preferences: Mapped[dict | None] = mapped_column(JSON, comment="UI specific settings (avatar, theme)")

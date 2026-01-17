@@ -7,12 +7,13 @@ import {
   fetchAssistantInstalls,
   type AssistantInstallItem,
 } from "@/lib/api/assistants"
-import { fetchChatModels, type ModelInfo } from "@/lib/api/models"
+import { fetchAvailableModels, fetchChatModels, type ModelInfo } from "@/lib/api/models"
 import { fetchConversationWindow } from "@/lib/api/conversations"
 import { useAuthStore } from "@/store/auth-store"
 
 const INSTALLS_QUERY_KEY = "/api/v1/assistants/installs"
 const MODELS_QUERY_KEY = "/api/v1/internal/models"
+const AVAILABLE_MODELS_QUERY_KEY = "/api/v1/models/available"
 
 const COLOR_PRESETS = [
   "from-indigo-500 to-purple-500",
@@ -71,8 +72,13 @@ export function useChatService({
 
   const {
     data: modelList,
-    isLoading: isLoadingModels,
+    isLoading: isLoadingAllModels,
   } = useSWR(isEnabled ? MODELS_QUERY_KEY : null, fetchChatModels)
+
+  const {
+    data: availableModels,
+    isLoading: isLoadingAvailableModels,
+  } = useSWR(isEnabled ? AVAILABLE_MODELS_QUERY_KEY : null, fetchAvailableModels)
 
   const assistant = useMemo(() => {
     if (!assistantId || !installPage?.items?.length) return null
@@ -85,7 +91,15 @@ export function useChatService({
     return installPage.items.map(mapInstallToAssistant)
   }, [installPage])
 
-  const models = useMemo<ModelInfo[]>(() => modelList?.data ?? [], [modelList])
+  const models = useMemo<ModelInfo[]>(() => {
+    const all = modelList?.data ?? []
+    if (!availableModels?.items) return []
+    if (availableModels.items.length === 0) return []
+    const allowed = new Set(availableModels.items)
+    return all.filter((model) => allowed.has(model.id))
+  }, [availableModels, modelList])
+
+  const isLoadingModels = isLoadingAllModels || isLoadingAvailableModels
 
   const loadHistory = useCallback(async (sessionId: string) => {
     return fetchConversationWindow(sessionId)

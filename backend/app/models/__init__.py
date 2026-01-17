@@ -54,6 +54,7 @@ from .media_asset import MediaAsset
 from .provider_preset import ProviderPreset
 from .provider_instance import ProviderInstance, ProviderModel, ProviderCredential
 from .secretary import SecretaryPhase, UserSecretary
+from .system_setting import SystemSetting
 from .identity import Identity
 from .registration_window import RegistrationWindow, RegistrationWindowStatus
 from .invite_code import InviteCode, InviteCodeStatus
@@ -98,6 +99,7 @@ __all__ = [
     "ConversationRole",
     "SecretaryPhase",
     "UserSecretary",
+    "SystemSetting",
     "User",
     "Role",
     "Permission",

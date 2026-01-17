@@ -9,6 +9,18 @@ from app.core.logging import logger
 from app.models.gateway_log import GatewayLog
 
 
+def _parse_uuid(value: Any, field: str) -> uuid.UUID | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(str(value))
+    except Exception:  # noqa: BLE001
+        logger.warning("audit_invalid_uuid field=%s value=%s", field, value)
+        return None
+
+
 @celery_app.task(name="app.tasks.audit.record_audit_log")
 def record_audit_log_task(log_data: dict[str, Any]) -> str:
     """
@@ -17,12 +29,9 @@ def record_audit_log_task(log_data: dict[str, Any]) -> str:
     db: Session = next(get_sync_db())
     try:
         # 转换 UUID 字段
-        if log_data.get("user_id") and isinstance(log_data["user_id"], str):
-            log_data["user_id"] = uuid.UUID(log_data["user_id"])
-        if log_data.get("api_key_id") and isinstance(log_data["api_key_id"], str):
-            log_data["api_key_id"] = uuid.UUID(log_data["api_key_id"])
-        if log_data.get("preset_id") and isinstance(log_data["preset_id"], str):
-            log_data["preset_id"] = uuid.UUID(log_data["preset_id"])
+        for field in ("user_id", "api_key_id", "preset_id"):
+            if field in log_data:
+                log_data[field] = _parse_uuid(log_data.get(field), field)
 
         log_entry = GatewayLog(**log_data)
         db.add(log_entry)

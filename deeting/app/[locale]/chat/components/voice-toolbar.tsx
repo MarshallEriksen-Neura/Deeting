@@ -4,10 +4,12 @@ import { Mic, X, Loader2 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import { useI18n } from '@/hooks/use-i18n';
 
 export default function VoiceInputToolbar() {
   const [isListening, setIsListening] = useState(true);
   const [audioLevel, setAudioLevel] = useState(0);
+  const t = useI18n('chat');
 
   // Simulate audio levels (replace with real Web Audio API)
   useEffect(() => {
@@ -40,12 +42,12 @@ export default function VoiceInputToolbar() {
         {isListening ? (
           <>
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.8)]" />
-            <span>Listening...</span>
+            <span>{t("voice.listening")}</span>
           </>
         ) : (
           <>
             <Loader2 className="w-3 h-3 animate-spin" />
-            <span>Processing...</span>
+            <span>{t("voice.processing")}</span>
           </>
         )}
       </div>
@@ -96,7 +98,7 @@ export default function VoiceInputToolbar() {
 
         <Link href="/chat" scroll={false}>
           <button className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-sm text-white transition-colors">
-            Cancel
+            {t("voice.cancel")}
           </button>
         </Link>
       </div>
@@ -104,7 +106,7 @@ export default function VoiceInputToolbar() {
       {/* Transcript preview (optional) */}
       <div className="mt-6 max-w-md text-center">
         <p className="text-sm text-white/50 italic">
-          Tap microphone to pause/resume
+          {t("voice.hint")}
         </p>
       </div>
     </div>

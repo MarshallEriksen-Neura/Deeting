@@ -3,6 +3,7 @@ import { Brain, ChevronDown, ChevronRight, Loader2, Terminal } from "lucide-reac
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/use-i18n";
 
 // 消息部分接口
 export interface MessagePart {
@@ -54,6 +55,7 @@ export function AIResponseBubble({ parts }: { parts: MessagePart[] }) {
 // === 组件：思维链折叠块 ===
 function ThoughtBlock({ content, cost }: { content?: string, cost?: string }) {
   const [isOpen, setIsOpen] = useState(false);
+  const t = useI18n("chat");
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
@@ -64,14 +66,14 @@ function ThoughtBlock({ content, cost }: { content?: string, cost?: string }) {
              isOpen ? "bg-muted text-foreground" : "bg-muted/50 text-muted-foreground hover:bg-muted"
            )}>
              <Brain size={12} className={cn(!cost && "animate-pulse")} /> 
-             <span>{cost ? `Thought for ${cost}` : "Thinking Process"}</span>
+             <span>{cost ? t("thought.withCost", { cost }) : t("thought.label")}</span>
              {isOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
            </div>
         </div>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-2 ml-2 pl-4 border-l-2 border-border text-xs text-muted-foreground font-mono whitespace-pre-wrap leading-relaxed">
-          {content || "Thinking..."}
+          {content || t("thought.loading")}
         </div>
       </CollapsibleContent>
     </Collapsible>

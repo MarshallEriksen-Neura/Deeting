@@ -24,6 +24,7 @@ from app.schemas.user import (
     UserWithRoles,
 )
 from app.services.users.auth_service import AuthService
+from app.services.assistant.default_assistant_service import DefaultAssistantService
 
 
 class UserAdminService:
@@ -85,6 +86,7 @@ class UserAdminService:
 
         # 管理员创建的用户直接激活
         user = await self.user_repo.activate_user(user.id)
+        await self._ensure_default_assistant(user)
 
         logger.info(
             "admin_created_user",
@@ -143,6 +145,7 @@ class UserAdminService:
         """
         # 检查用户是否存在
         user = await self._get_user_or_404(user_id)
+        was_active = user.is_active
 
         # 更新字段
         update_data = request.model_dump(exclude_unset=True)
@@ -156,6 +159,9 @@ class UserAdminService:
 
         if update_data:
             user = await self.user_repo.update_user(user_id, **update_data)
+
+            if not was_active and update_data.get("is_active") is True:
+                await self._ensure_default_assistant(user)
 
             logger.info(
                 "admin_updated_user",
@@ -171,6 +177,12 @@ class UserAdminService:
             created_at=user.created_at,
             updated_at=user.updated_at,
         )
+
+    async def _ensure_default_assistant(self, user: User) -> None:
+        if not user.is_active:
+            return
+        service = DefaultAssistantService(self.db)
+        await service.ensure_installed(user.id)
 
     async def assign_roles(self, user_id: UUID, role_ids: list[UUID]) -> None:
         """分配用户角色"""

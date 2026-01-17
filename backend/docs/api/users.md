@@ -16,20 +16,21 @@
 ## 获取秘书配置
 
 - `GET /users/me/secretary`
-- 响应：`UserSecretaryDTO`
+- 响应：`UserSecretaryDTO`（含 `embedding_model`）
 - 说明：若用户尚未创建秘书配置，将自动创建默认记录。
 
-## 更新秘书模型
+## 更新秘书配置
 
 - `PATCH /users/me/secretary`
 - Body：
   ```json
   {
-    "model_name": "gpt-4o"
+    "model_name": "gpt-4o",
+    "embedding_model": "text-embedding-3-small"
   }
   ```
 - 响应：`UserSecretaryDTO`
-- 说明：仅允许选择**当前用户自有 Provider**下可用的 chat 模型。
+- 说明：`model_name` 用于聊天模型，`embedding_model` 用于向量模型；仅允许选择**当前用户自有 Provider**下可用的对应能力模型。
 
 ---
 

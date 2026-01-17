@@ -11,6 +11,7 @@ from app.core.logging import logger
 from app.constants.permissions import DEFAULT_USER_ROLE
 from app.models import Identity, User
 from app.repositories import InviteCodeRepository, UserRepository
+from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.users.invite_code_service import InviteCodeService
 from app.services.users.registration_policy import RegistrationPolicy
 from app.utils.security import generate_jti, get_password_hash
@@ -90,6 +91,7 @@ class UserProvisioningService:
 
         # 分配默认角色（若存在）
         await self._assign_default_role(user.id)
+        await self._ensure_default_assistant(user)
 
         # 标记邀请码已使用
         if window and invite_code:
@@ -149,6 +151,12 @@ class UserProvisioningService:
 
         await self.user_repo.assign_roles(user_id, [role.id])
         await self.db.commit()
+
+    async def _ensure_default_assistant(self, user: User) -> None:
+        if not user.is_active:
+            return
+        service = DefaultAssistantService(self.db)
+        await service.ensure_installed(user.id)
 
 
 __all__ = ["UserProvisioningService"]

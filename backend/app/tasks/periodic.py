@@ -2,7 +2,7 @@ from loguru import logger
 import asyncio
 
 from app.core.celery_app import celery_app
-from app.core.database import async_session_factory
+from app.core.database import AsyncSessionLocal
 from app.services.providers.health_monitor import HealthMonitorService
 from app.core.cache import cache
 
@@ -32,7 +32,7 @@ def check_providers_health_task():
     logger.info("Starting check_providers_health_task...")
     
     async def _run():
-        async with async_session_factory() as session:
+        async with AsyncSessionLocal() as session:
             # Ensure Redis is init if running in worker process that didn't init it
             if not cache._redis and cache._redis is None:
                 cache.init()

@@ -5,9 +5,11 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
+import { useI18n } from '@/hooks/use-i18n';
 
 export default function DefaultControls() {
   const [showMenu, setShowMenu] = useState(false);
+  const t = useI18n('chat');
   
   const { input, setInput, sendMessage, isLoading, activeAssistantId, models } = useChatStore(
     useShallow((state) => ({
@@ -60,7 +62,9 @@ export default function DefaultControls() {
                             <div className="w-8 h-8 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-all">
                                 <Sparkles className="w-4 h-4" />
                             </div>
-                            <span className="text-sm font-medium text-black/80 dark:text-white/80 group-hover:text-black dark:group-hover:text-white">Image</span>
+                            <span className="text-sm font-medium text-black/80 dark:text-white/80 group-hover:text-black dark:group-hover:text-white">
+                              {t("controls.image")}
+                            </span>
                         </div>
                     </Link>
                     <Link href="/chat/coder" scroll={false}>
@@ -68,7 +72,9 @@ export default function DefaultControls() {
                              <div className="w-8 h-8 rounded-lg bg-green-500/10 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-all">
                                 <span className="font-mono text-xs font-bold">{`</>`}</span>
                             </div>
-                            <span className="text-sm font-medium text-black/80 dark:text-white/80 group-hover:text-black dark:group-hover:text-white">Code</span>
+                            <span className="text-sm font-medium text-black/80 dark:text-white/80 group-hover:text-black dark:group-hover:text-white">
+                              {t("controls.code")}
+                            </span>
                         </div>
                     </Link>
                 </motion.div>
@@ -82,7 +88,7 @@ export default function DefaultControls() {
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
         className="bg-transparent flex-1 outline-none text-black dark:text-white px-4 placeholder-black/40 dark:placeholder-white/30 text-[16px] font-normal h-full" 
-        placeholder="Type a message..."
+        placeholder={t("controls.placeholder")}
         autoFocus
         onFocus={() => setShowMenu(false)}
       />

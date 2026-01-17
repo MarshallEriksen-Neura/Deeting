@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from fastapi import HTTPException, status
+
 from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi_pagination.ext.sqlalchemy import paginate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.time_utils import Datetime
-from app.models.conversation import ConversationChannel, ConversationStatus
+from app.models.conversation import ConversationChannel, ConversationSession, ConversationStatus
 from app.repositories.conversation_session_repository import ConversationSessionRepository
 from app.schemas.conversation import ConversationSessionItem
 
@@ -67,3 +69,24 @@ class ConversationSessionService:
             last_active_at=Datetime.now(),
             message_count=message_count,
         )
+
+    async def update_session_status(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID,
+        status: ConversationStatus,
+    ) -> ConversationSession:
+        session_obj = await self.session_repo.get_by_user(
+            session_id=session_id,
+            user_id=user_id,
+            channel=ConversationChannel.INTERNAL,
+        )
+        if not session_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="conversation not found",
+            )
+        if session_obj.status == status:
+            return session_obj
+        return await self.session_repo.update(session_obj, {"status": status})

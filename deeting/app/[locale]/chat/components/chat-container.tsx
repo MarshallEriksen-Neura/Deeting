@@ -113,11 +113,13 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
 
   // Sync Models
   React.useEffect(() => {
-    if (cloudModels.length > 0) {
-      setModels(cloudModels)
-      if (!config.model && cloudModels[0]) {
-         setConfig({ model: cloudModels[0].id })
-      }
+    setModels(cloudModels)
+    if (cloudModels.length === 0) return
+    const hasSelectedModel = config.model
+      ? cloudModels.some((model) => model.id === config.model)
+      : false
+    if (!hasSelectedModel && cloudModels[0]) {
+      setConfig({ model: cloudModels[0].id })
     }
   }, [cloudModels, setModels, config.model, setConfig])
 

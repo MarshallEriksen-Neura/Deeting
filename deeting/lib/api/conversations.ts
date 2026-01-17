@@ -48,10 +48,20 @@ export const ConversationSessionPageSchema = z.object({
 export type ConversationSessionItem = z.infer<typeof ConversationSessionItemSchema>
 export type ConversationSessionPage = z.infer<typeof ConversationSessionPageSchema>
 
+export type ConversationSessionStatus = "active" | "archived" | "closed"
+
+export const ConversationArchiveResponseSchema = z.object({
+  session_id: z.string(),
+  status: z.enum(["active", "archived", "closed"]),
+})
+
+export type ConversationArchiveResponse = z.infer<typeof ConversationArchiveResponseSchema>
+
 export type ConversationSessionsQuery = {
   cursor?: string | null
   size?: number
   assistant_id?: string | null
+  status?: ConversationSessionStatus
 }
 
 export async function fetchConversationSessions(
@@ -63,4 +73,20 @@ export async function fetchConversationSessions(
     params: query,
   })
   return ConversationSessionPageSchema.parse(data)
+}
+
+export async function archiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
+  const data = await request({
+    url: `${CONVERSATION_BASE}/${sessionId}/archive`,
+    method: "POST",
+  })
+  return ConversationArchiveResponseSchema.parse(data)
+}
+
+export async function unarchiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
+  const data = await request({
+    url: `${CONVERSATION_BASE}/${sessionId}/unarchive`,
+    method: "POST",
+  })
+  return ConversationArchiveResponseSchema.parse(data)
 }

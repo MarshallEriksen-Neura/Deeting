@@ -44,7 +44,8 @@
       "online": "在线 ({latency}ms)",
       "offline": "离线",
       "degraded": "降级 ({latency}ms)",
-      "syncing": "同步中..."
+      "syncing": "同步中...",
+      "unknown": "位置/待检测"
     },
     "filter": {
       "searchPlaceholder": "按 ID 搜索 (例如 gpt-4)...",

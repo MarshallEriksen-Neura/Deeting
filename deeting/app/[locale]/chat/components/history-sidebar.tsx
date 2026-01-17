@@ -1,12 +1,19 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, MessageSquare, Clock, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Search, MessageSquare, Clock, Plus, MoreHorizontal, Archive, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfiniteList } from '@/components/ui/infinite-list';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useConversationSessions } from '@/lib/swr/use-conversation-sessions';
+import { archiveConversation, unarchiveConversation } from '@/lib/api/conversations';
 import { useI18n } from '@/hooks/use-i18n';
 import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
@@ -21,6 +28,8 @@ interface HistorySidebarProps {
 export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const t = useI18n('chat');
   const [search, setSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [actionSessionId, setActionSessionId] = useState<string | null>(null);
   const {
     activeAssistantId,
     sessionId,
@@ -42,10 +51,20 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     error,
     loadMore,
     reset,
+    mutate,
   } = useConversationSessions(
-    { size: 24, assistant_id: activeAssistantId ?? undefined },
+    {
+      size: 24,
+      assistant_id: activeAssistantId ?? undefined,
+      status: showArchived ? "archived" : "active",
+    },
     { enabled: Boolean(activeAssistantId) }
   );
+
+  useEffect(() => {
+    reset();
+    setSearch('');
+  }, [reset, activeAssistantId, showArchived]);
 
   const searchValue = search.trim().toLowerCase();
   const filteredSessions = useMemo(() => {
@@ -104,6 +123,24 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const handleSelectSession = async (targetSessionId: string) => {
     await loadHistoryBySession(targetSessionId);
     onClose();
+  };
+
+  const handleArchiveToggle = async (
+    targetSessionId: string,
+    nextStatus: "archived" | "active"
+  ) => {
+    if (actionSessionId) return;
+    setActionSessionId(targetSessionId);
+    try {
+      if (nextStatus === "archived") {
+        await archiveConversation(targetSessionId);
+      } else {
+        await unarchiveConversation(targetSessionId);
+      }
+      await mutate();
+    } finally {
+      setActionSessionId(null);
+    }
   };
 
   return (
@@ -210,23 +247,61 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                 t('history.untitled');
                               const isActive = sessionId === session.session_id;
                               return (
-                                <Button
-                                  key={session.session_id}
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleSelectSession(session.session_id)}
-                                  className={cn(
-                                    "w-full justify-start gap-3 rounded-lg px-2 py-2 text-left transition-all",
-                                    "hover:bg-black/5 dark:hover:bg-white/5",
-                                    isActive && "bg-black/5 dark:bg-white/5"
-                                  )}
-                                >
-                                  <MessageSquare className="w-4 h-4 text-black/40 dark:text-white/40 shrink-0" />
-                                  <span className="text-sm text-black/70 dark:text-white/70 truncate flex-1 font-medium">
-                                    {title}
-                                  </span>
-                                </Button>
+                                <div key={session.session_id} className="group flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleSelectSession(session.session_id)}
+                                    className={cn(
+                                      "flex-1 justify-start gap-3 rounded-lg px-2 py-2 text-left transition-all",
+                                      "hover:bg-black/5 dark:hover:bg-white/5",
+                                      isActive && "bg-black/5 dark:bg-white/5"
+                                    )}
+                                  >
+                                    <MessageSquare className="w-4 h-4 text-black/40 dark:text-white/40 shrink-0" />
+                                    <span className="text-sm text-black/70 dark:text-white/70 truncate flex-1 font-medium">
+                                      {title}
+                                    </span>
+                                  </Button>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="opacity-0 group-hover:opacity-100 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                                      >
+                                        <MoreHorizontal className="w-4 h-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-36">
+                                      {showArchived ? (
+                                        <DropdownMenuItem
+                                          onSelect={(event) => {
+                                            event.preventDefault();
+                                            void handleArchiveToggle(session.session_id, "active");
+                                          }}
+                                          disabled={actionSessionId === session.session_id}
+                                        >
+                                          <RotateCcw className="mr-2 h-4 w-4" />
+                                          {t('history.unarchive')}
+                                        </DropdownMenuItem>
+                                      ) : (
+                                        <DropdownMenuItem
+                                          onSelect={(event) => {
+                                            event.preventDefault();
+                                            void handleArchiveToggle(session.session_id, "archived");
+                                          }}
+                                          disabled={actionSessionId === session.session_id}
+                                        >
+                                          <Archive className="mr-2 h-4 w-4" />
+                                          {t('history.archive')}
+                                        </DropdownMenuItem>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
                               );
                             })}
                           </div>
@@ -243,9 +318,10 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                   type="button"
                   variant="ghost"
                   className="w-full flex items-center justify-center gap-2 text-xs font-medium text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                  onClick={() => setShowArchived((prev) => !prev)}
                 >
                   <Clock className="w-3 h-3" />
-                  {t('history.viewArchived')}
+                  {showArchived ? t('history.viewActive') : t('history.viewArchived')}
                 </Button>
               </div>
 

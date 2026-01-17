@@ -54,6 +54,10 @@ from .conversation import ConversationSessionItem
 from .assistant_rating import AssistantRatingRequest, AssistantRatingResponse
 from .review import ReviewTaskDTO
 from .secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
+from .system_settings import (
+    SystemEmbeddingSettingDTO,
+    SystemEmbeddingSettingUpdateRequest,
+)
 from .notification import (
     NotificationInboxItem,
     NotificationPublishAllRequest,
@@ -141,6 +145,8 @@ __all__ = [
     "ReviewTaskDTO",
     "UserSecretaryDTO",
     "UserSecretaryUpdateRequest",
+    "SystemEmbeddingSettingDTO",
+    "SystemEmbeddingSettingUpdateRequest",
     "ProviderPresetBase",
     "ProviderPresetCreate",
     "ProviderPresetDTO",

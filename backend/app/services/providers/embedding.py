@@ -1,6 +1,7 @@
 from typing import List
 import openai
 from app.core.config import settings
+from app.services.system_settings_service import get_cached_embedding_model
 
 class EmbeddingService:
     """
@@ -26,7 +27,9 @@ class EmbeddingService:
         if not self.client:
             # Fallback or Mock if no key
             return [0.0] * 1536 
-            
+        model = await get_cached_embedding_model()
+        if model:
+            self.model = model
         response = await self.client.embeddings.create(
             input=text,
             model=self.model
@@ -39,7 +42,9 @@ class EmbeddingService:
         """
         if not self.client:
             return [[0.0] * 1536 for _ in texts]
-            
+        model = await get_cached_embedding_model()
+        if model:
+            self.model = model
         response = await self.client.embeddings.create(
             input=texts,
             model=self.model

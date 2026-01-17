@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  HelpCircle,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -84,6 +85,7 @@ function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency
     bgColor: string
     label: string
     pulse: boolean
+    icon?: React.ReactNode
   }> = {
     online: {
       color: 'text-emerald-500',
@@ -109,10 +111,17 @@ function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency
       label: t('status.syncing'),
       pulse: true,
     },
+    unknown: {
+      color: 'text-slate-500',
+      bgColor: 'bg-slate-400/70',
+      label: t('status.unknown'),
+      pulse: false,
+      icon: <HelpCircle className="size-3.5" />,
+    },
   }
 
-  const statusKey: ProviderStatus = (status ?? 'offline') as ProviderStatus
-  const config = statusConfig[statusKey] ?? statusConfig.offline
+  const statusKey: ProviderStatus = status && statusConfig[status] ? status : 'unknown'
+  const config = statusConfig[statusKey] ?? statusConfig.unknown
   // 若 label 中需要延迟数值，使用安全值
   if (statusKey === 'online' || statusKey === 'degraded') {
     config.label = t(statusKey === 'online' ? 'status.online' : 'status.degraded', { latency: safeLatency })
@@ -137,8 +146,9 @@ function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency
           )}
         />
       </span>
-      <span className={cn("text-sm font-medium", config.color)}>
-        {config.label}
+      <span className={cn("text-sm font-medium inline-flex items-center gap-1.5", config.color)}>
+        {config.icon}
+        <span>{config.label}</span>
       </span>
     </div>
   )

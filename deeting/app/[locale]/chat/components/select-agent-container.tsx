@@ -64,8 +64,8 @@ export function SelectAgentContainer() {
           <X className="w-5 h-5" />
         </button>
 
-        <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Select Agent</h2>
-        <p className="text-white/40 mb-8 font-light">Choose the specialized intelligence for your task.</p>
+        <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">{t('select.title')}</h2>
+        <p className="text-white/40 mb-8 font-light">{t('select.subtitle')}</p>
 
         <div className="grid grid-cols-2 gap-4">
           <CreateAgentModal
@@ -78,8 +78,8 @@ export function SelectAgentContainer() {
             trigger={
               <AgentCard
                 icon={<Plus className="w-6 h-6 text-emerald-400" />}
-                name="Create"
-                desc="Build your own assistant. Private by default."
+                name={t('select.create.name')}
+                desc={t('select.create.desc')}
               />
             }
           />
@@ -127,26 +127,26 @@ export function SelectAgentContainer() {
           })}
           <AgentCard 
             icon={<Code className="w-6 h-6 text-green-400" />} 
-            name="Coder" 
-            desc="Python, JS, Rust expert. Capabilities: Execution, Debugging." 
+            name={t('select.presets.coder.name')} 
+            desc={t('select.presets.coder.desc')} 
             onClick={() => router.replace('/chat/coder')} 
           />
           <AgentCard 
             icon={<Sparkles className="w-6 h-6 text-purple-400" />}
-            name="Artist"
-            desc="DALL-E 3, Stable Diffusion. Visual creation & editing."
+            name={t('select.presets.artist.name')}
+            desc={t('select.presets.artist.desc')}
             onClick={() => router.replace('/chat/create/image')}
           />
           <AgentCard 
             icon={<PenTool className="w-6 h-6 text-orange-400" />}
-            name="Writer"
-            desc="Creative writing, copy, storytelling. Long-form focus."
+            name={t('select.presets.writer.name')}
+            desc={t('select.presets.writer.desc')}
              onClick={() => router.back()} // Placeholder
           />
           <AgentCard 
              icon={<MessageSquare className="w-6 h-6 text-blue-400" />}
-             name="Assistant"
-             desc="General purpose helper. Analysis, planning, chat."
+            name={t('select.presets.assistant.name')}
+            desc={t('select.presets.assistant.desc')}
              onClick={() => router.replace('/chat')}
           />
         </div>

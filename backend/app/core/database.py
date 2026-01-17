@@ -1,8 +1,11 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
+from contextlib import contextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.db_sync import SessionLocal as SyncSessionLocal
 
 # 创建异步引擎
 _db_url = settings.DATABASE_URL
@@ -34,3 +37,15 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
         finally:
             await session.close()
+
+
+@contextmanager
+def get_sync_session() -> Generator[Session, None, None]:
+    """
+    获取同步数据库 Session (用于 Celery 任务)
+    """
+    session = SyncSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()

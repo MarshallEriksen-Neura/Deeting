@@ -9,7 +9,7 @@
 export type ModelCapability = 'chat' | 'vision' | 'audio' | 'embedding' | 'code' | 'reasoning'
 
 // Provider instance status
-export type ProviderStatus = 'online' | 'offline' | 'degraded' | 'syncing'
+export type ProviderStatus = 'online' | 'offline' | 'degraded' | 'syncing' | 'unknown'
 
 // Price tier for visual encoding
 export type PriceTier = 'free' | 'cheap' | 'moderate' | 'expensive' | 'premium'
