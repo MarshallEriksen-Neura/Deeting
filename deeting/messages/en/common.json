@@ -36,6 +36,7 @@
     },
     "headerNav": {
       "home": "Home",
+      "chat": "Chat",
       "assistants": "Assistants",
       "images": "Images",
       "videos": "Videos",

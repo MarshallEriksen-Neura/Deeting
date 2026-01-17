@@ -1,14 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { useForm } from "react-hook-form"
+import { useForm, type UseFormReturn } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Plus, Loader2, Sparkles, Trash2 } from "lucide-react"
+import { Plus, Loader2, Sparkles, Trash2, Check, ChevronDown, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
   Sheet,
   SheetContent,
@@ -40,6 +41,8 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
   SelectContent,
@@ -49,6 +52,8 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { createAssistant } from "@/lib/api"
+import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
+import { cn } from "@/lib/utils"
 import { useMarketStore } from "@/store/market-store"
 import { ProviderIconPicker } from "@/components/providers/provider-icon-picker"
 
@@ -60,6 +65,18 @@ const COLOR_OPTIONS = [
   { key: "amber", value: "from-orange-400 to-amber-500" },
   { key: "neon", value: "from-fuchsia-500 to-pink-500" },
 ]
+
+type Translator = ReturnType<typeof useTranslations>
+
+type AssistantFormValues = {
+  name: string
+  desc: string
+  systemPrompt: string
+  tags: string[]
+  iconId: string
+  color: string
+  shareToMarket?: boolean
+}
 
 interface EditableAssistant {
   id: string
@@ -107,21 +124,28 @@ export function CreateAgentModal({
   const deleteLocalAssistant = useMarketStore((state) => state.deleteLocalAssistant)
   const isEditMode = Boolean(assistant)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const { tags: assistantTags } = useAssistantTags()
+  const stripTagPrefix = React.useCallback((value: string) => value.replace(/^#+/, ""), [])
+  const tagOptions = React.useMemo(() => {
+    const names = assistantTags
+      .map((tag) => tag.name)
+      .filter(Boolean)
+      .map((name) => stripTagPrefix(name))
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
+  }, [assistantTags, stripTagPrefix])
+  const optionalSuffix = t("create.optionalSuffix")
+
   const formSchema = React.useMemo(
     () =>
       z.object({
         name: z.string().min(2, {
           message: t("create.validation.nameMin"),
         }),
-        desc: z.string().min(10, {
-          message: t("create.validation.descMin"),
-        }),
+        desc: z.string().max(200),
         systemPrompt: z.string().min(20, {
           message: t("create.validation.promptMin"),
         }),
-        tags: z.string().min(2, {
-          message: t("create.validation.tagsMin"),
-        }),
+        tags: z.array(z.string()).default([]),
         iconId: z.string().min(1, {
           message: t("create.validation.iconRequired"),
         }),
@@ -136,15 +160,15 @@ export function CreateAgentModal({
       name: assistant?.name ?? "",
       desc: assistant?.desc ?? "",
       systemPrompt: assistant?.systemPrompt ?? "",
-      tags: assistant?.tags?.join(", ") ?? "",
+      tags: assistant?.tags?.map(stripTagPrefix) ?? [],
       iconId: assistant?.iconId ?? "lucide:bot",
       color: assistant?.color ?? "from-blue-500 to-cyan-500",
       shareToMarket: false,
     }),
-    [assistant]
+    [assistant, stripTagPrefix]
   )
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<AssistantFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues,
   })
@@ -155,15 +179,28 @@ export function CreateAgentModal({
     }
   }, [currentOpen, defaultValues, form])
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    const tagsArray = values.tags.split(/[,，\s]+/).filter(Boolean)
+  async function onSubmit(values: AssistantFormValues) {
+    const desc = values.desc.trim()
+    const tagsArray = (() => {
+      const seen = new Set<string>()
+      const normalized: string[] = []
+      for (const raw of values.tags || []) {
+        const trimmed = stripTagPrefix(raw).trim()
+        if (!trimmed) continue
+        const key = trimmed.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        normalized.push(trimmed)
+      }
+      return normalized
+    })()
     try {
       let createdId: string | undefined
       if (mode === "local") {
         if (assistant) {
           await updateLocalAssistant(assistant.id, {
             name: values.name,
-            description: values.desc,
+            description: desc || null,
             avatar: values.iconId,
             system_prompt: values.systemPrompt,
             tags: tagsArray,
@@ -173,7 +210,7 @@ export function CreateAgentModal({
         } else {
           createdId = await createLocalAssistant({
             name: values.name,
-            description: values.desc,
+            description: desc || null,
             avatar: values.iconId,
             system_prompt: values.systemPrompt,
             tags: tagsArray,
@@ -186,12 +223,12 @@ export function CreateAgentModal({
         const created = await createAssistant({
           visibility: shareToMarket ? "public" : "private",
           status: shareToMarket ? "published" : "draft",
-          summary: values.desc.slice(0, 200),
+          summary: desc ? desc.slice(0, 200) : null,
           icon_id: values.iconId,
           share_to_market: shareToMarket,
           version: {
             name: values.name,
-            description: values.desc,
+            description: desc || null,
             system_prompt: values.systemPrompt,
             tags: tagsArray,
           },
@@ -282,125 +319,25 @@ export function CreateAgentModal({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="desc"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("create.descLabel")}</FormLabel>
-                  <FormControl>
-                    <Input placeholder={t("create.descPlaceholder")} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t("create.descHelp")}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <AssistantProfileFields
+              form={form}
+              t={t}
+              optionalSuffix={optionalSuffix}
             />
 
-            <FormField
-              control={form.control}
-              name="color"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("create.themeLabel")}</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("create.themePlaceholder")} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {COLOR_OPTIONS.map((color) => (
-                        <SelectItem key={color.value} value={color.value}>
-                          <div className="flex items-center gap-2">
-                            <div className={`w-4 h-4 rounded-full bg-gradient-to-r ${color.value}`} />
-                            {t(`create.colors.${color.key}`)}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="iconId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("create.iconLabel")}</FormLabel>
-                  <FormControl>
-                    <ProviderIconPicker value={field.value} onChange={field.onChange} />
-                  </FormControl>
-                  <FormDescription>
-                    {t("create.iconHelp")}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="tags"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("create.tagsLabel")}</FormLabel>
-                  <FormControl>
-                    <Input placeholder={t("create.tagsPlaceholder")} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t("create.tagsHelp")}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <AssistantTagsField
+              form={form}
+              options={tagOptions}
+              t={t}
+              optionalSuffix={optionalSuffix}
+              resetKey={`${currentOpen}-${assistant?.id ?? "new"}`}
             />
 
             {mode === "cloud" ? (
-              <FormField
-                control={form.control}
-                name="shareToMarket"
-                render={({ field }) => (
-                  <FormItem className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <FormLabel>{t("create.shareLabel")}</FormLabel>
-                        <FormDescription>{t("create.shareHelp")}</FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </div>
-                  </FormItem>
-                )}
-              />
+              <AssistantShareField form={form} t={t} />
             ) : null}
 
-            <FormField
-              control={form.control}
-              name="systemPrompt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("create.systemPromptLabel")}</FormLabel>
-                  <FormControl>
-                    <Textarea 
-                      placeholder={t("create.systemPromptPlaceholder")} 
-                      className="min-h-[150px] font-mono text-sm"
-                      {...field} 
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t("create.systemPromptHelp")}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <AssistantPromptField form={form} t={t} />
 
             <SheetFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               {isEditMode ? (
@@ -459,5 +396,295 @@ export function CreateAgentModal({
         </Form>
       </SheetContent>
     </Sheet>
+  )
+}
+
+interface AssistantFieldProps {
+  form: UseFormReturn<AssistantFormValues>
+  t: Translator
+}
+
+interface AssistantProfileFieldsProps extends AssistantFieldProps {
+  optionalSuffix: string
+}
+
+function AssistantProfileFields({ form, t, optionalSuffix }: AssistantProfileFieldsProps) {
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name="desc"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{`${t("create.descLabel")}${optionalSuffix}`}</FormLabel>
+            <FormControl>
+              <Input placeholder={t("create.descPlaceholder")} {...field} />
+            </FormControl>
+            <FormDescription>{t("create.descHelp")}</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="color"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t("create.themeLabel")}</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={t("create.themePlaceholder")} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {COLOR_OPTIONS.map((color) => (
+                  <SelectItem key={color.value} value={color.value}>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-4 h-4 rounded-full bg-gradient-to-r ${color.value}`} />
+                      {t(`create.colors.${color.key}`)}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="iconId"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t("create.iconLabel")}</FormLabel>
+            <FormControl>
+              <ProviderIconPicker value={field.value} onChange={field.onChange} />
+            </FormControl>
+            <FormDescription>{t("create.iconHelp")}</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  )
+}
+
+interface AssistantTagsFieldProps extends AssistantFieldProps {
+  optionalSuffix: string
+  options: string[]
+  resetKey: string
+}
+
+function AssistantTagsField({
+  form,
+  t,
+  options,
+  optionalSuffix,
+  resetKey,
+}: AssistantTagsFieldProps) {
+  const [tagQuery, setTagQuery] = React.useState("")
+
+  React.useEffect(() => {
+    setTagQuery("")
+  }, [resetKey])
+
+  return (
+    <FormField
+      control={form.control}
+      name="tags"
+      render={({ field }) => {
+        const selectedTags = field.value || []
+        const filteredTags = tagQuery.trim()
+          ? options.filter((tag) =>
+              tag.toLowerCase().includes(tagQuery.trim().toLowerCase())
+            )
+          : options
+
+        return (
+          <FormItem>
+            <FormLabel>{`${t("create.tagsLabel")}${optionalSuffix}`}</FormLabel>
+            <FormControl>
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  {selectedTags.length ? (
+                    selectedTags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="gap-1 pr-1">
+                        #{tag}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 p-0"
+                          onClick={() => {
+                            field.onChange(selectedTags.filter((item) => item !== tag))
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {t("create.tagsEmpty")}
+                    </span>
+                  )}
+                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-between"
+                    >
+                      <span className="text-muted-foreground">
+                        {t("create.tagsSelectPlaceholder")}
+                      </span>
+                      <ChevronDown className="h-4 w-4 opacity-60" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-3">
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder={t("create.tagsInputPlaceholder")}
+                          value={tagQuery}
+                          onChange={(event) => setTagQuery(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return
+                            event.preventDefault()
+                            const nextTag = tagQuery.trim()
+                            if (!nextTag) return
+                            const normalized = nextTag.toLowerCase()
+                            const selected = new Set(
+                              selectedTags.map((item) => item.toLowerCase())
+                            )
+                            if (selected.has(normalized)) {
+                              setTagQuery("")
+                              return
+                            }
+                            field.onChange([...selectedTags, nextTag])
+                            setTagQuery("")
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={!tagQuery.trim()}
+                          onClick={() => {
+                            const nextTag = tagQuery.trim()
+                            if (!nextTag) return
+                            const normalized = nextTag.toLowerCase()
+                            const selected = new Set(
+                              selectedTags.map((item) => item.toLowerCase())
+                            )
+                            if (selected.has(normalized)) {
+                              setTagQuery("")
+                              return
+                            }
+                            field.onChange([...selectedTags, nextTag])
+                            setTagQuery("")
+                          }}
+                        >
+                          {t("create.tagsAdd")}
+                        </Button>
+                      </div>
+                      <ScrollArea className="h-48 pr-2">
+                        <div className="space-y-1">
+                          {filteredTags.map((tag) => {
+                            const selected = selectedTags.some(
+                              (item) => item.toLowerCase() === tag.toLowerCase()
+                            )
+                            return (
+                              <Button
+                                key={tag}
+                                type="button"
+                                variant="ghost"
+                                className={cn(
+                                  "w-full justify-between",
+                                  selected && "bg-accent"
+                                )}
+                                onClick={() => {
+                                  if (selected) {
+                                    field.onChange(
+                                      selectedTags.filter(
+                                        (item) => item.toLowerCase() !== tag.toLowerCase()
+                                      )
+                                    )
+                                    return
+                                  }
+                                  field.onChange([...selectedTags, tag])
+                                }}
+                              >
+                                <span className="truncate">#{tag}</span>
+                                {selected ? <Check className="h-4 w-4 text-primary" /> : null}
+                              </Button>
+                            )
+                          })}
+                          {filteredTags.length === 0 ? (
+                            <div className="py-2 text-xs text-muted-foreground">
+                              {t("create.tagsNoOptions")}
+                            </div>
+                          ) : null}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </FormControl>
+            <FormDescription>{t("create.tagsHelp")}</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )
+      }}
+    />
+  )
+}
+
+function AssistantPromptField({ form, t }: AssistantFieldProps) {
+  return (
+    <FormField
+      control={form.control}
+      name="systemPrompt"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t("create.systemPromptLabel")}</FormLabel>
+          <FormControl>
+            <Textarea
+              placeholder={t("create.systemPromptPlaceholder")}
+              className="min-h-[150px] font-mono text-sm"
+              {...field}
+            />
+          </FormControl>
+          <FormDescription>{t("create.systemPromptHelp")}</FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  )
+}
+
+function AssistantShareField({ form, t }: AssistantFieldProps) {
+  return (
+    <FormField
+      control={form.control}
+      name="shareToMarket"
+      render={({ field }) => (
+        <FormItem className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <FormLabel>{t("create.shareLabel")}</FormLabel>
+              <FormDescription>{t("create.shareHelp")}</FormDescription>
+            </div>
+            <FormControl>
+              <Switch checked={field.value} onCheckedChange={field.onChange} />
+            </FormControl>
+          </div>
+        </FormItem>
+      )}
+    />
   )
 }

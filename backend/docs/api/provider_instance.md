@@ -20,7 +20,7 @@
   }
   ```
 - 响应：`ProviderInstanceResponse`
-- 说明：`user_id` 自动填当前超管；`credentials_ref` 为密钥引用，不存明文。
+- 说明：`preset_slug` 必须是已存在且启用的模板 slug，否则返回 404 `preset not found`；`user_id` 自动填当前超管；`credentials_ref` 为密钥引用，不存明文。
 
 示例：
 ```bash

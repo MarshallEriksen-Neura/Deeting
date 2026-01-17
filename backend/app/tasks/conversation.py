@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.services.conversation.service import get_conversation_service
 from app.services.conversation.summarizer import SummarizerService
+from app.services.conversation.topic_namer import generate_conversation_title
 
 
 @celery_app.task(name="conversation.summarize")
@@ -198,3 +199,26 @@ async def _persist_summary(
         except (SQLAlchemyError, ValueError) as exc:
             await db.rollback()
             logger.error(f"conversation_summary_persist_failed session={session_id} exc={exc}")
+
+
+@celery_app.task(name="conversation.topic_naming")
+def conversation_topic_naming(session_id: str, user_id: str, first_message: str) -> str:
+    """
+    异步话题命名任务：
+    - 读取用户秘书配置中的 topic_naming_model
+    - 调用用户自有模型生成标题
+    - 写回 conversation_session.title
+    """
+
+    setup_logging()
+    return asyncio.run(_run_topic_naming(session_id, user_id, first_message))
+
+
+async def _run_topic_naming(session_id: str, user_id: str, first_message: str) -> str:
+    async with AsyncSessionLocal() as db:
+        return await generate_conversation_title(
+            db,
+            session_id=session_id,
+            user_id=user_id,
+            first_message=first_message,
+        )

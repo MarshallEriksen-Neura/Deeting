@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from app.models.conversation import ConversationChannel
 from app.services.conversation.session_service import ConversationSessionService
 from app.services.conversation.service import ConversationService
+from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
@@ -123,6 +124,15 @@ class ConversationAppendStep(BaseStep):
                         exc,
                     )
 
+        await self._maybe_schedule_topic_naming(
+            ctx=ctx,
+            conv_service=conv_service,
+            session_id=session_id,
+            messages=user_messages,
+            appended_count=len(msgs_to_append),
+            last_turn=result.get("last_turn") if isinstance(result, dict) else None,
+        )
+
         # 将 session_id 透传到响应
         response = ctx.get("response_transform", "response") or {}
         if isinstance(response, dict):
@@ -166,3 +176,50 @@ class ConversationAppendStep(BaseStep):
         if isinstance(first, dict):
             return first.get("message")
         return None
+
+    async def _maybe_schedule_topic_naming(
+        self,
+        *,
+        ctx: WorkflowContext,
+        conv_service: ConversationService,
+        session_id: str,
+        messages: list[dict[str, Any]],
+        appended_count: int,
+        last_turn: int | None,
+    ) -> None:
+        if not ctx.user_id:
+            return
+        if not last_turn or last_turn != appended_count:
+            return
+        first_message = extract_first_user_message(messages)
+        if not first_message:
+            return
+        first_message = first_message[:1000]
+
+        from app.core.cache_keys import CacheKeys
+
+        meta_key = CacheKeys.conversation_meta(session_id)
+        try:
+            existing = await conv_service.redis.hget(meta_key, TOPIC_NAMING_META_KEY)
+            if isinstance(existing, (bytes, bytearray)):
+                existing = existing.decode()
+            if existing and str(existing) not in ("0", ""):
+                return
+            await conv_service._redis_hset(meta_key, {TOPIC_NAMING_META_KEY: 1})
+        except Exception:
+            return
+
+        try:
+            from app.tasks.conversation import conversation_topic_naming
+
+            conversation_topic_naming.delay(
+                session_id=session_id,
+                user_id=str(ctx.user_id),
+                first_message=first_message,
+            )
+        except Exception as exc:
+            logger.warning(
+                "conversation_topic_naming_schedule_failed session=%s exc=%s",
+                session_id,
+                exc,
+            )

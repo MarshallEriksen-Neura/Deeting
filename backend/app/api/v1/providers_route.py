@@ -91,25 +91,31 @@ async def create_instance(
     user=Depends(get_current_user),
 ):
     svc = ProviderInstanceService(db)
-    instance = await svc.create_instance(
-        user_id=getattr(user, "id", None),
-        preset_slug=payload.preset_slug,
-        name=payload.name,
-        description=payload.description,
-        base_url=payload.base_url,
-        icon=payload.icon,
-        credentials_ref=payload.credentials_ref,
-        api_key=payload.api_key,
-        protocol=payload.protocol,
-        model_prefix=payload.model_prefix,
-        priority=payload.priority,
-        is_enabled=payload.is_enabled,
-        resource_name=payload.resource_name,
-        deployment_name=payload.deployment_name,
-        api_version=payload.api_version,
-        project_id=payload.project_id,
-        region=payload.region,
-    )
+    try:
+        instance = await svc.create_instance(
+            user_id=getattr(user, "id", None),
+            preset_slug=payload.preset_slug,
+            name=payload.name,
+            description=payload.description,
+            base_url=payload.base_url,
+            icon=payload.icon,
+            credentials_ref=payload.credentials_ref,
+            api_key=payload.api_key,
+            protocol=payload.protocol,
+            model_prefix=payload.model_prefix,
+            priority=payload.priority,
+            is_enabled=payload.is_enabled,
+            resource_name=payload.resource_name,
+            deployment_name=payload.deployment_name,
+            api_version=payload.api_version,
+            project_id=payload.project_id,
+            region=payload.region,
+        )
+    except ValueError as e:
+        message = str(e)
+        if message == "preset_not_found":
+            raise HTTPException(status_code=404, detail="preset not found")
+        raise HTTPException(status_code=400, detail=message)
     return instance
 
 

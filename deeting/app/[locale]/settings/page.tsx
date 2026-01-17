@@ -1,6 +1,6 @@
 import { setRequestLocale } from "next-intl/server"
 
-import { SettingsPageClient } from "./components/settings-page-client"
+import { SettingsClient } from "./components/settings-client"
 
 export default async function SettingsPage({
   params,
@@ -10,5 +10,5 @@ export default async function SettingsPage({
   const { locale } = await params
   setRequestLocale(locale)
 
-  return <SettingsPageClient />
+  return <SettingsClient />
 }

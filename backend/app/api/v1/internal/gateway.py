@@ -54,6 +54,7 @@ from app.deps.auth import get_current_user
 from app.models.conversation import ConversationChannel
 from app.services.conversation.service import ConversationService
 from app.services.conversation.session_service import ConversationSessionService
+from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
 from app.schemas.gateway import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -179,6 +180,60 @@ async def _append_stream_conversation(
                     session_id,
                     exc,
                 )
+
+    await _maybe_schedule_topic_naming(
+        ctx=ctx,
+        conv_service=conv_service,
+        session_id=session_id,
+        messages=user_messages,
+        appended_count=len(msgs_to_append),
+        last_turn=result.get("last_turn") if isinstance(result, dict) else None,
+    )
+
+
+async def _maybe_schedule_topic_naming(
+    *,
+    ctx: WorkflowContext,
+    conv_service: ConversationService,
+    session_id: str,
+    messages: list[dict[str, Any]],
+    appended_count: int,
+    last_turn: int | None,
+) -> None:
+    if not ctx.user_id:
+        return
+    if not last_turn or last_turn != appended_count:
+        return
+    first_message = extract_first_user_message(messages)
+    if not first_message:
+        return
+    first_message = first_message[:1000]
+
+    meta_key = CacheKeys.conversation_meta(session_id)
+    try:
+        existing = await conv_service.redis.hget(meta_key, TOPIC_NAMING_META_KEY)
+        if isinstance(existing, (bytes, bytearray)):
+            existing = existing.decode()
+        if existing and str(existing) not in ("0", ""):
+            return
+        await conv_service._redis_hset(meta_key, {TOPIC_NAMING_META_KEY: 1})
+    except Exception:
+        return
+
+    try:
+        from app.tasks.conversation import conversation_topic_naming
+
+        conversation_topic_naming.delay(
+            session_id=session_id,
+            user_id=str(ctx.user_id),
+            first_message=first_message,
+        )
+    except Exception as exc:
+        logger.warning(
+            "conversation_topic_naming_schedule_failed session=%s exc=%s",
+            session_id,
+            exc,
+        )
 
 
 async def _stream_internal_callback(
@@ -394,24 +449,51 @@ async def list_models(
     instance_repo = ProviderInstanceRepository(db)
     model_repo = ProviderModelRepository(db)
 
+    logger.info(f"internal_models_list start user_id={user.id}")
     instances = await instance_repo.get_available_instances(user_id=str(user.id), include_public=True)
     if not instances:
+        logger.warning(f"internal_models_list empty_instances user_id={user.id}")
         return ModelGroupListResponse(instances=[])
 
     preset_cache: dict[str, any] = {}
     inst_list = list(instances)
     inst_map = {str(i.id): i for i in inst_list}
     models = await model_repo.list()
+    logger.info(
+        f"internal_models_list loaded user_id={user.id} "
+        f"instances={len(inst_list)} models={len(models)}"
+    )
 
+    skipped_missing_instance = 0
+    skipped_inactive_model = 0
+    skipped_preset_missing = 0
+    skipped_preset_inactive = 0
+    added_models = 0
+    logged_missing_preset_slugs: set[str] = set()
     grouped: dict[str, dict[str, Any]] = {}
     for m in models:
         inst = inst_map.get(str(m.instance_id))
-        if not inst or not m.is_active:
+        if not inst:
+            skipped_missing_instance += 1
+            continue
+        if not m.is_active:
+            skipped_inactive_model += 1
             continue
         if inst.preset_slug not in preset_cache:
             preset_cache[inst.preset_slug] = await preset_repo.get_by_slug(inst.preset_slug)
         preset = preset_cache.get(inst.preset_slug)
-        if not preset or not preset.is_active:
+        if not preset:
+            skipped_preset_missing += 1
+            if inst.preset_slug not in logged_missing_preset_slugs:
+                logged_missing_preset_slugs.add(inst.preset_slug)
+                logger.warning(
+                    f"internal_models_list preset_missing user_id={user.id} "
+                    f"instance_id={inst.id} preset_slug={inst.preset_slug} "
+                    f"sample_model_id={m.model_id}"
+                )
+            continue
+        if not preset.is_active:
+            skipped_preset_inactive += 1
             continue
         icon = inst.icon or preset.icon if hasattr(preset, "icon") else None
         group = grouped.get(str(inst.id))
@@ -434,6 +516,21 @@ async def list_models(
                 "provider_model_id": str(m.id),
             }
         )
+        added_models += 1
 
     instances_data = [grouped[str(inst.id)] for inst in inst_list if str(inst.id) in grouped]
+    if not instances_data:
+        logger.warning(
+            f"internal_models_list result_empty user_id={user.id} "
+            f"instances={len(inst_list)} models={len(models)} "
+            f"skipped_missing_instance={skipped_missing_instance} "
+            f"skipped_inactive_model={skipped_inactive_model} "
+            f"skipped_preset_missing={skipped_preset_missing} "
+            f"skipped_preset_inactive={skipped_preset_inactive}"
+        )
+    else:
+        logger.info(
+            f"internal_models_list result_ok user_id={user.id} "
+            f"instances={len(instances_data)} models={added_models}"
+        )
     return ModelGroupListResponse(instances=instances_data)

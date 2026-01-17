@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from sqlalchemy import select
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
@@ -23,6 +24,52 @@ async def ensure_tables():
     """确保内存 SQLite 存在最新表结构（补充 provider_instance/provider_preset 表）。"""
     async with engine.begin() as conn:  # type: ignore[attr-defined]
         await conn.run_sync(Base.metadata.create_all)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def seed_presets():
+    async with AsyncSessionLocal() as session:
+        existing = set(
+            (
+                await session.execute(
+                    select(ProviderPreset.slug).where(ProviderPreset.slug.in_(["openai", "azure"]))
+                )
+            ).scalars()
+        )
+        presets = []
+        if "openai" not in existing:
+            presets.append(
+                ProviderPreset(
+                    id=uuid.uuid4(),
+                    name="OpenAI",
+                    slug="openai",
+                    provider="openai",
+                    base_url="https://api.openai.com",
+                    auth_type="bearer",
+                    auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
+                    default_headers={},
+                    default_params={},
+                    is_active=True,
+                )
+            )
+        if "azure" not in existing:
+            presets.append(
+                ProviderPreset(
+                    id=uuid.uuid4(),
+                    name="Azure OpenAI",
+                    slug="azure",
+                    provider="azure",
+                    base_url="https://{resource}.openai.azure.com",
+                    auth_type="api_key",
+                    auth_config={"secret_ref_id": "ENV_AZURE_KEY"},
+                    default_headers={},
+                    default_params={},
+                    is_active=True,
+                )
+            )
+        if presets:
+            session.add_all(presets)
+            await session.commit()
 
 
 @pytest.mark.asyncio

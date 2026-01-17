@@ -435,6 +435,10 @@ class ProviderInstanceService:
         project_id: str | None = None,
         region: str | None = None,
     ) -> ProviderInstance:
+        preset = await self.preset_repo.get_by_slug(preset_slug)
+        if not preset or not preset.is_active:
+            raise ValueError("preset_not_found")
+
         meta = {}
         if protocol:
             meta["protocol"] = protocol

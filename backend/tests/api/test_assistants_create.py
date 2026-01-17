@@ -3,6 +3,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from uuid import UUID
 
+from app.models.assistant import AssistantVersion
 from app.models.assistant_install import AssistantInstall
 
 
@@ -98,3 +99,38 @@ async def test_create_assistant_without_share_skips_review(
             )
         )
         assert res.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_create_assistant_persists_model_config(
+    client: AsyncClient,
+    auth_tokens: dict,
+    AsyncSessionLocal,
+):
+    payload = {
+        "visibility": "private",
+        "status": "draft",
+        "summary": "携带模型配置",
+        "icon_id": "lucide:bot",
+        "share_to_market": False,
+        "version": {
+            "name": "Config Assistant",
+            "description": "config flow",
+            "system_prompt": "You are a helpful assistant.",
+            "model_config": {"temperature": 0.2, "max_tokens": 128},
+            "tags": ["config"],
+        },
+    }
+    headers = {"Authorization": f"Bearer {auth_tokens['access_token']}"}
+    resp = await client.post("/api/v1/assistants", json=payload, headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["versions"][0]["model_config"] == {"temperature": 0.2, "max_tokens": 128}
+
+    assistant_id = UUID(data["id"])
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(
+            select(AssistantVersion).where(AssistantVersion.assistant_id == assistant_id)
+        )
+        version = res.scalar_one()
+        assert version.model_config == {"temperature": 0.2, "max_tokens": 128}

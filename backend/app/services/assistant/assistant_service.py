@@ -207,7 +207,7 @@ class AssistantService:
         if not version:
             raise ValueError("版本不存在或不属于该助手")
 
-        update_data = payload.model_dump(exclude_unset=True)
+        update_data = payload.model_dump(exclude_unset=True, by_alias=True)
         if "tags" in update_data:
             update_data["tags"] = self.tag_service.normalize_tags(update_data.get("tags"))
         # published_at 由外部决定; 此处仅更新提供的字段
@@ -222,7 +222,7 @@ class AssistantService:
         assistant_id: UUID,
         payload: AssistantVersionCreate,
     ):
-        version_data = payload.model_dump()
+        version_data = payload.model_dump(by_alias=True)
         if "tags" in version_data:
             version_data["tags"] = self.tag_service.normalize_tags(version_data.get("tags"))
         version_data["assistant_id"] = assistant_id
