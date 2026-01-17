@@ -6,7 +6,7 @@ from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
 
 
-async def _seed_internal_provider(session):
+async def _seed_internal_provider(session) -> uuid.UUID:
     preset = ProviderPreset(
         id=uuid.uuid4(),
         name="OpenAI Debug",
@@ -60,6 +60,7 @@ async def _seed_internal_provider(session):
     )
     session.add(model)
     await session.commit()
+    return model.id
 
 
 @pytest.mark.asyncio
@@ -83,11 +84,15 @@ async def test_internal_step_registry_requires_auth(client):
 @pytest.mark.asyncio
 async def test_internal_test_routing(client, auth_tokens, AsyncSessionLocal):
     async with AsyncSessionLocal() as session:
-        await _seed_internal_provider(session)
+        provider_model_id = await _seed_internal_provider(session)
 
     resp = await client.post(
         "/api/v1/internal/debug/test-routing",
-        json={"model": "gpt-4", "capability": "chat"},
+        json={
+            "model": "gpt-4",
+            "capability": "chat",
+            "provider_model_id": str(provider_model_id),
+        },
         headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
     )
     assert resp.status_code == 200
@@ -103,6 +108,16 @@ async def test_internal_test_routing_validation_error(client, auth_tokens):
     resp = await client.post(
         "/api/v1/internal/debug/test-routing",
         json={"model": "", "capability": "chat"},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_internal_test_routing_requires_provider_model_id(client, auth_tokens):
+    resp = await client.post(
+        "/api/v1/internal/debug/test-routing",
+        json={"model": "gpt-4", "capability": "chat"},
         headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
     )
     assert resp.status_code == 400

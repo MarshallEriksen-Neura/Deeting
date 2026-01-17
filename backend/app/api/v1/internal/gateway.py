@@ -59,7 +59,7 @@ from app.schemas.gateway import (
     ChatCompletionResponse,
     EmbeddingsRequest,
     EmbeddingsResponse,
-    ModelListResponse,
+    ModelGroupListResponse,
     GatewayError,
     RoutingTestRequest,
     RoutingTestResponse,
@@ -196,7 +196,6 @@ async def _stream_internal_callback(
 async def bandit_report(
     capability: str | None = None,
     model: str | None = None,
-    channel: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BanditReportResponse:
@@ -205,7 +204,7 @@ async def bandit_report(
     """
 
     repo = BanditRepository(db)
-    items = await repo.get_report(capability=capability, model=model, channel=channel)
+    items = await repo.get_report(capability=capability, model=model)
 
     total_trials = sum(i.get("total_trials", 0) for i in items) or 0
     total_successes = sum(i.get("successes", 0) for i in items) or 0
@@ -251,6 +250,7 @@ async def test_routing(
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.set("validation", "request", request_body)
+    ctx.set("routing", "require_provider_model_id", True)
 
     orchestrator = GatewayOrchestrator(workflow_config=INTERNAL_DEBUG_WORKFLOW)
     result = await orchestrator.execute(ctx)
@@ -308,6 +308,7 @@ async def chat_completions(
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.set("validation", "request", request_body)
+    ctx.set("routing", "require_provider_model_id", True)
 
     result = await orchestrator.execute(ctx)
     if not result.success or not ctx.is_success:
@@ -363,6 +364,7 @@ async def embeddings(
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.set("validation", "request", request_body)
+    ctx.set("routing", "require_provider_model_id", True)
 
     result = await orchestrator.execute(ctx)
     if not result.success or not ctx.is_success:
@@ -383,23 +385,25 @@ async def embeddings(
     return JSONResponse(content=response_body, status_code=status_code)
 
 
-@router.get("/models", response_model=ModelListResponse)
+@router.get("/models", response_model=ModelGroupListResponse)
 async def list_models(
     db: AsyncSession = Depends(get_db),
-) -> ModelListResponse:
+    user: User = Depends(get_current_user),
+) -> ModelGroupListResponse:
     preset_repo = ProviderPresetRepository(db)
     instance_repo = ProviderInstanceRepository(db)
     model_repo = ProviderModelRepository(db)
 
-    instances = await instance_repo.get_available_instances(user_id=None, include_public=True)
+    instances = await instance_repo.get_available_instances(user_id=str(user.id), include_public=True)
     if not instances:
-        return ModelListResponse(data=[])
+        return ModelGroupListResponse(instances=[])
 
     preset_cache: dict[str, any] = {}
-    inst_map = {str(i.id): i for i in instances if i.channel in {"internal", "both"}}
+    inst_list = list(instances)
+    inst_map = {str(i.id): i for i in inst_list}
     models = await model_repo.list()
 
-    data = []
+    grouped: dict[str, dict[str, Any]] = {}
     for m in models:
         inst = inst_map.get(str(m.instance_id))
         if not inst or not m.is_active:
@@ -410,7 +414,17 @@ async def list_models(
         if not preset or not preset.is_active:
             continue
         icon = inst.icon or preset.icon if hasattr(preset, "icon") else None
-        data.append(
+        group = grouped.get(str(inst.id))
+        if not group:
+            group = {
+                "instance_id": str(inst.id),
+                "instance_name": inst.name,
+                "provider": preset.provider,
+                "icon": icon,
+                "models": [],
+            }
+            grouped[str(inst.id)] = group
+        group["models"].append(
             {
                 "id": m.unified_model_id or m.model_id,
                 "object": "model",
@@ -421,4 +435,5 @@ async def list_models(
             }
         )
 
-    return ModelListResponse(data=data)
+    instances_data = [grouped[str(inst.id)] for inst in inst_list if str(inst.id) in grouped]
+    return ModelGroupListResponse(instances=instances_data)

@@ -10,6 +10,25 @@
         "local": "Local Hosted",
         "custom": "Custom"
       },
+      "connectModal": {
+        "title": "Connect {name}",
+        "description": "Continue to configure and connect {name}."
+      },
+      "grid": {
+        "loading": "Loading providers...",
+        "emptyTitle": "No providers found",
+        "emptyNoMatch": "No providers match \"{query}\". Try adjusting your search or category filter.",
+        "emptyNoCategory": "No providers available in this category.",
+        "requestProvider": "Request Provider"
+      },
+      "card": {
+        "popular": "POPULAR",
+        "connected": "CONNECTED",
+        "noDescription": "No description available",
+        "moreTags": "+{count} more",
+        "actionManage": "Manage",
+        "actionConnect": "Connect"
+      },
       "error": {
         "loadFailed": "Failed to load providers:",
         "unknown": "Unknown error"

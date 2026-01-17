@@ -3,6 +3,7 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 import { Globe, Cpu, Box, Terminal, ArrowRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Icon } from "@iconify/react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +16,7 @@ interface ProviderCardProps {
 }
 
 export default function ProviderCard({ provider, index, onSelect }: ProviderCardProps) {
+  const t = useTranslations("providers.market")
   // Get theme color or default
   const themeColor = provider.theme_color || "#6b7280"
   
@@ -79,12 +81,12 @@ export default function ProviderCard({ provider, index, onSelect }: ProviderCard
             <div className="flex flex-col gap-1">
               {provider.is_popular && (
                 <Badge variant="secondary" className="bg-[var(--surface)] text-xs font-normal opacity-80 backdrop-blur-sm">
-                  POPULAR
+                  {t("card.popular")}
                 </Badge>
               )}
               {provider.connected && (
                 <Badge variant="default" className="bg-green-500/20 text-green-400 text-xs font-normal border-green-500/30">
-                  CONNECTED
+                  {t("card.connected")}
                 </Badge>
               )}
             </div>
@@ -95,7 +97,7 @@ export default function ProviderCard({ provider, index, onSelect }: ProviderCard
               {provider.name}
             </h3>
             <p className="text-sm text-[var(--muted)] leading-relaxed">
-              {provider.description || "No description available"}
+              {provider.description || t("card.noDescription")}
             </p>
             
             {/* Tags */}
@@ -111,7 +113,7 @@ export default function ProviderCard({ provider, index, onSelect }: ProviderCard
                 ))}
                 {provider.tags.length > 3 && (
                   <span className="text-xs text-[var(--muted)]">
-                    +{provider.tags.length - 3} more
+                    {t("card.moreTags", { count: provider.tags.length - 3 })}
                   </span>
                 )}
               </div>
@@ -124,7 +126,7 @@ export default function ProviderCard({ provider, index, onSelect }: ProviderCard
             </span>
             
             <div className="flex items-center gap-1 text-xs font-semibold text-[var(--primary)] opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
-              {provider.connected ? "Manage" : "Connect"} <ArrowRight className="size-3" />
+              {provider.connected ? t("card.actionManage") : t("card.actionConnect")} <ArrowRight className="size-3" />
             </div>
           </div>
 

@@ -52,6 +52,88 @@
     "error": {
       "requestFailed": "Request failed. Please try again.",
       "modelUnavailable": "No available models. Please configure a provider."
+    },
+    "hud": {
+      "activeAgent": "Active Agent",
+      "sessionTitle": "Deeting OS",
+      "selectAgent": "Select Agent",
+      "market": "Market",
+      "newAgent": "New",
+      "engine": "Engine",
+      "optimized": "Optimized",
+      "temperature": "Temperature",
+      "topP": "Top P",
+      "system": {
+        "userName": "Admin User",
+        "integrity": "System Integrity: {value}"
+      },
+      "menu": {
+        "home": "Home",
+        "dashboard": "OS Dashboard",
+        "registry": "Registry",
+        "preferences": "Preferences",
+        "interfaceMode": "Interface Mode",
+        "terminateSession": "Terminate Session"
+      }
+    },
+    "controls": {
+      "image": "Image",
+      "code": "Code",
+      "placeholder": "Type a message...",
+      "menu": "Actions",
+      "send": "Send"
+    },
+    "thought": {
+      "label": "Thinking Process",
+      "withCost": "Thought for {cost}",
+      "loading": "Thinking..."
+    },
+    "voice": {
+      "listening": "Listening...",
+      "processing": "Processing...",
+      "cancel": "Cancel",
+      "hint": "Tap microphone to pause/resume"
+    },
+    "image": {
+      "toolbar": {
+        "style": "Style",
+        "refImage": "Ref Image",
+        "settings": "Settings"
+      },
+      "prompt": {
+        "label": "Prompt",
+        "placeholder": "Describe your imagination..."
+      },
+      "badges": {
+        "cyberpunk": "Cyberpunk",
+        "cinematicLighting": "Cinematic Lighting",
+        "resolution": "8k Resolution",
+        "addNegative": "+ Add Negative"
+      },
+      "aspectRatio": "Aspect Ratio",
+      "model": "Model",
+      "modelVersion": "Midjourney v6",
+      "generate": "Generate"
+    },
+    "coder": {
+      "envLabel": "PYTHON_ENV",
+      "envMeta": "{version} • {latency} latency",
+      "placeholder": "# Write your logic here or ask for a snippet...",
+      "libraries": "Libraries",
+      "shortcuts": "Shortcuts",
+      "run": "Run"
+    },
+    "audio": {
+      "reading": "Reading",
+      "sampleText": "Sample response about web design: modern UI focuses on user experience, using clean layouts...",
+      "previous": "Previous",
+      "next": "Next",
+      "pause": "Pause",
+      "play": "Play"
+    },
+    "canvas": {
+      "title": "Deeting OS",
+      "subtitle": "System online. Awaiting input."
     }
   }
 }

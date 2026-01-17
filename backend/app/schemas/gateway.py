@@ -62,7 +62,7 @@ class ChatCompletionRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     provider_model_id: str | None = Field(
-        default=None, description="指定 provider model ID（可选，绕过负载均衡）"
+        default=None, description="指定 provider model ID（内部网关必填，外部可选）"
     )
     assistant_id: UUID | None = Field(
         default=None, description="助手 ID（内部通道可选）"
@@ -127,6 +127,9 @@ class ChatCompletionResponse(BaseModel):
 class EmbeddingsRequest(BaseModel):
     model: str
     input: str | list[str]
+    provider_model_id: str | None = Field(
+        default=None, description="指定 provider model ID（内部网关必填，外部可选）"
+    )
 
 
 class EmbeddingItem(BaseModel):
@@ -144,6 +147,9 @@ class EmbeddingsResponse(BaseModel):
 class RoutingTestRequest(BaseModel):
     model: str = Field(..., description="目标模型")
     capability: str = Field(default="chat", description="能力类型: chat/embedding 等")
+    provider_model_id: str | None = Field(
+        default=None, description="指定 provider model ID（内部网关必填）"
+    )
 
 
 class RoutingTestResponse(BaseModel):
@@ -177,6 +183,18 @@ class ModelInfo(BaseModel):
 
 class ModelListResponse(BaseModel):
     data: list[ModelInfo]
+
+
+class ModelGroup(BaseModel):
+    instance_id: str
+    instance_name: str
+    provider: str
+    icon: str | None = None
+    models: list[ModelInfo]
+
+
+class ModelGroupListResponse(BaseModel):
+    instances: list[ModelGroup]
 
 
 class GatewayError(BaseModel):

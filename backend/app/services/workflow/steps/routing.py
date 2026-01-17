@@ -248,8 +248,23 @@ class RoutingStep(BaseStep):
                 f"No upstream available for provider_model_id={provider_model_id}"
             )
 
-        messages = ctx.get("conversation", "merged_messages") or ctx.get("validation", "validated", {}).get("messages")
-        primary, backups, _ = await selector.choose(candidates, messages=messages)
+        if ctx.is_internal and ctx.get("routing", "require_provider_model_id", False):
+            primary = max(
+                candidates,
+                key=lambda c: (
+                    c.priority,
+                    c.weight,
+                    c.credential_alias or "",
+                    c.credential_id or "",
+                    c.model_id,
+                ),
+            )
+            backups = []
+        else:
+            messages = ctx.get("conversation", "merged_messages") or ctx.get("validation", "validated", {}).get(
+                "messages"
+            )
+            primary, backups, _ = await selector.choose(candidates, messages=messages)
 
         def to_dict(c):
             return {

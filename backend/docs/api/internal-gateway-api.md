@@ -80,7 +80,7 @@ Content-Type: application/json
   "stream": false,
   "temperature": 0.7,
   "max_tokens": 1000,
-  "provider_model_id": "optional-provider-model-id",
+  "provider_model_id": "7a0f2c3e-6b7d-4b9c-8a66-93c59f0a3c23",
   "assistant_id": "optional-assistant-id",
   "session_id": "optional-session-id"
 }
@@ -95,7 +95,7 @@ Content-Type: application/json
 | `stream` | boolean | 否 | 是否流式返回，默认 `false` |
 | `temperature` | float | 否 | 温度参数 (0-2) |
 | `max_tokens` | integer | 否 | 最大生成 token 数 |
-| `provider_model_id` | string | 否 | 指定 provider model ID（可选，绕过负载均衡） |
+| `provider_model_id` | string | 是 | 指定 provider model ID（内部网关必填，禁用路由/负载均衡） |
 | `assistant_id` | string | 否 | 助手 ID（用于会话归属） |
 | `session_id` | string | 否 | 会话 ID（用于上下文管理） |
 
@@ -141,22 +141,36 @@ data: [DONE]
 
 ### 2. Models
 
-获取内部通道可用的模型列表（按提供商输出）。
+获取内部通道可用的模型列表（按 provider_instance 分组，包含公共实例 + 当前用户实例，实例需为 internal/both 通道）。
 
 **端点**: `GET /models`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
 
 #### 响应体
 
 ```json
 {
-  "data": [
+  "instances": [
     {
-      "id": "gpt-4o",
-      "object": "model",
-      "owned_by": "openai",
+      "instance_id": "b8b8fdfd-8b6f-4f7d-8d3e-2b1c9c3c6e1a",
+      "instance_name": "my-openai",
+      "provider": "openai",
       "icon": "openai",
-      "upstream_model_id": "gpt-4o",
-      "provider_model_id": "7a0f2c3e-6b7d-4b9c-8a66-93c59f0a3c23"
+      "models": [
+        {
+          "id": "gpt-4o",
+          "object": "model",
+          "owned_by": "openai",
+          "icon": "openai",
+          "upstream_model_id": "gpt-4o",
+          "provider_model_id": "7a0f2c3e-6b7d-4b9c-8a66-93c59f0a3c23"
+        }
+      ]
     }
   ]
 }
@@ -164,11 +178,16 @@ data: [DONE]
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `id` | string | 模型 ID（可能为统一别名） |
-| `owned_by` | string | 提供商标识 |
-| `icon` | string | 提供商图标（可选） |
-| `upstream_model_id` | string | 上游模型 ID |
-| `provider_model_id` | string | provider model 唯一 ID（用于指定路由） |
+| `instances` | array | provider_instance 分组列表 |
+| `instances[].instance_id` | string | 实例 ID |
+| `instances[].instance_name` | string | 实例名称 |
+| `instances[].provider` | string | 提供商标识 |
+| `instances[].icon` | string | 提供商图标（可选） |
+| `instances[].models[].id` | string | 模型 ID（可能为统一别名） |
+| `instances[].models[].owned_by` | string | 提供商标识 |
+| `instances[].models[].icon` | string | 提供商图标（可选） |
+| `instances[].models[].upstream_model_id` | string | 上游模型 ID |
+| `instances[].models[].provider_model_id` | string | provider model 唯一 ID（用于指定路由） |
 
 ---
 
@@ -306,7 +325,8 @@ Authorization: Bearer <access_token>
 ```json
 {
   "model": "text-embedding-ada-002",
-  "input": "The food was delicious and the waiter..."
+  "input": "The food was delicious and the waiter...",
+  "provider_model_id": "7a0f2c3e-6b7d-4b9c-8a66-93c59f0a3c23"
 }
 ```
 
@@ -314,6 +334,7 @@ Authorization: Bearer <access_token>
 |------|------|------|------|
 | `model` | string | 是 | 嵌入模型名称 |
 | `input` | string/array | 是 | 输入文本或文本数组 |
+| `provider_model_id` | string | 是 | 指定 provider model ID（内部网关必填，禁用路由/负载均衡） |
 
 #### 响应体
 
@@ -338,7 +359,7 @@ Authorization: Bearer <access_token>
 
 ### 3. List Models
 
-获取可用模型列表。
+获取可用模型列表（同上 `/models` 接口，需鉴权）。
 
 **端点**: `GET /models`
 
@@ -357,7 +378,8 @@ Authorization: Bearer <access_token>
 ```json
 {
   "model": "gpt-4",
-  "capability": "chat"
+  "capability": "chat",
+  "provider_model_id": "3a5e9c7f-2f18-4d3c-9e87-15b1c6b3f2a1"
 }
 ```
 
@@ -365,6 +387,7 @@ Authorization: Bearer <access_token>
 |------|------|------|------|
 | `model` | string | 是 | 模型名称 |
 | `capability` | string | 否 | 能力类型，默认 `chat` |
+| `provider_model_id` | string | 是 | 指定 provider model ID（内部网关必填，禁用路由/负载均衡） |
 
 #### 响应体
 

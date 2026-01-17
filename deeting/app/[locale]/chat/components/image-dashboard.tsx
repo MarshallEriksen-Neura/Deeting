@@ -88,7 +88,10 @@ export default function ImageDashboard() {
 
 function TooltipButton({ icon, label, active }: any) {
     return (
-        <button className={`p-2.5 rounded-xl transition-all ${active ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white shadow-inner' : 'text-black/30 dark:text-white/30 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'}`}>
+        <button
+          aria-label={label}
+          className={`p-2.5 rounded-xl transition-all ${active ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white shadow-inner' : 'text-black/30 dark:text-white/30 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'}`}
+        >
             {icon}
         </button>
     )

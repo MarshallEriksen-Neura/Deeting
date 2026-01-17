@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Code, PenTool, Sparkles, MessageSquare, Plus, Pencil } from 'lucide-react';
+import { X, MessageSquare, Plus, Pencil } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { CreateAgentModal } from '@/components/assistants/create-agent-modal';
 import { useMarketStore } from '@/store/market-store';
@@ -46,6 +46,7 @@ export function SelectAgentContainer() {
   );
 
   const displayAgents = isTauri ? installedAgents : cloudAgents;
+  const showLocalEdit = isTauri;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center animate-in fade-in duration-200">
@@ -68,20 +69,11 @@ export function SelectAgentContainer() {
         <p className="text-white/40 mb-8 font-light">{t('select.subtitle')}</p>
 
         <div className="grid grid-cols-2 gap-4">
-          <CreateAgentModal
-            mode="local"
-            onCreated={(assistantId) => {
-              if (assistantId) {
-                router.replace(`/chat/${assistantId}`)
-              }
-            }}
-            trigger={
-              <AgentCard
-                icon={<Plus className="w-6 h-6 text-emerald-400" />}
-                name={t('select.create.name')}
-                desc={t('select.create.desc')}
-              />
-            }
+          <AgentCard
+            icon={<Plus className="w-6 h-6 text-emerald-400" />}
+            name={t('select.create.name')}
+            desc={t('select.create.desc')}
+            onClick={() => router.replace('/chat/create/assistant')}
           />
           {displayAgents.map((agent) => {
             const record = assistantMap.get(agent.id);
@@ -93,62 +85,40 @@ export function SelectAgentContainer() {
                 desc={record?.description ?? agent.desc ?? ''}
                 onClick={() => router.replace(`/chat/${agent.id}`)}
                 action={
-                  <CreateAgentModal
-                    mode="local"
-                    assistant={{
-                      id: agent.id,
-                      name: agent.name,
-                      desc: record?.description ?? agent.desc ?? '',
-                      systemPrompt: record?.system_prompt ?? agent.systemPrompt ?? '',
-                      tags: record?.tags ?? agent.tags ?? [],
-                      iconId: record?.avatar ?? agent.icon ?? 'lucide:bot',
-                      color: agent.color,
-                    }}
-                    onUpdated={(assistantId) => {
-                      router.replace(`/chat/${assistantId}`);
-                    }}
-                    onDeleted={() => {
-                      router.replace('/chat/select-agent');
-                    }}
-                    trigger={
-                      <button
-                        type="button"
-                        className="h-8 w-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-colors flex items-center justify-center"
-                        onClick={(event) => event.stopPropagation()}
-                        aria-label={t('edit.trigger')}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                    }
-                  />
+                  showLocalEdit ? (
+                    <CreateAgentModal
+                      mode="local"
+                      assistant={{
+                        id: agent.id,
+                        name: agent.name,
+                        desc: record?.description ?? agent.desc ?? '',
+                        systemPrompt: record?.system_prompt ?? agent.systemPrompt ?? '',
+                        tags: record?.tags ?? agent.tags ?? [],
+                        iconId: record?.avatar ?? agent.icon ?? 'lucide:bot',
+                        color: agent.color,
+                      }}
+                      onUpdated={(assistantId) => {
+                        router.replace(`/chat/${assistantId}`);
+                      }}
+                      onDeleted={() => {
+                        router.replace('/chat/select-agent');
+                      }}
+                      trigger={
+                        <button
+                          type="button"
+                          className="h-8 w-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-colors flex items-center justify-center"
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={t('edit.trigger')}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      }
+                    />
+                  ) : null
                 }
               />
             );
           })}
-          <AgentCard 
-            icon={<Code className="w-6 h-6 text-green-400" />} 
-            name={t('select.presets.coder.name')} 
-            desc={t('select.presets.coder.desc')} 
-            onClick={() => router.replace('/chat/coder')} 
-          />
-          <AgentCard 
-            icon={<Sparkles className="w-6 h-6 text-purple-400" />}
-            name={t('select.presets.artist.name')}
-            desc={t('select.presets.artist.desc')}
-            onClick={() => router.replace('/chat/create/image')}
-          />
-          <AgentCard 
-            icon={<PenTool className="w-6 h-6 text-orange-400" />}
-            name={t('select.presets.writer.name')}
-            desc={t('select.presets.writer.desc')}
-             onClick={() => router.back()} // Placeholder
-          />
-          <AgentCard 
-             icon={<MessageSquare className="w-6 h-6 text-blue-400" />}
-            name={t('select.presets.assistant.name')}
-            desc={t('select.presets.assistant.desc')}
-             onClick={() => router.replace('/chat')}
-          />
         </div>
       </div>
     </div>

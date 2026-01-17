@@ -99,6 +99,14 @@ class ValidationStep(BaseStep):
         if hasattr(request, "model") and not request.model:
             raise ValidationError("model", "Model is required")
 
+        if ctx.is_internal and ctx.get("routing", "require_provider_model_id", False):
+            provider_model_id = getattr(request, "provider_model_id", None)
+            if not provider_model_id:
+                raise ValidationError(
+                    "provider_model_id",
+                    "provider_model_id is required for internal gateway",
+                )
+
         # 请求大小限制（基于序列化长度）
         try:
             serialized = request.model_dump() if hasattr(request, "model_dump") else {}

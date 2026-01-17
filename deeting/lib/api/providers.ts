@@ -95,7 +95,6 @@ export const ProviderInstanceCreateSchema = z.object({
   api_version: z.string().nullable().optional(),
   project_id: z.string().nullable().optional(),
   region: z.string().nullable().optional(),
-  channel: z.string().default("external"),
   priority: z.number().default(0),
   is_enabled: z.boolean().default(true),
 })
@@ -109,7 +108,6 @@ export const ProviderInstanceResponseSchema = z.object({
   base_url: z.string(),
   icon: z.string().nullable().optional(),
   theme_color: z.string().nullable().optional(),
-  channel: z.string(),
   priority: z.number(),
   is_enabled: z.boolean(),
   created_at: z.string(),

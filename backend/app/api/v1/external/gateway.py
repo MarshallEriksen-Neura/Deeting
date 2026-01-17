@@ -674,7 +674,7 @@ async def list_models(
     data = []
     for m in models:
         inst = instance_map.get(str(m.instance_id))
-        if not inst or inst.channel not in {"external", "both"}:
+        if not inst:
             continue
         preset = presets.get(inst.preset_slug)
         if not preset or not preset.is_active:

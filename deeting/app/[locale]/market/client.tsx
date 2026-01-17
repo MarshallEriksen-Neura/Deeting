@@ -11,11 +11,12 @@ interface PublicMarketClientProps {
 
 export function PublicMarketClient({ initialData }: PublicMarketClientProps) {
   const { openDownloadModal } = useDownloadModalStore()
+  const t = useTranslations("providers.market")
   
   const handleSelect = (provider: any) => {
       openDownloadModal({
-          title: `Connect ${provider.name}`,
-          description: `To connect ${provider.name} and manage AI models securely, please download our desktop application.`
+          title: t("connectModal.title", { name: provider.name }),
+          description: t("connectModal.description", { name: provider.name })
       })
   }
 

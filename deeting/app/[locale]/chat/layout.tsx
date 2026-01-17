@@ -7,11 +7,13 @@ export default function ChatLayout({
   hud,
   canvas,
   controls,
+  assistant,
 }: {
   children: ReactNode;
   hud: ReactNode;
   canvas: ReactNode;
   controls: ReactNode;
+  assistant: ReactNode;
 }) {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background text-foreground selection:bg-primary/30">
@@ -40,6 +42,7 @@ export default function ChatLayout({
       {/* Children (Modals/Intercepting Routes) */}
       <div className="relative z-[100]">
         {children}
+        {assistant}
       </div>
 
       {/* Global TTS Audio Player */}

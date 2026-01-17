@@ -15,7 +15,15 @@ export const ModelInfoSchema = z.object({
 })
 
 export const ModelListResponseSchema = z.object({
-  data: z.array(ModelInfoSchema),
+  instances: z.array(
+    z.object({
+      instance_id: z.string(),
+      instance_name: z.string(),
+      provider: z.string().optional(),
+      icon: z.string().nullable().optional(),
+      models: z.array(ModelInfoSchema),
+    })
+  ),
 })
 export const AvailableModelsResponseSchema = z.object({
   items: z.array(z.string()),
@@ -23,6 +31,7 @@ export const AvailableModelsResponseSchema = z.object({
 
 export type ModelInfo = z.infer<typeof ModelInfoSchema>
 export type ModelListResponse = z.infer<typeof ModelListResponseSchema>
+export type ModelGroup = ModelListResponse["instances"][number]
 export type AvailableModelsResponse = z.infer<typeof AvailableModelsResponseSchema>
 
 export async function fetchChatModels(): Promise<ModelListResponse> {

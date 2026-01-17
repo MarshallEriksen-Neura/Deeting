@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, SkipForward, SkipBack, X, Volume2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { useI18n } from '@/hooks/use-i18n';
 
 interface AudioPlayerState {
   isPlaying: boolean;
@@ -12,6 +13,7 @@ interface AudioPlayerState {
 }
 
 export function GlobalAudioPlayer() {
+  const t = useI18n('chat');
   const [isVisible, setIsVisible] = useState(false);
   const [playerState, setPlayerState] = useState<AudioPlayerState>({
     isPlaying: false,
@@ -78,7 +80,7 @@ export function GlobalAudioPlayer() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 text-xs text-white/50">
                 <Volume2 className="w-3 h-3" />
-                <span>正在朗读</span>
+                <span>{t("audio.reading")}</span>
               </div>
               <button
                 onClick={closePlayer}
@@ -91,8 +93,7 @@ export function GlobalAudioPlayer() {
             {/* Text being read */}
             <div className="mb-3 max-h-16 overflow-hidden">
               <p className="text-sm text-white/70 line-clamp-2">
-                {playerState.text ||
-                  '关于Web设计的回复：现代网页设计注重用户体验，应该采用简洁的布局...'}
+                {playerState.text || t("audio.sampleText")}
               </p>
             </div>
 
@@ -112,7 +113,7 @@ export function GlobalAudioPlayer() {
             <div className="flex items-center justify-center gap-2">
               <button
                 className="p-2 text-white/60 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-                aria-label="Previous"
+                aria-label={t("audio.previous")}
               >
                 <SkipBack className="w-4 h-4" />
               </button>
@@ -120,7 +121,7 @@ export function GlobalAudioPlayer() {
               <button
                 onClick={togglePlay}
                 className="p-3 bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-transform shadow-lg"
-                aria-label={playerState.isPlaying ? 'Pause' : 'Play'}
+                aria-label={playerState.isPlaying ? t("audio.pause") : t("audio.play")}
               >
                 {playerState.isPlaying ? (
                   <Pause className="w-5 h-5 fill-current" />
@@ -131,7 +132,7 @@ export function GlobalAudioPlayer() {
 
               <button
                 className="p-2 text-white/60 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-                aria-label="Next"
+                aria-label={t("audio.next")}
               >
                 <SkipForward className="w-4 h-4" />
               </button>

@@ -178,7 +178,6 @@ class BanditRepository(BaseRepository[BanditArmState]):
         self,
         capability: str | None = None,
         model: str | None = None,
-        channel: str | None = None,
     ) -> list[dict]:
         """聚合并返回 Bandit 臂的观测数据。"""
 
@@ -203,13 +202,6 @@ class BanditRepository(BaseRepository[BanditArmState]):
             stmt = stmt.where(ProviderModel.capability == capability)
         if model:
             stmt = stmt.where(ProviderModel.model_id == model)
-        if channel:
-            if channel == "external":
-                stmt = stmt.where(ProviderInstance.channel.in_(["external", "both"]))
-            elif channel == "internal":
-                stmt = stmt.where(ProviderInstance.channel.in_(["internal", "both"]))
-            else:
-                stmt = stmt.where(ProviderInstance.channel == channel)
 
         result = await self.session.execute(stmt)
         rows = result.all()
@@ -237,7 +229,6 @@ class BanditRepository(BaseRepository[BanditArmState]):
                     "provider": provider,
                     "capability": pm.capability,
                     "model": pm.model_id,
-                    "channel": inst.channel,
                     "strategy": state.strategy,
                     "epsilon": state.epsilon,
                     "alpha": state.alpha,

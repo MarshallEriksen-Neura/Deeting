@@ -12,7 +12,7 @@ from .provider_preset import JSONBCompat
 
 class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
-    用户级通道实例（BYOP 渠道）
+    用户级实例（BYOP）
 
     - preset_slug 指向系统级 provider_preset（模板）
     - user_id 为空表示平台公共实例
@@ -30,13 +30,6 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     base_url: Mapped[str] = mapped_column(String(255), nullable=False, comment="实例基础 URL，可覆盖模板")
     icon: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="覆盖模板的图标引用")
     credentials_ref: Mapped[str] = mapped_column(String(128), nullable=False, comment="密钥引用 ID/环境变量名")
-    channel: Mapped[str] = mapped_column(
-        String(16),
-        nullable=False,
-        default="external",
-        server_default="external",
-        comment="可用通道: internal / external / both",
-    )
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0", comment="路由优先级")
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", comment="是否启用")
     meta: Mapped[dict[str, Any]] = mapped_column(

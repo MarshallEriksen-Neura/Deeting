@@ -102,7 +102,6 @@ async def create_instance(
         api_key=payload.api_key,
         protocol=payload.protocol,
         model_prefix=payload.model_prefix,
-        channel=payload.channel,
         priority=payload.priority,
         is_enabled=payload.is_enabled,
         resource_name=payload.resource_name,

@@ -101,6 +101,32 @@
       "deleteConfirmDesc": "This will remove {name} from your local list. This action cannot be undone.",
       "deleteConfirmAction": "Delete",
       "deleteConfirmCancel": "Cancel"
+    },
+    "select": {
+      "title": "Select Agent",
+      "subtitle": "Choose the specialized intelligence for your task.",
+      "create": {
+        "name": "Create",
+        "desc": "Build your own assistant. Private by default."
+      },
+      "presets": {
+        "coder": {
+          "name": "Coder",
+          "desc": "Python, JS, Rust expert. Capabilities: Execution, Debugging."
+        },
+        "artist": {
+          "name": "Artist",
+          "desc": "DALL·E 3, Stable Diffusion. Visual creation & editing."
+        },
+        "writer": {
+          "name": "Writer",
+          "desc": "Creative writing, copy, storytelling. Long-form focus."
+        },
+        "assistant": {
+          "name": "Assistant",
+          "desc": "General purpose helper. Analysis, planning, chat."
+        }
+      }
     }
   }
 }

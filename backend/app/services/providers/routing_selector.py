@@ -2,7 +2,7 @@
 RoutingSelector: 统一的路由选择与降级策略
 
 职责：
-- 在 BYOP 架构下，从 ProviderInstance/ProviderModel 中筛选可用上游（按 capability/model/channel/is_active）
+- 在 BYOP 架构下，从 ProviderInstance/ProviderModel 中筛选可用上游（按 capability/model/is_active）
 - 支持权重/优先级选择
 - 支持灰度比例（gray_ratio）及备份列表用于熔断降级
 """
@@ -144,11 +144,6 @@ class RoutingSelector:
                 continue  # 无可用密钥跳过
 
             for m in instance_models:
-                if channel == "external" and instance.channel not in {"external", "both"}:
-                    continue
-                if channel == "internal" and instance.channel not in {"internal", "both"}:
-                    continue
-
                 base_url = instance.base_url or ""
                 upstream_url = f"{base_url.rstrip('/')}/{m.upstream_path.lstrip('/')}"
 
@@ -165,7 +160,7 @@ class RoutingSelector:
                             model_id=str(m.id),
                             provider=preset.provider if preset else "custom",
                             upstream_url=upstream_url,
-                            channel=instance.channel or "external",
+                            channel=channel,
                             template_engine=m.template_engine or "simple_replace",
                             request_template=m.request_template or {},
                             response_transform=m.response_transform or {},
@@ -216,11 +211,6 @@ class RoutingSelector:
 
         instance = await self.instance_repo.get(model.instance_id)
         if not instance or not instance.is_enabled:
-            return results
-
-        if channel == "external" and instance.channel not in {"external", "both"}:
-            return results
-        if channel == "internal" and instance.channel not in {"internal", "both"}:
             return results
 
         if user_id is not None:
@@ -285,7 +275,7 @@ class RoutingSelector:
                     model_id=str(model.id),
                     provider=preset.provider if preset else "custom",
                     upstream_url=upstream_url,
-                    channel=instance.channel or "external",
+                    channel=channel,
                     template_engine=model.template_engine or "simple_replace",
                     request_template=model.request_template or {},
                     response_transform=model.response_transform or {},

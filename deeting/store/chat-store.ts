@@ -203,7 +203,9 @@ export const useChatStore = create<ChatState & ChatActions>()(
         const trimmedInput = input.trim();
         if (!trimmedInput) return;
 
-        const selectedModel = models.find((model) => model.id === config.model) ?? models[0];
+        const selectedModel =
+          models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
+          models[0];
         const activeAssistant = assistants.find((assistant) => assistant.id === activeAssistantId);
         if (!selectedModel || !activeAssistant) return;
 

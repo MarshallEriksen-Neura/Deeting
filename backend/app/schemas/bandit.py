@@ -15,7 +15,6 @@ class BanditArmReport(BaseModel):
     provider: str
     capability: str
     model: str
-    channel: str
     strategy: str
     epsilon: float
     alpha: float

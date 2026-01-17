@@ -101,6 +101,32 @@
       "deleteConfirmDesc": "这会从本地移除 {name}，且无法恢复。",
       "deleteConfirmAction": "确认删除",
       "deleteConfirmCancel": "取消"
+    },
+    "select": {
+      "title": "选择助手",
+      "subtitle": "为你的任务选择最合适的智能体。",
+      "create": {
+        "name": "创建",
+        "desc": "创建你的专属助手，默认私有。"
+      },
+      "presets": {
+        "coder": {
+          "name": "程序员",
+          "desc": "Python、JS、Rust 专家。支持执行与调试。"
+        },
+        "artist": {
+          "name": "艺术家",
+          "desc": "DALL·E 3、Stable Diffusion，支持视觉创作与编辑。"
+        },
+        "writer": {
+          "name": "写作者",
+          "desc": "创意写作、文案与故事创作，长文更擅长。"
+        },
+        "assistant": {
+          "name": "助手",
+          "desc": "通用助理，擅长分析、规划与对话。"
+        }
+      }
     }
   }
 }

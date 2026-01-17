@@ -52,6 +52,88 @@
     "error": {
       "requestFailed": "请求失败，请稍后重试。",
       "modelUnavailable": "暂无可用模型，请先配置提供商。"
+    },
+    "hud": {
+      "activeAgent": "当前助手",
+      "sessionTitle": "Deeting OS",
+      "selectAgent": "选择助手",
+      "market": "市场",
+      "newAgent": "新建",
+      "engine": "引擎",
+      "optimized": "已优化",
+      "temperature": "温度",
+      "topP": "Top P",
+      "system": {
+        "userName": "管理员",
+        "integrity": "系统完整性：{value}"
+      },
+      "menu": {
+        "home": "首页",
+        "dashboard": "系统面板",
+        "registry": "注册中心",
+        "preferences": "偏好设置",
+        "interfaceMode": "界面模式",
+        "terminateSession": "结束会话"
+      }
+    },
+    "controls": {
+      "image": "图像",
+      "code": "代码",
+      "placeholder": "输入消息...",
+      "menu": "更多功能",
+      "send": "发送"
+    },
+    "thought": {
+      "label": "思考过程",
+      "withCost": "思考耗时 {cost}",
+      "loading": "思考中..."
+    },
+    "voice": {
+      "listening": "正在聆听...",
+      "processing": "处理中...",
+      "cancel": "取消",
+      "hint": "轻点麦克风以暂停/继续"
+    },
+    "image": {
+      "toolbar": {
+        "style": "风格",
+        "refImage": "参考图",
+        "settings": "设置"
+      },
+      "prompt": {
+        "label": "提示词",
+        "placeholder": "描述你的想象..."
+      },
+      "badges": {
+        "cyberpunk": "赛博朋克",
+        "cinematicLighting": "电影级光影",
+        "resolution": "8K 分辨率",
+        "addNegative": "+ 添加负面词"
+      },
+      "aspectRatio": "画面比例",
+      "model": "模型",
+      "modelVersion": "Midjourney v6",
+      "generate": "生成"
+    },
+    "coder": {
+      "envLabel": "PYTHON_ENV",
+      "envMeta": "{version} · {latency} 延迟",
+      "placeholder": "# 在这里编写逻辑，或直接提需求...",
+      "libraries": "库",
+      "shortcuts": "快捷键",
+      "run": "运行"
+    },
+    "audio": {
+      "reading": "正在朗读",
+      "sampleText": "关于 Web 设计的回复：现代网页设计注重用户体验，应该采用简洁的布局...",
+      "previous": "上一条",
+      "next": "下一条",
+      "pause": "暂停",
+      "play": "播放"
+    },
+    "canvas": {
+      "title": "Deeting OS",
+      "subtitle": "系统在线，等待输入。"
     }
   }
 }

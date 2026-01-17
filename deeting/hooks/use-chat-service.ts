@@ -7,13 +7,12 @@ import {
   fetchAssistantInstalls,
   type AssistantInstallItem,
 } from "@/lib/api/assistants"
-import { fetchAvailableModels, fetchChatModels, type ModelInfo } from "@/lib/api/models"
+import { fetchChatModels, type ModelInfo, type ModelGroup } from "@/lib/api/models"
 import { fetchConversationWindow } from "@/lib/api/conversations"
 import { useAuthStore } from "@/store/auth-store"
 
 const INSTALLS_QUERY_KEY = "/api/v1/assistants/installs"
 const MODELS_QUERY_KEY = "/api/v1/internal/models"
-const AVAILABLE_MODELS_QUERY_KEY = "/api/v1/models/available"
 
 const COLOR_PRESETS = [
   "from-indigo-500 to-purple-500",
@@ -75,11 +74,6 @@ export function useChatService({
     isLoading: isLoadingAllModels,
   } = useSWR(isEnabled ? MODELS_QUERY_KEY : null, fetchChatModels)
 
-  const {
-    data: availableModels,
-    isLoading: isLoadingAvailableModels,
-  } = useSWR(isEnabled ? AVAILABLE_MODELS_QUERY_KEY : null, fetchAvailableModels)
-
   const assistant = useMemo(() => {
     if (!assistantId || !installPage?.items?.length) return null
     const found = installPage.items.find((item) => item.assistant_id === assistantId)
@@ -91,15 +85,16 @@ export function useChatService({
     return installPage.items.map(mapInstallToAssistant)
   }, [installPage])
 
-  const models = useMemo<ModelInfo[]>(() => {
-    const all = modelList?.data ?? []
-    if (!availableModels?.items) return []
-    if (availableModels.items.length === 0) return []
-    const allowed = new Set(availableModels.items)
-    return all.filter((model) => allowed.has(model.id))
-  }, [availableModels, modelList])
+  const modelGroups = useMemo<ModelGroup[]>(() => {
+    return (modelList?.instances ?? []).filter((group) => group.models.length > 0)
+  }, [modelList])
 
-  const isLoadingModels = isLoadingAllModels || isLoadingAvailableModels
+  const models = useMemo<ModelInfo[]>(() => {
+    if (modelGroups.length === 0) return []
+    return modelGroups.flatMap((group) => group.models)
+  }, [modelGroups])
+
+  const isLoadingModels = isLoadingAllModels
 
   const loadHistory = useCallback(async (sessionId: string) => {
     return fetchConversationWindow(sessionId)
@@ -109,6 +104,7 @@ export function useChatService({
     assistant,
     assistants,
     models,
+    modelGroups,
     isLoadingAssistants,
     isLoadingModels,
     loadHistory,

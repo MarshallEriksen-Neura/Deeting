@@ -427,7 +427,6 @@ class ProviderInstanceService:
         api_key: str | None = None,
         protocol: str | None = None,
         model_prefix: str | None = None,
-        channel: str = "external",
         priority: int = 0,
         is_enabled: bool = True,
         resource_name: str | None = None,
@@ -470,7 +469,6 @@ class ProviderInstanceService:
             "base_url": base_url,
             "icon": icon,
             "credentials_ref": final_credentials_ref,
-            "channel": channel,
             "priority": priority,
             "is_enabled": is_enabled,
             "meta": meta,
@@ -503,7 +501,7 @@ class ProviderInstanceService:
         # 提取允许更新的字段
         updatable = {}
         meta_updates = {}
-        for key in ["name", "description", "base_url", "icon", "channel", "priority", "is_enabled", "credentials_ref"]:
+        for key in ["name", "description", "base_url", "icon", "priority", "is_enabled", "credentials_ref"]:
             if key in fields and fields[key] is not None:
                 updatable[key] = fields[key]
 

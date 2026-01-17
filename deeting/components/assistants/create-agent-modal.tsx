@@ -10,14 +10,14 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,6 +77,8 @@ interface CreateAgentModalProps {
   onCreated?: (assistantId?: string) => void
   onUpdated?: (assistantId: string) => void
   onDeleted?: (assistantId: string) => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export function CreateAgentModal({
@@ -86,9 +88,19 @@ export function CreateAgentModal({
   onCreated,
   onUpdated,
   onDeleted,
+  open,
+  onOpenChange,
 }: CreateAgentModalProps) {
   const t = useTranslations("assistants")
-  const [open, setOpen] = React.useState(false)
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const isControlled = open !== undefined
+  const currentOpen = isControlled ? open : internalOpen
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!isControlled) {
+      setInternalOpen(nextOpen)
+    }
+    onOpenChange?.(nextOpen)
+  }
   const createLocalAssistant = useMarketStore((state) => state.createLocalAssistant)
   const updateLocalAssistant = useMarketStore((state) => state.updateLocalAssistant)
   const deleteLocalAssistant = useMarketStore((state) => state.deleteLocalAssistant)
@@ -135,10 +147,10 @@ export function CreateAgentModal({
   })
 
   React.useEffect(() => {
-    if (open) {
+    if (currentOpen) {
       form.reset(defaultValues)
     }
-  }, [open, defaultValues, form])
+  }, [currentOpen, defaultValues, form])
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     const tagsArray = values.tags.split(/[,，\s]+/).filter(Boolean)
@@ -192,7 +204,7 @@ export function CreateAgentModal({
           icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
         })
       }
-      setOpen(false)
+      handleOpenChange(false)
       form.reset()
       if (assistant) {
         onUpdated?.(assistant.id)
@@ -214,7 +226,7 @@ export function CreateAgentModal({
       toast.success(t("toast.assistantDeletedTitle"), {
         description: t("toast.assistantDeletedDesc", { name: assistant.name }),
       })
-      setOpen(false)
+      handleOpenChange(false)
       onDeleted?.(assistant.id)
     } catch (error) {
       toast.error(t("toast.deleteFailedTitle"), {
@@ -225,25 +237,26 @@ export function CreateAgentModal({
     }
   }
 
+  const triggerNode =
+    trigger !== undefined ? trigger : (
+      <Button className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg border-0">
+        <Plus className="mr-2 h-4 w-4" /> {t("create.trigger")}
+      </Button>
+    )
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg border-0">
-            <Plus className="mr-2 h-4 w-4" /> {t("create.trigger")}
-          </Button>
-        )}
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-        <DialogTitle>{isEditMode ? t("edit.title") : t("create.title")}</DialogTitle>
-        <DialogDescription>
-          {isEditMode ? t("edit.description") : t("create.description")}
-        </DialogDescription>
-        </DialogHeader>
-        
+    <Sheet open={currentOpen} onOpenChange={handleOpenChange}>
+      {triggerNode ? <SheetTrigger asChild>{triggerNode}</SheetTrigger> : null}
+      <SheetContent side="right" className="w-full sm:max-w-xl max-h-screen overflow-y-auto p-0">
+        <SheetHeader className="px-6 pt-6">
+          <SheetTitle>{isEditMode ? t("edit.title") : t("create.title")}</SheetTitle>
+          <SheetDescription>
+            {isEditMode ? t("edit.description") : t("create.description")}
+          </SheetDescription>
+        </SheetHeader>
+
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 px-6 py-4">
             
             <FormField
               control={form.control}
@@ -359,7 +372,7 @@ export function CreateAgentModal({
               )}
             />
 
-            <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+            <SheetFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               {isEditMode ? (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -403,10 +416,10 @@ export function CreateAgentModal({
                   isEditMode ? t("edit.submit") : t("create.submit")
                 )}
               </Button>
-            </DialogFooter>
+            </SheetFooter>
           </form>
         </Form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }

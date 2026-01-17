@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { invoke } from "@tauri-apps/api/core"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useChatService } from "@/hooks/use-chat-service"
@@ -28,6 +28,7 @@ interface LocalAssistantMessageRecord {
 export function ChatContainer({ agentId }: ChatContainerProps) {
   const t = useI18n("chat")
   const router = useRouter()
+  const pathname = usePathname()
   
   // Stores
   const installedAgents = useMarketStore((state) => state.installedAgents)
@@ -63,6 +64,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   const {
     assistant: cloudAssistant,
     models: cloudModels,
+    modelGroups: cloudModelGroups,
     isLoadingAssistants,
     isLoadingModels,
     loadHistory,
@@ -83,8 +85,6 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
         setAssistants([agent as ChatAssistant])
     }
   }, [agent, setAssistants])
-
-  const models = isTauri ? [] : cloudModels // TODO: Load local models for Tauri if applicable
 
   const [historyLoaded, setHistoryLoaded] = React.useState(false)
 
@@ -116,10 +116,10 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     setModels(cloudModels)
     if (cloudModels.length === 0) return
     const hasSelectedModel = config.model
-      ? cloudModels.some((model) => model.id === config.model)
+      ? cloudModels.some((model) => model.id === config.model || model.provider_model_id === config.model)
       : false
     if (!hasSelectedModel && cloudModels[0]) {
-      setConfig({ model: cloudModels[0].id })
+      setConfig({ model: cloudModels[0].provider_model_id ?? cloudModels[0].id })
     }
   }, [cloudModels, setModels, config.model, setConfig])
 
@@ -248,6 +248,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
 
   // Routing checks
   React.useEffect(() => {
+    if (pathname?.includes("/chat/create/assistant")) return
     if (isTauri) {
       if (!marketLoaded) return
       if (!agent) router.replace('/chat/select-agent')
@@ -255,7 +256,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     }
     if (isLoadingAssistants) return
     if (!agent) router.replace('/chat/select-agent')
-  }, [agent, marketLoaded, router, isTauri, isLoadingAssistants])
+  }, [agent, marketLoaded, router, isTauri, isLoadingAssistants, pathname])
 
 
   // Handlers
@@ -328,7 +329,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     <div className="flex flex-col h-[calc(100vh-60px)] bg-background">
       <ChatHeader 
         agent={agent as ChatAssistant}
-        models={models}
+        modelGroups={cloudModelGroups}
         selectedModelId={config.model}
         onModelChange={handleModelChange}
         streamEnabled={streamEnabled}

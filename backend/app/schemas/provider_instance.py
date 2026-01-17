@@ -20,7 +20,6 @@ class ProviderInstanceCreate(BaseModel):
     api_version: str | None = Field(None, description="Azure API 版本，默认 2023-05-15")
     project_id: str | None = Field(None, description="Vertex 项目 ID")
     region: str | None = Field(None, description="Vertex 区域，如 us-central1")
-    channel: str = Field("external", description="internal/external/both")
     priority: int = Field(0, description="路由优先级")
     is_enabled: bool = Field(True, description="是否启用")
 
@@ -39,7 +38,6 @@ class ProviderInstanceUpdate(BaseModel):
     api_version: str | None = Field(default=None, description="Azure API 版本")
     project_id: str | None = Field(default=None, description="Vertex 项目 ID")
     region: str | None = Field(default=None, description="Vertex 区域")
-    channel: str | None = Field(default=None, description="internal/external/both")
     priority: int | None = Field(default=None, description="路由优先级")
     is_enabled: bool | None = Field(default=None, description="是否启用")
 
@@ -52,7 +50,6 @@ class ProviderInstanceResponse(BaseModel):
     description: Optional[str] = None
     base_url: str
     icon: Optional[str] = None
-    channel: str
     priority: int
     is_enabled: bool
     created_at: datetime

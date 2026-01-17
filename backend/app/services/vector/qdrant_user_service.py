@@ -56,6 +56,11 @@ class QdrantUserVectorService(VectorStoreClient):
         self._collection_name: str | None = None
         self._log = logger.getChild("QdrantUserVectorService")
 
+    def _refresh_embedding_model(self) -> None:
+        current_model = getattr(self._embedding_service, "model", None)
+        if current_model:
+            self._embedding_model = current_model
+
     async def _ensure_collection(self, vector_size: int) -> tuple[str, bool]:
         collection, degraded = await ensure_user_collection(
             self._client,
@@ -87,6 +92,7 @@ class QdrantUserVectorService(VectorStoreClient):
     async def upsert(self, content: str, payload: dict[str, Any] | None = None, id: str | None = None) -> str:
         point_id = id or str(uuid.uuid4())
         vector = await self._embedding_service.embed_text(content)
+        self._refresh_embedding_model()
         collection, degraded = await self._ensure_collection(len(vector))
         if degraded:
             self._log.warning("upsert degraded; skip write", extra={"collection": collection, "user": self._user_id})
@@ -114,6 +120,7 @@ class QdrantUserVectorService(VectorStoreClient):
 
     async def search(self, query: str, limit: int = 5, score_threshold: float = 0.0) -> List[dict[str, Any]]:
         vector = await self._embedding_service.embed_text(query)
+        self._refresh_embedding_model()
         collection, degraded = await self._ensure_collection(len(vector))
         if degraded:
             self._log.warning("search degraded; return empty", extra={"collection": collection})

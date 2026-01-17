@@ -9,18 +9,20 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-import type { ModelInfo } from "@/lib/api/models"
+import type { ModelGroup } from "@/lib/api/models"
 import type { ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 
 interface ChatHeaderProps {
   agent: ChatAssistant
-  models: ModelInfo[]
+  modelGroups: ModelGroup[]
   selectedModelId: string | null
   onModelChange: (modelId: string) => void
   streamEnabled: boolean
@@ -30,7 +32,7 @@ interface ChatHeaderProps {
 
 export function ChatHeader({
   agent,
-  models,
+  modelGroups,
   selectedModelId,
   onModelChange,
   streamEnabled,
@@ -63,26 +65,32 @@ export function ChatHeader({
           <Select
             value={selectedModelId ?? ""}
             onValueChange={onModelChange}
-            disabled={isLoadingModels || models.length === 0}
+            disabled={isLoadingModels || modelGroups.length === 0}
           >
             <SelectTrigger className="h-7 w-[200px] border-0 bg-transparent text-xs shadow-none focus:ring-0">
               <SelectValue placeholder={t("model.placeholder")} />
             </SelectTrigger>
             <SelectContent>
-              {models.map((model) => {
-                const modelValue = model.provider_model_id ?? model.id
-                const provider = model.owned_by || "provider"
-                return (
-                  <SelectItem key={modelValue} value={modelValue}>
-                    <div className="flex flex-col">
-                      <span className="text-xs font-medium text-foreground">{model.id}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {provider}
-                      </span>
-                    </div>
-                  </SelectItem>
-                )
-              })}
+              {modelGroups.map((group) => (
+                <SelectGroup key={group.instance_id}>
+                  <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                    {group.instance_name}
+                  </SelectLabel>
+                  {group.models.map((model) => {
+                    const modelValue = model.provider_model_id ?? model.id
+                    return (
+                      <SelectItem key={modelValue} value={modelValue}>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-medium text-foreground">{model.id}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {group.provider || model.owned_by || "provider"}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
+                </SelectGroup>
+              ))}
             </SelectContent>
           </Select>
         </div>
