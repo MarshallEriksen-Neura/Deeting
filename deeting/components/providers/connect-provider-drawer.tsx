@@ -224,7 +224,6 @@ export function ConnectProviderDrawer({
           credentials_ref: apiKey ? null : "default",
           api_key: apiKey || null,
           protocol,
-          channel: "external",
           priority: 0,
           is_enabled: enabled,
           resource_name: resourceName || null,

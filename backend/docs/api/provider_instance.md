@@ -15,7 +15,6 @@
     "base_url": "https://api.openai.com",
     "icon": null,
     "credentials_ref": "ENV_OPENAI_KEY",
-    "channel": "external",          // internal/external/both
     "priority": 0,
     "is_enabled": true
   }

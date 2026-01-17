@@ -43,6 +43,9 @@ export interface NotificationItem {
   description: string
   timestamp: Date | string | number
   read: boolean
+  meta?: {
+    reason?: string
+  }
   action?: {
     label: string
     onClick: () => void
@@ -166,6 +169,11 @@ export function NotificationCenter({
               <p className="text-xs text-gray-500 leading-relaxed">
                 {notification.description}
               </p>
+              {notification.meta?.reason ? (
+                <p className="text-xs text-rose-600 mt-2">
+                  {t("reason")}: {notification.meta.reason}
+                </p>
+              ) : null}
               {notification.action && (
                 <Button
                   size="sm"

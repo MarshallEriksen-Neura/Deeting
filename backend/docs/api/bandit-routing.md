@@ -286,7 +286,6 @@ elif gray_ratio >= 1 or random() < gray_ratio:
 |------|------|
 | `capability` | 按能力过滤（chat/embedding） |
 | `model` | 按模型过滤 |
-| `channel` | 按通道过滤（internal/external） |
 
 **响应**:
 ```json
@@ -302,7 +301,6 @@ elif gray_ratio >= 1 or random() < gray_ratio:
       "provider": "openai",
       "capability": "chat",
       "model": "gpt-4",
-      "channel": "external",
       "total_trials": 5000,
       "successes": 4800,
       "failures": 200,

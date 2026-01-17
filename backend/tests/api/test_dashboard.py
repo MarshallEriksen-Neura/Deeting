@@ -115,7 +115,6 @@ async def test_provider_health_uses_redis(client, auth_tokens, AsyncSessionLocal
             base_url="https://api.example.com",
             credentials_ref="REF",
             priority=1,
-            channel="external",
         )
         session.add(inst)
         await session.commit()

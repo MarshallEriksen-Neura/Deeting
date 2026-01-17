@@ -76,7 +76,6 @@ async def test_provider_hub_marks_connected_after_instance_created(client, auth_
         "base_url": "https://api.openai.com",
         "icon": None,
         "credentials_ref": "ENV_OPENAI_KEY",
-        "channel": "external",
         "priority": 0,
         "is_enabled": True,
     }

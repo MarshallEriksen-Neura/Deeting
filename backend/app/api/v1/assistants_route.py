@@ -2,6 +2,8 @@
 用户侧助手市场与安装 API
 """
 
+import asyncio
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -9,9 +11,10 @@ from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.deps.auth import get_current_user
 from app.models import User
+from app.models.assistant import AssistantStatus, AssistantVisibility
 from app.models.review import ReviewStatus
 from app.repositories import (
     AssistantRepository,
@@ -62,7 +65,10 @@ def get_assistant_service(db: AsyncSession = Depends(get_db)) -> AssistantServic
     return AssistantService(assistant_repo, version_repo)
 
 
-def get_market_service(db: AsyncSession = Depends(get_db)) -> AssistantMarketService:
+logger = logging.getLogger(__name__)
+
+
+def build_market_service(db: AsyncSession) -> AssistantMarketService:
     assistant_repo = AssistantRepository(db)
     install_repo = AssistantInstallRepository(db)
     review_repo = ReviewTaskRepository(db)
@@ -80,6 +86,52 @@ def get_market_service(db: AsyncSession = Depends(get_db)) -> AssistantMarketSer
         market_repo,
         auto_review_service=auto_review_service,
     )
+
+
+def get_market_service(db: AsyncSession = Depends(get_db)) -> AssistantMarketService:
+    return build_market_service(db)
+
+
+async def _submit_share_review_task(assistant_id: UUID, user_id: UUID) -> None:
+    try:
+        async with AsyncSessionLocal() as session:
+            service = build_market_service(session)
+            await service.submit_for_review(user_id=user_id, assistant_id=assistant_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "assistant_share_review_failed",
+            extra={"assistant_id": str(assistant_id), "user_id": str(user_id), "error": str(exc)},
+        )
+
+
+def _schedule_assistant_share_review(assistant_id: UUID, user_id: UUID) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.warning(
+            "assistant_share_review_no_loop",
+            extra={"assistant_id": str(assistant_id), "user_id": str(user_id)},
+        )
+        return
+
+    task = loop.create_task(_submit_share_review_task(assistant_id, user_id))
+
+    def _log_task_error(task_obj: asyncio.Task) -> None:
+        try:
+            exc = task_obj.exception()
+        except Exception as err:  # pragma: no cover - 避免异常吞噬
+            logger.warning(
+                "assistant_share_review_task_exception",
+                extra={"assistant_id": str(assistant_id), "user_id": str(user_id), "error": str(err)},
+            )
+            return
+        if exc:
+            logger.warning(
+                "assistant_share_review_task_failed",
+                extra={"assistant_id": str(assistant_id), "user_id": str(user_id), "error": str(exc)},
+            )
+
+    task.add_done_callback(_log_task_error)
 
 
 def get_rating_service(db: AsyncSession = Depends(get_db)) -> AssistantRatingService:
@@ -267,10 +319,28 @@ async def create_custom_assistant(
     payload: AssistantCreate,
     current_user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
+    market_service: AssistantMarketService = Depends(get_market_service),
 ) -> AssistantDTO:
     try:
+        share_to_market = payload.share_to_market
+        if share_to_market:
+            payload = payload.model_copy(
+                update={
+                    "visibility": AssistantVisibility.PUBLIC,
+                    "status": AssistantStatus.PUBLISHED,
+                }
+            )
         assistant = await service.create_assistant(payload=payload, owner_user_id=current_user.id)
+        try:
+            await market_service.install_assistant(user_id=current_user.id, assistant_id=assistant.id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "assistant_install_failed",
+                extra={"assistant_id": str(assistant.id), "user_id": str(current_user.id), "error": str(exc)},
+            )
         assistant = await service.assistant_repo.get_with_versions(assistant.id)
+        if share_to_market:
+            _schedule_assistant_share_review(assistant.id, current_user.id)
         return AssistantDTO.model_validate(assistant)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

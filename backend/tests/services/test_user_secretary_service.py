@@ -36,7 +36,6 @@ async def test_update_secretary_model_with_user_provider():
             name="My Provider",
             base_url="https://api.example.com",
             credentials_ref="secret_ref",
-            channel="internal",
         )
         session.add(instance)
         await session.commit()
@@ -79,7 +78,6 @@ async def test_update_secretary_model_rejects_public_provider():
             name="Public Provider",
             base_url="https://api.example.com",
             credentials_ref="secret_ref",
-            channel="internal",
         )
         session.add(instance)
         await session.commit()
@@ -122,7 +120,6 @@ async def test_update_secretary_embedding_model_with_user_provider():
             name="My Provider",
             base_url="https://api.example.com",
             credentials_ref="secret_ref",
-            channel="internal",
         )
         session.add(instance)
         await session.commit()
@@ -168,7 +165,6 @@ async def test_update_secretary_embedding_model_rejects_public_provider():
             name="Public Provider",
             base_url="https://api.example.com",
             credentials_ref="secret_ref",
-            channel="internal",
         )
         session.add(instance)
         await session.commit()
@@ -192,4 +188,94 @@ async def test_update_secretary_embedding_model_rejects_public_provider():
             await service.update_settings(
                 user_id=user.id,
                 embedding_model="text-embedding-3-small",
+            )
+
+
+@pytest.mark.asyncio
+async def test_update_topic_naming_model_with_user_provider():
+    async with AsyncSessionLocal() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email="topic-naming@example.com",
+            hashed_password="hash",
+        )
+        session.add(user)
+        phase = SecretaryPhase(name="default-topic", description="test")
+        session.add(phase)
+        await session.commit()
+
+        instance = ProviderInstance(
+            user_id=user.id,
+            preset_slug="openai",
+            name="My Provider",
+            base_url="https://api.example.com",
+            credentials_ref="secret_ref",
+        )
+        session.add(instance)
+        await session.commit()
+
+        model = ProviderModel(
+            instance_id=instance.id,
+            capability="chat",
+            model_id="gpt-4o-mini",
+            upstream_path="/chat/completions",
+        )
+        session.add(model)
+        await session.commit()
+
+        service = UserSecretaryService(
+            UserSecretaryRepository(session),
+            SecretaryPhaseRepository(session),
+            ProviderModelRepository(session),
+        )
+
+        secretary = await service.update_settings(
+            user_id=user.id,
+            topic_naming_model="gpt-4o-mini",
+        )
+        assert secretary.topic_naming_model == "gpt-4o-mini"
+
+
+@pytest.mark.asyncio
+async def test_update_topic_naming_model_rejects_public_provider():
+    async with AsyncSessionLocal() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email="topic-naming-public@example.com",
+            hashed_password="hash",
+        )
+        session.add(user)
+        phase = SecretaryPhase(name="default-topic-public", description="test")
+        session.add(phase)
+        await session.commit()
+
+        instance = ProviderInstance(
+            user_id=None,
+            preset_slug="openai",
+            name="Public Provider",
+            base_url="https://api.example.com",
+            credentials_ref="secret_ref",
+        )
+        session.add(instance)
+        await session.commit()
+
+        model = ProviderModel(
+            instance_id=instance.id,
+            capability="chat",
+            model_id="gpt-4o-mini",
+            upstream_path="/chat/completions",
+        )
+        session.add(model)
+        await session.commit()
+
+        service = UserSecretaryService(
+            UserSecretaryRepository(session),
+            SecretaryPhaseRepository(session),
+            ProviderModelRepository(session),
+        )
+
+        with pytest.raises(ValueError, match="话题自动命名模型不可用或不属于当前用户"):
+            await service.update_settings(
+                user_id=user.id,
+                topic_naming_model="gpt-4o-mini",
             )

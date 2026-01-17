@@ -52,6 +52,9 @@
 
 - `POST /assistants`
 - Body：`AssistantCreate`
+  - 新增字段 `share_to_market`：是否提交审核并分享到市场
+    - 为 `true` 时，后端会自动将 `visibility` 设为 `public`、`status` 设为 `published`，并后台触发“超级用户秘书”审核。
+    - 该审核异步执行，创建接口仍返回助手信息。
 - 响应：`AssistantDTO`
 
 ## 更新自定义助手
@@ -113,3 +116,4 @@
 
 变更记录
 - 2026-01-15：新增助手市场/安装/提交审核/评分/标签列表/体验预览 API；提交审核默认自动审核。
+- 2026-01-17：创建助手支持 `share_to_market`，可在创建时自动提交审核。

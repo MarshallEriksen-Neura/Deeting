@@ -44,8 +44,9 @@ class UserSecretaryService:
         user_id: UUID,
         model_name: str | None = None,
         embedding_model: str | None = None,
+        topic_naming_model: str | None = None,
     ):
-        if not model_name and not embedding_model:
+        if not model_name and not embedding_model and not topic_naming_model:
             raise ValueError("请至少提供一个可更新字段")
 
         updates: dict[str, str] = {}
@@ -74,6 +75,19 @@ class UserSecretaryService:
             if not candidates:
                 raise ValueError("Embedding 模型不可用或不属于当前用户")
             updates["embedding_model"] = embedding_model
+
+        if topic_naming_model is not None:
+            if not topic_naming_model:
+                raise ValueError("话题自动命名模型不能为空")
+            candidates = await self.model_repo.get_candidates(
+                capability="chat",
+                model_id=topic_naming_model,
+                user_id=str(user_id),
+                include_public=False,
+            )
+            if not candidates:
+                raise ValueError("话题自动命名模型不可用或不属于当前用户")
+            updates["topic_naming_model"] = topic_naming_model
 
         secretary = await self.get_or_create(user_id)
         return await self.secretary_repo.update(secretary, updates)

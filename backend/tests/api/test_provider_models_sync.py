@@ -16,7 +16,6 @@ async def test_sync_models_accepts_empty_body(client, auth_tokens, monkeypatch):
         "name": "sync-test",
         "base_url": "https://api.openai.com",  # 不会真实访问，后续会 stub
         "credentials_ref": "ENV_OPENAI_KEY",
-        "channel": "external",
         "priority": 0,
         "is_enabled": True,
     }
@@ -59,7 +58,6 @@ async def test_sync_models_returns_404_when_preset_missing(client, auth_tokens):
         "name": "ghost-instance",
         "base_url": "https://api.invalid.local",
         "credentials_ref": "ENV_FAKE_KEY",
-        "channel": "external",
         "priority": 0,
         "is_enabled": True,
     }

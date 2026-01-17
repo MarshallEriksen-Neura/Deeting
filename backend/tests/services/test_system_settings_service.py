@@ -25,7 +25,6 @@ async def test_set_and_get_system_embedding_model():
             name="System Provider",
             base_url="https://api.example.com",
             credentials_ref="secret_ref",
-            channel="internal",
         )
         session.add(instance)
         await session.commit()

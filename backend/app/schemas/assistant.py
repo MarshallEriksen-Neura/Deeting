@@ -69,6 +69,7 @@ class AssistantBase(BaseSchema):
 
 
 class AssistantCreate(AssistantBase):
+    share_to_market: bool = Field(False, description="是否提交审核并分享到市场")
     version: AssistantVersionCreate
 
 

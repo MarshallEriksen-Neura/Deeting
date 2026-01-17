@@ -47,6 +47,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { createAssistant } from "@/lib/api"
 import { useMarketStore } from "@/store/market-store"
 import { ProviderIconPicker } from "@/components/providers/provider-icon-picker"
@@ -125,6 +126,7 @@ export function CreateAgentModal({
           message: t("create.validation.iconRequired"),
         }),
         color: z.string(),
+        shareToMarket: z.boolean().optional(),
       }),
     [t]
   )
@@ -137,6 +139,7 @@ export function CreateAgentModal({
       tags: assistant?.tags?.join(", ") ?? "",
       iconId: assistant?.iconId ?? "lucide:bot",
       color: assistant?.color ?? "from-blue-500 to-cyan-500",
+      shareToMarket: false,
     }),
     [assistant]
   )
@@ -179,11 +182,13 @@ export function CreateAgentModal({
           })
         }
       } else {
-        await createAssistant({
-          visibility: "private",
-          status: "draft",
+        const shareToMarket = Boolean(values.shareToMarket)
+        const created = await createAssistant({
+          visibility: shareToMarket ? "public" : "private",
+          status: shareToMarket ? "published" : "draft",
           summary: values.desc.slice(0, 200),
           icon_id: values.iconId,
+          share_to_market: shareToMarket,
           version: {
             name: values.name,
             description: values.desc,
@@ -191,6 +196,7 @@ export function CreateAgentModal({
             tags: tagsArray,
           },
         })
+        createdId = created?.id
       }
 
       if (assistant) {
@@ -251,7 +257,11 @@ export function CreateAgentModal({
         <SheetHeader className="px-6 pt-6">
           <SheetTitle>{isEditMode ? t("edit.title") : t("create.title")}</SheetTitle>
           <SheetDescription>
-            {isEditMode ? t("edit.description") : t("create.description")}
+            {isEditMode
+              ? t("edit.description")
+              : mode === "cloud"
+                ? t("create.descriptionCloud")
+                : t("create.description")}
           </SheetDescription>
         </SheetHeader>
 
@@ -351,6 +361,26 @@ export function CreateAgentModal({
               )}
             />
 
+            {mode === "cloud" ? (
+              <FormField
+                control={form.control}
+                name="shareToMarket"
+                render={({ field }) => (
+                  <FormItem className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <FormLabel>{t("create.shareLabel")}</FormLabel>
+                        <FormDescription>{t("create.shareHelp")}</FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </div>
+                  </FormItem>
+                )}
+              />
+            ) : null}
+
             <FormField
               control={form.control}
               name="systemPrompt"
@@ -410,10 +440,18 @@ export function CreateAgentModal({
                 {form.formState.isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {isEditMode ? t("edit.submitting") : t("create.submitting")}
+                    {isEditMode
+                      ? t("edit.submitting")
+                      : mode === "cloud"
+                        ? t("create.submittingCloud")
+                        : t("create.submitting")}
                   </>
                 ) : (
-                  isEditMode ? t("edit.submit") : t("create.submit")
+                  isEditMode
+                    ? t("edit.submit")
+                    : mode === "cloud"
+                      ? t("create.submitCloud")
+                      : t("create.submit")
                 )}
               </Button>
             </SheetFooter>

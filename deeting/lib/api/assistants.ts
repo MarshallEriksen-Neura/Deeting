@@ -200,6 +200,7 @@ export async function createAssistant(payload: {
   status: string
   summary?: string | null
   icon_id?: string | null
+  share_to_market?: boolean
   version: {
     name: string
     description?: string | null

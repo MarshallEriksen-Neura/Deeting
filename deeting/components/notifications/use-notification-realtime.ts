@@ -96,6 +96,10 @@ function mapLevelToUiType(level?: string): NotificationType {
 function mapBackendItem(item: BackendNotificationItem): NotificationItem | null {
   if (!item?.id || !item?.title) return null
 
+  const reason = typeof item.payload?.reason === "string"
+    ? item.payload.reason.trim()
+    : undefined
+
   return {
     id: String(item.id),
     type: mapLevelToUiType(item.level),
@@ -103,6 +107,7 @@ function mapBackendItem(item: BackendNotificationItem): NotificationItem | null 
     description: String(item.content ?? ""),
     timestamp: item.created_at ?? new Date().toISOString(),
     read: Boolean(item.read ?? item.read_at),
+    meta: reason ? { reason } : undefined,
   }
 }
 

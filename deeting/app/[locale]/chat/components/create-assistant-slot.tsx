@@ -7,6 +7,7 @@ import { CreateAgentModal } from "@/components/assistants/create-agent-modal"
 export default function CreateAssistantSlot() {
   const router = useRouter()
   const [open, setOpen] = React.useState(true)
+  const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
 
   const handleOpenChange = React.useCallback(
     (nextOpen: boolean) => {
@@ -31,7 +32,7 @@ export default function CreateAssistantSlot() {
 
   return (
     <CreateAgentModal
-      mode="local"
+      mode={isTauri ? "local" : "cloud"}
       open={open}
       onOpenChange={handleOpenChange}
       onCreated={handleCreated}

@@ -6,9 +6,14 @@ import { fetchAvailableModels, type AvailableModelsResponse } from "@/lib/api/mo
 
 const AVAILABLE_MODELS_QUERY_KEY = "/api/v1/models/available"
 
-export function useAvailableModels() {
+interface UseAvailableModelsOptions {
+  enabled?: boolean
+}
+
+export function useAvailableModels(options?: UseAvailableModelsOptions) {
+  const key = options?.enabled === false ? null : AVAILABLE_MODELS_QUERY_KEY
   const { data, error, isLoading, mutate, isValidating } = useSWR<AvailableModelsResponse>(
-    AVAILABLE_MODELS_QUERY_KEY,
+    key,
     fetchAvailableModels,
     {
       revalidateOnFocus: false,

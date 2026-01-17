@@ -13,7 +13,7 @@
 
 ### provider_instance（用户实例 / 通道）
 - 作用：用户绑定自己的 endpoint 与密钥。
-- 主要字段：`user_id`(可空=公共实例)、`preset_slug`、`name`、`base_url`、`credentials_ref`、`channel`(internal/external/both)、`priority`、`is_enabled`、`metadata`(探测/健康日志)。
+- 主要字段：`user_id`(可空=公共实例)、`preset_slug`、`name`、`base_url`、`credentials_ref`、`priority`、`is_enabled`、`metadata`(探测/健康日志)。
 
 ### provider_model（模型快照，实例下）
 - 作用：某实例可用的路由条目，直接驱动上游调用。

@@ -7,6 +7,7 @@ import { Cloud, Monitor, ShieldCheck, User, Lock, Download } from "lucide-react"
 import { toast } from "sonner"
 
 import { useI18n } from "@/hooks/use-i18n"
+import { useChatService } from "@/hooks/use-chat-service"
 import { useUserProfile } from "@/hooks/use-user"
 import { Container } from "@/components/ui/container"
 import {
@@ -37,14 +38,16 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { updateEmbeddingSetting } from "@/lib/api/settings"
-import { updateUserSecretary } from "@/lib/api/secretary"
+import { updateUserSecretary, type UserSecretaryUpdate } from "@/lib/api/secretary"
 import {
   useSystemEmbeddingSetting,
   useUserSecretary,
@@ -59,6 +62,8 @@ const EMBEDDING_MODELS = [
 interface SettingsFormValues {
   cloudModel: string
   desktopModel: string
+  secretaryModel: string
+  topicNamingModel: string
 }
 
 export function SettingsPageClient() {
@@ -75,25 +80,31 @@ export function SettingsPageClient() {
     isLoading: isLoadingSecretary,
     mutate: mutateSecretary,
   } = useUserSecretary({ enabled: isAuthenticated })
+  const { modelGroups, isLoadingModels } = useChatService({ enabled: isAuthenticated })
   const [isSaving, setIsSaving] = React.useState(false)
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
       cloudModel: EMBEDDING_MODELS[0],
       desktopModel: EMBEDDING_MODELS[1] ?? EMBEDDING_MODELS[0],
+      secretaryModel: "",
+      topicNamingModel: "",
     },
   })
 
   const isAdmin = Boolean(profile?.is_superuser)
   const canEditCloud = isAuthenticated && isAdmin
   const canEditDesktop = isAuthenticated && isTauri
-  const canSave = isAuthenticated && (canEditCloud || canEditDesktop)
+  const canEditPersonal = isAuthenticated
+  const canSave = isAuthenticated && (canEditCloud || canEditDesktop || canEditPersonal)
   const roleLabel = !isAuthenticated
     ? t("role.guest")
     : isAdmin
     ? t("role.admin")
     : t("role.user")
-  const isLoading = isLoadingProfile || isLoadingSystem || isLoadingSecretary
+  const isLoading =
+    isLoadingProfile || isLoadingSystem || isLoadingSecretary || isLoadingModels
+  const hasAvailableModels = modelGroups.length > 0
 
   React.useEffect(() => {
     if (!isAuthenticated) return
@@ -101,6 +112,8 @@ export function SettingsPageClient() {
     form.reset({
       cloudModel: systemSetting?.model_name ?? EMBEDDING_MODELS[0],
       desktopModel: secretarySetting?.embedding_model ?? EMBEDDING_MODELS[0],
+      secretaryModel: secretarySetting?.model_name ?? "",
+      topicNamingModel: secretarySetting?.topic_naming_model ?? "",
     })
   }, [
     form,
@@ -109,6 +122,8 @@ export function SettingsPageClient() {
     isLoadingSecretary,
     systemSetting?.model_name,
     secretarySetting?.embedding_model,
+    secretarySetting?.model_name,
+    secretarySetting?.topic_naming_model,
   ])
 
   async function onSubmit(values: SettingsFormValues) {
@@ -126,8 +141,18 @@ export function SettingsPageClient() {
       if (canEditCloud) {
         tasks.push(updateEmbeddingSetting({ model_name: values.cloudModel }))
       }
-      if (canEditDesktop) {
-        tasks.push(updateUserSecretary({ embedding_model: values.desktopModel }))
+      const secretaryPayload: UserSecretaryUpdate = {}
+      if (canEditDesktop && values.desktopModel?.trim()) {
+        secretaryPayload.embedding_model = values.desktopModel.trim()
+      }
+      if (canEditPersonal && values.secretaryModel?.trim()) {
+        secretaryPayload.model_name = values.secretaryModel.trim()
+      }
+      if (canEditPersonal && values.topicNamingModel?.trim()) {
+        secretaryPayload.topic_naming_model = values.topicNamingModel.trim()
+      }
+      if (Object.keys(secretaryPayload).length > 0) {
+        tasks.push(updateUserSecretary(secretaryPayload))
       }
       await Promise.all(tasks)
       await Promise.all([mutateSystem?.(), mutateSecretary?.()])
@@ -371,6 +396,136 @@ export function SettingsPageClient() {
               <CardFooter className="justify-end">
                 <Badge variant="outline" className="text-xs">
                   {t("desktop.scopeBadge")}
+                </Badge>
+              </CardFooter>
+            </Card>
+
+            <Card className="border-0 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_10px_15px_-3px_rgba(0,0,0,0.04)]">
+              <CardHeader className="space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-lg text-slate-900">
+                      {t("personal.title")}
+                    </CardTitle>
+                    <CardDescription className="text-slate-600">
+                      {t("personal.description")}
+                    </CardDescription>
+                  </div>
+                  <Badge variant="secondary" className="gap-1">
+                    <User className="h-3 w-3" />
+                    {t("personal.badge")}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  {canEditPersonal ? (
+                    <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                  ) : (
+                    <Lock className="h-3.5 w-3.5 text-slate-400" />
+                  )}
+                  <span>
+                    {canEditPersonal
+                      ? t("personal.editableHint")
+                      : t("personal.readonlyHint")}
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="topicNamingModel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("personal.topicLabel")}</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={!canEditPersonal || !hasAvailableModels}
+                      >
+                        <FormControl>
+                          <SelectTrigger disabled={!canEditPersonal || !hasAvailableModels}>
+                            <SelectValue placeholder={t("personal.topicPlaceholder")} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {hasAvailableModels ? (
+                            modelGroups.map((group) => (
+                              <SelectGroup key={group.instance_id}>
+                                <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                                  {group.instance_name}
+                                </SelectLabel>
+                                {group.models.map((model) => (
+                                  <SelectItem key={`${group.instance_id}-${model.id}`} value={model.id}>
+                                    <div className="flex flex-col">
+                                      <span className="text-xs font-medium text-foreground">{model.id}</span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {group.provider || model.owned_by || "provider"}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ))
+                          ) : (
+                            <SelectItem value="empty" disabled>
+                              {t("personal.emptyHint")}
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>{t("personal.topicHelp")}</FormDescription>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="secretaryModel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("personal.secretaryLabel")}</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={!canEditPersonal || !hasAvailableModels}
+                      >
+                        <FormControl>
+                          <SelectTrigger disabled={!canEditPersonal || !hasAvailableModels}>
+                            <SelectValue placeholder={t("personal.secretaryPlaceholder")} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {hasAvailableModels ? (
+                            modelGroups.map((group) => (
+                              <SelectGroup key={group.instance_id}>
+                                <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                                  {group.instance_name}
+                                </SelectLabel>
+                                {group.models.map((model) => (
+                                  <SelectItem key={`${group.instance_id}-${model.id}`} value={model.id}>
+                                    <div className="flex flex-col">
+                                      <span className="text-xs font-medium text-foreground">{model.id}</span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {group.provider || model.owned_by || "provider"}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ))
+                          ) : (
+                            <SelectItem value="empty" disabled>
+                              {t("personal.emptyHint")}
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>{t("personal.secretaryHelp")}</FormDescription>
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+              <CardFooter className="justify-end">
+                <Badge variant="outline" className="text-xs">
+                  {t("personal.scopeBadge")}
                 </Badge>
               </CardFooter>
             </Card>

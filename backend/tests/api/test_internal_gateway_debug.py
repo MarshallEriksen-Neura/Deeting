@@ -30,7 +30,6 @@ async def _seed_internal_provider(session) -> uuid.UUID:
         base_url="https://api.openai.com",
         icon=None,
         credentials_ref="ENV_TEST_KEY",
-        channel="internal",
         priority=0,
         is_enabled=True,
         meta={},

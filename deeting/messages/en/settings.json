@@ -1,7 +1,7 @@
 {
   "settings": {
     "title": "Settings",
-    "subtitle": "Manage cloud and desktop embedding configuration in one place.",
+    "subtitle": "Manage cloud/desktop embeddings and personal model selections in one place.",
     "env": {
       "currentLabel": "Current environment",
       "cloud": "Cloud",
@@ -50,8 +50,23 @@
       "download": "Get the desktop app",
       "scopeBadge": "Local only"
     },
+    "personal": {
+      "title": "Personal Assistant Models",
+      "description": "Topic auto-naming and secretary models apply only to your account.",
+      "badge": "Personal",
+      "editableHint": "Sign in to edit personal models",
+      "readonlyHint": "Sign in required",
+      "topicLabel": "Topic auto-naming model",
+      "topicPlaceholder": "Select a topic auto-naming model",
+      "topicHelp": "Only your own chat models are supported.",
+      "secretaryLabel": "Secretary model",
+      "secretaryPlaceholder": "Select a secretary model",
+      "secretaryHelp": "Used for secretary capabilities and assistant previews.",
+      "emptyHint": "No models available yet",
+      "scopeBadge": "Personal only"
+    },
     "actions": {
-      "hint": "Cloud and desktop settings are independent. Save as needed.",
+      "hint": "Cloud, desktop, and personal settings are independent. Save as needed.",
       "reset": "Reset",
       "save": "Save settings",
       "saving": "Saving..."

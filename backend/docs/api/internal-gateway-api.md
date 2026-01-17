@@ -141,7 +141,7 @@ data: [DONE]
 
 ### 2. Models
 
-获取内部通道可用的模型列表（按 provider_instance 分组，包含公共实例 + 当前用户实例，实例需为 internal/both 通道）。
+获取内部通道可用的模型列表（按 provider_instance 分组，包含公共实例 + 当前用户实例）。
 
 **端点**: `GET /models`
 
@@ -459,7 +459,6 @@ Authorization: Bearer <access_token>
 |------|------|------|
 | `capability` | string | 能力过滤（如 `chat`） |
 | `model` | string | 模型过滤 |
-| `channel` | string | 通道过滤（`internal`/`external`） |
 
 #### 响应体
 
@@ -475,7 +474,6 @@ Authorization: Bearer <access_token>
       "arm_id": "provider-openai-gpt4",
       "capability": "chat",
       "model": "gpt-4",
-      "channel": "external",
       "total_trials": 5000,
       "successes": 4800,
       "success_rate": 0.96,

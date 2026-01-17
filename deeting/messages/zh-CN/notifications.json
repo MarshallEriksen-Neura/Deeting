@@ -8,6 +8,7 @@
     "markAllRead": "全部标记为已读",
     "clear": "清空",
     "settings": "通知设置",
+    "reason": "拒绝原因",
     "types": {
       "info": "信息",
       "success": "成功",
