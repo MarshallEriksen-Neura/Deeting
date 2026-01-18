@@ -44,6 +44,9 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     sessionId,
     streamEnabled,
     errorMessage,
+    statusStage,
+    statusCode,
+    statusMeta,
     setInput,
     setModels,
     setActiveAssistantId,
@@ -341,6 +344,10 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
         messages={messages}
         agent={agent as ChatAssistant}
         isTyping={isTyping}
+        streamEnabled={streamEnabled}
+        statusStage={statusStage}
+        statusCode={statusCode}
+        statusMeta={statusMeta}
       />
 
       <ChatInput 

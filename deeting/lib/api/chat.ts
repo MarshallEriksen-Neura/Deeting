@@ -10,6 +10,7 @@ export type ChatCompletionRequest = {
   model: string
   messages: ChatMessage[]
   stream?: boolean
+  status_stream?: boolean
   temperature?: number
   max_tokens?: number
   provider_model_id?: string
@@ -43,7 +44,11 @@ export async function streamChatCompletion(
     onMessage?: (data: unknown) => void
   } = {}
 ): Promise<string> {
-  const body = JSON.stringify({ ...payload, stream: true })
+  const body = JSON.stringify({
+    ...payload,
+    stream: payload.stream ?? true,
+    status_stream: payload.status_stream ?? true,
+  })
   const response = await requestStream(body, true)
 
   if (!response.ok || !response.body) {

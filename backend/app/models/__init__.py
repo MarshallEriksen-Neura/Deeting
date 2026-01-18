@@ -53,6 +53,7 @@ from .notification import (
 from .media_asset import MediaAsset
 from .provider_preset import ProviderPreset
 from .provider_instance import ProviderInstance, ProviderModel, ProviderCredential
+from .upstream_secret import UpstreamSecret
 from .secretary import UserSecretary
 from .system_setting import SystemSetting
 from .identity import Identity
@@ -68,6 +69,7 @@ __all__ = [
     "ProviderInstance",
     "ProviderModel",
     "ProviderCredential",
+    "UpstreamSecret",
     "GatewayLog",
     "Notification",
     "NotificationReceipt",

@@ -29,7 +29,7 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="实例描述")
     base_url: Mapped[str] = mapped_column(String(255), nullable=False, comment="实例基础 URL，可覆盖模板")
     icon: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="覆盖模板的图标引用")
-    credentials_ref: Mapped[str] = mapped_column(String(128), nullable=False, comment="密钥引用 ID/环境变量名")
+    credentials_ref: Mapped[str] = mapped_column(String(128), nullable=False, comment="密钥引用 ID（db:<uuid> 或别名）")
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0", comment="路由优先级")
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", comment="是否启用")
     meta: Mapped[dict[str, Any]] = mapped_column(
@@ -51,6 +51,30 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<ProviderInstance(slug={self.preset_slug}, name={self.name}, user={self.user_id})>"
+
+    @property
+    def protocol(self) -> str | None:
+        return (self.meta or {}).get("protocol")
+
+    @property
+    def auto_append_v1(self) -> bool | None:
+        return (self.meta or {}).get("auto_append_v1")
+
+    @property
+    def has_credentials(self) -> bool:
+        ref = (self.credentials_ref or "").strip()
+        if not ref:
+            return False
+        if ref.startswith("db:"):
+            return True
+        # 避免触发懒加载，仅在已加载 credentials 时判断别名
+        creds = self.__dict__.get("credentials")
+        if not creds:
+            return False
+        for cred in creds:
+            if cred.alias == ref and cred.is_active:
+                return True
+        return False
 
 
 class ProviderModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -139,7 +163,7 @@ class ProviderCredential(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         SA_UUID(as_uuid=True), ForeignKey("provider_instance.id", ondelete="CASCADE"), nullable=False
     )
     alias: Mapped[str] = mapped_column(String(80), nullable=False, comment="凭证别名")
-    secret_ref_id: Mapped[str] = mapped_column(String(128), nullable=False, comment="密钥引用 ID/环境变量名")
+    secret_ref_id: Mapped[str] = mapped_column(String(128), nullable=False, comment="密钥引用 ID（db:<uuid>）")
     weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0", comment="候选权重偏移")
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0", comment="候选优先级偏移")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", comment="是否启用")

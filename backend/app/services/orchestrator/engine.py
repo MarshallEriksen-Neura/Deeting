@@ -25,6 +25,22 @@ from app.services.workflow.steps.base import (
 
 logger = logging.getLogger(__name__)
 
+STEP_STATUS_STAGE_MAP: dict[str, str] = {
+    "request_adapter": "listen",
+    "validation": "listen",
+    "quota_check": "listen",
+    "rate_limit": "listen",
+    "conversation_load": "remember",
+    "routing": "remember",
+    "template_render": "evolve",
+    "upstream_call": "evolve",
+    "response_transform": "render",
+    "conversation_append": "render",
+    "memory_write": "render",
+    "sanitize": "render",
+    "billing": "render",
+    "audit_log": "render",
+}
 
 class CyclicDependencyError(Exception):
     """循环依赖异常"""
@@ -270,6 +286,10 @@ class OrchestrationEngine:
             start_time = time.perf_counter()
 
             try:
+                stage = STEP_STATUS_STAGE_MAP.get(step.name)
+                if stage:
+                    ctx.emit_status(stage=stage, step=step.name, state="running")
+
                 # 带超时执行
                 step_result = await asyncio.wait_for(
                     step.execute(ctx),

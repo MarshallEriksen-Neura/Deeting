@@ -78,6 +78,7 @@ Content-Type: application/json
     {"role": "user", "content": "Hello!"}
   ],
   "stream": false,
+  "status_stream": true,
   "temperature": 0.7,
   "max_tokens": 1000,
   "provider_model_id": "7a0f2c3e-6b7d-4b9c-8a66-93c59f0a3c23",
@@ -93,6 +94,7 @@ Content-Type: application/json
 | `messages[].role` | string | 是 | 角色：`system`/`user`/`assistant` |
 | `messages[].content` | string/array | 是 | 消息内容 |
 | `stream` | boolean | 否 | 是否流式返回，默认 `false` |
+| `status_stream` | boolean | 否 | 是否通过 SSE 推送状态事件；为 `true` 时即使 `stream=false` 也会返回 SSE |
 | `temperature` | float | 否 | 温度参数 (0-2) |
 | `max_tokens` | integer | 否 | 最大生成 token 数 |
 | `provider_model_id` | string | 是 | 指定 provider model ID（内部网关必填，禁用路由/负载均衡） |
@@ -133,6 +135,22 @@ Content-Type: application/json
 data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}
 
 data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"content":"!"}}]}
+
+data: [DONE]
+```
+
+当 `status_stream=true` 时，SSE 会额外包含状态事件（示例）：
+
+```
+data: {"type":"status","stage":"listen","step":"validation","state":"running","code":"context.loaded","meta":{"count":3,"has_summary":false}}
+
+data: {"type":"status","stage":"remember","step":"routing","state":"success","code":"routing.selected","meta":{"candidates":2,"provider":"openai"}}
+```
+
+若 `stream=false` 且 `status_stream=true`，会在状态事件之后返回一次完整结果：
+
+```
+data: {"id":"chatcmpl-abc123","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"Hello!"}}],"session_id":"session-xyz"}
 
 data: [DONE]
 ```

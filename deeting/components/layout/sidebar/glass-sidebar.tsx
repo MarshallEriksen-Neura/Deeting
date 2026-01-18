@@ -462,7 +462,7 @@ export function GlassSidebarProvider({
   const [isCollapsed, setIsCollapsed] = React.useState(defaultCollapsed)
 
   // Get translations for navigation
-  const tNav = useTranslations()
+  const tNav = useTranslations("common")
 
   // Translation helper that safely handles keys
   const t = React.useCallback(

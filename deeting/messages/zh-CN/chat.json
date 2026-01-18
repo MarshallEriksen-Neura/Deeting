@@ -22,7 +22,30 @@
       "content": "你好！我是 **{name}**。\n{desc}\n\n准备好开始协作了吗？"
     },
     "status": {
-      "thinking": "{name} 正在思考..."
+      "thinking": "{name} 正在思考...",
+      "flow": {
+        "stream": "实时输出",
+        "batch": "构建中",
+        "listen": "分析意图",
+        "remember": "检索记忆",
+        "evolve": "组织回答",
+        "render": "渲染输出"
+      },
+      "placeholder": {
+        "stream": "正在输出内容...",
+        "batch": "正在构建答案容器..."
+      },
+      "detail": {
+        "contextLoaded": "已载入 {count} 条上下文",
+        "contextLoadedWithSummary": "已载入 {count} 条上下文 · 含摘要",
+        "routingSelected": "候选 {candidates} · 已选 {provider}",
+        "templateRendered": "模板引擎 {engine}",
+        "upstreamRequestStream": "上游请求 · 流式",
+        "upstreamRequestBatch": "上游请求 · 整段",
+        "upstreamStreaming": "流式输出中",
+        "upstreamResponse": "上游响应 {latency}ms",
+        "toolCall": "工具调用 {name}"
+      }
     },
     "input": {
       "placeholder": "给 {name} 发消息..."

@@ -86,6 +86,14 @@ class TemplateRenderStep(BaseStep):
             ctx.set("template_render", "request_body", rendered_body)
             ctx.set("template_render", "headers", rendered_headers)
 
+            ctx.emit_status(
+                stage="evolve",
+                step=self.name,
+                state="success",
+                code="template.rendered",
+                meta={"engine": template_engine},
+            )
+
             logger.debug(
                 f"Template rendered trace_id={ctx.trace_id} "
                 f"engine={template_engine} url={rendered_url}"
@@ -211,6 +219,7 @@ class TemplateRenderStep(BaseStep):
         通常直接透传请求数据，但可根据配置进行转换
         """
         merged = {**default_params, **request_data}
+        merged.pop("status_stream", None)
         return merged
 
     async def _render_headers(

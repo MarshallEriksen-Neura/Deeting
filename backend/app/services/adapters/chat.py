@@ -59,6 +59,7 @@ def adapt_anthropic_messages(raw: Any) -> ChatCompletionRequest:
         model=parsed.model,
         messages=messages,
         stream=parsed.stream,
+        status_stream=parsed.status_stream,
         temperature=parsed.temperature,
         max_tokens=parsed.max_tokens,
     )
@@ -86,6 +87,7 @@ def adapt_responses_request(raw: Any) -> ChatCompletionRequest:
         model=parsed.model,
         messages=messages,
         stream=parsed.stream,
+        status_stream=parsed.status_stream,
         temperature=parsed.temperature,
         max_tokens=parsed.max_tokens,
     )

@@ -59,6 +59,9 @@ class ChatCompletionRequest(BaseModel):
     model: str = Field(..., description="目标模型")
     messages: list[ChatMessage] = Field(default_factory=list)
     stream: bool = Field(default=False)
+    status_stream: bool = Field(
+        default=False, description="是否通过 SSE 推送状态事件（用于前端状态流）"
+    )
     temperature: float | None = None
     max_tokens: int | None = None
     provider_model_id: str | None = Field(
@@ -92,6 +95,7 @@ class AnthropicMessagesRequest(BaseModel):
     max_tokens: int | None = Field(default=None, description="输出上限 token 数")
     temperature: float | None = None
     stream: bool = False
+    status_stream: bool = False
 
 
 class ResponsesRequest(BaseModel):
@@ -101,6 +105,7 @@ class ResponsesRequest(BaseModel):
     max_tokens: int | None = None
     temperature: float | None = None
     stream: bool = False
+    status_stream: bool = False
 
 
 class UsageInfo(BaseModel):

@@ -2,6 +2,8 @@
 
 - 前置条件：需要超级管理员权限（Bearer Token），路由前缀 `/api/v1`.
 - 模型定义：`ProviderInstanceCreate`、`ProviderInstanceResponse`、`ProviderModelUpsert` 见 `backend/app/schemas/provider_instance.py`。
+- `ProviderInstanceResponse` 已包含 `protocol`、`auto_append_v1` 字段（来自实例 meta，用于前端回显），以及 `has_credentials`（仅表示是否已配置默认凭证，不暴露密钥）。
+- `POST /providers/verify` 响应新增 `probe_url`，用于展示后端实际探测的上游 URL。
 - 缓存：实例/模型列表有 Redis 短期缓存，写操作会自动失效。
 
 ## 创建实例
@@ -13,14 +15,16 @@
     "preset_slug": "openai",
     "name": "My OpenAI",
     "base_url": "https://api.openai.com",
+    "protocol": "openai",
+    "auto_append_v1": true,
     "icon": null,
-    "credentials_ref": "ENV_OPENAI_KEY",
+    "api_key": "sk-***",
     "priority": 0,
     "is_enabled": true
   }
   ```
 - 响应：`ProviderInstanceResponse`
-- 说明：`preset_slug` 必须是已存在且启用的模板 slug，否则返回 404 `preset not found`；`user_id` 自动填当前超管；`credentials_ref` 为密钥引用，不存明文。
+- 说明：`preset_slug` 必须是已存在且启用的模板 slug，否则返回 404 `preset not found`；`user_id` 自动填当前超管；`credentials_ref` 为密钥引用（仅支持 `db:<uuid>` 或已有凭证别名），不从环境变量读取；若提供 `api_key`，后端会使用 `SECRET_KEY` 加密存储并生成引用（不落库明文）；`auto_append_v1` 仅对 OpenAI 兼容协议生效，默认 `true`。
 
 示例：
 ```bash
@@ -31,7 +35,9 @@ curl -X POST https://host/api/v1/admin/provider-instances \
     "preset_slug": "openai",
     "name": "openai-default",
     "base_url": "https://api.openai.com",
-    "credentials_ref": "ENV_OPENAI_KEY"
+    "protocol": "openai",
+    "auto_append_v1": true,
+    "api_key": "sk-***"
   }'
 ```
 

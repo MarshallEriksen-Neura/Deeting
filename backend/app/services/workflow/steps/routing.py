@@ -187,6 +187,18 @@ class RoutingStep(BaseStep):
             ctx.selected_upstream = routing_result["upstream_url"]
             ctx.routing_weight = routing_result.get("weight")
 
+            candidate_count = 1 + len(backups or [])
+            ctx.emit_status(
+                stage="remember",
+                step=self.name,
+                state="success",
+                code="routing.selected",
+                meta={
+                    "candidates": candidate_count,
+                    "provider": routing_result["provider"],
+                },
+            )
+
             logger.info(
                 f"Routing decided trace_id={ctx.trace_id} "
                 f"model={model} provider={routing_result['provider']} "

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ProviderInstanceCreate(BaseModel):
@@ -11,10 +11,11 @@ class ProviderInstanceCreate(BaseModel):
     description: str | None = Field(default=None, description="实例描述")
     base_url: str = Field(..., description="基础 URL")
     icon: str | None = Field(default=None, description="图标引用，覆盖模板 icon")
-    credentials_ref: str | None = Field(None, description="密钥引用 ID/环境变量名，若提供 api_key 则自动生成")
+    credentials_ref: str | None = Field(None, description="密钥引用 ID（仅支持 db:<uuid> 或已有别名），若提供 api_key 则自动生成")
     api_key: str | None = Field(None, description="上游 API Key (明文)，将自动存入 ProviderCredential")
     protocol: str | None = Field(None, description="协议类型 (openai/anthropic)，若为空则使用 Preset 默认")
     model_prefix: str | None = Field(None, description="模型 ID 映射前缀")
+    auto_append_v1: bool | None = Field(None, description="OpenAI 协议是否自动补 /v1")
     resource_name: str | None = Field(None, description="Azure OpenAI 资源名")
     deployment_name: str | None = Field(None, description="Azure 部署名")
     api_version: str | None = Field(None, description="Azure API 版本，默认 2023-05-15")
@@ -23,16 +24,25 @@ class ProviderInstanceCreate(BaseModel):
     priority: int = Field(0, description="路由优先级")
     is_enabled: bool = Field(True, description="是否启用")
 
+    @field_validator("api_key", "protocol", mode="before")
+    @classmethod
+    def _strip_optional(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
 
 class ProviderInstanceUpdate(BaseModel):
     name: str | None = Field(default=None, description="实例名称")
     description: str | None = Field(default=None, description="实例描述")
     base_url: str | None = Field(default=None, description="基础 URL")
     icon: str | None = Field(default=None, description="图标引用，覆盖模板 icon")
-    credentials_ref: str | None = Field(default=None, description="密钥引用 ID/环境变量名")
+    credentials_ref: str | None = Field(default=None, description="密钥引用 ID（仅支持 db:<uuid> 或已有别名）")
     api_key: str | None = Field(default=None, description="更新默认上游 API Key (明文)，将自动存入 ProviderCredential")
     protocol: str | None = Field(default=None, description="协议类型 (openai/anthropic)")
     model_prefix: str | None = Field(default=None, description="模型 ID 映射前缀")
+    auto_append_v1: bool | None = Field(default=None, description="OpenAI 协议是否自动补 /v1")
     resource_name: str | None = Field(default=None, description="Azure OpenAI 资源名")
     deployment_name: str | None = Field(default=None, description="Azure 部署名")
     api_version: str | None = Field(default=None, description="Azure API 版本")
@@ -40,6 +50,14 @@ class ProviderInstanceUpdate(BaseModel):
     region: str | None = Field(default=None, description="Vertex 区域")
     priority: int | None = Field(default=None, description="路由优先级")
     is_enabled: bool | None = Field(default=None, description="是否启用")
+
+    @field_validator("api_key", "protocol", mode="before")
+    @classmethod
+    def _strip_optional(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
 
 
 class ProviderInstanceResponse(BaseModel):
@@ -49,6 +67,8 @@ class ProviderInstanceResponse(BaseModel):
     name: str
     description: Optional[str] = None
     base_url: str
+    protocol: str | None = None
+    auto_append_v1: bool | None = None
     icon: Optional[str] = None
     priority: int
     is_enabled: bool
@@ -59,6 +79,7 @@ class ProviderInstanceResponse(BaseModel):
     latency_ms: int | None = 0
     sparkline: List[int] = Field(default_factory=list)
     model_count: int = 0
+    has_credentials: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -151,6 +172,7 @@ class ProviderVerifyRequest(BaseModel):
     api_key: str
     model: str | None = None
     protocol: str | None = "openai"
+    auto_append_v1: bool | None = None
     resource_name: str | None = None
     deployment_name: str | None = None
     project_id: str | None = None
@@ -163,3 +185,4 @@ class ProviderVerifyResponse(BaseModel):
     message: str
     latency_ms: int = 0
     discovered_models: List[str] = Field(default_factory=list)
+    probe_url: str | None = None

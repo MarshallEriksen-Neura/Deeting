@@ -22,7 +22,30 @@
       "content": "Hi! I'm **{name}**.\n{desc}\n\nReady to collaborate?"
     },
     "status": {
-      "thinking": "{name} is thinking..."
+      "thinking": "{name} is thinking...",
+      "flow": {
+        "stream": "Live output",
+        "batch": "Constructing",
+        "listen": "Analyzing intent",
+        "remember": "Retrieving memory",
+        "evolve": "Synthesizing response",
+        "render": "Rendering output"
+      },
+      "placeholder": {
+        "stream": "Streaming response...",
+        "batch": "Constructing the answer..."
+      },
+      "detail": {
+        "contextLoaded": "Loaded {count} context items",
+        "contextLoadedWithSummary": "Loaded {count} context items · summary included",
+        "routingSelected": "{candidates} candidates · selected {provider}",
+        "templateRendered": "Template engine {engine}",
+        "upstreamRequestStream": "Upstream request · stream",
+        "upstreamRequestBatch": "Upstream request · batch",
+        "upstreamStreaming": "Streaming output",
+        "upstreamResponse": "Upstream response {latency}ms",
+        "toolCall": "Tool call {name}"
+      }
     },
     "input": {
       "placeholder": "Message {name}..."

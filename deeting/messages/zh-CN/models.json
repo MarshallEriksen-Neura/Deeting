@@ -71,6 +71,8 @@
         "desc": "为模型添加易读名称并控制启用状态。",
         "displayName": "展示名称",
         "unifiedId": "对外模型 ID（路由别名）",
+        "upstreamPath": "上游路径",
+        "requestUrl": "实际请求 URL",
         "weight": "路由权重",
         "priority": "路由优先级"
       },

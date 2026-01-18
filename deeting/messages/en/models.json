@@ -71,6 +71,8 @@
         "desc": "Give the model a readable name and control its availability.",
         "displayName": "Display name",
         "unifiedId": "External model ID (routing alias)",
+        "upstreamPath": "Upstream path",
+        "requestUrl": "Request URL",
         "weight": "Routing weight",
         "priority": "Routing priority"
       },

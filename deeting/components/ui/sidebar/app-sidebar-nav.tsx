@@ -95,7 +95,7 @@ interface AppSidebarNavProps {
 export function AppSidebarNav({ groups }: AppSidebarNavProps) {
   const { state, isMobile } = useSidebar()
   const isCollapsed = state === "collapsed"
-  const t = useTranslations()
+  const t = useTranslations("common")
 
   const translate = React.useCallback(
     (key: string) => {
@@ -146,7 +146,7 @@ interface SidebarGroupProps {
 
 function SidebarGroup({ group, isCollapsed = false }: SidebarGroupProps) {
   const [isExpanded, setIsExpanded] = React.useState(true)
-  const t = useTranslations()
+  const t = useTranslations("common")
 
   const translate = React.useCallback(
     (key: string) => {

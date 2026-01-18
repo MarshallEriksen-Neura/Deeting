@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bandit import BanditArmState
 from app.models.provider_instance import ProviderInstance, ProviderModel
+from app.services.providers.upstream_url import build_upstream_url
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
@@ -31,23 +32,6 @@ from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-def _build_upstream_url(
-    base_url: str,
-    upstream_path: str,
-    protocol: str | None,
-) -> str:
-    base = (base_url or "").rstrip("/")
-    path = (upstream_path or "").lstrip("/")
-    proto = (protocol or "").lower()
-
-    if "openai" in proto and base and not base.endswith("/v1"):
-        base = f"{base}/v1"
-
-    if not path:
-        return base
-    return f"{base}/{path}"
 
 
 @dataclass
@@ -135,16 +119,6 @@ class RoutingSelector:
 
             # 为该实例准备可用凭证列表：默认 credentials_ref + 额外 provider_credential
             cred_entries: list[dict] = []
-            if instance.credentials_ref:
-                cred_entries.append(
-                    {
-                        "id": None,
-                        "alias": "default",
-                        "secret_ref": instance.credentials_ref,
-                        "weight": 0,
-                        "priority": 0,
-                    }
-                )
             extra_creds = credentials_map.get(str(instance.id), [])
             for cred in extra_creds:
                 cred_entries.append(
@@ -157,16 +131,35 @@ class RoutingSelector:
                     }
                 )
 
+            default_ref = instance.credentials_ref
+            if default_ref and not default_ref.startswith("db:"):
+                for cred in extra_creds:
+                    if cred.alias == default_ref:
+                        default_ref = cred.secret_ref_id
+                        break
+            if default_ref:
+                cred_entries.append(
+                    {
+                        "id": None,
+                        "alias": "default",
+                        "secret_ref": default_ref,
+                        "weight": 0,
+                        "priority": 0,
+                    }
+                )
+
             if not cred_entries:
                 continue  # 无可用密钥跳过
 
             for m in instance_models:
                 base_url = instance.base_url or ""
-                protocol = (instance.meta or {}).get("protocol") or preset.provider
-                upstream_url = _build_upstream_url(
+                meta = instance.meta or {}
+                protocol = meta.get("protocol") or preset.provider
+                upstream_url = build_upstream_url(
                     base_url=base_url,
                     upstream_path=m.upstream_path,
                     protocol=protocol,
+                    auto_append_v1=meta.get("auto_append_v1"),
                 )
 
                 for cred in cred_entries:
@@ -256,16 +249,6 @@ class RoutingSelector:
 
         credentials_map = await self.credential_repo.get_by_instance_ids([str(instance.id)])
         cred_entries: list[dict] = []
-        if instance.credentials_ref:
-            cred_entries.append(
-                {
-                    "id": None,
-                    "alias": "default",
-                    "secret_ref": instance.credentials_ref,
-                    "weight": 0,
-                    "priority": 0,
-                }
-            )
         extra_creds = credentials_map.get(str(instance.id), [])
         for cred in extra_creds:
             cred_entries.append(
@@ -278,15 +261,34 @@ class RoutingSelector:
                 }
             )
 
+        default_ref = instance.credentials_ref
+        if default_ref and not default_ref.startswith("db:"):
+            for cred in extra_creds:
+                if cred.alias == default_ref:
+                    default_ref = cred.secret_ref_id
+                    break
+        if default_ref:
+            cred_entries.append(
+                {
+                    "id": None,
+                    "alias": "default",
+                    "secret_ref": default_ref,
+                    "weight": 0,
+                    "priority": 0,
+                }
+            )
+
         if not cred_entries:
             return results
 
         base_url = instance.base_url or ""
-        protocol = (instance.meta or {}).get("protocol") or preset.provider
-        upstream_url = _build_upstream_url(
+        meta = instance.meta or {}
+        protocol = meta.get("protocol") or preset.provider
+        upstream_url = build_upstream_url(
             base_url=base_url,
             upstream_path=model.upstream_path,
             protocol=protocol,
+            auto_append_v1=meta.get("auto_append_v1"),
         )
 
         for cred in cred_entries:

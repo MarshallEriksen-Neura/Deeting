@@ -184,14 +184,14 @@ export function ApiKeyStrip({
               onClick={() => onEdit?.(apiKey)}
               disabled={isDisabled}
             >
-              <Pencil className="size-4 mr-2" />
+              <Pencil className="size-4" />
               {t("actions.edit")}
             </GlassDropdownMenuItem>
             <GlassDropdownMenuItem
               onClick={() => onRoll?.(apiKey)}
               disabled={isDisabled}
             >
-              <RefreshCw className="size-4 mr-2" />
+              <RefreshCw className="size-4" />
               {t("actions.roll")}
             </GlassDropdownMenuItem>
             <GlassDropdownMenuSeparator />
@@ -200,7 +200,7 @@ export function ApiKeyStrip({
               disabled={isDisabled}
               className="text-red-500 focus:text-red-500"
             >
-              <Trash2 className="size-4 mr-2" />
+              <Trash2 className="size-4" />
               {t("actions.revoke")}
             </GlassDropdownMenuItem>
           </GlassDropdownMenuContent>

@@ -98,6 +98,17 @@ class ConversationLoadStep(BaseStep):
         ctx.set("conversation", "merged_messages", merged_messages)
         ctx.set("conversation", "meta", window.get("meta", {}))
 
+        ctx.emit_status(
+            stage="remember",
+            step=self.name,
+            state="success",
+            code="context.loaded",
+            meta={
+                "count": len(window_messages),
+                "has_summary": bool(summary and summary.get("summary_text")),
+            },
+        )
+
         logger.debug(
             f"conversation_loaded session={session_id} "
             f"window_msgs={len(window_messages)} summary={'yes' if summary else 'no'}"

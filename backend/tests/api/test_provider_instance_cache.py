@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.cache import cache
+from app.core.config import settings
 from app.core.cache_keys import CacheKeys
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
@@ -454,6 +455,7 @@ async def test_quick_add_models_defaults_and_upstream_path():
 
 @pytest.mark.asyncio
 async def test_provider_model_test_ping(monkeypatch):
+    monkeypatch.setattr(settings, "SECRET_KEY", "secret")
     class FakeResp:
         def __init__(self):
             self.status_code = 200
@@ -517,7 +519,8 @@ async def test_provider_model_test_ping(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_provider_instance_update_and_delete_invalidate_cache_and_health():
+async def test_provider_instance_update_and_delete_invalidate_cache_and_health(monkeypatch):
+    monkeypatch.setattr(settings, "SECRET_KEY", "secret")
     async with AsyncSessionLocal() as session:
         svc = ProviderInstanceService(session)
         inst = await svc.create_instance(

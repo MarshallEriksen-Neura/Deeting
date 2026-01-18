@@ -12,6 +12,10 @@ interface ChatMessageListProps {
   messages: Message[]
   agent: ChatAssistant
   isTyping: boolean
+  streamEnabled: boolean
+  statusStage: string | null
+  statusCode: string | null
+  statusMeta: Record<string, unknown> | null
 }
 
 function parseMessageContent(content: string): MessagePart[] {
@@ -40,8 +44,23 @@ function parseMessageContent(content: string): MessagePart[] {
   return parts;
 }
 
-export function ChatMessageList({ messages, agent, isTyping }: ChatMessageListProps) {
+export function ChatMessageList({
+  messages,
+  agent,
+  isTyping,
+  streamEnabled,
+  statusStage,
+  statusCode,
+  statusMeta,
+}: ChatMessageListProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null)
+  const lastAssistantId = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.role === "assistant") return messages[i]?.id
+    }
+    return undefined
+  }, [messages])
+  const activeAssistantId = isTyping ? lastAssistantId : undefined
 
   // 自动滚动到底部
   React.useEffect(() => {
@@ -76,7 +95,15 @@ export function ChatMessageList({ messages, agent, isTyping }: ChatMessageListPr
             {/* 气泡 */}
             {msg.role === 'assistant' ? (
               <div className="flex-1 min-w-0">
-                <AIResponseBubble parts={parseMessageContent(msg.content)} />
+                <AIResponseBubble
+                  parts={parseMessageContent(msg.content)}
+                  isActive={msg.id === activeAssistantId}
+                  streamEnabled={streamEnabled}
+                  statusStage={msg.id === activeAssistantId ? statusStage : null}
+                  statusCode={msg.id === activeAssistantId ? statusCode : null}
+                  statusMeta={msg.id === activeAssistantId ? statusMeta : null}
+                  reveal={!isTyping && !streamEnabled && msg.id === lastAssistantId}
+                />
                 <div className="text-[10px] mt-1 opacity-70 text-muted-foreground text-left ml-1">
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
@@ -92,7 +119,7 @@ export function ChatMessageList({ messages, agent, isTyping }: ChatMessageListPr
           </div>
         ))}
 
-        {isTyping && (
+        {isTyping && !activeAssistantId && (
           <div className="flex gap-3">
              <Avatar className="w-8 h-8 border shadow-sm">
                 <AvatarImage src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.name}`} />

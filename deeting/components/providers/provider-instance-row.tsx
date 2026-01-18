@@ -174,18 +174,18 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                   aria-labelledby={`${menuId}-trigger`}
                 >
                   <GlassDropdownMenuItem onClick={() => onToggle(data.id, !isEnabled)}>
-                    <Settings2 className="mr-2 size-4" />
+                    <Settings2 className="size-4" />
                     {isEnabled ? t("actions.disable") : t("actions.enable")}
                   </GlassDropdownMenuItem>
                   {onViewModels && (
                     <GlassDropdownMenuItem onClick={() => onViewModels(data.id)}>
-                      <Server className="mr-2 size-4" />
+                      <Server className="size-4" />
                       {t("actions.models")}
                     </GlassDropdownMenuItem>
                   )}
                   {onEdit && (
                     <GlassDropdownMenuItem onClick={() => onEdit(data.id)}>
-                      <Settings2 className="mr-2 size-4" />
+                      <Settings2 className="size-4" />
                       {t("actions.edit")}
                     </GlassDropdownMenuItem>
                   )}
@@ -198,7 +198,7 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                           setConfirmOpen(true)
                         }}
                         >
-                          <Trash2 className="mr-2 size-4" />
+                          <Trash2 className="size-4" />
                           {t("actions.remove")}
                       </GlassDropdownMenuItem>
                     </AlertDialogTrigger>

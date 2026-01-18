@@ -18,15 +18,7 @@ import {
   FormItem,
   FormLabel,
 } from "@/components/ui/form"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { ModelPicker } from "@/components/models/model-picker"
 import { useI18n } from "@/hooks/use-i18n"
 import { type SettingsFormValues, type ModelGroup } from "../types"
 
@@ -87,43 +79,21 @@ export function PersonalSettingsCard({
           name="secretaryModel"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t("personal.secretaryLabel")}</FormLabel>
-              <Select
-                onValueChange={field.onChange}
-                defaultValue={field.value}
-                disabled={!canEditPersonal || !hasAvailableModels}
-              >
-                <FormControl>
-                  <SelectTrigger disabled={!canEditPersonal || !hasAvailableModels}>
-                    <SelectValue placeholder={t("personal.secretaryPlaceholder")} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {hasAvailableModels ? (
-                    modelGroups.map((group) => (
-                      <SelectGroup key={group.instance_id}>
-                        <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                          {group.instance_name}
-                        </SelectLabel>
-                        {group.models.map((model) => (
-                          <SelectItem key={`${group.instance_id}-${model.id}`} value={model.id}>
-                            <div className="flex flex-col">
-                              <span className="text-xs font-medium text-foreground">{model.id}</span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {group.provider || model.owned_by || "provider"}
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))
-                  ) : (
-                    <SelectItem value="empty" disabled>
-                      {t("personal.emptyHint")}
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
+              <FormLabel className="sr-only">{t("personal.secretaryLabel")}</FormLabel>
+              <FormControl>
+                <ModelPicker
+                  value={field.value}
+                  onChange={field.onChange}
+                  modelGroups={modelGroups}
+                  title={t("personal.secretaryLabel")}
+                  subtitle={t("personal.secretaryPlaceholder")}
+                  searchPlaceholder={t("personal.modelSearchPlaceholder")}
+                  emptyText={t("personal.emptyHint")}
+                  noResultsText={t("personal.modelNoResults")}
+                  disabled={!canEditPersonal || !hasAvailableModels}
+                  scrollAreaClassName="h-64 pr-1"
+                />
+              </FormControl>
               <FormDescription>{t("personal.secretaryHelp")}</FormDescription>
             </FormItem>
           )}

@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { createChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat";
+import { streamChatCompletion, type ChatMessage } from "@/lib/api/chat";
 import { fetchConversationWindow } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
 
@@ -96,6 +96,11 @@ interface ChatState {
   sessionId?: string;
   streamEnabled: boolean;
   errorMessage: string | null;
+  statusStage: string | null;
+  statusStep: string | null;
+  statusState: string | null;
+  statusCode: string | null;
+  statusMeta: Record<string, unknown> | null;
 }
 
 interface ChatActions {
@@ -135,6 +140,11 @@ export const useChatStore = create<ChatState & ChatActions>()(
       sessionId: undefined,
       streamEnabled: false,
       errorMessage: null,
+      statusStage: null,
+      statusStep: null,
+      statusState: null,
+      statusCode: null,
+      statusMeta: null,
 
       setInput: (input) => set({ input }),
 
@@ -251,6 +261,11 @@ export const useChatStore = create<ChatState & ChatActions>()(
           messages: [...state.messages, userMessage, assistantMessage],
           input: "",
           isLoading: true,
+          statusStage: null,
+          statusStep: null,
+          statusState: null,
+          statusCode: null,
+          statusMeta: null,
         }));
 
         const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant.systemPrompt);
@@ -267,35 +282,63 @@ export const useChatStore = create<ChatState & ChatActions>()(
         const storageKey = sessionKeyForAssistant(activeAssistant.id);
 
         try {
-          if (streamEnabled) {
-            await streamChatCompletion(payload, {
+          await streamChatCompletion(
+            { ...payload, stream: streamEnabled, status_stream: true },
+            {
               onDelta: (_delta, snapshot) => {
                 updateMessage(assistantMessageId, snapshot);
               },
               onMessage: (data) => {
+                if (data && typeof data === "object" && "type" in data) {
+                  const payload = data as {
+                    type?: string;
+                    stage?: string | null;
+                    step?: string | null;
+                    state?: string | null;
+                    code?: string | null;
+                    meta?: unknown;
+                    message?: string;
+                    error_code?: string;
+                  };
+                  if (payload.type === "status") {
+                    set({
+                      statusStage: payload.stage ?? null,
+                      statusStep: payload.step ?? null,
+                      statusState: payload.state ?? null,
+                      statusCode: payload.code ?? null,
+                      statusMeta: typeof payload.meta === "object" && payload.meta ? (payload.meta as Record<string, unknown>) : null,
+                    });
+                    return;
+                  }
+                  if (payload.type === "error") {
+                    const message = payload.message || "Request failed";
+                    updateMessage(assistantMessageId, message);
+                    set({ errorMessage: payload.error_code ? `${payload.error_code}: ${message}` : message });
+                    return;
+                  }
+                }
+
                 const session = (data as { session_id?: string | null })?.session_id ?? undefined;
                 if (session) {
                   setSessionId(session);
                   localStorage.setItem(storageKey, session);
                 }
               },
-            });
-          } else {
-            const response = await createChatCompletion({ ...payload, stream: false });
-            const reply = response?.choices?.[0]?.message?.content ?? "";
-            updateMessage(assistantMessageId, reply);
-            const session = response?.session_id ?? undefined;
-            if (session) {
-              setSessionId(session);
-              localStorage.setItem(storageKey, session);
             }
-          }
+          );
         } catch (error) {
           const message = error instanceof Error && error.message ? error.message : "Request failed";
           updateMessage(assistantMessageId, message);
           set({ errorMessage: message });
         } finally {
-          set({ isLoading: false });
+          set({
+            isLoading: false,
+            statusStage: null,
+            statusStep: null,
+            statusState: null,
+            statusCode: null,
+            statusMeta: null,
+          });
         }
       },
     }),

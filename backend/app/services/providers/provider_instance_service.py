@@ -20,6 +20,10 @@ from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.core.cache_invalidation import CacheInvalidator
 from app.constants.model_capability_map import guess_capabilities, primary_capability
 from app.services.secrets.manager import SecretManager
+from app.services.providers.upstream_url import (
+    build_upstream_url,
+    build_upstream_url_with_params,
+)
 
 
 class ProviderInstanceService:
@@ -43,6 +47,7 @@ class ProviderInstanceService:
         api_key: str,
         model: str | None = None,
         protocol: str | None = "openai",
+        auto_append_v1: bool | None = None,
         resource_name: str | None = None,
         deployment_name: str | None = None,
         project_id: str | None = None,
@@ -61,7 +66,9 @@ class ProviderInstanceService:
             headers["Authorization"] = f"Bearer {api_key}"
             test_model = model or "gemini-1.5-flash"
             url = f"{url}publishers/google/models/{test_model}:streamGenerateContent?alt=sse"
-            return await self._probe_vertex_deployment(url, headers)
+            result = await self._probe_vertex_deployment(url, headers)
+            result["probe_url"] = url
+            return result
 
         # Azure 特殊处理
         elif "azure" in preset_slug.lower() and resource_name:
@@ -71,18 +78,27 @@ class ProviderInstanceService:
                 version = api_version or "2023-05-15"
                 url = f"{url}/openai/deployments/{deployment_name}/chat/completions?api-version={version}"
                 headers["api-key"] = api_key
-                return await self._probe_azure_deployment(url, headers)
+                result = await self._probe_azure_deployment(url, headers)
+                result["probe_url"] = url
+                return result
         
         # 协议处理
         elif protocol == "claude" or protocol == "anthropic":
-            url = f"{url}/v1/models"
+            url = build_upstream_url(
+                base_url=url,
+                upstream_path="v1/models",
+                protocol=protocol,
+                auto_append_v1=False,
+            )
             headers["x-api-key"] = api_key
             headers["anthropic-version"] = "2023-06-01"
         else:
-            if not url.endswith("/v1"):
-                 url = f"{url}/v1/models"
-            else:
-                 url = f"{url}/models"
+            url = build_upstream_url(
+                base_url=url,
+                upstream_path="models",
+                protocol=protocol,
+                auto_append_v1=auto_append_v1,
+            )
             headers["Authorization"] = f"Bearer {api_key}"
         
         start = time.time()
@@ -104,21 +120,24 @@ class ProviderInstanceService:
                         "success": True,
                         "message": "Verification successful",
                         "latency_ms": latency,
-                        "discovered_models": models
+                        "discovered_models": models,
+                        "probe_url": url,
                     }
                 else:
                     return {
                         "success": False,
                         "message": f"Verification failed: HTTP {resp.status_code} - {resp.text[:100]}",
                         "latency_ms": latency,
-                        "discovered_models": []
+                        "discovered_models": [],
+                        "probe_url": url,
                     }
         except Exception as e:
             return {
                 "success": False,
                 "message": f"Verification error: {str(e)}",
                 "latency_ms": 0,
-                "discovered_models": []
+                "discovered_models": [],
+                "probe_url": url,
             }
 
     def _get_vertex_access_token(self, creds_input: str) -> str:
@@ -211,15 +230,15 @@ class ProviderInstanceService:
     async def _get_secret(self, preset, instance: ProviderInstance) -> str | None:
         """解析实例默认凭证：先查实例内 credential，再查 SecretManager。"""
         secret_ref = instance.credentials_ref or getattr(preset, "auth_config", {}).get("secret_ref_id")
-        if secret_ref:
+        if secret_ref and not secret_ref.startswith("db:"):
             grouped = await self.credential_repo.get_by_instance_ids([str(instance.id)])
             creds = grouped.get(str(instance.id), [])
-            clean_ref = secret_ref.split(":", 1)[1] if secret_ref.startswith("db:") else secret_ref
             for cred in creds:
-                if cred.alias == clean_ref and cred.is_active:
-                    return cred.secret_ref_id
+                if cred.alias == secret_ref and cred.is_active:
+                    secret_ref = cred.secret_ref_id
+                    break
         provider = getattr(preset, "provider", None) if preset else None
-        return await self.secret_manager.get(provider, secret_ref)
+        return await self.secret_manager.get(provider, secret_ref, self.session)
 
     def _normalize_base_url(self, preset, instance: ProviderInstance) -> str:
         base = instance.base_url or getattr(preset, "base_url", "")
@@ -427,6 +446,7 @@ class ProviderInstanceService:
         api_key: str | None = None,
         protocol: str | None = None,
         model_prefix: str | None = None,
+        auto_append_v1: bool | None = None,
         priority: int = 0,
         is_enabled: bool = True,
         resource_name: str | None = None,
@@ -444,6 +464,8 @@ class ProviderInstanceService:
             meta["protocol"] = protocol
         if model_prefix:
             meta["model_prefix"] = model_prefix
+        if auto_append_v1 is not None:
+            meta["auto_append_v1"] = auto_append_v1
         if resource_name:
             meta["resource_name"] = resource_name
         if deployment_name:
@@ -456,12 +478,20 @@ class ProviderInstanceService:
             meta["region"] = region
 
         final_credentials_ref = credentials_ref
-        
+        if final_credentials_ref and self.secret_manager._looks_like_plain_secret(final_credentials_ref):
+            raise ValueError("plaintext_secret_ref_forbidden")
         if api_key:
-            final_credentials_ref = "default"
+            try:
+                final_credentials_ref = await self.secret_manager.store(
+                    provider=preset.provider,
+                    raw_secret=api_key,
+                    db_session=self.session,
+                )
+            except RuntimeError as exc:
+                raise ValueError("secret_key_not_configured") from exc
 
         if not final_credentials_ref:
-             raise ValueError("credentials_ref or api_key is required")
+            raise ValueError("credentials_ref or api_key is required")
 
         instance_id = uuid.uuid4()
         instance_data = {
@@ -480,17 +510,6 @@ class ProviderInstanceService:
         
         instance = await self.instance_repo.create(instance_data)
         
-        if api_key:
-            # Use repository for credential creation
-            cred_data = {
-                "id": uuid.uuid4(),
-                "instance_id": instance_id,
-                "alias": "default",
-                "secret_ref_id": api_key,
-                "is_active": True
-            }
-            await self.credential_repo.create(cred_data)
-
         await self._invalidator.on_provider_instance_changed(str(user_id) if user_id else None)
         return instance
 
@@ -509,26 +528,45 @@ class ProviderInstanceService:
             if key in fields and fields[key] is not None:
                 updatable[key] = fields[key]
 
-        for key in ["protocol", "model_prefix", "resource_name", "deployment_name", "api_version", "project_id", "region"]:
-            if key in fields and fields[key] is not None:
-                meta_updates[key] = fields[key]
+        for key in [
+            "protocol",
+            "model_prefix",
+            "auto_append_v1",
+            "resource_name",
+            "deployment_name",
+            "api_version",
+            "project_id",
+            "region",
+        ]:
+            if key not in fields or fields[key] is None:
+                continue
+            if key == "protocol" and isinstance(fields[key], str) and not fields[key].strip():
+                continue
+            meta_updates[key] = fields[key]
 
         if meta_updates:
             meta = dict(getattr(instance, "meta", {}) or {})
             meta.update(meta_updates)
             updatable["meta"] = meta
 
-        # 处理 api_key 更新：追加默认凭证
+        if "credentials_ref" in updatable and self.secret_manager._looks_like_plain_secret(updatable["credentials_ref"]):
+            raise ValueError("plaintext_secret_ref_forbidden")
+
+        # 处理 api_key 更新：写入加密密钥并更新 credentials_ref
         api_key = fields.get("api_key")
         if api_key:
-            cred_data = {
-                "id": uuid.uuid4(),
-                "instance_id": instance_id,
-                "alias": "default",
-                "secret_ref_id": api_key,
-                "is_active": True,
-            }
-            await self.credential_repo.create(cred_data)
+            preset = await self.preset_repo.get_by_slug(instance.preset_slug)
+            existing_ref = instance.credentials_ref if instance.credentials_ref and instance.credentials_ref.startswith("db:") else None
+            try:
+                new_ref = await self.secret_manager.store(
+                    provider=preset.provider if preset else None,
+                    raw_secret=api_key,
+                    db_session=self.session,
+                    secret_ref_id=existing_ref,
+                )
+            except RuntimeError as exc:
+                raise ValueError("secret_key_not_configured") from exc
+            updatable["credentials_ref"] = new_ref
             await self._invalidator.on_provider_credentials_changed(str(instance_id))
 
         if updatable:
@@ -643,25 +681,14 @@ class ProviderInstanceService:
         protocol: str | None,
         instance: ProviderInstance,
     ) -> tuple[str, dict]:
-        params: dict[str, Any] = {}
-        path = (upstream_path or "").lstrip("/")
-        base = (base_url or "").rstrip("/")
-        proto = (protocol or "").lower()
-
-        # Azure 追加 api-version
-        if "azure" in proto:
-            version = (instance.meta or {}).get("api_version") or "2023-05-15"
-            params["api-version"] = version
-            return f"{base}/{path}", params
-
-        # Google/Gemini 直接拼路径
-        if "gemini" in proto or "google" in proto or "vertex" in proto:
-            return f"{base}/{path}", params
-
-        # OpenAI 兼容
-        if base.endswith("/v1"):
-            return f"{base}/{path}", params
-        return f"{base}/v1/{path}", params
+        meta = instance.meta or {}
+        return build_upstream_url_with_params(
+            base_url=base_url,
+            upstream_path=upstream_path,
+            protocol=protocol,
+            auto_append_v1=meta.get("auto_append_v1"),
+            api_version=meta.get("api_version"),
+        )
 
     async def test_model(
         self,
@@ -753,17 +780,35 @@ class ProviderInstanceService:
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
         alias: str,
-        secret_ref_id: str,
+        secret_ref_id: str | None = None,
         weight: int = 0,
         priority: int = 0,
         is_active: bool = True,
+        api_key: str | None = None,
     ) -> ProviderCredential:
-        await self.assert_instance_access(instance_id, user_id)
+        instance = await self.assert_instance_access(instance_id, user_id)
         
         # 唯一性校验
         exists = await self.credential_repo.get_by_alias(instance_id, alias)
         if exists:
             raise ValueError("alias_exists")
+
+        if api_key:
+            preset = await self.preset_repo.get_by_slug(instance.preset_slug)
+            try:
+                secret_ref_id = await self.secret_manager.store(
+                    provider=preset.provider if preset else None,
+                    raw_secret=api_key,
+                    db_session=self.session,
+                )
+            except RuntimeError as exc:
+                raise ValueError("secret_key_not_configured") from exc
+        elif not secret_ref_id:
+            raise ValueError("secret_ref_id_or_api_key_required")
+        elif self.secret_manager._looks_like_plain_secret(secret_ref_id):
+            raise ValueError("plaintext_secret_ref_forbidden")
+        elif not secret_ref_id.startswith("db:"):
+            raise ValueError("secret_ref_id_invalid_format")
 
         cred_data = {
             "id": uuid.uuid4(),

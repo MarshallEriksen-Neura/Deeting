@@ -13,6 +13,7 @@ export { FilterLens } from "./filter-lens"
 export { ModelMatrix, ModelDataStrip } from "./model-matrix"
 export { TestDrawer } from "./test-drawer"
 export { ModelEmptyState } from "./empty-state"
+export { ModelPicker } from "./model-picker"
 
 // Main page component
 export { ModelsManager } from "./models-manager"

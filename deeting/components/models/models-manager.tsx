@@ -85,6 +85,29 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     [instances, instanceId, normalizeStatus]
   )
 
+  const buildRequestUrl = React.useCallback(
+    (baseUrl?: string, upstreamPath?: string) => {
+      if (!baseUrl) return ""
+      const base = baseUrl.trim().replace(/\/+$/, "")
+      if (!base) return ""
+      const path = (upstreamPath || "").replace(/^\/+/, "")
+      const protocolValue = (
+        instance?.protocol ||
+        instance?.provider ||
+        instance?.preset_slug ||
+        ""
+      ).toLowerCase()
+      const isOpenAI = protocolValue.includes("openai") && !protocolValue.includes("azure")
+      const appendV1 = instance?.auto_append_v1 ?? (isOpenAI ? true : false)
+      let resolvedBase = base
+      if (isOpenAI && appendV1 && !resolvedBase.endsWith("/v1")) {
+        resolvedBase = `${resolvedBase}/v1`
+      }
+      return path ? `${resolvedBase}/${path}` : resolvedBase
+    },
+    [instance]
+  )
+
   // Normalization helpers to provide UI-ready safe defaults
   const toNumber = React.useCallback((v: unknown, fallback = 0) => {
     const n = Number(v)
@@ -132,6 +155,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       )
 
       const limitConfig = (m.limit_config || {}) as Record<string, unknown>
+      const requestUrl = buildRequestUrl(instance?.base_url, m.upstream_path)
 
       return {
         uuid: m.id,
@@ -146,6 +170,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           output: outputPrice,
         },
         is_active: m.is_active,
+        upstream_path: m.upstream_path,
+        request_url: requestUrl,
         weight: toNumber(m.weight, 0),
         priority: toNumber(m.priority, 0),
         updated_at: m.updated_at || m.synced_at || "",

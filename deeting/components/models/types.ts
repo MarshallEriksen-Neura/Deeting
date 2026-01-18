@@ -40,6 +40,10 @@ export interface ProviderModel {
   }
   /** Whether model is active in the gateway */
   is_active: boolean
+  /** Upstream path for building request URL */
+  upstream_path?: string
+  /** Fully resolved request URL preview */
+  request_url?: string
   /** Routing weight */
   weight?: number
   /** Routing priority */
@@ -83,6 +87,10 @@ export interface ProviderInstance {
   preset_slug?: string
   /** API base URL */
   base_url: string
+  /** Protocol hint (e.g. openai/anthropic) */
+  protocol?: string | null
+  /** OpenAI auto-append /v1 toggle */
+  auto_append_v1?: boolean | null
   /** Current status */
   status?: ProviderStatus
   /** Last ping latency in ms */

@@ -208,7 +208,7 @@ const GlassDropdownMenuItem = React.forwardRef<
         {icon}
       </span>
     )}
-    <span className="flex-1">{children}</span>
+    <span className="flex flex-1 items-center gap-2">{children}</span>
     {selected && (
       <Check className="size-4 text-[var(--primary)]" />
     )}

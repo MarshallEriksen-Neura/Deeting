@@ -61,6 +61,7 @@ export const ProviderVerifyRequestSchema = z.object({
   api_key: z.string(),
   model: z.string().optional(),
   protocol: z.string().optional(),
+  auto_append_v1: z.boolean().optional(),
   resource_name: z.string().optional(),
   deployment_name: z.string().optional(),
   project_id: z.string().optional(),
@@ -73,6 +74,7 @@ export const ProviderVerifyResponseSchema = z.object({
   message: z.string(),
   latency_ms: z.number(),
   discovered_models: z.array(z.string()),
+  probe_url: z.string().optional(),
 })
 
 export type ProviderVerifyRequest = z.infer<typeof ProviderVerifyRequestSchema>
@@ -90,6 +92,7 @@ export const ProviderInstanceCreateSchema = z.object({
   api_key: z.string().nullable().optional(),
   protocol: z.string().nullable().optional(),
   model_prefix: z.string().nullable().optional(),
+  auto_append_v1: z.boolean().nullable().optional(),
   resource_name: z.string().nullable().optional(),
   deployment_name: z.string().nullable().optional(),
   api_version: z.string().nullable().optional(),
@@ -106,6 +109,8 @@ export const ProviderInstanceResponseSchema = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
   base_url: z.string(),
+  protocol: z.string().nullable().optional(),
+  auto_append_v1: z.boolean().nullable().optional(),
   icon: z.string().nullable().optional(),
   theme_color: z.string().nullable().optional(),
   priority: z.number(),
@@ -116,6 +121,7 @@ export const ProviderInstanceResponseSchema = z.object({
   latency_ms: z.number().optional(),
   sparkline: z.array(z.number()).optional(),
   model_count: z.number().optional(),
+  has_credentials: z.boolean().optional(),
 })
 
 export type ProviderInstanceCreate = z.infer<typeof ProviderInstanceCreateSchema>

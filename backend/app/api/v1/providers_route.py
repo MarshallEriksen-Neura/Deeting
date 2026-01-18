@@ -75,6 +75,7 @@ async def verify_provider(
         api_key=payload.api_key,
         model=payload.model,
         protocol=payload.protocol,
+        auto_append_v1=payload.auto_append_v1,
         resource_name=payload.resource_name,
         deployment_name=payload.deployment_name,
         project_id=payload.project_id,
@@ -103,6 +104,7 @@ async def create_instance(
             api_key=payload.api_key,
             protocol=payload.protocol,
             model_prefix=payload.model_prefix,
+            auto_append_v1=payload.auto_append_v1,
             priority=payload.priority,
             is_enabled=payload.is_enabled,
             resource_name=payload.resource_name,
@@ -115,6 +117,10 @@ async def create_instance(
         message = str(e)
         if message == "preset_not_found":
             raise HTTPException(status_code=404, detail="preset not found")
+        if message == "secret_key_not_configured":
+            raise HTTPException(status_code=400, detail="SECRET_KEY not configured")
+        if message == "plaintext_secret_ref_forbidden":
+            raise HTTPException(status_code=400, detail="credentials_ref must be a reference, not a raw key")
         raise HTTPException(status_code=400, detail=message)
     return instance
 
@@ -145,7 +151,11 @@ async def update_instance(
     svc = ProviderInstanceService(db)
     try:
         updated = await svc.update_instance(instance_uuid, getattr(user, "id", None), **payload.model_dump(exclude_none=True))
-    except ValueError:
+    except ValueError as e:
+        if str(e) == "secret_key_not_configured":
+            raise HTTPException(status_code=400, detail="SECRET_KEY not configured")
+        if str(e) == "plaintext_secret_ref_forbidden":
+            raise HTTPException(status_code=400, detail="credentials_ref must be a reference, not a raw key")
         raise HTTPException(status_code=404, detail="instance not found")
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")

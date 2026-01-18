@@ -81,6 +81,33 @@ class ResponseTransformStep(BaseStep):
             # 写入转换后的响应
             ctx.set("response_transform", "response", transformed)
 
+            tool_calls = []
+            if isinstance(transformed, dict):
+                choices = transformed.get("choices") or []
+                if choices:
+                    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+                    if isinstance(message, dict):
+                        tool_calls = message.get("tool_calls") or []
+            if isinstance(tool_calls, list) and tool_calls:
+                names = []
+                for call in tool_calls:
+                    func = call.get("function") if isinstance(call, dict) else None
+                    name = None
+                    if isinstance(func, dict):
+                        name = func.get("name")
+                    if not name and isinstance(call, dict):
+                        name = call.get("name")
+                    if name and name not in names:
+                        names.append(name)
+                if names:
+                    ctx.emit_status(
+                        stage="evolve",
+                        step="tool_call",
+                        state="running",
+                        code="tool.call",
+                        meta={"name": ", ".join(names[:2])},
+                    )
+
             logger.debug(
                 f"Response transformed trace_id={ctx.trace_id} "
                 f"provider={provider} tokens={ctx.billing.total_tokens}"

@@ -1,44 +1,23 @@
 'use client';
-import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon, Cpu, Zap, Check, Search } from 'lucide-react';
+import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon } from 'lucide-react';
 import { Link } from '@/i18n/routing';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { HistorySidebar } from '../components/history-sidebar';
 import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
-import type { ModelInfo } from '@/lib/api/models';
 import { useI18n } from '@/hooks/use-i18n';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
-
-type ModelVisual = {
-  icon: typeof Cpu;
-  color: string;
-  indicator: string;
-};
-
-function resolveModelVisual(model?: ModelInfo): ModelVisual {
-  const ownedBy = model?.owned_by?.toLowerCase() ?? "";
-  if (ownedBy.includes("openai")) {
-    return { icon: Zap, color: "text-emerald-500", indicator: "bg-emerald-500" };
-  }
-  if (ownedBy.includes("anthropic") || ownedBy.includes("claude")) {
-    return { icon: Cpu, color: "text-orange-500", indicator: "bg-orange-500" };
-  }
-  if (ownedBy.includes("deepseek")) {
-    return { icon: Cpu, color: "text-blue-500", indicator: "bg-blue-500" };
-  }
-  return { icon: Cpu, color: "text-black/40 dark:text-white/40", indicator: "bg-black/30 dark:bg-white/30" };
-}
+import { ModelPicker, resolveModelVisual } from '@/components/models/model-picker';
+import { resolveStatusDetail } from '@/lib/chat/status-detail';
+import { StatusPill } from '@/components/ui/status-pill';
 
 export default function HUD() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
-  const [modelQuery, setModelQuery] = useState('');
   const t = useI18n('chat');
   
   const { setTheme, theme } = useTheme();
@@ -53,6 +32,9 @@ export default function HUD() {
     setModels,
     setActiveAssistantId,
     loadHistory,
+    isLoading,
+    statusCode,
+    statusMeta,
   } = useChatStore(
     useShallow((state) => ({
       config: state.config,
@@ -64,31 +46,13 @@ export default function HUD() {
       setModels: state.setModels,
       setActiveAssistantId: state.setActiveAssistantId,
       loadHistory: state.loadHistory,
+      isLoading: state.isLoading,
+      statusCode: state.statusCode,
+      statusMeta: state.statusMeta,
     }))
   );
 
   const { assistants: serviceAssistants, models: serviceModels, modelGroups: serviceModelGroups } = useChatService({ enabled: true });
-
-  const filteredModelGroups = useMemo(() => {
-    const query = modelQuery.trim().toLowerCase();
-    if (!query) return serviceModelGroups;
-    return serviceModelGroups
-      .map((group) => ({
-        ...group,
-        models: group.models.filter((model) => {
-          const name = model.id?.toLowerCase() ?? '';
-          const ownedBy = model.owned_by?.toLowerCase() ?? '';
-          const providerId = model.provider_model_id?.toLowerCase() ?? '';
-          return name.includes(query) || ownedBy.includes(query) || providerId.includes(query);
-        }),
-      }))
-      .filter((group) => group.models.length > 0);
-  }, [modelQuery, serviceModelGroups]);
-
-  const filteredModelCount = useMemo(
-    () => filteredModelGroups.reduce((sum, group) => sum + group.models.length, 0),
-    [filteredModelGroups]
-  );
 
   useEffect(() => {
     if (serviceAssistants.length) {
@@ -122,6 +86,7 @@ export default function HUD() {
   const activeModel =
     models.find((model) => model.provider_model_id === config.model || model.id === config.model) ?? models[0];
   const activeModelVisual = resolveModelVisual(activeModel);
+  const statusDetail = resolveStatusDetail(t, statusCode, statusMeta);
 
   return (
     <>
@@ -158,12 +123,15 @@ export default function HUD() {
           {/* Session Title (Center) */}
           <div 
              onClick={() => setIsHistoryOpen(true)}
-             className="flex items-center gap-1.5 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors cursor-pointer group/session"
+             className="flex items-center gap-2 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors cursor-pointer group/session"
           >
              <span className="text-xs font-semibold truncate max-w-[120px]">{t("hud.sessionTitle")}</span>
              <div className="w-5 h-5 rounded-md bg-black/5 dark:bg-white/5 flex items-center justify-center group-hover/session:bg-black/10 dark:group-hover/session:bg-white/10 transition-colors">
                 <ChevronDown className="w-3 h-3 text-black/30 dark:text-white/30 transition-transform group-hover/session:rotate-180" />
              </div>
+             {isLoading && statusDetail ? (
+               <StatusPill text={statusDetail} className="ml-1 max-w-[160px]" tone="subtle" isLoading />
+             ) : null}
           </div>
 
           <span className="text-black/10 dark:text-white/10 text-xs self-center h-4 w-[1px] bg-current"></span>
@@ -191,106 +159,16 @@ export default function HUD() {
                 transition={{ type: 'spring', damping: 20, stiffness: 300 }}
                 className="absolute top-full mt-3 w-80 bg-[#F7F9FB]/95 dark:bg-[#0b0c0e]/92 backdrop-blur-2xl border border-black/5 dark:border-white/10 rounded-[2.25rem] shadow-[0_20px_50px_-18px_rgba(15,23,42,0.35),0_8px_20px_-12px_rgba(37,99,235,0.18)] overflow-hidden p-4 flex flex-col gap-4 z-50"
             >
-                <div className="flex flex-col gap-3 rounded-[1.75rem] bg-white/80 dark:bg-white/5 border border-black/5 dark:border-white/10 p-4 shadow-[0_10px_24px_-16px_rgba(15,23,42,0.3)]">
-                  <div className="flex items-center justify-between px-1">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-black text-black/55 dark:text-white/60 uppercase tracking-[0.2em]">
-                        {t("model.label")}
-                      </span>
-                      <span className="text-[11px] text-black/40 dark:text-white/40">
-                        {t("model.placeholder")}
-                      </span>
-                    </div>
-                    <span className="rounded-full bg-black/5 dark:bg-white/10 px-2.5 py-0.5 text-[10px] font-mono text-black/40 dark:text-white/40">
-                      {filteredModelCount}
-                    </span>
-                  </div>
-
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30 dark:text-white/30" />
-                    <Input
-                      value={modelQuery}
-                      onChange={(event) => setModelQuery(event.target.value)}
-                      placeholder={t("model.searchPlaceholder")}
-                      className="h-10 rounded-full border-0 bg-white/90 dark:bg-black/40 pl-9 text-[12px] font-medium text-black/80 dark:text-white/80 placeholder:text-black/30 dark:placeholder:text-white/30 shadow-[0_6px_16px_-12px_rgba(15,23,42,0.25)] focus-visible:ring-2 focus-visible:ring-blue-500/30"
-                    />
-                  </div>
-
-                  {serviceModelGroups.length === 0 ? (
-                    <div className="text-[11px] text-black/40 dark:text-white/40 px-1">
-                      {t("error.modelUnavailable")}
-                    </div>
-                  ) : (
-                    <ScrollArea className="max-h-72 pr-1">
-                      <div className="space-y-3">
-                        {filteredModelGroups.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-6 text-center text-[11px] text-black/40 dark:text-white/40">
-                            {t("model.noResults")}
-                          </div>
-                        ) : (
-                          filteredModelGroups.map((group) => (
-                            <div
-                              key={group.instance_id}
-                              className="rounded-2xl bg-white/80 dark:bg-black/30 border border-black/5 dark:border-white/10 shadow-[0_10px_24px_-16px_rgba(15,23,42,0.25)]"
-                            >
-                              <div className="flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-black/40 dark:text-white/40">
-                                <span className="font-black">{group.instance_name}</span>
-                                {group.provider && (
-                                  <span className="text-[9px] font-semibold text-black/35 dark:text-white/35">
-                                    {group.provider}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex flex-col gap-1.5 px-2 pb-2">
-                                {group.models.map((model) => {
-                                  const modelValue = model.provider_model_id ?? model.id;
-                                  const isActive = config.model === modelValue || config.model === model.id;
-                                  const visual = resolveModelVisual(model);
-                                  const Icon = visual.icon;
-                                  return (
-                                    <Button
-                                      key={modelValue}
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => setConfig({ model: modelValue })}
-                                      className={`h-11 justify-between rounded-xl px-3 text-[11px] font-semibold transition-colors ${
-                                        isActive
-                                          ? "bg-black/10 text-black dark:bg-white/10 dark:text-white ring-1 ring-blue-500/25"
-                                          : "text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/5"
-                                      }`}
-                                    >
-                                      <span className="flex items-center gap-2 min-w-0">
-                                        <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-black/5 dark:bg-white/10 ${isActive ? "bg-white/80 dark:bg-black/60" : ""}`}>
-                                          <Icon className={`h-3.5 w-3.5 ${visual.color}`} />
-                                        </span>
-                                        <span className="flex min-w-0 flex-col text-left leading-tight">
-                                          <span className="truncate text-[11px] font-semibold">
-                                            {model.id}
-                                          </span>
-                                          {model.owned_by ? (
-                                            <span className="truncate text-[9px] text-black/35 dark:text-white/35">
-                                              {model.owned_by}
-                                            </span>
-                                          ) : null}
-                                        </span>
-                                      </span>
-                                      {isActive ? (
-                                        <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                      ) : (
-                                        <span className="h-2 w-2 rounded-full bg-black/10 dark:bg-white/10" />
-                                      )}
-                                    </Button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  )}
-                </div>
+                <ModelPicker
+                  value={config.model}
+                  onChange={(value) => setConfig({ model: value })}
+                  modelGroups={serviceModelGroups}
+                  title={t("model.label")}
+                  subtitle={t("model.placeholder")}
+                  searchPlaceholder={t("model.searchPlaceholder")}
+                  emptyText={t("error.modelUnavailable")}
+                  noResultsText={t("model.noResults")}
+                />
 
                 <div className="flex items-center justify-center pb-1">
                     <div className="w-12 h-1 rounded-full bg-black/10 dark:bg-white/10" />

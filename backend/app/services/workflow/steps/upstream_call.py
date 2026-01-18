@@ -69,6 +69,33 @@ def _parse_response_body(response: httpx.Response) -> Any:
         return {"raw_text": response.text}
 
 
+def _truncate_text(text: str, limit: int = 2000) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(truncated)"
+
+
+def _safe_log_payload(payload: Any, limit: int = 2000) -> str:
+    try:
+        text = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        text = str(payload)
+    return _truncate_text(text, limit)
+
+
+def _filter_headers_for_log(headers: httpx.Headers) -> dict[str, str]:
+    allowed = {"www-authenticate", "x-request-id", "x-trace-id", "x-error-code"}
+    return {k: v for k, v in headers.items() if k.lower() in allowed}
+
+
+def _mask_secret_ref(secret_ref: str | None) -> str:
+    if not secret_ref:
+        return ""
+    if len(secret_ref) <= 8:
+        return "*" * len(secret_ref)
+    return f"{secret_ref[:4]}...{secret_ref[-4:]}"
+
+
 @dataclass
 class StreamTokenAccumulator:
     """
@@ -87,6 +114,7 @@ class StreamTokenAccumulator:
     finish_reason: str | None = None
     model: str | None = None
     assistant_content: list[str] = field(default_factory=list)
+    tool_call_names: list[str] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
@@ -135,6 +163,18 @@ class StreamTokenAccumulator:
                             if isinstance(content, str) and content:
                                 self.assistant_content.append(content)
 
+                            tool_calls = delta.get("tool_calls")
+                            if isinstance(tool_calls, list):
+                                for tc in tool_calls:
+                                    func = tc.get("function") if isinstance(tc, dict) else None
+                                    name = None
+                                    if isinstance(func, dict):
+                                        name = func.get("name")
+                                    if not name and isinstance(tc, dict):
+                                        name = tc.get("name")
+                                    if name and name not in self.tool_call_names:
+                                        self.tool_call_names.append(name)
+
                         # 提取 usage（通常在最后一个块）
                         if "usage" in data:
                             usage = data["usage"]
@@ -178,10 +218,23 @@ async def stream_with_billing(
         accumulator: Token 累计器
         on_complete: 流完成时的回调函数，用于触发计费
     """
+    tool_call_emitted = False
     try:
         async for chunk in stream:
             # 解析并累计 token
             accumulator.parse_sse_chunk(chunk)
+            if (
+                not tool_call_emitted
+                and accumulator.tool_call_names
+            ):
+                ctx.emit_status(
+                    stage="evolve",
+                    step="tool_call",
+                    state="running",
+                    code="tool.call",
+                    meta={"name": accumulator.tool_call_names[0]},
+                )
+                tool_call_emitted = True
             yield chunk
     except Exception as e:
         accumulator.error = str(e)
@@ -321,6 +374,12 @@ class UpstreamCallStep(BaseStep):
         # 判断是否流式
         is_stream = request_body.get("stream", False)
         ctx.set("upstream_call", "stream", is_stream)
+        ctx.emit_status(
+            stage="evolve",
+            step=self.name,
+            state="running",
+            code="upstream.request.stream" if is_stream else "upstream.request.batch",
+        )
 
         # 允许从 routing.limit_config 覆盖超时
         limit_config = ctx.get("routing", "limit_config") or {}
@@ -425,6 +484,22 @@ class UpstreamCallStep(BaseStep):
                 f"latency_ms={latency_ms:.2f}"
             )
 
+            if is_stream:
+                ctx.emit_status(
+                    stage="evolve",
+                    step=self.name,
+                    state="streaming",
+                    code="upstream.streaming",
+                )
+            else:
+                ctx.emit_status(
+                    stage="evolve",
+                    step=self.name,
+                    state="success",
+                    code="upstream.response",
+                    meta={"latency_ms": round(latency_ms)},
+                )
+
             return StepResult(
                 status=StepStatus.SUCCESS,
                 data={
@@ -477,6 +552,17 @@ class UpstreamCallStep(BaseStep):
             ctx.upstream_result.status_code = e.response.status_code
             ctx.upstream_result.latency_ms = latency_ms
             ctx.upstream_result.error_code = f"HTTP_{e.response.status_code}"
+            upstream_body = _parse_response_body(e.response)
+            safe_headers = _filter_headers_for_log(e.response.headers)
+            logger.warning(
+                "Upstream http error trace_id=%s status=%s url=%s provider=%s body=%s headers=%s",
+                ctx.trace_id,
+                e.response.status_code,
+                upstream_url,
+                ctx.get("routing", "provider") or "unknown",
+                _safe_log_payload(upstream_body),
+                safe_headers,
+            )
             ctx.mark_error(
                 ErrorSource.UPSTREAM,
                 f"UPSTREAM_{e.response.status_code}",
@@ -524,7 +610,15 @@ class UpstreamCallStep(BaseStep):
         auth_config = ctx.get("routing", "auth_config") or {}
         provider = ctx.get("routing", "provider") or auth_config.get("provider")
         secret_ref = auth_config.get("secret_ref_id") or auth_config.get("secret")
-        secret = await self.secret_manager.get(provider, secret_ref)
+        secret = await self.secret_manager.get(provider, secret_ref, ctx.db_session)
+        if not secret:
+            logger.warning(
+                "Upstream auth secret missing trace_id=%s provider=%s auth_type=%s secret_ref_id=%s",
+                ctx.trace_id,
+                provider,
+                auth_type,
+                _mask_secret_ref(secret_ref),
+            )
 
         if auth_type == "api_key":
             header_name = auth_config.get("header", "x-api-key")
@@ -768,6 +862,23 @@ class UpstreamCallStep(BaseStep):
                     if accumulator:
                         accumulator.error = str(exc)
                     raise
+            except httpx.HTTPStatusError as exc:
+                upstream_body = _parse_response_body(exc.response)
+                safe_headers = _filter_headers_for_log(exc.response.headers)
+                logger.warning(
+                    "Upstream stream http error trace_id=%s status=%s url=%s provider=%s body=%s headers=%s",
+                    ctx.trace_id,
+                    exc.response.status_code,
+                    url,
+                    ctx.get("routing", "provider") or "unknown",
+                    _safe_log_payload(upstream_body),
+                    safe_headers,
+                )
+                if accumulator:
+                    accumulator.error = str(exc)
+                if selection:
+                    await self.proxy_pool.report_failure(selection.endpoint_id)
+                raise
             except Exception as e:
                 if accumulator:
                     accumulator.error = str(e)

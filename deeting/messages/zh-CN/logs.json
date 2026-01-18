@@ -125,7 +125,7 @@
       "costUpstream": "上游成本",
       "callUser": "调用者 ID",
       "preset": "预设 ID",
-      "error": "错误码",
+      "errorCode": "错误码",
       "upstreamModel": "上游模型"
     },
     "error": {

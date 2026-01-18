@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.http_client import create_async_http_client
-from app.models.provider_instance import ProviderInstance, ProviderModel, ProviderCredential
+from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
@@ -148,22 +148,17 @@ class LLMService:
 
     async def _get_auth_headers(self, session, preset: ProviderPreset, instance: ProviderInstance) -> dict:
         secret_ref = instance.credentials_ref or preset.auth_config.get("secret_ref_id")
-        secret = ""
 
-        # 1. Priority: Check instance-specific credentials (eager loaded)
-        # matches if secret_ref is an alias like "default"
-        if instance.credentials and secret_ref:
-            # Handle potential legacy "db:" prefix just in case, but prefer clean alias
-            clean_ref = secret_ref.split(":", 1)[1] if secret_ref.startswith("db:") else secret_ref
-            
+        # 如果 secret_ref 是别名，先映射到真实引用
+        if secret_ref and not secret_ref.startswith("db:") and instance.credentials:
             for cred in instance.credentials:
-                if cred.alias == clean_ref and cred.is_active:
-                    secret = cred.secret_ref_id
+                if cred.alias == secret_ref and cred.is_active:
+                    secret_ref = cred.secret_ref_id
                     break
-        
-        # 2. Fallback: Global/Env Secrets via SecretManager
-        if not secret and secret_ref:
-            secret = await self.secret_manager.get(preset.provider, secret_ref)
+
+        secret = ""
+        if secret_ref:
+            secret = await self.secret_manager.get(preset.provider, secret_ref, session)
 
         if not secret:
             return {}

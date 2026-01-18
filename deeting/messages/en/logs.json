@@ -125,7 +125,7 @@
       "costUpstream": "Upstream cost",
       "callUser": "Caller ID",
       "preset": "Preset ID",
-      "error": "Error code",
+      "errorCode": "Error code",
       "upstreamModel": "Upstream model"
     },
     "error": {

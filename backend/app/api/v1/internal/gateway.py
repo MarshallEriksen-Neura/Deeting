@@ -32,8 +32,10 @@
   - 查看已注册的编排步骤
 """
 
+import asyncio
+import json
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastapi import APIRouter
 
@@ -67,6 +69,7 @@ from app.schemas.gateway import (
     StepRegistryResponse,
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.repositories.bandit_repository import BanditRepository
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
@@ -78,11 +81,84 @@ from app.services.workflow.steps.upstream_call import (
 )
 from app.api.v1.external.gateway import _stream_billing_callback
 from app.schemas.bandit import BanditReportResponse, BanditReportSummary
-from app.repositories.bandit_repository import BanditRepository
 
 logger = logging.getLogger(__name__)
 
+def _format_sse(payload: dict[str, Any] | str) -> bytes:
+    if isinstance(payload, str):
+        data = payload
+    else:
+        data = json.dumps(payload, ensure_ascii=False, default=str)
+    return f"data: {data}\n\n".encode("utf-8")
 
+
+async def _status_stream_chat(
+    ctx: WorkflowContext,
+    orchestrator: GatewayOrchestrator,
+) -> AsyncIterator[bytes]:
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+
+    def emitter(payload: dict[str, Any]) -> None:
+        try:
+            queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            pass
+
+    ctx.status_emitter = emitter
+    ctx.emit_status(stage="listen", step="request_adapter", state="running")
+
+    task = asyncio.create_task(orchestrator.execute(ctx))
+
+    while True:
+        if task.done() and queue.empty():
+            break
+        try:
+            payload = await asyncio.wait_for(queue.get(), timeout=0.25)
+            yield _format_sse(payload)
+        except TimeoutError:
+            continue
+
+    result = await task
+    if not result.success or not ctx.is_success:
+        yield _format_sse(
+            {
+                "type": "error",
+                "error_code": ctx.error_code or "GATEWAY_ERROR",
+                "message": ctx.error_message or "Request failed",
+                "source": ctx.error_source.value if ctx.error_source else "gateway",
+                "trace_id": ctx.trace_id,
+            }
+        )
+        yield _format_sse("[DONE]")
+        return
+
+    if ctx.get("upstream_call", "stream"):
+        if ctx.status_stage != "render":
+            yield _format_sse(
+                {
+                    "type": "status",
+                    "stage": "render",
+                    "step": "upstream_call",
+                    "state": "streaming",
+                    "trace_id": ctx.trace_id,
+                    "timestamp": ctx.created_at.isoformat(),
+                }
+            )
+        stream = ctx.get("upstream_call", "response_stream")
+        accumulator = ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        wrapped_stream = stream_with_billing(
+            stream=stream,
+            ctx=ctx,
+            accumulator=accumulator,
+            on_complete=_stream_internal_callback,
+        )
+        async for chunk in wrapped_stream:
+            yield chunk
+        return
+
+    response_body = ctx.get("response_transform", "response") or ctx.get("upstream_call", "response") or {}
+    yield _format_sse(response_body)
+    yield _format_sse("[DONE]")
 def _estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / 4)) if text else 1
 
@@ -364,6 +440,12 @@ async def chat_completions(
     )
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
+
+    if request_body.status_stream:
+        return StreamingResponse(
+            _status_stream_chat(ctx, orchestrator),
+            media_type="text/event-stream",
+        )
 
     result = await orchestrator.execute(ctx)
     if not result.success or not ctx.is_success:

@@ -64,6 +64,26 @@ function TextInput({ label, value, onChange, placeholder }: TextInputProps) {
   )
 }
 
+type ReadonlyInputProps = {
+  label: string
+  value: string
+  placeholder?: string
+}
+
+function ReadonlyInput({ label, value, placeholder }: ReadonlyInputProps) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-[var(--muted)]">{label}</Label>
+      <Input
+        value={value}
+        placeholder={placeholder}
+        readOnly
+        className="h-9 bg-white/5 border-white/10 text-xs font-mono text-[var(--muted)]"
+      />
+    </div>
+  )
+}
+
 type ModelConfigPanelProps = {
   model: ProviderModel
   onSave?: (model: ProviderModel, payload: ProviderModelUpdate) => Promise<void>
@@ -270,6 +290,16 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
               value={unifiedModelId}
               onChange={setUnifiedModelId}
               placeholder={model.unified_model_id || model.id}
+            />
+            <ReadonlyInput
+              label={t("basic.upstreamPath")}
+              value={model.upstream_path || ""}
+              placeholder={model.upstream_path ? undefined : "-"}
+            />
+            <ReadonlyInput
+              label={t("basic.requestUrl")}
+              value={model.request_url || ""}
+              placeholder={model.request_url ? undefined : "-"}
             />
             <NumberInput
               label={t("basic.weight")}

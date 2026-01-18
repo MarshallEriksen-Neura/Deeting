@@ -8,7 +8,7 @@ WorkflowContext: 编排上下文管理
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,6 +113,14 @@ class WorkflowContext:
     step_timings: dict[str, float] = field(default_factory=dict)  # step_name -> ms
     failed_step: str | None = None
 
+    # ===== 状态流（可选）=====
+    status_emitter: Callable[[dict[str, Any]], Any] | None = None
+    status_stage: str | None = None
+    status_step: str | None = None
+    status_state: str | None = None
+    status_code: str | None = None
+    status_meta: dict[str, Any] | None = None
+
     def get(self, step_name: str, key: str, default: Any = None) -> Any:
         """
         从指定步骤的命名空间获取值
@@ -148,6 +156,63 @@ class WorkflowContext:
         """记录步骤执行完成"""
         self.executed_steps.append(step_name)
         self.step_timings[step_name] = duration_ms
+
+    def emit_status(
+        self,
+        stage: str,
+        step: str | None = None,
+        state: str = "running",
+        code: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        推送状态流事件（可选）
+
+        Args:
+            stage: listen/remember/evolve/render
+            step: 当前步骤名称
+            state: running/success/failed 等
+            code: 状态码（用于前端 i18n 渲染）
+            meta: 状态元信息（用于前端插值）
+        """
+        if not self.status_emitter:
+            return
+
+        if (
+            stage == self.status_stage
+            and step == self.status_step
+            and state == self.status_state
+            and code == self.status_code
+            and meta == self.status_meta
+        ):
+            return
+
+        self.status_stage = stage
+        self.status_step = step
+        self.status_state = state
+        self.status_code = code
+        self.status_meta = meta
+
+        payload = {
+            "type": "status",
+            "stage": stage,
+            "step": step,
+            "state": state,
+            "code": code,
+            "meta": meta,
+            "trace_id": self.trace_id,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        result = self.status_emitter(payload)
+        if hasattr(result, "__await__"):
+            # 不阻塞流程，异步派发
+            try:
+                import asyncio
+
+                asyncio.create_task(result)
+            except RuntimeError:
+                # 非运行中的事件循环时忽略
+                pass
 
     def mark_error(
         self,

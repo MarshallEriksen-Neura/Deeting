@@ -62,10 +62,19 @@ async def create_credential(
             weight=payload.weight,
             priority=payload.priority,
             is_active=payload.is_active,
+            api_key=payload.api_key,
         )
     except ValueError as e:
         if str(e) == "alias_exists":
             raise HTTPException(status_code=409, detail="alias already exists")
+        if str(e) == "secret_ref_id_or_api_key_required":
+            raise HTTPException(status_code=400, detail="secret_ref_id or api_key required")
+        if str(e) == "plaintext_secret_ref_forbidden":
+            raise HTTPException(status_code=400, detail="secret_ref_id must be a reference, not a raw key")
+        if str(e) == "secret_ref_id_invalid_format":
+            raise HTTPException(status_code=400, detail="secret_ref_id must start with db:")
+        if str(e) == "secret_key_not_configured":
+            raise HTTPException(status_code=400, detail="SECRET_KEY not configured")
         raise
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")

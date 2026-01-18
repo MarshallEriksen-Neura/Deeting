@@ -61,6 +61,8 @@ interface ConnectProviderInitialValues {
   project_id?: string | null
   region?: string | null
   protocol?: string | null
+  auto_append_v1?: boolean | null
+  has_credentials?: boolean
 }
 
 export interface ConnectProviderDrawerProps {
@@ -104,6 +106,10 @@ export function ConnectProviderDrawer({
   const protocolValue = (protocol || "").toLowerCase()
   const isOpenAIProtocol = protocolValue.includes("openai")
   const isAnthropicProtocol = protocolValue.includes("anthropic")
+  const [autoAppendV1, setAutoAppendV1] = React.useState(
+    initialValues?.auto_append_v1 ?? (isOpenAIProtocol ? true : false)
+  )
+  const hasCredentials = Boolean(initialValues?.has_credentials)
 
   const normalizedBaseUrl = React.useMemo(() => {
     const raw = baseUrl.trim()
@@ -111,11 +117,11 @@ export function ConnectProviderDrawer({
       return ""
     }
     const base = raw.replace(/\/+$/, "")
-    if (isOpenAIProtocol && !base.endsWith("/v1")) {
+    if (isOpenAIProtocol && autoAppendV1 && !base.endsWith("/v1")) {
       return `${base}/v1`
     }
     return base
-  }, [baseUrl, isOpenAIProtocol])
+  }, [baseUrl, isOpenAIProtocol, autoAppendV1])
 
   const endpointPreview = React.useMemo(() => {
     if (!normalizedBaseUrl) {
@@ -139,12 +145,16 @@ export function ConnectProviderDrawer({
 
   React.useEffect(() => {
     if (!isOpen) return
-    setPresetSlug(preset?.slug || "custom")
+    const nextPresetSlug = preset?.slug || "custom"
+    const nextProtocol = initialValues?.protocol || preset?.protocol || "openai"
+    const nextIsOpenAI = (nextProtocol || "").toLowerCase().includes("openai")
+    setPresetSlug(nextPresetSlug)
     setName(initialValues?.name || preset?.name || "")
     setDescription(initialValues?.description || "")
     setBaseUrl(initialValues?.base_url || preset?.default_endpoint || "")
     setApiKey(initialValues?.api_key || "")
-    setProtocol(initialValues?.protocol || preset?.protocol || "openai")
+    setProtocol(nextProtocol)
+    setAutoAppendV1(initialValues?.auto_append_v1 ?? (nextIsOpenAI ? true : false))
     setIcon(initialValues?.icon || preset?.icon_key || "lucide:server")
     setCustomIconUrl("")
     setBrandColor(initialValues?.theme_color || preset?.brand_color || "#3b82f6")
@@ -199,6 +209,7 @@ export function ConnectProviderDrawer({
         base_url: baseUrl,
         api_key: apiKey,
         protocol,
+        auto_append_v1: isOpenAIProtocol ? autoAppendV1 : undefined,
         resource_name: resourceName || undefined,
         deployment_name: deploymentName || undefined,
         api_version: apiVersion || undefined,
@@ -210,16 +221,18 @@ export function ConnectProviderDrawer({
         setLogs([
           `> ${result.message}`,
           `> latency ${result.latency_ms} ms`,
+          result.probe_url ? `> probe ${result.probe_url}` : null,
           result.discovered_models.length
             ? `> models: ${result.discovered_models.join(", ")}`
             : "> no models returned",
-        ])
+        ].filter(Boolean) as string[])
       } else {
         setConnectionStatus('error')
         setLogs([
           `> ${result.message}`,
           `> latency ${result.latency_ms} ms`,
-        ])
+          result.probe_url ? `> probe ${result.probe_url}` : null,
+        ].filter(Boolean) as string[])
       }
     } catch (err: any) {
       setConnectionStatus('error')
@@ -232,7 +245,14 @@ export function ConnectProviderDrawer({
       setLogs([`> ${t("drawer.baseUrlRequired")}`])
       return
     }
+    const trimmedApiKey = apiKey.trim()
+    if (mode === "create" && !trimmedApiKey) {
+      setLogs([`> ${t("drawer.apiKeyRequired")}`])
+      setConnectionStatus("error")
+      return
+    }
     const resolvedIcon = (customIconUrl || icon || preset?.icon_key || "").trim() || null
+    const protocolValue = (protocol || "").trim()
     setSaving(true)
     setLogs([])
     try {
@@ -244,9 +264,10 @@ export function ConnectProviderDrawer({
           base_url: baseUrl,
           icon: resolvedIcon,
           theme_color: brandColor || null,
-          credentials_ref: apiKey ? null : "default",
-          api_key: apiKey || null,
-          protocol,
+          credentials_ref: null,
+          api_key: trimmedApiKey || null,
+          protocol: protocolValue || null,
+          auto_append_v1: isOpenAIProtocol ? autoAppendV1 : null,
           priority: 0,
           is_enabled: enabled,
           resource_name: resourceName || null,
@@ -256,20 +277,27 @@ export function ConnectProviderDrawer({
           region: region || null,
         })
       } else if (mode === "edit" && instanceId) {
-        await update(instanceId, {
+        const payload: Record<string, unknown> = {
           name,
           description: description || null,
           base_url: baseUrl,
           icon: resolvedIcon,
           theme_color: brandColor || null,
-          api_key: apiKey || null,
           is_enabled: enabled,
+          auto_append_v1: isOpenAIProtocol ? autoAppendV1 : null,
           resource_name: resourceName || null,
           deployment_name: deploymentName || null,
           api_version: apiVersion || null,
           project_id: projectId || null,
           region: region || null,
-        })
+        }
+        if (trimmedApiKey) {
+          payload.api_key = trimmedApiKey
+        }
+        if (protocolValue) {
+          payload.protocol = protocolValue
+        }
+        await update(instanceId, payload)
       }
       onSave({ baseUrl, apiKey, protocol, name, description, is_enabled: enabled })
       onClose()
@@ -474,50 +502,55 @@ export function ConnectProviderDrawer({
                 )}
               </div>
               
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
-                  {isSystem ? <Lock className="size-4 opacity-50" /> : <Terminal className="size-4 text-blue-400" />}
+              <div className="space-y-2">
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+                    {isSystem ? <Lock className="size-4 opacity-50" /> : <Terminal className="size-4 text-blue-400" />}
+                  </div>
+                  <Input
+                    value={baseUrl}
+                    onChange={(e) => !isSystem && setBaseUrl(e.target.value)}
+                    readOnly={isSystem}
+                    className={cn(
+                      "pl-9 bg-white/5 border-white/10 transition-all duration-300 font-mono text-sm",
+                      isSystem 
+                        ? "text-muted-foreground cursor-default focus-visible:ring-0" 
+                        : "focus:border-blue-500/50 focus:bg-blue-900/10 text-blue-100"
+                    )}
+                    placeholder="http://localhost:11434"
+                  />
+                  
+                  {/* Visual Feedback Line (Heartbeat) */}
+                  <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/5 overflow-hidden rounded-b-md">
+                    {connectionStatus === 'testing' && (
+                      <motion.div 
+                        className="h-full bg-gradient-to-r from-transparent via-blue-500 to-transparent w-1/2"
+                        animate={{ x: ["-100%", "200%"] }}
+                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                      />
+                    )}
+                    {connectionStatus === 'success' && (
+                      <div className="h-full w-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                    )}
+                    {connectionStatus === 'error' && (
+                      <div className="h-full w-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+                    )}
+                  </div>
                 </div>
-                <Input
-                  value={baseUrl}
-                  onChange={(e) => !isSystem && setBaseUrl(e.target.value)}
-                  readOnly={isSystem}
-                  className={cn(
-                    "pl-9 bg-white/5 border-white/10 transition-all duration-300 font-mono text-sm",
-                    isSystem 
-                      ? "text-muted-foreground cursor-default focus-visible:ring-0" 
-                      : "focus:border-blue-500/50 focus:bg-blue-900/10 text-blue-100"
-                  )}
-                  placeholder="http://localhost:11434"
-                />
+
                 {normalizedBaseUrl && (
-                  <div className="mt-2 text-[11px] text-muted-foreground">
+                  <div className="text-[11px] text-muted-foreground">
                     <span className="text-foreground/80">{t("drawer.endpointPreviewLabel")}</span>
                     <span className="ml-2 font-mono break-all">{endpointPreview}</span>
                     <div className="mt-1 text-[10px] text-muted-foreground/80">
                       {isOpenAIProtocol
-                        ? t("drawer.endpointPreviewHintOpenAI")
+                        ? autoAppendV1
+                          ? t("drawer.endpointPreviewHintOpenAI")
+                          : t("drawer.endpointPreviewHintOpenAIDisabled")
                         : t("drawer.endpointPreviewHintGeneric")}
                     </div>
                   </div>
                 )}
-                
-                {/* Visual Feedback Line (Heartbeat) */}
-                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/5 overflow-hidden rounded-b-md">
-                  {connectionStatus === 'testing' && (
-                    <motion.div 
-                      className="h-full bg-gradient-to-r from-transparent via-blue-500 to-transparent w-1/2"
-                      animate={{ x: ["-100%", "200%"] }}
-                      transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                    />
-                  )}
-                  {connectionStatus === 'success' && (
-                    <div className="h-full w-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                  )}
-                  {connectionStatus === 'error' && (
-                    <div className="h-full w-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
-                  )}
-                </div>
               </div>
 
               {/* Console Log Area (Slide down) */}
@@ -548,7 +581,20 @@ export function ConnectProviderDrawer({
             <div className="space-y-3">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 {t("drawer.secretKey")}
-                {!isSystem && <span className="ml-2 text-[10px] normal-case opacity-50">{t("drawer.noAuth")}</span>}
+                {mode === "edit" ? (
+                  <span className="ml-2 text-[10px] normal-case opacity-60">
+                    {hasCredentials ? t("drawer.authConfigured") : t("drawer.authMissing")}
+                  </span>
+                ) : (
+                  <span className="ml-2 text-[10px] normal-case opacity-60">
+                    {t("drawer.authRequired")}
+                  </span>
+                )}
+                {mode === "create" && (
+                  <span className="ml-1 text-red-400" aria-hidden="true">
+                    *
+                  </span>
+                )}
               </Label>
               <div className="relative">
                 <Key className={cn(
@@ -559,7 +605,13 @@ export function ConnectProviderDrawer({
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={isSystem ? "sk-..." : t("drawer.noAuth")}
+                  placeholder={
+                    mode === "edit"
+                      ? (hasCredentials ? t("drawer.secretPlaceholderConfigured") : t("drawer.secretPlaceholderMissing"))
+                      : (isSystem ? "sk-..." : t("drawer.secretPlaceholderCreate"))
+                  }
+                  required={mode === "create"}
+                  aria-required={mode === "create"}
                   className={cn(
                     "pl-9 bg-white/5 border-white/10 h-12 text-base transition-all duration-300",
                     "placeholder:text-muted-foreground/30",
@@ -579,6 +631,19 @@ export function ConnectProviderDrawer({
                 </button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-4 pt-4">
+                {isOpenAIProtocol && (
+                  <div className="flex items-start justify-between gap-3 rounded-md border border-white/10 bg-white/5 p-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">
+                        {t("drawer.autoAppendV1Label")}
+                      </Label>
+                      <p className="text-[10px] text-muted-foreground/60">
+                        {t("drawer.autoAppendV1Hint")}
+                      </p>
+                    </div>
+                    <Switch checked={autoAppendV1} onCheckedChange={setAutoAppendV1} />
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">{t("drawer.modelPrefixLabel")}</Label>
                   <Input 

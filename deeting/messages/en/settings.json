@@ -62,6 +62,8 @@
       "secretaryLabel": "Secretary model",
       "secretaryPlaceholder": "Select a secretary model",
       "secretaryHelp": "Used for secretary capabilities and assistant previews.",
+      "modelSearchPlaceholder": "Search models...",
+      "modelNoResults": "No matching models found",
       "emptyHint": "No models available yet",
       "scopeBadge": "Personal only"
     },

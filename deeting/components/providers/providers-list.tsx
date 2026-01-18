@@ -91,6 +91,12 @@ export function ProvidersList() {
     if (!editing) return undefined
     return instances.find((i) => i.id === editing)
   }, [instances, editing])
+  const isSystemPreset = React.useMemo(() => {
+    if (editingInstance) {
+      return !editingInstance.user_id
+    }
+    return !(editingItem?.category?.toLowerCase().includes("custom") ?? false)
+  }, [editingInstance, editingItem?.category])
 
   const handleToggle = async (id: string, enabled: boolean) => {
     await update(id, { is_enabled: enabled })
@@ -164,7 +170,7 @@ export function ProvidersList() {
             ? {
                 slug: editingItem.presetSlug,
                 name: editingItem.presetName,
-                type: "system",
+                type: isSystemPreset ? "system" : "custom",
                 protocol: "openai",
                 brand_color: editingInstance?.theme_color || "#10a37f",
                 icon_key: editingInstance?.icon || editingItem.icon || "lucide:server",
@@ -182,6 +188,9 @@ export function ProvidersList() {
                 is_enabled: editingInstance?.is_enabled ?? editingItem.is_enabled !== false,
                 icon: editingInstance?.icon || editingItem.icon || null,
                 theme_color: editingInstance?.theme_color || null,
+                protocol: editingInstance?.protocol || undefined,
+                auto_append_v1: editingInstance?.auto_append_v1 ?? undefined,
+                has_credentials: editingInstance?.has_credentials ?? undefined,
               }
             : undefined
         }
