@@ -8,7 +8,9 @@
     },
     "model": {
       "label": "模型",
-      "placeholder": "选择模型"
+      "placeholder": "选择模型",
+      "searchPlaceholder": "搜索模型...",
+      "noResults": "未找到匹配的模型"
     },
     "empty": {
       "notFoundTitle": "未找到该助手",

@@ -30,11 +30,13 @@ export default getRequestConfig(async ({ requestLocale }) => {
   const messagesEntries = await Promise.all(
     namespaces.map(async (ns) => {
       const mod = await import(`../messages/${locale}/${ns}.json`)
-      return mod.default
+      const raw = mod.default as Record<string, unknown>
+      const scoped = (raw && raw[ns] ? raw[ns] : raw) as Record<string, unknown>
+      return { [ns]: scoped }
     })
   )
 
-  // 深合并简单场景：同级 keys 不冲突情况下直接展开
+  // 以 namespace 为一级 key，避免不同文件顶层 key 相互覆盖
   const messages = Object.assign({}, ...messagesEntries)
 
   return {

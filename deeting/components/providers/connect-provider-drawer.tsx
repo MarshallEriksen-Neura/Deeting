@@ -101,6 +101,29 @@ export function ConnectProviderDrawer({
   const [baseUrl, setBaseUrl] = React.useState(initialValues?.base_url || preset?.default_endpoint || "")
   const [apiKey, setApiKey] = React.useState(initialValues?.api_key || "")
   const [protocol, setProtocol] = React.useState(initialValues?.protocol || preset?.protocol || "openai")
+  const protocolValue = (protocol || "").toLowerCase()
+  const isOpenAIProtocol = protocolValue.includes("openai")
+  const isAnthropicProtocol = protocolValue.includes("anthropic")
+
+  const normalizedBaseUrl = React.useMemo(() => {
+    const raw = baseUrl.trim()
+    if (!raw) {
+      return ""
+    }
+    const base = raw.replace(/\/+$/, "")
+    if (isOpenAIProtocol && !base.endsWith("/v1")) {
+      return `${base}/v1`
+    }
+    return base
+  }, [baseUrl, isOpenAIProtocol])
+
+  const endpointPreview = React.useMemo(() => {
+    if (!normalizedBaseUrl) {
+      return ""
+    }
+    const path = isAnthropicProtocol ? "v1/messages" : "chat/completions"
+    return `${normalizedBaseUrl}/${path}`
+  }, [normalizedBaseUrl, isAnthropicProtocol])
   const [icon, setIcon] = React.useState(initialValues?.icon || preset?.icon_key || "lucide:server")
   const [customIconUrl, setCustomIconUrl] = React.useState("")
   const [brandColor, setBrandColor] = React.useState(initialValues?.theme_color || preset?.brand_color || "#3b82f6")
@@ -467,6 +490,17 @@ export function ConnectProviderDrawer({
                   )}
                   placeholder="http://localhost:11434"
                 />
+                {normalizedBaseUrl && (
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    <span className="text-foreground/80">{t("drawer.endpointPreviewLabel")}</span>
+                    <span className="ml-2 font-mono break-all">{endpointPreview}</span>
+                    <div className="mt-1 text-[10px] text-muted-foreground/80">
+                      {isOpenAIProtocol
+                        ? t("drawer.endpointPreviewHintOpenAI")
+                        : t("drawer.endpointPreviewHintGeneric")}
+                    </div>
+                  </div>
+                )}
                 
                 {/* Visual Feedback Line (Heartbeat) */}
                 <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/5 overflow-hidden rounded-b-md">

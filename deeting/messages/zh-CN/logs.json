@@ -15,6 +15,13 @@
       "refresh": "刷新"
     },
     "table": {
+      "headers": {
+        "status": "状态",
+        "requestModel": "请求 / 模型",
+        "time": "时间",
+        "latency": "耗时",
+        "cost": "成本"
+      },
       "time": "时间",
       "status": "状态",
       "model": "模型",
@@ -24,6 +31,22 @@
       "ttft": "TTFT: {value}ms",
       "totalTokens": "Σ {value}",
       "cached": "命中缓存",
+      "cacheBadge": "缓存",
+      "tech": {
+        "input": "输入 Tokens",
+        "output": "输出 Tokens",
+        "total": "总 Tokens"
+      },
+      "viewInspector": "查看完整详情 →",
+      "error": {
+        "gatewayBadge": "GW-ERR {code}",
+        "upstreamBadge": "API-ERR {error}"
+      },
+      "trace": {
+        "client": "客户端",
+        "gateway": "网关",
+        "upstream": "上游"
+      },
       "noData": "暂无日志记录，调整筛选条件再试试。"
     },
     "pagination": {
@@ -32,6 +55,64 @@
       "next": "下一页"
     },
     "detail": {
+      "banner": {
+        "success": "请求成功",
+        "failed": "请求失败",
+        "statusLine": "状态 {status} • {time}"
+      },
+      "sections": {
+        "requestTrace": "请求链路",
+        "performance": "性能指标",
+        "tokenConsumption": "Token 消耗",
+        "costAnalysis": "成本分析",
+        "technicalMetadata": "技术元数据"
+      },
+      "trace": {
+        "client": "客户端请求",
+        "gateway": "AI 网关",
+        "errorDetail": "错误: {message}",
+        "internalError": "内部错误",
+        "rateLimited": "已限流"
+      },
+      "error": {
+        "gatewayTitle": "网关错误",
+        "upstreamTitle": "上游错误",
+        "gatewayDesc": "错误来自 AI 网关层。请检查鉴权、限流或网关配置。",
+        "upstreamDesc": "错误来自上游模型服务，可能是限流、接口异常或模型不可用。"
+      },
+      "metrics": {
+        "totalDuration": "总耗时",
+        "ttft": "TTFT（首字延迟）",
+        "cacheStatus": "缓存状态",
+        "statusCode": "状态码",
+        "cached": "已缓存",
+        "hit": "命中",
+        "miss": "未命中",
+        "na": "N/A"
+      },
+      "tokens": {
+        "input": "输入 Tokens",
+        "output": "输出 Tokens",
+        "total": "合计",
+        "totalValue": "{value} Tokens"
+      },
+      "cost": {
+        "user": "用户成本",
+        "upstream": "上游成本"
+      },
+      "meta": {
+        "requestId": "请求 ID",
+        "model": "模型",
+        "userId": "用户 ID",
+        "presetId": "预设 ID",
+        "errorCode": "错误码",
+        "anonymous": "匿名",
+        "directCall": "直连",
+        "errorBadge": "错误"
+      },
+      "actions": {
+        "copy": "复制到剪贴板"
+      },
       "title": "请求详情",
       "id": "ID: {id}",
       "status": "状态",

@@ -15,6 +15,13 @@
       "refresh": "Refresh"
     },
     "table": {
+      "headers": {
+        "status": "Status",
+        "requestModel": "Request / Model",
+        "time": "Time",
+        "latency": "Latency",
+        "cost": "Cost"
+      },
       "time": "Time",
       "status": "Status",
       "model": "Model",
@@ -24,6 +31,22 @@
       "ttft": "TTFT: {value}ms",
       "totalTokens": "Σ {value}",
       "cached": "Cached",
+      "cacheBadge": "CACHE",
+      "tech": {
+        "input": "Input Tokens",
+        "output": "Output Tokens",
+        "total": "Total Tokens"
+      },
+      "viewInspector": "View Full Inspector →",
+      "error": {
+        "gatewayBadge": "GW-ERR {code}",
+        "upstreamBadge": "API-ERR {error}"
+      },
+      "trace": {
+        "client": "Client",
+        "gateway": "Gateway",
+        "upstream": "Upstream"
+      },
       "noData": "No logs yet. Adjust filters and try again."
     },
     "pagination": {
@@ -32,6 +55,64 @@
       "next": "Next"
     },
     "detail": {
+      "banner": {
+        "success": "REQUEST SUCCESS",
+        "failed": "REQUEST FAILED",
+        "statusLine": "Status {status} • {time}"
+      },
+      "sections": {
+        "requestTrace": "Request Trace",
+        "performance": "Performance Metrics",
+        "tokenConsumption": "Token Consumption",
+        "costAnalysis": "Cost Analysis",
+        "technicalMetadata": "Technical Metadata"
+      },
+      "trace": {
+        "client": "Client Request",
+        "gateway": "AI Gateway",
+        "errorDetail": "Error: {message}",
+        "internalError": "Internal Error",
+        "rateLimited": "Rate Limited"
+      },
+      "error": {
+        "gatewayTitle": "Gateway Error",
+        "upstreamTitle": "Upstream Error",
+        "gatewayDesc": "The error originated from the AI Gateway layer. Check authentication, rate limits, or gateway configuration.",
+        "upstreamDesc": "The error came from the upstream AI provider. This could be rate limiting, API issues, or model unavailability."
+      },
+      "metrics": {
+        "totalDuration": "Total Duration",
+        "ttft": "TTFT (Time to First Token)",
+        "cacheStatus": "Cache Status",
+        "statusCode": "Status Code",
+        "cached": "Cached",
+        "hit": "HIT",
+        "miss": "MISS",
+        "na": "N/A"
+      },
+      "tokens": {
+        "input": "Input Tokens",
+        "output": "Output Tokens",
+        "total": "Total",
+        "totalValue": "{value} tokens"
+      },
+      "cost": {
+        "user": "User Cost",
+        "upstream": "Upstream Cost"
+      },
+      "meta": {
+        "requestId": "Request ID",
+        "model": "Model",
+        "userId": "User ID",
+        "presetId": "Preset ID",
+        "errorCode": "Error Code",
+        "anonymous": "Anonymous",
+        "directCall": "Direct Call",
+        "errorBadge": "Error"
+      },
+      "actions": {
+        "copy": "Copy to clipboard"
+      },
       "title": "Request Detail",
       "id": "ID: {id}",
       "status": "Status",

@@ -86,16 +86,37 @@ class RoutingStep(BaseStep):
         capability = ctx.capability or "chat"
         raw_request = ctx.get("validation", "request")
         provider_model_id = self._extract_provider_model_id(raw_request)
+        allow_fallback = ctx.get("routing", "allow_fallback", False)
+
+        logger.debug(
+            "Routing start trace_id=%s model=%s capability=%s provider_model_id=%s channel=%s allow_fallback=%s has_db=%s",
+            ctx.trace_id,
+            model,
+            capability,
+            provider_model_id,
+            ctx.channel.value,
+            allow_fallback,
+            ctx.db_session is not None,
+        )
 
         if not model:
+            logger.warning(
+                "routing_failed_missing_model trace_id=%s capability=%s channel=%s",
+                ctx.trace_id,
+                capability,
+                ctx.channel.value,
+            )
             return StepResult(
                 status=StepStatus.FAILED,
                 message="Model not specified",
             )
 
-        allow_fallback = ctx.get("routing", "allow_fallback", False)
-
         if ctx.db_session is None:
+            logger.warning(
+                "routing_failed_no_db trace_id=%s allow_fallback=%s",
+                ctx.trace_id,
+                allow_fallback,
+            )
             if allow_fallback:
                 return self._fallback(ctx)
             return StepResult(
@@ -105,6 +126,14 @@ class RoutingStep(BaseStep):
 
         allowed_providers, allowed_presets, allowed_preset_items = _extract_provider_filters(
             ctx.get("auth", "scopes")
+        )
+
+        logger.debug(
+            "routing_filters trace_id=%s providers=%s presets=%s preset_items=%s",
+            ctx.trace_id,
+            len(allowed_providers or []),
+            len(allowed_presets or []),
+            len(allowed_preset_items or []),
         )
 
         try:
@@ -170,7 +199,18 @@ class RoutingStep(BaseStep):
             )
 
         except NoAvailableUpstreamError as e:
-            logger.error(f"No available upstream: {e}")
+            logger.error(
+                "routing_no_available_upstream trace_id=%s model=%s capability=%s provider_model_id=%s channel=%s providers=%s presets=%s preset_items=%s err=%s",
+                ctx.trace_id,
+                model,
+                capability,
+                provider_model_id,
+                ctx.channel.value,
+                len(allowed_providers or []),
+                len(allowed_presets or []),
+                len(allowed_preset_items or []),
+                e,
+            )
             if allow_fallback:
                 return self._fallback(ctx)
             return StepResult(
@@ -178,7 +218,19 @@ class RoutingStep(BaseStep):
                 message=str(e),
             )
         except Exception as exc:
-            logger.warning(f"routing_failed trace_id={ctx.trace_id} err={exc}")
+            logger.warning(
+                "routing_failed trace_id=%s model=%s capability=%s provider_model_id=%s channel=%s providers=%s presets=%s preset_items=%s err_type=%s err=%s",
+                ctx.trace_id,
+                model,
+                capability,
+                provider_model_id,
+                ctx.channel.value,
+                len(allowed_providers or []),
+                len(allowed_presets or []),
+                len(allowed_preset_items or []),
+                exc.__class__.__name__,
+                exc,
+            )
             if ctx.get("routing", "allow_fallback", False):
                 return self._fallback(ctx)
             return StepResult(

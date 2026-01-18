@@ -33,6 +33,23 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _build_upstream_url(
+    base_url: str,
+    upstream_path: str,
+    protocol: str | None,
+) -> str:
+    base = (base_url or "").rstrip("/")
+    path = (upstream_path or "").lstrip("/")
+    proto = (protocol or "").lower()
+
+    if "openai" in proto and base and not base.endswith("/v1"):
+        base = f"{base}/v1"
+
+    if not path:
+        return base
+    return f"{base}/{path}"
+
+
 @dataclass
 class RoutingCandidate:
     preset_id: str | None
@@ -145,7 +162,12 @@ class RoutingSelector:
 
             for m in instance_models:
                 base_url = instance.base_url or ""
-                upstream_url = f"{base_url.rstrip('/')}/{m.upstream_path.lstrip('/')}"
+                protocol = (instance.meta or {}).get("protocol") or preset.provider
+                upstream_url = _build_upstream_url(
+                    base_url=base_url,
+                    upstream_path=m.upstream_path,
+                    protocol=protocol,
+                )
 
                 for cred in cred_entries:
                     auth_config = dict((preset.auth_config or {})) if preset else {}
@@ -260,7 +282,12 @@ class RoutingSelector:
             return results
 
         base_url = instance.base_url or ""
-        upstream_url = f"{base_url.rstrip('/')}/{model.upstream_path.lstrip('/')}"
+        protocol = (instance.meta or {}).get("protocol") or preset.provider
+        upstream_url = _build_upstream_url(
+            base_url=base_url,
+            upstream_path=model.upstream_path,
+            protocol=protocol,
+        )
 
         for cred in cred_entries:
             auth_config = dict((preset.auth_config or {})) if preset else {}

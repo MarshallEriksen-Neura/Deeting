@@ -1,4 +1,5 @@
 {
+  "mcp": {
   "header": {
     "title": "MCP 注册表",
     "description": "在 Deeting OS 运行时中管理 MCP 服务与上游同步源。",
@@ -158,4 +159,5 @@
     "startFailed": "启动失败",
     "stopFailed": "停止失败"
   }
+}
 }

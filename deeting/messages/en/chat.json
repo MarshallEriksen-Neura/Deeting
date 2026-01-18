@@ -8,7 +8,9 @@
     },
     "model": {
       "label": "Model",
-      "placeholder": "Select model"
+      "placeholder": "Select model",
+      "searchPlaceholder": "Search models...",
+      "noResults": "No matching models found"
     },
     "empty": {
       "notFoundTitle": "Assistant not found",
