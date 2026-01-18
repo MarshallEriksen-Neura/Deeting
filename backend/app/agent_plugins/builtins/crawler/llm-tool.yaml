@@ -1,0 +1,38 @@
+name: core.tools.crawler
+version: "1.0.0"
+description: "Provides web crawling capabilities using Playwright."
+author: "Gemini CLI"
+tools:
+  - name: fetch_web_content
+    description: "Fetch and extract content from a URL. Returns text, markdown, and structured data."
+    parameters:
+      type: object
+      properties:
+        url:
+          type: string
+          description: "The target URL to crawl."
+        wait_for:
+          type: string
+          enum: ["load", "domcontentloaded", "networkidle"]
+          default: "networkidle"
+          description: "Wait strategy for page loading."
+        timeout:
+          type: integer
+          default: 30000
+          description: "Timeout in milliseconds."
+        extract_markdown:
+          type: boolean
+          default: true
+          description: "Whether to convert HTML to Markdown."
+        extract_tables:
+          type: boolean
+          default: true
+          description: "Whether to extract tables."
+        extract_code:
+          type: boolean
+          default: true
+          description: "Whether to extract code blocks."
+        user_agent:
+          type: string
+          description: "Custom User-Agent string."
+      required: ["url"]

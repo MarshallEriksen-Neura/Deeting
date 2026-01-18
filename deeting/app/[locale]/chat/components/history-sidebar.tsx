@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, MessageSquare, Clock, Plus, MoreHorizontal, Archive, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfiniteList } from '@/components/ui/infinite-list';
@@ -29,7 +29,6 @@ interface HistorySidebarProps {
 export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const t = useI18n('chat');
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -125,12 +124,13 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   }, [filteredSessions, t]);
 
   const buildChatUrl = (nextSessionId?: string) => {
-    const basePath = activeAssistantId ? `/chat/${activeAssistantId}` : pathname || '/chat';
+    const basePath = activeAssistantId ? `/chat/${activeAssistantId}` : "/chat";
     const params = new URLSearchParams(searchParams?.toString());
+    params.delete("agentId");
     if (nextSessionId) {
-      params.set('session', nextSessionId);
+      params.set("session", nextSessionId);
     } else {
-      params.delete('session');
+      params.delete("session");
     }
     const query = params.toString();
     return query ? `${basePath}?${query}` : basePath;

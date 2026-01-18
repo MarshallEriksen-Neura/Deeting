@@ -1,14 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { User } from "lucide-react"
+import { ArrowDown, ArrowUp, User } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { normalizeMessage } from "@/lib/chat/message-normalizer"
 import type { Message, ChatAssistant } from "@/store/chat-store"
+import { useI18n } from "@/hooks/use-i18n"
 
 interface ChatMessageListProps {
   messages: Message[]
@@ -29,7 +31,12 @@ export function ChatMessageList({
   statusCode,
   statusMeta,
 }: ChatMessageListProps) {
+  const t = useI18n("chat")
   const scrollRef = React.useRef<HTMLDivElement>(null)
+  const scrollAreaRef = React.useRef<HTMLDivElement>(null)
+  const [showScrollToBottom, setShowScrollToBottom] = React.useState(false)
+  const [showScrollToTop, setShowScrollToTop] = React.useState(false)
+  const [autoScrollEnabled, setAutoScrollEnabled] = React.useState(true)
   const lastAssistantId = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i]?.role === "assistant") return messages[i]?.id
@@ -38,16 +45,49 @@ export function ChatMessageList({
   }, [messages])
   const activeAssistantId = isTyping ? lastAssistantId : undefined
 
-  // 自动滚动到底部
+  // 自动滚动到底部（仅在用户未手动上滑时）
   React.useEffect(() => {
+    if (!autoScrollEnabled) return
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, isTyping])
+  }, [messages, isTyping, autoScrollEnabled])
+
+  const getViewport = React.useCallback(() => {
+    return scrollAreaRef.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? null
+  }, [])
+
+  React.useEffect(() => {
+    const viewport = getViewport()
+    if (!viewport) return
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = viewport
+      const distanceToBottom = scrollHeight - (scrollTop + clientHeight)
+      const nearBottom = distanceToBottom < 120
+      setShowScrollToBottom(!nearBottom)
+      setShowScrollToTop(scrollTop > 120)
+      setAutoScrollEnabled(nearBottom)
+    }
+    handleScroll()
+    viewport.addEventListener("scroll", handleScroll)
+    return () => viewport.removeEventListener("scroll", handleScroll)
+  }, [getViewport])
+
+  React.useEffect(() => {
+    const viewport = getViewport()
+    if (!viewport) return
+    const { scrollTop, scrollHeight, clientHeight } = viewport
+    const distanceToBottom = scrollHeight - (scrollTop + clientHeight)
+    const nearBottom = distanceToBottom < 120
+    setShowScrollToBottom(!nearBottom)
+    setShowScrollToTop(scrollTop > 120)
+    setAutoScrollEnabled(nearBottom)
+  }, [messages, isTyping, getViewport])
 
   return (
-    <ScrollArea className="flex-1 p-4">
-      <div className="max-w-3xl mx-auto space-y-6 py-4">
+    <div ref={scrollAreaRef} className="relative flex-1">
+      <ScrollArea className="h-full p-4">
+        <div className="max-w-3xl mx-auto space-y-6 py-4">
         {messages.map((msg) => (
           <div
             key={msg.id}
@@ -112,7 +152,39 @@ export function ChatMessageList({
           </div>
         )}
         <div ref={scrollRef} />
+        </div>
+      </ScrollArea>
+
+      <div className="pointer-events-none absolute bottom-4 right-4 flex flex-col gap-2">
+        {showScrollToTop && (
+          <Button
+            variant="secondary"
+            size="icon"
+            className="pointer-events-auto h-9 w-9 rounded-full shadow-md"
+            aria-label={t("scroll.toTop")}
+            onClick={() => {
+              const viewport = getViewport()
+              viewport?.scrollTo({ top: 0, behavior: "smooth" })
+            }}
+          >
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+        )}
+        {showScrollToBottom && (
+          <Button
+            variant="secondary"
+            size="icon"
+            className="pointer-events-auto h-9 w-9 rounded-full shadow-md"
+            aria-label={t("scroll.toBottom")}
+            onClick={() => {
+              setAutoScrollEnabled(true)
+              scrollRef.current?.scrollIntoView({ behavior: "smooth" })
+            }}
+          >
+            <ArrowDown className="h-4 w-4" />
+          </Button>
+        )}
       </div>
-    </ScrollArea>
+    </div>
   )
 }

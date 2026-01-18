@@ -22,7 +22,7 @@ export default function CreateAssistantSlot() {
   const handleCreated = React.useCallback(
     (assistantId?: string) => {
       if (assistantId) {
-        router.replace(`/chat/${assistantId}`)
+        router.replace(`/chat/${encodeURIComponent(assistantId)}`)
       } else {
         router.replace("/chat")
       }

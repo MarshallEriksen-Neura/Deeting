@@ -131,7 +131,8 @@ interface SidebarItemProps {
 function SidebarItem({ item, isCollapsed = false }: SidebarItemProps) {
   const pathname = usePathname()
   const { t } = useSidebar()
-  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+  const hrefPath = item.href.split("?")[0]
+  const isActive = pathname === hrefPath || pathname.startsWith(`${hrefPath}/`)
 
   const Icon = navIconMap[item.icon] ?? defaultNavIcon
   const label = t(item.label)
@@ -270,7 +271,7 @@ function DesktopSidebar({ navigation }: DesktopSidebarProps) {
       items: installedAgents.map(agent => ({
         id: `agent-${agent.id}`,
         label: agent.name,
-        href: `/chat/${agent.id}`, // 假设安装后的助手跳转到 chat 页面
+        href: `/chat/${encodeURIComponent(agent.id)}`, // 假设安装后的助手跳转到 chat 页面
         icon: "Bot" as const, // 使用 Bot 图标，需要在 icon-map 中确保有映射或直接在这里处理图标
       }))
     }
@@ -391,7 +392,7 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
     ? [...allItems, ...installedAgents.map(agent => ({
         id: `agent-${agent.id}`,
         label: agent.name,
-        href: `/chat/${agent.id}`,
+        href: `/chat/${encodeURIComponent(agent.id)}`,
         icon: "Bot" as const,
         badge: 0
       }))]
@@ -409,7 +410,8 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex items-center gap-1 px-4 py-2">
           {finalItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+            const hrefPath = item.href.split("?")[0]
+            const isActive = pathname === hrefPath || pathname.startsWith(`${hrefPath}/`)
             const Icon = navIconMap[item.icon as keyof typeof navIconMap] ?? defaultNavIcon
             const label = item.id.startsWith('agent-') ? item.label : t(item.label)
 

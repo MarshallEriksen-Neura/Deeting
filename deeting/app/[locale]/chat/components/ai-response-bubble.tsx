@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Brain, Check, ChevronDown, ChevronRight, Loader2, Terminal } from "lucide-react";
+import { Brain, Check, ChevronDown, ChevronRight, Loader2, Terminal, Sparkles } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -10,6 +10,7 @@ import { resolveStatusDetail } from "@/lib/chat/status-detail";
 import { useI18n } from "@/hooks/use-i18n";
 import type { MessageBlock } from "@/lib/chat/message-protocol";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface AIResponseBubbleProps {
   parts: MessageBlock[];
@@ -43,80 +44,116 @@ export function AIResponseBubble({
   const timerStep = useStepProgress(isActive && !statusStage, steps.length);
   const activeStep = statusStage ? resolveStageIndex(statusStage, steps) : timerStep;
   const hasContent = parts.length > 0;
-  const enableReveal = reveal && !streamEnabled;
-  let revealIndex = 0;
+  
+  // Animation variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.1
+      }
+    }
+  };
 
-  const nextRevealClass = () => {
-    if (!enableReveal) return "";
-    revealIndex += 1;
-    return cn("animate-glass-card-in", getStaggerClass(revealIndex));
+  const itemVariants = {
+    hidden: { y: 10, opacity: 0 },
+    visible: { 
+      y: 0, 
+      opacity: 1,
+      transition: { type: "spring", stiffness: 100, damping: 15 }
+    }
   };
 
   return (
     <div className="flex flex-col gap-2 w-full items-start">
       <div
         className={cn(
-          "w-full max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed",
+          "w-full max-w-[85%] rounded-2xl rounded-tl-sm px-1 py-1 text-sm leading-relaxed",
           "bg-white/80 dark:bg-white/5 border border-black/5 dark:border-white/10",
-          "shadow-[0_6px_20px_-12px_rgba(15,23,42,0.2)] backdrop-blur-md"
+          "shadow-[0_6px_20px_-12px_rgba(15,23,42,0.2)] backdrop-blur-md overflow-hidden"
         )}
         data-slot="glass-card"
       >
-        {isActive && (
-          <StatusStream
-            steps={steps}
-            activeIndex={activeStep}
-            compact={hasContent}
-            label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
-            detail={resolveStatusDetail(t, statusCode, statusMeta)}
-          />
-        )}
+        <div className="px-4 py-3">
+            {isActive && (
+            <div className="mb-3">
+                <StatusStream
+                steps={steps}
+                activeIndex={activeStep}
+                compact={hasContent}
+                label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
+                detail={resolveStatusDetail(t, statusCode, statusMeta)}
+                />
+            </div>
+            )}
 
-        {hasContent ? (
-          <div className={cn("space-y-3", isActive && "mt-3")}>
-            {parts.map((part, index) => {
-              // --- A. 思维链 (CoT) ---
-              if (part.type === 'thought') {
-                return (
-                  <div key={index} className={nextRevealClass()}>
-                    <ThoughtBlock content={part.content} cost={part.cost} />
-                  </div>
-                );
-              }
+            <AnimatePresence mode="wait">
+            {!hasContent ? (
+                <motion.div
+                key="placeholder"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                >
+                <HolographicPulse
+                    label={streamEnabled ? t("status.placeholder.stream") : t("status.placeholder.batch")} 
+                />
+                </motion.div>
+            ) : (
+                <motion.div
+                key="content"
+                className="space-y-3"
+                variants={!streamEnabled ? containerVariants : {}}
+                initial={!streamEnabled ? "hidden" : "visible"}
+                animate="visible"
+                >
+                {parts.map((part, index) => {
+                    // --- A. 思维链 (CoT) ---
+                    if (part.type === 'thought') {
+                    return (
+                        <motion.div key={`thought-${index}`} variants={itemVariants}>
+                        <ThoughtBlock content={part.content} cost={part.cost} />
+                        </motion.div>
+                    );
+                    }
 
-              // --- B. MCP 工具调用 ---
-              if (part.type === 'tool_call') {
-                return (
-                  <div key={index} className={nextRevealClass()}>
-                    <ToolCallBlock 
-                      name={part.toolName} 
-                      args={part.toolArgs} 
-                      status={part.status} 
-                    />
-                  </div>
-                );
-              }
+                    // --- B. MCP 工具调用 ---
+                    if (part.type === 'tool_call') {
+                    return (
+                        <motion.div key={`tool-${index}`} variants={itemVariants}>
+                        <ToolCallBlock 
+                            name={part.toolName} 
+                            args={part.toolArgs} 
+                            status={part.status} 
+                        />
+                        </motion.div>
+                    );
+                    }
 
-              // --- C. 普通文本 ---
-              if (!part.content?.trim()) return null;
+                    // --- C. 普通文本 ---
+                    if (!part.content?.trim()) return null;
 
-              return (
-                <div key={index} className={nextRevealClass()}>
-                  <MarkdownViewer
-                    content={part.content}
-                    className="chat-markdown chat-markdown-assistant"
-                  />
-                </div>
-              );
-            })}
+                    return (
+                    <motion.div key={`text-${index}`} variants={itemVariants}>
+                        <MarkdownViewer
+                        content={part.content}
+                        className="chat-markdown chat-markdown-assistant"
+                        />
+                    </motion.div>
+                    );
+                })}
 
-            {isActive && streamEnabled && <GhostCursor />}
-          </div>
-        ) : (
-          <ConstructingPlaceholder
-            label={streamEnabled ? t("status.placeholder.stream") : t("status.placeholder.batch")}
-          />
-        )}
+                {isActive && streamEnabled && (
+                    <motion.div variants={itemVariants}>
+                        <GhostCursor />
+                    </motion.div>
+                )}
+                </motion.div>
+            )}
+            </AnimatePresence>
+        </div>
       </div>
     </div>
   );
@@ -141,12 +178,12 @@ function StatusStream({
     <div
       className={cn(
         "rounded-xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5",
-        "px-3 py-2 backdrop-blur-sm",
+        "px-3 py-2 backdrop-blur-sm transition-all duration-300",
         compact ? "text-[10px]" : "text-xs",
-        remembering && "bg-blue-50/60 dark:bg-blue-500/10"
+        remembering && "bg-blue-50/60 dark:bg-blue-500/10 border-blue-200/50 dark:border-blue-500/30"
       )}
     >
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground/80 font-medium">
         <span>{label}</span>
       </div>
       <div className={cn("mt-2 flex flex-col", compact ? "gap-1" : "gap-1.5")}>
@@ -154,18 +191,26 @@ function StatusStream({
           const done = index < activeIndex;
           const active = index === activeIndex;
           return (
-            <div key={step.key} className="flex items-center gap-2 text-muted-foreground">
+            <div key={step.key} className="flex items-center gap-2 text-muted-foreground transition-colors duration-300">
               {done ? (
-                <Check className="w-3 h-3 text-emerald-500" />
+                <div className="w-3 h-3 flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-emerald-500" />
+                </div>
               ) : active ? (
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-blue-500/40 animate-ping"></span>
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500/80"></span>
-                </span>
+                <div className="relative flex h-3 w-3 items-center justify-center">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-blue-500/20 animate-ping"></span>
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                </div>
               ) : (
-                <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
+                <div className="w-3 h-3 flex items-center justify-center">
+                     <span className="h-1 w-1 rounded-full bg-muted-foreground/20" />
+                </div>
               )}
-              <span className={cn(active ? "text-foreground" : "text-muted-foreground/70")}>
+              <span className={cn(
+                  "transition-colors duration-300",
+                  active ? "text-foreground font-medium" : "text-muted-foreground/60",
+                  done && "text-muted-foreground/80"
+              )}>
                 {step.label}
               </span>
             </div>
@@ -173,37 +218,45 @@ function StatusStream({
         })}
       </div>
       {detail ? (
-        <div className="mt-2">
+        <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="mt-2"
+        >
           <StatusPill text={detail} tone="subtle" isLoading={activeIndex === 2} />
-        </div>
+        </motion.div>
       ) : null}
     </div>
   );
 }
 
-function ConstructingPlaceholder({ label }: { label: string }) {
+function HolographicPulse({ label }: { label: string }) {
   return (
-    <div className="mt-3 rounded-xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-3 backdrop-blur-sm relative overflow-hidden">
-      <div className="absolute inset-0 glass-shimmer opacity-70" aria-hidden />
-      <div className="relative z-10 flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="relative flex h-2.5 w-2.5">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-blue-500/35 animate-ping"></span>
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500/70"></span>
-        </span>
-        <span>{label}</span>
-      </div>
-      <div className="relative z-10 mt-3 space-y-2">
-        <div className="h-2.5 rounded-full bg-black/5 dark:bg-white/5" />
-        <div className="h-2.5 w-5/6 rounded-full bg-black/5 dark:bg-white/5" />
-      </div>
+    <div className="relative w-full h-24 rounded-xl overflow-hidden bg-gradient-to-r from-transparent via-white/5 to-transparent dark:via-white/5">
+        {/* Animated Gradient Background */}
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-blue-500/5 animate-[shimmer_3s_infinite] bg-[length:200%_100%]" />
+        
+        {/* Content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+             <div className="relative">
+                <div className="absolute -inset-2 bg-blue-500/20 rounded-full blur-xl animate-pulse" />
+                <Sparkles className="w-5 h-5 text-blue-500/80 animate-bounce [animation-duration:3s]" />
+             </div>
+             <span className="text-xs font-mono text-muted-foreground/60 tracking-widest uppercase animate-pulse">
+                {label}
+             </span>
+        </div>
+
+        {/* Scanline Effect */}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-500/5 to-transparent h-[20%] w-full animate-[scan_2s_linear_infinite]" />
     </div>
   );
 }
 
 function GhostCursor() {
   return (
-    <span className="inline-flex items-end gap-1 text-muted-foreground/70">
-      <span className="inline-flex w-2.5 h-4 rounded-sm bg-blue-500/70 dark:bg-blue-400/70 shadow-[0_0_12px_rgba(37,99,235,0.35)] animate-pulse" />
+    <span className="inline-flex relative items-end top-0.5 align-middle ml-1">
+      <span className="block w-2.5 h-5 bg-blue-500/80 dark:bg-blue-400/80 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
     </span>
   );
 }
@@ -219,7 +272,8 @@ function useStepProgress(isActive: boolean, stepCount: number) {
 
     let current = 0;
     setIndex(0);
-    const delays = [700, 1100, 1400, 900];
+    // Adjusted timing for a more deliberate "thinking" feel
+    const delays = [800, 1500, 2000, 1000];
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const schedule = (delay: number) => {
@@ -252,28 +306,40 @@ function getStaggerClass(index: number) {
   return `stagger-${capped}`;
 }
 
-// === 组件：思维链折叠块 ===
+// === 组件：思维链折叠块 (Terminal Style) ===
 function ThoughtBlock({ content, cost }: { content?: string, cost?: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const t = useI18n("chat");
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full group">
       <CollapsibleTrigger asChild>
-        <div className="flex items-center gap-2 cursor-pointer group select-none">
+        <div className="flex items-center gap-2 cursor-pointer select-none mb-2">
            <div className={cn(
-             "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
-             isOpen ? "bg-muted text-foreground" : "bg-muted/50 text-muted-foreground hover:bg-muted"
+             "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono transition-all border",
+             isOpen 
+                ? "bg-zinc-900 text-zinc-100 border-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-200" 
+                : "bg-muted/30 text-muted-foreground border-transparent hover:bg-muted/50 hover:border-border"
            )}>
-             <Brain size={12} className={cn(!cost && "animate-pulse")} /> 
+             <Brain size={12} className={cn(!cost && !isOpen && "animate-pulse")} /> 
              <span>{cost ? t("thought.withCost", { cost }) : t("thought.label")}</span>
-             {isOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
+             <ChevronDown size={12} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
            </div>
+           {!isOpen && (
+               <div className="h-px flex-1 bg-border/50" />
+           )}
         </div>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-2 ml-2 pl-4 border-l-2 border-border text-xs text-muted-foreground font-mono whitespace-pre-wrap leading-relaxed">
-          {content || t("thought.loading")}
+        <div className="relative rounded-lg overflow-hidden bg-[#1e1e1e] dark:bg-[#0d0d0d] border border-zinc-800 shadow-inner">
+            <div className="absolute top-0 left-0 right-0 h-6 bg-white/5 flex items-center px-2 gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-red-500/50" />
+                <div className="w-2 h-2 rounded-full bg-yellow-500/50" />
+                <div className="w-2 h-2 rounded-full bg-green-500/50" />
+            </div>
+            <div className="p-4 pt-8 text-xs font-mono text-zinc-400 whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                {content || <span className="animate-pulse">Thinking...</span>}
+            </div>
         </div>
       </CollapsibleContent>
     </Collapsible>

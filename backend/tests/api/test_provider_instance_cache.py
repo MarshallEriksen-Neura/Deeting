@@ -555,3 +555,30 @@ async def test_provider_instance_update_and_delete_invalidate_cache_and_health(m
         assert model_list_key not in cache._redis.store  # type: ignore[attr-defined]
         assert f"provider:health:{inst.id}" not in cache._redis.store  # type: ignore[attr-defined]
         assert f"provider:health:{inst.id}:history" not in cache._redis.store  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_provider_instance_auto_migrates_plaintext_ref_on_update(monkeypatch):
+    monkeypatch.setattr(settings, "SECRET_KEY", "secret")
+    async with AsyncSessionLocal() as session:
+        repo = ProviderInstanceRepository(session)
+        inst = await repo.create(
+            {
+                "id": uuid.uuid4(),
+                "user_id": None,
+                "preset_slug": "openai",
+                "name": "inst-legacy",
+                "description": None,
+                "base_url": "https://api.example.com",
+                "icon": None,
+                "credentials_ref": "sk-test1234567890123456",
+                "priority": 0,
+                "is_enabled": True,
+                "meta": {},
+            }
+        )
+
+        svc = ProviderInstanceService(session)
+        updated = await svc.update_instance(inst.id, None, name="inst-migrated")
+
+        assert updated.credentials_ref.startswith("db:")

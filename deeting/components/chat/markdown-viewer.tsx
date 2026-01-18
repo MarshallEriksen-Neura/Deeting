@@ -1,11 +1,23 @@
 "use client"
 
 import { useTheme } from "next-themes"
+import { isValidElement } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
 import rehypePrism from "rehype-prism-plus"
 import { cn } from "@/lib/utils"
+import { CodeBlock } from "@/components/chat/code-block"
+
+const INLINE_FENCE_REGEX = /```([a-zA-Z0-9_-]+)?\s+([^\n`]+?)```/g
+
+function normalizeInlineFences(raw: string) {
+  return raw.replace(INLINE_FENCE_REGEX, (_match, lang, code) => {
+    const language = typeof lang === "string" && lang.length > 0 ? lang : ""
+    const content = typeof code === "string" ? code.trim() : ""
+    return `\`\`\`${language}\n${content}\n\`\`\``
+  })
+}
 
 export function MarkdownViewer({
   content,
@@ -16,6 +28,8 @@ export function MarkdownViewer({
 }) {
   const { resolvedTheme } = useTheme()
   const dataTheme = resolvedTheme === "dark" ? "dark" : "light"
+
+  const normalizedContent = normalizeInlineFences(content)
 
   return (
     <div
@@ -53,11 +67,24 @@ export function MarkdownViewer({
               </code>
             )
           },
-          pre: ({ children }) => (
-            <pre className="mt-3 overflow-auto rounded-lg border border-border bg-muted/60 p-3 text-xs font-mono">
-              {children}
-            </pre>
-          ),
+          pre: ({ children }) => {
+            const child = Array.isArray(children) ? children[0] : children
+            if (isValidElement(child) && child.type === "code") {
+              const codeClassName = (child.props as { className?: string }).className
+              const languageMatch = codeClassName?.match(/language-([\w-]+)/)
+              const language = languageMatch?.[1]
+              return (
+                <CodeBlock className={codeClassName} language={language}>
+                  {child.props.children}
+                </CodeBlock>
+              )
+            }
+            return (
+              <pre className="mt-3 overflow-auto rounded-lg border border-border bg-muted/60 p-3 text-xs font-mono">
+                {children}
+              </pre>
+            )
+          },
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
               {children}
@@ -78,7 +105,7 @@ export function MarkdownViewer({
           ),
         }}
       >
-        {content}
+        {normalizedContent}
       </ReactMarkdown>
     </div>
   )

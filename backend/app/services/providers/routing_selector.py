@@ -30,6 +30,7 @@ from app.repositories.provider_credential_repository import ProviderCredentialRe
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
+from app.services.providers.auth_resolver import resolve_auth_for_protocol
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +162,16 @@ class RoutingSelector:
                     protocol=protocol,
                     auto_append_v1=meta.get("auto_append_v1"),
                 )
+                resolved_auth_type, base_auth_config, resolved_headers = resolve_auth_for_protocol(
+                    protocol=protocol,
+                    provider=preset.provider if preset else None,
+                    auth_type=preset.auth_type if preset else None,
+                    auth_config=preset.auth_config if preset else None,
+                    default_headers=preset.default_headers if preset else None,
+                )
 
                 for cred in cred_entries:
-                    auth_config = dict((preset.auth_config or {})) if preset else {}
+                    auth_config = dict(base_auth_config)
                     auth_config["secret_ref_id"] = cred["secret_ref"]
                     auth_config["provider"] = preset.provider if preset else None
 
@@ -181,9 +189,9 @@ class RoutingSelector:
                             response_transform=m.response_transform or {},
                             pricing_config=m.pricing_config or {},
                             limit_config=m.limit_config or {},
-                            auth_type=preset.auth_type if preset else "bearer",
+                            auth_type=resolved_auth_type,
                             auth_config=auth_config,
-                            default_headers=preset.default_headers if preset else {},
+                            default_headers=resolved_headers,
                             default_params=preset.default_params if preset else {},
                             routing_config=m.routing_config or {},
                             weight=int(m.weight or 0) + int(cred["weight"] or 0),
@@ -290,9 +298,16 @@ class RoutingSelector:
             protocol=protocol,
             auto_append_v1=meta.get("auto_append_v1"),
         )
+        resolved_auth_type, base_auth_config, resolved_headers = resolve_auth_for_protocol(
+            protocol=protocol,
+            provider=preset.provider if preset else None,
+            auth_type=preset.auth_type if preset else None,
+            auth_config=preset.auth_config if preset else None,
+            default_headers=preset.default_headers if preset else None,
+        )
 
         for cred in cred_entries:
-            auth_config = dict((preset.auth_config or {})) if preset else {}
+            auth_config = dict(base_auth_config)
             auth_config["secret_ref_id"] = cred["secret_ref"]
             auth_config["provider"] = preset.provider if preset else None
 
@@ -310,9 +325,9 @@ class RoutingSelector:
                     response_transform=model.response_transform or {},
                     pricing_config=model.pricing_config or {},
                     limit_config=model.limit_config or {},
-                    auth_type=preset.auth_type if preset else "bearer",
+                    auth_type=resolved_auth_type,
                     auth_config=auth_config,
-                    default_headers=preset.default_headers if preset else {},
+                    default_headers=resolved_headers,
                     default_params=preset.default_params if preset else {},
                     routing_config=model.routing_config or {},
                     weight=int(model.weight or 0) + int(cred["weight"] or 0),

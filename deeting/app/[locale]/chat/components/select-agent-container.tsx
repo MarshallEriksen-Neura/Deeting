@@ -48,6 +48,13 @@ export function SelectAgentContainer() {
   const displayAgents = isTauri ? installedAgents : cloudAgents;
   const showLocalEdit = isTauri;
 
+  const handleSelectAgent = React.useCallback(
+    (assistantId: string) => {
+      router.replace(`/chat/${encodeURIComponent(assistantId)}`);
+    },
+    [router]
+  );
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center animate-in fade-in duration-200">
       <div 
@@ -59,7 +66,7 @@ export function SelectAgentContainer() {
         <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-48 h-48 bg-blue-500/10 blur-[80px] rounded-full" />
 
         <button 
-          onClick={() => router.back()}
+          onClick={() => router.replace("/chat")}
           className="absolute top-6 right-6 text-white/30 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-full"
         >
           <X className="w-5 h-5" />
@@ -83,7 +90,7 @@ export function SelectAgentContainer() {
                 icon={<MessageSquare className="w-6 h-6 text-blue-400" />}
                 name={agent.name}
                 desc={record?.description ?? agent.desc ?? ''}
-                onClick={() => router.replace(`/chat/${agent.id}`)}
+                onClick={() => handleSelectAgent(agent.id)}
                 action={
                   showLocalEdit ? (
                     <CreateAgentModal
@@ -98,10 +105,10 @@ export function SelectAgentContainer() {
                         color: agent.color,
                       }}
                       onUpdated={(assistantId) => {
-                        router.replace(`/chat/${assistantId}`);
+                        handleSelectAgent(assistantId);
                       }}
                       onDeleted={() => {
-                        router.replace('/chat/select-agent');
+                        router.replace("/chat");
                       }}
                       trigger={
                         <button

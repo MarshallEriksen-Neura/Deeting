@@ -2,9 +2,11 @@
 import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
+import { useMarketStore } from '@/store/market-store';
 import { useI18n } from '@/hooks/use-i18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,9 +14,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Slider } from '@/components/ui/slider';
 
 export default function DefaultControls() {
+  const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
   const [isParamsOpen, setIsParamsOpen] = useState(false);
   const t = useI18n('chat');
+  const installedAgents = useMarketStore((state) => state.installedAgents);
   
   const {
     input,
@@ -26,6 +30,7 @@ export default function DefaultControls() {
     models,
     config,
     setConfig,
+    setActiveAssistantId,
   } = useChatStore(
     useShallow((state) => ({
       input: state.input,
@@ -37,24 +42,46 @@ export default function DefaultControls() {
       models: state.models,
       config: state.config,
       setConfig: state.setConfig,
+      setActiveAssistantId: state.setActiveAssistantId,
     }))
   );
 
-  const canSend = Boolean(activeAssistantId) && models.length > 0 && input.trim().length > 0 && !isLoading;
+  // Allow sending if models exist and input is valid, even if no agent is selected (we'll pick one)
+  const canSend = Boolean(models.length > 0 && input.trim().length > 0 && !isLoading);
+  
   const activeAssistant = useMemo(
     () => assistants.find((assistant) => assistant.id === activeAssistantId),
     [assistants, activeAssistantId]
   );
+  
   const handleParamsOpenChange = (open: boolean) => {
     setIsParamsOpen(open);
+  };
+
+  const handleSend = () => {
+    if (!canSend) return;
+
+    if (!activeAssistantId) {
+      // Pick the first available agent (e.g., usually the default system agent)
+      const defaultAgent = installedAgents[0] || assistants[0];
+      if (defaultAgent) {
+        setActiveAssistantId(defaultAgent.id);
+        // Seamlessly update URL without full page reload perception
+        router.replace(`/chat/${defaultAgent.id}`);
+        sendMessage();
+      } else {
+        // Fallback or error if absolutely no agents found
+        console.warn("No agents available to start chat");
+      }
+    } else {
+      sendMessage();
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (canSend) {
-        sendMessage();
-      }
+      handleSend();
     }
   };
 
@@ -133,7 +160,7 @@ export default function DefaultControls() {
             variant="ghost"
             className="h-10 rounded-full px-2.5 gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
           >
-            <Link href="/chat/select-agent" scroll={false} aria-label={t("hud.selectAgent")}>
+            <Link href="/chat" scroll={false} aria-label={t("hud.selectAgent")}>
               <span
                 className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
                   activeAssistant?.color ?? "from-slate-400 to-slate-600"
@@ -208,7 +235,7 @@ export default function DefaultControls() {
         <div className="flex items-center gap-1.5">
           <Button
             type="button"
-            onClick={() => sendMessage()}
+            onClick={() => handleSend()}
             disabled={!canSend}
             className={`
               size-10 rounded-full bg-black text-white dark:bg-white/10 dark:text-white

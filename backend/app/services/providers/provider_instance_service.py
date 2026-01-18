@@ -568,6 +568,20 @@ class ProviderInstanceService:
                 raise ValueError("secret_key_not_configured") from exc
             updatable["credentials_ref"] = new_ref
             await self._invalidator.on_provider_credentials_changed(str(instance_id))
+        elif "credentials_ref" not in updatable:
+            current_ref = (instance.credentials_ref or "").strip()
+            if current_ref and self.secret_manager._looks_like_plain_secret(current_ref):
+                preset = await self.preset_repo.get_by_slug(instance.preset_slug)
+                try:
+                    new_ref = await self.secret_manager.store(
+                        provider=preset.provider if preset else None,
+                        raw_secret=current_ref,
+                        db_session=self.session,
+                    )
+                except RuntimeError as exc:
+                    raise ValueError("secret_key_not_configured") from exc
+                updatable["credentials_ref"] = new_ref
+                await self._invalidator.on_provider_credentials_changed(str(instance_id))
 
         if updatable:
             await self.instance_repo.update(instance, updatable)

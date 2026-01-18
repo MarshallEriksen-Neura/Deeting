@@ -115,6 +115,17 @@
       "menu": "Actions",
       "send": "Send"
     },
+    "codeBlock": {
+      "copy": "Copy code",
+      "copied": "Copied",
+      "collapse": "Collapse code",
+      "expand": "Expand code",
+      "collapsed": "Collapsed · {count} lines"
+    },
+    "scroll": {
+      "toTop": "Scroll to top",
+      "toBottom": "Scroll to bottom"
+    },
     "thought": {
       "label": "Thinking Process",
       "withCost": "Thought for {cost}",

@@ -289,6 +289,10 @@ class UpstreamSecurityError(Exception):
     """上游安全策略拦截"""
 
 
+class UpstreamAuthError(Exception):
+    """上游鉴权缺失/不可用"""
+
+
 @step_registry.register
 class UpstreamCallStep(BaseStep):
     """
@@ -612,13 +616,18 @@ class UpstreamCallStep(BaseStep):
         secret_ref = auth_config.get("secret_ref_id") or auth_config.get("secret")
         secret = await self.secret_manager.get(provider, secret_ref, ctx.db_session)
         if not secret:
+            masked_ref = _mask_secret_ref(secret_ref)
             logger.warning(
                 "Upstream auth secret missing trace_id=%s provider=%s auth_type=%s secret_ref_id=%s",
                 ctx.trace_id,
                 provider,
                 auth_type,
-                _mask_secret_ref(secret_ref),
+                masked_ref,
             )
+            if auth_type != "none":
+                message = f"Upstream auth secret missing provider={provider} auth_type={auth_type} secret_ref_id={masked_ref}"
+                ctx.mark_error(ErrorSource.UPSTREAM, "UPSTREAM_AUTH_MISSING", message, upstream_code="AUTH_MISSING")
+                raise UpstreamAuthError(message)
 
         if auth_type == "api_key":
             header_name = auth_config.get("header", "x-api-key")
@@ -917,6 +926,9 @@ class UpstreamCallStep(BaseStep):
                 return FailureAction.DEGRADE
             # 4xx 不重试
             return FailureAction.ABORT
+
+        if isinstance(error, UpstreamAuthError):
+            return FailureAction.DEGRADE
 
         if isinstance(error, (httpx.TimeoutException, httpx.NetworkError)):
             if attempt <= self.config.max_retries:
