@@ -5,7 +5,9 @@ import { User } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { AIResponseBubble, type MessagePart } from "./ai-response-bubble"
+import { AIResponseBubble } from "./ai-response-bubble"
+import { MarkdownViewer } from "@/components/chat/markdown-viewer"
+import { normalizeMessage } from "@/lib/chat/message-normalizer"
 import type { Message, ChatAssistant } from "@/store/chat-store"
 
 interface ChatMessageListProps {
@@ -16,32 +18,6 @@ interface ChatMessageListProps {
   statusStage: string | null
   statusCode: string | null
   statusMeta: Record<string, unknown> | null
-}
-
-function parseMessageContent(content: string): MessagePart[] {
-  const parts: MessagePart[] = [];
-  const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = thinkRegex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      const text = content.substring(lastIndex, match.index);
-      if (text.trim()) parts.push({ type: 'text', content: text });
-    }
-    parts.push({ type: 'thought', content: match[1].trim() });
-    lastIndex = thinkRegex.lastIndex;
-  }
-  
-  if (lastIndex < content.length) {
-    const text = content.substring(lastIndex);
-    if (text.trim()) parts.push({ type: 'text', content: text });
-  }
-  
-  if (parts.length === 0 && content) {
-    return [{ type: 'text', content }];
-  }
-  return parts;
 }
 
 export function ChatMessageList({
@@ -96,7 +72,7 @@ export function ChatMessageList({
             {msg.role === 'assistant' ? (
               <div className="flex-1 min-w-0">
                 <AIResponseBubble
-                  parts={parseMessageContent(msg.content)}
+                  parts={normalizeMessage(msg.content)}
                   isActive={msg.id === activeAssistantId}
                   streamEnabled={streamEnabled}
                   statusStage={msg.id === activeAssistantId ? statusStage : null}
@@ -110,7 +86,10 @@ export function ChatMessageList({
               </div>
             ) : (
               <div className="relative max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm bg-primary text-primary-foreground rounded-tr-sm">
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                <MarkdownViewer
+                  content={msg.content}
+                  className="chat-markdown chat-markdown-user"
+                />
                 <div className="text-[10px] mt-1 opacity-70 text-right text-primary-foreground/80">
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>

@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { DynamicBackground } from './components/dynamic-background';
+import { WorkspaceShell } from './components/workspace-shell';
 // import { GlobalAudioPlayer } from './components/global-audio-player';
 
 export default function ChatLayout({
@@ -8,17 +9,20 @@ export default function ChatLayout({
   canvas,
   controls,
   assistant,
+  workspace,
 }: {
   children: ReactNode;
   hud: ReactNode;
   canvas: ReactNode;
   controls: ReactNode;
   assistant: ReactNode;
+  workspace: ReactNode;
 }) {
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-background text-foreground selection:bg-primary/30">
-      {/* Dynamic Animated Background */}
-      <DynamicBackground />
+    <WorkspaceShell workspace={workspace}>
+      <div className="relative h-full w-full overflow-hidden bg-background text-foreground selection:bg-primary/30">
+        {/* Dynamic Animated Background */}
+        <DynamicBackground />
 
       {/* Heads-Up Display (Top Center) */}
       <div className="absolute top-0 left-0 right-0 z-50 flex justify-center pt-6 pointer-events-none">
@@ -45,8 +49,9 @@ export default function ChatLayout({
         {assistant}
       </div>
 
-      {/* Global TTS Audio Player */}
-      {/* <GlobalAudioPlayer /> */}
-    </div>
+        {/* Global TTS Audio Player */}
+        {/* <GlobalAudioPlayer /> */}
+      </div>
+    </WorkspaceShell>
   );
 }

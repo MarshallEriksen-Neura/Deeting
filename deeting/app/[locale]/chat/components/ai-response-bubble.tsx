@@ -8,19 +8,11 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { cn } from "@/lib/utils";
 import { resolveStatusDetail } from "@/lib/chat/status-detail";
 import { useI18n } from "@/hooks/use-i18n";
-
-// 消息部分接口
-export interface MessagePart {
-  type: 'text' | 'thought' | 'tool_call';
-  content?: string;
-  toolName?: string;
-  toolArgs?: string;
-  status?: 'running' | 'success' | 'error';
-  cost?: string; // 思考耗时
-}
+import type { MessageBlock } from "@/lib/chat/message-protocol";
+import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 
 interface AIResponseBubbleProps {
-  parts: MessagePart[];
+  parts: MessageBlock[];
   isActive?: boolean;
   streamEnabled?: boolean;
   reveal?: boolean;
@@ -108,20 +100,12 @@ export function AIResponseBubble({
               // --- C. 普通文本 ---
               if (!part.content?.trim()) return null;
 
-              const textBlocks = splitTextBlocks(part.content);
               return (
-                <div key={index} className="space-y-3">
-                  {textBlocks.map((block, blockIndex) => (
-                    <div
-                      key={`${index}-${blockIndex}`}
-                      className={cn(
-                        "prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap",
-                        nextRevealClass()
-                      )}
-                    >
-                      {block}
-                    </div>
-                  ))}
+                <div key={index} className={nextRevealClass()}>
+                  <MarkdownViewer
+                    content={part.content}
+                    className="chat-markdown chat-markdown-assistant"
+                  />
                 </div>
               );
             })}
@@ -266,13 +250,6 @@ function resolveStageIndex(stage: string, steps: Array<{ key: string }>) {
 function getStaggerClass(index: number) {
   const capped = Math.min(Math.max(index, 1), 10);
   return `stagger-${capped}`;
-}
-
-function splitTextBlocks(content: string) {
-  if (!content.includes("\n\n") || content.includes("```")) {
-    return [content];
-  }
-  return content.split(/\n{2,}/g).filter((block) => block.trim().length > 0);
 }
 
 // === 组件：思维链折叠块 ===

@@ -1,4 +1,4 @@
-import { getAuthToken, refreshAccessToken } from "./client"
+import { apiClient, getAuthToken, refreshAccessToken } from "./client"
 
 export interface SSEMessage<T = string> {
   event?: string
@@ -13,6 +13,9 @@ export interface SSEOptions<T = unknown> {
    */
   parseJson?: boolean
   headers?: Record<string, string>
+  method?: RequestInit["method"]
+  body?: RequestInit["body"]
+  credentials?: RequestCredentials
   /**
    * 若需自定义关闭，可传入外部的 AbortSignal。
    */
@@ -20,6 +23,7 @@ export interface SSEOptions<T = unknown> {
   onOpen?: () => void
   onMessage: (msg: SSEMessage<T>) => void
   onError?: (err: Error) => void
+  onClose?: () => void
 }
 
 /**
@@ -30,10 +34,14 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
   const {
     parseJson = true,
     headers,
+    method = "GET",
+    body,
+    credentials = "include",
     signal,
     onOpen,
     onMessage,
     onError,
+    onClose,
   } = options
 
   const controller = new AbortController()
@@ -49,13 +57,14 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
     try {
       const token = getAuthToken()
       const response = await fetch(url, {
-        method: "GET",
+        method,
         headers: {
           Accept: "text/event-stream",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...headers,
         },
-        credentials: "include",
+        ...(body !== undefined ? { body } : {}),
+        credentials,
         signal: mergeSignal,
         cache: "no-store",
       })
@@ -93,11 +102,21 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
           onMessage({ ...parsed, data })
         }
       }
+
+      onClose?.()
     } catch (err) {
       if (mergeSignal.aborted) return
       onError?.(err instanceof Error ? err : new Error(String(err)))
     }
   }
+}
+
+export function openApiSSE<T = unknown>(
+  path: string,
+  options: SSEOptions<T>
+) {
+  const url = apiClient.getUri({ url: path })
+  return openSSE<T>(url, options)
 }
 
 function parseEventChunk(chunk: string): SSEMessage<string> | null {

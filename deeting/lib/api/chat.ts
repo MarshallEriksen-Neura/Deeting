@@ -1,5 +1,4 @@
-import { request } from "@/lib/http"
-import { getAuthToken, refreshAccessToken } from "@/lib/http/client"
+import { openApiSSE, request } from "@/lib/http"
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant"
@@ -49,117 +48,48 @@ export async function streamChatCompletion(
     stream: payload.stream ?? true,
     status_stream: payload.status_stream ?? true,
   })
-  const response = await requestStream(body, true)
-
-  if (!response.ok || !response.body) {
-    const message = await readErrorMessage(response)
-    throw new Error(message || `请求失败: ${response.status}`)
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder("utf-8")
-  let buffer = ""
   let fullText = ""
+  let settled = false
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split("\n\n")
-    buffer = parts.pop() ?? ""
-
-    for (const part of parts) {
-      const data = extractData(part)
-      if (!data) continue
-      if (data === "[DONE]") {
-        return fullText
-      }
-
-      const parsed = safeJson(data)
-      handlers.onMessage?.(parsed)
-      const delta =
-        parsed?.choices?.[0]?.delta?.content ??
-        parsed?.choices?.[0]?.message?.content ??
-        ""
-      if (delta) {
-        fullText += delta
-        handlers.onDelta?.(delta, fullText)
-      }
-    }
-  }
-
-  return fullText
-
-  async function requestStream(bodyText: string, allowRefresh: boolean) {
-    const token = resolveAuthToken()
-    const response = await fetch(CHAT_COMPLETIONS_PATH, {
+  return await new Promise<string>((resolve, reject) => {
+    const close = openApiSSE(CHAT_COMPLETIONS_PATH, {
       method: "POST",
+      body,
       headers: {
-        Accept: "text/event-stream",
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      credentials: "include",
-      body: bodyText,
+      onMessage: (message) => {
+        const data = message.data
+        if (data === "[DONE]") {
+          if (settled) return
+          settled = true
+          close()
+          resolve(fullText)
+          return
+        }
+
+        handlers.onMessage?.(data)
+        const parsed =
+          typeof data === "string" || data === null ? null : (data as any)
+        const delta =
+          parsed?.choices?.[0]?.delta?.content ??
+          parsed?.choices?.[0]?.message?.content ??
+          ""
+        if (delta) {
+          fullText += delta
+          handlers.onDelta?.(delta, fullText)
+        }
+      },
+      onError: (err) => {
+        if (settled) return
+        settled = true
+        reject(err)
+      },
+      onClose: () => {
+        if (settled) return
+        settled = true
+        resolve(fullText)
+      },
     })
-
-    if (response.status === 401 && allowRefresh) {
-      const newToken = await refreshAccessToken().catch(() => null)
-      if (newToken) {
-        return requestStream(bodyText, false)
-      }
-    }
-
-    return response
-  }
-}
-
-function resolveAuthToken() {
-  const token = getAuthToken()
-  if (token) return token
-  if (typeof window === "undefined") return null
-  try {
-    const stored = sessionStorage.getItem("deeting-auth-store")
-    if (!stored) return null
-    const parsed = JSON.parse(stored)
-    return parsed.state?.accessToken ?? null
-  } catch {
-    return null
-  }
-}
-
-function extractData(chunk: string) {
-  const dataLines: string[] = []
-  for (const rawLine of chunk.split("\n")) {
-    const line = rawLine.trim()
-    if (!line || line.startsWith(":")) continue
-    if (line.startsWith("data:")) {
-      dataLines.push(line.slice(5).trimStart())
-    }
-  }
-  if (dataLines.length === 0) return null
-  return dataLines.join("\n")
-}
-
-function safeJson(raw: string) {
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return raw
-  }
-}
-
-async function readErrorMessage(response: Response) {
-  try {
-    const contentType = response.headers.get("content-type") || ""
-    if (contentType.includes("application/json")) {
-      const payload = (await response.json()) as { message?: string }
-      return payload?.message
-    }
-    const text = await response.text()
-    return text || response.statusText
-  } catch {
-    return response.statusText
-  }
+  })
 }

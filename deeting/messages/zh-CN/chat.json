@@ -47,6 +47,13 @@
         "toolCall": "工具调用 {name}"
       }
     },
+    "workspace": {
+      "emptyTitle": "暂未打开视图",
+      "closeView": "关闭视图",
+      "blockedTitle": "已阻止外部视图",
+      "blockedDesc": "该链接不在允许列表中。",
+      "nativeDesc": "原生视图渲染占位，将在后续接入具体能力。"
+    },
     "input": {
       "placeholder": "给 {name} 发消息..."
     },

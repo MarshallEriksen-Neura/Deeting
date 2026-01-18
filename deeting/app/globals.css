@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "github-markdown-css/github-markdown.css";
 
 /* ============================================
    Tailwind v4 dark mode variant
@@ -164,6 +165,101 @@ html.dark {
 body {
   font-family: "AlibabaPuHuiTi", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   transition: background-color 0.3s ease-out, color 0.3s ease-out;
+}
+
+/* ============================================
+   GitHub Markdown (Chat)
+   ============================================ */
+.markdown-body {
+  background-color: transparent;
+  padding: 0;
+}
+
+.chat-markdown {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.chat-markdown pre {
+  background-color: color-mix(in oklch, var(--bgColor-muted) 85%, transparent);
+}
+
+.chat-markdown-user {
+  --fgColor-default: var(--primary-foreground);
+  --fgColor-muted: color-mix(in oklch, var(--primary-foreground) 75%, transparent);
+  --fgColor-accent: var(--primary-foreground);
+  --bgColor-muted: color-mix(in oklch, var(--primary-foreground) 12%, transparent);
+  --borderColor-default: color-mix(in oklch, var(--primary-foreground) 24%, transparent);
+  --color-prettylights-syntax-comment: color-mix(in oklch, var(--primary-foreground) 70%, transparent);
+  --color-prettylights-syntax-constant: var(--primary-foreground);
+  --color-prettylights-syntax-entity: var(--primary-foreground);
+  --color-prettylights-syntax-keyword: var(--primary-foreground);
+  --color-prettylights-syntax-string: var(--primary-foreground);
+  --color-prettylights-syntax-variable: var(--primary-foreground);
+}
+
+/* Prism token mapping to GitHub variables */
+.markdown-body .token.comment,
+.markdown-body .token.prolog,
+.markdown-body .token.doctype,
+.markdown-body .token.cdata {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+.markdown-body .token.punctuation {
+  color: var(--fgColor-muted);
+}
+
+.markdown-body .token.property,
+.markdown-body .token.tag,
+.markdown-body .token.boolean,
+.markdown-body .token.number,
+.markdown-body .token.constant,
+.markdown-body .token.symbol,
+.markdown-body .token.deleted {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+.markdown-body .token.selector,
+.markdown-body .token.attr-name,
+.markdown-body .token.string,
+.markdown-body .token.char,
+.markdown-body .token.builtin,
+.markdown-body .token.inserted {
+  color: var(--color-prettylights-syntax-string);
+}
+
+.markdown-body .token.operator,
+.markdown-body .token.entity,
+.markdown-body .token.url,
+.markdown-body .language-css .token.string,
+.markdown-body .style .token.string {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+.markdown-body .token.atrule,
+.markdown-body .token.attr-value,
+.markdown-body .token.keyword {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+.markdown-body .token.function,
+.markdown-body .token.class-name {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+.markdown-body .token.regex,
+.markdown-body .token.important,
+.markdown-body .token.variable {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+.markdown-body .token.bold {
+  font-weight: var(--base-text-weight-semibold);
+}
+
+.markdown-body .token.italic {
+  font-style: italic;
 }
 
 /* Light mode frosted glass veil */

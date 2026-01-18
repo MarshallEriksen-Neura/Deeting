@@ -47,6 +47,13 @@
         "toolCall": "Tool call {name}"
       }
     },
+    "workspace": {
+      "emptyTitle": "No views open",
+      "closeView": "Close view",
+      "blockedTitle": "External view blocked",
+      "blockedDesc": "This URL is not on the allowlist.",
+      "nativeDesc": "Native view placeholder. Content will be wired later."
+    },
     "input": {
       "placeholder": "Message {name}..."
     },

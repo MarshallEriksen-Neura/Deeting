@@ -27,6 +27,18 @@ export class ApiError extends Error {
 
 let authToken: string | null = null
 
+function loadAuthTokenFromStorage() {
+  if (typeof window === "undefined") return null
+  try {
+    const stored = sessionStorage.getItem("deeting-auth-store")
+    if (!stored) return null
+    const parsed = JSON.parse(stored)
+    return parsed.state?.accessToken ?? null
+  } catch {
+    return null
+  }
+}
+
 type RefreshableAxiosRequestConfig = AxiosRequestConfig & {
   /** 内部标记：避免在刷新请求或重放请求中重复触发刷新逻辑 */
   skipAuthRefresh?: boolean
@@ -51,6 +63,11 @@ export function clearAuthToken() {
 }
 
 export function getAuthToken() {
+  if (authToken) return authToken
+  const stored = loadAuthTokenFromStorage()
+  if (stored) {
+    authToken = stored
+  }
   return authToken
 }
 
@@ -75,6 +92,28 @@ const desktopBaseURL = envApiUrl || "http://localhost:8000"
 const webBaseURL = envApiUrl || ""
 
 const apiBaseURL = isTauri ? desktopBaseURL : webBaseURL
+
+export function resolveApiBaseUrl() {
+  if (apiBaseURL) return apiBaseURL
+  if (typeof window !== "undefined") return window.location.origin
+  return ""
+}
+
+export function buildApiWsUrl(
+  path: string,
+  params?: Record<string, string>
+) {
+  const baseUrl = resolveApiBaseUrl() || "http://localhost:8000"
+  const url = new URL(baseUrl)
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+  url.pathname = path
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value)
+    }
+  }
+  return url.toString()
+}
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: apiBaseURL,
@@ -105,23 +144,9 @@ apiClient.interceptors.request.use((config) => {
   const headers = config.headers ?? {}
 
   // 尝试从内存获取，若失败且在客户端环境，尝试从 storage 恢复（防止 SWR 请求早于 hydration）
-  if (!authToken && typeof window !== "undefined") {
-    try {
-      const stored = sessionStorage.getItem("deeting-auth-store")
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        const token = parsed.state?.accessToken
-        if (token) {
-          authToken = token
-        }
-      }
-    } catch (e) {
-      // ignore json parse error
-    }
-  }
-
-  if (authToken && !headers.Authorization) {
-    headers.Authorization = `Bearer ${authToken}`
+  const token = getAuthToken()
+  if (token && !headers.Authorization) {
+    headers.Authorization = `Bearer ${token}`
   }
 
   return {

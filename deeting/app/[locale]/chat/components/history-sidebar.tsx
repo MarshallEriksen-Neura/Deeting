@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, MessageSquare, Clock, Plus, MoreHorizontal, Archive, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfiniteList } from '@/components/ui/infinite-list';
@@ -27,6 +28,9 @@ interface HistorySidebarProps {
 
 export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const t = useI18n('chat');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string | null>(null);
@@ -120,9 +124,27 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
       .filter(Boolean) as Array<{ label: string; items: ConversationSessionItem[] }>;
   }, [filteredSessions, t]);
 
+  const buildChatUrl = (nextSessionId?: string) => {
+    const basePath = activeAssistantId ? `/chat/${activeAssistantId}` : pathname || '/chat';
+    const params = new URLSearchParams(searchParams?.toString());
+    if (nextSessionId) {
+      params.set('session', nextSessionId);
+    } else {
+      params.delete('session');
+    }
+    const query = params.toString();
+    return query ? `${basePath}?${query}` : basePath;
+  };
+
   const handleSelectSession = async (targetSessionId: string) => {
     await loadHistoryBySession(targetSessionId);
+    router.replace(buildChatUrl(targetSessionId));
     onClose();
+  };
+
+  const handleResetSession = () => {
+    resetSession();
+    router.replace(buildChatUrl());
   };
 
   const handleArchiveToggle = async (
@@ -176,7 +198,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                   size="icon-sm"
                   className="rounded-full text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white"
                   onClick={() => {
-                    resetSession();
+                    handleResetSession();
                     onClose();
                   }}
                 >

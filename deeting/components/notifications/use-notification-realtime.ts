@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react"
 
-import { getAuthToken, refreshAccessToken } from "@/lib/http/client"
+import { buildApiWsUrl, getAuthToken, refreshAccessToken } from "@/lib/http/client"
 import { useNotificationActions } from "@/stores/notification-store"
 import { type NotificationItem, type NotificationType } from "@/components/notifications/notification-center"
 
@@ -45,41 +45,7 @@ const POLL_RECONNECT_BASE_MS = 1000
 const POLL_RECONNECT_MAX_MS = 30000
 const PING_INTERVAL_MS = 25000
 
-function resolveApiBaseUrl() {
-  const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
-  const envBase = process.env.NEXT_PUBLIC_API_BASE_URL
-  if (isTauri) {
-    return envBase || "http://localhost:8000"
-  }
-  if (envBase) {
-    return envBase
-  }
-  if (typeof window !== "undefined") {
-    return window.location.origin
-  }
-  return ""
-}
 
-function buildWsUrl(token: string) {
-  const baseUrl = resolveApiBaseUrl() || "http://localhost:8000"
-  const url = new URL(baseUrl)
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
-  url.pathname = "/api/v1/notifications/ws"
-  url.searchParams.set("token", token)
-  return url.toString()
-}
-
-function loadTokenFromStorage() {
-  if (typeof window === "undefined") return null
-  try {
-    const raw = sessionStorage.getItem("deeting-auth-store")
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    return parsed.state?.accessToken || null
-  } catch {
-    return null
-  }
-}
 
 function mapLevelToUiType(level?: string): NotificationType {
   switch (level) {
@@ -203,7 +169,7 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
     if (!enabled || !activeRef.current) return
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return
 
-    let token = getAuthToken() || loadTokenFromStorage()
+    let token = getAuthToken()
     if (!token) {
       token = await refreshAccessToken().catch(() => null)
     }
@@ -213,7 +179,7 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
       return
     }
 
-    const wsUrl = buildWsUrl(token)
+    const wsUrl = buildApiWsUrl("/api/v1/notifications/ws", { token })
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { invoke } from "@tauri-apps/api/core"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useChatService } from "@/hooks/use-chat-service"
@@ -29,6 +29,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   const t = useI18n("chat")
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   
   // Stores
   const installedAgents = useMarketStore((state) => state.installedAgents)
@@ -157,9 +158,15 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
       let cancelled = false
       const loadRemoteHistory = async () => {
         try {
-          const storedSessionId = typeof window !== "undefined" ? localStorage.getItem(sessionStorageKey) : null
+          const querySessionId = searchParams?.get("session")?.trim() || null
+          const storedSessionId =
+            querySessionId ??
+            (typeof window !== "undefined" ? localStorage.getItem(sessionStorageKey) : null)
           if (storedSessionId) {
             setSessionId(storedSessionId)
+            if (querySessionId && typeof window !== "undefined") {
+              localStorage.setItem(sessionStorageKey, storedSessionId)
+            }
             const windowState = await loadHistory(storedSessionId)
             if (cancelled) return
             const rawMessages = (windowState.messages || [])
@@ -240,7 +247,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
 
     void loadLocalHistory()
     return () => { cancelled = true }
-  }, [agent, historyLoaded, isTauri, loadHistory, sessionStorageKey, t, setSessionId, setMessages, agentId])
+  }, [agent, historyLoaded, isTauri, loadHistory, searchParams, sessionStorageKey, t, setSessionId, setMessages, agentId])
 
   // Tauri Agent Loading
   React.useEffect(() => {
