@@ -93,7 +93,7 @@ services:
       retries: 3
       start_period: 10s
     # 开发模式:启用热重载
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "python -m app.scripts.env_check && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
   celery_worker:
     build:
@@ -121,7 +121,7 @@ services:
     networks:
       apiproxy-net:
         ipv4_address: 172.20.0.14
-    command: celery -A app.core.celery_app.celery_app worker -Q default,audit_queue,billing_queue -l info
+    command: sh -c "python -m app.scripts.env_check && celery -A app.core.celery_app.celery_app worker -Q default,audit_queue,billing_queue -l info"
 
   celery_beat:
     build:
@@ -147,7 +147,7 @@ services:
     networks:
       apiproxy-net:
         ipv4_address: 172.20.0.15
-    command: celery -A app.core.celery_app.celery_app beat -l info
+    command: sh -c "python -m app.scripts.env_check && celery -A app.core.celery_app.celery_app beat -l info"
 
   # 前端服务(开发环境,可选)
   frontend:

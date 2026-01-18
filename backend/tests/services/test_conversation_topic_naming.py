@@ -6,7 +6,7 @@ import pytest_asyncio
 from app.models import Base, User
 from app.models.conversation import ConversationChannel, ConversationSession, ConversationStatus
 from app.models.provider_instance import ProviderInstance, ProviderModel
-from app.models.secretary import SecretaryPhase, UserSecretary
+from app.models.secretary import UserSecretary
 from app.services.conversation.topic_namer import generate_conversation_title
 from app.services.providers.provider_instance_service import ProviderInstanceService
 from tests.api.conftest import AsyncSessionLocal, engine
@@ -72,15 +72,10 @@ async def test_topic_naming_updates_title(monkeypatch):
             hashed_password="hash",
         )
         session.add(user)
-        phase = SecretaryPhase(name="topic-phase", description="test")
-        session.add(phase)
-        await session.commit()
-
         secretary = UserSecretary(
             user_id=user.id,
-            current_phase_id=phase.id,
             name="My Secretary",
-            topic_naming_model="gpt-4o-mini",
+            model_name="gpt-4o-mini",
         )
         session.add(secretary)
         await session.commit()

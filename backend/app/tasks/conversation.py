@@ -205,7 +205,7 @@ async def _persist_summary(
 def conversation_topic_naming(session_id: str, user_id: str, first_message: str) -> str:
     """
     异步话题命名任务：
-    - 读取用户秘书配置中的 topic_naming_model
+    - 读取用户秘书配置中的 model_name
     - 调用用户自有模型生成标题
     - 写回 conversation_session.title
     """

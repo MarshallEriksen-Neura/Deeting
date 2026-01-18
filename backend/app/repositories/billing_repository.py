@@ -487,15 +487,14 @@ class BillingRepository:
 
         result = await redis_client.evalsha(
             script_sha,
-            keys=[cache._make_key(key)],
-            args=[
-                str(amount),
-                str(daily_requests),
-                str(monthly_requests),
-                today,
-                month,
-                "1" if allow_negative else "0",
-            ],
+            1,
+            cache._make_key(key),
+            str(amount),
+            str(daily_requests),
+            str(monthly_requests),
+            today,
+            month,
+            "1" if allow_negative else "0",
         )
 
         if result[0] == 0:

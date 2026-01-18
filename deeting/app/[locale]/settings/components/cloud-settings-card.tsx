@@ -47,10 +47,10 @@ export function CloudSettingsCard({ control, canEditCloud }: CloudSettingsCardPr
       <GlassCardHeader className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <GlassCardTitle className="text-lg text-slate-900">
+            <GlassCardTitle className="text-lg text-foreground">
               {t("cloud.title")}
             </GlassCardTitle>
-            <GlassCardDescription className="text-slate-600">
+            <GlassCardDescription className="text-muted-foreground">
               {t("cloud.description")}
             </GlassCardDescription>
           </div>
@@ -59,11 +59,11 @@ export function CloudSettingsCard({ control, canEditCloud }: CloudSettingsCardPr
             {t("env.cloud")}
           </Badge>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {canEditCloud ? (
-            <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
           ) : (
-            <Lock className="h-3.5 w-3.5 text-slate-400" />
+            <Lock className="h-3.5 w-3.5 text-muted-foreground" />
           )}
           <span>
             {canEditCloud ? t("cloud.editableHint") : t("cloud.readonlyHint")}
@@ -99,10 +99,10 @@ export function CloudSettingsCard({ control, canEditCloud }: CloudSettingsCardPr
             </FormItem>
           )}
         />
-        <div className="rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-500">
+        <div className="rounded-lg border border-white/10 bg-[var(--surface)]/50 px-4 py-3 text-xs text-muted-foreground">
           <div className="flex items-center justify-between">
             <span>{t("cloud.scopeLabel")}</span>
-            <span className="text-slate-700">{t("cloud.scopeValue")}</span>
+            <span className="text-foreground">{t("cloud.scopeValue")}</span>
           </div>
         </div>
       </GlassCardContent>

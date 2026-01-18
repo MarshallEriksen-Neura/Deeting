@@ -234,7 +234,7 @@ class RateLimitStep(BaseStep):
             # Result: [allowed(1/0), val2, val3, val4]
             # Allowed: [1, min_remaining, max_reset]
             # Denied: [0, rejected_index, limit, retry_after]
-            res = await redis_client.evalsha(script_sha, keys=keys, args=args)
+            res = await redis_client.evalsha(script_sha, len(keys), *keys, *args)
             
             if res[0] == 0:
                 # 拒绝
@@ -279,8 +279,12 @@ class RateLimitStep(BaseStep):
             if script_sha:
                 res = await redis_client.evalsha(
                     script_sha,
-                    keys=[key],
-                    args=[tpm_limit, tpm_rate, now_sec, cost]
+                    1,
+                    key,
+                    tpm_limit,
+                    tpm_rate,
+                    now_sec,
+                    cost,
                 )
                 # res: [allowed, tokens, retry_after]
                 if res[0] == 0:

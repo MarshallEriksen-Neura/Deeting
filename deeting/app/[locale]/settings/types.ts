@@ -1,8 +1,6 @@
 export interface SettingsFormValues {
   cloudModel: string
-  desktopModel: string
   secretaryModel: string
-  topicNamingModel: string
 }
 
 export interface ModelGroup {

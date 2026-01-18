@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 
 from app.models import Base, User
-from app.models.secretary import SecretaryPhase, UserSecretary
+from app.models.secretary import UserSecretary
 from app.models.review import ReviewStatus
 from app.models.assistant import AssistantStatus, AssistantVisibility
 from app.repositories import (
@@ -34,13 +34,11 @@ async def test_auto_review_build_request_uses_superuser_secretary():
             hashed_password="hash",
             is_superuser=True,
         )
-        phase = SecretaryPhase(name="default")
-        session.add_all([superuser, phase])
+        session.add(superuser)
         await session.commit()
 
         secretary = UserSecretary(
             user_id=superuser.id,
-            current_phase_id=phase.id,
             model_name="gpt-4",
         )
         session.add(secretary)

@@ -40,6 +40,7 @@ async def test_validation_request_size_limit(monkeypatch):
 @pytest.mark.asyncio
 async def test_upstream_whitelist_block(monkeypatch):
     monkeypatch.setattr(config.settings, "OUTBOUND_WHITELIST", ["allowed.com"])
+    monkeypatch.setattr(config.settings, "ALLOW_CUSTOM_UPSTREAM", False)
     step = UpstreamCallStep()
     ctx = WorkflowContext(channel=Channel.EXTERNAL)
     ctx.set("template_render", "upstream_url", "https://blocked.com/api")

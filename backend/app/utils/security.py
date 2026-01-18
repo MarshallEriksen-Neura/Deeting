@@ -1,11 +1,15 @@
 """
-安全工具模块：密码哈希、JWT 编解码、验证码生成
+安全工具模块：密码哈希、JWT 编解码、验证码生成、SSRF 检测
 """
+import ipaddress
+import logging
 import re
 import secrets
+import socket
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import bcrypt
@@ -27,6 +31,9 @@ PROMPT_INJECTION_PATTERNS = [
     re.compile(r"you are now a", re.IGNORECASE),
     re.compile(r"stay in character", re.IGNORECASE),
 ]
+
+logger = logging.getLogger(__name__)
+
 
 def get_password_hash(password: str) -> str:
     """生成密码的 bcrypt 哈希值"""
@@ -113,3 +120,113 @@ def is_potential_prompt_injection(content: str) -> bool:
         if pattern.search(content):
             return True
     return False
+
+
+def _normalize_list(value: list[str] | str | None) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
+def is_hostname_whitelisted(hostname: str, whitelist: list[str] | str | None = None) -> bool:
+    """检查主机名是否在白名单中（支持 *.domain.com 通配）"""
+    if not hostname:
+        return False
+    entries = _normalize_list(whitelist if whitelist is not None else settings.OUTBOUND_WHITELIST)
+    if not entries:
+        return False
+
+    host = hostname.lower().strip()
+    for allowed in entries:
+        allowed = allowed.lower().strip()
+        if not allowed:
+            continue
+        if allowed.startswith("*."):
+            suffix = allowed[1:]  # .domain.com
+            if host.endswith(suffix) or host == allowed[2:]:
+                return True
+        elif host == allowed:
+            return True
+    return False
+
+
+def is_safe_upstream_url(url: str) -> bool:
+    """
+    严谨的 SSRF 检查函数：
+    1) 只允许 http/https
+    2) 命中系统白名单直接放行
+    3) 非白名单需满足自定义上游策略与内网阻断策略
+    """
+    if not url:
+        return False
+
+    try:
+        parsed = urlparse(url)
+    except Exception as exc:
+        logger.warning("SSRF: invalid url format err=%s", exc)
+        return False
+
+    if parsed.scheme not in ("http", "https"):
+        logger.warning("SSRF: blocked invalid scheme=%s", parsed.scheme)
+        return False
+
+    hostname = parsed.hostname
+    if not hostname:
+        logger.warning("SSRF: missing hostname url=%s", url)
+        return False
+
+    if is_hostname_whitelisted(hostname, settings.OUTBOUND_WHITELIST):
+        return True
+
+    if not settings.ALLOW_CUSTOM_UPSTREAM:
+        logger.warning("SSRF: custom upstream disabled host=%s", hostname)
+        return False
+
+    if settings.ALLOW_INTERNAL_NETWORKS:
+        return True
+
+    blocked_subnets = _normalize_list(settings.BLOCKED_SUBNETS)
+    networks = []
+    for cidr in blocked_subnets:
+        try:
+            networks.append(ipaddress.ip_network(cidr, strict=False))
+        except ValueError as exc:
+            logger.warning("SSRF: invalid blocked subnet=%s err=%s", cidr, exc)
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        ip = None
+
+    if ip:
+        for network in networks:
+            if ip in network:
+                logger.critical("SSRF ALERT: blocked direct ip=%s", hostname)
+                return False
+        return True
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        addr_info = socket.getaddrinfo(hostname, port)
+    except OSError as exc:
+        logger.warning("SSRF: dns resolution failed host=%s err=%s", hostname, exc)
+        return False
+
+    for _, _, _, _, sockaddr in addr_info:
+        ip_str = sockaddr[0]
+        try:
+            resolved = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        for network in networks:
+            if resolved in network:
+                logger.critical(
+                    "SSRF ALERT: blocked host=%s ip=%s",
+                    hostname,
+                    ip_str,
+                )
+                return False
+
+    return True

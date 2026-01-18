@@ -16,7 +16,7 @@
 ## 获取秘书配置
 
 - `GET /users/me/secretary`
-- 响应：`UserSecretaryDTO`（含 `embedding_model`、`topic_naming_model`）
+- 响应：`UserSecretaryDTO`（含 `model_name`）
 - 说明：若用户尚未创建秘书配置，将自动创建默认记录。
 
 ## 更新秘书配置
@@ -26,15 +26,14 @@
   ```json
   {
     "model_name": "gpt-4o",
-    "embedding_model": "text-embedding-3-small",
-    "topic_naming_model": "gpt-4o-mini"
+    "model_name": "gpt-4o"
   }
   ```
 - 响应：`UserSecretaryDTO`
-- 说明：`model_name` 用于秘书模型，`embedding_model` 用于向量模型，`topic_naming_model` 用于话题自动命名；仅允许选择**当前用户自有 Provider**下可用的对应能力模型。
+- 说明：`model_name` 用于秘书模型；允许选择当前用户可见的模型（含公共模型）。
 
 ---
 
 变更记录
 - 2026-01-15：新增用户秘书配置接口。
-- 2026-01-17：新增 `topic_naming_model` 字段，用于话题自动命名模型配置。
+- 2026-01-17：简化秘书配置，仅保留 `model_name`（默认名称 `deeting`）。

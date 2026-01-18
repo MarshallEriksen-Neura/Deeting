@@ -53,7 +53,7 @@ from .notification import (
 from .media_asset import MediaAsset
 from .provider_preset import ProviderPreset
 from .provider_instance import ProviderInstance, ProviderModel, ProviderCredential
-from .secretary import SecretaryPhase, UserSecretary
+from .secretary import UserSecretary
 from .system_setting import SystemSetting
 from .identity import Identity
 from .registration_window import RegistrationWindow, RegistrationWindowStatus
@@ -97,7 +97,6 @@ __all__ = [
     "ConversationChannel",
     "ConversationStatus",
     "ConversationRole",
-    "SecretaryPhase",
     "UserSecretary",
     "SystemSetting",
     "User",

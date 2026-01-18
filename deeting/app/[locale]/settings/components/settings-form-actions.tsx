@@ -21,9 +21,9 @@ export function SettingsFormActions({
 
   return (
     <>
-      <Separator className="bg-slate-100" />
+      <Separator className="bg-border/60" />
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="text-xs text-slate-500">{t("actions.hint")}</span>
+        <span className="text-xs text-muted-foreground">{t("actions.hint")}</span>
         <div className="flex flex-col gap-2 sm:flex-row">
           <GlassButton
             type="button"

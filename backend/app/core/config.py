@@ -71,7 +71,21 @@ class Settings(BaseSettings):
         "api.openai.com", "api.anthropic.com", "api.cohere.ai",
         "api.groq.com", "api.mistral.ai", "openrouter.ai",
         "dashscope.aliyuncs.com", "api.deepseek.com"
-    ]  # 上游域名白名单,留空表示全部禁止
+    ]  # 系统级上游域名白名单（命中后直接放行）
+    ALLOW_CUSTOM_UPSTREAM: bool = True  # 允许自定义上游（需通过 SSRF 校验）
+    ALLOW_INTERNAL_NETWORKS: bool = False  # 是否允许访问内网地址（生产环境应为 False）
+    BLOCKED_SUBNETS: list[str] = [
+        "127.0.0.0/8",      # Loopback
+        "10.0.0.0/8",       # Private A
+        "172.16.0.0/12",    # Private B
+        "192.168.0.0/16",   # Private C
+        "169.254.0.0/16",   # Link-local (云元数据风险)
+        "224.0.0.0/4",      # Multicast
+        "0.0.0.0/8",        # Current network
+        "::1/128",          # IPv6 Loopback
+        "fc00::/7",         # IPv6 Private
+        "fe80::/10",        # IPv6 Link-local
+    ]  # SSRF 防护黑名单网段（CIDR）
     GATEWAY_MAX_CONCURRENCY: int = 200  # 网关并发上限(每进程)
     GATEWAY_QUEUE_TIMEOUT: float = 0.25  # 排队等待获取并发槽的超时(秒)
 

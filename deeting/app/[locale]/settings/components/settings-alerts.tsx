@@ -14,25 +14,25 @@ export function SettingsAlerts({ isAuthenticated }: SettingsAlertsProps) {
   return (
     <>
       {!isAuthenticated && (
-        <Alert className="mb-6 border-0 bg-slate-50">
-          <Lock className="h-4 w-4 text-slate-500" />
-          <AlertTitle className="text-slate-800">
+        <Alert className="mb-6 border border-white/10 bg-[var(--surface)]/70">
+          <Lock className="h-4 w-4 text-muted-foreground" />
+          <AlertTitle className="text-foreground">
             {t("auth.requiredTitle")}
           </AlertTitle>
-          <AlertDescription className="text-slate-600">
+          <AlertDescription className="text-muted-foreground">
             <p>{t("auth.requiredDesc")}</p>
           </AlertDescription>
         </Alert>
       )}
 
-      <Alert className="mb-6 border-0 bg-white/90 shadow-[0_4px_20px_-12px_rgba(37,99,235,0.2)]">
-        <Cloud className="h-4 w-4 text-blue-500" />
-        <AlertTitle className="text-slate-900">
+      <Alert className="mb-6 border border-white/10 bg-[var(--surface)]/70 shadow-[0_4px_20px_-12px_rgba(124,109,255,0.25)]">
+        <Cloud className="h-4 w-4 text-primary" />
+        <AlertTitle className="text-foreground">
           {t("alert.consistencyTitle")}
         </AlertTitle>
-        <AlertDescription className="text-slate-600">
+        <AlertDescription className="text-muted-foreground">
           <p>{t("alert.consistencyDesc")}</p>
-          <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span>{t("alert.dimensionHint")}</span>
             <span>{t("alert.versionHint")}</span>
           </div>

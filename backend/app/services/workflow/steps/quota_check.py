@@ -134,8 +134,10 @@ class QuotaCheckStep(BaseStep):
         # 2. 继续使用原 API Key quota 检查（Redis -> DB 回退）
         repo = self.apikey_repo or ApiKeyRepository(ctx.db_session)
         from app.models.api_key import QuotaType
-        quotas = await repo.get_quotas(api_key_id, quota_type=None)
-        for quota in quotas or []:
+        api_key = await repo.get_by_id(api_key_id)
+        if not api_key:
+            return
+        for quota in api_key.quotas or []:
             if quota.quota_type == QuotaType.REQUEST and quota.used_quota >= quota.total_quota:
                 raise QuotaExceededError("apikey_request", quota.total_quota, quota.used_quota)
             if quota.quota_type == QuotaType.TOKEN and quota.total_quota > 0 and quota.used_quota >= quota.total_quota:
@@ -277,15 +279,14 @@ class QuotaCheckStep(BaseStep):
         # args: amount, daily_requests, monthly_requests, today, month, allow_negative
         result = await redis_client.evalsha(
             script_sha,
-            keys=[cache._make_key(key)],
-            args=[
-                str(estimated_cost),  # amount
-                "1",  # daily_requests
-                "1",  # monthly_requests
-                today,
-                month,
-                "0",  # allow_negative=False（配额检查阶段不允许负余额）
-            ],
+            1,
+            cache._make_key(key),
+            str(estimated_cost),  # amount
+            "1",  # daily_requests
+            "1",  # monthly_requests
+            today,
+            month,
+            "0",  # allow_negative=False（配额检查阶段不允许负余额）
         )
 
         if result[0] == 0:

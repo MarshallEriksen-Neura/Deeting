@@ -10,8 +10,6 @@ export const UserSecretarySchema = z.object({
   current_phase_id: z.string().uuid(),
   name: z.string(),
   model_name: z.string().nullable().optional(),
-  embedding_model: z.string().nullable().optional(),
-  topic_naming_model: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -20,8 +18,6 @@ export type UserSecretary = z.infer<typeof UserSecretarySchema>
 
 export const UserSecretaryUpdateSchema = z.object({
   model_name: z.string().nullable().optional(),
-  embedding_model: z.string().nullable().optional(),
-  topic_naming_model: z.string().nullable().optional(),
 })
 
 export type UserSecretaryUpdate = z.infer<typeof UserSecretaryUpdateSchema>

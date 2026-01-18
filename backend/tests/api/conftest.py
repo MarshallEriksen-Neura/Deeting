@@ -113,7 +113,15 @@ class DummyRedis:
         self.scripts[sha] = script
         return sha
 
-    async def evalsha(self, sha, keys=None, args=None):
+    async def evalsha(self, sha, *keys_and_args, keys=None, args=None):
+        if keys is None and args is None:
+            if not keys_and_args:
+                return None
+            numkeys = keys_and_args[0]
+            if not isinstance(numkeys, int):
+                return None
+            keys = list(keys_and_args[1:1 + numkeys])
+            args = list(keys_and_args[1 + numkeys:])
         if not keys or not args:
             return None
         key = keys[0]

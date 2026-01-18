@@ -29,6 +29,30 @@ function sessionKeyForAssistant(assistantId: string) {
   return `${SESSION_STORAGE_PREFIX}:${assistantId}`;
 }
 
+function createMessageId() {
+  const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
+  if (cryptoObj?.randomUUID) {
+    return cryptoObj.randomUUID();
+  }
+
+  if (cryptoObj?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    cryptoObj.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const toHex = (byte: number) => byte.toString(16).padStart(2, "0");
+    return (
+      `${toHex(bytes[0])}${toHex(bytes[1])}${toHex(bytes[2])}${toHex(bytes[3])}` +
+      `-${toHex(bytes[4])}${toHex(bytes[5])}` +
+      `-${toHex(bytes[6])}${toHex(bytes[7])}` +
+      `-${toHex(bytes[8])}${toHex(bytes[9])}` +
+      `-${toHex(bytes[10])}${toHex(bytes[11])}${toHex(bytes[12])}${toHex(bytes[13])}${toHex(bytes[14])}${toHex(bytes[15])}`
+    );
+  }
+
+  return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessage[] {
   const mapped = history.map((msg) => ({
     role: msg.role,
@@ -137,7 +161,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
 
       addMessage: (role, content) => {
         const newMessage: Message = {
-          id: crypto.randomUUID(),
+          id: createMessageId(),
           role,
           content,
           createdAt: Date.now(),
@@ -210,12 +234,12 @@ export const useChatStore = create<ChatState & ChatActions>()(
         if (!selectedModel || !activeAssistant) return;
 
         const userMessage: Message = {
-          id: crypto.randomUUID(),
+          id: createMessageId(),
           role: "user",
           content: trimmedInput,
           createdAt: Date.now(),
         };
-        const assistantMessageId = crypto.randomUUID();
+        const assistantMessageId = createMessageId();
         const assistantMessage: Message = {
           id: assistantMessageId,
           role: "assistant",

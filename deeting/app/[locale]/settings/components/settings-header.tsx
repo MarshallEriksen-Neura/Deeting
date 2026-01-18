@@ -27,23 +27,23 @@ export function SettingsHeader({ isTauri, isAdmin, roleLabel, isLoading }: Setti
       theme="surface"
       hover="none"
       padding="lg"
-      className="mb-6 border border-white/40 bg-white/80 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.18)]"
+      className="mb-6 border border-white/10 bg-[var(--surface)]/70 shadow-[0_12px_32px_-16px_rgba(0,0,0,0.4)]"
     >
       <GlassCardHeader className="gap-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <GlassCardTitle className="text-2xl font-semibold text-slate-900">
+            <GlassCardTitle className="text-2xl font-semibold text-foreground">
               {t("title")}
             </GlassCardTitle>
-            <GlassCardDescription className="text-sm text-slate-600">
+            <GlassCardDescription className="text-sm text-muted-foreground">
               {t("subtitle")}
             </GlassCardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">{t("env.currentLabel")}</span>
+            <span className="text-xs text-muted-foreground">{t("env.currentLabel")}</span>
             <Badge
               variant="secondary"
-              className="gap-1 bg-slate-100 text-slate-700"
+              className="gap-1"
             >
               {isTauri ? <Monitor className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
               {isTauri ? t("env.desktop") : t("env.web")}
@@ -52,11 +52,11 @@ export function SettingsHeader({ isTauri, isAdmin, roleLabel, isLoading }: Setti
         </div>
       </GlassCardHeader>
       <GlassCardContent className="mt-4">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>{t("role.currentLabel")}</span>
           <Badge
             variant="secondary"
-            className="gap-1 bg-slate-100 text-slate-700"
+            className="gap-1"
           >
             {isAdmin ? (
               <ShieldCheck className="h-3 w-3" />

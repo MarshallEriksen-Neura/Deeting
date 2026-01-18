@@ -15,7 +15,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -30,6 +30,7 @@ from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.proxy.proxy_pool import get_proxy_pool, mask_proxy_url
 from app.services.secrets.manager import SecretManager
+from app.utils.security import is_hostname_whitelisted, is_safe_upstream_url
 from app.services.workflow.steps.base import (
     BaseStep,
     FailureAction,
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
 
 logger = logging.getLogger(__name__)
+MAX_UPSTREAM_REDIRECTS = 3
 
 
 def _model_allowed(allowed_models: list[str] | None, model: str | None) -> bool:
@@ -50,6 +52,21 @@ def _model_allowed(allowed_models: list[str] | None, model: str | None) -> bool:
     if not model:
         return False
     return model in allowed_models
+
+
+def _jsonify_payload(payload: Any) -> Any:
+    """将请求体转换为可 JSON 序列化的结构（避免 UUID 等类型报错）。"""
+    return json.loads(json.dumps(payload, default=str))
+
+
+def _parse_response_body(response: httpx.Response) -> Any:
+    """解析上游响应体，避免 JSONDecodeError 直接冒泡。"""
+    if not response.content:
+        return {}
+    try:
+        return response.json()
+    except json.JSONDecodeError:
+        return {"raw_text": response.text}
 
 
 @dataclass
@@ -215,6 +232,10 @@ class UpstreamTimeoutError(UpstreamError):
         self.timeout = timeout
 
 
+class UpstreamSecurityError(Exception):
+    """上游安全策略拦截"""
+
+
 @step_registry.register
 class UpstreamCallStep(BaseStep):
     """
@@ -269,16 +290,16 @@ class UpstreamCallStep(BaseStep):
         auth_config = ctx.get("routing", "auth_config") or {}
         cb_key = self._build_cb_key(upstream_url, auth_config.get("secret_ref_id"))
 
-        # 域名白名单校验
-        if not self._is_whitelisted(upstream_url):
+        # 上游地址安全校验（白名单直通 + SSRF 阻断）
+        if not is_safe_upstream_url(upstream_url):
             ctx.mark_error(
                 ErrorSource.GATEWAY,
                 "UPSTREAM_DOMAIN_NOT_ALLOWED",
-                "Upstream host not in whitelist",
+                "Upstream URL blocked by security policy",
             )
             return StepResult(
                 status=StepStatus.FAILED,
-                message="Upstream host not allowed",
+                message="Upstream URL blocked by security policy",
             )
 
         # 熔断保护
@@ -413,6 +434,17 @@ class UpstreamCallStep(BaseStep):
                 },
             )
 
+        except UpstreamSecurityError as e:
+            ctx.mark_error(
+                ErrorSource.GATEWAY,
+                "UPSTREAM_DOMAIN_NOT_ALLOWED",
+                str(e),
+            )
+            return StepResult(
+                status=StepStatus.FAILED,
+                message=str(e),
+            )
+
         except httpx.TimeoutException:
             latency_ms = (time.perf_counter() - start_time) * 1000
             ctx.upstream_result.latency_ms = latency_ms
@@ -504,6 +536,97 @@ class UpstreamCallStep(BaseStep):
         # 默认 Bearer
         return {"Authorization": f"Bearer {secret or ''}"}
 
+    @staticmethod
+    def _resolve_redirect_url(current_url: str, location: str | None) -> str | None:
+        if not location:
+            return None
+        return urljoin(current_url, location)
+
+    async def _request_with_redirects(
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        url: str,
+        body: dict,
+        headers: dict,
+        timeout: float,
+    ) -> httpx.Response:
+        current_url = url
+        redirect_count = 0
+
+        while True:
+            response = await client.request(
+                method,
+                current_url,
+                json=body,
+                headers=headers,
+                timeout=timeout,
+                follow_redirects=False,
+            )
+            if response.is_redirect:
+                await response.aclose()
+                if redirect_count >= MAX_UPSTREAM_REDIRECTS:
+                    raise UpstreamSecurityError("Upstream redirect exceeds limit")
+
+                next_url = self._resolve_redirect_url(
+                    current_url,
+                    response.headers.get("Location"),
+                )
+                if not next_url:
+                    raise UpstreamSecurityError("Upstream redirect missing location")
+                if not is_safe_upstream_url(next_url):
+                    raise UpstreamSecurityError("Upstream redirect blocked by security policy")
+
+                logger.info("Upstream redirecting url=%s -> %s", current_url, next_url)
+                current_url = next_url
+                redirect_count += 1
+                continue
+            return response
+
+    async def _stream_with_redirects(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        body: dict,
+        headers: dict,
+        timeout: float,
+    ) -> AsyncIterator[bytes]:
+        current_url = url
+        redirect_count = 0
+
+        while True:
+            stream_ctx = client.stream(
+                "POST",
+                current_url,
+                json=body,
+                headers=headers,
+                timeout=timeout,
+                follow_redirects=False,
+            )
+            async with stream_ctx as response:
+                if response.is_redirect:
+                    if redirect_count >= MAX_UPSTREAM_REDIRECTS:
+                        raise UpstreamSecurityError("Upstream redirect exceeds limit")
+
+                    next_url = self._resolve_redirect_url(
+                        current_url,
+                        response.headers.get("Location"),
+                    )
+                    if not next_url:
+                        raise UpstreamSecurityError("Upstream redirect missing location")
+                    if not is_safe_upstream_url(next_url):
+                        raise UpstreamSecurityError("Upstream redirect blocked by security policy")
+
+                    logger.info("Upstream redirecting url=%s -> %s", current_url, next_url)
+                    current_url = next_url
+                    redirect_count += 1
+                    continue
+
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+                return
+
     async def _call_upstream(
         self,
         ctx: "WorkflowContext",
@@ -513,6 +636,7 @@ class UpstreamCallStep(BaseStep):
         timeout: float,
     ) -> dict[str, Any]:
         """非流式上游调用"""
+        safe_body = _jsonify_payload(body)
         proxy_attempts = max(1, settings.UPSTREAM_PROXY_MAX_RETRIES + 1)
         tried_endpoints: set[str] = set()
         last_error: Exception | None = None
@@ -539,9 +663,11 @@ class UpstreamCallStep(BaseStep):
                 proxies=proxies,
             )
             try:
-                response = await client.post(
-                    url,
-                    json=body,
+                response = await self._request_with_redirects(
+                    client=client,
+                    method="POST",
+                    url=url,
+                    body=safe_body,
                     headers=headers,
                     timeout=timeout,
                 )
@@ -551,7 +677,7 @@ class UpstreamCallStep(BaseStep):
                 return {
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
-                    "body": response.json(),
+                    "body": _parse_response_body(response),
                     "raw_bytes": raw_bytes,
                 }
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
@@ -591,6 +717,7 @@ class UpstreamCallStep(BaseStep):
         Args:
             accumulator: Token 累计器，用于跟踪流式响应中的 token 用量
         """
+        safe_body = _jsonify_payload(body)
         proxy_attempts = max(1, settings.UPSTREAM_PROXY_MAX_RETRIES + 1)
         tried_endpoints: set[str] = set()
 
@@ -615,21 +742,17 @@ class UpstreamCallStep(BaseStep):
                 proxies=proxies,
             )
             try:
-                stream_ctx = client.stream(
-                    "POST",
-                    url,
-                    json=body,
+                async for chunk in self._stream_with_redirects(
+                    client=client,
+                    url=url,
+                    body=safe_body,
                     headers=headers,
                     timeout=timeout,
-                )
-                async with stream_ctx as response:
-                    response.raise_for_status()
-
-                    async for chunk in response.aiter_bytes():
-                        if accumulator:
-                            accumulator.parse_sse_chunk(chunk)
-                        yield chunk
-                    return
+                ):
+                    if accumulator:
+                        accumulator.parse_sse_chunk(chunk)
+                    yield chunk
+                return
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
                 if selection:
                     tried_endpoints.add(selection.endpoint_id)
@@ -842,17 +965,7 @@ class UpstreamCallStep(BaseStep):
             host = urlparse(url).hostname or ""
         except Exception:
             return False
-        if not settings.OUTBOUND_WHITELIST:
-            return False
-
-        for allowed in settings.OUTBOUND_WHITELIST:
-            if allowed.startswith("*."):
-                suffix = allowed[1:]  # .domain.com
-                if host.endswith(suffix) or host == allowed[2:]:
-                    return True
-            elif host == allowed:
-                return True
-        return False
+        return is_hostname_whitelisted(host, settings.OUTBOUND_WHITELIST)
 
     def _build_cb_key(self, url: str, secret_ref: str | None) -> str:
         host = urlparse(url).hostname or url

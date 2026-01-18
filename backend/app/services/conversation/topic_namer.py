@@ -106,13 +106,13 @@ async def generate_conversation_title(
     secretary_stmt = select(UserSecretary).where(UserSecretary.user_id == user_uuid)
     secretary_result = await db.execute(secretary_stmt)
     secretary = secretary_result.scalar_one_or_none()
-    if not secretary or not secretary.topic_naming_model:
+    if not secretary or not secretary.model_name:
         return "skip_unconfigured"
 
     model_repo = ProviderModelRepository(db)
     candidates = await model_repo.get_candidates(
         capability="chat",
-        model_id=secretary.topic_naming_model,
+        model_id=secretary.model_name,
         user_id=str(user_uuid),
         include_public=False,
     )

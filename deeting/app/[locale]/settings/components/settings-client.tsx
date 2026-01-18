@@ -36,7 +36,6 @@ export function SettingsClient() {
       <SettingsAlerts isAuthenticated={isAuthenticated} />
 
       <SettingsForm
-        isTauri={isTauri}
         isAuthenticated={isAuthenticated}
         isAdmin={isAdmin}
       />

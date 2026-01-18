@@ -1,10 +1,15 @@
 import asyncio
+import json
+import uuid
 
 import pytest
 
 from app.services.orchestrator.context import Channel, WorkflowContext
+from app.services.workflow.steps import upstream_call as upstream_call_module
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
+    UpstreamCallStep,
+    _jsonify_payload,
     stream_with_billing,
 )
 
@@ -31,6 +36,61 @@ def test_stream_token_accumulator_estimates_tokens_when_missing_usage():
     assert accumulator.output_tokens == 0
     # 无 usage 时根据 chunk 数估算
     assert accumulator.estimate_output_tokens() >= 1
+
+
+def test_jsonify_payload_converts_uuid():
+    payload = {"assistant_id": uuid.uuid4(), "nested": {"ids": [uuid.uuid4()]}}
+    result = _jsonify_payload(payload)
+
+    assert isinstance(result["assistant_id"], str)
+    assert isinstance(result["nested"]["ids"][0], str)
+
+
+@pytest.mark.asyncio
+async def test_call_upstream_handles_non_json_response(monkeypatch):
+    class DummyResponse:
+        status_code = 200
+        headers = {"content-type": "text/plain"}
+        content = b"OK"
+        text = "OK"
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            raise json.JSONDecodeError("Expecting value", "", 0)
+
+    class DummyClient:
+        async def aclose(self) -> None:
+            return None
+
+    class DummyProxyPool:
+        async def pick(self, **_):
+            return None
+
+        def build_transport_kwargs(self, _selection):
+            return {}
+
+    async def fake_request_with_redirects(*_args, **_kwargs):
+        return DummyResponse()
+
+    step = UpstreamCallStep()
+    step.proxy_pool = DummyProxyPool()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+
+    monkeypatch.setattr(step, "_request_with_redirects", fake_request_with_redirects)
+    monkeypatch.setattr(upstream_call_module, "create_async_http_client", lambda **_: DummyClient())
+
+    result = await step._call_upstream(
+        ctx=ctx,
+        url="https://api.example.com",
+        body={"hello": "world"},
+        headers={},
+        timeout=1.0,
+    )
+
+    assert result["status_code"] == 200
+    assert result["body"] == {"raw_text": "OK"}
 
 
 @pytest.mark.asyncio

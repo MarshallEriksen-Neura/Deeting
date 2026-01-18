@@ -21,7 +21,7 @@ from app.models import User
 from app.schemas.auth import MessageResponse
 from app.schemas.user import UserRead, UserUpdate, UserWithPermissions
 from app.schemas.secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
-from app.repositories import ProviderModelRepository, SecretaryPhaseRepository, UserSecretaryRepository
+from app.repositories import ProviderModelRepository, UserSecretaryRepository
 from app.services.secretary.secretary_service import UserSecretaryService
 from app.services.users import UserService
 
@@ -31,7 +31,6 @@ router = APIRouter(prefix="/users", tags=["Users"])
 def get_secretary_service(db: AsyncSession = Depends(get_db)) -> UserSecretaryService:
     return UserSecretaryService(
         UserSecretaryRepository(db),
-        SecretaryPhaseRepository(db),
         ProviderModelRepository(db),
     )
 
@@ -95,21 +94,15 @@ async def update_user_secretary(
     user: User = Depends(get_current_active_user),
     service: UserSecretaryService = Depends(get_secretary_service),
 ) -> UserSecretaryDTO:
-    if (
-        payload.model_name is None
-        and payload.embedding_model is None
-        and payload.topic_naming_model is None
-    ):
+    if payload.model_name is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="至少提供 model_name、embedding_model 或 topic_naming_model",
+            detail="至少提供 model_name",
         )
     try:
         secretary = await service.update_settings(
             user_id=user.id,
             model_name=payload.model_name,
-            embedding_model=payload.embedding_model,
-            topic_naming_model=payload.topic_naming_model,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

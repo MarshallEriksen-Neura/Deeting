@@ -31,7 +31,7 @@ def upgrade() -> None:
     if "preset_slug" not in existing_columns:
         return
 
-    op.execute(
+    bind.execute(
         sa.text(
             "UPDATE provider_instance "
             "SET preset_slug = :new_slug "

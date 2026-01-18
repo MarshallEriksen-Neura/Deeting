@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from app.models.secretary import UserSecretary, SecretaryPhase
+from app.models.secretary import UserSecretary
 
 from .base import BaseRepository
 
@@ -18,12 +18,3 @@ class UserSecretaryRepository(BaseRepository[UserSecretary]):
         )
         return result.scalars().first()
 
-
-class SecretaryPhaseRepository(BaseRepository[SecretaryPhase]):
-    model = SecretaryPhase
-
-    async def get_default(self) -> SecretaryPhase | None:
-        result = await self.session.execute(
-            select(SecretaryPhase).order_by(SecretaryPhase.created_at.asc())
-        )
-        return result.scalars().first()

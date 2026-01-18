@@ -3,7 +3,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from app.models import Base, User, UserSecretary, SecretaryPhase
+from app.models import Base, User, UserSecretary
 from app.models.assistant import AssistantStatus, AssistantVisibility
 from app.repositories import (
     AssistantRepository,
@@ -33,13 +33,8 @@ async def test_preview_builds_request_with_secretary_model():
         )
         session.add(user)
 
-        phase = SecretaryPhase(name="v1", description="test")
-        session.add(phase)
-        await session.commit()
-
         secretary = UserSecretary(
             user_id=user.id,
-            current_phase_id=phase.id,
             name="My Secretary",
             model_name="gpt-4o",
         )
@@ -98,13 +93,8 @@ async def test_preview_requires_secretary_model():
         )
         session.add(user)
 
-        phase = SecretaryPhase(name="v1-missing", description="test")
-        session.add(phase)
-        await session.commit()
-
         secretary = UserSecretary(
             user_id=user.id,
-            current_phase_id=phase.id,
             name="My Secretary",
             model_name=None,
         )
