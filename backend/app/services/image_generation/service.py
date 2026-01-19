@@ -5,9 +5,12 @@ import hashlib
 import logging
 from datetime import timedelta
 from typing import Any
+from uuid import UUID
 from urllib.parse import urlparse
 
 import httpx
+from fastapi_pagination.cursor import CursorPage, CursorParams
+from fastapi_pagination.ext.sqlalchemy import paginate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -16,6 +19,7 @@ from app.models.image_generation import ImageGenerationOutput, ImageGenerationSt
 from app.repositories.image_generation_output_repository import ImageGenerationOutputRepository
 from app.repositories.image_generation_task_repository import ImageGenerationTaskRepository
 from app.repositories.media_asset_repository import MediaAssetRepository
+from app.schemas.image_generation import ImageGenerationOutputItem, ImageGenerationTaskListItem
 from app.services.image_generation.prompt_security import PromptCipher, build_prompt_hash
 from app.services.oss.asset_storage_service import store_asset_bytes
 from app.services.orchestrator.context import Channel, WorkflowContext
@@ -66,7 +70,10 @@ class ImageGenerationService:
         task = await self.task_repo.get(task_id)
         if not task:
             return
-        if task.status not in (ImageGenerationStatus.QUEUED, ImageGenerationStatus.RUNNING):
+        if _status_value(task.status) not in (
+            ImageGenerationStatus.QUEUED.value,
+            ImageGenerationStatus.RUNNING.value,
+        ):
             return
 
         await self.task_repo.update_status(
@@ -191,6 +198,95 @@ class ImageGenerationService:
             )
         return result
 
+    async def list_user_tasks(
+        self,
+        *,
+        user_id: UUID,
+        params: CursorParams,
+        status: ImageGenerationStatus | None = None,
+        session_id: UUID | None = None,
+        include_outputs: bool = True,
+        base_url: str | None = None,
+    ) -> CursorPage[ImageGenerationTaskListItem]:
+        stmt = self.task_repo.build_user_query(
+            user_id=user_id,
+            status=status,
+            session_id=session_id,
+        )
+
+        async def _transform(rows):
+            tasks = list(rows)
+            preview_map: dict[UUID, ImageGenerationOutputItem | None] = {}
+            if include_outputs:
+                preview_map = await self._build_task_previews(tasks, base_url)
+            items: list[ImageGenerationTaskListItem] = []
+            for task in tasks:
+                prompt_value = None if task.prompt_encrypted else task.prompt_raw
+                items.append(
+                    ImageGenerationTaskListItem(
+                        task_id=task.id,
+                        status=_status_value(task.status),
+                        model=task.model,
+                        session_id=task.session_id,
+                        prompt=prompt_value,
+                        prompt_encrypted=bool(task.prompt_encrypted),
+                        created_at=task.created_at,
+                        updated_at=task.updated_at,
+                        completed_at=task.completed_at,
+                        error_code=task.error_code,
+                        error_message=task.error_message,
+                        preview=preview_map.get(task.id),
+                    )
+                )
+            return items
+
+        return await paginate(self.task_repo.session, stmt, params=params, transformer=_transform)
+
+    async def _build_task_previews(
+        self,
+        tasks: list[Any],
+        base_url: str | None,
+    ) -> dict[UUID, ImageGenerationOutputItem | None]:
+        task_ids = [
+            task.id
+            for task in tasks
+            if _status_value(task.status) == ImageGenerationStatus.SUCCEEDED.value
+        ]
+        if not task_ids:
+            return {}
+
+        outputs = await self.output_repo.list_by_task_ids(task_ids)
+        first_outputs: dict[UUID, ImageGenerationOutput] = {}
+        for output in outputs:
+            if output.task_id not in first_outputs:
+                first_outputs[output.task_id] = output
+
+        asset_ids = [output.media_asset_id for output in first_outputs.values() if output.media_asset_id]
+        assets = await self.asset_repo.list_by_ids(asset_ids)
+        asset_map = {asset.id: asset for asset in assets}
+
+        from app.services.oss.asset_storage_service import build_signed_asset_url
+
+        now = Datetime.now()
+        preview_map: dict[UUID, ImageGenerationOutputItem | None] = {}
+        for task_id, output in first_outputs.items():
+            asset_url = None
+            if output.media_asset_id:
+                asset = asset_map.get(output.media_asset_id)
+                if asset and (not asset.expire_at or asset.expire_at > now):
+                    asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+            preview_map[task_id] = ImageGenerationOutputItem(
+                output_index=output.output_index,
+                asset_url=asset_url,
+                source_url=output.source_url,
+                seed=output.seed,
+                content_type=output.content_type,
+                size_bytes=output.size_bytes,
+                width=output.width,
+                height=output.height,
+            )
+        return preview_map
+
     async def _persist_outputs(self, task, response: dict[str, Any]) -> list[ImageGenerationOutput]:
         items = _extract_image_items(response)
         outputs: list[ImageGenerationOutput] = []
@@ -305,6 +401,14 @@ class ImageGenerationService:
         }
 
 
+def _status_value(status: ImageGenerationStatus | str | None) -> str:
+    if isinstance(status, ImageGenerationStatus):
+        return status.value
+    if status is None:
+        return ""
+    return str(status)
+
+
 def _build_request_from_task(task) -> Any:
     from app.schemas.image_generation import ImageGenerationTaskCreateRequest
 
@@ -384,3 +488,11 @@ def _estimate_image_cost(pricing: dict[str, Any], task: Any) -> float:
 
 
 __all__ = ["ImageGenerationService"]
+
+
+def _status_value(status: ImageGenerationStatus | str | None) -> str:
+    if isinstance(status, ImageGenerationStatus):
+        return status.value
+    if status is None:
+        return ""
+    return str(status)

@@ -225,6 +225,8 @@ class TemplateRenderStep(BaseStep):
         通常直接透传请求数据，但可根据配置进行转换
         """
         merged = {**default_params, **request_data}
+        if merged.get("response_format") is None:
+            merged.pop("response_format", None)
         merged.pop("status_stream", None)
         return merged
 

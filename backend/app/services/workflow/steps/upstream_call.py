@@ -338,6 +338,18 @@ class UpstreamCallStep(BaseStep):
         request_body = ctx.get("template_render", "request_body") or {}
         headers = ctx.get("template_render", "headers") or {}
 
+        if (ctx.capability or "").lower() in {"image", "image_generation"}:
+            has_response_format = "response_format" in request_body
+            response_format = request_body.get("response_format")
+            logger.info(
+                "image_upstream_request_format trace_id=%s provider=%s model=%s present=%s value=%s",
+                ctx.trace_id,
+                ctx.get("routing", "provider") or "unknown",
+                ctx.requested_model or "unknown",
+                has_response_format,
+                response_format,
+            )
+
         if not upstream_url:
             return StepResult(
                 status=StepStatus.FAILED,

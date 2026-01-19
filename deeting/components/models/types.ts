@@ -6,7 +6,7 @@
  */
 
 // Model capability types
-export type ModelCapability = 'chat' | 'vision' | 'audio' | 'embedding' | 'code' | 'reasoning'
+export type ModelCapability = 'chat' | 'vision' | 'image' | 'audio' | 'embedding' | 'code' | 'reasoning'
 
 // Provider instance status
 export type ProviderStatus = 'online' | 'offline' | 'degraded' | 'syncing' | 'unknown'
@@ -181,6 +181,11 @@ export const CAPABILITY_META: Record<ModelCapability, {
     icon: '👁️',
     label: 'Vision',
     description: 'Image understanding and analysis'
+  },
+  image: {
+    icon: '🖼️',
+    label: 'Image',
+    description: 'Image generation capabilities'
   },
   audio: {
     icon: '🗣️',

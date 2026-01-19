@@ -340,6 +340,8 @@ class ProviderInstanceService:
                     return f"{base}/embeddings"
                 if cap == "audio":
                     return f"{base}/audio/transcriptions"
+                if cap == "image":
+                    return f"{base}/images/generations"
                 return f"{base}/chat/completions"
             if "gemini" in proto or "google" in proto or "vertex" in proto:
                 if cap == "embedding":
@@ -349,6 +351,8 @@ class ProviderInstanceService:
                 return "embeddings"
             if cap == "audio":
                 return "audio/transcriptions"
+            if cap == "image":
+                return "images/generations"
             return "chat/completions"
 
         now = Datetime.utcnow()

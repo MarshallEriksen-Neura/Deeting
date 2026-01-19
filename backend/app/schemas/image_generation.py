@@ -64,9 +64,25 @@ class ImageGenerationTaskDetail(BaseSchema):
     outputs: list[ImageGenerationOutputItem] = Field(default_factory=list)
 
 
+class ImageGenerationTaskListItem(BaseSchema):
+    task_id: UUID
+    status: str
+    model: str
+    session_id: UUID | None = None
+    prompt: str | None = None
+    prompt_encrypted: bool = False
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    preview: ImageGenerationOutputItem | None = None
+
+
 __all__ = [
     "ImageGenerationTaskCreateRequest",
     "ImageGenerationTaskCreateResponse",
     "ImageGenerationOutputItem",
     "ImageGenerationTaskDetail",
+    "ImageGenerationTaskListItem",
 ]

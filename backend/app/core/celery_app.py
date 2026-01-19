@@ -73,12 +73,14 @@ celery_app.conf.update(
     },
     # 任务路由配置
     task_routes={
+        "conversation.*": {"queue": "conversation"},
         "app.tasks.audit.*": {"queue": "internal"},
         "app.tasks.reports.*": {"queue": "internal"},
         "app.tasks.billing.*": {"queue": "billing"},
         "app.tasks.async_inference.*": {"queue": "external"},
         "app.tasks.callbacks.*": {"queue": "external"},
         "app.tasks.media.*": {"queue": "external"},
+        "app.tasks.image_generation.*": {"queue": "image_generation"},
         "app.tasks.upstream.*": {"queue": "retry"},
         "*": {"queue": "default"},
     },

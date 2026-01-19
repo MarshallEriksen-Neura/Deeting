@@ -396,6 +396,8 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
         onAddAttachments={addAttachments}
         onRemoveAttachment={removeAttachment}
         onClearAttachments={clearAttachments}
+        streamEnabled={streamEnabled}
+        onStreamChange={setStreamEnabled}
       />
     </div>
   )

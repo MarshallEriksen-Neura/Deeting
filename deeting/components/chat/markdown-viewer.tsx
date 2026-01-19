@@ -8,6 +8,7 @@ import remarkBreaks from "remark-breaks"
 import rehypePrism from "rehype-prism-plus"
 import { cn } from "@/lib/utils"
 import { CodeBlock } from "@/components/chat/code-block"
+import { ImageLightbox } from "@/components/ui/image-lightbox"
 
 const INLINE_FENCE_REGEX = /```([a-zA-Z0-9_-]+)?\s+([^\n`]+?)```/g
 
@@ -102,6 +103,11 @@ export function MarkdownViewer({
           ),
           td: ({ children }) => (
             <td className="border border-border px-2 py-1">{children}</td>
+          ),
+          img: ({ src, alt, ...props }) => (
+            <div className="my-2">
+              <ImageLightbox src={src || ""} alt={alt || ""} className="max-w-full rounded-lg border border-border/50" />
+            </div>
           ),
         }}
       >

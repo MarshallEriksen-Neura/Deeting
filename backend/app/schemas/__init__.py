@@ -79,6 +79,7 @@ from .image_generation import (
     ImageGenerationTaskCreateRequest,
     ImageGenerationTaskCreateResponse,
     ImageGenerationTaskDetail,
+    ImageGenerationTaskListItem,
 )
 from .mcp_market import (
     McpEnvVarSchema,
@@ -131,6 +132,7 @@ __all__ = [
     "ImageGenerationTaskCreateResponse",
     "ImageGenerationOutputItem",
     "ImageGenerationTaskDetail",
+    "ImageGenerationTaskListItem",
     "AssistantBase",
     "AssistantCreate",
     "AssistantDTO",

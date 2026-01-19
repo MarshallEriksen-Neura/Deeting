@@ -30,7 +30,11 @@
         "listen": "分析意图",
         "remember": "检索记忆",
         "evolve": "组织回答",
-        "render": "渲染输出"
+        "render": "渲染输出",
+        "queue": "排队等待中",
+        "process": "生成视觉",
+        "refine": "优化细节",
+        "finish": "最终渲染"
       },
       "placeholder": {
         "stream": "正在输出内容...",
@@ -61,7 +65,6 @@
         "add": "上传图片",
         "clear": "清空图片",
         "summary": "已添加 {count} 张图片",
-        "hint": "支持上传或粘贴图片 · 仅视觉模型可用",
         "alt": "图像",
         "remove": "移除图片",
         "errorInvalid": "仅支持图片文件。",
@@ -93,11 +96,42 @@
     "renameSaving": "保存中...",
     "renameEmpty": "标题不能为空。",
     "renameFailed": "重命名失败，请稍后重试。",
-    "groups": {
+      "groups": {
       "today": "今天",
       "yesterday": "昨天",
       "last7Days": "近 7 天",
         "earlier": "更早"
+      }
+    },
+    "imageHistory": {
+      "title": "图片历史",
+      "searchPlaceholder": "搜索提示词或模型...",
+      "emptyTitle": "暂无图片历史",
+      "emptyDesc": "生成图片后会显示在这里。",
+      "loading": "加载中...",
+      "loadFailed": "加载历史失败。",
+      "retry": "重试",
+      "noMore": "没有更多记录",
+      "promptEncrypted": "提示词已加密",
+      "promptEmpty": "无提示词",
+      "previewTitle": "图片预览",
+      "previewEmpty": "暂无预览",
+      "promptLabel": "提示词",
+      "sessionTitle": "本会话图库",
+      "sessionEmpty": "当前会话暂无图片",
+      "footer": "文生图时间线",
+      "groups": {
+        "today": "今天",
+        "yesterday": "昨天",
+        "last7Days": "近 7 天",
+        "earlier": "更早"
+      },
+      "status": {
+        "queued": "排队中",
+        "running": "生成中",
+        "succeeded": "已完成",
+        "failed": "失败",
+        "canceled": "已取消"
       }
     },
     "footer": {
@@ -178,7 +212,14 @@
       "aspectRatio": "画面比例",
       "model": "模型",
       "modelVersion": "Midjourney v6",
-      "generate": "生成"
+      "generate": "生成",
+      "settings": {
+        "steps": "步数",
+        "guidance": "引导系数",
+        "count": "数量",
+        "seed": "随机种子",
+        "randomize": "随机"
+      }
     },
     "coder": {
       "envLabel": "PYTHON_ENV",

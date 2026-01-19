@@ -162,13 +162,13 @@ export default function DefaultControls() {
   return (
     <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
       {/* 1. Main Input Area */}
-      <div className="flex items-center rounded-full bg-slate-100/80 dark:bg-white/5 px-3">
+      <div className="flex items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 px-3 py-2">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          className="h-11 w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
+          className="min-h-[44px] w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
           placeholder={t("controls.placeholder")}
           aria-label={t("controls.placeholder")}
           autoFocus
@@ -184,7 +184,7 @@ export default function DefaultControls() {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-[11px]"
+              className="min-h-[44px] h-8 px-3 text-[11px] sm:h-7 sm:min-h-0 hover:bg-slate-200/70 dark:hover:bg-white/10"
               onClick={() => clearAttachments()}
               disabled={isLoading}
             >
@@ -197,7 +197,7 @@ export default function DefaultControls() {
               .map((attachment) => (
               <div
                 key={attachment.id}
-                className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/70 dark:bg-white/5 shadow-sm"
+                className="group relative overflow-hidden rounded-xl border border-slate-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 shadow-sm"
               >
                 <Image
                   src={attachment.url ?? ""}
@@ -207,7 +207,7 @@ export default function DefaultControls() {
                   className="h-24 w-full object-cover"
                   unoptimized
                 />
-                <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
+                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-[10px] text-white/90 backdrop-blur-sm">
                   <span className="truncate">
                     {attachment.name ?? t("input.image.alt")}
                   </span>
@@ -216,12 +216,12 @@ export default function DefaultControls() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/40 text-white/80 opacity-0 transition-opacity group-hover:opacity-100"
+                  className="absolute right-1 top-1 min-h-[44px] min-w-[44px] h-8 w-8 rounded-full bg-black/60 text-white hover:bg-black/80 opacity-0 transition-all group-hover:opacity-100 sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0"
                   onClick={() => removeAttachment(attachment.id)}
                   aria-label={t("input.image.remove")}
                   disabled={isLoading}
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
             ))}
@@ -230,7 +230,7 @@ export default function DefaultControls() {
       ) : null}
 
       {attachmentError ? (
-        <div className="text-center text-xs text-red-500/80">{attachmentError}</div>
+        <div className="text-center text-xs font-medium text-red-500/90 dark:text-red-400/90">{attachmentError}</div>
       ) : null}
 
       {/* 2. Action Row */}
@@ -245,7 +245,7 @@ export default function DefaultControls() {
               aria-label={t("controls.menu")}
               onClick={() => setShowMenu(!showMenu)}
               className={`
-                size-10 rounded-full transition-all duration-300
+                min-h-[44px] min-w-[44px] size-11 rounded-full transition-all duration-300 cursor-pointer
                 ${showMenu ? 'bg-slate-900 text-white dark:bg-white dark:text-black rotate-45' : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-white hover:bg-slate-200/70 dark:hover:bg-white/20 hover:scale-105'}
               `}
             >
@@ -255,16 +255,16 @@ export default function DefaultControls() {
             {/* Local Popover Menu for Capability Selection */}
             <AnimatePresence>
               {showMenu && (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, y: 10, scale: 0.9 }}
                   animate={{ opacity: 1, y: -10, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                  className="absolute bottom-full left-0 mb-2 bg-white/90 dark:bg-[#1a1a1a] border border-slate-200/70 dark:border-white/10 rounded-2xl p-2 shadow-xl backdrop-blur-xl flex flex-col gap-1 w-40 z-50 origin-bottom-left"
+                  className="absolute bottom-full left-0 mb-2 bg-white/95 dark:bg-[#1a1a1a] border border-slate-200/70 dark:border-white/10 rounded-2xl p-2 shadow-xl backdrop-blur-xl flex flex-col gap-1 w-44 z-50 origin-bottom-left"
                 >
                   <Link href="/chat/create/image" scroll={false}>
-                    <div className="flex items-center gap-3 p-2 hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-all">
-                        <Sparkles className="w-4 h-4" />
+                    <div className="flex items-center gap-3 p-3 min-h-[44px] hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
+                      <div className="w-9 h-9 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-all">
+                        <Sparkles className="w-5 h-5" />
                       </div>
                       <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
                         {t("controls.image")}
@@ -272,9 +272,9 @@ export default function DefaultControls() {
                     </div>
                   </Link>
                   <Link href="/chat/coder" scroll={false}>
-                    <div className="flex items-center gap-3 p-2 hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-green-500/10 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-all">
-                        <span className="font-mono text-xs font-bold">{`</>`}</span>
+                    <div className="flex items-center gap-3 p-3 min-h-[44px] hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
+                      <div className="w-9 h-9 rounded-lg bg-green-500/10 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-all">
+                        <span className="font-mono text-sm font-bold">{`</>`}</span>
                       </div>
                       <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
                         {t("controls.code")}
@@ -293,7 +293,7 @@ export default function DefaultControls() {
              size="icon"
              onClick={handleNewChat}
              aria-label={t("header.newChat")}
-             className="size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors"
+             className="min-h-[44px] min-w-[44px] size-11 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
           >
              <MessageSquarePlus className="w-5 h-5" />
           </Button>
@@ -302,20 +302,20 @@ export default function DefaultControls() {
           <Button
             asChild
             variant="ghost"
-            className="h-10 rounded-full px-2.5 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors"
+            className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
           >
             <Link href="/chat/select-agent" scroll={false} aria-label={t("hud.selectAgent")}>
               <span
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
                   activeAssistant?.color ?? "from-slate-400 to-slate-600"
                 }`}
               >
                 {(activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
               </span>
-              <span className="text-[12px] font-semibold text-slate-700 dark:text-white/70 max-w-[120px] truncate">
+              <span className="text-[13px] font-semibold text-slate-700 dark:text-white/70 max-w-[100px] truncate">
                 {activeAssistant?.name ?? t("hud.selectAgent")}
               </span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-white/30" />
+              <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
             </Link>
           </Button>
 
@@ -327,9 +327,9 @@ export default function DefaultControls() {
                 size="icon"
                 aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
                 title={`${t("hud.temperature")} / ${t("hud.topP")}`}
-                className={`size-9 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 ${isParamsOpen ? "ring-1 ring-indigo-500/30" : ""}`}
+                className={`min-h-[44px] min-w-[44px] size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 cursor-pointer ${isParamsOpen ? "ring-2 ring-indigo-500/30" : ""}`}
               >
-                <Sliders className="w-4 h-4" />
+                <Sliders className="w-5 h-5" />
               </Button>
             </PopoverTrigger>
             <PopoverContent
@@ -340,10 +340,10 @@ export default function DefaultControls() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex justify-between items-center px-1">
-                    <label className="text-[10px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
                       {t("hud.temperature")}
                     </label>
-                    <span className="text-[10px] font-mono font-bold">{config.temperature}</span>
+                    <span className="text-[11px] font-mono font-bold">{config.temperature}</span>
                   </div>
                   <Slider
                     value={[config.temperature]}
@@ -356,10 +356,10 @@ export default function DefaultControls() {
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center px-1">
-                    <label className="text-[10px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
                       {t("hud.topP")}
                     </label>
-                    <span className="text-[10px] font-mono font-bold">{config.topP}</span>
+                    <span className="text-[11px] font-mono font-bold">{config.topP}</span>
                   </div>
                   <Slider
                     value={[config.topP]}
@@ -380,10 +380,10 @@ export default function DefaultControls() {
             size="icon"
             aria-label={t("input.image.add")}
             onClick={() => fileInputRef.current?.click()}
-            className="size-9 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors"
+            className="min-h-[44px] min-w-[44px] size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
             disabled={isLoading}
           >
-            <ImagePlus className="w-4 h-4" />
+            <ImagePlus className="w-5 h-5" />
           </Button>
         </div>
 
@@ -394,9 +394,9 @@ export default function DefaultControls() {
             onClick={() => handleSend()}
             disabled={!canSend}
             className={`
-              size-10 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white
+              min-h-[44px] min-w-[44px] size-11 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white
               hover:bg-slate-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
-              ${!canSend ? 'opacity-50 cursor-not-allowed' : ''}
+              ${!canSend ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             `}
             aria-label={t("controls.send")}
           >
@@ -414,9 +414,6 @@ export default function DefaultControls() {
         onChange={handleFileChange}
         disabled={isLoading}
       />
-      <div className="text-center text-[11px] text-slate-500 dark:text-white/40">
-        {t("input.image.hint")}
-      </div>
     </div>
   );
 }

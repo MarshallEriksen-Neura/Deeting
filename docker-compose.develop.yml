@@ -121,7 +121,7 @@ services:
     networks:
       apiproxy-net:
         ipv4_address: 172.20.0.14
-    command: sh -c "python -m app.scripts.env_check && celery -A app.core.celery_app.celery_app worker -Q default,audit_queue,billing_queue -l info"
+    command: sh -c "python -m app.scripts.env_check && celery -A app.core.celery_app.celery_app worker -Q default,internal,billing,external,retry,conversation,image_generation -l info"
 
   celery_beat:
     build:

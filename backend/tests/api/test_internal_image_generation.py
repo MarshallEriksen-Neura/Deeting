@@ -53,6 +53,7 @@ async def test_internal_image_generation_get_task_outputs(
     task_id = uuid.uuid4()
     asset_id = uuid.uuid4()
     output_id = uuid.uuid4()
+    session_id = uuid.uuid4()
     now = Datetime.now()
 
     async with AsyncSessionLocal() as session:
@@ -108,3 +109,128 @@ async def test_internal_image_generation_get_task_outputs(
     assert data["status"] == "succeeded"
     assert data["outputs"]
     assert data["outputs"][0]["asset_url"].startswith("http://test/api/v1/media/assets/")
+
+
+@pytest.mark.asyncio
+async def test_internal_image_generation_list_tasks(
+    client: AsyncClient,
+    auth_tokens: dict,
+    AsyncSessionLocal,
+    test_user: dict,
+):
+    task_id = uuid.uuid4()
+    encrypted_task_id = uuid.uuid4()
+    other_task_id = uuid.uuid4()
+    asset_id = uuid.uuid4()
+    output_id = uuid.uuid4()
+    now = Datetime.now()
+
+    async with AsyncSessionLocal() as session:
+        session.add(
+            MediaAsset(
+                id=asset_id,
+                content_hash="a" * 64,
+                size_bytes=10,
+                content_type="image/png",
+                object_key="assets/generated/list.png",
+                etag=None,
+                uploader_user_id=uuid.UUID(test_user["id"]),
+                expire_at=now + timedelta(days=30),
+            )
+        )
+        session.add(
+            ImageGenerationTask(
+                id=task_id,
+                user_id=uuid.UUID(test_user["id"]),
+                tenant_id=uuid.UUID(test_user["id"]),
+                api_key_id=uuid.UUID(test_user["id"]),
+                session_id=session_id,
+                model="gpt-image-1",
+                prompt_raw="draw a city",
+                negative_prompt=None,
+                prompt_hash="x" * 64,
+                status=ImageGenerationStatus.SUCCEEDED,
+                completed_at=now,
+            )
+        )
+        session.add(
+            ImageGenerationTask(
+                id=encrypted_task_id,
+                user_id=uuid.UUID(test_user["id"]),
+                tenant_id=uuid.UUID(test_user["id"]),
+                api_key_id=uuid.UUID(test_user["id"]),
+                session_id=session_id,
+                model="gpt-image-1",
+                prompt_raw="secret prompt",
+                negative_prompt=None,
+                prompt_hash="y" * 64,
+                prompt_encrypted=True,
+                prompt_ciphertext="cipher",
+                status=ImageGenerationStatus.FAILED,
+                completed_at=now,
+                error_message="failed",
+            )
+        )
+        session.add(
+            ImageGenerationTask(
+                id=other_task_id,
+                user_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                api_key_id=uuid.uuid4(),
+                model="gpt-image-1",
+                prompt_raw="other user",
+                negative_prompt=None,
+                prompt_hash="z" * 64,
+                status=ImageGenerationStatus.SUCCEEDED,
+                completed_at=now,
+            )
+        )
+        session.add(
+            ImageGenerationOutput(
+                id=output_id,
+                task_id=task_id,
+                output_index=0,
+                media_asset_id=asset_id,
+                source_url=None,
+                seed=42,
+                content_type="image/png",
+                size_bytes=10,
+                width=512,
+                height=512,
+                meta={},
+            )
+        )
+        await session.commit()
+
+    resp = await client.get(
+        "/api/v1/internal/images/generations",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    items = data["items"]
+    ids = {item["task_id"] for item in items}
+    assert str(task_id) in ids
+    assert str(encrypted_task_id) in ids
+    assert str(other_task_id) not in ids
+
+    task_item = next(item for item in items if item["task_id"] == str(task_id))
+    assert task_item["prompt"] == "draw a city"
+    assert task_item["session_id"] == str(session_id)
+    assert task_item["preview"]["asset_url"].startswith("http://test/api/v1/media/assets/")
+
+    encrypted_item = next(item for item in items if item["task_id"] == str(encrypted_task_id))
+    assert encrypted_item["prompt"] is None
+    assert encrypted_item["prompt_encrypted"] is True
+
+    resp = await client.get(
+        "/api/v1/internal/images/generations",
+        params={"session_id": str(session_id)},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    session_items = resp.json()["items"]
+    session_ids = {item["task_id"] for item in session_items}
+    assert str(task_id) in session_ids
+    assert str(encrypted_task_id) in session_ids
+    assert str(other_task_id) not in session_ids

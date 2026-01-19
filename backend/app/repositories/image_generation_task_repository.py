@@ -29,6 +29,24 @@ class ImageGenerationTaskRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    def build_user_query(
+        self,
+        *,
+        user_id,
+        status: ImageGenerationStatus | None = None,
+        session_id=None,
+    ):
+        stmt = (
+            select(ImageGenerationTask)
+            .where(ImageGenerationTask.user_id == user_id)
+            .order_by(ImageGenerationTask.created_at.desc(), ImageGenerationTask.id.desc())
+        )
+        if status:
+            stmt = stmt.where(ImageGenerationTask.status == status)
+        if session_id:
+            stmt = stmt.where(ImageGenerationTask.session_id == session_id)
+        return stmt
+
     async def create(self, payload: dict[str, Any], commit: bool = True) -> ImageGenerationTask:
         task = ImageGenerationTask(**payload)
         self.session.add(task)

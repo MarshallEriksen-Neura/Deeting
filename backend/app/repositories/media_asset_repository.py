@@ -30,6 +30,13 @@ class MediaAssetRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_by_ids(self, asset_ids: list) -> list[MediaAsset]:
+        if not asset_ids:
+            return []
+        stmt = select(MediaAsset).where(MediaAsset.id.in_(asset_ids))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def create_asset(self, data: dict[str, Any], commit: bool = True) -> MediaAsset:
         asset = MediaAsset(**data)
         self.session.add(asset)

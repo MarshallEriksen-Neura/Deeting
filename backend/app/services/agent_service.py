@@ -9,6 +9,8 @@ from app.agent_plugins.builtins.database.plugin import DatabasePlugin
 from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
 from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
 from app.agent_plugins.builtins.scheduler.plugin import TaskSchedulerPlugin
+from app.agent_plugins.builtins.planner.plugin import PlannerPlugin
+from app.agent_plugins.builtins.vector_store.plugin import VectorStorePlugin # Added VectorStore
 from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,9 @@ class AgentService:
         self.plugin_manager.register_class(DatabasePlugin)
         self.plugin_manager.register_class(ProviderRegistryPlugin)
         self.plugin_manager.register_class(CrawlerPlugin)
-        self.plugin_manager.register_class(TaskSchedulerPlugin) # Added Scheduler
+        self.plugin_manager.register_class(TaskSchedulerPlugin)
+        self.plugin_manager.register_class(PlannerPlugin)
+        self.plugin_manager.register_class(VectorStorePlugin) # Register Qdrant Capabilities
         
         self.tools: List[ToolDefinition] = []
         self.tool_map: Dict[str, Any] = {}
@@ -66,7 +70,7 @@ class AgentService:
         method_name = f"handle_{tool_name}" # Convention: handle_tool_name
         
         for plugin in self.plugin_manager.plugins.values():
-            # Check for direct method on plugin class first (e.g. submit_background_ingestion_job)
+            # Check for direct method on plugin class first
             if hasattr(plugin, tool_name): 
                 return getattr(plugin, tool_name)
             # Check for handle_ prefix convention

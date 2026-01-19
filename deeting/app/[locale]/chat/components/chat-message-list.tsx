@@ -13,6 +13,7 @@ import { normalizeMessage } from "@/lib/chat/message-normalizer"
 import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
+import { ImageLightbox } from "@/components/ui/image-lightbox"
 
 interface ChatMessageListProps {
   messages: Message[]
@@ -223,27 +224,28 @@ function MessageAttachments({
       {attachments
         .filter((attachment) => attachment.url)
         .map((attachment) => (
-        <div
-          key={attachment.id}
-          className={cn(
-            "relative overflow-hidden rounded-xl border border-white/10 shadow-sm",
-            cardBg
-          )}
-        >
-          <Image
-            src={attachment.url ?? ""}
-            alt={attachment.name ?? alt}
-            width={320}
-            height={320}
-            className="h-28 w-full object-cover"
-            unoptimized
-          />
-          <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
-            <span className="truncate">
-              {attachment.name ?? alt}
-            </span>
+        <ImageLightbox key={attachment.id} src={attachment.url ?? ""} alt={attachment.name ?? alt}>
+          <div
+            className={cn(
+              "relative overflow-hidden rounded-xl border border-white/10 shadow-sm cursor-zoom-in group",
+              cardBg
+            )}
+          >
+            <Image
+              src={attachment.url ?? ""}
+              alt={attachment.name ?? alt}
+              width={320}
+              height={320}
+              className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              unoptimized
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
+              <span className="truncate">
+                {attachment.name ?? alt}
+              </span>
+            </div>
           </div>
-        </div>
+        </ImageLightbox>
       ))}
     </div>
   )

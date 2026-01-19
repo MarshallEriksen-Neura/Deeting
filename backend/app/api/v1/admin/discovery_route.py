@@ -18,7 +18,8 @@ async def create_discovery_task(
         kwargs={
             "target_url": payload.target_url,
             "capability": payload.capability,
-            "model_hint": payload.model_hint
+            "model_hint": payload.model_hint,
+            "provider_name_hint": payload.provider_name_hint
         }
     )
     

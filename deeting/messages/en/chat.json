@@ -30,7 +30,11 @@
         "listen": "Analyzing intent",
         "remember": "Retrieving memory",
         "evolve": "Synthesizing response",
-        "render": "Rendering output"
+        "render": "Rendering output",
+        "queue": "Queued in sequence",
+        "process": "Processing visual",
+        "refine": "Refining details",
+        "finish": "Finalizing asset"
       },
       "placeholder": {
         "stream": "Streaming response...",
@@ -61,7 +65,6 @@
         "add": "Add image",
         "clear": "Clear images",
         "summary": "{count} image(s) attached",
-        "hint": "Upload or paste images · works with vision models",
         "alt": "Image",
         "remove": "Remove image",
         "errorInvalid": "Only image files are supported.",
@@ -93,11 +96,42 @@
     "renameSaving": "Saving...",
     "renameEmpty": "Title cannot be empty.",
     "renameFailed": "Failed to rename. Please try again.",
-    "groups": {
+      "groups": {
       "today": "Today",
       "yesterday": "Yesterday",
       "last7Days": "Previous 7 days",
         "earlier": "Earlier"
+      }
+    },
+    "imageHistory": {
+      "title": "Image History",
+      "searchPlaceholder": "Search prompts or models...",
+      "emptyTitle": "No images yet",
+      "emptyDesc": "Generate an image to see it here.",
+      "loading": "Loading...",
+      "loadFailed": "Failed to load image history.",
+      "retry": "Retry",
+      "noMore": "No more records",
+      "promptEncrypted": "Prompt is encrypted",
+      "promptEmpty": "No prompt",
+      "previewTitle": "Image Preview",
+      "previewEmpty": "No preview available",
+      "promptLabel": "Prompt",
+      "sessionTitle": "Session Gallery",
+      "sessionEmpty": "No images in this session yet.",
+      "footer": "Image generation timeline",
+      "groups": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "last7Days": "Previous 7 days",
+        "earlier": "Earlier"
+      },
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "canceled": "Canceled"
       }
     },
     "footer": {
@@ -178,7 +212,14 @@
       "aspectRatio": "Aspect Ratio",
       "model": "Model",
       "modelVersion": "Midjourney v6",
-      "generate": "Generate"
+      "generate": "Generate",
+      "settings": {
+        "steps": "Steps",
+        "guidance": "Guidance",
+        "count": "Count",
+        "seed": "Seed",
+        "randomize": "Randomize"
+      }
     },
     "coder": {
       "envLabel": "PYTHON_ENV",

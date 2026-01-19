@@ -65,7 +65,7 @@ export default function Canvas() {
 
   return (
     <div className="w-full h-full overflow-y-auto p-4 pb-32 scrollbar-hide">
-      <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-20">
+      <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-24 sm:pt-20">
         {messages.map((msg) => {
           const isLastAssistant = msg.id === lastAssistantId;
           const isActive = isLastAssistant && isLoading;

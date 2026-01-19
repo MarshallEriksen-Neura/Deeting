@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,7 @@ from app.schemas.image_generation import (
     ImageGenerationTaskCreateRequest,
     ImageGenerationTaskCreateResponse,
     ImageGenerationTaskDetail,
+    ImageGenerationTaskListItem,
 )
 from app.services.image_generation.service import ImageGenerationService
 from app.tasks.image_generation import process_image_generation_task
@@ -32,6 +34,14 @@ def _format_sse(payload: dict[str, Any] | str) -> bytes:
     else:
         data = json.dumps(payload, ensure_ascii=False, default=str)
     return f"data: {data}\n\n".encode("utf-8")
+
+
+def _status_value(status: ImageGenerationStatus | str | None) -> str:
+    if isinstance(status, ImageGenerationStatus):
+        return status.value
+    if status is None:
+        return ""
+    return str(status)
 
 
 @router.post(
@@ -92,9 +102,40 @@ async def create_image_generation(
 
     return ImageGenerationTaskCreateResponse(
         task_id=task.id,
-        status=task.status.value,
+        status=_status_value(task.status),
         created_at=task.created_at,
         deduped=deduped,
+    )
+
+
+@router.get(
+    "/images/generations",
+    response_model=CursorPage[ImageGenerationTaskListItem],
+)
+async def list_image_generations(
+    request: Request,
+    params: CursorParams = Depends(),
+    status: ImageGenerationStatus | None = Query(default=None),
+    include_outputs: bool = Query(True, description="是否包含预览输出"),
+    session_id: str | None = Query(default=None, description="会话 ID（可选）"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CursorPage[ImageGenerationTaskListItem]:
+    service = ImageGenerationService(db)
+    session_uuid = None
+    if session_id:
+        try:
+            session_uuid = uuid.UUID(session_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="invalid session_id") from exc
+    base_url = str(request.base_url).rstrip("/") if request else None
+    return await service.list_user_tasks(
+        user_id=user.id,
+        params=params,
+        status=status,
+        session_id=session_uuid,
+        include_outputs=include_outputs,
+        base_url=base_url,
     )
 
 
@@ -120,7 +161,7 @@ async def get_image_generation(
         raise HTTPException(status_code=404, detail="task not found")
 
     outputs = []
-    if include_outputs and task.status == ImageGenerationStatus.SUCCEEDED:
+    if include_outputs and _status_value(task.status) == ImageGenerationStatus.SUCCEEDED.value:
         outputs = await service.build_signed_outputs(
             task.id,
             base_url=str(request.base_url).rstrip("/") if request else None,
@@ -128,7 +169,7 @@ async def get_image_generation(
 
     return ImageGenerationTaskDetail(
         task_id=task.id,
-        status=task.status.value,
+        status=_status_value(task.status),
         model=task.model,
         created_at=task.created_at,
         updated_at=task.updated_at,
@@ -175,28 +216,29 @@ async def stream_image_generation_events(
                 yield _format_sse("[DONE]")
                 return
 
-            if task.status.value != last_status:
+            status_value = _status_value(task.status)
+            if status_value != last_status:
                 payload: dict[str, Any] = {
                     "type": "status",
                     "task_id": str(task.id),
-                    "status": task.status.value,
+                    "status": status_value,
                     "updated_at": task.updated_at,
                 }
-                if task.status == ImageGenerationStatus.FAILED:
+                if status_value == ImageGenerationStatus.FAILED.value:
                     payload["error_code"] = task.error_code
                     payload["error_message"] = task.error_message
-                if task.status == ImageGenerationStatus.SUCCEEDED:
+                if status_value == ImageGenerationStatus.SUCCEEDED.value:
                     payload["outputs"] = await service.build_signed_outputs(
                         task.id,
                         base_url=str(request.base_url).rstrip("/") if request else None,
                     )
                 yield _format_sse(payload)
-                last_status = task.status.value
+                last_status = status_value
 
-            if task.status in (
-                ImageGenerationStatus.SUCCEEDED,
-                ImageGenerationStatus.FAILED,
-                ImageGenerationStatus.CANCELED,
+            if status_value in (
+                ImageGenerationStatus.SUCCEEDED.value,
+                ImageGenerationStatus.FAILED.value,
+                ImageGenerationStatus.CANCELED.value,
             ):
                 yield _format_sse("[DONE]")
                 return
@@ -206,7 +248,7 @@ async def stream_image_generation_events(
                     {
                         "type": "timeout",
                         "task_id": str(task.id),
-                        "status": task.status.value,
+                        "status": status_value,
                     }
                 )
                 yield _format_sse("[DONE]")

@@ -31,6 +31,50 @@
 }
 ```
 
+## GET /internal/images/generations
+获取文生图任务列表（分页）。
+
+查询参数：
+- `cursor` string，可选
+- `size` number，可选，默认 20
+- `status` string，可选（queued/running/succeeded/failed/canceled）
+- `include_outputs` boolean，可选，默认 true（是否包含预览输出）
+- `session_id` string，可选（会话 ID）
+
+响应示例：
+```json
+{
+  "items": [
+    {
+      "task_id": "3f1e7c3d-8b6c-4d5c-8c7f-4c3c2b9d9a12",
+      "status": "succeeded",
+      "model": "gpt-image-1",
+      "session_id": "2d126c4c-2d1c-4fd4-99a9-1b53c1c0a8d0",
+      "prompt": "a city at night",
+      "prompt_encrypted": false,
+      "created_at": "2026-01-19T08:00:00+00:00",
+      "updated_at": "2026-01-19T08:00:12+00:00",
+      "completed_at": "2026-01-19T08:00:12+00:00",
+      "preview": {
+        "output_index": 0,
+        "asset_url": "https://api.example.com/api/v1/media/assets/...",
+        "source_url": null,
+        "seed": 123,
+        "content_type": "image/png",
+        "size_bytes": 123456,
+        "width": 1024,
+        "height": 1024
+      }
+    }
+  ],
+  "next_page": null,
+  "previous_page": null
+}
+```
+
+说明：
+- 当任务使用 `encrypt_prompt=true` 保存时，列表接口会返回 `prompt=null` 且 `prompt_encrypted=true`。
+
 ## GET /internal/images/generations/{task_id}
 查询任务状态（可返回结果）。
 
@@ -84,4 +128,3 @@ data: [DONE]
 ## 存储策略
 - 生成结果写入 `media_asset`（去重索引 + 对象存储）。
 - 默认 `expire_at`=90 天；对象存储建议配置 Lifecycle 清理。
-

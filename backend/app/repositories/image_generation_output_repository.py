@@ -19,6 +19,17 @@ class ImageGenerationOutputRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_by_task_ids(self, task_ids: list) -> list[ImageGenerationOutput]:
+        if not task_ids:
+            return []
+        stmt = (
+            select(ImageGenerationOutput)
+            .where(ImageGenerationOutput.task_id.in_(task_ids))
+            .order_by(ImageGenerationOutput.task_id.asc(), ImageGenerationOutput.output_index.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def create(self, payload: dict[str, Any], commit: bool = True) -> ImageGenerationOutput:
         output = ImageGenerationOutput(**payload)
         self.session.add(output)

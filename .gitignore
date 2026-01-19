@@ -8,6 +8,8 @@ security/
 __pycache__/
 .claude/
 .codex/
+.workflow/
+.specify/
 backend/__pycache__
 backend/*.py[oc]
 backend/build/

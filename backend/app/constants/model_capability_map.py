@@ -18,9 +18,12 @@ PREFIX_RULES: list[tuple[str, list[str]]] = [
     ("whisper", ["audio"]),
     ("tts-", ["audio"]),
     ("audio-", ["audio"]),
-    ("dall-e", ["vision"]),
-    ("sd", ["vision"]),
-    ("flux", ["vision"]),
+    ("gpt-image", ["image"]),
+    ("dall-e", ["image"]),
+    ("sd", ["image"]),
+    ("flux", ["image"]),
+    ("glm-image", ["image"]),
+    ("qwen-image", ["image"]),
     ("claude", ["chat"]),  # 默认仍视作 chat
     ("gpt-4o", ["chat", "vision", "audio", "reasoning"]),
     ("o1", ["chat", "reasoning"]),
@@ -30,8 +33,9 @@ PREFIX_RULES: list[tuple[str, list[str]]] = [
 # 正则兜底
 REGEX_RULES: list[tuple[re.Pattern[str], list[str]]] = [
     (re.compile(r"(embed|embedding)", re.I), ["embedding"]),
-    (re.compile(r"(vision|image|img|dall[-_]?e|sd\d|flux)", re.I), ["vision"]),
     (re.compile(r"(whisper|audio|speech|tts)", re.I), ["audio"]),
+    (re.compile(r"(dall[-_]?e|sdxl?|flux|image|img|pixart|kolors|kandinsky)", re.I), ["image"]),
+    (re.compile(r"(vision|multimodal)", re.I), ["chat", "vision"]),
     (re.compile(r"(code|coder|codestral)", re.I), ["code"]),
     (re.compile(r"(reasoner|o1|o3|o4|r1)", re.I), ["reasoning"]),
 ]
@@ -56,4 +60,3 @@ def primary_capability(caps: Iterable[str]) -> str:
     for c in caps:
         return c
     return "chat"
-

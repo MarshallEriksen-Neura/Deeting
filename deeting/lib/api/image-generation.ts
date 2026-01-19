@@ -34,6 +34,27 @@ const ImageGenerationTaskDetailSchema = z.object({
   outputs: z.array(ImageGenerationOutputItemSchema).optional(),
 })
 
+const ImageGenerationTaskItemSchema = z.object({
+  task_id: z.string(),
+  status: z.string(),
+  model: z.string(),
+  session_id: z.string().nullable().optional(),
+  prompt: z.string().nullable().optional(),
+  prompt_encrypted: z.boolean().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable().optional(),
+  error_code: z.string().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  preview: ImageGenerationOutputItemSchema.nullable().optional(),
+})
+
+const ImageGenerationTaskPageSchema = z.object({
+  items: z.array(ImageGenerationTaskItemSchema),
+  next_page: z.string().nullable().optional(),
+  previous_page: z.string().nullable().optional(),
+})
+
 export type ImageGenerationTaskCreateRequest = {
   model: string
   prompt: string
@@ -54,6 +75,15 @@ export type ImageGenerationTaskCreateRequest = {
   session_id?: string | null
   request_id?: string | null
   encrypt_prompt?: boolean
+  image_url?: string | null
+}
+
+export type ImageGenerationTasksQuery = {
+  cursor?: string | null
+  size?: number
+  status?: string | null
+  include_outputs?: boolean
+  session_id?: string | null
 }
 
 export type ImageGenerationTaskCreateResponse = z.infer<
@@ -65,6 +95,8 @@ export type ImageGenerationOutputItem = z.infer<
 export type ImageGenerationTaskDetail = z.infer<
   typeof ImageGenerationTaskDetailSchema
 >
+export type ImageGenerationTaskItem = z.infer<typeof ImageGenerationTaskItemSchema>
+export type ImageGenerationTaskPage = z.infer<typeof ImageGenerationTaskPageSchema>
 
 export async function createImageGenerationTask(
   payload: ImageGenerationTaskCreateRequest
@@ -89,3 +121,13 @@ export async function fetchImageGenerationTask(
   return ImageGenerationTaskDetailSchema.parse(data)
 }
 
+export async function fetchImageGenerationTasks(
+  query: ImageGenerationTasksQuery
+): Promise<ImageGenerationTaskPage> {
+  const data = await request({
+    url: INTERNAL_IMAGE_BASE,
+    method: "GET",
+    params: query,
+  })
+  return ImageGenerationTaskPageSchema.parse(data)
+}
