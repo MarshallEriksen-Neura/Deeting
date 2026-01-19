@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -29,6 +30,7 @@ from app.services.oss.asset_storage_service import (
 from app.services.oss.asset_upload_service import AssetUploadService
 
 router = APIRouter(tags=["media"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/media/assets/{object_key:path}", include_in_schema=False)
@@ -143,6 +145,7 @@ async def sign_assets(
             for object_key in payload.object_keys
         ]
     except AssetStorageNotConfigured as exc:
+        logger.warning("sign_assets_not_configured err=%s", exc)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
     return AssetSignResponse(assets=assets)

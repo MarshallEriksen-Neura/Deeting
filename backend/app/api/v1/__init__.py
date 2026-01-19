@@ -2,6 +2,7 @@
 v1 路由聚合
 """
 
+from app.api.v1.admin import agent_router as admin_agent_router
 from app.api.v1.admin import api_keys_router as admin_api_keys_router
 from app.api.v1.admin import users_router as admin_users_router
 from app.api.v1.admin import assistants_router as admin_assistants_router
@@ -21,6 +22,7 @@ from app.api.v1.external.gateway import router as external_gateway_router
 from app.api.v1.internal import bridge_router as internal_bridge_router
 from app.api.v1.internal import gateway_router as internal_gateway_router
 from app.api.v1.internal import conversation_router as internal_conversation_router
+from app.api.v1.internal import image_generation_router as internal_image_generation_router
 from app.api.v1.media_routes import router as media_router
 from app.api.v1.users_route import router as users_router
 from app.api.v1.providers_route import router as provider_router
@@ -32,6 +34,7 @@ from app.api.v1.mcp_route import router as mcp_router
 from app.api.v1.settings_route import router as settings_router
 
 __all__ = [
+    "admin_agent_router",
     "admin_api_keys_router",
     "admin_users_router",
     "admin_assistants_router",
@@ -52,6 +55,7 @@ __all__ = [
     "internal_bridge_router",
     "internal_gateway_router",
     "internal_conversation_router",
+    "internal_image_generation_router",
     "media_router",
     "users_router",
     "provider_router",

@@ -83,3 +83,44 @@ async def test_internal_models_includes_user_instances(client, auth_tokens, Asyn
 async def test_internal_models_requires_auth(client):
     resp = await client.get("/api/v1/internal/models")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_internal_models_filter_by_capability(client, auth_tokens, AsyncSessionLocal, test_user):
+    user_id = uuid.UUID(test_user["id"])
+    async with AsyncSessionLocal() as session:
+        base_model = await _seed_user_internal_provider(session, user_id)
+        image_model = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=base_model.instance_id,
+            capability="image",
+            model_id="sdxl-user",
+            unified_model_id=None,
+            display_name="SDXL User",
+            upstream_path="/v1/images/generations",
+            template_engine="simple_replace",
+            request_template={},
+            response_transform={},
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        session.add(image_model)
+        await session.commit()
+
+    resp = await client.get(
+        "/api/v1/internal/models?capability=image",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    instances = data.get("instances", [])
+    ids = {item["id"] for inst in instances for item in inst.get("models", [])}
+    assert "sdxl-user" in ids
+    assert "gpt-4-user" not in ids

@@ -74,6 +74,12 @@ from .media_asset import (
     AssetUploadInitRequest,
     AssetUploadInitResponse,
 )
+from .image_generation import (
+    ImageGenerationOutputItem,
+    ImageGenerationTaskCreateRequest,
+    ImageGenerationTaskCreateResponse,
+    ImageGenerationTaskDetail,
+)
 from .mcp_market import (
     McpEnvVarSchema,
     McpInstallManifest,
@@ -121,6 +127,10 @@ __all__ = [
     "AssetUploadCompleteResponse",
     "AssetUploadInitRequest",
     "AssetUploadInitResponse",
+    "ImageGenerationTaskCreateRequest",
+    "ImageGenerationTaskCreateResponse",
+    "ImageGenerationOutputItem",
+    "ImageGenerationTaskDetail",
     "AssistantBase",
     "AssistantCreate",
     "AssistantDTO",

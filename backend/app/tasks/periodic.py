@@ -4,6 +4,9 @@ import asyncio
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.services.providers.health_monitor import HealthMonitorService
+from app.repositories.media_asset_repository import MediaAssetRepository
+from app.services.oss.asset_storage_service import get_effective_asset_storage_mode
+from app.utils.time_utils import Datetime
 from app.core.cache import cache
 
 
@@ -13,8 +16,24 @@ def daily_cleanup_task():
     示例：每日清理任务
     """
     logger.info("Running daily cleanup task...")
-    # 这里添加清理逻辑，如清理临时文件、过期日志等
-    return "Cleanup completed"
+    if get_effective_asset_storage_mode() == "local":
+        return "Cleanup skipped (local storage)"
+
+    async def _run():
+        async with AsyncSessionLocal() as session:
+            repo = MediaAssetRepository(session)
+            now = Datetime.now()
+            expired_assets = await repo.delete_expired(now, commit=False)
+            if expired_assets:
+                logger.info("media_asset_expired_records=%s", expired_assets)
+            await session.commit()
+
+    try:
+        asyncio.run(_run())
+        return "Cleanup completed"
+    except Exception as exc:
+        logger.error(f"Cleanup failed: {exc}")
+        return f"Failed: {exc}"
 
 @celery_app.task
 def heartbeat_task():

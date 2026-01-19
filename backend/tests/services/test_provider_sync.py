@@ -89,3 +89,48 @@ async def test_sync_preserves_manual_overrides(monkeypatch):
         assert by_id["gpt-4o"].weight == 777
         # 新增的嵌入模型被写入且能力映射为 embedding
         assert by_id["text-embedding-3-small"].capability == "embedding"
+
+
+@pytest.mark.asyncio
+async def test_sync_dedupes_duplicate_models(monkeypatch):
+    async with AsyncSessionLocal() as session:
+        preset = ProviderPreset(
+            id=uuid.uuid4(),
+            name="OpenAI",
+            slug="openai",
+            provider="openai",
+            base_url="https://api.openai.com",
+            auth_type="bearer",
+            auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
+            default_headers={},
+            default_params={},
+            is_active=True,
+        )
+        session.add(preset)
+        await session.commit()
+
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-dedupe",
+            base_url="https://api.openai.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        async def fake_fetch(*_args, **_kwargs):
+            return [
+                {"id": "openai/gpt-oss-120b"},
+                {"id": "openai/gpt-oss-120b"},
+            ]
+
+        monkeypatch.setattr(svc, "_fetch_models_from_upstream", fake_fetch)
+        monkeypatch.setattr(svc, "_get_secret", lambda *args, **kwargs: "dummy")
+
+        await svc.sync_models_from_upstream(inst.id, None)
+
+        repo = ProviderModelRepository(session)
+        models = await repo.get_by_instance_id(inst.id)
+        ids = [m.model_id for m in models]
+        assert ids.count("openai/gpt-oss-120b") == 1

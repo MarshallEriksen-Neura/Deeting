@@ -5,6 +5,7 @@ type AttachmentBuildResult = {
   attachments: ChatImageAttachment[]
   rejected: number
   skipped: number
+  errors: string[]
 }
 
 const createAttachmentId = () => {
@@ -37,6 +38,15 @@ const buildUploadHeaders = (
   return headers
 }
 
+const UPLOAD_ERROR_CODES = new Set([
+  "hash_failed",
+  "upload_init_failed",
+  "upload_put_failed",
+  "upload_complete_failed",
+  "missing_upload_url",
+  "missing_asset_url",
+])
+
 const uploadFile = async (url: string, headers: Headers, file: File) => {
   const response = await fetch(url, {
     method: "PUT",
@@ -44,17 +54,28 @@ const uploadFile = async (url: string, headers: Headers, file: File) => {
     body: file,
   })
   if (!response.ok) {
-    throw new Error("upload_failed")
+    throw new Error("upload_put_failed")
   }
 }
 
 const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> => {
-  const contentHash = await hashFile(file)
-  const init = await initAssetUpload({
-    content_hash: contentHash,
-    size_bytes: file.size,
-    content_type: file.type,
-  })
+  let contentHash: string
+  try {
+    contentHash = await hashFile(file)
+  } catch {
+    throw new Error("hash_failed")
+  }
+
+  let init: Awaited<ReturnType<typeof initAssetUpload>>
+  try {
+    init = await initAssetUpload({
+      content_hash: contentHash,
+      size_bytes: file.size,
+      content_type: file.type,
+    })
+  } catch {
+    throw new Error("upload_init_failed")
+  }
 
   let assetUrl = init.asset_url ?? undefined
   if (!init.deduped) {
@@ -62,13 +83,23 @@ const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> =>
       throw new Error("missing_upload_url")
     }
     const headers = buildUploadHeaders(init.upload_headers, file.type)
-    await uploadFile(init.upload_url, headers, file)
-    const completed = await completeAssetUpload({
-      object_key: init.object_key,
-      content_hash: contentHash,
-      size_bytes: file.size,
-      content_type: file.type,
-    })
+    try {
+      await uploadFile(init.upload_url, headers, file)
+    } catch {
+      throw new Error("upload_put_failed")
+    }
+
+    let completed: Awaited<ReturnType<typeof completeAssetUpload>>
+    try {
+      completed = await completeAssetUpload({
+        object_key: init.object_key,
+        content_hash: contentHash,
+        size_bytes: file.size,
+        content_type: file.type,
+      })
+    } catch {
+      throw new Error("upload_complete_failed")
+    }
     assetUrl = completed.asset_url
   }
 
@@ -94,7 +125,7 @@ export async function buildImageAttachments(
   const imageFiles = files.filter((file) => file.type.startsWith("image/"))
   const skipped = files.length - imageFiles.length
   if (!imageFiles.length) {
-    return { attachments: [], rejected: 0, skipped }
+    return { attachments: [], rejected: 0, skipped, errors: [] }
   }
 
   const results = await Promise.allSettled(
@@ -103,15 +134,29 @@ export async function buildImageAttachments(
 
   const attachments: ChatImageAttachment[] = []
   let rejected = 0
+  const errors: string[] = []
   results.forEach((result) => {
     if (result.status === "fulfilled") {
       attachments.push(result.value)
     } else {
       rejected += 1
+      if (result.reason instanceof Error) {
+        const code = result.reason.message || "upload_failed"
+        errors.push(code)
+      } else if (typeof result.reason === "string") {
+        errors.push(result.reason)
+      } else {
+        errors.push("upload_failed")
+      }
     }
   })
 
-  return { attachments, rejected, skipped }
+  if (errors.length) {
+    console.warn("image_upload_failed", { errors })
+  }
+
+  return { attachments, rejected, skipped, errors }
 }
 
 export type { AttachmentBuildResult }
+export { UPLOAD_ERROR_CODES }

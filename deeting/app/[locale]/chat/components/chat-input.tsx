@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
-import { buildImageAttachments } from "@/lib/chat/attachments"
+import { buildImageAttachments, UPLOAD_ERROR_CODES } from "@/lib/chat/attachments"
 
 interface ChatInputProps {
   inputValue: string
@@ -39,6 +39,13 @@ export function ChatInput({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
   const hasContent = Boolean(inputValue.trim() || attachments.length)
+  const resolvedErrorMessage = React.useMemo(() => {
+    if (!errorMessage) return null
+    if (errorMessage.startsWith("i18n:")) {
+      return t(errorMessage.slice("i18n:".length))
+    }
+    return errorMessage
+  }, [errorMessage, t])
 
   const handleFiles = async (files: File[]) => {
     if (!files.length) return
@@ -52,7 +59,12 @@ export function ChatInput({
       onAddAttachments(result.attachments)
     }
     if (result.rejected > 0) {
-      setAttachmentError(t("input.image.errorRead"))
+      const hasUploadError = result.errors.some((error) =>
+        UPLOAD_ERROR_CODES.has(error)
+      )
+      setAttachmentError(
+        hasUploadError ? t("input.image.errorUpload") : t("input.image.errorRead")
+      )
     }
   }
 
@@ -193,9 +205,9 @@ export function ChatInput({
           </div>
         ) : null}
 
-        {errorMessage ? (
+        {resolvedErrorMessage ? (
           <div className="text-center text-xs text-red-500/80">
-            {errorMessage}
+            {resolvedErrorMessage}
           </div>
         ) : null}
 

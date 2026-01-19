@@ -8,6 +8,7 @@ from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
+from app.core.logging import logger
 from app.utils.time_utils import Datetime
 
 from .base import BaseRepository
@@ -73,6 +74,22 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
 
 class ProviderModelRepository(BaseRepository[ProviderModel]):
     model = ProviderModel
+
+    @staticmethod
+    def _dedupe_payloads(models_data: list[dict]) -> list[dict]:
+        seen: set[tuple[str | None, str | None, str | None]] = set()
+        deduped: list[dict] = []
+        for payload in models_data:
+            key = (
+                payload.get("capability"),
+                payload.get("model_id"),
+                payload.get("upstream_path"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(payload)
+        return deduped
 
     async def list(self) -> list[ProviderModel]:
         result = await self.session.execute(select(ProviderModel))
@@ -146,6 +163,14 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         """批量 Upsert 模型列表：按 instance_id + capability + model_id + upstream_path 唯一键判断。"""
         now = Datetime.utcnow()
         results: list[ProviderModel] = []
+        original_count = len(models_data)
+        models_data = self._dedupe_payloads(models_data)
+        if len(models_data) != original_count:
+            logger.warning(
+                "provider_model_payloads_deduped "
+                f"source=manual instance_id={instance_id} "
+                f"before={original_count} after={len(models_data)}"
+            )
 
         for payload in models_data:
             payload = dict(payload)
@@ -199,6 +224,14 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         """
         now = Datetime.utcnow()
         results: list[ProviderModel] = []
+        original_count = len(models_data)
+        models_data = self._dedupe_payloads(models_data)
+        if len(models_data) != original_count:
+            logger.warning(
+                "provider_model_payloads_deduped "
+                f"source=upstream instance_id={instance_id} "
+                f"before={original_count} after={len(models_data)}"
+            )
 
         protected_fields = {
             "display_name",

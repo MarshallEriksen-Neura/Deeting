@@ -1,7 +1,7 @@
 """create image generation tables and media asset expiry
 
 Revision ID: 20260119_01_create_image_generation_tables
-Revises: 20260118_01_create_upstream_secret_store
+Revises: 20260118_01
 Create Date: 2026-01-19
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "20260119_01_create_image_generation_tables"
-down_revision: Union[str, None] = "20260118_01_create_upstream_secret_store"
+down_revision: Union[str, None] = "20260118_01"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

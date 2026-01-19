@@ -41,7 +41,7 @@ from fastapi import APIRouter
 
 router = APIRouter(tags=["Internal Gateway"])
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -529,6 +529,7 @@ async def embeddings(
 async def list_models(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    capability: str | None = Query(None, description="能力过滤 (chat/image/embedding 等)"),
 ) -> ModelGroupListResponse:
     preset_repo = ProviderPresetRepository(db)
     instance_repo = ProviderInstanceRepository(db)
@@ -557,6 +558,8 @@ async def list_models(
     logged_missing_preset_slugs: set[str] = set()
     grouped: dict[str, dict[str, Any]] = {}
     for m in models:
+        if capability and m.capability != capability:
+            continue
         inst = inst_map.get(str(m.instance_id))
         if not inst:
             skipped_missing_instance += 1

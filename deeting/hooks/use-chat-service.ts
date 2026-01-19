@@ -57,10 +57,12 @@ export function useChatService({
   assistantId,
   enabled = true,
   installSize = 100,
+  modelCapability,
 }: {
   assistantId?: string
   enabled?: boolean
   installSize?: number
+  modelCapability?: string
 }) {
   const { isAuthenticated } = useAuthStore()
   const isEnabled = enabled && isAuthenticated
@@ -71,10 +73,16 @@ export function useChatService({
     isLoading: isLoadingAssistants,
   } = useSWR(shouldFetch, () => fetchAssistantInstalls({ size: installSize }))
 
+  const modelQueryKey = isEnabled
+    ? [MODELS_QUERY_KEY, modelCapability ?? "all"]
+    : null
+
   const {
     data: modelList,
     isLoading: isLoadingAllModels,
-  } = useSWR(isEnabled ? MODELS_QUERY_KEY : null, fetchChatModels)
+  } = useSWR(modelQueryKey, () =>
+    fetchChatModels(modelCapability ? { capability: modelCapability } : undefined)
+  )
 
   const assistant = useMemo(() => {
     if (!assistantId || !installPage?.items?.length) return null

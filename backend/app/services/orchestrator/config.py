@@ -147,4 +147,6 @@ def get_workflow_for_channel(
             )
         return EXTERNAL_CHAT_WORKFLOW
     else:
+        if capability != "chat":
+            return INTERNAL_PREVIEW_WORKFLOW
         return INTERNAL_CHAT_WORKFLOW

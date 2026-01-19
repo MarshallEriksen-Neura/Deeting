@@ -14,7 +14,7 @@ import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
-import { buildImageAttachments } from '@/lib/chat/attachments';
+import { buildImageAttachments, UPLOAD_ERROR_CODES } from '@/lib/chat/attachments';
 
 export default function DefaultControls() {
   const router = useRouter();
@@ -129,7 +129,12 @@ export default function DefaultControls() {
       addAttachments(result.attachments);
     }
     if (result.rejected > 0) {
-      setAttachmentError(t("input.image.errorRead"));
+      const hasUploadError = result.errors.some((error) =>
+        UPLOAD_ERROR_CODES.has(error)
+      );
+      setAttachmentError(
+        hasUploadError ? t("input.image.errorUpload") : t("input.image.errorRead")
+      );
     }
   };
 

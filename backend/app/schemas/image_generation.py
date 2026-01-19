@@ -14,11 +14,11 @@ class ImageGenerationTaskCreateRequest(BaseSchema):
     prompt: str = Field(..., description="提示词")
     negative_prompt: str | None = Field(None, description="反向提示词")
 
-    width: int | None = Field(None, description="输出宽度")
-    height: int | None = Field(None, description="输出高度")
+    width: int | None = Field(None, ge=1, description="输出宽度")
+    height: int | None = Field(None, ge=1, description="输出高度")
     aspect_ratio: str | None = Field(None, description="纵横比")
 
-    num_outputs: int = Field(1, description="生成图片数量")
+    num_outputs: int = Field(1, ge=1, description="生成图片数量")
     steps: int | None = Field(None, description="推理步数")
     cfg_scale: float | None = Field(None, description="CFG 指数")
     seed: int | None = Field(None, description="随机种子")

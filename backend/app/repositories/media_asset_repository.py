@@ -47,5 +47,17 @@ class MediaAssetRepository:
         else:
             await self.session.flush()
 
+    async def delete_expired(self, now, commit: bool = True) -> int:
+        stmt = select(MediaAsset).where(MediaAsset.expire_at.is_not(None), MediaAsset.expire_at <= now)
+        result = await self.session.execute(stmt)
+        items = list(result.scalars().all())
+        for asset in items:
+            await self.session.delete(asset)
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        return len(items)
+
 
 __all__ = ["MediaAssetRepository"]

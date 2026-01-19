@@ -115,6 +115,7 @@ def register_routes(app: FastAPI) -> None:
     from app.api.v1 import (
         admin_api_keys_router,
         admin_users_router,
+        admin_agent_router,
         admin_assistants_router,
         admin_assistant_reviews_router,
         admin_registration_router,
@@ -132,6 +133,7 @@ def register_routes(app: FastAPI) -> None:
         internal_bridge_router,
         internal_gateway_router,
         internal_conversation_router,
+        internal_image_generation_router,
         media_router,
         users_router,
         provider_router,
@@ -151,6 +153,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(user_api_keys_router, prefix=api_prefix, tags=["API Keys"])
     app.include_router(available_models_router, prefix=api_prefix, tags=["Models"])
     app.include_router(admin_users_router, prefix=api_prefix, tags=["Admin - Users"])
+    app.include_router(admin_agent_router, prefix=api_prefix, tags=["Admin - Agent"])
     app.include_router(admin_api_keys_router, prefix=api_prefix, tags=["Admin - API Keys"])
     app.include_router(admin_assistants_router, prefix=api_prefix, tags=["Admin - Assistants"])
     app.include_router(admin_assistant_reviews_router, prefix=api_prefix, tags=["Admin - Assistant Reviews"])
@@ -184,6 +187,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         internal_conversation_router, prefix=f"{api_prefix}/internal", tags=["Conversations"]
+    )
+    app.include_router(
+        internal_image_generation_router, prefix=f"{api_prefix}/internal", tags=["Image Generation"]
     )
     app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])

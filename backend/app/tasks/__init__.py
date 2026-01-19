@@ -15,4 +15,5 @@ from app.tasks import (  # noqa: F401
     quota_sync,
     reports,
     upstream,
+    image_generation,
 )

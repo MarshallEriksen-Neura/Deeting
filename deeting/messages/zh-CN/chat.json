@@ -65,7 +65,9 @@
         "alt": "图像",
         "remove": "移除图片",
         "errorInvalid": "仅支持图片文件。",
-        "errorRead": "读取图片失败，请重试。"
+        "errorRead": "读取图片失败，请重试。",
+        "errorUpload": "上传图片失败，请检查网络后重试。",
+        "errorSign": "图片签名失败，请刷新或稍后重试。"
       }
     },
     "history": {

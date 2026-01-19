@@ -34,10 +34,13 @@ export type ModelListResponse = z.infer<typeof ModelListResponseSchema>
 export type ModelGroup = ModelListResponse["instances"][number]
 export type AvailableModelsResponse = z.infer<typeof AvailableModelsResponseSchema>
 
-export async function fetchChatModels(): Promise<ModelListResponse> {
+export async function fetchChatModels(options?: {
+  capability?: string
+}): Promise<ModelListResponse> {
   const data = await request({
     url: MODELS_BASE,
     method: "GET",
+    params: options?.capability ? { capability: options.capability } : undefined,
   })
   return ModelListResponseSchema.parse(data)
 }

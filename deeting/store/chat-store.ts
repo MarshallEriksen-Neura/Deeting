@@ -280,7 +280,9 @@ export const useChatStore = create<ChatState & ChatActions>()(
           let resolved = mapped;
           try {
             resolved = await resolveMessageAttachments(mapped);
-          } catch {
+          } catch (error) {
+            console.warn("signAssets_failed", error);
+            set({ errorMessage: "i18n:input.image.errorSign" });
             resolved = mapped;
           }
           set({ messages: resolved, sessionId });

@@ -49,6 +49,7 @@ curl -X POST https://host/api/v1/admin/provider-instances \
 ## 同步/上报模型（幂等 upsert）
 
 - `POST /admin/provider-instances/{instance_id}/models:sync`
+  - 同一批次如出现重复模型（`capability + model_id + upstream_path` 相同），服务端会自动去重
 - Body：
   ```json
   {

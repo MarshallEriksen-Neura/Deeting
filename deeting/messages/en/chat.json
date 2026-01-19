@@ -65,7 +65,9 @@
         "alt": "Image",
         "remove": "Remove image",
         "errorInvalid": "Only image files are supported.",
-        "errorRead": "Failed to read image. Please try again."
+        "errorRead": "Failed to read image. Please try again.",
+        "errorUpload": "Image upload failed. Please check your network and try again.",
+        "errorSign": "Failed to sign image. Please refresh or try again later."
       }
     },
     "history": {

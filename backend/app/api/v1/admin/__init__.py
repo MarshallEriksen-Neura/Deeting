@@ -1,7 +1,9 @@
 """
 Admin API 路由包
 """
-from app.api.v1.admin.api_keys_route import router as api_keys_router
+from .agent_route import router as agent_router
+from .api_keys_route import router as api_keys_router
+
 from app.api.v1.admin.users_route import router as users_router
 from app.api.v1.admin.assistant_route import router as assistants_router
 from app.api.v1.admin.assistant_review_route import router as assistant_reviews_router
@@ -14,6 +16,7 @@ from app.api.v1.admin.notification_route import router as notification_router
 from app.api.v1.admin.settings_route import router as settings_router
 
 __all__ = [
+    "agent_router",
     "api_keys_router",
     "users_router",
     "assistants_router",

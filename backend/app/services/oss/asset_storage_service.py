@@ -372,6 +372,32 @@ async def head_asset_object(object_key: str) -> AssetObjectMeta:
     return await anyio.to_thread.run_sync(_head_s3)
 
 
+async def delete_asset_object(object_key: str) -> None:
+    if get_effective_asset_storage_mode() == "local":
+        def _delete_local() -> None:
+            path = _local_path_for_object_key(object_key)
+            if path.exists():
+                path.unlink()
+        await anyio.to_thread.run_sync(_delete_local)
+        return
+
+    if not _oss_is_configured():
+        raise AssetStorageNotConfigured("OSS_* 未配置，无法删除对象")
+
+    def _delete_oss() -> None:
+        bucket = _create_oss_bucket()
+        bucket.delete_object(object_key)
+
+    def _delete_s3() -> None:
+        client = _create_s3_client()
+        client.delete_object(Bucket=_resolve_bucket(), Key=object_key)
+
+    if _oss_backend_kind() == "aliyun_oss":
+        await anyio.to_thread.run_sync(_delete_oss)
+    else:
+        await anyio.to_thread.run_sync(_delete_s3)
+
+
 async def presign_asset_get_url(object_key: str, *, expires_seconds: int) -> str:
     if get_effective_asset_storage_mode() == "local":
         raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持生成预签名 URL")
@@ -457,6 +483,7 @@ __all__ = [
     "get_effective_asset_storage_mode",
     "head_asset_object",
     "load_asset_bytes",
+    "delete_asset_object",
     "presign_asset_get_url",
     "presign_asset_put_url",
     "store_asset_b64",

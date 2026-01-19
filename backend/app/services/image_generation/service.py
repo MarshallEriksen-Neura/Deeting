@@ -112,7 +112,19 @@ class ImageGenerationService:
             or {}
         )
 
-        outputs = await self._persist_outputs(task.id, response)
+        outputs = await self._persist_outputs(task, response)
+        if not outputs:
+            await self.task_repo.update_fields(
+                task.id,
+                {
+                    "status": ImageGenerationStatus.FAILED,
+                    "error_code": "IMAGE_NO_OUTPUT",
+                    "error_message": "no image outputs received",
+                    "completed_at": Datetime.now(),
+                },
+                commit=True,
+            )
+            return
 
         pricing = ctx.get("routing", "pricing_config") or {}
         cost_user = ctx.billing.total_cost or 0.0
@@ -160,8 +172,11 @@ class ImageGenerationService:
             if output.media_asset_id:
                 asset = await self.asset_repo.get(output.media_asset_id)
                 if asset:
-                    from app.services.oss.asset_storage_service import build_signed_asset_url
-                    asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                    if asset.expire_at and asset.expire_at <= Datetime.now():
+                        asset_url = None
+                    else:
+                        from app.services.oss.asset_storage_service import build_signed_asset_url
+                        asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
             result.append(
                 {
                     "output_index": output.output_index,
@@ -176,13 +191,13 @@ class ImageGenerationService:
             )
         return result
 
-    async def _persist_outputs(self, task_id, response: dict[str, Any]) -> list[ImageGenerationOutput]:
+    async def _persist_outputs(self, task, response: dict[str, Any]) -> list[ImageGenerationOutput]:
         items = _extract_image_items(response)
         outputs: list[ImageGenerationOutput] = []
         for index, item in enumerate(items):
-            asset = await self._store_image_item(item)
+            asset = await self._store_image_item(item, uploader_user_id=task.user_id)
             output_payload = {
-                "task_id": task_id,
+                "task_id": task.id,
                 "output_index": index,
                 "media_asset_id": asset.get("asset_id") if asset else None,
                 "source_url": asset.get("source_url") if asset else None,
@@ -201,7 +216,12 @@ class ImageGenerationService:
             await self.session.refresh(output)
         return outputs
 
-    async def _store_image_item(self, item: dict[str, Any]) -> dict[str, Any] | None:
+    async def _store_image_item(
+        self,
+        item: dict[str, Any],
+        *,
+        uploader_user_id: Any | None = None,
+    ) -> dict[str, Any] | None:
         if not isinstance(item, dict):
             return None
 
@@ -213,14 +233,24 @@ class ImageGenerationService:
             if raw is None:
                 return None
             content_type = item.get("content_type") or DEFAULT_IMAGE_CONTENT_TYPE
-            return await self._store_bytes(raw, content_type=content_type, source_url=None)
+            return await self._store_bytes(
+                raw,
+                content_type=content_type,
+                source_url=None,
+                uploader_user_id=uploader_user_id,
+            )
 
         if source_url:
             fetched = await _fetch_image(source_url)
             if not fetched:
                 return None
             raw, content_type = fetched
-            return await self._store_bytes(raw, content_type=content_type, source_url=source_url)
+            return await self._store_bytes(
+                raw,
+                content_type=content_type,
+                source_url=source_url,
+                uploader_user_id=uploader_user_id,
+            )
 
         return None
 
@@ -230,8 +260,11 @@ class ImageGenerationService:
         *,
         content_type: str,
         source_url: str | None,
+        uploader_user_id: Any | None,
     ) -> dict[str, Any] | None:
         if not data:
+            return None
+        if settings.MAX_RESPONSE_BYTES and len(data) > settings.MAX_RESPONSE_BYTES:
             return None
         content_hash = hashlib.sha256(data).hexdigest()
         size_bytes = len(data)
@@ -259,7 +292,7 @@ class ImageGenerationService:
                 "content_type": stored.content_type,
                 "object_key": stored.object_key,
                 "etag": None,
-                "uploader_user_id": None,
+                "uploader_user_id": uploader_user_id,
                 "expire_at": expire_at,
             },
             commit=True,
@@ -310,6 +343,8 @@ def _extract_image_items(response: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _decode_base64(raw: str) -> bytes | None:
     try:
+        if "," in raw and raw.strip().lower().startswith("data:"):
+            raw = raw.split(",", 1)[1]
         return base64.b64decode(raw)
     except Exception:
         return None
@@ -321,7 +356,10 @@ async def _fetch_image(url: str) -> tuple[bytes, str] | None:
         return None
     timeout = httpx.Timeout(30.0)
     async with create_async_http_client(timeout=timeout) as client:
-        resp = await client.get(url)
+        try:
+            resp = await client.get(url)
+        except Exception:
+            return None
         if resp.status_code >= 400:
             return None
         data = resp.content or b""

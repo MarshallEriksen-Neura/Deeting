@@ -403,6 +403,28 @@ def upgrade() -> None:
             "is_active": True,
             "synced_at": None,
         },
+        {
+            "id": uuid.uuid4(),
+            "instance_id": instance_ids["openai"],
+            "capability": "image",
+            "model_id": "gpt-image-1",
+            "unified_model_id": "gpt-image-1",
+            "display_name": "GPT Image",
+            "upstream_path": "/v1/images/generations",
+            "template_engine": "openai_compat",
+            "request_template": {},
+            "response_transform": {},
+            "pricing_config": {},
+            "limit_config": {},
+            "tokenizer_config": {},
+            "routing_config": {},
+            "source": "manual",
+            "extra_meta": {},
+            "weight": 100,
+            "priority": 0,
+            "is_active": True,
+            "synced_at": None,
+        },
         # Anthropic
         {
             "id": uuid.uuid4(),
@@ -487,6 +509,7 @@ def downgrade() -> None:
             provider_model.c.model_id.in_(
                 [
                     "gpt-4o",
+                    "gpt-image-1",
                     "claude-3-5-sonnet-20241022",
                     "gemini-1.5-flash",
                     "llama3:latest",

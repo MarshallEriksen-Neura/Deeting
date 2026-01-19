@@ -181,6 +181,12 @@ data: [DONE]
 Authorization: Bearer <access_token>
 ```
 
+#### Query 参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `capability` | string | 否 | 能力过滤（如 `chat` / `image` / `embedding`） |
+
 #### 响应体
 
 ```json
