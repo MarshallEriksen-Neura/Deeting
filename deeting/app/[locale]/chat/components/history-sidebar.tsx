@@ -1,7 +1,16 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, MessageSquare, Clock, Plus, MoreHorizontal, Archive, RotateCcw } from 'lucide-react';
+import {
+  Search,
+  MessageSquare,
+  Clock,
+  Plus,
+  MoreHorizontal,
+  Archive,
+  RotateCcw,
+  PencilLine,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -13,8 +22,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { useConversationSessions } from '@/lib/swr/use-conversation-sessions';
-import { archiveConversation, unarchiveConversation } from '@/lib/api/conversations';
+import { archiveConversation, unarchiveConversation, renameConversation } from '@/lib/api/conversations';
 import { useI18n } from '@/hooks/use-i18n';
 import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
@@ -33,6 +50,11 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameSaving, setRenameSaving] = useState(false);
   const {
     activeAssistantId,
     sessionId,
@@ -165,6 +187,56 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     }
   };
 
+  const openRenameDialog = (session: ConversationSessionItem) => {
+    const initialTitle =
+      session.title?.trim() || session.summary_text?.trim() || '';
+    setRenameSessionId(session.session_id);
+    setRenameValue(initialTitle);
+    setRenameError(null);
+    setRenameOpen(true);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renameSessionId) return;
+    const nextTitle = renameValue.trim();
+    if (!nextTitle) {
+      setRenameError(t('history.renameEmpty'));
+      return;
+    }
+    if (renameSaving) return;
+    setRenameSaving(true);
+    setRenameError(null);
+    try {
+      await renameConversation(renameSessionId, nextTitle);
+      await mutate();
+      setRenameOpen(false);
+    } catch {
+      setRenameError(t('history.renameFailed'));
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
+  const handleRenameOpenChange = (open: boolean) => {
+    setRenameOpen(open);
+    if (!open) {
+      setRenameSessionId(null);
+      setRenameValue('');
+      setRenameError(null);
+      setRenameSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setRenameOpen(false);
+      setRenameSessionId(null);
+      setRenameValue('');
+      setRenameError(null);
+      setRenameSaving(false);
+    }
+  }, [isOpen]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -187,16 +259,16 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
             className="fixed top-4 bottom-4 left-4 w-80 z-[70] flex flex-col"
           >
             {/* Glass Container */}
-            <div className="h-full w-full bg-white/80 dark:bg-[#121212]/90 backdrop-blur-2xl border border-black/5 dark:border-white/5 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+            <div className="h-full w-full bg-white/92 dark:bg-[#121212]/90 backdrop-blur-2xl border border-slate-200/70 dark:border-white/5 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
               
               {/* Header */}
-              <div className="p-4 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
-                <h2 className="text-sm font-bold text-black/80 dark:text-white/80 tracking-wide">{t('history.title')}</h2>
+              <div className="p-4 border-b border-slate-200/70 dark:border-white/5 flex items-center justify-between">
+                <h2 className="text-sm font-bold text-slate-800 dark:text-white/80 tracking-wide">{t('history.title')}</h2>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  className="rounded-full text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white"
+                  className="rounded-full text-slate-600 dark:text-white/50 hover:text-slate-900 dark:hover:text-white"
                   onClick={() => {
                     handleResetSession();
                     onClose();
@@ -209,12 +281,12 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
               {/* Search */}
               <div className="px-4 py-2">
                 <div className="relative group">
-                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-black/30 dark:text-white/30 group-hover:text-black/50 dark:group-hover:text-white/50 transition-colors" />
+                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 dark:text-white/30 group-hover:text-slate-600 dark:group-hover:text-white/50 transition-colors" />
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder={t('history.searchPlaceholder')}
-                    className="w-full bg-black/5 dark:bg-white/5 border border-transparent focus:border-black/10 dark:focus:border-white/10 rounded-xl py-2 pl-9 pr-3 text-sm outline-none transition-all placeholder:text-black/30 dark:placeholder:text-white/30 text-black/80 dark:text-white/80"
+                    className="w-full bg-slate-100/80 dark:bg-white/5 border border-transparent focus:border-slate-200 dark:focus:border-white/10 rounded-xl py-2 pl-9 pr-3 text-sm outline-none transition-all placeholder:text-slate-500 dark:placeholder:text-white/30 text-slate-800 dark:text-white/80"
                   />
                 </div>
               </div>
@@ -228,14 +300,14 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                   hasMore={hasMore}
                   onLoadMore={loadMore}
                   emptyDisplay={
-                    <div className="flex flex-col items-center gap-2 text-black/40 dark:text-white/40">
+                    <div className="flex flex-col items-center gap-2 text-slate-500 dark:text-white/40">
                       <MessageSquare className="h-9 w-9 opacity-50" />
                       <p className="text-sm font-medium">{t('history.emptyTitle')}</p>
                       <p className="text-xs">{t('history.emptyDesc')}</p>
                     </div>
                   }
                   loadingIndicator={
-                    <div className="flex items-center gap-2 text-black/40 dark:text-white/40 text-xs">
+                    <div className="flex items-center gap-2 text-slate-500 dark:text-white/40 text-xs">
                       <span>{t('history.loading')}</span>
                     </div>
                   }
@@ -258,7 +330,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                     <div className="space-y-6 py-2">
                       {historyGroups.map((group) => (
                         <div key={group.label} className="px-2">
-                          <h3 className="text-[10px] font-bold text-black/30 dark:text-white/30 uppercase tracking-wider mb-2 px-2">
+                          <h3 className="text-[10px] font-bold text-slate-500 dark:text-white/30 uppercase tracking-wider mb-2 px-2">
                             {group.label}
                           </h3>
                           <div className="space-y-1">
@@ -277,12 +349,12 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                     onClick={() => handleSelectSession(session.session_id)}
                                     className={cn(
                                       "flex-1 justify-start gap-3 rounded-lg px-2 py-2 text-left transition-all",
-                                      "hover:bg-black/5 dark:hover:bg-white/5",
-                                      isActive && "bg-black/5 dark:bg-white/5"
+                                      "hover:bg-slate-100/80 dark:hover:bg-white/5",
+                                      isActive && "bg-slate-100/80 dark:bg-white/5"
                                     )}
                                   >
-                                    <MessageSquare className="w-4 h-4 text-black/40 dark:text-white/40 shrink-0" />
-                                    <span className="text-sm text-black/70 dark:text-white/70 truncate flex-1 font-medium">
+                                    <MessageSquare className="w-4 h-4 text-slate-500 dark:text-white/40 shrink-0" />
+                                    <span className="text-sm text-slate-700 dark:text-white/70 truncate flex-1 font-medium">
                                       {title}
                                     </span>
                                   </Button>
@@ -292,12 +364,20 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                         type="button"
                                         variant="ghost"
                                         size="icon-sm"
-                                        className="opacity-0 group-hover:opacity-100 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                                        className="opacity-0 group-hover:opacity-100 text-slate-500 dark:text-white/40 hover:text-slate-900 dark:hover:text-white"
                                       >
                                         <MoreHorizontal className="w-4 h-4" />
                                       </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-36">
+                                      <DropdownMenuItem
+                                        onSelect={() => {
+                                          openRenameDialog(session);
+                                        }}
+                                      >
+                                        <PencilLine className="mr-2 h-4 w-4" />
+                                        {t('history.rename')}
+                                      </DropdownMenuItem>
                                       {showArchived ? (
                                         <DropdownMenuItem
                                           onSelect={(event) => {
@@ -335,11 +415,11 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
               </div>
 
               {/* Footer */}
-              <div className="p-4 border-t border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
+              <div className="p-4 border-t border-slate-200/70 dark:border-white/5 bg-slate-50/80 dark:bg-white/[0.02]">
                 <Button
                   type="button"
                   variant="ghost"
-                  className="w-full flex items-center justify-center gap-2 text-xs font-medium text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                  className="w-full flex items-center justify-center gap-2 text-xs font-medium text-slate-600 dark:text-white/40 hover:text-slate-900 dark:hover:text-white"
                   onClick={() => setShowArchived((prev) => !prev)}
                 >
                   <Clock className="w-3 h-3" />
@@ -349,6 +429,56 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
 
             </div>
           </motion.div>
+
+          <Dialog open={renameOpen} onOpenChange={handleRenameOpenChange}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t('history.renameTitle')}</DialogTitle>
+              </DialogHeader>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleRenameSubmit();
+                }}
+                className="space-y-4"
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="conversation-rename-input">
+                    {t('history.renameLabel')}
+                  </Label>
+                  <Input
+                    id="conversation-rename-input"
+                    value={renameValue}
+                    onChange={(event) => {
+                      setRenameValue(event.target.value);
+                      if (renameError) {
+                        setRenameError(null);
+                      }
+                    }}
+                    placeholder={t('history.renamePlaceholder')}
+                  />
+                  {renameError ? (
+                    <p className="text-xs text-red-500">{renameError}</p>
+                  ) : null}
+                </div>
+                <DialogFooter className="gap-2 sm:gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleRenameOpenChange(false)}
+                  >
+                    {t('history.renameCancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={renameSaving || !renameValue.trim()}
+                  >
+                    {renameSaving ? t('history.renameSaving') : t('history.renameConfirm')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </AnimatePresence>

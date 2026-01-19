@@ -16,7 +16,6 @@ interface AIResponseBubbleProps {
   parts: MessageBlock[];
   isActive?: boolean;
   streamEnabled?: boolean;
-  reveal?: boolean;
   statusStage?: string | null;
   statusCode?: string | null;
   statusMeta?: Record<string, unknown> | null;
@@ -26,7 +25,6 @@ export function AIResponseBubble({
   parts,
   isActive = false,
   streamEnabled = false,
-  reveal = false,
   statusStage = null,
   statusCode = null,
   statusMeta = null,
@@ -71,8 +69,8 @@ export function AIResponseBubble({
       <div
         className={cn(
           "w-full max-w-[85%] rounded-2xl rounded-tl-sm px-1 py-1 text-sm leading-relaxed",
-          "bg-white/80 dark:bg-white/5 border border-black/5 dark:border-white/10",
-          "shadow-[0_6px_20px_-12px_rgba(15,23,42,0.2)] backdrop-blur-md overflow-hidden"
+          "bg-white/90 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-foreground",
+          "shadow-[0_4px_20px_-6px_rgba(15,23,42,0.18)] backdrop-blur-md overflow-hidden"
         )}
         data-slot="glass-card"
       >
@@ -177,13 +175,13 @@ function StatusStream({
   return (
     <div
       className={cn(
-        "rounded-xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5",
+        "rounded-xl border border-slate-200/70 dark:border-white/10 bg-white/85 dark:bg-white/5",
         "px-3 py-2 backdrop-blur-sm transition-all duration-300",
         compact ? "text-[10px]" : "text-xs",
         remembering && "bg-blue-50/60 dark:bg-blue-500/10 border-blue-200/50 dark:border-blue-500/30"
       )}
     >
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground/80 font-medium">
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-600 dark:text-muted-foreground/80 font-medium">
         <span>{label}</span>
       </div>
       <div className={cn("mt-2 flex flex-col", compact ? "gap-1" : "gap-1.5")}>
@@ -191,7 +189,7 @@ function StatusStream({
           const done = index < activeIndex;
           const active = index === activeIndex;
           return (
-            <div key={step.key} className="flex items-center gap-2 text-muted-foreground transition-colors duration-300">
+            <div key={step.key} className="flex items-center gap-2 text-slate-600 dark:text-muted-foreground transition-colors duration-300">
               {done ? (
                 <div className="w-3 h-3 flex items-center justify-center">
                     <Check className="w-2.5 h-2.5 text-emerald-500" />
@@ -203,13 +201,13 @@ function StatusStream({
                 </div>
               ) : (
                 <div className="w-3 h-3 flex items-center justify-center">
-                     <span className="h-1 w-1 rounded-full bg-muted-foreground/20" />
+                     <span className="h-1 w-1 rounded-full bg-slate-400/40 dark:bg-muted-foreground/30" />
                 </div>
               )}
               <span className={cn(
                   "transition-colors duration-300",
-                  active ? "text-foreground font-medium" : "text-muted-foreground/60",
-                  done && "text-muted-foreground/80"
+                  active ? "text-foreground font-medium" : "text-slate-500 dark:text-muted-foreground/70",
+                  done && "text-slate-600 dark:text-muted-foreground/80"
               )}>
                 {step.label}
               </span>
@@ -242,7 +240,7 @@ function HolographicPulse({ label }: { label: string }) {
                 <div className="absolute -inset-2 bg-blue-500/20 rounded-full blur-xl animate-pulse" />
                 <Sparkles className="w-5 h-5 text-blue-500/80 animate-bounce [animation-duration:3s]" />
              </div>
-             <span className="text-xs font-mono text-muted-foreground/60 tracking-widest uppercase animate-pulse">
+             <span className="text-xs font-mono text-slate-500 dark:text-muted-foreground/60 tracking-widest uppercase animate-pulse">
                 {label}
              </span>
         </div>
@@ -299,11 +297,6 @@ function useStepProgress(isActive: boolean, stepCount: number) {
 function resolveStageIndex(stage: string, steps: Array<{ key: string }>) {
   const idx = steps.findIndex((step) => step.key === stage);
   return idx >= 0 ? idx : 0;
-}
-
-function getStaggerClass(index: number) {
-  const capped = Math.min(Math.max(index, 1), 10);
-  return `stagger-${capped}`;
 }
 
 // === 组件：思维链折叠块 (Terminal Style) ===

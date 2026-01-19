@@ -4,7 +4,8 @@
       "online": "Online",
       "stream": "Stream",
       "streamOn": "Live output",
-      "streamOff": "Full response"
+      "streamOff": "Full response",
+      "newChat": "New chat"
     },
     "model": {
       "label": "Model",
@@ -71,6 +72,15 @@
     "viewActive": "View active",
     "archive": "Archive",
     "unarchive": "Unarchive",
+    "rename": "Rename",
+    "renameTitle": "Rename conversation",
+    "renameLabel": "New title",
+    "renamePlaceholder": "Enter a new conversation title...",
+    "renameCancel": "Cancel",
+    "renameConfirm": "Save",
+    "renameSaving": "Saving...",
+    "renameEmpty": "Title cannot be empty.",
+    "renameFailed": "Failed to rename. Please try again.",
     "groups": {
       "today": "Today",
       "yesterday": "Yesterday",

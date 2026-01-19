@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Bot, Sparkles } from "lucide-react"
+import { ArrowLeft, Bot, Sparkles, Plus, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import {
@@ -28,6 +28,7 @@ interface ChatHeaderProps {
   streamEnabled: boolean
   onStreamChange: (enabled: boolean) => void
   isLoadingModels: boolean
+  onNewChat: () => void
 }
 
 export function ChatHeader({
@@ -38,6 +39,7 @@ export function ChatHeader({
   streamEnabled,
   onStreamChange,
   isLoadingModels,
+  onNewChat,
 }: ChatHeaderProps) {
   const router = useRouter()
   const t = useI18n("chat")
@@ -48,19 +50,26 @@ export function ChatHeader({
         <Button variant="ghost" size="icon" onClick={() => router.push('/assistants')} className="md:hidden">
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <div className={cn("w-8 h-8 rounded-lg bg-gradient-to-br flex items-center justify-center text-white shadow-sm", agent.color)}>
-          <Bot className="w-5 h-5" />
-        </div>
-        <div>
-          <h1 className="font-semibold text-sm">{agent.name}</h1>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            {t("header.online")}
-          </div>
-        </div>
+        <Button 
+            variant="ghost" 
+            className="pl-0 gap-3 hover:bg-transparent -ml-2 px-2"
+            onClick={() => router.push('/assistants')}
+        >
+            <div className={cn("w-8 h-8 rounded-lg bg-gradient-to-br flex items-center justify-center text-white shadow-sm", agent.color)}>
+            <Bot className="w-5 h-5" />
+            </div>
+            <div className="text-left flex flex-col items-start">
+            <h1 className="font-semibold text-sm">{agent.name}</h1>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                {t("header.online")}
+            </div>
+            </div>
+            <ChevronDown className="w-3 h-3 text-muted-foreground/50 ml-1" />
+        </Button>
       </div>
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 rounded-full bg-white/70 dark:bg-white/10 px-3 py-1 shadow-sm ring-1 ring-black/5 dark:ring-white/10 backdrop-blur">
+        <div className="hidden md:flex items-center gap-2 rounded-full bg-white/70 dark:bg-white/10 px-3 py-1 shadow-sm ring-1 ring-black/5 dark:ring-white/10 backdrop-blur">
           <Label className="text-xs text-muted-foreground">{t("model.label")}</Label>
           <Select
             value={selectedModelId ?? ""}
@@ -94,13 +103,18 @@ export function ChatHeader({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-2 rounded-full bg-white/70 dark:bg-white/10 px-3 py-1 shadow-sm ring-1 ring-black/5 dark:ring-white/10 backdrop-blur">
+        <div className="hidden md:flex items-center gap-2 rounded-full bg-white/70 dark:bg-white/10 px-3 py-1 shadow-sm ring-1 ring-black/5 dark:ring-white/10 backdrop-blur">
           <Label className="text-xs text-muted-foreground">{t("header.stream")}</Label>
           <Switch checked={streamEnabled} onCheckedChange={onStreamChange} />
           <span className="text-[10px] text-muted-foreground/70">
             {streamEnabled ? t("header.streamOn") : t("header.streamOff")}
           </span>
         </div>
+
+        <Button variant="ghost" size="icon" onClick={onNewChat} title={t("header.newChat")}>
+           <Plus className="w-5 h-5 text-muted-foreground" />
+        </Button>
+
         <Button variant="ghost" size="icon">
           <Sparkles className="w-4 h-4 text-muted-foreground" />
         </Button>

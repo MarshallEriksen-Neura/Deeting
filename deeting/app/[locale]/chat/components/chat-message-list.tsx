@@ -144,10 +144,15 @@ export function ChatMessageList({
                 <AvatarImage src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.name}`} />
                 <AvatarFallback>AI</AvatarFallback>
              </Avatar>
-             <div className="bg-muted/50 border border-border px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1">
-               <span className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:-0.3s]" />
-               <span className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
-               <span className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full animate-bounce" />
+             <div className="flex-1 min-w-0">
+               <AIResponseBubble 
+                  parts={[]}
+                  isActive={true} 
+                  streamEnabled={streamEnabled}
+                  statusStage={statusStage}
+                  statusCode={statusCode}
+                  statusMeta={statusMeta}
+               />
              </div>
           </div>
         )}

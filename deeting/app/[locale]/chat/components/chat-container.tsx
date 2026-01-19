@@ -58,7 +58,8 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     sendMessage: storeSendMessage,
     addMessage,
     setConfig,
-    setAssistants
+    setAssistants,
+    resetSession
   } = useChatStore()
 
   // Environment check (runtime-safe for browser dev)
@@ -278,6 +279,15 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
      setConfig({ model: modelId })
   }
 
+  const handleNewChat = () => {
+    resetSession()
+    const params = new URLSearchParams(searchParams?.toString())
+    params.delete("session")
+    const query = params.toString()
+    const url = query ? `${pathname}?${query}` : pathname
+    router.replace(url || "/chat")
+  }
+
   const handleSendMessage = async () => {
      if (isTauriRuntime && agent) {
         const userContent = input.trim();
@@ -349,6 +359,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
         streamEnabled={streamEnabled}
         onStreamChange={setStreamEnabled}
         isLoadingModels={isLoadingModels}
+        onNewChat={handleNewChat}
       />
 
       <ChatMessageList 

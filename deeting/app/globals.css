@@ -198,6 +198,20 @@ body {
   --color-prettylights-syntax-variable: var(--primary-foreground);
 }
 
+.chat-markdown-assistant {
+  --fgColor-default: var(--foreground);
+  --fgColor-muted: color-mix(in oklch, var(--foreground) 68%, transparent);
+  --fgColor-accent: var(--primary);
+  --bgColor-muted: color-mix(in oklch, var(--foreground) 6%, transparent);
+  --borderColor-default: color-mix(in oklch, var(--foreground) 14%, transparent);
+  --color-prettylights-syntax-comment: color-mix(in oklch, var(--foreground) 58%, transparent);
+  --color-prettylights-syntax-constant: color-mix(in oklch, var(--foreground) 85%, transparent);
+  --color-prettylights-syntax-entity: var(--primary);
+  --color-prettylights-syntax-keyword: color-mix(in oklch, var(--primary) 82%, transparent);
+  --color-prettylights-syntax-string: color-mix(in oklch, var(--foreground) 80%, transparent);
+  --color-prettylights-syntax-variable: color-mix(in oklch, var(--foreground) 75%, transparent);
+}
+
 /* Prism token mapping to GitHub variables */
 .markdown-body .token.comment,
 .markdown-body .token.prolog,

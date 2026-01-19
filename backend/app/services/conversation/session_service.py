@@ -90,3 +90,30 @@ class ConversationSessionService:
         if session_obj.status == status:
             return session_obj
         return await self.session_repo.update(session_obj, {"status": status})
+
+    async def update_session_title(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID,
+        title: str,
+    ) -> ConversationSession:
+        session_obj = await self.session_repo.get_by_user(
+            session_id=session_id,
+            user_id=user_id,
+            channel=ConversationChannel.INTERNAL,
+        )
+        if not session_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="conversation not found",
+            )
+        new_title = title.strip()
+        if not new_title:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="title cannot be empty",
+            )
+        if session_obj.title == new_title:
+            return session_obj
+        return await self.session_repo.update(session_obj, {"title": new_title})

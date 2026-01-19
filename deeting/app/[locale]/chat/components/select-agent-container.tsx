@@ -56,7 +56,10 @@ export function SelectAgentContainer() {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center animate-in fade-in duration-200"
+      onClick={() => router.replace("/chat")}
+    >
       <div 
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-2xl bg-[#0f0f0f] border border-white/10 rounded-3xl p-8 shadow-2xl relative overflow-hidden ring-1 ring-white/5"

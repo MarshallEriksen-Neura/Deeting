@@ -4,7 +4,8 @@
       "online": "在线",
       "stream": "流式",
       "streamOn": "逐字生成",
-      "streamOff": "整段输出"
+      "streamOff": "整段输出",
+      "newChat": "新建会话"
     },
     "model": {
       "label": "模型",
@@ -71,6 +72,15 @@
     "viewActive": "查看进行中",
     "archive": "归档",
     "unarchive": "取消归档",
+    "rename": "重命名",
+    "renameTitle": "重命名会话",
+    "renameLabel": "新标题",
+    "renamePlaceholder": "输入新的会话标题...",
+    "renameCancel": "取消",
+    "renameConfirm": "保存",
+    "renameSaving": "保存中...",
+    "renameEmpty": "标题不能为空。",
+    "renameFailed": "重命名失败，请稍后重试。",
     "groups": {
       "today": "今天",
       "yesterday": "昨天",

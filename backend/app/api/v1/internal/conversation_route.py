@@ -22,7 +22,11 @@ from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models import User
 from app.schemas.gateway import ChatCompletionRequest, ChatCompletionResponse, GatewayError
-from app.schemas.conversation import ConversationSessionItem
+from app.schemas.conversation import (
+    ConversationSessionItem,
+    ConversationSessionRenameRequest,
+    ConversationSessionRenameResponse,
+)
 from app.models.conversation import ConversationStatus
 from app.services.conversation.session_service import ConversationSessionService
 from app.services.conversation.service import ConversationService
@@ -145,6 +149,28 @@ async def unarchive_conversation(
         status=ConversationStatus.ACTIVE,
     )
     return ArchiveResponse(session_id=str(session_obj.id), status=session_obj.status)
+
+
+@router.patch(
+    "/conversations/{session_id}/title",
+    response_model=ConversationSessionRenameResponse,
+)
+async def rename_conversation(
+    session_id: str,
+    payload: ConversationSessionRenameRequest,
+    user: User = Depends(get_current_user),
+    service: ConversationSessionService = Depends(get_conversation_session_service),
+) -> ConversationSessionRenameResponse:
+    session_uuid = UUID(session_id)
+    session_obj = await service.update_session_title(
+        session_id=session_uuid,
+        user_id=user.id,
+        title=payload.title,
+    )
+    return ConversationSessionRenameResponse(
+        session_id=session_obj.id,
+        title=session_obj.title,
+    )
 
 
 @router.get(

@@ -49,11 +49,11 @@ export default function Canvas() {
       <div className="w-full h-full flex flex-col items-center justify-center bg-transparent">
          <div className="relative group cursor-default">
             <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 opacity-20 blur-3xl animate-pulse group-hover:opacity-30 transition-opacity duration-500" />
-            <h1 className="relative text-6xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-black/80 to-black/20 dark:from-white dark:to-white/40">
+            <h1 className="relative text-6xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-slate-900/90 to-slate-500/60 dark:from-white/95 dark:to-white/50">
                {t("canvas.title")}
             </h1>
          </div>
-         <div className="mt-4 text-sm text-black/60 dark:text-white/40 font-mono flex items-center gap-2">
+         <div className="mt-4 text-sm text-slate-600 dark:text-white/50 font-mono flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
             {t("canvas.subtitle")}
          </div>
@@ -89,7 +89,7 @@ export default function Canvas() {
               <div 
                 className="
                   max-w-[80%] rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm
-                  bg-black text-white dark:bg-white dark:text-black rounded-tr-sm
+                  bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-tr-sm
                 "
               >
                 <MarkdownViewer

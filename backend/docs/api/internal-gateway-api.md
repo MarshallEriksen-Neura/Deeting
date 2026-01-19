@@ -332,6 +332,37 @@ Authorization: Bearer <access_token>
 
 ---
 
+### 5. Conversation Rename
+
+更新会话标题（内部通道）。
+
+**端点**: `PATCH /conversations/{session_id}/title`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 请求体
+
+```json
+{
+  "title": "新的会话标题"
+}
+```
+
+#### 响应体
+
+```json
+{
+  "session_id": "session-xyz",
+  "title": "新的会话标题"
+}
+```
+
+---
+
 ### 2. Embeddings
 
 创建文本嵌入向量。

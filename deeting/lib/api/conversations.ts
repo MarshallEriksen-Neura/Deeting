@@ -57,6 +57,13 @@ export const ConversationArchiveResponseSchema = z.object({
 
 export type ConversationArchiveResponse = z.infer<typeof ConversationArchiveResponseSchema>
 
+export const ConversationRenameResponseSchema = z.object({
+  session_id: z.string(),
+  title: z.string().nullable().optional(),
+})
+
+export type ConversationRenameResponse = z.infer<typeof ConversationRenameResponseSchema>
+
 export type ConversationSessionsQuery = {
   cursor?: string | null
   size?: number
@@ -89,4 +96,16 @@ export async function unarchiveConversation(sessionId: string): Promise<Conversa
     method: "POST",
   })
   return ConversationArchiveResponseSchema.parse(data)
+}
+
+export async function renameConversation(
+  sessionId: string,
+  title: string
+): Promise<ConversationRenameResponse> {
+  const data = await request({
+    url: `${CONVERSATION_BASE}/${sessionId}/title`,
+    method: "PATCH",
+    data: { title },
+  })
+  return ConversationRenameResponseSchema.parse(data)
 }

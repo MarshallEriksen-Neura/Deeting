@@ -1,6 +1,7 @@
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException, status
 from httpx import ASGITransport, AsyncClient
 
 from app.deps.auth import get_current_user
@@ -39,15 +40,17 @@ class _DummyConversationService:
 
 
 class _DummyConversationSession:
-    def __init__(self, session_id: str, status: str):
+    def __init__(self, session_id: str, status: str, title: str | None = None):
         self.id = session_id
         self.status = status
+        self.title = title
 
 
 class _DummyConversationSessionService:
     def __init__(self):
         self.called_with = None
         self.updated = None
+        self.title_updated = None
 
     async def list_user_sessions(self, *args, **kwargs):
         self.called_with = kwargs
@@ -69,6 +72,24 @@ class _DummyConversationSessionService:
     async def update_session_status(self, *, session_id, user_id, status):
         self.updated = {"session_id": session_id, "user_id": user_id, "status": status}
         return _DummyConversationSession(session_id=session_id, status=status)
+
+    async def update_session_title(self, *, session_id, user_id, title):
+        normalized = title.strip()
+        if not normalized:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="title cannot be empty",
+            )
+        self.title_updated = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "title": normalized,
+        }
+        return _DummyConversationSession(
+            session_id=session_id,
+            status="active",
+            title=normalized,
+        )
 
 
 class _DummyOrchestrator:
@@ -163,6 +184,49 @@ async def test_unarchive_conversation(monkeypatch):
             data = resp.json()
             assert data["status"] == "active"
             assert service.updated["status"].value == "active"
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(prev_overrides)
+
+
+@pytest.mark.asyncio
+async def test_rename_conversation(monkeypatch):
+    prev_overrides = _override_auth(monkeypatch)
+    service = _DummyConversationSessionService()
+    app.dependency_overrides[
+        conversation_route.get_conversation_session_service
+    ] = lambda: service
+    session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.patch(
+                f"/api/v1/internal/conversations/{session_id}/title",
+                json={"title": "新标题"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["title"] == "新标题"
+            assert service.title_updated["title"] == "新标题"
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(prev_overrides)
+
+
+@pytest.mark.asyncio
+async def test_rename_conversation_empty_title(monkeypatch):
+    prev_overrides = _override_auth(monkeypatch)
+    service = _DummyConversationSessionService()
+    app.dependency_overrides[
+        conversation_route.get_conversation_session_service
+    ] = lambda: service
+    session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.patch(
+                f"/api/v1/internal/conversations/{session_id}/title",
+                json={"title": "   "},
+            )
+            assert resp.status_code == 400
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(prev_overrides)

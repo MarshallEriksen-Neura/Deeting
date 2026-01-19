@@ -1,8 +1,8 @@
 'use client';
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Check } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
@@ -12,9 +12,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
 export default function DefaultControls() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [showMenu, setShowMenu] = useState(false);
   const [isParamsOpen, setIsParamsOpen] = useState(false);
   const t = useI18n('chat');
@@ -31,6 +40,7 @@ export default function DefaultControls() {
     config,
     setConfig,
     setActiveAssistantId,
+    resetSession,
   } = useChatStore(
     useShallow((state) => ({
       input: state.input,
@@ -43,6 +53,7 @@ export default function DefaultControls() {
       config: state.config,
       setConfig: state.setConfig,
       setActiveAssistantId: state.setActiveAssistantId,
+      resetSession: state.resetSession,
     }))
   );
 
@@ -56,6 +67,21 @@ export default function DefaultControls() {
   
   const handleParamsOpenChange = (open: boolean) => {
     setIsParamsOpen(open);
+  };
+
+  const handleNewChat = () => {
+    resetSession();
+    const params = new URLSearchParams(searchParams?.toString());
+    params.delete("session");
+    const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+    router.replace(url || "/chat");
+  };
+
+  const handleSelectAssistant = (assistantId: string) => {
+    setActiveAssistantId(assistantId);
+    // Update URL to reflect selected agent (optional, depending on routing strategy, but good for deep linking)
+    // If we want to stay on the same page but switch context:
+    router.replace(`/chat/${assistantId}`);
   };
 
   const handleSend = () => {
@@ -86,14 +112,14 @@ export default function DefaultControls() {
   };
 
   return (
-    <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+    <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
       {/* 1. Main Input Area */}
-      <div className="flex items-center rounded-full bg-black/5 dark:bg-white/5 px-3">
+      <div className="flex items-center rounded-full bg-slate-100/80 dark:bg-white/5 px-3">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="h-11 w-full bg-transparent border-0 shadow-none text-black/80 dark:text-white/80 placeholder:text-black/35 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
+          className="h-11 w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
           placeholder={t("controls.placeholder")}
           aria-label={t("controls.placeholder")}
           autoFocus
@@ -114,7 +140,7 @@ export default function DefaultControls() {
               onClick={() => setShowMenu(!showMenu)}
               className={`
                 size-10 rounded-full transition-all duration-300
-                ${showMenu ? 'bg-black text-white dark:bg-white dark:text-black rotate-45' : 'bg-black/5 dark:bg-white/10 text-black/60 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 hover:scale-105'}
+                ${showMenu ? 'bg-slate-900 text-white dark:bg-white dark:text-black rotate-45' : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-white hover:bg-slate-200/70 dark:hover:bg-white/20 hover:scale-105'}
               `}
             >
               <Plus className="w-5 h-5" />
@@ -127,24 +153,24 @@ export default function DefaultControls() {
                   initial={{ opacity: 0, y: 10, scale: 0.9 }}
                   animate={{ opacity: 1, y: -10, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                  className="absolute bottom-full left-0 mb-2 bg-white/80 dark:bg-[#1a1a1a] border border-black/5 dark:border-white/10 rounded-2xl p-2 shadow-xl backdrop-blur-xl flex flex-col gap-1 w-40 z-50 origin-bottom-left"
+                  className="absolute bottom-full left-0 mb-2 bg-white/90 dark:bg-[#1a1a1a] border border-slate-200/70 dark:border-white/10 rounded-2xl p-2 shadow-xl backdrop-blur-xl flex flex-col gap-1 w-40 z-50 origin-bottom-left"
                 >
                   <Link href="/chat/create/image" scroll={false}>
-                    <div className="flex items-center gap-3 p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
+                    <div className="flex items-center gap-3 p-2 hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
                       <div className="w-8 h-8 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-all">
                         <Sparkles className="w-4 h-4" />
                       </div>
-                      <span className="text-sm font-medium text-black/80 dark:text-white/80 group-hover:text-black dark:group-hover:text-white">
+                      <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
                         {t("controls.image")}
                       </span>
                     </div>
                   </Link>
                   <Link href="/chat/coder" scroll={false}>
-                    <div className="flex items-center gap-3 p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
+                    <div className="flex items-center gap-3 p-2 hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
                       <div className="w-8 h-8 rounded-lg bg-green-500/10 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-all">
                         <span className="font-mono text-xs font-bold">{`</>`}</span>
                       </div>
-                      <span className="text-sm font-medium text-black/80 dark:text-white/80 group-hover:text-black dark:group-hover:text-white">
+                      <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
                         {t("controls.code")}
                       </span>
                     </div>
@@ -154,13 +180,25 @@ export default function DefaultControls() {
             </AnimatePresence>
           </div>
 
-          {/* Agent Selector */}
+          {/* New Chat Button */}
+          <Button
+             type="button"
+             variant="ghost"
+             size="icon"
+             onClick={handleNewChat}
+             aria-label={t("header.newChat")}
+             className="size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors"
+          >
+             <MessageSquarePlus className="w-5 h-5" />
+          </Button>
+
+          {/* Agent Selector (Opens Select Agent Modal) */}
           <Button
             asChild
             variant="ghost"
-            className="h-10 rounded-full px-2.5 gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+            className="h-10 rounded-full px-2.5 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors"
           >
-            <Link href="/chat" scroll={false} aria-label={t("hud.selectAgent")}>
+            <Link href="/chat/select-agent" scroll={false} aria-label={t("hud.selectAgent")}>
               <span
                 className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
                   activeAssistant?.color ?? "from-slate-400 to-slate-600"
@@ -168,10 +206,10 @@ export default function DefaultControls() {
               >
                 {(activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
               </span>
-              <span className="text-[12px] font-semibold text-black/70 dark:text-white/70 max-w-[120px] truncate">
+              <span className="text-[12px] font-semibold text-slate-700 dark:text-white/70 max-w-[120px] truncate">
                 {activeAssistant?.name ?? t("hud.selectAgent")}
               </span>
-              <ChevronDown className="w-3.5 h-3.5 text-black/30 dark:text-white/30" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-white/30" />
             </Link>
           </Button>
 
@@ -183,7 +221,7 @@ export default function DefaultControls() {
                 size="icon"
                 aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
                 title={`${t("hud.temperature")} / ${t("hud.topP")}`}
-                className={`size-9 rounded-full bg-black/5 dark:bg-white/5 text-black/60 dark:text-white/70 hover:bg-black/10 dark:hover:bg-white/10 ${isParamsOpen ? "ring-1 ring-indigo-500/30" : ""}`}
+                className={`size-9 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 ${isParamsOpen ? "ring-1 ring-indigo-500/30" : ""}`}
               >
                 <Sliders className="w-4 h-4" />
               </Button>
@@ -191,12 +229,12 @@ export default function DefaultControls() {
             <PopoverContent
               side="top"
               align="end"
-              className="w-72 rounded-2xl border border-black/5 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
+              className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
             >
               <div className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex justify-between items-center px-1">
-                    <label className="text-[10px] font-bold text-black/50 dark:text-white/50 flex items-center gap-1.5">
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
                       {t("hud.temperature")}
                     </label>
                     <span className="text-[10px] font-mono font-bold">{config.temperature}</span>
@@ -212,7 +250,7 @@ export default function DefaultControls() {
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center px-1">
-                    <label className="text-[10px] font-bold text-black/50 dark:text-white/50 flex items-center gap-1.5">
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
                       {t("hud.topP")}
                     </label>
                     <span className="text-[10px] font-mono font-bold">{config.topP}</span>
@@ -238,8 +276,8 @@ export default function DefaultControls() {
             onClick={() => handleSend()}
             disabled={!canSend}
             className={`
-              size-10 rounded-full bg-black text-white dark:bg-white/10 dark:text-white
-              hover:bg-gray-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
+              size-10 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white
+              hover:bg-slate-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
               ${!canSend ? 'opacity-50 cursor-not-allowed' : ''}
             `}
             aria-label={t("controls.send")}
