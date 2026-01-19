@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import select, update
@@ -25,6 +25,7 @@ from app.models.bandit import BanditArmState, BanditStrategy
 from app.models.provider_instance import ProviderModel, ProviderInstance
 from app.models.provider_preset import ProviderPreset
 from app.repositories.base import BaseRepository
+from app.utils.time_utils import Datetime
 
 
 class BanditRepository(BaseRepository[BanditArmState]):
@@ -156,7 +157,7 @@ class BanditRepository(BaseRepository[BanditArmState]):
         fail_threshold = int(rc.get("failure_cooldown_threshold", 5))
         cooldown_seconds = int(rc.get("cooldown_seconds", 60))
         if not success and state.failures >= fail_threshold:
-            state.cooldown_until = datetime.now(UTC) + timedelta(seconds=cooldown_seconds)
+            state.cooldown_until = Datetime.now() + timedelta(seconds=cooldown_seconds)
         elif success:
             state.cooldown_until = None  # 成功后解除冷却
 
@@ -305,4 +306,4 @@ class BanditRepository(BaseRepository[BanditArmState]):
     def in_cooldown(state: BanditArmState | None) -> bool:
         if not state or not state.cooldown_until:
             return False
-        return state.cooldown_until > datetime.now(UTC)
+        return state.cooldown_until > Datetime.now()

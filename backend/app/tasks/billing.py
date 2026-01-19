@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 import redis
@@ -12,6 +11,7 @@ from app.core.config import settings
 from app.core.db_sync import get_sync_db
 from app.core.logging import logger
 from app.models.api_key import ApiKeyQuota, ApiKeyUsage, QuotaType
+from app.utils.time_utils import Datetime
 
 
 @celery_app.task(name="app.tasks.billing.record_usage")
@@ -31,7 +31,7 @@ def record_usage_task(usage_data: dict[str, Any]) -> str:
 
     db: Session = next(get_sync_db())
     try:
-        now = datetime.now(timezone.utc)
+        now = Datetime.now()
         stat_date = now.date()
         stat_hour = now.hour
 

@@ -41,6 +41,7 @@ from app.schemas.api_key import (
 )
 from app.schemas.auth import MessageResponse
 from app.services.providers.api_key import ApiKeyService
+from app.utils.time_utils import Datetime
 
 router = APIRouter(prefix="/admin/api-keys", tags=["Admin - API Keys"])
 
@@ -296,7 +297,7 @@ async def rotate_api_key(
             detail="API Key not found",
         )
 
-    old_key_expires_at = datetime.utcnow() + timedelta(hours=grace_period_hours)
+    old_key_expires_at = Datetime.utcnow() + timedelta(hours=grace_period_hours)
 
     return ApiKeyRotateResponse(
         new_key=ApiKeyRead.model_validate(new_key),

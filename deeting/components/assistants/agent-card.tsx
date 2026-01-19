@@ -16,7 +16,7 @@ import type { AssistantCardData } from "./types"
 
 interface AgentCardProps {
   agent: AssistantCardData
-  onInstall?: (assistantId: string) => Promise<void>
+  onInstall?: (assistantId: string, options?: { followLatest?: boolean }) => Promise<void>
   onPreview?: (assistantId: string, message: string) => Promise<string>
 }
 

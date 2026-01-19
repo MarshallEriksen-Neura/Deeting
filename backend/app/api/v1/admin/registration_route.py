@@ -6,7 +6,6 @@
 - 查询当前有效窗口
 - 手动关闭窗口
 """
-from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,6 +22,7 @@ from app.services.users.registration_window_service import (
     create_registration_window,
     get_active_registration_window,
 )
+from app.utils.time_utils import Datetime
 
 router = APIRouter(prefix="/admin/registration", tags=["Admin - Registration"])
 
@@ -54,7 +54,7 @@ async def create_window(
 async def active_window(
     db: AsyncSession = Depends(get_db),
 ):
-    window = await get_active_registration_window(db, now=datetime.now())
+    window = await get_active_registration_window(db, now=Datetime.now())
     if not window:
         return None
     return window

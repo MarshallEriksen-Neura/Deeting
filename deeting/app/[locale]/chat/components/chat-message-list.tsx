@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { ArrowDown, ArrowUp, User } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -11,6 +12,7 @@ import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { normalizeMessage } from "@/lib/chat/message-normalizer"
 import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
+import type { ChatImageAttachment } from "@/lib/chat/message-content"
 
 interface ChatMessageListProps {
   messages: Message[]
@@ -37,6 +39,7 @@ export function ChatMessageList({
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false)
   const [showScrollToTop, setShowScrollToTop] = React.useState(false)
   const [autoScrollEnabled, setAutoScrollEnabled] = React.useState(true)
+  const imageAlt = t("input.image.alt")
   const lastAssistantId = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i]?.role === "assistant") return messages[i]?.id
@@ -120,12 +123,20 @@ export function ChatMessageList({
                   statusMeta={msg.id === activeAssistantId ? statusMeta : null}
                   reveal={!isTyping && !streamEnabled && msg.id === lastAssistantId}
                 />
+                {msg.attachments?.length ? (
+                  <MessageAttachments attachments={msg.attachments} alt={imageAlt} />
+                ) : null}
                 <div className="text-[10px] mt-1 opacity-70 text-muted-foreground text-left ml-1">
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
             ) : (
               <div className="relative max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm bg-primary text-primary-foreground rounded-tr-sm">
+                {msg.attachments?.length ? (
+                  <div className="mb-3">
+                    <MessageAttachments attachments={msg.attachments} variant="user" alt={imageAlt} />
+                  </div>
+                ) : null}
                 <MarkdownViewer
                   content={msg.content}
                   className="chat-markdown chat-markdown-user"
@@ -190,6 +201,48 @@ export function ChatMessageList({
           </Button>
         )}
       </div>
+    </div>
+  )
+}
+
+function MessageAttachments({
+  attachments,
+  variant = "assistant",
+  alt,
+}: {
+  attachments: ChatImageAttachment[]
+  variant?: "assistant" | "user"
+  alt: string
+}) {
+  if (!attachments.length) return null
+  const gridCols = attachments.length > 2 ? "grid-cols-3" : "grid-cols-2"
+  const cardBg = variant === "user" ? "bg-white/10" : "bg-muted/40"
+
+  return (
+    <div className={cn("grid gap-2", gridCols)}>
+      {attachments.map((attachment) => (
+        <div
+          key={attachment.id}
+          className={cn(
+            "relative overflow-hidden rounded-xl border border-white/10 shadow-sm",
+            cardBg
+          )}
+        >
+          <Image
+            src={attachment.url}
+            alt={attachment.name ?? alt}
+            width={320}
+            height={320}
+            className="h-28 w-full object-cover"
+            unoptimized
+          />
+          <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
+            <span className="truncate">
+              {attachment.name ?? alt}
+            </span>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

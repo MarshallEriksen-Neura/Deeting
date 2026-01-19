@@ -64,6 +64,7 @@ from app.models.api_key import (
     ScopeType,
 )
 from app.repositories.api_key import ApiKeyRepository
+from app.utils.time_utils import Datetime
 
 # ============================================================
 # 数据传输对象
@@ -304,7 +305,7 @@ class ApiKeyService:
         obj = await self.repository.get_by_key_hash(key_hash)
         if not obj or obj.status != ApiKeyStatus.ACTIVE:
             return None
-        if obj.expires_at and obj.expires_at < datetime.utcnow():
+        if obj.expires_at and obj.expires_at < Datetime.utcnow():
             return None
 
         scopes = [f"{s.scope_type}:{s.scope_value}" for s in obj.scopes]
@@ -480,7 +481,7 @@ class ApiKeyService:
             return RateLimitResult(
                 allowed=True,
                 remaining=-1,
-                reset_at=datetime.utcnow() + timedelta(minutes=1),
+                reset_at=Datetime.utcnow() + timedelta(minutes=1),
                 limit=-1,
                 retry_after=None,
             )
@@ -491,7 +492,7 @@ class ApiKeyService:
         return RateLimitResult(
             allowed=True,
             remaining=limit,
-            reset_at=datetime.utcnow() + timedelta(minutes=1),
+            reset_at=Datetime.utcnow() + timedelta(minutes=1),
             limit=limit,
             retry_after=None,
         )
@@ -679,7 +680,7 @@ class ApiKeyService:
             return None, None, None
 
         # 1. 更新旧 Key 状态
-        old_expires_at = datetime.utcnow() + timedelta(hours=grace_period_hours)
+        old_expires_at = Datetime.utcnow() + timedelta(hours=grace_period_hours)
         await self.repository.update(api_key_id, {
             "status": ApiKeyStatus.EXPIRING,
             "expires_at": old_expires_at,
@@ -789,7 +790,7 @@ class ApiKeyService:
         # 更新状态
         await self.repository.update(api_key_id, {
             "status": ApiKeyStatus.REVOKED,
-            "revoked_at": datetime.utcnow(),
+            "revoked_at": Datetime.utcnow(),
             "revoked_reason": reason,
         })
         await self.repository.session.commit()
@@ -935,7 +936,7 @@ class ApiKeyService:
         for key in keys:
             await self.repository.update(key.id, {
                 "status": ApiKeyStatus.REVOKED,
-                "revoked_at": datetime.utcnow(),
+                "revoked_at": Datetime.utcnow(),
                 "revoked_reason": reason,
             })
             await self._invalidate_cache(key.key_hash)
@@ -960,7 +961,7 @@ class ApiKeyService:
         for key in keys:
             await self.repository.update(key.id, {
                 "status": ApiKeyStatus.REVOKED,
-                "revoked_at": datetime.utcnow(),
+                "revoked_at": Datetime.utcnow(),
                 "revoked_reason": reason,
             })
             await self._invalidate_cache(key.key_hash)

@@ -24,8 +24,15 @@
 ## 安装助手
 
 - `POST /assistants/{assistant_id}/install`
+- Body（可选）：
+  ```json
+  {
+    "follow_latest": true,
+    "pinned_version_id": null
+  }
+  ```
 - 响应：`AssistantInstallItem`
-- 说明：仅允许安装市场可见助手或自己创建的助手。
+- 说明：仅允许安装市场可见助手或自己创建的助手；当 `follow_latest=false` 时会锁定当前版本（或指定 `pinned_version_id`）。
 
 ## 卸载助手
 
@@ -61,7 +68,26 @@
 
 - `PATCH /assistants/{assistant_id}`
 - Body：`AssistantUpdate`
+  - 新增字段 `version`：用于创建新版本（发布版本不可变）。
+    ```json
+    {
+      "summary": "更简短的简介",
+      "icon_id": "lucide:bot",
+      "version": {
+        "name": "新版本名称",
+        "description": "更新说明",
+        "system_prompt": "新的系统提示词",
+        "tags": ["Python", "Debug"]
+      }
+    }
+    ```
 - 响应：`AssistantDTO`
+
+## 删除自定义助手
+
+- `DELETE /assistants/{assistant_id}`
+- 响应：`MessageResponse`
+- 说明：若助手已被安装，将执行“归档”而非硬删除（对已安装用户不产生影响）；未被安装时才会真正删除。
 
 ## 列出我创建的助手
 
@@ -117,3 +143,4 @@
 变更记录
 - 2026-01-15：新增助手市场/安装/提交审核/评分/标签列表/体验预览 API；提交审核默认自动审核。
 - 2026-01-17：创建助手支持 `share_to_market`，可在创建时自动提交审核。
+- 2026-01-19：安装支持 `follow_latest`；更新助手支持创建新版本；删除已安装助手改为归档。

@@ -7,6 +7,7 @@ import { useChatService } from "@/hooks/use-chat-service"
 import { useI18n } from "@/hooks/use-i18n"
 import { useMarketStore } from "@/store/market-store"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
+import { parseMessageContent } from "@/lib/chat/message-content"
 
 interface ChatControllerProps {
   agentId: string
@@ -166,7 +167,13 @@ export function ChatController({ agentId }: ChatControllerProps) {
             const mapped = rawMessages.map((msg, index) => ({
               id: `${storedSessionId}-${msg.turn_index ?? index}`,
               role: (msg.role === "assistant" ? "assistant" : "user") as 'user' | 'assistant',
-              content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? ""),
+              ...(() => {
+                const parsed = parseMessageContent(msg.content)
+                return {
+                  content: parsed.text,
+                  attachments: parsed.attachments.length ? parsed.attachments : undefined,
+                }
+              })(),
               createdAt: Date.now() - (total - index) * 1000,
             }))
             if (mapped.length > 0) {
@@ -205,10 +212,12 @@ export function ChatController({ agentId }: ChatControllerProps) {
           setMessages(
             records.map((record) => {
               const parsed = Date.parse(record.created_at)
+              const parsedContent = parseMessageContent(record.content)
               return {
                 id: record.id,
                 role: (record.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-                content: record.content,
+                content: parsedContent.text,
+                attachments: parsedContent.attachments.length ? parsedContent.attachments : undefined,
                 createdAt: Number.isNaN(parsed) ? Date.now() : parsed
               }
             })

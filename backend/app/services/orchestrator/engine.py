@@ -222,12 +222,17 @@ class OrchestrationEngine:
                 if not executable:
                     continue
 
-                # 并行执行同层步骤
-                tasks = [
-                    self._execute_step(self.steps[name], ctx, result)
-                    for name in executable
-                ]
-                await asyncio.gather(*tasks)
+                if ctx.db_session is None and len(executable) > 1:
+                    # 并行执行同层步骤（无共享 DB Session 时）
+                    tasks = [
+                        self._execute_step(self.steps[name], ctx, result)
+                        for name in executable
+                    ]
+                    await asyncio.gather(*tasks)
+                else:
+                    # 共享 AsyncSession 时串行，避免并发访问同一 Session
+                    for name in executable:
+                        await self._execute_step(self.steps[name], ctx, result)
 
                 # 检查是否有步骤失败导致中止
                 for step_name in executable:

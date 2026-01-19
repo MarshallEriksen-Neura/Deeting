@@ -8,6 +8,7 @@ from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
+from app.utils.time_utils import Datetime
 
 from .base import BaseRepository
 
@@ -143,9 +144,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
 
     async def upsert_for_instance(self, instance_id: uuid.UUID, models_data: list[dict]) -> list[ProviderModel]:
         """批量 Upsert 模型列表：按 instance_id + capability + model_id + upstream_path 唯一键判断。"""
-        from datetime import datetime
-
-        now = datetime.utcnow()
+        now = Datetime.utcnow()
         results: list[ProviderModel] = []
 
         for payload in models_data:
@@ -198,9 +197,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         - 跳过 source=manual 的记录
         - 可选择保护用户自定义字段
         """
-        from datetime import datetime
-
-        now = datetime.utcnow()
+        now = Datetime.utcnow()
         results: list[ProviderModel] = []
 
         protected_fields = {

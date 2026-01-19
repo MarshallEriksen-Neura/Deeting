@@ -2,7 +2,6 @@ import uuid
 import httpx
 import time
 import json
-from datetime import datetime
 from typing import Iterable, List, Dict, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +23,7 @@ from app.services.providers.upstream_url import (
     build_upstream_url,
     build_upstream_url_with_params,
 )
+from app.utils.time_utils import Datetime
 
 
 class ProviderInstanceService:
@@ -351,7 +351,7 @@ class ProviderInstanceService:
                 return "audio/transcriptions"
             return "chat/completions"
 
-        now = datetime.utcnow()
+        now = Datetime.utcnow()
         for m in models:
             raw_model_id = extract_model_id(m)
             if not raw_model_id:

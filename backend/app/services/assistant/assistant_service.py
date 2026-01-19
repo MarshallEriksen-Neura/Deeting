@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import UUID
 
 from app.models.assistant import Assistant, AssistantStatus, AssistantVisibility
@@ -148,6 +149,12 @@ class AssistantService:
             update_data["status"] = assistant.status
             update_data["published_at"] = assistant.published_at
 
+        if payload.version is not None:
+            version_payload = await self._prepare_version_payload(assistant, payload.version)
+            version = await self._create_version_internal(assistant_id, version_payload)
+            await self.tag_service.sync_assistant_tags(assistant_id, version.tags)
+            update_data["current_version_id"] = version.id
+
         assistant = await self.assistant_repo.update(assistant, update_data)
         return assistant
 
@@ -217,6 +224,37 @@ class AssistantService:
         return version
 
     # ===== 内部工具 =====
+    @staticmethod
+    def _bump_semver(version: str) -> str:
+        match = re.match(r"^(\\d+)\\.(\\d+)\\.(\\d+)$", version)
+        if not match:
+            return "0.1.0"
+        major, minor, patch = (int(part) for part in match.groups())
+        return f"{major}.{minor}.{patch + 1}"
+
+    async def _prepare_version_payload(
+        self,
+        assistant: Assistant,
+        payload: AssistantVersionCreate,
+    ) -> AssistantVersionCreate:
+        candidate_version = payload.version if "version" in payload.model_fields_set else None
+        if candidate_version:
+            existing = await self.version_repo.get_by_semver(assistant.id, candidate_version)
+            if not existing:
+                return payload
+
+        base_version = "0.1.0"
+        if assistant.current_version_id:
+            current = await self.version_repo.get_for_assistant(assistant.id, assistant.current_version_id)
+            if current and current.version:
+                base_version = current.version
+
+        next_version = self._bump_semver(base_version)
+        while await self.version_repo.get_by_semver(assistant.id, next_version):
+            next_version = self._bump_semver(next_version)
+
+        return payload.model_copy(update={"version": next_version})
+
     async def _create_version_internal(
         self,
         assistant_id: UUID,

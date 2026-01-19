@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { CreateAgentModal } from '@/components/assistants/create-agent-modal';
 import { useMarketStore } from '@/store/market-store';
 import { useChatService } from '@/hooks/use-chat-service';
+import { useUserProfile } from '@/hooks/use-user';
 
 export function SelectAgentContainer() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export function SelectAgentContainer() {
   const localAssistants = useMarketStore((state) => state.localAssistants);
   const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants);
   const loaded = useMarketStore((state) => state.loaded);
+  const { profile } = useUserProfile();
   const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
   const { assistants: cloudAssistants } = useChatService({ enabled: !isTauri });
 
@@ -37,6 +39,7 @@ export function SelectAgentContainer() {
         icon: "lucide:bot",
         tags: [],
         author: "system",
+        ownerUserId: assistant.ownerUserId,
         installs: "",
         rating: 0,
         color: assistant.color,
@@ -46,7 +49,6 @@ export function SelectAgentContainer() {
   );
 
   const displayAgents = isTauri ? installedAgents : cloudAgents;
-  const showLocalEdit = isTauri;
 
   const handleSelectAgent = React.useCallback(
     (assistantId: string) => {
@@ -87,6 +89,10 @@ export function SelectAgentContainer() {
           />
           {displayAgents.map((agent) => {
             const record = assistantMap.get(agent.id);
+            // In Cloud mode, allow editing if current user is the owner
+            const canEdit =
+              isTauri || (agent.ownerUserId && profile?.id && agent.ownerUserId === profile.id);
+
             return (
               <AgentCard
                 key={agent.id}
@@ -95,9 +101,9 @@ export function SelectAgentContainer() {
                 desc={record?.description ?? agent.desc ?? ''}
                 onClick={() => handleSelectAgent(agent.id)}
                 action={
-                  showLocalEdit ? (
+                  canEdit ? (
                     <CreateAgentModal
-                      mode="local"
+                      mode={isTauri ? "local" : "cloud"}
                       assistant={{
                         id: agent.id,
                         name: agent.name,
@@ -108,9 +114,11 @@ export function SelectAgentContainer() {
                         color: agent.color,
                       }}
                       onUpdated={(assistantId) => {
+                        // Refresh logic or just select it
                         handleSelectAgent(assistantId);
                       }}
                       onDeleted={() => {
+                        // In cloud mode we might need to refresh SWR or store
                         router.replace("/chat");
                       }}
                       trigger={

@@ -3,6 +3,11 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { streamChatCompletion, type ChatMessage } from "@/lib/api/chat";
+import {
+  buildMessageContent,
+  parseMessageContent,
+  type ChatImageAttachment,
+} from "@/lib/chat/message-content";
 import { fetchConversationWindow } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
 
@@ -12,6 +17,7 @@ export interface Message {
   id: string;
   role: MessageRole;
   content: string;
+  attachments?: ChatImageAttachment[];
   createdAt: number;
 }
 
@@ -21,6 +27,7 @@ export interface ChatAssistant {
   desc: string;
   color: string;
   systemPrompt?: string;
+  ownerUserId?: string | null;
 }
 
 const SESSION_STORAGE_PREFIX = "deeting-chat-session";
@@ -56,7 +63,10 @@ function createMessageId() {
 function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessage[] {
   const mapped = history.map((msg) => ({
     role: msg.role,
-    content: msg.content,
+    content: buildMessageContent(
+      msg.content,
+      msg.role === "user" ? msg.attachments ?? [] : []
+    ),
   })) as ChatMessage[];
 
   const trimmedPrompt = systemPrompt?.trim();
@@ -70,12 +80,16 @@ function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessa
 function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
   const filtered = rawMessages.filter((msg) => msg.role === "user" || msg.role === "assistant");
   const total = filtered.length;
-  return filtered.map((msg, index) => ({
-    id: `conv-${msg.turn_index ?? index}`,
-    role: (msg.role === "assistant" ? "assistant" : "user") as MessageRole,
-    content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? ""),
-    createdAt: Date.now() - (total - index) * 1000,
-  }));
+  return filtered.map((msg, index) => {
+    const parsed = parseMessageContent(msg.content);
+    return {
+      id: `conv-${msg.turn_index ?? index}`,
+      role: (msg.role === "assistant" ? "assistant" : "user") as MessageRole,
+      content: parsed.text,
+      attachments: parsed.attachments.length ? parsed.attachments : undefined,
+      createdAt: Date.now() - (total - index) * 1000,
+    };
+  });
 }
 
 interface ChatConfig {
@@ -87,6 +101,7 @@ interface ChatConfig {
 
 interface ChatState {
   input: string;
+  attachments: ChatImageAttachment[];
   messages: Message[];
   isLoading: boolean;
   config: ChatConfig;
@@ -105,6 +120,10 @@ interface ChatState {
 
 interface ChatActions {
   setInput: (input: string) => void;
+  setAttachments: (attachments: ChatImageAttachment[]) => void;
+  addAttachments: (attachments: ChatImageAttachment[]) => void;
+  removeAttachment: (attachmentId: string) => void;
+  clearAttachments: () => void;
   setConfig: (config: Partial<ChatConfig>) => void;
   setAssistants: (assistants: ChatAssistant[]) => void;
   setModels: (models: ModelInfo[]) => void;
@@ -114,7 +133,7 @@ interface ChatActions {
   setErrorMessage: (error: string | null) => void;
   setMessages: (messages: Message[]) => void;
   updateMessage: (id: string, content: string) => void;
-  addMessage: (role: MessageRole, content: string) => void;
+  addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void;
   clearMessages: () => void;
   resetSession: () => void;
   loadHistory: (assistantId?: string) => Promise<void>;
@@ -126,6 +145,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
   persist(
     (set, get) => ({
       input: "",
+      attachments: [],
       messages: [],
       isLoading: false,
       config: {
@@ -148,6 +168,20 @@ export const useChatStore = create<ChatState & ChatActions>()(
 
       setInput: (input) => set({ input }),
 
+      setAttachments: (attachments) => set({ attachments }),
+
+      addAttachments: (attachments) =>
+        set((state) => ({
+          attachments: [...state.attachments, ...attachments],
+        })),
+
+      removeAttachment: (attachmentId) =>
+        set((state) => ({
+          attachments: state.attachments.filter((attachment) => attachment.id !== attachmentId),
+        })),
+
+      clearAttachments: () => set({ attachments: [] }),
+
       setConfig: (newConfig) => set((state) => ({ config: { ...state.config, ...newConfig } })),
 
       setAssistants: (assistants) => set({ assistants }),
@@ -169,11 +203,12 @@ export const useChatStore = create<ChatState & ChatActions>()(
           messages: state.messages.map((msg) => (msg.id === id ? { ...msg, content } : msg)),
         })),
 
-      addMessage: (role, content) => {
+      addMessage: (role, content, attachments) => {
         const newMessage: Message = {
           id: createMessageId(),
           role,
           content,
+          attachments,
           createdAt: Date.now(),
         };
         set((state) => ({ messages: [...state.messages, newMessage] }));
@@ -186,7 +221,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
         if (typeof window !== "undefined" && activeAssistantId) {
           localStorage.removeItem(sessionKeyForAssistant(activeAssistantId));
         }
-        set({ messages: [], sessionId: undefined });
+        set({ messages: [], sessionId: undefined, attachments: [] });
       },
 
       loadHistory: async (assistantId) => {
@@ -224,6 +259,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
       sendMessage: async () => {
         const {
           input,
+          attachments,
           messages,
           config,
           models,
@@ -235,7 +271,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
           setSessionId,
         } = get();
         const trimmedInput = input.trim();
-        if (!trimmedInput) return;
+        if (!trimmedInput && attachments.length === 0) return;
 
         const selectedModel =
           models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
@@ -247,6 +283,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
           id: createMessageId(),
           role: "user",
           content: trimmedInput,
+          attachments: attachments.length ? attachments : undefined,
           createdAt: Date.now(),
         };
         const assistantMessageId = createMessageId();
@@ -260,6 +297,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
         set((state) => ({
           messages: [...state.messages, userMessage, assistantMessage],
           input: "",
+          attachments: [],
           isLoading: true,
           statusStage: null,
           statusStep: null,
@@ -346,7 +384,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
       name: "deeting-chat-store",
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
-        messages: state.messages,
+        messages: state.messages.map(({ attachments, ...rest }) => rest),
         config: state.config,
         activeAssistantId: state.activeAssistantId,
         streamEnabled: state.streamEnabled,

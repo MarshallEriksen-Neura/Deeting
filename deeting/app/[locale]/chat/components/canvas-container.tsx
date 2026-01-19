@@ -6,6 +6,8 @@ import { useI18n } from '@/hooks/use-i18n';
 import { AIResponseBubble } from './ai-response-bubble';
 import { MarkdownViewer } from '@/components/chat/markdown-viewer';
 import { normalizeMessage } from '@/lib/chat/message-normalizer';
+import Image from 'next/image';
+import type { ChatImageAttachment } from '@/lib/chat/message-content';
 
 export default function Canvas() {
   const t = useI18n('chat');
@@ -71,15 +73,20 @@ export default function Canvas() {
           if (msg.role === 'assistant') {
             return (
               <div key={msg.id} className="flex justify-start w-full">
-                <AIResponseBubble
-                  parts={normalizeMessage(msg.content)}
-                  isActive={isActive}
-                  streamEnabled={streamEnabled}
-                  statusStage={isActive ? statusStage : null}
-                  statusCode={isActive ? statusCode : null}
-                  statusMeta={isActive ? statusMeta : null}
-                  reveal={!isLoading && !streamEnabled && isLastAssistant}
-                />
+                <div className="flex flex-col gap-3 max-w-[80%]">
+                  <AIResponseBubble
+                    parts={normalizeMessage(msg.content)}
+                    isActive={isActive}
+                    streamEnabled={streamEnabled}
+                    statusStage={isActive ? statusStage : null}
+                    statusCode={isActive ? statusCode : null}
+                    statusMeta={isActive ? statusMeta : null}
+                    reveal={!isLoading && !streamEnabled && isLastAssistant}
+                  />
+                  {msg.attachments?.length ? (
+                    <MessageAttachments attachments={msg.attachments} alt={t("input.image.alt")} />
+                  ) : null}
+                </div>
               </div>
             );
           }
@@ -92,6 +99,11 @@ export default function Canvas() {
                   bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-tr-sm
                 "
               >
+                {msg.attachments?.length ? (
+                  <div className="mb-3">
+                    <MessageAttachments attachments={msg.attachments} variant="user" alt={t("input.image.alt")} />
+                  </div>
+                ) : null}
                 <MarkdownViewer
                   content={msg.content}
                   className="chat-markdown chat-markdown-user"
@@ -117,6 +129,44 @@ export default function Canvas() {
 
         <div ref={messagesEndRef} />
       </div>
+    </div>
+  );
+}
+
+function MessageAttachments({
+  attachments,
+  alt,
+  variant = "assistant",
+}: {
+  attachments: ChatImageAttachment[]
+  alt: string
+  variant?: "assistant" | "user"
+}) {
+  const gridCols = attachments.length > 2 ? "grid-cols-3" : "grid-cols-2";
+  const cardBg = variant === "user" ? "bg-white/10" : "bg-white/70 dark:bg-white/5";
+
+  return (
+    <div className={`grid gap-2 ${gridCols}`}>
+      {attachments.map((attachment) => (
+        <div
+          key={attachment.id}
+          className={`relative overflow-hidden rounded-xl border border-white/10 shadow-sm ${cardBg}`}
+        >
+          <Image
+            src={attachment.url}
+            alt={attachment.name ?? alt}
+            width={280}
+            height={280}
+            className="h-24 w-full object-cover"
+            unoptimized
+          />
+          <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
+            <span className="truncate">
+              {attachment.name ?? alt}
+            </span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

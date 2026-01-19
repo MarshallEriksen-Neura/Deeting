@@ -37,6 +37,7 @@ export type ChatAssistant = {
   desc: string
   color: string
   systemPrompt?: string
+  ownerUserId?: string | null
 }
 
 function mapInstallToAssistant(item: AssistantInstallItem): ChatAssistant {
@@ -48,6 +49,7 @@ function mapInstallToAssistant(item: AssistantInstallItem): ChatAssistant {
     desc: version?.description || item.assistant.summary || "",
     color,
     systemPrompt: version?.system_prompt ?? undefined,
+    ownerUserId: item.assistant.owner_user_id,
   }
 }
 

@@ -1,8 +1,9 @@
 import { openApiSSE, request } from "@/lib/http"
+import type { ChatMessageContent } from "@/lib/chat/message-content"
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant"
-  content: string
+  content: ChatMessageContent
 }
 
 export type ChatCompletionRequest = {

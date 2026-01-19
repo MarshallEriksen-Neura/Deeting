@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
+from app.utils.time_utils import Datetime
 
 
 class HelloWorldPlugin(AgentPlugin):
@@ -72,7 +71,7 @@ class HelloWorldPlugin(AgentPlugin):
     # --- Tool Handlers ---
 
     async def handle_get_current_system_time(self) -> str:
-        return datetime.now().isoformat()
+        return Datetime.now().isoformat()
 
     async def handle_echo_user_message(self, message: str) -> str:
         return f"Hello! You said: {message}"

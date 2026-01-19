@@ -31,6 +31,7 @@ from app.repositories import (
 from app.schemas import (
     AssistantCreate,
     AssistantDTO,
+    AssistantInstallCreate,
     AssistantInstallItem,
     AssistantInstallUpdate,
     AssistantListResponse,
@@ -188,11 +189,16 @@ async def list_installed_assistants(
 @router.post("/{assistant_id}/install", response_model=AssistantInstallItem)
 async def install_assistant(
     assistant_id: UUID,
+    payload: AssistantInstallCreate | None = None,
     current_user: User = Depends(get_current_user),
     service: AssistantMarketService = Depends(get_market_service),
 ) -> AssistantInstallItem:
     try:
-        return await service.install_assistant(user_id=current_user.id, assistant_id=assistant_id)
+        return await service.install_assistant(
+            user_id=current_user.id,
+            assistant_id=assistant_id,
+            payload=payload,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -364,6 +370,34 @@ async def update_custom_assistant(
         return AssistantDTO.model_validate(assistant)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.delete("/{assistant_id}", response_model=MessageResponse)
+async def delete_custom_assistant(
+    assistant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    service: AssistantService = Depends(get_assistant_service),
+) -> MessageResponse:
+    assistant = await service.assistant_repo.get(assistant_id)
+    if not assistant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="assistant not found")
+    if assistant.owner_user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+
+    install_repo = AssistantInstallRepository(service.assistant_repo.session)
+    install_count = await install_repo.count_by_assistant(assistant_id)
+    if install_count > 0:
+        await service.update_assistant(
+            assistant_id,
+            AssistantUpdate(
+                status=AssistantStatus.ARCHIVED,
+                visibility=AssistantVisibility.PRIVATE,
+            ),
+        )
+        return MessageResponse(message="assistant archived")
+
+    await service.assistant_repo.delete(assistant_id)
+    return MessageResponse(message="assistant deleted")
 
 
 @router.get("/owned", response_model=AssistantListResponse)

@@ -51,7 +51,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { createAssistant } from "@/lib/api"
+import { createAssistant, updateAssistant, deleteAssistant as deleteCloudAssistant } from "@/lib/api"
 import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
 import { cn } from "@/lib/utils"
 import { useMarketStore } from "@/store/market-store"
@@ -86,6 +86,7 @@ interface EditableAssistant {
   tags: string[]
   iconId: string
   color?: string
+  visibility?: string
 }
 
 interface CreateAgentModalProps {
@@ -163,7 +164,7 @@ export function CreateAgentModal({
       tags: assistant?.tags?.map(stripTagPrefix) ?? [],
       iconId: assistant?.iconId ?? "lucide:bot",
       color: assistant?.color ?? "from-blue-500 to-cyan-500",
-      shareToMarket: false,
+      shareToMarket: assistant?.visibility === "public",
     }),
     [assistant, stripTagPrefix]
   )
@@ -220,20 +221,35 @@ export function CreateAgentModal({
         }
       } else {
         const shareToMarket = Boolean(values.shareToMarket)
-        const created = await createAssistant({
-          visibility: shareToMarket ? "public" : "private",
-          status: shareToMarket ? "published" : "draft",
-          summary: desc ? desc.slice(0, 200) : null,
-          icon_id: values.iconId,
-          share_to_market: shareToMarket,
-          version: {
-            name: values.name,
-            description: desc || null,
-            system_prompt: values.systemPrompt,
-            tags: tagsArray,
-          },
-        })
-        createdId = created?.id
+        if (assistant) {
+          await updateAssistant(assistant.id, {
+            visibility: shareToMarket ? "public" : "private",
+            status: shareToMarket ? "published" : "draft",
+            summary: desc ? desc.slice(0, 200) : null,
+            icon_id: values.iconId,
+            version: {
+              name: values.name,
+              description: desc || null,
+              system_prompt: values.systemPrompt,
+              tags: tagsArray,
+            },
+          })
+        } else {
+          const created = await createAssistant({
+            visibility: shareToMarket ? "public" : "private",
+            status: shareToMarket ? "published" : "draft",
+            summary: desc ? desc.slice(0, 200) : null,
+            icon_id: values.iconId,
+            share_to_market: shareToMarket,
+            version: {
+              name: values.name,
+              description: desc || null,
+              system_prompt: values.systemPrompt,
+              tags: tagsArray,
+            },
+          })
+          createdId = created?.id
+        }
       }
 
       if (assistant) {
@@ -265,7 +281,11 @@ export function CreateAgentModal({
     if (!assistant) return
     try {
       setIsDeleting(true)
-      await deleteLocalAssistant(assistant.id)
+      if (mode === "local") {
+        await deleteLocalAssistant(assistant.id)
+      } else {
+        await deleteCloudAssistant(assistant.id)
+      }
       toast.success(t("toast.assistantDeletedTitle"), {
         description: t("toast.assistantDeletedDesc", { name: assistant.name }),
       })

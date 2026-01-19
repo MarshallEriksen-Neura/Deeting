@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { DialogContent } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 import { previewAssistant } from "@/lib/api"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -16,7 +18,7 @@ import type { AssistantCardData } from "./types"
 
 interface AgentModalContentProps {
   agent: AssistantCardData
-  onInstall?: (assistantId: string) => Promise<void>
+  onInstall?: (assistantId: string, options?: { followLatest?: boolean }) => Promise<void>
   onPreview?: (assistantId: string, message: string) => Promise<string>
 }
 
@@ -36,6 +38,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
   const isInstalled = agent.installed
   const [inputValue, setInputValue] = React.useState("")
   const [isSending, setIsSending] = React.useState(false)
+  const [followLatest, setFollowLatest] = React.useState(true)
   const Icon = getIconComponent(agent.iconId || "lucide:bot")
   const isImageIcon = Boolean(
     agent.iconId && (agent.iconId.startsWith("http") || agent.iconId.startsWith("data:"))
@@ -51,6 +54,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
   React.useEffect(() => {
     setMessages([{ role: "assistant", content: greeting }])
     setInputValue("")
+    setFollowLatest(true)
   }, [agent.id, greeting])
 
   const handleSendMessage = async () => {
@@ -84,7 +88,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
   const handleInstall = async () => {
     if (isInstalled || !onInstall) return
     try {
-      await onInstall(agent.id)
+      await onInstall(agent.id, { followLatest })
       toast.success(t("toast.installedTitle", { name: agent.name }), {
         description: t("toast.installedDesc"),
         icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
@@ -117,6 +121,21 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
                     #{tag}
                   </span>
                 ))}
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg border bg-background/70 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">{t("modal.followLatestLabel")}</Label>
+                  <p className="text-xs text-muted-foreground">{t("modal.followLatestDesc")}</p>
+                </div>
+                <Switch
+                  checked={followLatest}
+                  onCheckedChange={setFollowLatest}
+                  aria-label={t("modal.followLatestLabel")}
+                  disabled={isInstalled || !onInstall}
+                />
               </div>
             </div>
 

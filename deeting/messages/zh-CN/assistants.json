@@ -6,6 +6,10 @@
         "titleHighlight": "数字伙伴",
         "subtitle": "不仅仅是 Prompt，而是具有独特人格和技能的智能体"
       },
+      "installed": {
+        "title": "已安装",
+        "subtitle": "管理已安装助手的更新策略"
+      },
       "search": {
         "placeholder": "搜索助手能力 (e.g. Python, 写作...)"
       }
@@ -36,6 +40,10 @@
       "assistantUpdatedDesc": "{name} 已更新。",
       "assistantDeletedTitle": "助手已删除",
       "assistantDeletedDesc": "{name} 已删除。",
+      "followLatestUpdatedTitle": "更新成功",
+      "followLatestUpdatedDesc": "已更新跟随策略。",
+      "followLatestUpdateFailedTitle": "更新失败",
+      "followLatestUpdateFailedDesc": "请稍后重试",
       "createFailedTitle": "创建失败",
       "createFailedDesc": "请稍后重试或检查输入内容",
       "deleteFailedTitle": "删除失败",
@@ -45,6 +53,8 @@
       "tagsTitle": "能力标签",
       "installButton": "确认安装到侧边栏",
       "installedButton": "已添加到侧边栏",
+      "followLatestLabel": "自动跟随更新",
+      "followLatestDesc": "开启后将自动使用助手的最新版本",
       "previewMode": "预览模式",
       "inputPlaceholder": "试着和 {name} 聊聊..."
     },

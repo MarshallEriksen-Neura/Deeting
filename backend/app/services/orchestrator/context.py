@@ -12,6 +12,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.utils.time_utils import Datetime
 
 
 class Channel(str, Enum):
@@ -70,7 +71,7 @@ class WorkflowContext:
     # ===== 请求元数据（不可变）=====
     trace_id: str = field(default_factory=lambda: uuid4().hex)
     channel: Channel = Channel.INTERNAL
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=Datetime.now)
 
     # 租户与认证
     tenant_id: str | None = None
@@ -201,7 +202,7 @@ class WorkflowContext:
             "code": code,
             "meta": meta,
             "trace_id": self.trace_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": Datetime.utcnow().isoformat(),
         }
         result = self.status_emitter(payload)
         if hasattr(result, "__await__"):

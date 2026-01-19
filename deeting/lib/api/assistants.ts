@@ -157,10 +157,17 @@ export async function fetchOwnedAssistants(params: { cursor?: string | null; siz
   return AssistantListResponseSchema.parse(data)
 }
 
-export async function installAssistant(assistantId: string) {
+export async function installAssistant(
+  assistantId: string,
+  payload?: {
+    follow_latest?: boolean
+    pinned_version_id?: string | null
+  }
+) {
   return request({
     url: `${ASSISTANTS_BASE}/${assistantId}/install`,
     method: "POST",
+    data: payload,
   })
 }
 
@@ -168,6 +175,24 @@ export async function uninstallAssistant(assistantId: string) {
   return request({
     url: `${ASSISTANTS_BASE}/${assistantId}/install`,
     method: "DELETE",
+  })
+}
+
+export async function updateAssistantInstall(
+  assistantId: string,
+  payload: {
+    alias?: string | null
+    icon_override?: string | null
+    pinned_version_id?: string | null
+    follow_latest?: boolean | null
+    is_enabled?: boolean | null
+    sort_order?: number | null
+  }
+) {
+  return request({
+    url: `${ASSISTANTS_BASE}/${assistantId}/install`,
+    method: "PATCH",
+    data: payload,
   })
 }
 
@@ -214,4 +239,37 @@ export async function createAssistant(payload: {
     data: payload,
   })
   return AssistantDTOSchema.parse(data)
+}
+
+export async function updateAssistant(
+  assistantId: string,
+  payload: {
+    visibility?: string
+    status?: string
+    summary?: string | null
+    icon_id?: string | null
+    current_version_id?: string | null
+    version?: {
+      version?: string
+      name: string
+      description?: string | null
+      system_prompt: string
+      tags?: string[]
+      changelog?: string | null
+    }
+  }
+) {
+  const data = await request({
+    url: `${ASSISTANTS_BASE}/${assistantId}`,
+    method: "PATCH",
+    data: payload,
+  })
+  return AssistantDTOSchema.parse(data)
+}
+
+export async function deleteAssistant(assistantId: string) {
+  return request({
+    url: `${ASSISTANTS_BASE}/${assistantId}`,
+    method: "DELETE",
+  })
 }

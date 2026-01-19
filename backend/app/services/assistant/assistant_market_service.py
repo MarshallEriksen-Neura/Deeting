@@ -15,6 +15,7 @@ from app.repositories.assistant_tag_repository import AssistantTagLinkRepository
 from app.repositories.review_repository import ReviewTaskRepository
 from app.schemas.assistant_market import (
     AssistantInstallItem,
+    AssistantInstallCreate,
     AssistantInstallUpdate,
     AssistantMarketItem,
     AssistantSummary,
@@ -179,7 +180,13 @@ class AssistantMarketService:
 
         return await paginate(self.market_repo.session, stmt, params=params, transformer=_transform)
 
-    async def install_assistant(self, *, user_id: UUID, assistant_id: UUID) -> AssistantInstallItem:
+    async def install_assistant(
+        self,
+        *,
+        user_id: UUID,
+        assistant_id: UUID,
+        payload: AssistantInstallCreate | None = None,
+    ) -> AssistantInstallItem:
         assistant = await self.assistant_repo.get(assistant_id)
         if not assistant:
             raise ValueError("助手不存在")
@@ -191,10 +198,25 @@ class AssistantMarketService:
             await self._refresh_install_count(assistant_id)
             return await self._load_install_item(existing.id, user_id)
 
+        install_payload = payload or AssistantInstallCreate()
+        follow_latest = install_payload.follow_latest
+        pinned_version_id = install_payload.pinned_version_id
+        if pinned_version_id is not None:
+            version_repo = AssistantVersionRepository(self.assistant_repo.session)
+            version = await version_repo.get_for_assistant(assistant_id, pinned_version_id)
+            if not version:
+                raise ValueError("锁定版本不存在或不属于该助手")
+            follow_latest = False
+
+        if follow_latest is False and pinned_version_id is None:
+            pinned_version_id = assistant.current_version_id
+
         install = await self.install_repo.create(
             {
                 "user_id": user_id,
                 "assistant_id": assistant_id,
+                "follow_latest": follow_latest,
+                "pinned_version_id": pinned_version_id,
             }
         )
         await self._refresh_install_count(assistant_id)
@@ -229,6 +251,10 @@ class AssistantMarketService:
 
         if payload.follow_latest is True:
             update_data["pinned_version_id"] = None
+        elif payload.follow_latest is False and payload.pinned_version_id is None:
+            assistant = await self.assistant_repo.get(assistant_id)
+            if assistant and assistant.current_version_id:
+                update_data["pinned_version_id"] = assistant.current_version_id
 
         install = await self.install_repo.update(install, update_data)
         return await self._load_install_item(install.id, user_id)

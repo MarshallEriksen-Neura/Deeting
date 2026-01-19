@@ -6,6 +6,10 @@
         "titleHighlight": "digital companion",
         "subtitle": "Not just prompts — agents with distinct personalities and skills"
       },
+      "installed": {
+        "title": "Installed assistants",
+        "subtitle": "Manage update behavior for your installed assistants"
+      },
       "search": {
         "placeholder": "Search assistant skills (e.g. Python, writing...)"
       }
@@ -36,6 +40,10 @@
       "assistantUpdatedDesc": "{name} updated.",
       "assistantDeletedTitle": "Assistant deleted",
       "assistantDeletedDesc": "{name} deleted.",
+      "followLatestUpdatedTitle": "Update saved",
+      "followLatestUpdatedDesc": "Update behavior has been changed.",
+      "followLatestUpdateFailedTitle": "Update failed",
+      "followLatestUpdateFailedDesc": "Please try again later",
       "createFailedTitle": "Creation failed",
       "createFailedDesc": "Please try again later or check your input",
       "deleteFailedTitle": "Deletion failed",
@@ -45,6 +53,8 @@
       "tagsTitle": "Tags",
       "installButton": "Add to sidebar",
       "installedButton": "Added to sidebar",
+      "followLatestLabel": "Follow updates automatically",
+      "followLatestDesc": "Use the assistant’s latest version automatically",
       "previewMode": "Preview Mode",
       "inputPlaceholder": "Try chatting with {name}..."
     },

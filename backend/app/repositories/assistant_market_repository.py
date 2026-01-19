@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, case
 
 from app.models.assistant import Assistant, AssistantVersion
 from app.models.assistant_install import AssistantInstall
@@ -90,10 +90,14 @@ class AssistantMarketRepository:
     def build_install_query(self, *, user_id: UUID, install_id: UUID | None = None):
         av = AssistantVersion
         ai = AssistantInstall
+        version_id_expr = case(
+            (ai.follow_latest.is_(True), Assistant.current_version_id),
+            else_=func.coalesce(ai.pinned_version_id, Assistant.current_version_id),
+        )
         stmt = (
             select(ai, Assistant, av)
             .join(Assistant, Assistant.id == ai.assistant_id)
-            .join(av, av.id == Assistant.current_version_id)
+            .join(av, av.id == version_id_expr)
             .where(ai.user_id == user_id)
             .order_by(ai.sort_order.desc(), ai.created_at.desc(), ai.id.desc())
         )

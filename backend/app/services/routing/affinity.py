@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
+from app.utils.time_utils import Datetime
 
 if TYPE_CHECKING:
     pass
@@ -137,7 +138,7 @@ class RoutingAffinityStateMachine:
 
         # 锁定期：检查是否过期
         if ctx.state == AffinityState.LOCKED:
-            if ctx.lock_expires_at and datetime.utcnow() > ctx.lock_expires_at:
+            if ctx.lock_expires_at and Datetime.utcnow() > ctx.lock_expires_at:
                 # 锁定已过期，重新探索
                 await self._transition_to_exploring(ctx)
                 return False, None, None
@@ -211,7 +212,7 @@ class RoutingAffinityStateMachine:
         ctx.success_count = 0
         ctx.failure_count = 0
         ctx.lock_expires_at = None
-        ctx.last_updated = datetime.utcnow()
+        ctx.last_updated = Datetime.utcnow()
         await self._save_context(ctx)
         logger.debug("affinity_transition_to_exploring session=%s model=%s", self.session_id, self.model)
 
@@ -225,8 +226,8 @@ class RoutingAffinityStateMachine:
         ctx.state = AffinityState.LOCKED
         ctx.locked_provider = provider
         ctx.locked_item_id = item_id
-        ctx.lock_expires_at = datetime.utcnow() + timedelta(seconds=self.lock_duration)
-        ctx.last_updated = datetime.utcnow()
+        ctx.lock_expires_at = Datetime.utcnow() + timedelta(seconds=self.lock_duration)
+        ctx.last_updated = Datetime.utcnow()
         await self._save_context(ctx)
         logger.info(
             "affinity_locked session=%s model=%s provider=%s item=%s expires=%s",
@@ -250,7 +251,7 @@ class RoutingAffinityStateMachine:
                 "explore_count": str(ctx.explore_count),
                 "success_count": str(ctx.success_count),
                 "failure_count": str(ctx.failure_count),
-                "last_updated": ctx.last_updated.isoformat() if ctx.last_updated else datetime.utcnow().isoformat(),
+                "last_updated": ctx.last_updated.isoformat() if ctx.last_updated else Datetime.utcnow().isoformat(),
             }
 
             if ctx.locked_provider:

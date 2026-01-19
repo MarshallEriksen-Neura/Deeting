@@ -23,13 +23,14 @@ from app.schemas.user_api_key import (
     ApiKeyResponse,
 )
 from app.services.providers.api_key import ApiKeyService
+from app.utils.time_utils import Datetime
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 models_router = APIRouter(prefix="/models", tags=["Models"])
 
 
 def map_expiration(expiration: str, expires_at: Optional[datetime]) -> Optional[datetime]:
-    now = datetime.utcnow()
+    now = Datetime.utcnow()
     if expiration == "never":
         return None
     if expiration == "7d":

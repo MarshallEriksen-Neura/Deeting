@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -20,6 +19,7 @@ from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.database import get_sync_session
 from app.models.billing import TenantQuota
+from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def sync_quota_from_redis_to_db(tenant_id: str) -> dict:
             quota.daily_used = redis_daily_used
             quota.monthly_used = redis_monthly_used
             quota.version = redis_version
-            quota.updated_at = datetime.utcnow()
+            quota.updated_at = Datetime.utcnow()
             
             session.commit()
 

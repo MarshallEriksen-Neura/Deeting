@@ -39,6 +39,7 @@ from .assistant import (
     AssistantListResponse,
 )
 from .assistant_market import (
+    AssistantInstallCreate,
     AssistantInstallItem,
     AssistantInstallUpdate,
     AssistantMarketItem,
@@ -131,6 +132,7 @@ __all__ = [
     "AssistantPublishRequest",
     "AssistantListResponse",
     "AssistantInstallItem",
+    "AssistantInstallCreate",
     "AssistantInstallUpdate",
     "AssistantMarketItem",
     "AssistantSummary",

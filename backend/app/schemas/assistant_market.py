@@ -47,6 +47,11 @@ class AssistantInstallItem(IDSchema, TimestampSchema):
     assistant: AssistantSummary
 
 
+class AssistantInstallCreate(BaseSchema):
+    follow_latest: bool = True
+    pinned_version_id: UUID | None = None
+
+
 class AssistantInstallUpdate(BaseSchema):
     alias: str | None = Field(None, max_length=100)
     icon_override: str | None = Field(None, max_length=255)

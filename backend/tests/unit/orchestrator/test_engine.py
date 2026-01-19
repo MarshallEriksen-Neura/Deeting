@@ -89,6 +89,23 @@ class AbortStep(BaseStep):
         raise RuntimeError("fatal")
 
 
+class OverlapDetectStep(BaseStep):
+    name = "overlap"
+
+    def __init__(self, name: str, state: dict[str, bool]):
+        super().__init__()
+        self.name = name
+        self.state = state
+
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
+        if self.state["running"]:
+            self.state["overlap"] = True
+        self.state["running"] = True
+        await asyncio.sleep(0.05)
+        self.state["running"] = False
+        return StepResult(status=StepStatus.SUCCESS)
+
+
 def test_validate_dag_unknown_dependency():
     step_with_missing_dep = SuccessfulStep("b", depends_on=["missing"])
     with pytest.raises(ValueError):
@@ -172,3 +189,18 @@ async def test_execute_abort_sets_error():
     assert result.step_results["abort"].status == StepStatus.FAILED
     assert ctx.error_source == ErrorSource.GATEWAY
     assert ctx.error_code == "ABORT_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_execute_serializes_when_db_session_present():
+    ctx = WorkflowContext(channel=Channel.INTERNAL, db_session=object())
+    state = {"running": False, "overlap": False}
+    first = OverlapDetectStep("first", state)
+    second = OverlapDetectStep("second", state)
+    engine = OrchestrationEngine([first, second])
+
+    result = await engine.execute(ctx)
+
+    assert result.success is True
+    assert state["overlap"] is False
+    assert ctx.executed_steps == ["first", "second"]

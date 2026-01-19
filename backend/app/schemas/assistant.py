@@ -80,6 +80,10 @@ class AssistantUpdate(BaseSchema):
     current_version_id: UUID | None = None
     summary: str | None = Field(None, max_length=200)
     icon_id: str | None = Field(None, max_length=255)
+    version: AssistantVersionCreate | None = Field(
+        None,
+        description="创建新版本（强版本不可变）。提供时会生成新版本并切换为当前版本。",
+    )
 
 
 class AssistantDTO(AssistantBase, IDSchema, TimestampSchema):

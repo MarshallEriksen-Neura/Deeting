@@ -9,6 +9,7 @@ import { useChatService } from "@/hooks/use-chat-service"
 import { useI18n } from "@/hooks/use-i18n"
 import { useMarketStore } from "@/store/market-store"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
+import { parseMessageContent, serializeMessageContent } from "@/lib/chat/message-content"
 import { ChatHeader } from "./chat-header"
 import { ChatMessageList } from "./chat-message-list"
 import { ChatInput } from "./chat-input"
@@ -38,6 +39,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   
   const {
     input,
+    attachments,
     messages,
     isLoading: isTyping,
     config,
@@ -49,6 +51,9 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     statusCode,
     statusMeta,
     setInput,
+    addAttachments,
+    removeAttachment,
+    clearAttachments,
     setModels,
     setActiveAssistantId,
     setSessionId,
@@ -179,7 +184,13 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
             const mapped = rawMessages.map((msg, index) => ({
               id: `${storedSessionId}-${msg.turn_index ?? index}`,
               role: (msg.role === "assistant" ? "assistant" : "user") as 'user' | 'assistant',
-              content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? ""),
+              ...(() => {
+                const parsed = parseMessageContent(msg.content)
+                return {
+                  content: parsed.text,
+                  attachments: parsed.attachments.length ? parsed.attachments : undefined,
+                }
+              })(),
               createdAt: Date.now() - (total - index) * 1000,
             }))
             if (mapped.length > 0) {
@@ -218,10 +229,12 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
           setMessages(
             records.map((record) => {
               const parsed = Date.parse(record.created_at)
+              const parsedContent = parseMessageContent(record.content)
               return {
                 id: record.id,
                 role: (record.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-                content: record.content,
+                content: parsedContent.text,
+                attachments: parsedContent.attachments.length ? parsedContent.attachments : undefined,
                 createdAt: Number.isNaN(parsed) ? Date.now() : parsed
               }
             })
@@ -291,7 +304,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   const handleSendMessage = async () => {
      if (isTauriRuntime && agent) {
         const userContent = input.trim();
-        if (!userContent) return;
+        if (!userContent && attachments.length === 0) return;
         
         if (!config.model) {
             setErrorMessage(t("error.modelUnavailable"))
@@ -302,7 +315,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
         void invoke("append_assistant_message", {
           assistant_id: agent.id,
           role: "user",
-          content: userContent
+          content: serializeMessageContent(userContent, attachments)
         }).catch(() => undefined)
 
         // 2. Delegate to Store (adds to UI, calls API)
@@ -379,6 +392,10 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
         disabled={isTyping || (!isTauriRuntime && isLoadingModels)}
         placeholderName={agent.name}
         errorMessage={errorMessage}
+        attachments={attachments}
+        onAddAttachments={addAttachments}
+        onRemoveAttachment={removeAttachment}
+        onClearAttachments={clearAttachments}
       />
     </div>
   )

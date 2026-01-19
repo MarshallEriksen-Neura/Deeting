@@ -56,7 +56,17 @@
       "nativeDesc": "原生视图渲染占位，将在后续接入具体能力。"
     },
     "input": {
-      "placeholder": "给 {name} 发消息..."
+      "placeholder": "给 {name} 发消息...",
+      "image": {
+        "add": "上传图片",
+        "clear": "清空图片",
+        "summary": "已添加 {count} 张图片",
+        "hint": "支持上传或粘贴图片 · 仅视觉模型可用",
+        "alt": "图像",
+        "remove": "移除图片",
+        "errorInvalid": "仅支持图片文件。",
+        "errorRead": "读取图片失败，请重试。"
+      }
     },
     "history": {
       "title": "历史记录",

@@ -1,7 +1,7 @@
 'use client';
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Check } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, ImagePlus, X } from 'lucide-react';
 import { Link } from '@/i18n/routing';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
@@ -10,15 +10,11 @@ import { useMarketStore } from '@/store/market-store';
 import { useI18n } from '@/hooks/use-i18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { buildImageAttachments } from '@/lib/chat/attachments';
 
 export default function DefaultControls() {
   const router = useRouter();
@@ -26,11 +22,14 @@ export default function DefaultControls() {
   const searchParams = useSearchParams();
   const [showMenu, setShowMenu] = useState(false);
   const [isParamsOpen, setIsParamsOpen] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useI18n('chat');
   const installedAgents = useMarketStore((state) => state.installedAgents);
   
   const {
     input,
+    attachments,
     setInput,
     sendMessage,
     isLoading,
@@ -41,9 +40,13 @@ export default function DefaultControls() {
     setConfig,
     setActiveAssistantId,
     resetSession,
+    addAttachments,
+    removeAttachment,
+    clearAttachments,
   } = useChatStore(
     useShallow((state) => ({
       input: state.input,
+      attachments: state.attachments,
       setInput: state.setInput,
       sendMessage: state.sendMessage,
       isLoading: state.isLoading,
@@ -54,11 +57,14 @@ export default function DefaultControls() {
       setConfig: state.setConfig,
       setActiveAssistantId: state.setActiveAssistantId,
       resetSession: state.resetSession,
+      addAttachments: state.addAttachments,
+      removeAttachment: state.removeAttachment,
+      clearAttachments: state.clearAttachments,
     }))
   );
 
   // Allow sending if models exist and input is valid, even if no agent is selected (we'll pick one)
-  const canSend = Boolean(models.length > 0 && input.trim().length > 0 && !isLoading);
+  const canSend = Boolean(models.length > 0 && (input.trim().length > 0 || attachments.length > 0) && !isLoading);
   
   const activeAssistant = useMemo(
     () => assistants.find((assistant) => assistant.id === activeAssistantId),
@@ -111,6 +117,43 @@ export default function DefaultControls() {
     }
   };
 
+  const handleFiles = async (files: File[]) => {
+    if (!files.length) return;
+    setAttachmentError(null);
+    const result = await buildImageAttachments(files);
+    if (result.skipped > 0 && result.attachments.length === 0) {
+      setAttachmentError(t("input.image.errorInvalid"));
+      return;
+    }
+    if (result.attachments.length) {
+      addAttachments(result.attachments);
+    }
+    if (result.rejected > 0) {
+      setAttachmentError(t("input.image.errorRead"));
+    }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    if (isLoading) return;
+    const items = event.clipboardData?.items;
+    if (!items?.length) return;
+    const files = Array.from(items)
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter(Boolean) as File[];
+    if (files.length) {
+      void handleFiles(files);
+    }
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    if (files.length) {
+      await handleFiles(files);
+      event.target.value = "";
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
       {/* 1. Main Input Area */}
@@ -119,6 +162,7 @@ export default function DefaultControls() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           className="h-11 w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
           placeholder={t("controls.placeholder")}
           aria-label={t("controls.placeholder")}
@@ -126,6 +170,61 @@ export default function DefaultControls() {
           onFocus={() => setShowMenu(false)}
         />
       </div>
+
+      {attachments.length > 0 ? (
+        <div className="flex flex-col gap-2 px-1">
+          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-white/50">
+            <span>{t("input.image.summary", { count: attachments.length })}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={() => clearAttachments()}
+              disabled={isLoading}
+            >
+              {t("input.image.clear")}
+            </Button>
+          </div>
+          <div className={cn("grid gap-2", attachments.length > 3 ? "grid-cols-3" : "grid-cols-2")}>
+            {attachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/70 dark:bg-white/5 shadow-sm"
+              >
+                <Image
+                  src={attachment.url}
+                  alt={attachment.name ?? t("input.image.alt")}
+                  width={240}
+                  height={240}
+                  className="h-24 w-full object-cover"
+                  unoptimized
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
+                  <span className="truncate">
+                    {attachment.name ?? t("input.image.alt")}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/40 text-white/80 opacity-0 transition-opacity group-hover:opacity-100"
+                  onClick={() => removeAttachment(attachment.id)}
+                  aria-label={t("input.image.remove")}
+                  disabled={isLoading}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {attachmentError ? (
+        <div className="text-center text-xs text-red-500/80">{attachmentError}</div>
+      ) : null}
 
       {/* 2. Action Row */}
       <div className="flex items-center justify-between gap-2">
@@ -267,6 +366,18 @@ export default function DefaultControls() {
               </div>
             </PopoverContent>
           </Popover>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("input.image.add")}
+            onClick={() => fileInputRef.current?.click()}
+            className="size-9 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors"
+            disabled={isLoading}
+          >
+            <ImagePlus className="w-4 h-4" />
+          </Button>
         </div>
 
         {/* HUD Controls + Send */}
@@ -285,6 +396,19 @@ export default function DefaultControls() {
             <ArrowUp className="w-5 h-5" />
           </Button>
         </div>
+      </div>
+
+      <Input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={handleFileChange}
+        disabled={isLoading}
+      />
+      <div className="text-center text-[11px] text-slate-500 dark:text-white/40">
+        {t("input.image.hint")}
       </div>
     </div>
   );

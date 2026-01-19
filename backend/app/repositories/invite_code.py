@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Iterable
 from uuid import UUID
 
@@ -9,10 +9,11 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import InviteCode, InviteCodeStatus
+from app.utils.time_utils import Datetime
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return Datetime.now()
 
 
 def _generate_code(length: int = 12, prefix: str | None = None) -> str:

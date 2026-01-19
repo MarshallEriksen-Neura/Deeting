@@ -10,7 +10,6 @@ API Key 预算周期性同步任务（Redis → DB）
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import select, update
@@ -20,6 +19,7 @@ from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.database import get_sync_session
 from app.models.api_key import ApiKey
+from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ def sync_apikey_budget_from_redis_to_db(api_key_id: str) -> dict:
                 .where(ApiKey.id == api_key_id)
                 .values(
                     budget_used=redis_budget_used,
-                    updated_at=datetime.utcnow(),
+                    updated_at=Datetime.utcnow(),
                 )
             )
             session.execute(stmt)

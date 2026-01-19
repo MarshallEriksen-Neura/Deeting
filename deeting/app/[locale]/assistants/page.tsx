@@ -7,12 +7,15 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AgentCard } from "@/components/assistants/agent-card"
+import { InstalledAssistantCard } from "@/components/assistants/installed-assistant-card"
 import { InfiniteList } from "@/components/ui/infinite-list"
-import { installAssistant } from "@/lib/api"
+import { installAssistant, updateAssistantInstall } from "@/lib/api"
 import { useAssistantMarket } from "@/lib/swr/use-assistant-market"
 import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
 import { useAssistantOwned } from "@/lib/swr/use-assistant-owned"
+import { useAssistantInstalls } from "@/lib/swr/use-assistant-installs"
 import type { AssistantCardData } from "@/components/assistants/types"
+import { toast } from "sonner"
 
 const PAGE_SIZE = 8
 const COLOR_OPTIONS = [
@@ -68,6 +71,12 @@ export default function AssistantsPage() {
 
   const { items: ownedItems, isLoading: ownedLoading } = useAssistantOwned(20)
   const { tags: marketTags } = useAssistantTags()
+  const {
+    items: installedItems,
+    isLoading: isLoadingInstalls,
+    mutate: mutateInstalls,
+  } = useAssistantInstalls(20)
+  const [updatingInstall, setUpdatingInstall] = React.useState<Record<string, boolean>>({})
 
   React.useEffect(() => {
     reset()
@@ -139,11 +148,34 @@ export default function AssistantsPage() {
   const isInitialLoading = (isLoading || ownedLoading) && mergedAgents.length === 0
 
   const handleInstall = React.useCallback(
-    async (assistantId: string) => {
-      await installAssistant(assistantId)
+    async (assistantId: string, options?: { followLatest?: boolean }) => {
+      await installAssistant(
+        assistantId,
+        options ? { follow_latest: options.followLatest } : undefined
+      )
       await mutateMarket()
     },
     [mutateMarket]
+  )
+
+  const handleToggleFollowLatest = React.useCallback(
+    async (assistantId: string, followLatest: boolean) => {
+      setUpdatingInstall((prev) => ({ ...prev, [assistantId]: true }))
+      try {
+        await updateAssistantInstall(assistantId, { follow_latest: followLatest })
+        await mutateInstalls()
+        toast.success(t("toast.followLatestUpdatedTitle"), {
+          description: t("toast.followLatestUpdatedDesc"),
+        })
+      } catch (error) {
+        toast.error(t("toast.followLatestUpdateFailedTitle"), {
+          description: t("toast.followLatestUpdateFailedDesc"),
+        })
+      } finally {
+        setUpdatingInstall((prev) => ({ ...prev, [assistantId]: false }))
+      }
+    },
+    [mutateInstalls, t]
   )
 
   return (
@@ -202,7 +234,49 @@ export default function AssistantsPage() {
         </div>
       </div>
 
-      {/* 2. 助手网格 (使用 InfiniteList) */}
+      {/* 2. 已安装列表 */}
+      {isLoadingInstalls ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Skeleton className="h-6 w-24" />
+              <Skeleton className="h-4 w-56" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-64" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : installedItems.length > 0 ? (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold text-foreground">
+              {t("page.installed.title")}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {t("page.installed.subtitle")}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {installedItems.map((item) => (
+              <InstalledAssistantCard
+                key={item.id}
+                item={item}
+                isUpdating={Boolean(updatingInstall[item.assistant_id])}
+                onToggleFollowLatest={handleToggleFollowLatest}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 3. 助手网格 (使用 InfiniteList) */}
       <InfiniteList
         isLoading={isLoadingMore}
         isError={!!error}

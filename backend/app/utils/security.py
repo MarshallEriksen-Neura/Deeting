@@ -6,7 +6,7 @@ import logging
 import re
 import secrets
 import socket
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -16,6 +16,7 @@ import bcrypt
 from jose import JWTError, jwt
 
 from app.core.config import settings
+from app.utils.time_utils import Datetime
 
 # SQL 注入常用关键字正则
 SQL_INJECTION_PATTERN = re.compile(
@@ -64,27 +65,27 @@ def _load_public_key() -> str:
 
 def create_access_token(user_id: UUID, jti: str, version: int) -> str:
     """创建 access token (短期，用于 API 访问，携带 token_version 便于失效校验)"""
-    expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = Datetime.now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
         "jti": jti,
         "type": "access",
         "version": version,
         "exp": expire,
-        "iat": datetime.now(UTC),
+        "iat": Datetime.now(),
     }
     return jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)
 
 def create_refresh_token(user_id: UUID, jti: str, version: int) -> str:
     """创建 refresh token (长期，用于刷新 access token)"""
-    expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = Datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(user_id),
         "jti": jti,
         "type": "refresh",
         "version": version,
         "exp": expire,
-        "iat": datetime.now(UTC),
+        "iat": Datetime.now(),
     }
     return jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)
 

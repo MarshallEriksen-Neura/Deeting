@@ -37,7 +37,7 @@ API Key Repository
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import delete, insert, select, update
@@ -55,6 +55,7 @@ from app.models.api_key import (
     QuotaType,
     ScopeType,
 )
+from app.utils.time_utils import Datetime
 
 
 class ApiKeyRepository:
@@ -190,7 +191,7 @@ class ApiKeyRepository:
         if not obj:
             return None
         obj.status = ApiKeyStatus.REVOKED
-        obj.revoked_at = datetime.utcnow()
+        obj.revoked_at = Datetime.utcnow()
         obj.revoked_reason = reason
         await self.session.flush()
         await self.session.refresh(obj)
@@ -209,7 +210,7 @@ class ApiKeyRepository:
         await self.session.execute(
             update(ApiKey)
             .where(ApiKey.id == api_key_id)
-            .values(last_used_at=datetime.utcnow())
+            .values(last_used_at=Datetime.utcnow())
         )
         await self.session.flush()
 
@@ -341,7 +342,7 @@ class ApiKeyRepository:
         if not obj:
             return None
         obj.used_quota = 0
-        obj.reset_at = datetime.utcnow()
+        obj.reset_at = Datetime.utcnow()
         await self.session.flush()
         await self.session.refresh(obj)
         return obj
@@ -399,7 +400,7 @@ class ApiKeyRepository:
         error_count: int = 0,
     ) -> None:
         """记录使用量（按小时聚合，使用 UPSERT）"""
-        now = datetime.utcnow()
+        now = Datetime.utcnow()
         stat_date = now.date()
         stat_hour = now.hour
         stmt = insert(ApiKeyUsage).values(
@@ -450,7 +451,7 @@ class ApiKeyRepository:
             .where(ApiKey.tenant_id == tenant_id)
             .values(
                 status=ApiKeyStatus.REVOKED,
-                revoked_at=datetime.utcnow(),
+                revoked_at=Datetime.utcnow(),
                 revoked_reason=reason,
             )
         )
@@ -464,7 +465,7 @@ class ApiKeyRepository:
             .where(ApiKey.user_id == user_id)
             .values(
                 status=ApiKeyStatus.REVOKED,
-                revoked_at=datetime.utcnow(),
+                revoked_at=Datetime.utcnow(),
                 revoked_reason=reason,
             )
         )
@@ -473,7 +474,7 @@ class ApiKeyRepository:
 
     async def expire_keys(self) -> int:
         """将已过期的 Key 状态更新为 expired（定时任务调用）"""
-        now = datetime.utcnow()
+        now = Datetime.utcnow()
         res = await self.session.execute(
             update(ApiKey)
             .where(ApiKey.expires_at.isnot(None))

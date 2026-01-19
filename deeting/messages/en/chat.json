@@ -56,7 +56,17 @@
       "nativeDesc": "Native view placeholder. Content will be wired later."
     },
     "input": {
-      "placeholder": "Message {name}..."
+      "placeholder": "Message {name}...",
+      "image": {
+        "add": "Add image",
+        "clear": "Clear images",
+        "summary": "{count} image(s) attached",
+        "hint": "Upload or paste images · works with vision models",
+        "alt": "Image",
+        "remove": "Remove image",
+        "errorInvalid": "Only image files are supported.",
+        "errorRead": "Failed to read image. Please try again."
+      }
     },
     "history": {
       "title": "History",

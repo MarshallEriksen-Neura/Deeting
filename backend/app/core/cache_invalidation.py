@@ -66,11 +66,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.logging import logger
+from app.utils.time_utils import Datetime
 
 
 class CacheInvalidator:
@@ -255,7 +255,7 @@ class CacheInvalidator:
             return 0
         try:
             version = await redis.incr(cache._make_key(self.version_key))
-            await redis.set(cache._make_key(self.updated_at_key), datetime.now(timezone.utc).isoformat(), ex=24 * 3600)
+            await redis.set(cache._make_key(self.updated_at_key), Datetime.now().isoformat(), ex=24 * 3600)
             return version
         except Exception as exc:
             logger.warning(f"cache_bump_version_failed exc={exc}")

@@ -10,7 +10,7 @@ QuotaRepository: 配额/余额查询与管理
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select, update
@@ -21,6 +21,7 @@ from app.core.cache_invalidation import CacheInvalidator
 from app.core.cache_keys import CacheKeys
 from app.core.logging import logger
 from app.models.billing import TenantQuota
+from app.utils.time_utils import Datetime
 
 
 class InsufficientQuotaError(Exception):
@@ -209,7 +210,7 @@ class QuotaRepository:
                 monthly_used=TenantQuota.monthly_used + monthly_requests,
                 token_used=TenantQuota.token_used + tokens,
                 version=TenantQuota.version + 1,
-                updated_at=datetime.now(UTC),
+                updated_at=Datetime.now(),
             )
             .returning(TenantQuota)
         )
@@ -267,7 +268,7 @@ class QuotaRepository:
             .values(
                 balance=TenantQuota.balance + Decimal(str(amount)),
                 version=TenantQuota.version + 1,
-                updated_at=datetime.now(UTC),
+                updated_at=Datetime.now(),
             )
             .returning(TenantQuota)
         )
@@ -296,7 +297,7 @@ class QuotaRepository:
 
         quota = await self.get_or_create(tenant_id)
 
-        values = {"updated_at": datetime.now(UTC)}
+        values = {"updated_at": Datetime.now()}
         if rpm_limit is not None:
             values["rpm_limit"] = rpm_limit
         if tpm_limit is not None:
@@ -345,7 +346,7 @@ class QuotaRepository:
             needs_update = True
 
         if needs_update:
-            values["updated_at"] = datetime.now(UTC)
+            values["updated_at"] = Datetime.now()
             stmt = (
                 update(TenantQuota)
                 .where(TenantQuota.id == quota.id)
