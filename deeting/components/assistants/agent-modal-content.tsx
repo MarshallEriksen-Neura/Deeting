@@ -177,7 +177,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
                         )}
                       </Avatar>
                       <div className={cn(
-                        "p-3 rounded-2xl text-sm max-w-[80%]", 
+                        "p-3 rounded-2xl text-sm max-w-[88%]", 
                         msg.role === 'assistant' 
                           ? "bg-muted rounded-tl-none" 
                           : "bg-primary text-primary-foreground rounded-tr-none"

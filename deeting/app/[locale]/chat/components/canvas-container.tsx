@@ -65,7 +65,7 @@ export default function Canvas() {
 
   return (
     <div className="w-full h-full overflow-y-auto p-4 pb-32 scrollbar-hide">
-      <div className="max-w-3xl mx-auto flex flex-col gap-8 pt-20">
+      <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-20">
         {messages.map((msg) => {
           const isLastAssistant = msg.id === lastAssistantId;
           const isActive = isLastAssistant && isLoading;
@@ -73,7 +73,7 @@ export default function Canvas() {
           if (msg.role === 'assistant') {
             return (
               <div key={msg.id} className="flex justify-start w-full">
-                <div className="flex flex-col gap-3 max-w-[80%]">
+                <div className="flex flex-col gap-3 max-w-[92%]">
                   <AIResponseBubble
                     parts={normalizeMessage(msg.content)}
                     isActive={isActive}
@@ -95,7 +95,7 @@ export default function Canvas() {
             <div key={msg.id} className="flex justify-end w-full">
               <div 
                 className="
-                  max-w-[80%] rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm
+                  max-w-[88%] rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm
                   bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-tr-sm
                 "
               >

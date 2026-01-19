@@ -9,101 +9,120 @@ from app.agent_plugins.builtins.database.plugin import DatabasePlugin
 from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
 from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
 from app.schemas.tool import ToolDefinition, ToolCall
+from app.agent_plugins.core.manager import PluginManager # Use standard manager
 
 logger = logging.getLogger(__name__)
 
-@celery_app.task(queue="agent_tasks", name="app.tasks.agent.run_discovery_task")
-def run_discovery_task(target_url: str, capability: str, model_hint: str):
+@celery_app.task(queue="agent_tasks", name="app.tasks.agent.run_auto_ingestion_job")
+def run_auto_ingestion_job(target_url: str, instruction: str):
     """
-    Celery task to run the Pro-Level Discovery Agent.
+    Background Worker:
+    1. Crawls a URL.
+    2. Uses LLM to extract data based on 'instruction'.
+    3. Writes data to DB using DatabasePlugin.
     """
-    # Celery 运行在同步环境，需要用 loop 跑异步方法
-    return asyncio.run(_run_discovery_agent_logic(target_url, capability, model_hint))
+    return asyncio.run(_worker_logic(target_url, instruction))
 
-async def _run_discovery_agent_logic(target_url: str, capability: str, model_hint: str):
-    logger.info(f"Starting Discovery Agent for: {target_url} (Capability: {capability})")
+async def _worker_logic(target_url: str, instruction: str):
+    job_id = str(uuid.uuid4())[:8]
+    logger.info(f"[Worker-{job_id}] Started ingestion for: {target_url}")
     
-    # 1. Initialize Plugins (Real Crawler this time)
-    db_plugin = DatabasePlugin()
-    registry_plugin = ProviderRegistryPlugin()
-    crawler_plugin = CrawlerPlugin()
+    # 1. Setup Plugins
+    manager = PluginManager()
+    manager.register_class(CrawlerPlugin)
+    manager.register_class(DatabasePlugin)
+    # If we had a VectorStorePlugin, we'd add it here too
     
-    # Initialize crawler (Playwright) - needs context
-    # Note: In a real plugin manager this is handled automatically. 
-    # Here we manual trigger if needed, but CrawlerPlugin uses 'on_activate'.
-    # For now, we assume CrawlerPlugin.handle_fetch_web_content is ready.
+    await manager.activate_all()
+    crawler = manager.get_plugin("core.tools.crawler")
+    db_plugin = manager.get_plugin("system/database_manager") # use correct name from metadata
 
+    # 2. Crawl
+    logger.info(f"[Worker-{job_id}] Crawling...")
+    crawl_result = await crawler.handle_fetch_web_content(url=target_url)
+    
+    if crawl_result.get("error"):
+        return f"Job failed: Crawl error - {crawl_result['error']}"
+
+    content = crawl_result.get("markdown", "")[:20000] # Limit context for safety
+    
+    # 3. LLM Extraction & Action
+    # We ask the LLM to process the content and decide what to store.
+    # We give it the 'db_plugin' tools so it can verify/save directly.
+    
     tools = []
     tool_map = {}
-
-    def register(plugin, method_name, tool_def):
-        tool_name = tool_def["function"]["name"]
+    
+    # Only expose DB tools to the worker LLM (it doesn't need to crawl again)
+    raw_tools = db_plugin.get_tools()
+    for t in raw_tools:
         tools.append(ToolDefinition(
-            name=tool_name, description=tool_def["function"]["description"],
-            input_schema=tool_def["function"]["parameters"]
+            name=t["function"]["name"],
+            description=t["function"]["description"],
+            input_schema=t["function"]["parameters"]
         ))
-        tool_map[tool_name] = getattr(plugin, method_name if hasattr(plugin, method_name) else tool_name)
+        # Bind handler
+        handler_name = t["function"]["name"] # DatabasePlugin uses direct names in previous implementation? 
+        # Actually checking implementation: check_provider_preset_exists, create_provider_preset, etc.
+        # Let's bind them.
+        if hasattr(db_plugin, handler_name):
+            tool_map[handler_name] = getattr(db_plugin, handler_name)
 
-    # Register all tools
-    register(crawler_plugin, "handle_fetch_web_content", crawler_plugin.get_tools()[0])
-    for t in db_plugin.get_tools(): register(db_plugin, t["function"]["name"], t)
-    for t in registry_plugin.get_tools(): register(registry_plugin, t["function"]["name"], t)
+    system_prompt = f"""
+You are an autonomous Data Ingestion Worker.
+Your Task: {instruction}
 
-    messages = [
-        {"role": "system", "content": f"""
-You are a "Professional API Architect Agent". Your goal is to integrate multi-modal AI capabilities into the gateway.
+Context (Crawled Content):
+---
+{content}
+---
 
-Workflow:
-1. Call `get_unified_schema` for '{capability}'.
-2. Call `fetch_web_content` for '{target_url}'.
-3. Call `check_provider_exists` and decide to create or update.
-4. Set `template_engine="jinja2"`.
-5. Map INTERNAL fields to PROVIDER fields in `request_template`.
-6. Map PROVIDER output back to our INTERNAL schema in `response_transform`.
+Action:
+Extract the relevant information from the context and use the available database tools (like 'create_provider_preset' or 'update_provider_preset') to save it.
+If the data is already there, update it.
+"""
 
-Rules:
-- DO NOT crawl the same URL twice.
-- Be precise with Jinja2 syntax.
-"""}
-    ]
-
-    result_summary = "Task started"
-
-    for turn in range(10):
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    logger.info(f"[Worker-{job_id}] Thinking...")
+    
+    # One-shot or Multi-turn loop
+    actions_taken = []
+    
+    for i in range(5):
         try:
             response = await llm_service.chat_completion(
-                messages=messages, tools=tools, model=model_hint, temperature=0
+                messages=messages, tools=tools, temperature=0.0
             )
+            
+            if isinstance(response, str):
+                logger.info(f"[Worker-{job_id}] Finished: {response}")
+                return f"Job {job_id} Completed: {response}"
+            
+            elif isinstance(response, list): # Tool Calls
+                messages.append({
+                    "role": "assistant", 
+                    "tool_calls": [
+                        {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
+                        for tc in response
+                    ]
+                })
+                
+                for tc in response:
+                    func = tool_map.get(tc.name)
+                    if func:
+                        logger.info(f"[Worker-{job_id}] Executing {tc.name}...")
+                        res = await func(tc.arguments)
+                        actions_taken.append(f"Called {tc.name}: {res}")
+                        res_str = str(res)
+                    else:
+                        res_str = "Error: Tool not found"
+                        
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": res_str})
+
         except Exception as e:
-            logger.error(f"Discovery Agent LLM Error: {e}")
-            return f"Failed at turn {turn}: {str(e)}"
+            logger.error(f"[Worker-{job_id}] LLM Error: {e}")
+            return f"Job failed: {e}"
 
-        if isinstance(response, str):
-            messages.append({"role": "assistant", "content": response})
-            if "successfully" in response.lower() or "done" in response.lower():
-                result_summary = response
-                break
-        
-        elif isinstance(response, list):
-            messages.append({"role": "assistant", "tool_calls": [
-                {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
-                for tc in response
-            ]})
-
-            for tool_call in response:
-                func = tool_map.get(tool_call.name)
-                try:
-                    # Generic dispatcher
-                    if tool_call.name == "fetch_web_content": res = await func(url=tool_call.arguments["url"])
-                    elif tool_call.name == "get_unified_schema": res = await func(capability=tool_call.arguments["capability"])
-                    elif tool_call.name == "check_provider_exists": res = await func(slug=tool_call.arguments["slug"])
-                    else: res = await func(tool_call.arguments)
-                    
-                    res_str = json.dumps(res, default=str)
-                except Exception as e:
-                    res_str = f"Error: {str(e)}"
-
-                messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": res_str})
-
-    logger.info(f"Discovery Agent Task Finished: {result_summary}")
-    return result_summary
+    await manager.deactivate_all()
+    return f"Job finished. Actions: {'; '.join(actions_taken)}"

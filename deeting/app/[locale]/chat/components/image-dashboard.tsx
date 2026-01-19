@@ -13,26 +13,26 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ModelPicker } from '@/components/models/model-picker';
 import { cn } from '@/lib/utils';
+import { useImageGenerationStore } from '@/store/image-generation-store';
 
 const RATIO_OPTIONS = ["1:1", "16:9", "9:16"] as const;
 type RatioOption = (typeof RATIO_OPTIONS)[number];
 
 export default function ImageDashboard() {
   const t = useI18n('chat');
-  const { modelGroups, models, isLoadingModels } = useChatService({
+  const { models } = useChatService({
     enabled: true,
     modelCapability: "image",
   });
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState<RatioOption>("1:1");
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [output, setOutput] = useState<ImageGenerationOutputItem | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const { selectedModelId, setSelectedModelId } = useImageGenerationStore();
 
   const selectedModel = useMemo(
     () =>
@@ -50,7 +50,7 @@ export default function ImageDashboard() {
     if (!hasSelected) {
       setSelectedModelId(models[0].provider_model_id ?? models[0].id);
     }
-  }, [models, selectedModelId]);
+  }, [models, selectedModelId, setSelectedModelId]);
 
   useEffect(() => {
     return () => {
@@ -233,21 +233,6 @@ export default function ImageDashboard() {
             ))}
           </div>
         </div>
-
-        <ModelPicker
-          value={selectedModelId ?? ""}
-          onChange={(value) => setSelectedModelId(value)}
-          modelGroups={modelGroups}
-          title={t("model.label")}
-          subtitle={t("model.placeholder")}
-          searchPlaceholder={t("model.searchPlaceholder")}
-          emptyText={t("error.modelUnavailable")}
-          noResultsText={t("model.noResults")}
-          disabled={isLoadingModels}
-          showHeader
-          className="bg-transparent shadow-none border-black/10 dark:border-white/10"
-          scrollAreaClassName="h-64"
-        />
 
         {status ? (
           <Badge

@@ -20,6 +20,8 @@ export type ModelPickerGroup = {
   models: ModelPickerModel[]
 }
 
+type ModelPickerValueField = "id" | "provider_model_id"
+
 type ModelVisual = {
   icon: typeof Cpu
   color: string
@@ -48,6 +50,7 @@ interface ModelPickerProps {
   value?: string
   onChange: (value: string) => void
   modelGroups: ModelPickerGroup[]
+  valueField?: ModelPickerValueField
   title?: string
   subtitle?: string
   searchPlaceholder: string
@@ -63,6 +66,7 @@ export function ModelPicker({
   value,
   onChange,
   modelGroups,
+  valueField = "provider_model_id",
   title,
   subtitle,
   searchPlaceholder,
@@ -74,6 +78,11 @@ export function ModelPicker({
   scrollAreaClassName,
 }: ModelPickerProps) {
   const [query, setQuery] = useState("")
+
+  const resolveModelValue = (model: ModelPickerModel) => {
+    if (valueField === "id") return model.id
+    return model.provider_model_id ?? model.id
+  }
 
   const filteredModelGroups = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -162,13 +171,18 @@ export function ModelPicker({
                   </div>
                   <div className="flex flex-col gap-1.5 px-2 pb-2">
                     {group.models.map((model) => {
-                      const modelValue = model.provider_model_id ?? model.id
-                      const isActive = value === modelValue || value === model.id
+                      const modelValue = resolveModelValue(model)
+                      const isActive =
+                        value === modelValue ||
+                        value === model.id ||
+                        value === model.provider_model_id
                       const visual = resolveModelVisual(model)
                       const Icon = visual.icon
+                      const modelKey =
+                        model.provider_model_id ?? `${group.instance_id}:${model.id}`
                       return (
                         <Button
-                          key={modelValue}
+                          key={modelKey}
                           type="button"
                           variant="ghost"
                           size="sm"

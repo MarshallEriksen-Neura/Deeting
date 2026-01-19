@@ -100,7 +100,7 @@ export function ChatInput({
 
   return (
     <div className="p-4 border-t bg-background/80 backdrop-blur">
-      <div className="max-w-3xl mx-auto space-y-3">
+      <div className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-3">
         {attachments.length ? (
           <div className="rounded-2xl border border-white/10 bg-muted/30 p-3 shadow-sm">
             <div className="flex items-center justify-between mb-2">

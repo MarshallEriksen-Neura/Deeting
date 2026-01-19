@@ -34,7 +34,10 @@ export function SettingsForm({ isAuthenticated, isAdmin }: SettingsFormProps) {
     isLoading: isLoadingSecretary,
     mutate: mutateSecretary,
   } = useUserSecretary({ enabled: isAuthenticated })
-  const { modelGroups, isLoadingModels } = useChatService({ enabled: isAuthenticated })
+  const { modelGroups, isLoadingModels } = useChatService({
+    enabled: isAuthenticated,
+    modelCapability: "chat",
+  })
   const [isSaving, setIsSaving] = React.useState(false)
 
   const form = useForm<SettingsFormValues>({
@@ -110,6 +113,7 @@ export function SettingsForm({ isAuthenticated, isAdmin }: SettingsFormProps) {
             canEditPersonal={canEditPersonal}
             hasAvailableModels={hasAvailableModels}
             modelGroups={modelGroups}
+            isLoadingModels={isLoadingModels}
           />
         </div>
 

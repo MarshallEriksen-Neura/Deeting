@@ -38,7 +38,7 @@ export default function ChatLayout({
 
       {/* Controls / Morphing Bar (Bottom Center) */}
       <div className="absolute bottom-0 left-0 right-0 z-40 flex justify-center pb-8 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-3xl px-4">
+        <div className="pointer-events-auto w-full max-w-5xl 2xl:max-w-6xl px-4">
           {controls}
         </div>
       </div>

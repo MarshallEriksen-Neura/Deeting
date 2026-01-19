@@ -10,6 +10,8 @@ export interface ModelGroup {
   models: Array<{
     id: string
     owned_by?: string
+    upstream_model_id?: string
+    provider_model_id?: string
   }>
 }
 

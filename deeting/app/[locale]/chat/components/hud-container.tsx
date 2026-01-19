@@ -1,5 +1,5 @@
 'use client';
-import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon, Bot, Plus } from 'lucide-react';
+import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,11 +10,10 @@ import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useI18n } from '@/hooks/use-i18n';
-import { Button } from '@/components/ui/button';
 import { ModelPicker, resolveModelVisual } from '@/components/models/model-picker';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/components/ui/status-pill';
-import { cn } from '@/lib/utils';
+import { useImageGenerationStore } from '@/store/image-generation-store';
 
 export default function HUD() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -24,6 +23,7 @@ export default function HUD() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const isImage = pathname?.includes('/create/image');
   
   const { setTheme, theme } = useTheme();
   
@@ -59,17 +59,30 @@ export default function HUD() {
     }))
   );
 
-  const { assistants: serviceAssistants, models: serviceModels, modelGroups: serviceModelGroups } = useChatService({ enabled: true });
+  const { assistants: serviceAssistants, models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
+    enabled: !isImage,
+  });
+  const {
+    models: imageModels,
+    modelGroups: imageModelGroups,
+    isLoadingModels: isLoadingImageModels,
+  } = useChatService({
+    enabled: isImage,
+    modelCapability: "image",
+  });
+  const { selectedModelId, setSelectedModelId } = useImageGenerationStore();
 
   useEffect(() => {
+    if (isImage) return;
     if (serviceAssistants.length) {
       setAssistants(serviceAssistants);
     }
-  }, [serviceAssistants, setAssistants]);
+  }, [isImage, serviceAssistants, setAssistants]);
 
   useEffect(() => {
+    if (isImage) return;
     setModels(serviceModels);
-  }, [serviceModels, setModels]);
+  }, [isImage, serviceModels, setModels]);
 
   useEffect(() => {
     if (!activeAssistantId && assistants.length) {
@@ -78,20 +91,33 @@ export default function HUD() {
   }, [activeAssistantId, assistants, setActiveAssistantId]);
 
   useEffect(() => {
-    if (!models.length) return;
+    if (isImage || !models.length) return;
     const exists = models.some((model) => model.id === config.model || model.provider_model_id === config.model);
     if (!exists) {
       setConfig({ model: models[0].provider_model_id ?? models[0].id });
     }
-  }, [config.model, models, setConfig]);
+  }, [config.model, isImage, models, setConfig]);
+
+  useEffect(() => {
+    if (!isImage || !imageModels.length) return;
+    const exists = imageModels.some(
+      (model) => model.id === selectedModelId || model.provider_model_id === selectedModelId
+    );
+    if (!exists) {
+      setSelectedModelId(imageModels[0].provider_model_id ?? imageModels[0].id);
+    }
+  }, [imageModels, isImage, selectedModelId, setSelectedModelId]);
 
   useEffect(() => {
     if (!activeAssistantId) return;
     void loadHistory(activeAssistantId);
   }, [activeAssistantId, loadHistory]);
 
+  const activeModelSource = isImage ? imageModels : models;
+  const activeModelId = isImage ? selectedModelId : config.model;
   const activeModel =
-    models.find((model) => model.provider_model_id === config.model || model.id === config.model) ?? models[0];
+    activeModelSource.find((model) => model.provider_model_id === activeModelId || model.id === activeModelId) ??
+    activeModelSource[0];
   const activeModelVisual = resolveModelVisual(activeModel);
   const statusDetail = resolveStatusDetail(t, statusCode, statusMeta);
   
@@ -179,14 +205,21 @@ export default function HUD() {
                 className="absolute top-full mt-3 w-80 bg-[#F7F9FB]/95 dark:bg-[#0b0c0e]/92 backdrop-blur-2xl border border-slate-200/70 dark:border-white/10 rounded-[2.25rem] shadow-[0_20px_50px_-18px_rgba(15,23,42,0.35),0_8px_20px_-12px_rgba(37,99,235,0.18)] overflow-hidden p-4 flex flex-col gap-4 z-50"
             >
                 <ModelPicker
-                  value={config.model}
-                  onChange={(value) => setConfig({ model: value })}
-                  modelGroups={serviceModelGroups}
+                  value={activeModelId ?? ""}
+                  onChange={(value) => {
+                    if (isImage) {
+                      setSelectedModelId(value);
+                      return;
+                    }
+                    setConfig({ model: value });
+                  }}
+                  modelGroups={isImage ? imageModelGroups : serviceModelGroups}
                   title={t("model.label")}
                   subtitle={t("model.placeholder")}
                   searchPlaceholder={t("model.searchPlaceholder")}
                   emptyText={t("error.modelUnavailable")}
                   noResultsText={t("model.noResults")}
+                  disabled={isImage ? isLoadingImageModels : false}
                 />
 
                 <div className="flex items-center justify-center pb-1">

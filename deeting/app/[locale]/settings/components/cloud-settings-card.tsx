@@ -77,9 +77,15 @@ export function CloudSettingsCard({ control, canEditCloud }: CloudSettingsCardPr
           render={({ field }) => (
             <FormItem>
               <FormLabel>{t("cloud.modelLabel")}</FormLabel>
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-[var(--surface)]/60 px-4 py-3 text-xs text-muted-foreground">
+                <span>{t("cloud.currentLabel")}</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {field.value || t("cloud.currentEmpty")}
+                </span>
+              </div>
               <Select
                 onValueChange={field.onChange}
-                defaultValue={field.value}
+                value={field.value}
                 disabled={!canEditCloud}
               >
                 <FormControl>

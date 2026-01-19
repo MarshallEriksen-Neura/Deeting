@@ -27,13 +27,35 @@ interface PersonalSettingsCardProps {
   canEditPersonal: boolean
   hasAvailableModels: boolean
   modelGroups: ModelGroup[]
+  isLoadingModels?: boolean
+}
+
+type SelectedModel = {
+  model: ModelGroup["models"][number]
+  group?: ModelGroup
+}
+
+const findSelectedModel = (
+  value: string | undefined,
+  groups: ModelGroup[]
+): SelectedModel | null => {
+  if (!value) return null
+  for (const group of groups) {
+    for (const model of group.models) {
+      if (model.id === value || model.provider_model_id === value) {
+        return { model, group }
+      }
+    }
+  }
+  return null
 }
 
 export function PersonalSettingsCard({ 
   control, 
   canEditPersonal, 
   hasAvailableModels, 
-  modelGroups 
+  modelGroups,
+  isLoadingModels = false,
 }: PersonalSettingsCardProps) {
   const t = useI18n("settings")
 
@@ -77,26 +99,100 @@ export function PersonalSettingsCard({
         <FormField
           control={control}
           name="secretaryModel"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="sr-only">{t("personal.secretaryLabel")}</FormLabel>
-              <FormControl>
-                <ModelPicker
-                  value={field.value}
-                  onChange={field.onChange}
-                  modelGroups={modelGroups}
-                  title={t("personal.secretaryLabel")}
-                  subtitle={t("personal.secretaryPlaceholder")}
-                  searchPlaceholder={t("personal.modelSearchPlaceholder")}
-                  emptyText={t("personal.emptyHint")}
-                  noResultsText={t("personal.modelNoResults")}
-                  disabled={!canEditPersonal || !hasAvailableModels}
-                  scrollAreaClassName="h-64 pr-1"
-                />
-              </FormControl>
-              <FormDescription>{t("personal.secretaryHelp")}</FormDescription>
-            </FormItem>
-          )}
+          render={({ field }) => {
+            const selectedValue = field.value?.trim()
+            const selectedModel = findSelectedModel(selectedValue, modelGroups)
+            const selectionState = isLoadingModels
+              ? "loading"
+              : selectedValue
+              ? selectedModel
+                ? "configured"
+                : "unlisted"
+              : "empty"
+            const statusLabel =
+              selectionState === "loading"
+                ? t("personal.currentLoading")
+                : selectionState === "configured"
+                ? t("personal.currentConfigured")
+                : selectionState === "unlisted"
+                ? t("personal.currentUnlisted")
+                : t("personal.currentEmpty")
+            const displayName =
+              selectionState === "loading"
+                ? selectedValue || t("personal.currentLoading")
+                : selectionState === "configured"
+                ? selectedModel?.model.id
+                : selectedValue
+                ? selectedValue
+                : t("personal.currentEmpty")
+            const ownerText =
+              selectionState === "configured"
+                ? selectedModel?.model.owned_by || selectedModel?.group?.provider
+                : null
+
+            return (
+              <FormItem>
+                <FormLabel className="sr-only">{t("personal.secretaryLabel")}</FormLabel>
+                <div className="rounded-2xl border border-white/10 bg-[var(--surface)]/60 px-4 py-3 text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span
+                          className={
+                            selectionState === "configured"
+                              ? "absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/40"
+                              : "absolute inline-flex h-full w-full rounded-full bg-slate-400/30"
+                          }
+                        />
+                        <span
+                          className={
+                            selectionState === "configured"
+                              ? "relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"
+                              : selectionState === "loading"
+                              ? "relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-400/70"
+                              : "relative inline-flex h-2.5 w-2.5 rounded-full bg-slate-400"
+                          }
+                        />
+                      </span>
+                      <span>{t("personal.currentLabel")}</span>
+                    </div>
+                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-foreground/80">
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-col gap-1 text-sm font-semibold text-foreground">
+                    <span className="truncate">{displayName}</span>
+                    {ownerText ? (
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        {ownerText}
+                      </span>
+                    ) : null}
+                  </div>
+                  {selectionState === "unlisted" ? (
+                    <div className="mt-2 text-[11px] text-amber-500">
+                      {t("personal.currentUnlistedHint")}
+                    </div>
+                  ) : null}
+                </div>
+                <FormControl>
+                  <ModelPicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    modelGroups={modelGroups}
+                    valueField="id"
+                    title={t("personal.secretaryLabel")}
+                    subtitle={t("personal.secretaryPlaceholder")}
+                    searchPlaceholder={t("personal.modelSearchPlaceholder")}
+                    emptyText={t("personal.emptyHint")}
+                    noResultsText={t("personal.modelNoResults")}
+                    disabled={!canEditPersonal || !hasAvailableModels}
+                    scrollAreaClassName="h-64 pr-1"
+                  />
+                </FormControl>
+                <FormDescription>{t("personal.secretaryHelp")}</FormDescription>
+              </FormItem>
+            )
+          }}
         />
       </GlassCardContent>
       <GlassCardFooter className="justify-end">

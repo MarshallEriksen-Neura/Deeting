@@ -8,6 +8,7 @@ from app.agent_plugins.core.manager import PluginManager
 from app.agent_plugins.builtins.database.plugin import DatabasePlugin
 from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
 from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
+from app.agent_plugins.builtins.scheduler.plugin import TaskSchedulerPlugin
 from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -22,13 +23,10 @@ class AgentService:
         self.plugin_manager = PluginManager()
         
         # 1. Register ALL available capabilities here
-        # For the "Assistant Market" or "Knowledge Base" use cases, 
-        # you would simply register their respective plugins here.
         self.plugin_manager.register_class(DatabasePlugin)
         self.plugin_manager.register_class(ProviderRegistryPlugin)
         self.plugin_manager.register_class(CrawlerPlugin)
-        # self.plugin_manager.register_class(VectorStorePlugin)  <-- Future: For Knowledge Base
-        # self.plugin_manager.register_class(AssistantMarketPlugin) <-- Future: For Assistant Market
+        self.plugin_manager.register_class(TaskSchedulerPlugin) # Added Scheduler
         
         self.tools: List[ToolDefinition] = []
         self.tool_map: Dict[str, Any] = {}
@@ -68,10 +66,12 @@ class AgentService:
         method_name = f"handle_{tool_name}" # Convention: handle_tool_name
         
         for plugin in self.plugin_manager.plugins.values():
+            # Check for direct method on plugin class first (e.g. submit_background_ingestion_job)
+            if hasattr(plugin, tool_name): 
+                return getattr(plugin, tool_name)
+            # Check for handle_ prefix convention
             if hasattr(plugin, method_name):
                 return getattr(plugin, method_name)
-            if hasattr(plugin, tool_name): # Fallback: tool_name
-                return getattr(plugin, tool_name)
         return None
 
     async def chat(

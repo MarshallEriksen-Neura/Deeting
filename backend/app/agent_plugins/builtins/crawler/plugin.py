@@ -16,7 +16,7 @@ class CrawlerPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.tools.crawler",
-            version="1.0.0",
+            version="1.1.0",
             description="Provides web crawling capabilities using Playwright.",
             author="Gemini CLI"
         )
@@ -66,6 +66,11 @@ class CrawlerPlugin(AgentPlugin):
                                 "default": 30000,
                                 "description": "Timeout in milliseconds."
                             },
+                            "max_scrolls": {
+                                "type": "integer",
+                                "default": 0,
+                                "description": "Number of times to scroll to the bottom. Use >0 for infinite scroll pages."
+                            },
                             "extract_markdown": {
                                 "type": "boolean",
                                 "default": True,
@@ -97,6 +102,7 @@ class CrawlerPlugin(AgentPlugin):
         url: str,
         wait_for: str = "networkidle",
         timeout: int = 30000,
+        max_scrolls: int = 0,
         extract_markdown: bool = True,
         extract_tables: bool = True,
         extract_code: bool = True,
@@ -106,11 +112,12 @@ class CrawlerPlugin(AgentPlugin):
         Tool Handler: Execute crawl task.
         """
         logger = self.context.get_logger()
-        logger.info(f"Crawling URL: {url}")
+        logger.info(f"Crawling URL: {url} (Scrolls: {max_scrolls})")
 
         cfg = CrawlConfig(
             wait_for=wait_for,
             timeout=timeout,
+            max_scrolls=max_scrolls,
             extract_markdown=extract_markdown,
             extract_tables=extract_tables,
             extract_code=extract_code,

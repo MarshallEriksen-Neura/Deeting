@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import re
 from typing import Any
@@ -28,6 +29,7 @@ class CrawlConfig:
         extract_tables: bool = True,
         extract_code: bool = True,
         user_agent: str | None = None,
+        max_scrolls: int = 0, # Added max_scrolls
     ) -> None:
         self.wait_for = wait_for
         self.timeout = timeout
@@ -35,6 +37,7 @@ class CrawlConfig:
         self.extract_tables = extract_tables
         self.extract_code = extract_code
         self.user_agent = user_agent
+        self.max_scrolls = max_scrolls
 
 
 class CrawlRunner:
@@ -151,6 +154,10 @@ class CrawlRunner:
 
                     status = response.status
 
+                    # Handle Infinite Scroll
+                    if config.max_scrolls > 0:
+                        await cls._scroll_to_bottom(page, config.max_scrolls)
+
                     # Get page title
                     title = await page.title()
 
@@ -200,3 +207,14 @@ class CrawlRunner:
                 "status": 0,
                 "error": str(e),
             }
+
+    @staticmethod
+    async def _scroll_to_bottom(page: Any, max_scrolls: int) -> None:
+        """
+        Scroll the page to trigger dynamic content loading.
+        """
+        for _ in range(max_scrolls):
+            # Scroll down
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            # Wait for content load (heuristic)
+            await page.wait_for_timeout(1000) # Wait 1s between scrolls

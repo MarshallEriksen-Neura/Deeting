@@ -90,7 +90,7 @@ export function ChatMessageList({
   return (
     <div ref={scrollAreaRef} className="relative flex-1">
       <ScrollArea className="h-full p-4">
-        <div className="max-w-3xl mx-auto space-y-6 py-4">
+        <div className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 py-4">
         {messages.map((msg) => (
           <div
             key={msg.id}
@@ -131,7 +131,7 @@ export function ChatMessageList({
                 </div>
               </div>
             ) : (
-              <div className="relative max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm bg-primary text-primary-foreground rounded-tr-sm">
+              <div className="relative max-w-[88%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm bg-primary text-primary-foreground rounded-tr-sm">
                 {msg.attachments?.length ? (
                   <div className="mb-3">
                     <MessageAttachments attachments={msg.attachments} variant="user" alt={imageAlt} />

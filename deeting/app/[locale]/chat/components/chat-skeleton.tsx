@@ -26,12 +26,12 @@ export function ChatSkeleton() {
 
       {/* 2. Message Area Skeleton */}
       <div className="flex-1 p-4 space-y-6 overflow-hidden">
-        <div className="max-w-3xl mx-auto space-y-8 py-4">
+        <div className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-8 py-4">
           
           {/* Greeting from Assistant */}
           <div className="flex gap-3">
             <Skeleton className="h-8 w-8 rounded-full shrink-0" />
-            <div className="space-y-2 max-w-[80%]">
+            <div className="space-y-2 max-w-[88%]">
               <Skeleton className="h-4 w-[200px]" />
               <Skeleton className="h-4 w-[140px]" />
             </div>
@@ -40,7 +40,7 @@ export function ChatSkeleton() {
           {/* Fake History (Right) */}
           <div className="flex gap-3 flex-row-reverse">
             <Skeleton className="h-8 w-8 rounded-full shrink-0" />
-            <div className="space-y-2 max-w-[80%]">
+            <div className="space-y-2 max-w-[88%]">
                <Skeleton className="h-10 w-[240px] rounded-2xl rounded-tr-sm" />
             </div>
           </div>
@@ -48,7 +48,7 @@ export function ChatSkeleton() {
            {/* Fake Response (Left) */}
            <div className="flex gap-3">
             <Skeleton className="h-8 w-8 rounded-full shrink-0" />
-            <div className="space-y-2 w-full max-w-[80%]">
+            <div className="space-y-2 w-full max-w-[92%]">
               <Skeleton className="h-32 w-full rounded-2xl rounded-tl-sm" />
             </div>
           </div>
@@ -58,7 +58,7 @@ export function ChatSkeleton() {
 
       {/* 3. Input Area Skeleton */}
       <div className="p-4 border-t bg-background/80 backdrop-blur">
-        <div className="max-w-3xl mx-auto relative">
+        <div className="max-w-5xl 2xl:max-w-6xl mx-auto relative">
           <Skeleton className="h-[52px] w-full rounded-full" />
         </div>
         <div className="flex justify-center mt-2">
