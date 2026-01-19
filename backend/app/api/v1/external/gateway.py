@@ -444,6 +444,7 @@ def build_external_context(
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.user_id = user_id
+    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
     
     # 鉴权与配置
     if principal:

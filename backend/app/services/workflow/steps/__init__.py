@@ -19,6 +19,7 @@ from app.services.workflow.steps.base import (
 from app.services.workflow.steps.billing import BillingStep
 from app.services.workflow.steps.conversation_append import ConversationAppendStep
 from app.services.workflow.steps.conversation_load import ConversationLoadStep
+from app.services.workflow.steps.resolve_assets import ResolveAssetsStep
 from app.services.workflow.steps.memory_write import MemoryWriteStep
 from app.services.workflow.steps.quota_check import QuotaCheckStep
 from app.services.workflow.steps.rate_limit import RateLimitStep
@@ -44,6 +45,7 @@ __all__ = [
     "QuotaCheckStep",
     "RateLimitStep",
     "ConversationLoadStep",
+    "ResolveAssetsStep",
     "ConversationAppendStep",
     "MemoryWriteStep",
     "RequestAdapterStep",

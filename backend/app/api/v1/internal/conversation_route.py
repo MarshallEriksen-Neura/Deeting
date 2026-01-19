@@ -276,6 +276,7 @@ async def regenerate_last_reply(
         user_id=str(user.id) if user else None,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
+    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
     ctx.set("validation", "request", chat_req)
     ctx.set("conversation", "session_id", session_id)
 

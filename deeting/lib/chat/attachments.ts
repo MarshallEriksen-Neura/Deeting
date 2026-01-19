@@ -1,4 +1,5 @@
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
+import { completeAssetUpload, initAssetUpload } from "@/lib/api/media-assets"
 
 type AttachmentBuildResult = {
   attachments: ChatImageAttachment[]
@@ -14,21 +15,82 @@ const createAttachmentId = () => {
   return `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-const readFileAsDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result)
-      } else {
-        reject(new Error("invalid_result"))
-      }
-    }
-    reader.onerror = () => reject(new Error("read_failed"))
-    reader.readAsDataURL(file)
+const bufferToHex = (buffer: ArrayBuffer) =>
+  Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+
+const hashFile = async (file: File) => {
+  const data = await file.arrayBuffer()
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", data)
+  return bufferToHex(digest)
+}
+
+const buildUploadHeaders = (
+  uploadHeaders: Record<string, string> | null | undefined,
+  contentType: string
+) => {
+  const headers = new Headers(uploadHeaders ?? {})
+  if (contentType && !headers.has("Content-Type")) {
+    headers.set("Content-Type", contentType)
+  }
+  return headers
+}
+
+const uploadFile = async (url: string, headers: Headers, file: File) => {
+  const response = await fetch(url, {
+    method: "PUT",
+    headers,
+    body: file,
+  })
+  if (!response.ok) {
+    throw new Error("upload_failed")
+  }
+}
+
+const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> => {
+  const contentHash = await hashFile(file)
+  const init = await initAssetUpload({
+    content_hash: contentHash,
+    size_bytes: file.size,
+    content_type: file.type,
   })
 
-export async function buildImageAttachments(files: File[]): Promise<AttachmentBuildResult> {
+  let assetUrl = init.asset_url ?? undefined
+  if (!init.deduped) {
+    if (!init.upload_url) {
+      throw new Error("missing_upload_url")
+    }
+    const headers = buildUploadHeaders(init.upload_headers, file.type)
+    await uploadFile(init.upload_url, headers, file)
+    const completed = await completeAssetUpload({
+      object_key: init.object_key,
+      content_hash: contentHash,
+      size_bytes: file.size,
+      content_type: file.type,
+    })
+    assetUrl = completed.asset_url
+  }
+
+  if (!assetUrl) {
+    throw new Error("missing_asset_url")
+  }
+
+  return {
+    id: createAttachmentId(),
+    url: assetUrl,
+    objectKey: init.object_key,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    source: "oss",
+    sha256: contentHash,
+  }
+}
+
+export async function buildImageAttachments(
+  files: File[]
+): Promise<AttachmentBuildResult> {
   const imageFiles = files.filter((file) => file.type.startsWith("image/"))
   const skipped = files.length - imageFiles.length
   if (!imageFiles.length) {
@@ -36,13 +98,7 @@ export async function buildImageAttachments(files: File[]): Promise<AttachmentBu
   }
 
   const results = await Promise.allSettled(
-    imageFiles.map(async (file) => ({
-      id: createAttachmentId(),
-      url: await readFileAsDataUrl(file),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-    }))
+    imageFiles.map(async (file) => buildImageAttachment(file))
   )
 
   const attachments: ChatImageAttachment[] = []
@@ -59,4 +115,3 @@ export async function buildImageAttachments(files: File[]): Promise<AttachmentBu
 }
 
 export type { AttachmentBuildResult }
-

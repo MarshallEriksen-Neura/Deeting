@@ -179,3 +179,31 @@ async def test_media_asset_upload_complete_hash_mismatch(
 
     assert resp.status_code == 400
     assert "hash" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_media_asset_sign_endpoint(
+    client: AsyncClient,
+    auth_tokens: dict,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "SECRET_KEY", "secret")
+
+    object_keys = [
+        "assets/demo/2026/01/15/hello.png",
+        "assets/demo/2026/01/16/world.png",
+    ]
+
+    resp = await client.post(
+        "/api/v1/media/assets/sign",
+        json={"object_keys": object_keys},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["assets"]) == len(object_keys)
+    assert data["assets"][0]["object_key"] == object_keys[0]
+    assert data["assets"][0]["asset_url"].startswith(
+        "http://test/api/v1/media/assets/"
+    )

@@ -59,6 +59,25 @@
 }
 ```
 
+## POST /media/assets/sign
+批量生成短链签名 URL，用于前端展示或上游调用。
+
+请求体字段：
+- `object_keys` string[]，对象存储 Key 列表（必填）
+- `expires_seconds` number，签名有效期（可选）
+
+响应示例：
+```json
+{
+  "assets": [
+    {
+      "object_key": "assets/demo/2026/01/15/hello.png",
+      "asset_url": "https://api.example.com/api/v1/media/assets/assets/demo/2026/01/15/hello.png?expires=...&sig=..."
+    }
+  ]
+}
+```
+
 ## GET /media/assets/{object_key}
 通过网关短链签名访问资产（无需额外鉴权，需带 `expires` 与 `sig`）。
 

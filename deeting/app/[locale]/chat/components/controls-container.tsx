@@ -187,13 +187,15 @@ export default function DefaultControls() {
             </Button>
           </div>
           <div className={cn("grid gap-2", attachments.length > 3 ? "grid-cols-3" : "grid-cols-2")}>
-            {attachments.map((attachment) => (
+            {attachments
+              .filter((attachment) => attachment.url)
+              .map((attachment) => (
               <div
                 key={attachment.id}
                 className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/70 dark:bg-white/5 shadow-sm"
               >
                 <Image
-                  src={attachment.url}
+                  src={attachment.url ?? ""}
                   alt={attachment.name ?? t("input.image.alt")}
                   width={240}
                   height={240}

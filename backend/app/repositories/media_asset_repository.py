@@ -14,6 +14,9 @@ class MediaAssetRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get(self, asset_id) -> MediaAsset | None:
+        return await self.session.get(MediaAsset, asset_id)
+
     async def get_by_hash(self, content_hash: str, size_bytes: int) -> MediaAsset | None:
         stmt = select(MediaAsset).where(
             MediaAsset.content_hash == content_hash,

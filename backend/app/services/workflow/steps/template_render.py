@@ -50,7 +50,9 @@ class TemplateRenderStep(BaseStep):
         """执行模板渲染"""
         upstream_url = ctx.get("routing", "upstream_url") or ctx.selected_upstream
         template_engine = ctx.get("routing", "template_engine") or "simple_replace"
-        request_data = ctx.get("validation", "validated") or {}
+        request_data = ctx.get("resolve_assets", "request_data") or ctx.get(
+            "validation", "validated"
+        ) or {}
         default_params = ctx.get("routing", "default_params") or {}
         default_headers = ctx.get("routing", "default_headers") or {}
 
@@ -120,7 +122,11 @@ class TemplateRenderStep(BaseStep):
         request_data: dict,
     ) -> dict[str, Any]:
         """构建模板渲染上下文"""
-        conversation_messages = ctx.get("conversation", "merged_messages") or request_data.get("messages", [])
+        conversation_messages = (
+            ctx.get("resolve_assets", "merged_messages")
+            or ctx.get("conversation", "merged_messages")
+            or request_data.get("messages", [])
+        )
         summary = ctx.get("conversation", "summary")
         return {
             # 请求数据

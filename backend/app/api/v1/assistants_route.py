@@ -286,6 +286,7 @@ async def preview_assistant(
         api_key_id=str(current_user.id) if current_user else None,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
+    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
     ctx.set("validation", "request", preview_request)
     ctx.set("routing", "include_public", False)
 

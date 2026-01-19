@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +19,7 @@ class MediaAsset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UniqueConstraint("object_key", name="uq_media_asset_object_key"),
         Index("ix_media_asset_content_hash", "content_hash"),
         Index("ix_media_asset_object_key", "object_key"),
+        Index("ix_media_asset_expire_at", "expire_at"),
         Index(
             "idx_media_asset_created_at",
             "created_at",
@@ -53,6 +55,11 @@ class MediaAsset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         String(128),
         nullable=True,
         comment="对象存储 ETag",
+    )
+    expire_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="过期时间（用于生命周期清理）",
     )
     uploader_user_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),

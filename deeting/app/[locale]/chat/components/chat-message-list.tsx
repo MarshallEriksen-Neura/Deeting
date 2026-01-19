@@ -220,7 +220,9 @@ function MessageAttachments({
 
   return (
     <div className={cn("grid gap-2", gridCols)}>
-      {attachments.map((attachment) => (
+      {attachments
+        .filter((attachment) => attachment.url)
+        .map((attachment) => (
         <div
           key={attachment.id}
           className={cn(
@@ -229,7 +231,7 @@ function MessageAttachments({
           )}
         >
           <Image
-            src={attachment.url}
+            src={attachment.url ?? ""}
             alt={attachment.name ?? alt}
             width={320}
             height={320}

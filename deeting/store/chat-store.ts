@@ -10,6 +10,7 @@ import {
 } from "@/lib/chat/message-content";
 import { fetchConversationWindow } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
+import { signAssets } from "@/lib/api/media-assets";
 
 export type MessageRole = "user" | "assistant" | "system";
 
@@ -91,6 +92,36 @@ function mapConversationMessages(rawMessages: Array<{ role?: string; content?: u
     };
   });
 }
+
+const resolveMessageAttachments = async (messages: Message[]) => {
+  const objectKeys = new Set<string>();
+  messages.forEach((message) => {
+    message.attachments?.forEach((attachment) => {
+      const key = attachment.objectKey;
+      if (!key) return;
+      if (!attachment.url || attachment.url.startsWith("asset://")) {
+        objectKeys.add(key);
+      }
+    });
+  });
+  if (!objectKeys.size) return messages;
+
+  const signed = await signAssets(Array.from(objectKeys));
+  const urlMap = new Map(
+    signed.assets.map((item) => [item.object_key, item.asset_url])
+  );
+
+  return messages.map((message) => {
+    if (!message.attachments?.length) return message;
+    const attachments = message.attachments.map((attachment) => {
+      if (!attachment.objectKey) return attachment;
+      const url = urlMap.get(attachment.objectKey);
+      if (!url) return attachment;
+      return { ...attachment, url };
+    });
+    return { ...message, attachments };
+  });
+};
 
 interface ChatConfig {
   model: string;
@@ -246,7 +277,13 @@ export const useChatStore = create<ChatState & ChatActions>()(
         try {
           const windowState = await fetchConversationWindow(sessionId);
           const mapped = mapConversationMessages(windowState.messages ?? []);
-          set({ messages: mapped, sessionId });
+          let resolved = mapped;
+          try {
+            resolved = await resolveMessageAttachments(mapped);
+          } catch {
+            resolved = mapped;
+          }
+          set({ messages: resolved, sessionId });
           const activeAssistantId = get().activeAssistantId;
           if (typeof window !== "undefined" && activeAssistantId) {
             localStorage.setItem(sessionKeyForAssistant(activeAssistantId), sessionId);

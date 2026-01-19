@@ -31,6 +31,7 @@ STEP_STATUS_STAGE_MAP: dict[str, str] = {
     "quota_check": "listen",
     "rate_limit": "listen",
     "conversation_load": "remember",
+    "resolve_assets": "remember",
     "routing": "remember",
     "template_render": "evolve",
     "upstream_call": "evolve",

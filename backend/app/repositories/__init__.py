@@ -20,6 +20,8 @@ from .system_setting_repository import SystemSettingRepository
 from .notification_repository import NotificationReceiptRepository, NotificationRepository
 from .review_repository import ReviewTaskRepository
 from .media_asset_repository import MediaAssetRepository
+from .image_generation_task_repository import ImageGenerationTaskRepository
+from .image_generation_output_repository import ImageGenerationOutputRepository
 from .mcp_market_repository import McpMarketRepository
 
 __all__ = [
@@ -52,5 +54,7 @@ __all__ = [
     "NotificationReceiptRepository",
     "ReviewTaskRepository",
     "MediaAssetRepository",
+    "ImageGenerationTaskRepository",
+    "ImageGenerationOutputRepository",
     "McpMarketRepository",
 ]

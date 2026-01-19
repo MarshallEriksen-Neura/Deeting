@@ -147,13 +147,15 @@ function MessageAttachments({
 
   return (
     <div className={`grid gap-2 ${gridCols}`}>
-      {attachments.map((attachment) => (
+      {attachments
+        .filter((attachment) => attachment.url)
+        .map((attachment) => (
         <div
           key={attachment.id}
           className={`relative overflow-hidden rounded-xl border border-white/10 shadow-sm ${cardBg}`}
         >
           <Image
-            src={attachment.url}
+            src={attachment.url ?? ""}
             alt={attachment.name ?? alt}
             width={280}
             height={280}

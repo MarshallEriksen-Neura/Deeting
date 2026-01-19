@@ -51,6 +51,11 @@ from .notification import (
     NotificationType,
 )
 from .media_asset import MediaAsset
+from .image_generation import (
+    ImageGenerationOutput,
+    ImageGenerationStatus,
+    ImageGenerationTask,
+)
 from .provider_preset import ProviderPreset
 from .provider_instance import ProviderInstance, ProviderModel, ProviderCredential
 from .upstream_secret import UpstreamSecret
@@ -76,6 +81,9 @@ __all__ = [
     "NotificationType",
     "NotificationLevel",
     "MediaAsset",
+    "ImageGenerationTask",
+    "ImageGenerationOutput",
+    "ImageGenerationStatus",
     "Assistant",
     "AssistantVersion",
     "AssistantVisibility",

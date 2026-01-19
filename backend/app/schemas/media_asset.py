@@ -50,9 +50,39 @@ class AssetUploadCompleteResponse(BaseSchema):
     asset_url: str = Field(..., description="可直接展示的访问 URL")
 
 
+class AssetSignRequest(BaseSchema):
+    object_keys: list[str] = Field(..., description="对象存储 Key 列表", min_length=1)
+    expires_seconds: int | None = Field(
+        None,
+        description="签名有效期（秒，可选）",
+        gt=0,
+    )
+
+    @field_validator("object_keys")
+    @classmethod
+    def _validate_object_keys(cls, value: list[str]) -> list[str]:
+        cleaned = [str(item or "").strip() for item in value]
+        cleaned = [item for item in cleaned if item]
+        if not cleaned:
+            raise ValueError("object_keys must not be empty")
+        return cleaned
+
+
+class AssetSignedItem(BaseSchema):
+    object_key: str = Field(..., description="对象存储 Key")
+    asset_url: str = Field(..., description="签名后的访问 URL")
+
+
+class AssetSignResponse(BaseSchema):
+    assets: list[AssetSignedItem] = Field(..., description="签名后的资源列表")
+
+
 __all__ = [
     "AssetUploadCompleteRequest",
     "AssetUploadCompleteResponse",
     "AssetUploadInitRequest",
     "AssetUploadInitResponse",
+    "AssetSignRequest",
+    "AssetSignedItem",
+    "AssetSignResponse",
 ]

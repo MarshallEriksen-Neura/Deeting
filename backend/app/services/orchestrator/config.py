@@ -39,16 +39,17 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     steps=[
         "request_adapter",  # 0) 入口格式适配（OpenAI/Claude/Responses 等）
         "validation",  # 1) 入参校验
-        "quota_check",  # 2) 配额/额度检查（外部）
-        "rate_limit",  # 3) 限流
-        "routing",  # 4) 路由决策
-        "template_render",  # 5) 模板渲染
-        "upstream_call",  # 6) 上游调用
-        "response_transform",  # 7) 响应转换
-        "memory_write",  # 8) 记忆写入（外部，异步）
-        "sanitize",  # 9) 脱敏（外部）
-        "billing",  # 10) 计费
-        "audit_log",  # 11) 审计日志
+        "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
+        "quota_check",  # 3) 配额/额度检查（外部）
+        "rate_limit",  # 4) 限流
+        "routing",  # 5) 路由决策
+        "template_render",  # 6) 模板渲染
+        "upstream_call",  # 7) 上游调用
+        "response_transform",  # 8) 响应转换
+        "memory_write",  # 9) 记忆写入（外部，异步）
+        "sanitize",  # 10) 脱敏（外部）
+        "billing",  # 11) 计费
+        "audit_log",  # 12) 审计日志
     ],
     step_configs={
         "quota_check": StepConfig(timeout=5.0),
@@ -64,17 +65,18 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     steps=[
         "validation",  # 1) 入参校验
         "conversation_load",  # 2) 会话上下文加载
-        "quota_check",  # 3) 配额/余额检查（与外部一致）
-        "rate_limit",  # 4) 限流
-        "routing",  # 5) 路由决策
-        "template_render",  # 6) 模板渲染
-        "upstream_call",  # 7) 上游调用
-        "response_transform",  # 8) 响应转换
-        "conversation_append",  # 9) 写入窗口 & 触发摘要
-        "memory_write",  # 10) 记忆写入（内部跳过）
-        "sanitize",  # 11) 脱敏
-        "billing",  # 12) 计费记录
-        "audit_log",  # 13) 审计日志（内部）
+        "resolve_assets",  # 3) 资源引用解析（asset:// -> signed URL）
+        "quota_check",  # 4) 配额/余额检查（与外部一致）
+        "rate_limit",  # 5) 限流
+        "routing",  # 6) 路由决策
+        "template_render",  # 7) 模板渲染
+        "upstream_call",  # 8) 上游调用
+        "response_transform",  # 9) 响应转换
+        "conversation_append",  # 10) 写入窗口 & 触发摘要
+        "memory_write",  # 11) 记忆写入（内部跳过）
+        "sanitize",  # 12) 脱敏
+        "billing",  # 13) 计费记录
+        "audit_log",  # 14) 审计日志（内部）
     ],
     step_configs={
         "quota_check": StepConfig(timeout=5.0),
@@ -89,15 +91,16 @@ INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
     template=WorkflowTemplate.INTERNAL_PREVIEW,
     steps=[
         "validation",  # 1) 入参校验
-        "quota_check",  # 2) 配额/余额检查（与内部一致）
-        "rate_limit",  # 3) 限流
-        "routing",  # 4) 路由决策
-        "template_render",  # 5) 模板渲染
-        "upstream_call",  # 6) 上游调用
-        "response_transform",  # 7) 响应转换
-        "sanitize",  # 8) 脱敏
-        "billing",  # 9) 计费记录
-        "audit_log",  # 10) 审计日志（内部）
+        "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
+        "quota_check",  # 3) 配额/余额检查（与内部一致）
+        "rate_limit",  # 4) 限流
+        "routing",  # 5) 路由决策
+        "template_render",  # 6) 模板渲染
+        "upstream_call",  # 7) 上游调用
+        "response_transform",  # 8) 响应转换
+        "sanitize",  # 9) 脱敏
+        "billing",  # 10) 计费记录
+        "audit_log",  # 11) 审计日志（内部）
     ],
     step_configs=dict(INTERNAL_CHAT_WORKFLOW.step_configs),
 )

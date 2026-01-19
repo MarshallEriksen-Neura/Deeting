@@ -94,6 +94,18 @@ Content-Type: application/json
 | `messages[].role` | string | 是 | 角色：`system`/`user`/`assistant` |
 | `messages[].content` | string/array | 是 | 消息内容 |
 | `stream` | boolean | 否 | 是否流式返回，默认 `false` |
+
+多模态内容示例（图片引用）：
+```json
+{
+  "role": "user",
+  "content": [
+    { "type": "text", "text": "描述这张图片" },
+    { "type": "image_url", "image_url": { "url": "asset://assets/demo/2026/01/15/hello.png" } }
+  ]
+}
+```
+说明：`asset://` 为对象存储 Key 的引用，网关会在上游调用前解析为短链签名 URL。
 | `status_stream` | boolean | 否 | 是否通过 SSE 推送状态事件；为 `true` 时即使 `stream=false` 也会返回 SSE |
 | `temperature` | float | 否 | 温度参数 (0-2) |
 | `max_tokens` | integer | 否 | 最大生成 token 数 |

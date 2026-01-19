@@ -106,13 +106,15 @@ export function ChatInput({
               </Button>
             </div>
             <div className={cn("grid gap-2", attachments.length > 3 ? "grid-cols-3" : "grid-cols-2")}>
-              {attachments.map((attachment) => (
+              {attachments
+                .filter((attachment) => attachment.url)
+                .map((attachment) => (
                 <div
                   key={attachment.id}
                   className="group relative overflow-hidden rounded-xl bg-background/60 shadow-inner"
                 >
                   <Image
-                    src={attachment.url}
+                    src={attachment.url ?? ""}
                     alt={attachment.name ?? t("input.image.alt")}
                     width={240}
                     height={240}
@@ -135,10 +137,10 @@ export function ChatInput({
                     aria-label={t("input.image.remove")}
                     disabled={disabled}
                   >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
             </div>
           </div>
         ) : null}

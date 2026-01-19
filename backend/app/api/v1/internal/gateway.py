@@ -380,6 +380,7 @@ async def test_routing(
         api_key_id=str(user.id) if user else None,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
+    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
 
@@ -438,6 +439,7 @@ async def chat_completions(
         api_key_id=str(user.id) if user else None,  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
+    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
 
@@ -500,6 +502,7 @@ async def embeddings(
         api_key_id=str(user.id) if user else None,  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
+    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
 

@@ -14,10 +14,13 @@ from app.schemas.media_asset import (
     AssetUploadCompleteResponse,
     AssetUploadInitRequest,
     AssetUploadInitResponse,
+    AssetSignRequest,
+    AssetSignResponse,
 )
 from app.services.oss.asset_storage_service import (
     AssetStorageNotConfigured,
     SignedAssetUrlError,
+    build_signed_asset_url,
     get_effective_asset_storage_mode,
     load_asset_bytes,
     presign_asset_get_url,
@@ -117,6 +120,32 @@ async def complete_asset_upload(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return AssetUploadCompleteResponse(**result)
+
+
+@router.post("/media/assets/sign", response_model=AssetSignResponse)
+async def sign_assets(
+    payload: AssetSignRequest,
+    request: Request,
+    user: User = Depends(get_current_active_user),
+) -> AssetSignResponse:
+    """批量生成资源签名 URL"""
+    base_url = str(request.base_url).rstrip("/") if request else None
+    try:
+        assets = [
+            {
+                "object_key": object_key,
+                "asset_url": build_signed_asset_url(
+                    object_key,
+                    base_url=base_url,
+                    ttl_seconds=payload.expires_seconds,
+                ),
+            }
+            for object_key in payload.object_keys
+        ]
+    except AssetStorageNotConfigured as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    return AssetSignResponse(assets=assets)
 
 
 __all__ = ["router"]
