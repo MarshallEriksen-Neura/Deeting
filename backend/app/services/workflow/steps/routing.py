@@ -167,7 +167,10 @@ class RoutingStep(BaseStep):
             ctx.set("routing", "template_engine", routing_result["template_engine"])
             ctx.set("routing", "request_template", routing_result["request_template"])
             ctx.set("routing", "response_transform", routing_result["response_transform"])
+            ctx.set("routing", "async_config", routing_result.get("async_config") or {})
+            ctx.set("routing", "http_method", routing_result.get("http_method") or "POST")
             ctx.set("routing", "routing_config", routing_result["routing_config"])
+            ctx.set("routing", "config_override", routing_result.get("config_override") or {})
             ctx.set("routing", "limit_config", routing_result["limit_config"])
             ctx.set("routing", "pricing_config", routing_result["pricing_config"])
             ctx.set("routing", "auth_type", routing_result["auth_type"])
@@ -260,7 +263,7 @@ class RoutingStep(BaseStep):
             "upstream_url": "http://mock-upstream",
             "provider": "mock",
             "template_engine": "simple_replace",
-            "request_template": "{}",
+            "request_template": {"model": None},
             "response_transform": {},
             "pricing_config": {},
             "limit_config": {},
@@ -333,6 +336,7 @@ class RoutingStep(BaseStep):
         def to_dict(c):
             return {
                 "preset_id": c.preset_id,
+                "preset_slug": c.preset_slug,
                 "preset_item_id": c.preset_item_id,
                 "instance_id": c.instance_id,
                 "provider_model_id": c.model_id,
@@ -341,6 +345,8 @@ class RoutingStep(BaseStep):
                 "template_engine": c.template_engine,
                 "request_template": c.request_template,
                 "response_transform": c.response_transform,
+                "async_config": c.async_config,
+                "http_method": c.http_method,
                 "pricing_config": c.pricing_config,
                 "limit_config": c.limit_config,
                 "auth_type": c.auth_type,
@@ -348,6 +354,7 @@ class RoutingStep(BaseStep):
                 "default_headers": c.default_headers,
                 "default_params": c.default_params,
                 "routing_config": c.routing_config,
+                "config_override": c.config_override,
                 "weight": c.weight,
                 "priority": c.priority,
                 "credential_id": c.credential_id,
@@ -437,6 +444,7 @@ class RoutingStep(BaseStep):
                     def to_dict(c):
                         return {
                             "preset_id": c.preset_id,
+                            "preset_slug": c.preset_slug,
                             "preset_item_id": c.preset_item_id,
                             "instance_id": c.instance_id,
                             "provider_model_id": c.model_id,
@@ -445,6 +453,8 @@ class RoutingStep(BaseStep):
                             "template_engine": c.template_engine,
                             "request_template": c.request_template,
                             "response_transform": c.response_transform,
+                            "async_config": c.async_config,
+                            "http_method": c.http_method,
                             "pricing_config": c.pricing_config,
                             "limit_config": c.limit_config,
                             "auth_type": c.auth_type,
@@ -452,6 +462,7 @@ class RoutingStep(BaseStep):
                             "default_headers": c.default_headers,
                             "default_params": c.default_params,
                             "routing_config": c.routing_config,
+                            "config_override": c.config_override,
                             "weight": c.weight,
                             "priority": c.priority,
                             "credential_id": c.credential_id,
@@ -490,6 +501,8 @@ class RoutingStep(BaseStep):
                 "template_engine": c.template_engine,
                 "request_template": c.request_template,
                 "response_transform": c.response_transform,
+                "async_config": c.async_config,
+                "http_method": c.http_method,
                 "pricing_config": c.pricing_config,
                 "limit_config": c.limit_config,
                 "auth_type": c.auth_type,

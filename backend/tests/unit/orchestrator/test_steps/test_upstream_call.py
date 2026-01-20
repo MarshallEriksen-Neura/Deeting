@@ -87,6 +87,7 @@ async def test_call_upstream_handles_non_json_response(monkeypatch):
         body={"hello": "world"},
         headers={},
         timeout=1.0,
+        method="POST",
     )
 
     assert result["status_code"] == 200

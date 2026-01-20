@@ -16,7 +16,7 @@ def _fake_routing_result():
             "upstream_url": "https://api.fake.com",
             "provider": "fake",
             "template_engine": "simple_replace",
-            "request_template": "{}",
+            "request_template": {"model": None},
             "response_transform": {},
             "pricing_config": {"input_per_1k": 0.1, "output_per_1k": 0.2},
             "limit_config": {"rpm": 10, "tpm": 1000},

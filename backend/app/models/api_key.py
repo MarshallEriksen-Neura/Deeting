@@ -91,7 +91,7 @@ class ApiKeyStatus(str, enum.Enum):
 
 class ScopeType(str, enum.Enum):
     """权限范围类型"""
-    CAPABILITY = "capability"  # 能力级别 (chat, embeddings, images)
+    CAPABILITY = "capability"  # 能力级别 (chat, embedding, image_generation)
     MODEL = "model"            # 模型级别 (gpt-4, claude-3)
     ENDPOINT = "endpoint"      # 端点级别 (/v1/chat/completions)
 
@@ -283,7 +283,7 @@ class ApiKeyScope(Base, UUIDPrimaryKeyMixin):
     API Key 权限范围表
 
     支持三种范围类型:
-    - capability: 能力级别 (chat, embeddings, images)
+    - capability: 能力级别 (chat, embedding, image_generation)
     - model: 模型级别 (gpt-4, claude-3-opus)
     - endpoint: 端点级别 (/v1/chat/completions)
 

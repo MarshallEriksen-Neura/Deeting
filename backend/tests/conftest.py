@@ -6,16 +6,47 @@
 """
 from __future__ import annotations
 
+import asyncio
 import faulthandler
 import os
+import sys
 import threading
 from typing import Any
+
+import pytest
 
 from app.core.cache import cache
 from app.core.config import settings
 
 _HANG_DEBUG_ENV = "PYTEST_HANG_DEBUG"
 _HANG_DEBUG_TIMEOUT = 30
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    try:
+        api_conftest = sys.modules.get("tests.api.conftest")
+        engine = getattr(api_conftest, "engine", None) if api_conftest else None
+        if engine is not None:
+            try:
+                loop.run_until_complete(asyncio.wait_for(engine.dispose(), timeout=5))
+            except Exception:
+                pass
+        cache_obj = getattr(api_conftest, "cache", None) if api_conftest else None
+        if cache_obj is not None:
+            try:
+                loop.run_until_complete(asyncio.wait_for(cache_obj.close(), timeout=5))
+            except Exception:
+                pass
+        try:
+            loop.run_until_complete(asyncio.wait_for(loop.shutdown_asyncgens(), timeout=5))
+        except Exception:
+            pass
+    finally:
+        asyncio.set_event_loop(None)
+        loop.close()
 
 
 def pytest_sessionstart(session):  # type: ignore[unused-argument]

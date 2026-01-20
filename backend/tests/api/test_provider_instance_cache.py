@@ -17,6 +17,27 @@ from app.services.providers.provider_instance_service import ProviderInstanceSer
 from tests.api.conftest import AsyncSessionLocal, engine
 from app.models import Base
 
+DEFAULT_CAPABILITY_CONFIGS = {
+    "chat": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "messages": None,
+            "stream": None,
+            "status_stream": None,
+            "temperature": None,
+            "max_tokens": None,
+            "provider_model_id": None,
+            "assistant_id": None,
+            "session_id": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+}
+
 import pytest_asyncio
 
 
@@ -50,6 +71,7 @@ async def seed_presets():
                     auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
                     default_headers={},
                     default_params={},
+                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
                     is_active=True,
                 )
             )
@@ -65,6 +87,7 @@ async def seed_presets():
                     auth_config={"secret_ref_id": "ENV_AZURE_KEY"},
                     default_headers={},
                     default_params={},
+                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
                     is_active=True,
                 )
             )
@@ -130,9 +153,6 @@ async def test_provider_model_candidates_cache_and_invalidate():
             model_id="gpt-4",
             display_name="GPT-4",
             upstream_path="/v1/chat",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -160,9 +180,6 @@ async def test_provider_model_candidates_cache_and_invalidate():
             model_id="gpt-4",
             display_name="GPT-4",
             upstream_path="/v1/chat",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -202,9 +219,6 @@ async def test_provider_model_list_returns_all():
             model_id="gpt-4",
             display_name="GPT-4",
             upstream_path="/v1/chat",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -222,9 +236,6 @@ async def test_provider_model_list_returns_all():
             model_id="gpt-3.5",
             display_name="GPT-3.5",
             upstream_path="/v1/chat-35",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -251,28 +262,29 @@ async def test_provider_preset_cache_and_invalidate():
 
         preset = ProviderPreset(
             id=uuid.uuid4(),
-            name="OpenAI",
-            slug="openai",
+            name="OpenAI Test Cache",
+            slug="openai-test-cache",
             provider="openai",
             base_url="https://api.openai.com",
             auth_type="bearer",
             auth_config={},
             default_headers={},
             default_params={},
+            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
             is_active=True,
         )
         session.add(preset)
         await session.commit()
 
         # 首次查询写入缓存
-        obj = await repo.get_by_slug("openai")
+        obj = await repo.get_by_slug("openai-test-cache")
         assert obj is not None
-        key_one = cache._make_key(CacheKeys.provider_preset("openai"))  # type: ignore[attr-defined]
+        key_one = cache._make_key(CacheKeys.provider_preset("openai-test-cache"))  # type: ignore[attr-defined]
         assert key_one in cache._redis.store  # type: ignore[attr-defined]
 
         # 活跃列表缓存
         lst = await repo.get_active_presets()
-        assert len(lst) == 1
+        assert len(lst) >= 1
         key_list = cache._make_key(CacheKeys.provider_preset_active_list())  # type: ignore[attr-defined]
         assert key_list in cache._redis.store  # type: ignore[attr-defined]
 
@@ -309,9 +321,6 @@ async def test_provider_model_alias_match():
             unified_model_id=alias_name,
             display_name="Alias Claude",
             upstream_path="/v1/chat",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -351,9 +360,6 @@ async def test_provider_model_list_cache_and_update_invalidate():
             model_id="gpt-4o",
             display_name="gpt-4o",
             upstream_path="chat/completions",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -405,9 +411,6 @@ async def test_provider_instance_model_count_updates_with_models():
             model_id="gpt-4o",
             display_name="gpt-4o",
             upstream_path="/v1/chat/completions",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -498,9 +501,6 @@ async def test_provider_model_test_ping(monkeypatch):
             model_id="gpt-4o",
             display_name="gpt-4o",
             upstream_path="chat/completions",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},

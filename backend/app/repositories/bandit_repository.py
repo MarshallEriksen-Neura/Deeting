@@ -57,9 +57,18 @@ class BanditRepository(BaseRepository[BanditArmState]):
 
         rows: list[BanditArmState] = []
         if missing:
-            stmt = select(BanditArmState).where(BanditArmState.provider_model_id.in_(missing))
-            result = await self.session.execute(stmt)
-            rows = result.scalars().all()
+            missing_uuids = []
+            for m in missing:
+                try:
+                    missing_uuids.append(uuid.UUID(m))
+                except ValueError:
+                    continue
+            
+            if missing_uuids:
+                stmt = select(BanditArmState).where(BanditArmState.provider_model_id.in_(missing_uuids))
+                result = await self.session.execute(stmt)
+                rows = result.scalars().all()
+            
             for r in rows:
                 try:
                     await cache.set_with_version(
@@ -200,7 +209,7 @@ class BanditRepository(BaseRepository[BanditArmState]):
         )
 
         if capability:
-            stmt = stmt.where(ProviderModel.capability == capability)
+            stmt = stmt.where(ProviderModel.capabilities.contains([capability]))
         if model:
             stmt = stmt.where(ProviderModel.model_id == model)
 
@@ -228,7 +237,7 @@ class BanditRepository(BaseRepository[BanditArmState]):
                     "instance_id": str(pm.instance_id),
                     "provider_model_id": str(pm.id),
                     "provider": provider,
-                    "capability": pm.capability,
+                    "capability": pm.capabilities[0] if pm.capabilities else "chat",
                     "model": pm.model_id,
                     "strategy": state.strategy,
                     "epsilon": state.epsilon,

@@ -79,7 +79,7 @@ class WorkflowContext:
     user_id: str | None = None
 
     # 请求信息
-    capability: str | None = None  # 如 chat, embeddings, image
+    capability: str | None = None  # 如 chat, embedding, image_generation
     requested_model: str | None = None
     client_ip: str | None = None
     user_agent: str | None = None

@@ -74,7 +74,8 @@ async def test_transform_anthropic_response():
     ctx.set("upstream_call", "response", anthropic_response)
     ctx.set("upstream_call", "status_code", 200)
     ctx.set("routing", "provider", "anthropic")
-    
+    ctx.set("routing", "template_engine", "anthropic_messages")
+
     result = await step.execute(ctx)
     
     assert result.status == StepStatus.SUCCESS

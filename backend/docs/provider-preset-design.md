@@ -8,7 +8,7 @@
 
 ### provider_preset（系统模板）
 - 作用：定义如何与某厂商/协议交互（base_url 模板、auth_schema、默认 header/params、请求/响应映射、模型探测路径）。
-- 关键字段：`slug`、`provider`、`base_url`、`auth_type`、`auth_config`、`default_headers`、`default_params`、`request/response_transform`、`is_active`。
+- 关键字段：`slug`、`provider`、`base_url`、`auth_type`、`auth_config`、`default_headers`、`default_params`、`capability_configs`、`is_active`。
 - 不存密钥、不存用户私有信息。
 
 ### provider_instance（用户实例 / 通道）
@@ -17,7 +17,7 @@
 
 ### provider_model（模型快照，实例下）
 - 作用：某实例可用的路由条目，直接驱动上游调用。
-- 主要字段：`instance_id`、`capability`、`model_id`(上游真实标识)、`upstream_path`、`template_engine`、`request_template`、`response_transform`、`pricing_config`、`limit_config`、`tokenizer_config`、`routing_config`、`weight`、`priority`、`source`(auto/manual)、`extra_meta`、`synced_at`、`is_active`。
+- 主要字段：`instance_id`、`capability`、`model_id`(上游真实标识)、`upstream_path`、`pricing_config`、`limit_config`、`tokenizer_config`、`routing_config`、`config_override`、`weight`、`priority`、`source`(auto/manual)、`extra_meta`、`synced_at`、`is_active`。
 - 唯一约束：`(instance_id, capability, model_id, upstream_path)`。
 
 ### bandit_arm_state（多臂状态）

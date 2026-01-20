@@ -5,7 +5,7 @@ from pydantic import Field
 from .base import BaseSchema
 
 # 网关统一字段版本，便于审计/兼容
-GATEWAY_FIELDS_VERSION = "2026-01-05"
+GATEWAY_FIELDS_VERSION = "2026-01-20"
 
 # 通用字段（各能力共享）
 COMMON_FIELDS: set[str] = {
@@ -73,7 +73,11 @@ VIDEO_ONLY_FIELDS: set[str] = {
 ALLOWED_FIELDS_BY_CAPABILITY: dict[str, set[str]] = {
     "chat": CHAT_FIELDS,
     "image": COMMON_FIELDS | IMAGE_ONLY_FIELDS,
+    "image_generation": COMMON_FIELDS | IMAGE_ONLY_FIELDS,
+    "text_to_speech": COMMON_FIELDS | AUDIO_ONLY_FIELDS,
+    "speech_to_text": COMMON_FIELDS | AUDIO_ONLY_FIELDS,
     "audio": COMMON_FIELDS | AUDIO_ONLY_FIELDS,
+    "video_generation": COMMON_FIELDS | VIDEO_ONLY_FIELDS,
     "video": COMMON_FIELDS | VIDEO_ONLY_FIELDS,
 }
 
@@ -113,7 +117,10 @@ class GatewayRequestFields(BaseSchema):
     网关内部统一的多模态请求字段（供路由/模板映射使用）。
     """
 
-    capability: str = Field(..., description="能力：chat / image / audio / video")
+    capability: str = Field(
+        ...,
+        description="能力：chat / image_generation / text_to_speech / speech_to_text / video_generation",
+    )
     model: str | None = Field(None, description="逻辑/统一模型 ID")
     provider: str | None = Field(None, description="上游厂商标识（便于审计）")
     request_id: str | None = Field(None, description="幂等键")

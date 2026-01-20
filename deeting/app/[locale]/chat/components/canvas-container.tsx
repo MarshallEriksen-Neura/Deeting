@@ -73,7 +73,7 @@ export default function Canvas() {
           if (msg.role === 'assistant') {
             return (
               <div key={msg.id} className="flex justify-start w-full">
-                <div className="flex flex-col gap-3 max-w-[92%]">
+                <div className="flex w-full flex-col gap-3 max-w-[92%]">
                   <AIResponseBubble
                     parts={normalizeMessage(msg.content)}
                     isActive={isActive}

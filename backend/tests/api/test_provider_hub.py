@@ -3,6 +3,27 @@ from sqlalchemy import select
 
 from app.models import ProviderPreset
 
+DEFAULT_CAPABILITY_CONFIGS = {
+    "chat": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "messages": None,
+            "stream": None,
+            "status_stream": None,
+            "temperature": None,
+            "max_tokens": None,
+            "provider_model_id": None,
+            "assistant_id": None,
+            "session_id": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+}
+
 
 async def _seed_presets(session):
     existing = set(
@@ -24,6 +45,7 @@ async def _seed_presets(session):
                 auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
                 default_headers={},
                 default_params={},
+                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
                 category="Cloud API",
                 theme_color="#000000",
             )
@@ -39,6 +61,7 @@ async def _seed_presets(session):
                 auth_config={"secret_ref_id": "ENV_AZURE_KEY"},
                 default_headers={},
                 default_params={},
+                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
                 category="Cloud API",
                 theme_color="#0078d4",
             )

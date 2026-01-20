@@ -31,6 +31,7 @@ from app.services.workflow.steps.signature_verify import SignatureVerifyStep
 from app.services.workflow.steps.template_render import TemplateRenderStep
 from app.services.workflow.steps.upstream_call import UpstreamCallStep
 from app.services.workflow.steps.validation import ValidationStep
+from app.services.workflow.steps.provider_execution import ProviderExecutionStep
 
 __all__ = [
     # Base
@@ -52,6 +53,7 @@ __all__ = [
     "RoutingStep",
     "TemplateRenderStep",
     "UpstreamCallStep",
+    "ProviderExecutionStep",
     "ResponseTransformStep",
     "SanitizeStep",
     "BillingStep",

@@ -19,6 +19,7 @@ from app.models.image_generation import ImageGenerationOutput, ImageGenerationSt
 from app.repositories.image_generation_output_repository import ImageGenerationOutputRepository
 from app.repositories.image_generation_task_repository import ImageGenerationTaskRepository
 from app.repositories.media_asset_repository import MediaAssetRepository
+from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.schemas.image_generation import ImageGenerationOutputItem, ImageGenerationTaskListItem
 from app.services.image_generation.prompt_security import PromptCipher, build_prompt_hash
 from app.services.oss.asset_storage_service import store_asset_bytes
@@ -38,6 +39,7 @@ class ImageGenerationService:
         self.task_repo = ImageGenerationTaskRepository(session)
         self.output_repo = ImageGenerationOutputRepository(session)
         self.asset_repo = MediaAssetRepository(session)
+        self.model_repo = ProviderModelRepository(session)
         self.prompt_cipher = PromptCipher()
 
     async def create_task(self, payload: dict[str, Any]) -> tuple[Any, bool]:
@@ -84,9 +86,20 @@ class ImageGenerationService:
         )
 
         request = _build_request_from_task(task)
+        provider_model = None
+        if task.provider_model_id:
+            provider_model = await self.model_repo.get(task.provider_model_id)
+
+        capability = "image_generation"
+        if provider_model and provider_model.capabilities:
+            capability = (
+                "image_generation"
+                if "image" in provider_model.capabilities or "image_generation" in provider_model.capabilities
+                else provider_model.capabilities[0]
+            )
         ctx = WorkflowContext(
             channel=Channel.INTERNAL,
-            capability="image",
+            capability=capability,
             requested_model=task.model,
             db_session=self.session,
             tenant_id=str(task.user_id) if task.user_id else None,
@@ -179,7 +192,12 @@ class ImageGenerationService:
             if output.media_asset_id:
                 asset = await self.asset_repo.get(output.media_asset_id)
                 if asset:
-                    if asset.expire_at and asset.expire_at <= Datetime.now():
+                    expire_at = asset.expire_at
+                    if expire_at and expire_at.tzinfo is None:
+                        from datetime import UTC
+                        expire_at = expire_at.replace(tzinfo=UTC)
+                    
+                    if expire_at and expire_at <= Datetime.now():
                         asset_url = None
                     else:
                         from app.services.oss.asset_storage_service import build_signed_asset_url
@@ -273,8 +291,14 @@ class ImageGenerationService:
             asset_url = None
             if output.media_asset_id:
                 asset = asset_map.get(output.media_asset_id)
-                if asset and (not asset.expire_at or asset.expire_at > now):
-                    asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                if asset:
+                    expire_at = asset.expire_at
+                    if expire_at and expire_at.tzinfo is None:
+                        from datetime import UTC
+                        expire_at = expire_at.replace(tzinfo=UTC)
+                    
+                    if not expire_at or expire_at > now:
+                        asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
             preview_map[task_id] = ImageGenerationOutputItem(
                 output_index=output.output_index,
                 asset_url=asset_url,

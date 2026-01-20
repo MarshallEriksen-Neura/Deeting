@@ -74,6 +74,7 @@ from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
+from app.constants.model_capability_map import expand_capabilities
 from app.models import User
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
@@ -529,7 +530,7 @@ async def embeddings(
 async def list_models(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    capability: str | None = Query(None, description="能力过滤 (chat/image/embedding 等)"),
+    capability: str | None = Query(None, description="能力过滤 (chat/image_generation/embedding 等)"),
 ) -> ModelGroupListResponse:
     preset_repo = ProviderPresetRepository(db)
     instance_repo = ProviderInstanceRepository(db)
@@ -557,8 +558,10 @@ async def list_models(
     added_models = 0
     logged_missing_preset_slugs: set[str] = set()
     grouped: dict[str, dict[str, Any]] = {}
+    capability_filter = set(expand_capabilities(capability)) if capability else set()
     for m in models:
-        if capability and m.capability != capability:
+        # Check if model has any of the requested capabilities
+        if capability_filter and not set(m.capabilities).intersection(capability_filter):
             continue
         inst = inst_map.get(str(m.instance_id))
         if not inst:

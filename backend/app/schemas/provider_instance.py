@@ -85,18 +85,16 @@ class ProviderInstanceResponse(BaseModel):
 
 
 class ProviderModelUpsert(BaseModel):
-    capability: str = Field(..., description="能力：chat/embedding等")
+    capabilities: List[str] = Field(..., description="能力列表：chat/embedding等")
     model_id: str = Field(..., description="上游真实模型标识")
     unified_model_id: Optional[str] = Field(None, description="对外统一/别名模型标识，可为空")
     upstream_path: str = Field(..., description="相对路径")
     display_name: Optional[str] = None
-    template_engine: str = "simple_replace"
-    request_template: dict[str, Any] = Field(default_factory=dict)
-    response_transform: dict[str, Any] = Field(default_factory=dict)
     pricing_config: dict[str, Any] = Field(default_factory=dict)
     limit_config: dict[str, Any] = Field(default_factory=dict)
     tokenizer_config: dict[str, Any] = Field(default_factory=dict)
     routing_config: dict[str, Any] = Field(default_factory=dict)
+    config_override: dict[str, Any] = Field(default_factory=dict, description="能力配置覆盖（Merge Patch）")
     source: str = Field("auto", description="auto/manual")
     extra_meta: dict[str, Any] = Field(default_factory=dict)
     weight: int = 100
@@ -118,29 +116,29 @@ class ProviderModelsQuickAddRequest(BaseModel):
 class ProviderModelUpdate(BaseModel):
     display_name: Optional[str] = None
     is_active: Optional[bool] = None
+    capabilities: Optional[List[str]] = None
     weight: Optional[int] = None
     priority: Optional[int] = None
     pricing_config: Optional[dict[str, Any]] = None
     limit_config: Optional[dict[str, Any]] = None
     tokenizer_config: Optional[dict[str, Any]] = None
     routing_config: Optional[dict[str, Any]] = None
+    config_override: Optional[dict[str, Any]] = None
 
 
 class ProviderModelResponse(BaseModel):
     id: UUID
     instance_id: UUID
-    capability: str
+    capabilities: List[str]
     model_id: str
     unified_model_id: Optional[str] = None
     display_name: Optional[str] = None
     upstream_path: str
-    template_engine: str
-    request_template: dict[str, Any]
-    response_transform: dict[str, Any]
     pricing_config: dict[str, Any]
     limit_config: dict[str, Any]
     tokenizer_config: dict[str, Any]
     routing_config: dict[str, Any]
+    config_override: dict[str, Any]
     source: str
     extra_meta: dict[str, Any]
     weight: int

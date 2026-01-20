@@ -2,6 +2,9 @@
 Legacy placeholder for removed provider_preset_item schemas.
 Kept to satisfy imports in tests; new code should use provider_instance/provider_model flows.
 """
+from typing import Any
+
+from pydantic import Field
 from uuid import UUID
 from app.schemas.base import BaseSchema
 
@@ -16,6 +19,7 @@ class ProviderPresetDTO(BaseSchema):
     url_template: str | None = None
     theme_color: str | None = None
     icon: str | None = None
+    capability_configs: dict[str, Any] = Field(default_factory=dict)
     is_active: bool = True
 
 

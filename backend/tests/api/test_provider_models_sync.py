@@ -7,6 +7,27 @@ from app.services.providers import provider_instance_service
 from app.models.provider_preset import ProviderPreset
 from tests.api.conftest import AsyncSessionLocal
 
+DEFAULT_CAPABILITY_CONFIGS = {
+    "chat": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "messages": None,
+            "stream": None,
+            "status_stream": None,
+            "temperature": None,
+            "max_tokens": None,
+            "provider_model_id": None,
+            "assistant_id": None,
+            "session_id": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+}
+
 
 async def _seed_preset(session, slug: str):
     existing = (
@@ -24,6 +45,7 @@ async def _seed_preset(session, slug: str):
         auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
         default_headers={},
         default_params={},
+        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
         is_active=True,
     )
     session.add(preset)

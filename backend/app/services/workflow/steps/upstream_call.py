@@ -26,6 +26,7 @@ from app.core.http_client import create_async_http_client
 from app.core.metrics import record_upstream_call
 from app.repositories.bandit_repository import BanditRepository
 from app.services.providers.routing_selector import RoutingSelector
+from app.services.providers.config_utils import deep_merge, extract_by_path, render_value
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.proxy.proxy_pool import get_proxy_pool, mask_proxy_url
@@ -337,6 +338,17 @@ class UpstreamCallStep(BaseStep):
         upstream_url = ctx.get("template_render", "upstream_url")
         request_body = ctx.get("template_render", "request_body") or {}
         headers = ctx.get("template_render", "headers") or {}
+        async_config = ctx.get("routing", "async_config") or {}
+        async_enabled = async_config.get("enabled") is True
+        http_method = (ctx.get("routing", "http_method") or "POST").upper()
+
+        if async_enabled:
+            submit_headers = async_config.get("submit_headers") or {}
+            submit_headers = render_value(
+                submit_headers,
+                {"request": request_body, "input": request_body},
+            )
+            headers = deep_merge(headers, submit_headers)
 
         if (ctx.capability or "").lower() in {"image", "image_generation"}:
             has_response_format = "response_format" in request_body
@@ -389,6 +401,15 @@ class UpstreamCallStep(BaseStep):
 
         # 判断是否流式
         is_stream = request_body.get("stream", False)
+        if async_enabled and is_stream:
+            logger.warning(
+                "async_flow_disable_stream trace_id=%s provider=%s model=%s",
+                ctx.trace_id,
+                ctx.get("routing", "provider") or "unknown",
+                ctx.requested_model or "unknown",
+            )
+            request_body["stream"] = False
+            is_stream = False
         ctx.set("upstream_call", "stream", is_stream)
         ctx.emit_status(
             stage="evolve",
@@ -435,26 +456,40 @@ class UpstreamCallStep(BaseStep):
                     body=request_body,
                     headers=headers,
                     timeout=timeout,
+                    method=http_method,
                 )
 
-                # 响应大小限制
-                if response.get("raw_bytes"):
-                    if len(response["raw_bytes"]) > settings.MAX_RESPONSE_BYTES:
-                        ctx.mark_error(
-                            ErrorSource.UPSTREAM,
-                            "UPSTREAM_RESPONSE_TOO_LARGE",
-                            "Upstream response exceeds size limit",
-                            upstream_status=response.get("status_code"),
-                        )
-                        await self._mark_failure(cb_key)
-                        return StepResult(
-                            status=StepStatus.FAILED,
-                            message="Upstream response too large",
-                        )
+                if async_enabled:
+                    submit_payload = self._normalize_json_response(response.get("body"))
+                    final_response = await self._poll_async_result(
+                        ctx=ctx,
+                        submit_response=submit_payload,
+                        async_config=async_config,
+                        base_headers=headers,
+                        submit_url=upstream_url,
+                    )
+                    ctx.set("upstream_call", "response", final_response)
+                    ctx.set("upstream_call", "status_code", 200)
+                    ctx.set("upstream_call", "headers", response.get("headers") or {})
+                else:
+                    # 响应大小限制
+                    if response.get("raw_bytes"):
+                        if len(response["raw_bytes"]) > settings.MAX_RESPONSE_BYTES:
+                            ctx.mark_error(
+                                ErrorSource.UPSTREAM,
+                                "UPSTREAM_RESPONSE_TOO_LARGE",
+                                "Upstream response exceeds size limit",
+                                upstream_status=response.get("status_code"),
+                            )
+                            await self._mark_failure(cb_key)
+                            return StepResult(
+                                status=StepStatus.FAILED,
+                                message="Upstream response too large",
+                            )
 
-                ctx.set("upstream_call", "response", response["body"])
-                ctx.set("upstream_call", "status_code", response["status_code"])
-                ctx.set("upstream_call", "headers", response["headers"])
+                    ctx.set("upstream_call", "response", response["body"])
+                    ctx.set("upstream_call", "status_code", response["status_code"])
+                    ctx.set("upstream_call", "headers", response["headers"])
 
             latency_ms = (time.perf_counter() - start_time) * 1000
             ctx.set("upstream_call", "latency_ms", latency_ms)
@@ -749,6 +784,7 @@ class UpstreamCallStep(BaseStep):
         body: dict,
         headers: dict,
         timeout: float,
+        method: str,
     ) -> dict[str, Any]:
         """非流式上游调用"""
         safe_body = _jsonify_payload(body)
@@ -780,7 +816,7 @@ class UpstreamCallStep(BaseStep):
             try:
                 response = await self._request_with_redirects(
                     client=client,
-                    method="POST",
+                    method=method,
                     url=url,
                     body=safe_body,
                     headers=headers,
@@ -814,6 +850,100 @@ class UpstreamCallStep(BaseStep):
         if last_error:
             raise last_error
         raise RuntimeError("Upstream call failed without error context")
+
+    def _normalize_location(self, path: str | None) -> str:
+        if not path:
+            return ""
+        if path.startswith("body."):
+            return path[5:]
+        if path == "body":
+            return ""
+        return path
+
+    def _normalize_json_response(self, data: Any) -> dict[str, Any]:
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list):
+            return {"data": data}
+        return {}
+
+    def _extract_async_result(self, payload: dict[str, Any], async_config: dict[str, Any]) -> dict[str, Any]:
+        extraction = async_config.get("result_extraction") or {}
+        location = self._normalize_location(extraction.get("location") or "")
+        result_format = extraction.get("format") or "raw"
+
+        extracted = extract_by_path(payload, location) if location else payload
+        if result_format == "url_list":
+            urls = extracted if isinstance(extracted, list) else []
+            return {"data": [{"url": url} for url in urls if isinstance(url, str)]}
+        if result_format == "b64_list":
+            items = extracted if isinstance(extracted, list) else []
+            return {"data": [{"b64_json": item} for item in items if isinstance(item, str)]}
+        return payload
+
+    async def _poll_async_result(
+        self,
+        *,
+        ctx: "WorkflowContext",
+        submit_response: dict[str, Any],
+        async_config: dict[str, Any],
+        base_headers: dict[str, Any],
+        submit_url: str,
+    ) -> dict[str, Any]:
+        extraction = async_config.get("task_id_extraction") or {}
+        location = extraction.get("location") or "body"
+        key_path = self._normalize_location(extraction.get("key_path") or "")
+        source = submit_response if location == "body" else submit_response
+        task_id = extract_by_path(source, key_path)
+        if not task_id:
+            raise RuntimeError("async task_id extraction failed")
+
+        poll = async_config.get("poll") or {}
+        url_template = poll.get("url_template")
+        if not url_template:
+            raise RuntimeError("async poll.url_template missing")
+
+        base_url = submit_url.split("?")[0].rsplit("/", 1)[0] + "/"
+        context = {"task_id": task_id, "base_url": base_url}
+        poll_url = render_value(url_template, context)
+        poll_headers = deep_merge(base_headers, poll.get("headers") or {})
+        poll_headers = render_value(poll_headers, context)
+
+        status_check = poll.get("status_check") or {}
+        status_path = self._normalize_location(status_check.get("location") or "")
+        success_values = set(status_check.get("success_values") or [])
+        fail_values = set(status_check.get("fail_values") or [])
+        pending_values = set(status_check.get("pending_values") or [])
+        interval = int(poll.get("interval") or 5)
+        timeout = int(poll.get("timeout") or 300)
+
+        start = time.time()
+        while True:
+            async with create_async_http_client(timeout=60.0, http2=True) as client:
+                response = await client.request(
+                    poll.get("method") or "GET",
+                    poll_url,
+                    headers=poll_headers,
+                )
+                if response.status_code >= 400:
+                    raise RuntimeError(f"async poll failed status={response.status_code}")
+                payload = self._normalize_json_response(_parse_response_body(response))
+
+            status_value = extract_by_path(payload, status_path) if status_path else None
+            if status_value in success_values:
+                return self._extract_async_result(payload, async_config)
+            if status_value in fail_values:
+                raise RuntimeError(f"async task failed status={status_value}")
+            if pending_values and status_value not in pending_values:
+                logger.warning(
+                    "async_poll_unexpected_status trace_id=%s status=%s",
+                    ctx.trace_id,
+                    status_value,
+                )
+
+            if time.time() - start > timeout:
+                raise RuntimeError("async task timeout")
+            await asyncio.sleep(interval)
 
     async def _call_upstream_stream(
         self,

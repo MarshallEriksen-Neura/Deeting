@@ -9,9 +9,11 @@ TemplateRenderStep: 模板渲染步骤
 
 import logging
 import re
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from app.services.orchestrator.registry import step_registry
+from app.services.providers.request_renderer import request_renderer
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
 if TYPE_CHECKING:
@@ -53,8 +55,10 @@ class TemplateRenderStep(BaseStep):
         request_data = ctx.get("resolve_assets", "request_data") or ctx.get(
             "validation", "validated"
         ) or {}
+        tools = ctx.get("validation", "tools") or None
         default_params = ctx.get("routing", "default_params") or {}
         default_headers = ctx.get("routing", "default_headers") or {}
+        request_template = ctx.get("routing", "request_template") or {}
 
         try:
             # 构建渲染上下文
@@ -72,6 +76,8 @@ class TemplateRenderStep(BaseStep):
                 request_data=request_data,
                 default_params=default_params,
                 engine=template_engine,
+                request_template=request_template,
+                tools=tools,
                 context=render_context,
             )
 
@@ -217,6 +223,8 @@ class TemplateRenderStep(BaseStep):
         request_data: dict,
         default_params: dict,
         engine: str,
+        request_template: dict,
+        tools: list | None,
         context: dict,
     ) -> dict:
         """
@@ -228,7 +236,28 @@ class TemplateRenderStep(BaseStep):
         if merged.get("response_format") is None:
             merged.pop("response_format", None)
         merged.pop("status_stream", None)
-        return merged
+
+        template_engine = engine or "simple_replace"
+
+        if not request_template:
+            raise TemplateRenderError("request_template is required for template rendering")
+
+        item_config = SimpleNamespace(
+            template_engine=template_engine,
+            request_template=request_template,
+        )
+        try:
+            rendered = request_renderer.render(
+                item_config=item_config,
+                internal_req=merged,
+                tools=tools,
+            )
+        except Exception as exc:
+            raise TemplateRenderError(f"request_template render failed: {exc}") from exc
+
+        if rendered.get("response_format") is None:
+            rendered.pop("response_format", None)
+        return rendered
 
     async def _render_headers(
         self,

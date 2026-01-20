@@ -338,10 +338,16 @@ class ProviderInstanceService:
                 base = f"openai/deployments/{model_id}"
                 if cap == "embedding":
                     return f"{base}/embeddings"
+                if cap == "text_to_speech":
+                    return f"{base}/audio/speech"
+                if cap == "speech_to_text":
+                    return f"{base}/audio/transcriptions"
                 if cap == "audio":
                     return f"{base}/audio/transcriptions"
-                if cap == "image":
+                if cap in {"image", "image_generation"}:
                     return f"{base}/images/generations"
+                if cap == "video_generation":
+                    return f"{base}/videos/generations"
                 return f"{base}/chat/completions"
             if "gemini" in proto or "google" in proto or "vertex" in proto:
                 if cap == "embedding":
@@ -349,11 +355,18 @@ class ProviderInstanceService:
                 return f"v1beta/models/{model_id}:generateContent"
             if cap == "embedding":
                 return "embeddings"
+            if cap == "text_to_speech":
+                return "audio/speech"
+            if cap == "speech_to_text":
+                return "audio/transcriptions"
             if cap == "audio":
                 return "audio/transcriptions"
-            if cap == "image":
+            if cap in {"image", "image_generation"}:
                 return "images/generations"
+            if cap == "video_generation":
+                return "videos/generations"
             return "chat/completions"
+
 
         now = Datetime.utcnow()
         for m in models:
@@ -361,20 +374,35 @@ class ProviderInstanceService:
             if not raw_model_id:
                 continue
             model_id = f"{model_prefix}{raw_model_id}"
-            caps = guess_capabilities(model_id)
-            capability = forced_capability or primary_capability(caps)
-            upstream_path = upstream_path_for(capability, model_id)
+            
+            if forced_capability:
+                caps = [forced_capability]
+            else:
+                caps = guess_capabilities(model_id)
+            
+            # Normalize legacy/alias capabilities
+            normalized_caps = []
+            for c in caps:
+                if c == "image":
+                    normalized_caps.append("image_generation")
+                elif c == "audio":
+                    normalized_caps.append("speech_to_text")
+                else:
+                    normalized_caps.append(c)
+            caps = normalized_caps
+            
+            # For upstream_path, we still need a 'primary' one if we only have one record.
+            # Usually the first capability defines the path.
+            primary_cap = caps[0] if caps else "chat"
+            upstream_path = upstream_path_for(primary_cap, model_id)
 
             payloads.append(
                 {
-                    "capability": capability,
+                    "capabilities": caps,
                     "model_id": model_id,
                     "unified_model_id": model_id,
                     "display_name": m.get("display_name") or m.get("model") or m.get("id") or model_id,
                     "upstream_path": upstream_path,
-                    "template_engine": "simple_replace",
-                    "request_template": {},
-                    "response_transform": {},
                     "pricing_config": {},
                     "limit_config": {},
                     "tokenizer_config": {},
@@ -673,12 +701,14 @@ class ProviderInstanceService:
         updatable_fields = {
             "display_name",
             "is_active",
+            "capabilities",
             "weight",
             "priority",
             "pricing_config",
             "limit_config",
             "tokenizer_config",
             "routing_config",
+            "config_override",
         }
         updates = {k: v for k, v in fields.items() if k in updatable_fields and v is not None}
         if not updates:
@@ -687,7 +717,7 @@ class ProviderInstanceService:
         updated = await self.model_repo.update_fields(model, updates)
         await self._invalidator.on_provider_model_changed(
             str(model.instance_id),
-            capability=model.capability,
+            capabilities=model.capabilities,
             model_id=model.model_id,
         )
         return updated
@@ -740,11 +770,13 @@ class ProviderInstanceService:
         else:
             headers["Authorization"] = f"Bearer {secret}"
 
-        capability = (model.capability or "chat").lower()
+        capability = (model.capabilities[0] if model.capabilities else "chat").lower()
         if capability in {"embedding"}:
             payload = {"model": model.model_id, "input": prompt}
         elif capability in {"audio"}:
             payload = {"model": model.model_id, "input": prompt, "response_format": "json"}
+        elif capability in {"image", "image_generation"}:
+            payload = {"model": model.model_id, "prompt": prompt, "n": 1}
         else:
             payload = {
                 "model": model.model_id,

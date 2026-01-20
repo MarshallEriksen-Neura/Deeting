@@ -41,6 +41,8 @@ class ConversationAppendStep(BaseStep):
             return StepResult(status=StepStatus.SUCCESS, message="skip_non_chat")
         if ctx.is_external:
             return StepResult(status=StepStatus.SUCCESS, message="skip_external")
+        if ctx.get("conversation", "skip", False):
+            return StepResult(status=StepStatus.SUCCESS, message="skip_conversation")
         if ctx.get("upstream_call", "stream"):
             return StepResult(status=StepStatus.SUCCESS, message="skip_streaming")
 

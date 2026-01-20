@@ -5,6 +5,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.orm import selectinload
 
 from app.models.provider_instance import ProviderInstance, ProviderModel
+from app.constants.model_capability_map import expand_capabilities
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
@@ -77,11 +78,10 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
 
     @staticmethod
     def _dedupe_payloads(models_data: list[dict]) -> list[dict]:
-        seen: set[tuple[str | None, str | None, str | None]] = set()
+        seen: set[tuple[str | None, str | None]] = set()
         deduped: list[dict] = []
         for payload in models_data:
             key = (
-                payload.get("capability"),
                 payload.get("model_id"),
                 payload.get("upstream_path"),
             )
@@ -116,11 +116,18 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             return []
 
         async def loader() -> list[ProviderModel]:
+            capability_candidates = expand_capabilities(capability)
+            if not capability_candidates:
+                return []
+            
+            # 使用 capabilities 数组包含任意候选能力的过滤逻辑
+            # PostgreSQL: capabilities && ARRAY[...]
+            # SQLAlchemy: ProviderModel.capabilities.overlap(capability_candidates)
             stmt = (
                 select(ProviderModel)
                 .join(ProviderInstance, ProviderModel.instance_id == ProviderInstance.id)
                 .where(
-                    ProviderModel.capability == capability,
+                    ProviderModel.capabilities.overlap(capability_candidates),
                     # 支持对外别名 unified_model_id 作为匹配键
                     or_(ProviderModel.model_id == model_id, ProviderModel.unified_model_id == model_id),
                     ProviderModel.is_active == True,  # noqa: E712
@@ -183,7 +190,6 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
 
             stmt = select(ProviderModel).where(
                 ProviderModel.instance_id == instance_id,
-                ProviderModel.capability == payload["capability"],
                 ProviderModel.model_id == payload["model_id"],
                 ProviderModel.upstream_path == payload["upstream_path"],
             )
@@ -241,6 +247,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             "limit_config",
             "tokenizer_config",
             "routing_config",
+            "config_override",
             "is_active",
         }
 
@@ -252,7 +259,6 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
 
             stmt = select(ProviderModel).where(
                 ProviderModel.instance_id == instance_id,
-                ProviderModel.capability == payload["capability"],
                 ProviderModel.model_id == payload["model_id"],
                 ProviderModel.upstream_path == payload["upstream_path"],
             )

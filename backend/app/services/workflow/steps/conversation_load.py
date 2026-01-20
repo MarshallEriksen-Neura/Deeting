@@ -45,6 +45,8 @@ class ConversationLoadStep(BaseStep):
         # 仅内部通道需要历史
         if ctx.is_external:
             return StepResult(status=StepStatus.SUCCESS, message="skip_external")
+        if ctx.get("conversation", "skip", False):
+            return StepResult(status=StepStatus.SUCCESS, message="skip_conversation")
 
         request_data = ctx.get("validation", "validated") or {}
 

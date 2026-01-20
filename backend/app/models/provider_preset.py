@@ -53,6 +53,9 @@ class ProviderPreset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     default_headers: Mapped[dict[str, Any]] = mapped_column(JSONBCompat, nullable=False, default=dict, server_default="{}", comment="通用 Header 模板")
     default_params: Mapped[dict[str, Any]] = mapped_column(JSONBCompat, nullable=False, default=dict, server_default="{}", comment="通用请求体参数默认值")
+    capability_configs: Mapped[dict[str, Any]] = mapped_column(
+        JSONBCompat, nullable=False, default=dict, server_default="{}", comment="按能力配置的模板/路由/异步策略"
+    )
 
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1", comment="乐观锁版本号")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", comment="是否启用")

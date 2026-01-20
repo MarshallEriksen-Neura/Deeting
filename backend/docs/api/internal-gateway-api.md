@@ -185,7 +185,7 @@ Authorization: Bearer <access_token>
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `capability` | string | 否 | 能力过滤（如 `chat` / `image` / `embedding`） |
+| `capability` | string | 否 | 能力过滤（如 `chat` / `image_generation` / `embedding`） |
 
 #### 响应体
 
@@ -524,7 +524,7 @@ Authorization: Bearer <access_token>
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `capability` | string | 能力过滤（如 `chat`） |
+| `capability` | string | 能力过滤（如 `chat` / `image_generation`） |
 | `model` | string | 模型过滤 |
 
 #### 响应体

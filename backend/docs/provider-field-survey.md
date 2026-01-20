@@ -34,7 +34,7 @@
 
 ## 5. 建议的网关统一字段草案
 
-- 通用元信息：`provider`, `capability`（chat/image/audio/video），`model`, `request_id`, `stream`.
+- 通用元信息：`provider`, `capability`（chat/image_generation/audio/video），`model`, `request_id`, `stream`.
 - 输入：`messages`（统一 role/content 结构，可包含 `media` 列表，类型 text/image/audio/video），`system`, `tools`, `tool_choice`.
 - 生成控制：`max_tokens`, `temperature`, `top_p`, `top_k`, `stop`/`stop_sequences`, `presence_penalty`, `frequency_penalty`, `seed`.
 - 安全/合规：`safety_settings`（结构化，兼容 Gemini），`user_identifier`/`safety_identifier`.

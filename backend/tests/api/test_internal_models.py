@@ -5,11 +5,60 @@ import pytest
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
 
+DEFAULT_CAPABILITY_CONFIGS = {
+    "chat": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "messages": None,
+            "stream": None,
+            "status_stream": None,
+            "temperature": None,
+            "max_tokens": None,
+            "provider_model_id": None,
+            "assistant_id": None,
+            "session_id": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+    "image_generation": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "prompt": None,
+            "negative_prompt": None,
+            "width": None,
+            "height": None,
+            "aspect_ratio": None,
+            "num_outputs": None,
+            "steps": None,
+            "cfg_scale": None,
+            "seed": None,
+            "sampler_name": None,
+            "quality": None,
+            "style": None,
+            "response_format": None,
+            "extra_params": None,
+            "provider_model_id": None,
+            "session_id": None,
+            "request_id": None,
+            "encrypt_prompt": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+}
+
 
 async def _seed_user_internal_provider(session, user_id: uuid.UUID) -> ProviderModel:
     preset = ProviderPreset(
         id=uuid.uuid4(),
-        name="User Internal OpenAI",
+        name=f"User Internal OpenAI {uuid.uuid4().hex[:6]}",
         slug=f"openai-user-{uuid.uuid4().hex[:8]}",
         provider="openai",
         base_url="https://api.openai.com",
@@ -17,6 +66,7 @@ async def _seed_user_internal_provider(session, user_id: uuid.UUID) -> ProviderM
         auth_config={},
         default_headers={},
         default_params={},
+        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
         is_active=True,
     )
     session.add(preset)
@@ -44,9 +94,6 @@ async def _seed_user_internal_provider(session, user_id: uuid.UUID) -> ProviderM
         unified_model_id=None,
         display_name="GPT-4 User",
         upstream_path="/v1/chat/completions",
-        template_engine="simple_replace",
-        request_template={},
-        response_transform={},
         pricing_config={},
         limit_config={},
         tokenizer_config={},
@@ -93,14 +140,11 @@ async def test_internal_models_filter_by_capability(client, auth_tokens, AsyncSe
         image_model = ProviderModel(
             id=uuid.uuid4(),
             instance_id=base_model.instance_id,
-            capability="image",
+            capability="image_generation",
             model_id="sdxl-user",
             unified_model_id=None,
             display_name="SDXL User",
             upstream_path="/v1/images/generations",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={},
             limit_config={},
             tokenizer_config={},
@@ -115,7 +159,7 @@ async def test_internal_models_filter_by_capability(client, auth_tokens, AsyncSe
         await session.commit()
 
     resp = await client.get(
-        "/api/v1/internal/models?capability=image",
+        "/api/v1/internal/models?capability=image_generation",
         headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
     )
     assert resp.status_code == 200

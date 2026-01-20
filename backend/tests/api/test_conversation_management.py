@@ -65,6 +65,7 @@ class _DummyConversationSessionService:
                     "last_active_at": "2026-01-16T09:42:01+08:00",
                 }
             ],
+            "total": 1,
             "next_page": None,
             "previous_page": None,
         }
@@ -127,8 +128,8 @@ async def test_delete_message(monkeypatch):
         assert body["deleted"] is True
 
 
+@pytest.mark.asyncio
 async def test_list_conversations(monkeypatch):
-    prev_overrides = _override_auth(monkeypatch)
     service = _DummyConversationSessionService()
     app.dependency_overrides[
         conversation_route.get_conversation_session_service
@@ -145,13 +146,11 @@ async def test_list_conversations(monkeypatch):
             assert service.called_with["assistant_id"] == UUID(assistant_id)
             assert service.called_with["status"].value == "active"
     finally:
-        app.dependency_overrides.clear()
-        app.dependency_overrides.update(prev_overrides)
+        pass
 
 
 @pytest.mark.asyncio
 async def test_archive_conversation(monkeypatch):
-    prev_overrides = _override_auth(monkeypatch)
     service = _DummyConversationSessionService()
     app.dependency_overrides[
         conversation_route.get_conversation_session_service
@@ -165,13 +164,11 @@ async def test_archive_conversation(monkeypatch):
             assert data["status"] == "archived"
             assert service.updated["status"].value == "archived"
     finally:
-        app.dependency_overrides.clear()
-        app.dependency_overrides.update(prev_overrides)
+        pass
 
 
 @pytest.mark.asyncio
 async def test_unarchive_conversation(monkeypatch):
-    prev_overrides = _override_auth(monkeypatch)
     service = _DummyConversationSessionService()
     app.dependency_overrides[
         conversation_route.get_conversation_session_service
@@ -185,13 +182,11 @@ async def test_unarchive_conversation(monkeypatch):
             assert data["status"] == "active"
             assert service.updated["status"].value == "active"
     finally:
-        app.dependency_overrides.clear()
-        app.dependency_overrides.update(prev_overrides)
+        pass
 
 
 @pytest.mark.asyncio
 async def test_rename_conversation(monkeypatch):
-    prev_overrides = _override_auth(monkeypatch)
     service = _DummyConversationSessionService()
     app.dependency_overrides[
         conversation_route.get_conversation_session_service
@@ -208,13 +203,11 @@ async def test_rename_conversation(monkeypatch):
             assert data["title"] == "新标题"
             assert service.title_updated["title"] == "新标题"
     finally:
-        app.dependency_overrides.clear()
-        app.dependency_overrides.update(prev_overrides)
+        pass
 
 
 @pytest.mark.asyncio
 async def test_rename_conversation_empty_title(monkeypatch):
-    prev_overrides = _override_auth(monkeypatch)
     service = _DummyConversationSessionService()
     app.dependency_overrides[
         conversation_route.get_conversation_session_service
@@ -228,8 +221,7 @@ async def test_rename_conversation_empty_title(monkeypatch):
             )
             assert resp.status_code == 400
     finally:
-        app.dependency_overrides.clear()
-        app.dependency_overrides.update(prev_overrides)
+        pass
 
 
 @pytest.mark.asyncio

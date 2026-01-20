@@ -3,7 +3,7 @@ from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint, DateTime, text
 from sqlalchemy import UUID as SA_UUID
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -88,7 +88,9 @@ class ProviderModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         SA_UUID(as_uuid=True), ForeignKey("provider_instance.id", ondelete="CASCADE"), nullable=False
     )
 
-    capability: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="能力类型: chat, embedding 等")
+    capabilities: Mapped[list[str]] = mapped_column(
+        ARRAY(String(32)), nullable=False, default=list, server_default="{}", comment="能力列表: chat, image_generation 等"
+    )
     model_id: Mapped[str] = mapped_column(String(128), nullable=False, comment="上游真实模型标识/部署名")
     unified_model_id: Mapped[str | None] = mapped_column(
         String(128), nullable=True, index=True, comment="对外统一/别名模型标识，可为空"
@@ -96,15 +98,6 @@ class ProviderModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     display_name: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="友好展示名，可选")
 
     upstream_path: Mapped[str] = mapped_column(String(255), nullable=False, comment="请求路径（相对 base_url）")
-    template_engine: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="simple_replace", server_default="simple_replace", comment="模板引擎"
-    )
-    request_template: Mapped[dict[str, Any]] = mapped_column(
-        JSONBCompat, nullable=False, default=dict, server_default="{}", comment="请求体模板/映射规则"
-    )
-    response_transform: Mapped[dict[str, Any]] = mapped_column(
-        JSONBCompat, nullable=False, default=dict, server_default="{}", comment="响应变换规则"
-    )
     pricing_config: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat, nullable=False, default=dict, server_default="{}", comment="计费配置"
     )
@@ -116,6 +109,9 @@ class ProviderModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     routing_config: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat, nullable=False, default=dict, server_default="{}", comment="路由策略配置"
+    )
+    config_override: Mapped[dict[str, Any]] = mapped_column(
+        JSONBCompat, nullable=False, default=dict, server_default="{}", comment="能力配置覆盖（Merge Patch）"
     )
 
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="auto", server_default="auto", comment="auto/manual")
@@ -132,21 +128,21 @@ class ProviderModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     instance: Mapped["ProviderInstance"] = relationship("ProviderInstance", back_populates="models")
 
     __table_args__ = (
-        UniqueConstraint("instance_id", "capability", "model_id", "upstream_path", name="uq_provider_model_identity"),
+        UniqueConstraint("instance_id", "model_id", "upstream_path", name="uq_provider_model_identity"),
         Index(
             "uq_provider_model_unified",
             "instance_id",
-            "capability",
             "unified_model_id",
             unique=True,
             postgresql_where=text("unified_model_id IS NOT NULL"),
         ),
-        Index("ix_provider_model_lookup", "instance_id", "capability"),
+        Index("ix_provider_model_instance_id", "instance_id"),
+        Index("ix_provider_model_capabilities", "capabilities", postgresql_using="gin"),
         Index("ix_provider_model_model_id", "model_id"),
     )
 
     def __repr__(self) -> str:
-        return f"<ProviderModel(capability={self.capability}, model_id={self.model_id})>"
+        return f"<ProviderModel(capabilities={self.capabilities}, model_id={self.model_id})>"
 
 
 class ProviderCredential(Base, UUIDPrimaryKeyMixin, TimestampMixin):

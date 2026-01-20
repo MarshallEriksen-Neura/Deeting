@@ -16,7 +16,9 @@ class WorkflowTemplate(str, Enum):
 
     EXTERNAL_CHAT = "external_chat"  # 外部 Chat 完整流程
     EXTERNAL_EMBEDDINGS = "external_embeddings"  # 外部 Embeddings
+    EXTERNAL_IMAGE = "external_image" # 外部 Image (Config Driven)
     INTERNAL_CHAT = "internal_chat"  # 内部 Chat 简化流程
+    INTERNAL_IMAGE = "internal_image" # 内部 Image (Config Driven)
     INTERNAL_DEBUG = "internal_debug"  # 内部调试模式
     INTERNAL_PREVIEW = "internal_preview"  # 内部助手体验（无会话落库）
 
@@ -60,6 +62,31 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     },
 )
 
+# New Config-Driven Workflow for Image Generation
+EXTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
+    template=WorkflowTemplate.EXTERNAL_IMAGE,
+    steps=[
+        "request_adapter",
+        "validation",
+        "resolve_assets",
+        "quota_check",
+        "rate_limit",
+        "routing",
+        "provider_execution", # New Step
+        "response_transform",
+        "sanitize", # Maybe?
+        "billing",
+        "audit_log",
+    ],
+    step_configs={
+        "quota_check": StepConfig(timeout=5.0),
+        "rate_limit": StepConfig(timeout=2.0),
+        "routing": StepConfig(timeout=10.0, max_retries=1),
+        "provider_execution": StepConfig(timeout=300.0, max_retries=1), # Longer timeout for image gen
+        "billing": StepConfig(timeout=10.0, max_retries=3),
+    },
+)
+
 INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     template=WorkflowTemplate.INTERNAL_CHAT,
     steps=[
@@ -85,6 +112,28 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "upstream_call": StepConfig(timeout=180.0, max_retries=2),  # 内部超时更长
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },
+)
+
+INTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
+    template=WorkflowTemplate.INTERNAL_IMAGE,
+    steps=[
+        "validation",
+        "resolve_assets", # Maybe internal tasks need assets?
+        "quota_check",
+        "rate_limit",
+        "routing",
+        "provider_execution", # New Step
+        "response_transform",
+        "billing",
+        "audit_log",
+    ],
+    step_configs={
+        "quota_check": StepConfig(timeout=5.0),
+        "rate_limit": StepConfig(timeout=2.0),
+        "routing": StepConfig(timeout=10.0),
+        "provider_execution": StepConfig(timeout=600.0, max_retries=1), # Very long timeout for internal tasks
+        "billing": StepConfig(timeout=10.0, max_retries=3),
+    }
 )
 
 INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
@@ -119,7 +168,9 @@ INTERNAL_DEBUG_WORKFLOW = WorkflowConfig(
 # 模板注册表
 WORKFLOW_TEMPLATES: dict[WorkflowTemplate, WorkflowConfig] = {
     WorkflowTemplate.EXTERNAL_CHAT: EXTERNAL_CHAT_WORKFLOW,
+    WorkflowTemplate.EXTERNAL_IMAGE: EXTERNAL_IMAGE_WORKFLOW,
     WorkflowTemplate.INTERNAL_CHAT: INTERNAL_CHAT_WORKFLOW,
+    WorkflowTemplate.INTERNAL_IMAGE: INTERNAL_IMAGE_WORKFLOW,
     WorkflowTemplate.INTERNAL_PREVIEW: INTERNAL_PREVIEW_WORKFLOW,
     WorkflowTemplate.INTERNAL_DEBUG: INTERNAL_DEBUG_WORKFLOW,
 }
@@ -134,19 +185,33 @@ def get_workflow_for_channel(
 
     Args:
         channel: 通道类型
-        capability: 能力类型 (chat, embeddings, etc.)
+        capability: 能力类型 (chat, embeddings, image_generation, etc.)
 
     Returns:
         对应的编排配置
     """
+    capability = capability.lower()
+    media_capabilities = {
+        "image",
+        "image_generation",
+        "text_to_speech",
+        "speech_to_text",
+        "video_generation",
+    }
+    
     if channel == Channel.EXTERNAL:
         if capability == "embeddings":
             return WORKFLOW_TEMPLATES.get(
                 WorkflowTemplate.EXTERNAL_EMBEDDINGS,
                 EXTERNAL_CHAT_WORKFLOW,
             )
+        if capability in media_capabilities:
+            return EXTERNAL_IMAGE_WORKFLOW
         return EXTERNAL_CHAT_WORKFLOW
     else:
+        # Internal
+        if capability in media_capabilities:
+            return INTERNAL_IMAGE_WORKFLOW
         if capability != "chat":
             return INTERNAL_PREVIEW_WORKFLOW
         return INTERNAL_CHAT_WORKFLOW

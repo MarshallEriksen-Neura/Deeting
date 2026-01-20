@@ -77,13 +77,13 @@ def upgrade() -> None:
         model_id = row.model_id or ""
         if not model_id or not IMAGE_MODEL_PATTERN.search(model_id):
             continue
-        updates = {"capability": "image"}
+        updates = {"capability": "image_generation"}
         new_path = _upgrade_path(row.upstream_path)
         if new_path != row.upstream_path:
             updates["upstream_path"] = new_path
         meta = row.extra_meta if isinstance(row.extra_meta, dict) else None
         if meta is not None:
-            new_meta = _update_caps(meta, "vision", "image")
+            new_meta = _update_caps(meta, "vision", "image_generation")
             if new_meta != meta:
                 updates["extra_meta"] = new_meta
         conn.execute(
@@ -101,7 +101,7 @@ def downgrade() -> None:
             provider_model.c.model_id,
             provider_model.c.upstream_path,
             provider_model.c.extra_meta,
-        ).where(provider_model.c.capability == "image")
+        ).where(provider_model.c.capability == "image_generation")
     ).fetchall()
 
     for row in rows:
@@ -114,7 +114,7 @@ def downgrade() -> None:
             updates["upstream_path"] = new_path
         meta = row.extra_meta if isinstance(row.extra_meta, dict) else None
         if meta is not None:
-            new_meta = _update_caps(meta, "image", "vision")
+            new_meta = _update_caps(meta, "image_generation", "vision")
             if new_meta != meta:
                 updates["extra_meta"] = new_meta
         conn.execute(

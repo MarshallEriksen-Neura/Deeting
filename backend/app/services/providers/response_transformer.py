@@ -131,10 +131,18 @@ class ResponseTransformer:
             if not content_str:
                 message["content"] = None
 
+        finish_reason = raw.get("stop_reason") or "stop"
+        finish_map = {
+            "end_turn": "stop",
+            "max_tokens": "length",
+            "stop_sequence": "stop",
+        }
+        finish_reason = finish_map.get(finish_reason, finish_reason)
+
         choices.append({
             "index": 0,
             "message": message,
-            "finish_reason": raw.get("stop_reason")
+            "finish_reason": finish_reason,
         })
 
         return {
@@ -143,7 +151,11 @@ class ResponseTransformer:
             "choices": choices,
             "usage": {
                 "prompt_tokens": raw.get("usage", {}).get("input_tokens", 0),
-                "completion_tokens": raw.get("usage", {}).get("output_tokens", 0)
+                "completion_tokens": raw.get("usage", {}).get("output_tokens", 0),
+                "total_tokens": (
+                    raw.get("usage", {}).get("input_tokens", 0)
+                    + raw.get("usage", {}).get("output_tokens", 0)
+                ),
             }
         }
 

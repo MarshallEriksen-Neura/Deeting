@@ -6,6 +6,55 @@ from app.services.providers.provider_instance_service import ProviderInstanceSer
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from tests.api.conftest import AsyncSessionLocal, engine
 
+DEFAULT_CAPABILITY_CONFIGS = {
+    "chat": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "messages": None,
+            "stream": None,
+            "status_stream": None,
+            "temperature": None,
+            "max_tokens": None,
+            "provider_model_id": None,
+            "assistant_id": None,
+            "session_id": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+    "image_generation": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "prompt": None,
+            "negative_prompt": None,
+            "width": None,
+            "height": None,
+            "aspect_ratio": None,
+            "num_outputs": None,
+            "steps": None,
+            "cfg_scale": None,
+            "seed": None,
+            "sampler_name": None,
+            "quality": None,
+            "style": None,
+            "response_format": None,
+            "extra_params": None,
+            "provider_model_id": None,
+            "session_id": None,
+            "request_id": None,
+            "encrypt_prompt": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+}
+
 import pytest_asyncio
 
 
@@ -29,6 +78,7 @@ async def test_sync_preserves_manual_overrides(monkeypatch):
             auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
             default_headers={},
             default_params={},
+            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
             is_active=True,
         )
         session.add(preset)
@@ -48,14 +98,11 @@ async def test_sync_preserves_manual_overrides(monkeypatch):
         manual_model = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4o",
             unified_model_id="gpt-4o",
             display_name="Custom GPT-4o",
             upstream_path="chat/completions",
-            template_engine="simple_replace",
-            request_template={},
-            response_transform={},
             pricing_config={"input": 1},
             limit_config={},
             tokenizer_config={},
@@ -88,7 +135,7 @@ async def test_sync_preserves_manual_overrides(monkeypatch):
         assert by_id["gpt-4o"].display_name == "Custom GPT-4o"
         assert by_id["gpt-4o"].weight == 777
         # 新增的嵌入模型被写入且能力映射为 embedding
-        assert by_id["text-embedding-3-small"].capability == "embedding"
+        assert "embedding" in by_id["text-embedding-3-small"].capabilities
 
 
 @pytest.mark.asyncio
@@ -104,6 +151,7 @@ async def test_sync_dedupes_duplicate_models(monkeypatch):
             auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
             default_headers={},
             default_params={},
+            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
             is_active=True,
         )
         session.add(preset)

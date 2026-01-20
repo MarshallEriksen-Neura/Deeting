@@ -2,10 +2,10 @@ from app.constants.model_capability_map import guess_capabilities, primary_capab
 
 
 def test_guess_capabilities_image_models():
-    assert guess_capabilities("gpt-image-1") == ["image"]
-    assert guess_capabilities("dall-e-3") == ["image"]
-    assert guess_capabilities("flux.1-dev") == ["image"]
-    assert guess_capabilities("qwen-image-2512") == ["image"]
+    assert guess_capabilities("gpt-image-1") == ["image_generation"]
+    assert guess_capabilities("dall-e-3") == ["image_generation"]
+    assert guess_capabilities("flux.1-dev") == ["image_generation"]
+    assert guess_capabilities("qwen-image-2512") == ["image_generation"]
 
 
 def test_guess_capabilities_vision_chat_models():
@@ -16,4 +16,4 @@ def test_guess_capabilities_vision_chat_models():
 
 def test_primary_capability():
     assert primary_capability(["chat", "vision"]) == "chat"
-    assert primary_capability(["image"]) == "image"
+    assert primary_capability(["image_generation"]) == "image_generation"

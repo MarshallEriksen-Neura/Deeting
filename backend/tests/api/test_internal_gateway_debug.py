@@ -5,6 +5,27 @@ import pytest
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
 
+DEFAULT_CAPABILITY_CONFIGS = {
+    "chat": {
+        "template_engine": "simple_replace",
+        "request_template": {
+            "model": None,
+            "messages": None,
+            "stream": None,
+            "status_stream": None,
+            "temperature": None,
+            "max_tokens": None,
+            "provider_model_id": None,
+            "assistant_id": None,
+            "session_id": None,
+        },
+        "response_transform": {},
+        "default_headers": {},
+        "default_params": {},
+        "async_config": {},
+    },
+}
+
 
 async def _seed_internal_provider(session) -> uuid.UUID:
     preset = ProviderPreset(
@@ -17,6 +38,7 @@ async def _seed_internal_provider(session) -> uuid.UUID:
         auth_config={},
         default_headers={},
         default_params={},
+        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
         is_active=True,
     )
     session.add(preset)
@@ -44,9 +66,6 @@ async def _seed_internal_provider(session) -> uuid.UUID:
         unified_model_id=None,
         display_name="GPT-4",
         upstream_path="/v1/chat/completions",
-        template_engine="simple_replace",
-        request_template={},
-        response_transform={},
         pricing_config={},
         limit_config={},
         tokenizer_config={},

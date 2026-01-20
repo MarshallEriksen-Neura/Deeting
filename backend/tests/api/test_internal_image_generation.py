@@ -123,6 +123,7 @@ async def test_internal_image_generation_list_tasks(
     other_task_id = uuid.uuid4()
     asset_id = uuid.uuid4()
     output_id = uuid.uuid4()
+    session_id = uuid.uuid4()
     now = Datetime.now()
 
     async with AsyncSessionLocal() as session:

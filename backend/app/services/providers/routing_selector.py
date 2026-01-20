@@ -14,6 +14,7 @@ import math
 import random
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,18 +27,36 @@ from app.repositories.provider_instance_repository import (
 )
 from app.repositories.bandit_repository import BanditRepository
 from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.models.provider_preset import ProviderPreset
 from app.repositories.provider_credential_repository import ProviderCredentialRepository
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.services.providers.auth_resolver import resolve_auth_for_protocol
+from app.services.providers.config_utils import deep_merge
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_capability_config(preset: ProviderPreset, capability: str | None) -> dict[str, Any] | None:
+    if not preset:
+        return None
+    configs = preset.capability_configs or {}
+    if capability and capability in configs:
+        return configs.get(capability)
+    if capability == "image" and "image_generation" in configs:
+        return configs.get("image_generation")
+    if capability in {"code", "reasoning", "vision"} and "chat" in configs:
+        return configs.get("chat")
+    if capability == "audio" and "speech_to_text" in configs:
+        return configs.get("speech_to_text")
+    return None
 
 
 @dataclass
 class RoutingCandidate:
     preset_id: str | None
+    preset_slug: str | None
     instance_id: str
     preset_item_id: str  # 兼容旧字段，实际存 provider_model.id
     model_id: str
@@ -47,6 +66,8 @@ class RoutingCandidate:
     template_engine: str
     request_template: dict
     response_transform: dict
+    async_config: dict
+    http_method: str
     pricing_config: dict
     limit_config: dict
     auth_type: str
@@ -54,6 +75,7 @@ class RoutingCandidate:
     default_headers: dict
     default_params: dict
     routing_config: dict
+    config_override: dict
     weight: int
     priority: int
     credential_id: str | None = None
@@ -153,6 +175,52 @@ class RoutingSelector:
                 continue  # 无可用密钥跳过
 
             for m in instance_models:
+                # Use the requested capability to resolve config
+                capability_config = _resolve_capability_config(preset, capability)
+                if not capability_config:
+                    logger.warning(
+                        "routing_skip_missing_capability_config instance_id=%s model_id=%s capability=%s preset=%s",
+                        instance.id,
+                        m.id,
+                        capability,
+                        preset.slug,
+                    )
+                    continue
+
+                allow_override = (m.routing_config or {}).get("allow_template_override") is True
+                effective_config = dict(capability_config)
+                if allow_override and m.config_override:
+                    effective_config = deep_merge(effective_config, m.config_override)
+
+                template_engine = effective_config.get("template_engine") or "simple_replace"
+                request_template = effective_config.get("request_template") or effective_config.get(
+                    "body_template"
+                )
+                if not request_template:
+                    logger.warning(
+                        "routing_skip_missing_template instance_id=%s model_id=%s capability=%s preset=%s",
+                        instance.id,
+                        m.id,
+                        capability,
+                        preset.slug,
+                    )
+                    continue
+                response_transform = (
+                    effective_config.get("response_transform")
+                    or effective_config.get("response_template")
+                    or {}
+                )
+                async_config = (
+                    effective_config.get("async_config")
+                    or effective_config.get("async_flow")
+                    or {}
+                )
+                http_method = (
+                    effective_config.get("http_method")
+                    or effective_config.get("method")
+                    or "POST"
+                )
+
                 base_url = instance.base_url or ""
                 meta = instance.meta or {}
                 protocol = meta.get("protocol") or preset.provider
@@ -169,6 +237,18 @@ class RoutingSelector:
                     auth_config=preset.auth_config if preset else None,
                     default_headers=preset.default_headers if preset else None,
                 )
+                capability_headers = (
+                    effective_config.get("default_headers")
+                    or effective_config.get("headers")
+                    or {}
+                )
+                resolved_headers = deep_merge(resolved_headers, capability_headers)
+                default_params = deep_merge(
+                    preset.default_params if preset else {},
+                    effective_config.get("default_params")
+                    or effective_config.get("params")
+                    or {},
+                )
 
                 for cred in cred_entries:
                     auth_config = dict(base_auth_config)
@@ -178,22 +258,26 @@ class RoutingSelector:
                     results.append(
                         RoutingCandidate(
                             preset_id=str(preset.id) if preset else None,
+                            preset_slug=instance.preset_slug,
                             instance_id=str(instance.id),
                             preset_item_id=None,
                             model_id=str(m.id),
                             provider=preset.provider if preset else "custom",
                             upstream_url=upstream_url,
                             channel=channel,
-                            template_engine=m.template_engine or "simple_replace",
-                            request_template=m.request_template or {},
-                            response_transform=m.response_transform or {},
+                            template_engine=template_engine,
+                            request_template=request_template,
+                            response_transform=response_transform,
+                            async_config=async_config,
+                            http_method=http_method,
                             pricing_config=m.pricing_config or {},
                             limit_config=m.limit_config or {},
                             auth_type=resolved_auth_type,
                             auth_config=auth_config,
                             default_headers=resolved_headers,
-                            default_params=preset.default_params if preset else {},
+                            default_params=default_params,
                             routing_config=m.routing_config or {},
+                            config_override=m.config_override or {},
                             weight=int(m.weight or 0) + int(cred["weight"] or 0),
                             priority=int(m.priority or 0) + int(cred["priority"] or 0),
                             credential_id=cred["id"],
@@ -229,7 +313,7 @@ class RoutingSelector:
         model = await self.model_repo.get(model_uuid)
         if not model or not model.is_active:
             return results
-        if capability and model.capability != capability:
+        if capability and capability not in model.capabilities:
             return results
 
         instance = await self.instance_repo.get(model.instance_id)
@@ -254,6 +338,53 @@ class RoutingSelector:
             return results
         if allowed_providers and preset.provider not in allowed_providers:
             return results
+
+        # Use requested capability or the first capability of the model
+        resolved_cap = capability or (model.capabilities[0] if model.capabilities else "chat")
+        capability_config = _resolve_capability_config(preset, resolved_cap)
+        if not capability_config:
+            logger.warning(
+                "routing_skip_missing_capability_config instance_id=%s model_id=%s capability=%s preset=%s",
+                instance.id,
+                model.id,
+                resolved_cap,
+                preset.slug,
+            )
+            return results
+
+        allow_override = (model.routing_config or {}).get("allow_template_override") is True
+        effective_config = dict(capability_config)
+        if allow_override and model.config_override:
+            effective_config = deep_merge(effective_config, model.config_override)
+
+        template_engine = effective_config.get("template_engine") or "simple_replace"
+        request_template = effective_config.get("request_template") or effective_config.get(
+            "body_template"
+        )
+        if not request_template:
+            logger.warning(
+                "routing_skip_missing_template instance_id=%s model_id=%s capability=%s preset=%s",
+                instance.id,
+                model.id,
+                resolved_cap,
+                preset.slug,
+            )
+            return results
+        response_transform = (
+            effective_config.get("response_transform")
+            or effective_config.get("response_template")
+            or {}
+        )
+        async_config = (
+            effective_config.get("async_config")
+            or effective_config.get("async_flow")
+            or {}
+        )
+        http_method = (
+            effective_config.get("http_method")
+            or effective_config.get("method")
+            or "POST"
+        )
 
         credentials_map = await self.credential_repo.get_by_instance_ids([str(instance.id)])
         cred_entries: list[dict] = []
@@ -305,6 +436,18 @@ class RoutingSelector:
             auth_config=preset.auth_config if preset else None,
             default_headers=preset.default_headers if preset else None,
         )
+        capability_headers = (
+            effective_config.get("default_headers")
+            or effective_config.get("headers")
+            or {}
+        )
+        resolved_headers = deep_merge(resolved_headers, capability_headers)
+        default_params = deep_merge(
+            preset.default_params if preset else {},
+            effective_config.get("default_params")
+            or effective_config.get("params")
+            or {},
+        )
 
         for cred in cred_entries:
             auth_config = dict(base_auth_config)
@@ -314,22 +457,26 @@ class RoutingSelector:
             results.append(
                 RoutingCandidate(
                     preset_id=str(preset.id) if preset else None,
+                    preset_slug=instance.preset_slug,
                     instance_id=str(instance.id),
                     preset_item_id=None,
                     model_id=str(model.id),
                     provider=preset.provider if preset else "custom",
                     upstream_url=upstream_url,
                     channel=channel,
-                    template_engine=model.template_engine or "simple_replace",
-                    request_template=model.request_template or {},
-                    response_transform=model.response_transform or {},
+                    template_engine=template_engine,
+                    request_template=request_template,
+                    response_transform=response_transform,
+                    async_config=async_config,
+                    http_method=http_method,
                     pricing_config=model.pricing_config or {},
                     limit_config=model.limit_config or {},
                     auth_type=resolved_auth_type,
                     auth_config=auth_config,
                     default_headers=resolved_headers,
-                    default_params=preset.default_params if preset else {},
+                    default_params=default_params,
                     routing_config=model.routing_config or {},
+                    config_override=model.config_override or {},
                     weight=int(model.weight or 0) + int(cred["weight"] or 0),
                     priority=int(model.priority or 0) + int(cred["priority"] or 0),
                     credential_id=cred["id"],

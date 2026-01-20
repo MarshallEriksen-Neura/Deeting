@@ -33,9 +33,6 @@ provider_model = sa.table(
     sa.column("unified_model_id", sa.String),
     sa.column("display_name", sa.String),
     sa.column("upstream_path", sa.String),
-    sa.column("template_engine", sa.String),
-    sa.column("request_template", postgresql.JSONB),
-    sa.column("response_transform", postgresql.JSONB),
     sa.column("pricing_config", postgresql.JSONB),
     sa.column("limit_config", postgresql.JSONB),
     sa.column("tokenizer_config", postgresql.JSONB),
@@ -55,11 +52,9 @@ def upgrade() -> None:
     candidates = conn.execute(
         sa.select(
             provider_model.c.instance_id,
-            provider_model.c.template_engine,
             provider_model.c.upstream_path,
         ).where(
             provider_model.c.capability == "chat",
-            provider_model.c.template_engine.in_(["openai_compat", "simple_replace"]),
             provider_model.c.upstream_path.like("%chat/completions"),
         )
     ).fetchall()
@@ -75,7 +70,7 @@ def upgrade() -> None:
         exists = conn.execute(
             sa.select(provider_model.c.id).where(
                 provider_model.c.instance_id == instance_id,
-                provider_model.c.capability == "image",
+                provider_model.c.capability == "image_generation",
             )
         ).scalar_one_or_none()
         if exists:
@@ -94,14 +89,11 @@ def upgrade() -> None:
         payload = {
             "id": uuid.uuid4(),
             "instance_id": instance_id,
-            "capability": "image",
+            "capability": "image_generation",
             "model_id": "gpt-image-1",
             "unified_model_id": "gpt-image-1",
             "display_name": "GPT Image",
             "upstream_path": upstream_path,
-            "template_engine": row.template_engine or "openai_compat",
-            "request_template": {},
-            "response_transform": {},
             "pricing_config": {},
             "limit_config": {},
             "tokenizer_config": {},
@@ -121,7 +113,7 @@ def downgrade() -> None:
     conn = op.get_bind()
     conn.execute(
         provider_model.delete().where(
-            provider_model.c.capability == "image",
+            provider_model.c.capability == "image_generation",
             provider_model.c.model_id == "gpt-image-1",
             provider_model.c.extra_meta.contains({"seeded_by": SEED_MARK}),
         )
