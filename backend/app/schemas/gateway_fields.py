@@ -72,13 +72,10 @@ VIDEO_ONLY_FIELDS: set[str] = {
 
 ALLOWED_FIELDS_BY_CAPABILITY: dict[str, set[str]] = {
     "chat": CHAT_FIELDS,
-    "image": COMMON_FIELDS | IMAGE_ONLY_FIELDS,
     "image_generation": COMMON_FIELDS | IMAGE_ONLY_FIELDS,
     "text_to_speech": COMMON_FIELDS | AUDIO_ONLY_FIELDS,
     "speech_to_text": COMMON_FIELDS | AUDIO_ONLY_FIELDS,
-    "audio": COMMON_FIELDS | AUDIO_ONLY_FIELDS,
     "video_generation": COMMON_FIELDS | VIDEO_ONLY_FIELDS,
-    "video": COMMON_FIELDS | VIDEO_ONLY_FIELDS,
 }
 
 

@@ -1,10 +1,11 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint, DateTime, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint, DateTime, text, JSON
 from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from .provider_preset import JSONBCompat
@@ -77,6 +78,16 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         return False
 
 
+class CapabilityListType(TypeDecorator):
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(ARRAY(String(32)))
+        return dialect.type_descriptor(JSON())
+
+
 class ProviderModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
     某个实例下的可用模型快照（执行层配置）
@@ -89,7 +100,11 @@ class ProviderModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     capabilities: Mapped[list[str]] = mapped_column(
-        ARRAY(String(32)), nullable=False, default=list, server_default="{}", comment="能力列表: chat, image_generation 等"
+        CapabilityListType,
+        nullable=False,
+        default=list,
+        server_default="{}",
+        comment="能力列表: chat, image_generation 等",
     )
     model_id: Mapped[str] = mapped_column(String(128), nullable=False, comment="上游真实模型标识/部署名")
     unified_model_id: Mapped[str | None] = mapped_column(

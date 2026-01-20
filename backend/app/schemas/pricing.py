@@ -106,15 +106,15 @@ class PricingConfig(BaseSchema):
             case "chat":
                 if not self.chat:
                     raise ValueError("capability=chat 需提供 chat 定价配置")
-            case "image" | "image_generation":
+            case "image_generation":
                 if not self.image:
-                    raise ValueError("capability=image_generation（或 image）需提供 image 定价配置")
-            case "audio" | "text_to_speech" | "speech_to_text":
+                    raise ValueError("capability=image_generation 需提供 image 定价配置")
+            case "text_to_speech" | "speech_to_text":
                 if not self.audio:
-                    raise ValueError("capability=audio/text_to_speech/speech_to_text 需提供 audio 定价配置")
-            case "video" | "video_generation":
+                    raise ValueError("capability=text_to_speech/speech_to_text 需提供 audio 定价配置")
+            case "video_generation":
                 if not self.video:
-                    raise ValueError("capability=video/video_generation 需提供 video 定价配置")
+                    raise ValueError("capability=video_generation 需提供 video 定价配置")
             case _:
                 # 其他能力保持向后兼容，不强制
                 return

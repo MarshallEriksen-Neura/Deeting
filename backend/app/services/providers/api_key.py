@@ -251,7 +251,7 @@ class ApiKeyService:
             for ip in ip_whitelist:
                 await self.repository.add_ip_whitelist(key_obj.id, ip)
 
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return key_obj, raw_key, raw_secret
 
     def _generate_raw_key(self, key_type: ApiKeyType) -> str:
@@ -329,7 +329,7 @@ class ApiKeyService:
         )
 
         await self.repository.update_last_used(obj.id)
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         await cache.set(cache_key, principal, ttl=300)
         return principal
 
@@ -543,7 +543,7 @@ class ApiKeyService:
             return False
 
         await self.repository.update_quota_usage(api_key_id, quota_type, amount)
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return True
 
     # ============================================================
@@ -729,7 +729,7 @@ class ApiKeyService:
                 new_key.id, ip_entry.ip_pattern, ip_entry.description
             )
 
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
 
         # 6. 失效旧 Key 缓存
         await self._invalidate_cache(old_key.key_hash)
@@ -764,7 +764,7 @@ class ApiKeyService:
             "secret_hash": secret_hash,
             "secret_hint": secret_hint,
         })
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
 
         # 失效缓存
         await self._invalidate_cache(api_key.key_hash)
@@ -793,7 +793,7 @@ class ApiKeyService:
             "revoked_at": Datetime.utcnow(),
             "revoked_reason": reason,
         })
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
 
         # 失效缓存
         await self._invalidate_cache(api_key.key_hash)
@@ -841,7 +841,7 @@ class ApiKeyService:
         if update_fields:
             await self.repository.update(api_key_id, update_fields)
 
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
 
         # 失效缓存
         await self._invalidate_cache(api_key.key_hash)
@@ -856,7 +856,7 @@ class ApiKeyService:
 
         key_hash = api_key.key_hash
         success = await self.repository.delete(api_key_id)
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
 
         if success:
             await self._invalidate_cache(key_hash)
@@ -942,7 +942,7 @@ class ApiKeyService:
             await self._invalidate_cache(key.key_hash)
             count += 1
 
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return count
 
     async def revoke_user_keys(
@@ -967,5 +967,5 @@ class ApiKeyService:
             await self._invalidate_cache(key.key_hash)
             count += 1
 
-        await self.repository.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return count

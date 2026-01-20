@@ -21,8 +21,6 @@ def _extract_capability_config(configs: dict[str, Any], capability: str) -> dict
         return None
     if capability in configs:
         return configs.get(capability)
-    if capability == "image" and "image_generation" in configs:
-        return configs.get("image_generation")
     return None
 
 
@@ -43,21 +41,17 @@ def inspect_state(sample_limit: int = 20) -> None:
     cap_counter: Counter[str] = Counter()
     preset_cap_counter: Counter[str] = Counter()
     preset_empty = 0
-    preset_has_image_key = 0
 
     for preset in presets:
         configs = preset.capability_configs or {}
         if not configs:
             preset_empty += 1
-        if "image" in configs:
-            preset_has_image_key += 1
         for key in configs.keys():
             preset_cap_counter[key] += 1
 
     missing_preset: list[tuple[str, str]] = []
     missing_cap_config: list[tuple[str, str, str, str]] = []
     missing_template: list[tuple[str, str, str, str]] = []
-    has_image_cap_models = 0
 
     for model in models:
         inst = instance_by_id.get(str(model.instance_id))
@@ -72,8 +66,6 @@ def inspect_state(sample_limit: int = 20) -> None:
 
         for cap in model.capabilities or []:
             cap_counter[cap] += 1
-            if cap == "image":
-                has_image_cap_models += 1
             config = _extract_capability_config(preset.capability_configs or {}, cap)
             if not config:
                 missing_cap_config.append((str(inst.id), model.model_id, cap, preset.slug))
@@ -93,8 +85,6 @@ def inspect_state(sample_limit: int = 20) -> None:
         print("没有任何 provider_preset 数据。")
     else:
         print(f"capability_configs 为空的 preset 数量: {preset_empty}")
-        if preset_has_image_key:
-            print(f"含旧能力键 image 的 preset 数量: {preset_has_image_key}")
         if preset_cap_counter:
             print("能力键统计:")
             for key, count in preset_cap_counter.most_common():
@@ -109,8 +99,6 @@ def inspect_state(sample_limit: int = 20) -> None:
             print(f"  - {key}: {count}")
     else:
         print("未发现任何 provider_model.capabilities。")
-    if has_image_cap_models:
-        print(f"注意: 仍有 {has_image_cap_models} 个模型使用旧能力 image。")
     print("")
 
     print("=== 关联性检查（实例/模型 -> 模板配置） ===")

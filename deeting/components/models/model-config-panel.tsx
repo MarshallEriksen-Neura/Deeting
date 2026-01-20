@@ -322,7 +322,14 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
         <Section title={t("capabilities.title")} description={t("capabilities.desc")}>
           <div className="flex flex-wrap gap-2">
             {(
-              ["chat", "vision", "audio", "embedding", "code", "reasoning"] as ModelCapability[]
+              [
+                "chat",
+                "image_generation",
+                "text_to_speech",
+                "speech_to_text",
+                "video_generation",
+                "embedding",
+              ] as ModelCapability[]
             ).map((cap) => {
               const active = capabilities.includes(cap)
               const meta = CAPABILITY_META[cap]

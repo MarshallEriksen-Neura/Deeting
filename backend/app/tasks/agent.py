@@ -6,7 +6,6 @@ import uuid
 from typing import Any, Callable
 
 from app.core.celery_app import celery_app
-from app.services.providers.llm import llm_service
 from app.agent_plugins.builtins.database.plugin import DatabasePlugin
 from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
 from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
@@ -67,6 +66,7 @@ async def _chat_completion_with_fallback(
     tools: list[ToolDefinition],
     model_hint: str | None,
 ) -> tuple[Any, str | None]:
+    from app.services.providers.llm import llm_service
     try:
         response = await llm_service.chat_completion(
             messages=messages,

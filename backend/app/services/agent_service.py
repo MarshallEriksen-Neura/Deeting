@@ -3,7 +3,6 @@ import json
 import logging
 from typing import List, Dict, Any, Optional
 
-from app.services.providers.llm import llm_service
 from app.agent_plugins.core.manager import PluginManager
 from app.agent_plugins.builtins.database.plugin import DatabasePlugin
 from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
@@ -88,6 +87,8 @@ class AgentService:
         """
         Execute a chat turn with the Agent using a specific Persona (System Instruction).
         """
+        from app.services.providers.llm import llm_service
+
         await self.initialize()
 
         if conversation_history is None:

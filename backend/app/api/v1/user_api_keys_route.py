@@ -6,7 +6,6 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -14,8 +13,8 @@ from app.core.config import settings
 from app.deps.auth import get_current_user
 from app.models import User
 from app.models.api_key import ApiKeyStatus, ApiKeyType
-from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.repositories.api_key import ApiKeyRepository
+from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.schemas.user_api_key import (
     ApiKeyCreateRequest,
     ApiKeyCreateResponse,
@@ -87,7 +86,9 @@ async def create_api_key(
     payload: ApiKeyCreateRequest,
     current_user: User = Depends(get_current_user),
     service: ApiKeyService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ApiKeyCreateResponse:
+    """创建 API Key"""
     expires_at = map_expiration(payload.expiration, payload.expires_at)
 
     api_key, raw_key, _ = await service.generate_key(
@@ -103,7 +104,8 @@ async def create_api_key(
         enable_logging=payload.enable_logging,
     )
 
-    await service.repository.session.commit()
+    # 路由层统一管理事务
+    await db.commit()
 
     return ApiKeyCreateResponse(api_key=to_response(api_key), secret=raw_key)
 
@@ -113,7 +115,9 @@ async def roll_api_key(
     api_key_id: UUID,
     current_user: User = Depends(get_current_user),
     service: ApiKeyService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ApiKeyCreateResponse:
+    """轮换 API Key"""
     key = await service.repository.get_by_id(api_key_id)
     if not key or key.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found")
@@ -122,7 +126,8 @@ async def roll_api_key(
     if not new_key:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rotate failed")
 
-    await service.repository.session.commit()
+    # 路由层统一管理事务
+    await db.commit()
     return ApiKeyCreateResponse(api_key=to_response(new_key), secret=raw_key)
 
 
@@ -131,13 +136,16 @@ async def revoke_api_key(
     api_key_id: UUID,
     current_user: User = Depends(get_current_user),
     service: ApiKeyService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ApiKeyResponse:
+    """吊销 API Key"""
     key = await service.repository.get_by_id(api_key_id)
     if not key or key.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found")
 
-    revoked = await service.repository.revoke(api_key_id, reason="user revoke")
-    await service.repository.session.commit()
+    revoked = await service.revoke_key(api_key_id, reason="user revoke")
+    # 路由层统一管理事务
+    await db.commit()
     return to_response(revoked)
 
 
@@ -146,12 +154,16 @@ async def delete_api_key(
     api_key_id: UUID,
     current_user: User = Depends(get_current_user),
     service: ApiKeyService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
 ):
+    """删除 API Key"""
     key = await service.repository.get_by_id(api_key_id)
     if not key or key.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found")
-    await service.repository.delete(api_key_id)
-    await service.repository.session.commit()
+    
+    await service.delete_key(api_key_id)
+    # 路由层统一管理事务
+    await db.commit()
     return None
 
 
@@ -160,13 +172,7 @@ async def available_models(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        select(distinct(ProviderModel.model_id))
-        .join(ProviderInstance, ProviderInstance.id == ProviderModel.instance_id)
-        .where(ProviderInstance.user_id == current_user.id)
-        .where(ProviderInstance.is_enabled.is_(True))
-        .where(ProviderModel.is_active.is_(True))
-    )
-    res = await db.execute(stmt)
-    items = [row[0] for row in res.all()]
+    """获取用户可用的模型列表"""
+    model_repo = ProviderModelRepository(db)
+    items = await model_repo.get_available_models_for_user(str(current_user.id))
     return {"items": items}

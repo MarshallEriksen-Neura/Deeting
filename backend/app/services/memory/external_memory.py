@@ -15,7 +15,6 @@ from app.prompts.memory_extraction import MEMORY_PERSIST_DECISION_SYSTEM_PROMPT
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.repositories import UserSecretaryRepository
 from app.services.providers.embedding import EmbeddingService
-from app.services.providers.llm import llm_service
 from app.services.providers.sanitizer import sanitizer
 from app.services.vector.qdrant_user_service import QdrantUserVectorService
 
@@ -123,6 +122,8 @@ async def _resolve_secretary_model(
 
 
 async def _classify_with_llm(text: str, *, model: str | None) -> tuple[bool | None, float | None]:
+    from app.services.providers.llm import llm_service
+
     messages = [
         {"role": "system", "content": MEMORY_PERSIST_DECISION_SYSTEM_PROMPT.strip()},
         {"role": "user", "content": f"用户输入：{text}\n请严格输出 JSON 对象。"},

@@ -127,13 +127,15 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
                 select(ProviderModel)
                 .join(ProviderInstance, ProviderModel.instance_id == ProviderInstance.id)
                 .where(
-                    ProviderModel.capabilities.overlap(capability_candidates),
                     # 支持对外别名 unified_model_id 作为匹配键
                     or_(ProviderModel.model_id == model_id, ProviderModel.unified_model_id == model_id),
                     ProviderModel.is_active == True,  # noqa: E712
                     ProviderInstance.is_enabled == True,  # noqa: E712
                 )
             )
+            dialect = self.session.bind.dialect.name if getattr(self.session, "bind", None) else None
+            if dialect == "postgresql":
+                stmt = stmt.where(ProviderModel.capabilities.overlap(capability_candidates))
 
             if user_id is not None:
                 if include_public:
@@ -144,7 +146,11 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
                     stmt = stmt.where(ProviderInstance.user_id == user_uuid)
 
             result = await self.session.execute(stmt)
-            return list(result.scalars().all())
+            models = list(result.scalars().all())
+            if dialect != "postgresql":
+                candidate_set = set(capability_candidates)
+                models = [m for m in models if any(c in candidate_set for c in (m.capabilities or []))]
+            return models
 
         return await cache.get_or_set_singleflight(
             cache_key,
@@ -216,6 +222,31 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         for r in results:
             await self.session.refresh(r)
         return results
+
+    async def get_available_models_for_user(self, user_id: str) -> list[str]:
+        """
+        获取用户可用的模型列表
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            可用模型ID列表
+        """
+        try:
+            user_uuid = uuid.UUID(str(user_id))
+        except Exception:
+            return []
+            
+        stmt = (
+            select(ProviderModel.model_id.distinct())
+            .join(ProviderInstance, ProviderInstance.id == ProviderModel.instance_id)
+            .where(ProviderInstance.user_id == user_uuid)
+            .where(ProviderInstance.is_enabled.is_(True))
+            .where(ProviderModel.is_active.is_(True))
+        )
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.all()]
 
     async def upsert_from_upstream(
         self,

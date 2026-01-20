@@ -44,12 +44,6 @@ def _resolve_capability_config(preset: ProviderPreset, capability: str | None) -
     configs = preset.capability_configs or {}
     if capability and capability in configs:
         return configs.get(capability)
-    if capability == "image" and "image_generation" in configs:
-        return configs.get("image_generation")
-    if capability in {"code", "reasoning", "vision"} and "chat" in configs:
-        return configs.get("chat")
-    if capability == "audio" and "speech_to_text" in configs:
-        return configs.get("speech_to_text")
     return None
 
 

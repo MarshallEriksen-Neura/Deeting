@@ -6,7 +6,13 @@
  */
 
 // Model capability types
-export type ModelCapability = 'chat' | 'vision' | 'image' | 'audio' | 'embedding' | 'code' | 'reasoning'
+export type ModelCapability =
+  | 'chat'
+  | 'image_generation'
+  | 'text_to_speech'
+  | 'speech_to_text'
+  | 'video_generation'
+  | 'embedding'
 
 // Provider instance status
 export type ProviderStatus = 'online' | 'offline' | 'degraded' | 'syncing' | 'unknown'
@@ -29,7 +35,7 @@ export interface ProviderModel {
   display_name?: string
   /** External/unified model id used for routing (alias) */
   unified_model_id?: string
-  /** Model capabilities (chat, vision, audio, embedding, etc.) */
+  /** Model capabilities (chat, image_generation, speech_to_text, etc.) */
   capabilities: ModelCapability[]
   /** Context window size in tokens: e.g., 128000 */
   context_window: number
@@ -177,35 +183,30 @@ export const CAPABILITY_META: Record<ModelCapability, {
     label: 'Chat',
     description: 'Conversational AI capabilities'
   },
-  vision: {
-    icon: '👁️',
-    label: 'Vision',
-    description: 'Image understanding and analysis'
-  },
-  image: {
+  image_generation: {
     icon: '🖼️',
-    label: 'Image',
+    label: 'Image Generation',
     description: 'Image generation capabilities'
   },
-  audio: {
+  text_to_speech: {
     icon: '🗣️',
-    label: 'Audio',
-    description: 'Speech recognition and synthesis'
+    label: 'Text to Speech',
+    description: 'Speech synthesis capabilities'
+  },
+  speech_to_text: {
+    icon: '🎧',
+    label: 'Speech to Text',
+    description: 'Speech recognition capabilities'
+  },
+  video_generation: {
+    icon: '🎬',
+    label: 'Video Generation',
+    description: 'Video generation capabilities'
   },
   embedding: {
     icon: '🔢',
     label: 'Embedding',
     description: 'Text embedding generation'
-  },
-  code: {
-    icon: '💻',
-    label: 'Code',
-    description: 'Code generation and understanding'
-  },
-  reasoning: {
-    icon: '🧠',
-    label: 'Reasoning',
-    description: 'Advanced reasoning capabilities'
   }
 }
 

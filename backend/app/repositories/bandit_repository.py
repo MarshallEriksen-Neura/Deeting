@@ -208,13 +208,16 @@ class BanditRepository(BaseRepository[BanditArmState]):
             )
         )
 
-        if capability:
+        dialect = self.session.bind.dialect.name if getattr(self.session, "bind", None) else None
+        if capability and dialect == "postgresql":
             stmt = stmt.where(ProviderModel.capabilities.contains([capability]))
         if model:
             stmt = stmt.where(ProviderModel.model_id == model)
 
         result = await self.session.execute(stmt)
         rows = result.all()
+        if capability and dialect != "postgresql":
+            rows = [r for r in rows if capability in (r.ProviderModel.capabilities or [])]
 
         total_trials = sum(r.BanditArmState.total_trials for r in rows if r.BanditArmState)
 

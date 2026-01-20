@@ -131,6 +131,21 @@ export function ChatController({ agentId }: ChatControllerProps) {
     localStorage.setItem(sessionStorageKey, sessionId)
   }, [sessionId, sessionStorageKey])
 
+  React.useEffect(() => {
+    if (!agentId || !sessionId) return
+    if (pathname?.includes("/chat/create/assistant")) return
+    const params = new URLSearchParams(searchParams?.toString())
+    params.set("session", sessionId)
+    params.delete("agentId")
+    const nextPath = `/chat/${agentId}`
+    const query = params.toString()
+    const nextUrl = query ? `${nextPath}?${query}` : nextPath
+    const currentQuery = searchParams?.toString()
+    const currentUrl = currentQuery ? `${pathname}?${currentQuery}` : pathname ?? ""
+    if (nextUrl === currentUrl) return
+    router.replace(nextUrl)
+  }, [agentId, pathname, router, searchParams, sessionId])
+
   // Load History Logic
   React.useEffect(() => {
     if (!agent) return

@@ -69,7 +69,7 @@ export default function HUD() {
     isLoadingModels: isLoadingImageModels,
   } = useChatService({
     enabled: isImage,
-    modelCapability: "image",
+    modelCapability: "image_generation",
   });
   const { selectedModelId, setSelectedModelId } = useImageGenerationStore();
 

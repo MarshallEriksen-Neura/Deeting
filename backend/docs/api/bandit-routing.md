@@ -284,7 +284,7 @@ elif gray_ratio >= 1 or random() < gray_ratio:
 **参数**:
 | 参数 | 说明 |
 |------|------|
-| `capability` | 按能力过滤（chat/embedding） |
+| `capability` | 按能力过滤（chat/embedding/image_generation/text_to_speech/speech_to_text/video_generation） |
 | `model` | 按模型过滤 |
 
 **响应**:

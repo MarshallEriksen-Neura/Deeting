@@ -8,6 +8,7 @@ import {
   parseMessageContent,
   type ChatImageAttachment,
 } from "@/lib/chat/message-content";
+import { createSessionId } from "@/lib/chat/session-id";
 import { fetchConversationWindow } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
 import { signAssets } from "@/lib/api/media-assets";
@@ -346,6 +347,16 @@ export const useChatStore = create<ChatState & ChatActions>()(
         }));
 
         const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant.systemPrompt);
+        let resolvedSessionId = sessionId;
+        const storageKey = sessionKeyForAssistant(activeAssistant.id);
+        if (!resolvedSessionId) {
+          resolvedSessionId = createSessionId();
+          setSessionId(resolvedSessionId);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(storageKey, resolvedSessionId);
+          }
+        }
+
         const payload = {
           model: selectedModel.id,
           provider_model_id: selectedModel.provider_model_id ?? undefined,
@@ -353,10 +364,8 @@ export const useChatStore = create<ChatState & ChatActions>()(
           temperature: config.temperature,
           max_tokens: config.maxTokens,
           assistant_id: activeAssistant?.id ?? undefined,
-          session_id: sessionId ?? undefined,
+          session_id: resolvedSessionId ?? undefined,
         };
-
-        const storageKey = sessionKeyForAssistant(activeAssistant.id);
 
         try {
           await streamChatCompletion(

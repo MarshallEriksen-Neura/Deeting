@@ -185,14 +185,13 @@ def get_workflow_for_channel(
 
     Args:
         channel: 通道类型
-        capability: 能力类型 (chat, embeddings, image_generation, etc.)
+        capability: 能力类型 (chat, embedding, image_generation, etc.)
 
     Returns:
         对应的编排配置
     """
     capability = capability.lower()
     media_capabilities = {
-        "image",
         "image_generation",
         "text_to_speech",
         "speech_to_text",
@@ -200,7 +199,7 @@ def get_workflow_for_channel(
     }
     
     if channel == Channel.EXTERNAL:
-        if capability == "embeddings":
+        if capability == "embedding":
             return WORKFLOW_TEMPLATES.get(
                 WorkflowTemplate.EXTERNAL_EMBEDDINGS,
                 EXTERNAL_CHAT_WORKFLOW,

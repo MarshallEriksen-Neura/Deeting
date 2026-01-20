@@ -10,10 +10,9 @@ def test_guess_capabilities_image_models():
 
 def test_guess_capabilities_vision_chat_models():
     caps = guess_capabilities("gpt-4-vision-preview")
-    assert caps[0] == "chat"
-    assert "vision" in caps
+    assert caps == ["chat"]
 
 
 def test_primary_capability():
-    assert primary_capability(["chat", "vision"]) == "chat"
+    assert primary_capability(["chat", "image_generation"]) == "chat"
     assert primary_capability(["image_generation"]) == "image_generation"

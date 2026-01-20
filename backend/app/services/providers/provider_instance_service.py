@@ -342,9 +342,7 @@ class ProviderInstanceService:
                     return f"{base}/audio/speech"
                 if cap == "speech_to_text":
                     return f"{base}/audio/transcriptions"
-                if cap == "audio":
-                    return f"{base}/audio/transcriptions"
-                if cap in {"image", "image_generation"}:
+                if cap == "image_generation":
                     return f"{base}/images/generations"
                 if cap == "video_generation":
                     return f"{base}/videos/generations"
@@ -359,9 +357,7 @@ class ProviderInstanceService:
                 return "audio/speech"
             if cap == "speech_to_text":
                 return "audio/transcriptions"
-            if cap == "audio":
-                return "audio/transcriptions"
-            if cap in {"image", "image_generation"}:
+            if cap == "image_generation":
                 return "images/generations"
             if cap == "video_generation":
                 return "videos/generations"
@@ -379,17 +375,6 @@ class ProviderInstanceService:
                 caps = [forced_capability]
             else:
                 caps = guess_capabilities(model_id)
-            
-            # Normalize legacy/alias capabilities
-            normalized_caps = []
-            for c in caps:
-                if c == "image":
-                    normalized_caps.append("image_generation")
-                elif c == "audio":
-                    normalized_caps.append("speech_to_text")
-                else:
-                    normalized_caps.append(c)
-            caps = normalized_caps
             
             # For upstream_path, we still need a 'primary' one if we only have one record.
             # Usually the first capability defines the path.
@@ -771,12 +756,16 @@ class ProviderInstanceService:
             headers["Authorization"] = f"Bearer {secret}"
 
         capability = (model.capabilities[0] if model.capabilities else "chat").lower()
-        if capability in {"embedding"}:
+        if capability == "embedding":
             payload = {"model": model.model_id, "input": prompt}
-        elif capability in {"audio"}:
-            payload = {"model": model.model_id, "input": prompt, "response_format": "json"}
-        elif capability in {"image", "image_generation"}:
+        elif capability == "image_generation":
             payload = {"model": model.model_id, "prompt": prompt, "n": 1}
+        elif capability == "text_to_speech":
+            payload = {"model": model.model_id, "input": prompt, "voice": "alloy"}
+        elif capability == "speech_to_text":
+            payload = {"model": model.model_id, "audio_data": prompt, "response_format": "json"}
+        elif capability == "video_generation":
+            payload = {"model": model.model_id, "prompt": prompt}
         else:
             payload = {
                 "model": model.model_id,

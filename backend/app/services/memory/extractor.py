@@ -4,9 +4,9 @@ from typing import List
 from loguru import logger
 
 from app.core.config import settings
+from app.prompts.memory_extraction import MEMORY_EXTRACTION_SYSTEM_PROMPT
 from app.services.memory.qdrant_service import system_qdrant
 from app.services.providers.embedding import EmbeddingService
-from app.services.providers.llm import llm_service
 from app.services.vector.qdrant_user_service import QdrantUserVectorService
 from app.services.providers.sanitizer import sanitizer
 
@@ -50,6 +50,8 @@ class MemoryExtractorService:
         """
         调用 LLM 提取事实。
         """
+        from app.services.providers.llm import llm_service
+
         # 构造对话文本
         conversation_text = ""
         for msg in messages:

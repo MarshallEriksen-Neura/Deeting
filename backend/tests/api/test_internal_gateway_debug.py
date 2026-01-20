@@ -61,7 +61,7 @@ async def _seed_internal_provider(session) -> uuid.UUID:
     model = ProviderModel(
         id=uuid.uuid4(),
         instance_id=instance.id,
-        capability="chat",
+        capabilities=["chat"],  # 修复：使用 capabilities 复数形式，并且是数组
         model_id="gpt-4",
         unified_model_id=None,
         display_name="GPT-4",

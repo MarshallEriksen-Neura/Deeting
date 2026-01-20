@@ -185,7 +185,7 @@ Authorization: Bearer <access_token>
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `capability` | string | 否 | 能力过滤（如 `chat` / `image_generation` / `embedding`） |
+| `capability` | string | 否 | 能力过滤（如 `chat` / `image_generation` / `embedding` / `text_to_speech` / `speech_to_text` / `video_generation`） |
 
 #### 响应体
 
@@ -453,7 +453,7 @@ Authorization: Bearer <access_token>
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `model` | string | 是 | 模型名称 |
-| `capability` | string | 否 | 能力类型，默认 `chat` |
+| `capability` | string | 否 | 能力类型，默认 `chat`（支持 `image_generation` / `text_to_speech` / `speech_to_text` / `video_generation` 等） |
 | `provider_model_id` | string | 是 | 指定 provider model ID（内部网关必填，禁用路由/负载均衡） |
 
 #### 响应体
@@ -524,7 +524,7 @@ Authorization: Bearer <access_token>
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `capability` | string | 能力过滤（如 `chat` / `image_generation`） |
+| `capability` | string | 能力过滤（如 `chat` / `image_generation` / `text_to_speech` / `speech_to_text` / `video_generation`） |
 | `model` | string | 模型过滤 |
 
 #### 响应体

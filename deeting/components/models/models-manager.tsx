@@ -134,13 +134,14 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       const capabilitiesFromMeta = Array.isArray(extraMeta.upstream_capabilities)
         ? extraMeta.upstream_capabilities
         : []
+      const capabilitiesFromPayload = Array.isArray(m.capabilities) ? m.capabilities : []
       const capabilities: ModelCapability[] =
         capabilitiesFromRouting.length > 0
           ? (capabilitiesFromRouting as ModelCapability[])
-          : capabilitiesFromMeta.length > 0
-            ? (capabilitiesFromMeta as ModelCapability[])
-            : m.capability
-              ? [m.capability as ModelCapability]
+          : capabilitiesFromPayload.length > 0
+            ? (capabilitiesFromPayload as ModelCapability[])
+            : capabilitiesFromMeta.length > 0
+              ? (capabilitiesFromMeta as ModelCapability[])
               : ["chat"]
 
       const tokenizerConfig = (m.tokenizer_config || {}) as Record<string, unknown>

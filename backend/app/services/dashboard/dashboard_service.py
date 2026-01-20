@@ -5,7 +5,7 @@ from datetime import UTC, timedelta
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import func, select, cast, Float, case
+from sqlalchemy import func, select, cast, Float, String, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -267,11 +267,11 @@ class DashboardService:
         dialect = self.session.bind.dialect.name if getattr(self.session, "bind", None) else None
         meta_expr = base_subq.c.meta["routing"]["affinity_saved_tokens_est"]
         if dialect == "postgresql":
-            meta_text = meta_expr.astext
+            meta_text = cast(meta_expr, String)
             is_numeric = meta_text.op("~")(r"^-?\d+(\.\d+)?$")
-            routing_saved_tokens = func.case((is_numeric, cast(meta_text, Float)), else_=None)
+            routing_saved_tokens = case((is_numeric, cast(meta_text, Float)), else_=None)
         else:
-            routing_saved_tokens = cast(meta_expr, Float)
+            routing_saved_tokens = cast(cast(meta_expr, String), Float)
         stmt_speed = select(func.avg(routing_saved_tokens)).select_from(base_subq)
         saved_tokens = float((await self.session.execute(stmt_speed)).scalar() or 0.0)
         avg_speedup = round(saved_tokens * 3, 2) if saved_tokens > 0 else 0.0  # 约 3ms/Token 估算

@@ -4,7 +4,6 @@ import { create } from "zustand"
 import { createJSONStorage, persist } from "zustand/middleware"
 
 import {
-  type AudioMode,
   type Capability,
   type CapabilitySettings,
   type ChatModelSettings,
@@ -24,27 +23,22 @@ interface CapabilitySettingsActions {
     key: K,
     patch: Partial<ChatModelSettings[K]>
   ) => void
-  setImageSetting: <K extends keyof ImageModelSettings>(
+  setImageGenerationSetting: <K extends keyof ImageModelSettings>(
     key: K,
     patch: Partial<ImageModelSettings[K]>
   ) => void
-  setVideoSetting: <K extends keyof VideoModelSettings>(
+  setVideoGenerationSetting: <K extends keyof VideoModelSettings>(
     key: K,
     patch: Partial<VideoModelSettings[K]>
   ) => void
-  setAudioMode: (mode: AudioMode) => void
-  setAudioSetting: {
-    <K extends keyof TTSModelSettings>(
-      section: "tts",
-      key: K,
-      patch: Partial<TTSModelSettings[K]>
-    ): void
-    <K extends keyof STTModelSettings>(
-      section: "stt",
-      key: K,
-      patch: Partial<STTModelSettings[K]>
-    ): void
-  }
+  setTextToSpeechSetting: <K extends keyof TTSModelSettings>(
+    key: K,
+    patch: Partial<TTSModelSettings[K]>
+  ) => void
+  setSpeechToTextSetting: <K extends keyof STTModelSettings>(
+    key: K,
+    patch: Partial<STTModelSettings[K]>
+  ) => void
   resetCapability: (capability: Capability) => void
   resetAll: () => void
 }
@@ -72,54 +66,54 @@ export const useCapabilitySettingsStore = create<CapabilitySettingsStore>()(
             },
           },
         })),
-      setImageSetting: (key, patch) =>
+      setImageGenerationSetting: (key, patch) =>
         set((state) => ({
           settings: {
             ...state.settings,
-            image: {
-              ...state.settings.image,
+            image_generation: {
+              ...state.settings.image_generation,
               [key]: {
-                ...state.settings.image[key],
+                ...state.settings.image_generation[key],
                 ...patch,
               },
             },
           },
         })),
-      setVideoSetting: (key, patch) =>
+      setVideoGenerationSetting: (key, patch) =>
         set((state) => ({
           settings: {
             ...state.settings,
-            video: {
-              ...state.settings.video,
+            video_generation: {
+              ...state.settings.video_generation,
               [key]: {
-                ...state.settings.video[key],
+                ...state.settings.video_generation[key],
                 ...patch,
               },
             },
           },
         })),
-      setAudioMode: (mode) =>
+      setTextToSpeechSetting: (key, patch) =>
         set((state) => ({
           settings: {
             ...state.settings,
-            audio: {
-              ...state.settings.audio,
-              mode,
+            text_to_speech: {
+              ...state.settings.text_to_speech,
+              [key]: {
+                ...state.settings.text_to_speech[key],
+                ...patch,
+              },
             },
           },
         })),
-      setAudioSetting: (section, key, patch) =>
+      setSpeechToTextSetting: (key, patch) =>
         set((state) => ({
           settings: {
             ...state.settings,
-            audio: {
-              ...state.settings.audio,
-              [section]: {
-                ...state.settings.audio[section],
-                [key]: {
-                  ...state.settings.audio[section][key],
-                  ...patch,
-                },
+            speech_to_text: {
+              ...state.settings.speech_to_text,
+              [key]: {
+                ...state.settings.speech_to_text[key],
+                ...patch,
               },
             },
           },
@@ -139,12 +133,12 @@ export const useCapabilitySettingsStore = create<CapabilitySettingsStore>()(
     {
       name: "deeting-capability-settings-store",
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         settings: state.settings,
       }),
       migrate: (state, version) => {
-        if (!state || version < 1) {
+        if (!state || version < 2) {
           return DEFAULT_SETTINGS_STATE
         }
         return state

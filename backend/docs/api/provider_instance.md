@@ -49,13 +49,13 @@ curl -X POST https://host/api/v1/admin/provider-instances \
 ## 同步/上报模型（幂等 upsert）
 
 - `POST /admin/provider-instances/{instance_id}/models:sync`
-  - 同一批次如出现重复模型（`capability + model_id + upstream_path` 相同），服务端会自动去重
+  - 同一批次如出现重复模型（`model_id + upstream_path` 相同），服务端会自动去重
 - Body：
   ```json
   {
     "models": [
       {
-        "capability": "chat",
+        "capabilities": ["chat"],
         "model_id": "gpt-4o",
         "upstream_path": "/v1/chat/completions",
         "display_name": "GPT-4o",
@@ -74,7 +74,7 @@ curl -X POST https://host/api/v1/admin/provider-instances \
   }
   ```
 - 响应：`ProviderModelResponse[]`
-- 说明：按 `(capability, model_id, upstream_path)` 幂等更新；`synced_at` 由后端设置。
+- 说明：按 `(model_id, upstream_path)` 幂等更新；`synced_at` 由后端设置。
 
 ## 查询某实例的模型列表
 

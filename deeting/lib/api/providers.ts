@@ -135,7 +135,7 @@ export type ProviderInstanceUpdate = z.infer<typeof ProviderInstanceUpdateSchema
 export const ProviderModelResponseSchema = z.object({
   id: z.string().uuid(),
   instance_id: z.string().uuid(),
-  capability: z.string(),
+  capabilities: z.array(z.string()),
   model_id: z.string(),
   unified_model_id: z.string().nullable().optional(),
   display_name: z.string().nullable().optional(),

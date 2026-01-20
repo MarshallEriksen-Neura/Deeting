@@ -161,7 +161,7 @@ class BridgeAgentTokenService:
             record.expires_at = expires_at
             self.session.add(record)
 
-        await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         await self.session.refresh(record)
 
         await self._cache_version(user_id=user_id, agent_id=agent_id, version=record.version, expires_at=record.expires_at)
@@ -179,7 +179,7 @@ class BridgeAgentTokenService:
             return False
         
         await self.session.delete(record)
-        await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         
         # 清除缓存
         if self.redis:

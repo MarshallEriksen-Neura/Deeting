@@ -1,5 +1,9 @@
-export type Capability = "chat" | "image" | "audio" | "video"
-export type AudioMode = "tts" | "stt"
+export type Capability =
+  | "chat"
+  | "image_generation"
+  | "text_to_speech"
+  | "speech_to_text"
+  | "video_generation"
 
 export type ParamSetting<T> = {
   enabled: boolean
@@ -45,12 +49,6 @@ export type STTModelSettings = {
   timestamp_granularities: ParamSetting<string[]>
 }
 
-export type AudioModelSettings = {
-  mode: AudioMode
-  tts: TTSModelSettings
-  stt: STTModelSettings
-}
-
 export type VideoModelSettings = {
   width: ParamSetting<number>
   height: ParamSetting<number>
@@ -66,9 +64,10 @@ export type VideoModelSettings = {
 
 export type CapabilitySettings = {
   chat: ChatModelSettings
-  image: ImageModelSettings
-  audio: AudioModelSettings
-  video: VideoModelSettings
+  image_generation: ImageModelSettings
+  text_to_speech: TTSModelSettings
+  speech_to_text: STTModelSettings
+  video_generation: VideoModelSettings
 }
 
 export type ChatRequestParams = Partial<{
@@ -110,10 +109,6 @@ export type STTRequestParams = Partial<{
   timestamp_granularities: string[]
 }>
 
-export type AudioRequestParams =
-  | { mode: "tts"; tts: TTSRequestParams }
-  | { mode: "stt"; stt: STTRequestParams }
-
 export type VideoRequestParams = Partial<{
   width: number
   height: number
@@ -129,9 +124,10 @@ export type VideoRequestParams = Partial<{
 
 export type CapabilityRequestParams = {
   chat: ChatRequestParams
-  image: ImageRequestParams
-  audio: AudioRequestParams
-  video: VideoRequestParams
+  image_generation: ImageRequestParams
+  text_to_speech: TTSRequestParams
+  speech_to_text: STTRequestParams
+  video_generation: VideoRequestParams
 }
 
 export const DEFAULT_CAPABILITY_SETTINGS: CapabilitySettings = {
@@ -143,7 +139,7 @@ export const DEFAULT_CAPABILITY_SETTINGS: CapabilitySettings = {
     max_tokens: { enabled: false, value: 1024 },
     seed: { enabled: false, value: 0 },
   },
-  image: {
+  image_generation: {
     width: { enabled: false, value: 1024 },
     height: { enabled: false, value: 1024 },
     aspect_ratio: { enabled: false, value: "1:1" },
@@ -154,26 +150,23 @@ export const DEFAULT_CAPABILITY_SETTINGS: CapabilitySettings = {
     quality: { enabled: false, value: "standard" },
     style: { enabled: false, value: "natural" },
   },
-  audio: {
-    mode: "tts",
-    tts: {
-      voice: { enabled: false, value: "default" },
-      speed: { enabled: false, value: 1.0 },
-      pitch: { enabled: false, value: 0 },
-      volume: { enabled: false, value: 1.0 },
-      stability: { enabled: false, value: 0.5 },
-      similarity_boost: { enabled: false, value: 0.5 },
-      style_exaggeration: { enabled: false, value: 0.0 },
-      response_format: { enabled: false, value: "mp3" },
-    },
-    stt: {
-      language: { enabled: false, value: "auto" },
-      temperature: { enabled: false, value: 0.0 },
-      response_format: { enabled: false, value: "json" },
-      timestamp_granularities: { enabled: false, value: [] },
-    },
+  text_to_speech: {
+    voice: { enabled: false, value: "default" },
+    speed: { enabled: false, value: 1.0 },
+    pitch: { enabled: false, value: 0 },
+    volume: { enabled: false, value: 1.0 },
+    stability: { enabled: false, value: 0.5 },
+    similarity_boost: { enabled: false, value: 0.5 },
+    style_exaggeration: { enabled: false, value: 0.0 },
+    response_format: { enabled: false, value: "mp3" },
   },
-  video: {
+  speech_to_text: {
+    language: { enabled: false, value: "auto" },
+    temperature: { enabled: false, value: 0.0 },
+    response_format: { enabled: false, value: "json" },
+    timestamp_granularities: { enabled: false, value: [] },
+  },
+  video_generation: {
     width: { enabled: false, value: 1280 },
     height: { enabled: false, value: 720 },
     duration_seconds: { enabled: false, value: 4 },
@@ -217,19 +210,6 @@ export function getImageRequestParams(settings: ImageModelSettings): ImageReques
   return extractEnabledParams(settings) as ImageRequestParams
 }
 
-export function getAudioRequestParams(settings: AudioModelSettings): AudioRequestParams {
-  if (settings.mode === "tts") {
-    return {
-      mode: "tts",
-      tts: extractEnabledParams(settings.tts) as TTSRequestParams,
-    }
-  }
-  return {
-    mode: "stt",
-    stt: extractEnabledParams(settings.stt) as STTRequestParams,
-  }
-}
-
 export function getVideoRequestParams(settings: VideoModelSettings): VideoRequestParams {
   return extractEnabledParams(settings) as VideoRequestParams
 }
@@ -241,12 +221,14 @@ export function getCapabilityRequestParams(
   switch (capability) {
     case "chat":
       return getChatRequestParams(settings.chat)
-    case "image":
-      return getImageRequestParams(settings.image)
-    case "audio":
-      return getAudioRequestParams(settings.audio)
-    case "video":
-      return getVideoRequestParams(settings.video)
+    case "image_generation":
+      return getImageRequestParams(settings.image_generation)
+    case "text_to_speech":
+      return extractEnabledParams(settings.text_to_speech) as TTSRequestParams
+    case "speech_to_text":
+      return extractEnabledParams(settings.speech_to_text) as STTRequestParams
+    case "video_generation":
+      return getVideoRequestParams(settings.video_generation)
     default:
       {
         const _exhaustive: never = capability

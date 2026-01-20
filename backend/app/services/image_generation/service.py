@@ -94,7 +94,7 @@ class ImageGenerationService:
         if provider_model and provider_model.capabilities:
             capability = (
                 "image_generation"
-                if "image" in provider_model.capabilities or "image_generation" in provider_model.capabilities
+                if "image_generation" in provider_model.capabilities
                 else provider_model.capabilities[0]
             )
         ctx = WorkflowContext(
@@ -331,7 +331,7 @@ class ImageGenerationService:
             output = await self.output_repo.create(output_payload, commit=False)
             outputs.append(output)
 
-        await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         for output in outputs:
             await self.session.refresh(output)
         return outputs

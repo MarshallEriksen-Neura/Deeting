@@ -52,14 +52,13 @@ class McpMarketService:
             alias=alias,
             config_hash_snapshot=manifest_hash,
         )
-        await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         await self.session.refresh(subscription)
         return subscription, tool, True
 
     async def unsubscribe(self, *, user_id: UUID, tool_id: UUID) -> bool:
         deleted = await self.repo.delete_subscription(user_id=user_id, market_tool_id=tool_id)
-        if deleted:
-            await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return deleted
 
     @staticmethod

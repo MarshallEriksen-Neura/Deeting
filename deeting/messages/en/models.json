@@ -147,12 +147,11 @@
     },
     "capabilities": {
       "chat": { "label": "Chat", "description": "Conversational AI capabilities" },
-      "vision": { "label": "Vision", "description": "Image understanding and analysis" },
-      "image": { "label": "Image", "description": "Image generation capabilities" },
-      "audio": { "label": "Audio", "description": "Speech recognition and synthesis" },
-      "embedding": { "label": "Embedding", "description": "Text embedding generation" },
-      "code": { "label": "Code", "description": "Code generation and understanding" },
-      "reasoning": { "label": "Reasoning", "description": "Advanced reasoning capabilities" }
+      "image_generation": { "label": "Image Generation", "description": "Text-to-image generation" },
+      "text_to_speech": { "label": "Text to Speech", "description": "Speech synthesis (TTS)" },
+      "speech_to_text": { "label": "Speech to Text", "description": "Speech recognition (STT)" },
+      "video_generation": { "label": "Video Generation", "description": "Text-to-video generation" },
+      "embedding": { "label": "Embedding", "description": "Text embedding generation" }
     },
     "contextPresets": {
       "all": "All",

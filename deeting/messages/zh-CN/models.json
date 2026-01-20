@@ -147,12 +147,11 @@
     },
     "capabilities": {
       "chat": { "label": "对话", "description": "通用对话 AI 能力" },
-      "vision": { "label": "视觉", "description": "图像理解与分析" },
-      "image": { "label": "图像", "description": "图像生成能力" },
-      "audio": { "label": "音频", "description": "语音识别与合成" },
-      "embedding": { "label": "嵌入", "description": "文本向量生成" },
-      "code": { "label": "代码", "description": "代码生成与理解" },
-      "reasoning": { "label": "推理", "description": "高级逻辑推理能力" }
+      "image_generation": { "label": "图像生成", "description": "文生图能力" },
+      "text_to_speech": { "label": "语音合成", "description": "文本转语音（TTS）" },
+      "speech_to_text": { "label": "语音识别", "description": "语音转文本（STT）" },
+      "video_generation": { "label": "视频生成", "description": "文生视频能力" },
+      "embedding": { "label": "嵌入", "description": "文本向量生成" }
     },
     "contextPresets": {
       "all": "全部",

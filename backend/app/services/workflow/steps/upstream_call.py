@@ -350,7 +350,7 @@ class UpstreamCallStep(BaseStep):
             )
             headers = deep_merge(headers, submit_headers)
 
-        if (ctx.capability or "").lower() in {"image", "image_generation"}:
+        if (ctx.capability or "").lower() in {"image_generation"}:
             has_response_format = "response_format" in request_body
             response_format = request_body.get("response_format")
             logger.info(

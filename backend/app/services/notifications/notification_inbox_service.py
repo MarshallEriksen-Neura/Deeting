@@ -58,7 +58,7 @@ class NotificationInboxService:
         notification_id: uuid.UUID,
     ) -> int:
         updated = await self.receipt_repo.mark_read(user_id, notification_id)
-        await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return updated
 
     async def mark_all_read(
@@ -66,7 +66,7 @@ class NotificationInboxService:
         user_id: uuid.UUID,
     ) -> int:
         updated = await self.receipt_repo.mark_all_read(user_id)
-        await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return updated
 
     async def clear_all(
@@ -74,7 +74,7 @@ class NotificationInboxService:
         user_id: uuid.UUID,
     ) -> int:
         updated = await self.receipt_repo.archive_all(user_id)
-        await self.session.commit()
+        # 不在 Service 层直接 commit，由上层管理事务
         return updated
 
     async def get_unread_count(self, user_id: uuid.UUID) -> int:
