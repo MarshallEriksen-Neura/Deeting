@@ -9,6 +9,7 @@ ConversationAppendStep: 会话窗口追加
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -53,12 +54,6 @@ class ConversationAppendStep(BaseStep):
         if not session_id:
             return StepResult(status=StepStatus.SUCCESS, message="no_session_id")
 
-        try:
-            conv_service = ConversationService()
-        except Exception as exc:
-            logger.warning(f"ConversationAppend skipped (redis unavailable): {exc}")
-            return StepResult(status=StepStatus.SUCCESS, message="redis_unavailable")
-
         req = ctx.get("validation", "validated") or {}
         user_messages: list[dict[str, Any]] = req.get("messages", []) or []
         assistant_id = req.get("assistant_id")
@@ -66,42 +61,76 @@ class ConversationAppendStep(BaseStep):
             ctx.get("response_transform", "response") or {}
         )
 
-        msgs_to_append: list[dict[str, Any]] = []
-        msgs_to_append.extend(self._with_tokens(user_messages))
-        if assistant_msg:
-            msgs_to_append.append(self._with_tokens([assistant_msg])[0])
-
         channel = (
             ConversationChannel.EXTERNAL
             if ctx.is_external
             else ConversationChannel.INTERNAL
         )
 
-        # 使用分布式锁防止并发写入冲突（P1-4）
-        from app.core.distributed_lock import distributed_lock
-        from app.core.cache_keys import CacheKeys
-        
-        lock_key = CacheKeys.session_lock(session_id)
-        
-        async with distributed_lock(lock_key, ttl=10, retry_times=3) as acquired:
-            if not acquired:
-                logger.warning(
-                    "conversation_append_lock_failed session=%s trace=%s",
-                    session_id,
-                    ctx.trace_id,
-                )
-                # 锁获取失败，降级处理（不阻塞请求）
-                return StepResult(
-                    status=StepStatus.SUCCESS,
-                    message="lock_acquisition_failed",
-                )
-            
-            # 持有锁，执行会话追加
-        result = await conv_service.append_messages(
-            session_id=session_id,
-            messages=msgs_to_append,
-            channel=channel,
+        db_messages, redis_messages = self._prepare_messages(
+            user_messages=user_messages,
+            assistant_message=assistant_msg,
         )
+
+        conv_service: ConversationService | None = None
+        result: dict[str, Any] = {"should_flush": False, "last_turn": None}
+        redis_available = True
+        try:
+            conv_service = ConversationService()
+        except Exception as exc:
+            redis_available = False
+            logger.warning(
+                "ConversationAppend redis unavailable, fallback to db: %s", exc
+            )
+
+        if redis_available and conv_service:
+            try:
+                # 使用分布式锁防止并发写入冲突（P1-4）
+                from app.core.distributed_lock import distributed_lock
+                from app.core.cache_keys import CacheKeys
+
+                lock_key = CacheKeys.session_lock(session_id)
+
+                async with distributed_lock(lock_key, ttl=10, retry_times=3) as acquired:
+                    if not acquired:
+                        logger.warning(
+                            "conversation_append_lock_failed session=%s trace=%s",
+                            session_id,
+                            ctx.trace_id,
+                        )
+                        # 锁获取失败，降级处理（不阻塞请求）
+                        return StepResult(
+                            status=StepStatus.SUCCESS,
+                            message="lock_acquisition_failed",
+                        )
+
+                    # 持有锁，执行会话追加
+                    try:
+                        result = await conv_service.append_messages(
+                            session_id=session_id,
+                            messages=redis_messages,
+                            channel=channel,
+                        )
+                    except Exception as exc:
+                        redis_available = False
+                        logger.warning(
+                            "conversation_append_redis_failed session=%s exc=%s",
+                            session_id,
+                            exc,
+                        )
+            except Exception as exc:
+                redis_available = False
+                logger.warning(
+                    "conversation_append_lock_error session=%s exc=%s",
+                    session_id,
+                    exc,
+                )
+
+        if redis_available:
+            for idx, msg in enumerate(db_messages):
+                if idx < len(redis_messages):
+                    msg["turn_index"] = redis_messages[idx].get("turn_index")
+
         if ctx.db_session is not None:
             try:
                 session_uuid = uuid.UUID(session_id)
@@ -110,12 +139,35 @@ class ConversationAppendStep(BaseStep):
                 assistant_uuid = (
                     uuid.UUID(str(assistant_id)) if assistant_id else None
                 )
-                message_count = result.get("last_turn") if isinstance(result, dict) else None
+                session_service = ConversationSessionService(ctx.db_session)
+                if redis_available:
+                    message_count = (
+                        result.get("last_turn") if isinstance(result, dict) else None
+                    )
+                    await session_service.touch_session(
+                        session_id=session_uuid,
+                        user_id=user_uuid,
+                        tenant_id=tenant_uuid,
+                        assistant_id=assistant_uuid,
+                        channel=channel,
+                        message_count=message_count,
+                    )
+                else:
+                    turn_indexes = await session_service.reserve_turn_indexes(
+                        session_id=session_uuid,
+                        user_id=user_uuid,
+                        tenant_id=tenant_uuid,
+                        assistant_id=assistant_uuid,
+                        channel=channel,
+                        count=len(db_messages),
+                    )
+                    for msg, turn_index in zip(db_messages, turn_indexes, strict=False):
+                        msg["turn_index"] = turn_index
                 try:
                     message_repo = ConversationMessageRepository(ctx.db_session)
                     await message_repo.bulk_insert_messages(
                         session_id=session_uuid,
-                        messages=msgs_to_append,
+                        messages=db_messages,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -123,30 +175,28 @@ class ConversationAppendStep(BaseStep):
                         session_id,
                         exc,
                     )
-                session_service = ConversationSessionService(ctx.db_session)
-                await session_service.touch_session(
-                    session_id=session_uuid,
-                    user_id=user_uuid,
-                    tenant_id=tenant_uuid,
-                    assistant_id=assistant_uuid,
-                    channel=channel,
-                    message_count=message_count,
-                )
             except Exception as exc:
                 logger.warning(
                     "conversation_session_touch_failed session=%s exc=%s",
                     session_id,
                     exc,
                 )
+        elif not redis_available:
+            logger.warning(
+                "conversation_append_db_unavailable session=%s trace=%s",
+                session_id,
+                ctx.trace_id,
+            )
 
-        await self._maybe_schedule_topic_naming(
-            ctx=ctx,
-            conv_service=conv_service,
-            session_id=session_id,
-            messages=user_messages,
-            appended_count=len(msgs_to_append),
-            last_turn=result.get("last_turn") if isinstance(result, dict) else None,
-        )
+        if conv_service:
+            await self._maybe_schedule_topic_naming(
+                ctx=ctx,
+                conv_service=conv_service,
+                session_id=session_id,
+                messages=user_messages,
+                appended_count=len(db_messages),
+                last_turn=result.get("last_turn") if isinstance(result, dict) else None,
+            )
 
         # 将 session_id 透传到响应
         response = ctx.get("response_transform", "response") or {}
@@ -158,7 +208,7 @@ class ConversationAppendStep(BaseStep):
             status=StepStatus.SUCCESS,
             data={
                 "session_id": session_id,
-                "appended": len(msgs_to_append),
+                "appended": len(db_messages),
                 "should_flush": result.get("should_flush"),
             },
         )
@@ -167,20 +217,70 @@ class ConversationAppendStep(BaseStep):
     def _estimate_tokens(text: str) -> int:
         return max(1, int(len(text) / 4)) if text else 1
 
-    def _with_tokens(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        enriched = []
-        for msg in messages:
+    @staticmethod
+    def _content_for_tokens(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if content is None:
+            return ""
+        try:
+            return json.dumps(content, ensure_ascii=False)
+        except TypeError:
+            return str(content)
+
+    def _prepare_messages(
+        self,
+        *,
+        user_messages: list[dict[str, Any]],
+        assistant_message: dict[str, Any] | None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        raw_messages = list(user_messages)
+        if assistant_message:
+            raw_messages.append(assistant_message)
+
+        db_messages: list[dict[str, Any]] = []
+        redis_messages: list[dict[str, Any]] = []
+
+        for msg in raw_messages:
+            content = msg.get("content")
+            content_text = content if isinstance(content, str) else None
+            content_for_tokens = self._content_for_tokens(content)
             token_est = msg.get("token_estimate")
-            content = msg.get("content", "")
-            enriched.append(
-                {
-                    **msg,
-                    "token_estimate": token_est
-                    if token_est is not None
-                    else self._estimate_tokens(str(content)),
-                }
-            )
-        return enriched
+            meta_info = self._build_meta_info(msg, content)
+
+            normalized = {
+                **msg,
+                "content": content_text,
+                "token_estimate": token_est
+                if token_est is not None
+                else self._estimate_tokens(content_for_tokens),
+                "meta_info": meta_info,
+            }
+            db_messages.append(normalized)
+            redis_messages.append({**normalized, "content": content_for_tokens})
+
+        return db_messages, redis_messages
+
+    @staticmethod
+    def _build_meta_info(message: dict[str, Any], content: Any) -> dict[str, Any] | None:
+        meta_info = message.get("meta_info") or {}
+        extras = {}
+        for key in (
+            "tool_calls",
+            "tool_call_id",
+            "function_call",
+            "attachments",
+            "image_url",
+            "audio",
+            "modalities",
+        ):
+            if message.get(key) is not None:
+                extras[key] = message.get(key)
+        if not isinstance(content, str) and content is not None:
+            extras["content"] = content
+        if extras:
+            meta_info = {**meta_info, **extras}
+        return meta_info or None
 
     @staticmethod
     def _extract_assistant_message(response: dict[str, Any]) -> dict[str, Any] | None:

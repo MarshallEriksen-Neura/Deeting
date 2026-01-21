@@ -28,6 +28,47 @@ export default function Canvas() {
   })));
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const hud = document.querySelector<HTMLElement>('[data-chat-hud]');
+    const controls = document.querySelector<HTMLElement>('[data-chat-controls]');
+    const fallbackTop = 112;
+    const fallbackBottom = 152;
+
+    const updateOffsets = () => {
+      const hudHeight = hud?.getBoundingClientRect().height ?? 0;
+      const controlsHeight = controls?.getBoundingClientRect().height ?? 0;
+      const topOffset = Math.max(hudHeight + 24, fallbackTop);
+      const bottomOffset = Math.max(controlsHeight + 24, fallbackBottom);
+      container.style.setProperty('--chat-hud-offset', `${topOffset}px`);
+      container.style.setProperty('--chat-controls-offset', `${bottomOffset}px`);
+    };
+
+    updateOffsets();
+
+    const observers: ResizeObserver[] = [];
+    if (hud) {
+      const observer = new ResizeObserver(updateOffsets);
+      observer.observe(hud);
+      observers.push(observer);
+    }
+    if (controls) {
+      const observer = new ResizeObserver(updateOffsets);
+      observer.observe(controls);
+      observers.push(observer);
+    }
+
+    window.addEventListener('resize', updateOffsets);
+
+    return () => {
+      observers.forEach((observer) => observer.disconnect());
+      window.removeEventListener('resize', updateOffsets);
+    };
+  }, []);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -64,8 +105,17 @@ export default function Canvas() {
   }
 
   return (
-    <div className="w-full h-full overflow-y-auto p-4 pb-32 scrollbar-hide">
-      <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-24 sm:pt-20">
+    <div
+      ref={containerRef}
+      className="w-full h-full overflow-y-auto px-4 scrollbar-hide"
+      style={{
+        paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
+        paddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
+        scrollPaddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
+        scrollPaddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
+      }}
+    >
+      <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-2">
         {messages.map((msg) => {
           const isLastAssistant = msg.id === lastAssistantId;
           const isActive = isLastAssistant && isLoading;

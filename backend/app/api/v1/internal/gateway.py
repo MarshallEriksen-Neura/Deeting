@@ -161,24 +161,66 @@ async def _status_stream_chat(
     response_body = ctx.get("response_transform", "response") or ctx.get("upstream_call", "response") or {}
     yield _format_sse(response_body)
     yield _format_sse("[DONE]")
+
+
 def _estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / 4)) if text else 1
 
 
-def _with_tokens(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    enriched: list[dict[str, Any]] = []
+def _content_for_tokens(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if content is None:
+        return ""
+    try:
+        return json.dumps(content, ensure_ascii=False)
+    except TypeError:
+        return str(content)
+
+
+def _build_meta_info(message: dict[str, Any], content: Any) -> dict[str, Any] | None:
+    meta_info = message.get("meta_info") or {}
+    extras = {}
+    for key in (
+        "tool_calls",
+        "tool_call_id",
+        "function_call",
+        "attachments",
+        "image_url",
+        "audio",
+        "modalities",
+    ):
+        if message.get(key) is not None:
+            extras[key] = message.get(key)
+    if not isinstance(content, str) and content is not None:
+        extras["content"] = content
+    if extras:
+        meta_info = {**meta_info, **extras}
+    return meta_info or None
+
+
+def _prepare_messages(
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    db_messages: list[dict[str, Any]] = []
+    redis_messages: list[dict[str, Any]] = []
     for msg in messages:
+        content = msg.get("content")
+        content_text = content if isinstance(content, str) else None
+        content_for_tokens = _content_for_tokens(content)
         token_est = msg.get("token_estimate")
-        content = msg.get("content", "")
-        enriched.append(
-            {
-                **msg,
-                "token_estimate": token_est
-                if token_est is not None
-                else _estimate_tokens(str(content)),
-            }
-        )
-    return enriched
+        meta_info = _build_meta_info(msg, content)
+        normalized = {
+            **msg,
+            "content": content_text,
+            "token_estimate": token_est
+            if token_est is not None
+            else _estimate_tokens(content_for_tokens),
+            "meta_info": meta_info,
+        }
+        db_messages.append(normalized)
+        redis_messages.append({**normalized, "content": content_for_tokens})
+    return db_messages, redis_messages
 
 
 async def _append_stream_conversation(
@@ -194,11 +236,15 @@ async def _append_stream_conversation(
     if not session_id:
         return
 
+    conv_service: ConversationService | None = None
+    redis_available = True
     try:
         conv_service = ConversationService()
     except Exception as exc:
-        logger.warning(f"ConversationAppend skipped (redis unavailable): {exc}")
-        return
+        redis_available = False
+        logger.warning(
+            "ConversationAppend redis unavailable, fallback to db: %s", exc
+        )
 
     req = ctx.get("validation", "validated") or {}
     user_messages: list[dict[str, Any]] = req.get("messages", []) or []
@@ -209,53 +255,61 @@ async def _append_stream_conversation(
         else None
     )
 
-    msgs_to_append: list[dict[str, Any]] = []
+    raw_messages: list[dict[str, Any]] = []
     if user_messages:
-        msgs_to_append.extend(_with_tokens(user_messages))
+        raw_messages.extend(user_messages)
     if assistant_msg:
-        msgs_to_append.append(_with_tokens([assistant_msg])[0])
+        raw_messages.append(assistant_msg)
 
-    if not msgs_to_append:
+    if not raw_messages:
         return
 
-    lock_key = CacheKeys.session_lock(session_id)
-    async with distributed_lock(lock_key, ttl=10, retry_times=3) as acquired:
-        if not acquired:
-            logger.warning(
-                "conversation_append_lock_failed session=%s trace=%s",
-                session_id,
-                ctx.trace_id,
-            )
-            return
+    db_messages, redis_messages = _prepare_messages(raw_messages)
 
-        result = await conv_service.append_messages(
-            session_id=session_id,
-            messages=msgs_to_append,
-            channel=ConversationChannel.INTERNAL,
-        )
-
-        if ctx.db_session is not None:
-            try:
-                from uuid import UUID
-
-                session_uuid = UUID(session_id)
-                user_uuid = UUID(ctx.user_id) if ctx.user_id else None
-                tenant_uuid = UUID(ctx.tenant_id) if ctx.tenant_id else None
-                assistant_uuid = UUID(str(assistant_id)) if assistant_id else None
-                message_count = result.get("last_turn") if isinstance(result, dict) else None
-                try:
-                    message_repo = ConversationMessageRepository(ctx.db_session)
-                    await message_repo.bulk_insert_messages(
-                        session_id=session_uuid,
-                        messages=msgs_to_append,
-                    )
-                except Exception as exc:
+    result: dict[str, Any] = {"should_flush": False, "last_turn": None}
+    if redis_available and conv_service:
+        try:
+            lock_key = CacheKeys.session_lock(session_id)
+            async with distributed_lock(lock_key, ttl=10, retry_times=3) as acquired:
+                if not acquired:
                     logger.warning(
-                        "conversation_message_persist_failed session=%s exc=%s",
+                        "conversation_append_lock_failed session=%s trace=%s",
                         session_id,
-                        exc,
+                        ctx.trace_id,
                     )
-                session_service = ConversationSessionService(ctx.db_session)
+                    return
+
+                result = await conv_service.append_messages(
+                    session_id=session_id,
+                    messages=redis_messages,
+                    channel=ConversationChannel.INTERNAL,
+                )
+        except Exception as exc:
+            redis_available = False
+            logger.warning(
+                "conversation_append_redis_failed session=%s exc=%s",
+                session_id,
+                exc,
+            )
+
+    if redis_available:
+        for idx, msg in enumerate(db_messages):
+            if idx < len(redis_messages):
+                msg["turn_index"] = redis_messages[idx].get("turn_index")
+
+    if ctx.db_session is not None:
+        try:
+            from uuid import UUID
+
+            session_uuid = UUID(session_id)
+            user_uuid = UUID(ctx.user_id) if ctx.user_id else None
+            tenant_uuid = UUID(ctx.tenant_id) if ctx.tenant_id else None
+            assistant_uuid = UUID(str(assistant_id)) if assistant_id else None
+            session_service = ConversationSessionService(ctx.db_session)
+            if redis_available:
+                message_count = (
+                    result.get("last_turn") if isinstance(result, dict) else None
+                )
                 await session_service.touch_session(
                     session_id=session_uuid,
                     user_id=user_uuid,
@@ -264,21 +318,51 @@ async def _append_stream_conversation(
                     channel=ConversationChannel.INTERNAL,
                     message_count=message_count,
                 )
+            else:
+                turn_indexes = await session_service.reserve_turn_indexes(
+                    session_id=session_uuid,
+                    user_id=user_uuid,
+                    tenant_id=tenant_uuid,
+                    assistant_id=assistant_uuid,
+                    channel=ConversationChannel.INTERNAL,
+                    count=len(db_messages),
+                )
+                for msg, turn_index in zip(db_messages, turn_indexes, strict=False):
+                    msg["turn_index"] = turn_index
+            try:
+                message_repo = ConversationMessageRepository(ctx.db_session)
+                await message_repo.bulk_insert_messages(
+                    session_id=session_uuid,
+                    messages=db_messages,
+                )
             except Exception as exc:
                 logger.warning(
-                    "conversation_session_touch_failed session=%s exc=%s",
+                    "conversation_message_persist_failed session=%s exc=%s",
                     session_id,
                     exc,
                 )
+        except Exception as exc:
+            logger.warning(
+                "conversation_session_touch_failed session=%s exc=%s",
+                session_id,
+                exc,
+            )
+    elif not redis_available:
+        logger.warning(
+            "conversation_append_db_unavailable session=%s trace=%s",
+            session_id,
+            ctx.trace_id,
+        )
 
-    await _maybe_schedule_topic_naming(
-        ctx=ctx,
-        conv_service=conv_service,
-        session_id=session_id,
-        messages=user_messages,
-        appended_count=len(msgs_to_append),
-        last_turn=result.get("last_turn") if isinstance(result, dict) else None,
-    )
+    if conv_service:
+        await _maybe_schedule_topic_naming(
+            ctx=ctx,
+            conv_service=conv_service,
+            session_id=session_id,
+            messages=user_messages,
+            appended_count=len(db_messages),
+            last_turn=result.get("last_turn") if isinstance(result, dict) else None,
+        )
 
 
 async def _maybe_schedule_topic_naming(

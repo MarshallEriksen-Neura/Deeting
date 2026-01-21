@@ -145,6 +145,15 @@ class ConversationService:
         except Exception:
             pass
 
+        # 空闲触发摘要调度（仅内部通道）
+        if channel == ConversationChannel.INTERNAL:
+            try:
+                from app.services.conversation.summary_scheduler import summary_scheduler
+
+                await summary_scheduler.touch_session(session_id)
+            except Exception:
+                pass
+
         # 已在做摘要则不重复派单
         if should_flush and not await self._is_summarizing(session_id):
             await self._mark_summarizing(session_id, True)

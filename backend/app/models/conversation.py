@@ -31,6 +31,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.provider_preset import JSONBCompat
 from app.utils.time_utils import Datetime
 
 
@@ -172,8 +173,13 @@ class ConversationMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str | None] = mapped_column(
         String(128), nullable=True, comment="可选：tool/function 名称"
     )
-    content: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="消息内容"
+    content: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="消息内容"
+    )
+    meta_info: Mapped[dict | None] = mapped_column(
+        JSONBCompat,
+        nullable=True,
+        comment="结构化元数据：tool_calls/raw_response/attachments",
     )
     token_estimate: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0", comment="估算 token 数（用于窗口判定）"
@@ -229,6 +235,12 @@ class ConversationSummary(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     covered_to_turn: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="摘要覆盖的结束 turn"
+    )
+    previous_summary_id: Mapped[uuid.UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("conversation_summary.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="前序摘要 ID（用于链式记忆）",
     )
     start_message_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),

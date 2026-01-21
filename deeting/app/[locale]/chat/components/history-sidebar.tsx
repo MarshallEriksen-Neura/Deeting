@@ -237,6 +237,11 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    void mutate();
+  }, [isOpen, mutate]);
+
   return (
     <AnimatePresence>
       {isOpen && (

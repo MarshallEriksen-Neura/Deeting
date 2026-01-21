@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 
 from app.utils.time_utils import Datetime
 from app.models.conversation import (
     ConversationChannel,
+    ConversationMessage,
     ConversationSession,
     ConversationStatus,
     ConversationSummary,
@@ -106,3 +107,58 @@ class ConversationSessionRepository(BaseRepository[ConversationSession]):
             stmt = stmt.where(ConversationSession.channel == channel)
         result = await self.session.execute(stmt)
         return result.scalars().first()
+
+    async def reserve_turn_indexes(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID | None,
+        tenant_id: UUID | None,
+        assistant_id: UUID | None,
+        channel: ConversationChannel,
+        count: int,
+    ) -> list[int]:
+        if count <= 0:
+            return []
+
+        now = Datetime.now()
+        async with self.session.begin():
+            session_obj = await self.session.get(
+                ConversationSession, session_id, with_for_update=True
+            )
+            if not session_obj:
+                session_obj = ConversationSession(
+                    id=session_id,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    assistant_id=assistant_id,
+                    channel=channel,
+                    status=ConversationStatus.ACTIVE,
+                    message_count=count,
+                    first_message_at=now,
+                    last_active_at=now,
+                )
+                self.session.add(session_obj)
+                start_turn = 1
+            else:
+                if user_id and not session_obj.user_id:
+                    session_obj.user_id = user_id
+                if tenant_id and not session_obj.tenant_id:
+                    session_obj.tenant_id = tenant_id
+                if assistant_id and not session_obj.assistant_id:
+                    session_obj.assistant_id = assistant_id
+                session_obj.last_active_at = now
+                if not session_obj.first_message_at:
+                    session_obj.first_message_at = now
+
+                result = await self.session.execute(
+                    select(func.max(ConversationMessage.turn_index)).where(
+                        ConversationMessage.session_id == session_id
+                    )
+                )
+                max_turn = int(result.scalar() or 0)
+                base_turn = max(session_obj.message_count or 0, max_turn)
+                session_obj.message_count = base_turn + count
+                start_turn = base_turn + 1
+
+        return list(range(start_turn, start_turn + count))

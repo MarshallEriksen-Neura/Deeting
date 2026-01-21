@@ -262,12 +262,24 @@ export const useChatStore = create<ChatState & ChatActions>()(
         if (!targetAssistantId) return;
         const storageKey = sessionKeyForAssistant(targetAssistantId);
         const storedSessionId = localStorage.getItem(storageKey);
-        if (!storedSessionId) {
+        const querySessionId = (() => {
+          try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get("session")?.trim() || null;
+          } catch {
+            return null;
+          }
+        })();
+        const resolvedSessionId = storedSessionId || querySessionId;
+        if (!resolvedSessionId) {
           set({ messages: [], sessionId: undefined });
           return;
         }
+        if (!storedSessionId && querySessionId) {
+          localStorage.setItem(storageKey, querySessionId);
+        }
         try {
-          await get().loadHistoryBySession(storedSessionId);
+          await get().loadHistoryBySession(resolvedSessionId);
         } catch {
           set({ messages: [], sessionId: undefined });
         }

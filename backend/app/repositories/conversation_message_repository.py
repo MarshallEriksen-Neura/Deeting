@@ -29,6 +29,34 @@ class ConversationMessageRepository(BaseRepository[ConversationMessage]):
             turn_index = msg.get("turn_index")
             if not turn_index:
                 continue
+            content = msg.get("content")
+            meta_info = msg.get("meta_info")
+            extras = {
+                k: v
+                for k, v in msg.items()
+                if k
+                not in {
+                    "role",
+                    "content",
+                    "name",
+                    "token_estimate",
+                    "is_truncated",
+                    "turn_index",
+                    "is_deleted",
+                    "parent_message_id",
+                    "meta_info",
+                }
+                and v is not None
+            }
+            if (
+                not isinstance(content, str)
+                and content is not None
+                and "content" not in (meta_info or {})
+            ):
+                extras["content"] = content
+                content = None
+            if extras:
+                meta_info = {**(meta_info or {}), **extras}
             rows.append(
                 {
                     "id": uuid.uuid4(),
@@ -36,9 +64,10 @@ class ConversationMessageRepository(BaseRepository[ConversationMessage]):
                     "turn_index": int(turn_index),
                     "role": msg.get("role"),
                     "name": msg.get("name"),
-                    "content": msg.get("content", ""),
+                    "content": content,
                     "token_estimate": int(msg.get("token_estimate", 0)),
                     "is_truncated": bool(msg.get("is_truncated", False)),
+                    "meta_info": meta_info,
                 }
             )
 

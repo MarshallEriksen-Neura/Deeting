@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 import uuid
 from typing import Any
 
@@ -23,6 +25,7 @@ from app.models import (
 from app.services.conversation.service import get_conversation_service
 from app.services.conversation.summarizer import SummarizerService
 from app.services.conversation.topic_namer import generate_conversation_title
+from app.utils.time_utils import Datetime
 
 
 @celery_app.task(name="conversation.summarize")
@@ -37,6 +40,124 @@ def conversation_summarize(session_id: str) -> str:
 
     setup_logging()
     return asyncio.run(_run_summarize(session_id))
+
+
+@celery_app.task(name="conversation.summary_idle_check")
+def conversation_summary_idle_check(session_id: str) -> str:
+    """
+    空闲触发摘要任务：
+    - 检查最后活跃时间，仍活跃则跳过
+    - 确认有新消息且未在摘要中，触发异步摘要
+    """
+    setup_logging()
+    return asyncio.run(_run_summary_idle_check(session_id))
+
+
+def _decode_str(val: Any | None) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, (bytes, bytearray)):
+        return val.decode()
+    return str(val)
+
+
+def _decode_int(val: Any | None, default: int = 0) -> int:
+    raw = _decode_str(val)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        try:
+            return int(float(raw))
+        except Exception:
+            return default
+
+
+def _decode_float(val: Any | None, default: float = 0.0) -> float:
+    raw = _decode_str(val)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except Exception:
+        return default
+
+
+def _decode_bool(val: Any | None) -> bool:
+    raw = _decode_str(val)
+    if raw is None:
+        return False
+    return raw not in ("0", "", "false", "False")
+
+
+async def _run_summary_idle_check(session_id: str) -> str:
+    from app.core.cache_keys import CacheKeys
+
+    try:
+        svc = get_conversation_service()
+    except Exception as exc:
+        logger.error(
+            f"conversation_summary_idle_redis_unavailable session={session_id} exc={exc}"
+        )
+        return "redis_unavailable"
+
+    redis = svc.redis
+    last_active_key = CacheKeys.conversation_summary_last_active(session_id)
+    pending_key = CacheKeys.conversation_summary_pending_task(session_id)
+
+    try:
+        last_active_raw = await redis.get(last_active_key)
+        await redis.delete(pending_key)
+        if not last_active_raw:
+            return "no_last_active"
+
+        last_active = _decode_float(last_active_raw)
+        if time.time() - last_active < settings.CONVERSATION_SUMMARY_IDLE_SECONDS:
+            return "skip_active"
+
+        meta_key = CacheKeys.conversation_meta(session_id)
+        summary_key = CacheKeys.conversation_summary(session_id)
+        meta_raw = await redis.hgetall(meta_key)
+        if not meta_raw:
+            return "no_meta"
+
+        last_turn = _decode_int(meta_raw.get(b"last_turn"), 0)
+        if last_turn <= 0:
+            return "no_messages"
+
+        if _decode_bool(meta_raw.get(b"summarizing")):
+            return "already_summarizing"
+
+        summary_raw = await redis.get(summary_key)
+        if summary_raw:
+            summary_payload = json.loads(_decode_str(summary_raw) or "{}")
+            covered_to = _decode_int(summary_payload.get("covered_to_turn"), 0)
+            if covered_to >= last_turn:
+                return "no_new_messages"
+            generated_at = summary_payload.get("generated_at")
+            if generated_at:
+                try:
+                    last_summary_at = Datetime.from_iso_string(str(generated_at))
+                    if (
+                        Datetime.now() - last_summary_at
+                    ).total_seconds() < settings.CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS:
+                        return "min_interval"
+                except Exception:
+                    pass
+
+        job = conversation_summarize.delay(session_id)
+        await svc._redis_hset(
+            key=meta_key,
+            mapping={"summarizing": 1, "summary_job_id": job.id or ""},
+        )
+        logger.info(
+            f"conversation_summary_idle_triggered session={session_id} job_id={job.id}"
+        )
+        return "queued"
+    except Exception as exc:
+        logger.error(f"conversation_summary_idle_failed session={session_id} exc={exc}")
+        return "failed"
 
 
 async def _run_summarize(session_id: str) -> str:
@@ -72,6 +193,7 @@ async def _run_summarize(session_id: str) -> str:
             "covered_from_turn": covered_from,
             "covered_to_turn": covered_to,
             "token_estimate": token_estimate,
+            "generated_at": Datetime.now().isoformat(),
         }
         await svc.update_summary_cache(session_id, summary_payload)
 
@@ -182,12 +304,21 @@ async def _persist_summary(
             preset_val = settings.CONVERSATION_SUMMARIZER_PRESET_ID
             preset_uuid = uuid.UUID(preset_val) if preset_val else None
 
+            previous_summary_id = None
+            if summary_payload.get("version", 0) > 1:
+                prev_stmt = select(ConversationSummary.id).where(
+                    ConversationSummary.session_id == session_uuid,
+                    ConversationSummary.version == summary_payload["version"] - 1,
+                )
+                previous_summary_id = (await db.execute(prev_stmt)).scalar_one_or_none()
+
             summary = ConversationSummary(
                 session_id=session_uuid,
                 version=summary_payload["version"],
                 summary_text=summary_payload["summary_text"],
                 covered_from_turn=summary_payload["covered_from_turn"],
                 covered_to_turn=summary_payload["covered_to_turn"],
+                previous_summary_id=previous_summary_id,
                 start_message_id=None,
                 end_message_id=None,
                 token_estimate=summary_payload["token_estimate"],

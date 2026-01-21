@@ -117,3 +117,22 @@ class ConversationSessionService:
         if session_obj.title == new_title:
             return session_obj
         return await self.session_repo.update(session_obj, {"title": new_title})
+
+    async def reserve_turn_indexes(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID | None,
+        tenant_id: UUID | None,
+        assistant_id: UUID | None,
+        channel: ConversationChannel,
+        count: int,
+    ) -> list[int]:
+        return await self.session_repo.reserve_turn_indexes(
+            session_id=session_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            assistant_id=assistant_id,
+            channel=channel,
+            count=count,
+        )
