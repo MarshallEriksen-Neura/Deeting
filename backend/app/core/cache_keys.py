@@ -343,6 +343,14 @@ class CacheKeys:
         return f"{cls.prefix}:conv:{session_id}:summary_job"
 
     @classmethod
+    def conversation_summary_last_active(cls, session_id: str) -> str:
+        return f"{cls.prefix}:conv:{session_id}:summary:last_active"
+
+    @classmethod
+    def conversation_summary_pending_task(cls, session_id: str) -> str:
+        return f"{cls.prefix}:conv:{session_id}:summary:pending"
+
+    @classmethod
     def conversation_embedding_prefix(cls, session_id: str) -> str:
         return f"{cls.prefix}:conv:{session_id}:embed"
 

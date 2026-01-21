@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.models.conversation import ConversationChannel
 from app.services.conversation.session_service import ConversationSessionService
+from app.repositories.conversation_message_repository import ConversationMessageRepository
 from app.services.conversation.service import ConversationService
 from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
 from app.services.orchestrator.registry import step_registry
@@ -96,35 +97,47 @@ class ConversationAppendStep(BaseStep):
                 )
             
             # 持有锁，执行会话追加
-            result = await conv_service.append_messages(
-                session_id=session_id,
-                messages=msgs_to_append,
-                channel=channel,
-            )
-            if ctx.db_session is not None:
+        result = await conv_service.append_messages(
+            session_id=session_id,
+            messages=msgs_to_append,
+            channel=channel,
+        )
+        if ctx.db_session is not None:
+            try:
+                session_uuid = uuid.UUID(session_id)
+                user_uuid = uuid.UUID(ctx.user_id) if ctx.user_id else None
+                tenant_uuid = uuid.UUID(ctx.tenant_id) if ctx.tenant_id else None
+                assistant_uuid = (
+                    uuid.UUID(str(assistant_id)) if assistant_id else None
+                )
+                message_count = result.get("last_turn") if isinstance(result, dict) else None
                 try:
-                    session_uuid = uuid.UUID(session_id)
-                    user_uuid = uuid.UUID(ctx.user_id) if ctx.user_id else None
-                    tenant_uuid = uuid.UUID(ctx.tenant_id) if ctx.tenant_id else None
-                    assistant_uuid = (
-                        uuid.UUID(str(assistant_id)) if assistant_id else None
-                    )
-                    message_count = result.get("last_turn") if isinstance(result, dict) else None
-                    session_service = ConversationSessionService(ctx.db_session)
-                    await session_service.touch_session(
+                    message_repo = ConversationMessageRepository(ctx.db_session)
+                    await message_repo.bulk_insert_messages(
                         session_id=session_uuid,
-                        user_id=user_uuid,
-                        tenant_id=tenant_uuid,
-                        assistant_id=assistant_uuid,
-                        channel=channel,
-                        message_count=message_count,
+                        messages=msgs_to_append,
                     )
                 except Exception as exc:
                     logger.warning(
-                        "conversation_session_touch_failed session=%s exc=%s",
+                        "conversation_message_persist_failed session=%s exc=%s",
                         session_id,
                         exc,
                     )
+                session_service = ConversationSessionService(ctx.db_session)
+                await session_service.touch_session(
+                    session_id=session_uuid,
+                    user_id=user_uuid,
+                    tenant_id=tenant_uuid,
+                    assistant_id=assistant_uuid,
+                    channel=channel,
+                    message_count=message_count,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "conversation_session_touch_failed session=%s exc=%s",
+                    session_id,
+                    exc,
+                )
 
         await self._maybe_schedule_topic_naming(
             ctx=ctx,

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
+import { useChatStateStore } from "@/store/chat-state-store"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import { buildImageAttachments, UPLOAD_ERROR_CODES } from "@/lib/chat/attachments"
 
@@ -19,11 +20,11 @@ interface ChatInputProps {
   placeholderName: string
   errorMessage: string | null
   attachments: ChatImageAttachment[]
-  onAddAttachments: (attachments: ChatImageAttachment[]) => void
   onRemoveAttachment: (attachmentId: string) => void
   onClearAttachments: () => void
   streamEnabled: boolean
   onStreamChange: (enabled: boolean) => void
+  onPaste?: (event: React.ClipboardEvent<HTMLInputElement>) => void
 }
 
 export function ChatInput({
@@ -34,15 +35,19 @@ export function ChatInput({
   placeholderName,
   errorMessage,
   attachments,
-  onAddAttachments,
   onRemoveAttachment,
   onClearAttachments,
   streamEnabled,
-  onStreamChange
+  onStreamChange,
+  onPaste
 }: ChatInputProps) {
   const t = useI18n("chat")
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
+  
+  // 使用 attachments hook 来处理文件上传
+  const { addAttachments } = useChatStateStore()
+  
   const hasContent = Boolean(inputValue.trim() || attachments.length)
   const resolvedErrorMessage = React.useMemo(() => {
     if (!errorMessage) return null
@@ -61,7 +66,7 @@ export function ChatInput({
       return
     }
     if (result.attachments.length) {
-      onAddAttachments(result.attachments)
+      addAttachments(result.attachments)
     }
     if (result.rejected > 0) {
       const hasUploadError = result.errors.some((error) =>
@@ -75,6 +80,14 @@ export function ChatInput({
 
   const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
     if (disabled) return
+    
+    // 如果有外部 onPaste 处理器，优先使用
+    if (onPaste) {
+      onPaste(event)
+      return
+    }
+    
+    // 默认的粘贴处理逻辑
     const items = event.clipboardData?.items
     if (!items?.length) return
     const files = Array.from(items)

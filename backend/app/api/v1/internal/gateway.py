@@ -56,6 +56,7 @@ from app.deps.auth import get_current_user
 from app.models.conversation import ConversationChannel
 from app.services.conversation.service import ConversationService
 from app.services.conversation.session_service import ConversationSessionService
+from app.repositories.conversation_message_repository import ConversationMessageRepository
 from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
 from app.schemas.gateway import (
     ChatCompletionRequest,
@@ -242,6 +243,18 @@ async def _append_stream_conversation(
                 tenant_uuid = UUID(ctx.tenant_id) if ctx.tenant_id else None
                 assistant_uuid = UUID(str(assistant_id)) if assistant_id else None
                 message_count = result.get("last_turn") if isinstance(result, dict) else None
+                try:
+                    message_repo = ConversationMessageRepository(ctx.db_session)
+                    await message_repo.bulk_insert_messages(
+                        session_id=session_uuid,
+                        messages=msgs_to_append,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "conversation_message_persist_failed session=%s exc=%s",
+                        session_id,
+                        exc,
+                    )
                 session_service = ConversationSessionService(ctx.db_session)
                 await session_service.touch_session(
                     session_id=session_uuid,
