@@ -3,7 +3,6 @@ import { ThemeTransitionOverlay } from "@/components/theme-transition-overlay";
 import { AuthSync } from "@/components/auth/auth-sync";
 import { DownloadAppModal } from "@/components/ui/modal/download-app-modal";
 import { PlatformProvider } from "@/lib/platform/provider";
-import { Toaster } from "sonner";
 import "./globals.css";
 
 export default function RootLayout({
@@ -25,7 +24,6 @@ export default function RootLayout({
             <AuthSync />
             {children}
             <DownloadAppModal />
-            <Toaster position="bottom-right" />
           </ThemeProvider>
         </PlatformProvider>
       </body>

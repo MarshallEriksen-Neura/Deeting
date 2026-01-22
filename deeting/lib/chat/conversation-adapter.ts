@@ -12,6 +12,15 @@ const isToolCallArray = (value: unknown): value is ToolCall[] =>
 const isBlockArray = (value: unknown): value is MessageBlock[] =>
   Array.isArray(value) && value.every((item) => item && typeof item === "object" && "type" in item)
 
+const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBlock[] => {
+  return blocks.map((block, index) => ({
+    ...block,
+    id: block.id || `${messageId}-block-${index}`,
+    streamState: block.streamState || 'completed',
+    displayMode: block.displayMode || 'bubble',
+  }))
+}
+
 const readContentCandidate = (message: ConversationMessage): unknown => {
   if (message.content !== undefined && message.content !== null) {
     return message.content
@@ -43,7 +52,7 @@ export function normalizeConversationMessages(
     const toolCallId =
       typeof metaInfo?.tool_call_id === "string" ? metaInfo.tool_call_id : undefined
     const blocks = isBlockArray(metaInfo?.blocks)
-      ? metaInfo?.blocks
+      ? normalizeBlocks(metaInfo.blocks, `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`)
       : normalizeMessage(parsed.text)
     return {
       id: `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`,

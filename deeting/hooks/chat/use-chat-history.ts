@@ -150,6 +150,17 @@ export function useChatHistory({
     }
   }, [agent, isTauriRuntime, loadLocalHistory, loadCloudHistory])
 
+  // Ensure history is loaded on mount if not already loaded
+  useEffect(() => {
+    if (!agent || historyLoaded) return
+
+    if (isTauriRuntime) {
+      loadLocalHistory()
+    } else {
+      loadCloudHistory()
+    }
+  }, [agent, historyLoaded, isTauriRuntime, loadCloudHistory, loadLocalHistory])
+
   return {
     historyLoaded,
     resetHistory,
