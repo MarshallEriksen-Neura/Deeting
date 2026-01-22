@@ -279,8 +279,21 @@ Authorization: Bearer <access_token>
 {
   "session_id": "session-xyz",
   "messages": [
-    { "role": "user", "content": "Hello", "turn_index": 1 },
-    { "role": "assistant", "content": "Hi!", "turn_index": 2 }
+    {
+      "role": "user",
+      "content": "Hello",
+      "turn_index": 1
+    },
+    {
+      "role": "assistant",
+      "content": "Hi!",
+      "turn_index": 2,
+      "meta_info": {
+        "blocks": [
+          { "type": "text", "content": "Hi!" }
+        ]
+      }
+    }
   ],
   "meta": {
     "total_tokens": 128,
@@ -307,6 +320,11 @@ response = httpx.post(
 )
 print(response.json())
 ```
+
+**消息字段补充说明**：
+
+- `messages[].meta_info`：可选，结构化元数据（如 `blocks` / `tool_calls` / 多模态内容）。
+- `messages[].meta_info.blocks`：结构化块列表，支持 `text` / `thought` / `tool_call` 等类型，前端可直接按 block 渲染。
 
 ---
 

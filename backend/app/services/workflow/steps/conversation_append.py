@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -247,6 +248,12 @@ class ConversationAppendStep(BaseStep):
             content_for_tokens = self._content_for_tokens(content)
             token_est = msg.get("token_estimate")
             meta_info = self._build_meta_info(msg, content)
+            blocks = self._build_blocks(
+                content_text=content_text,
+                tool_calls=msg.get("tool_calls"),
+            )
+            if blocks and not (meta_info or {}).get("blocks"):
+                meta_info = {**(meta_info or {}), "blocks": blocks}
 
             normalized = {
                 **msg,
@@ -281,6 +288,55 @@ class ConversationAppendStep(BaseStep):
         if extras:
             meta_info = {**meta_info, **extras}
         return meta_info or None
+
+    @staticmethod
+    def _build_blocks(
+        *,
+        content_text: str | None,
+        tool_calls: Any,
+    ) -> list[dict[str, Any]] | None:
+        blocks: list[dict[str, Any]] = []
+        if content_text:
+            think_regex = re.compile(r"<think>([\\s\\S]*?)</think>", re.IGNORECASE)
+            last_index = 0
+            for match in think_regex.finditer(content_text):
+                if match.start() > last_index:
+                    text = content_text[last_index:match.start()]
+                    if text.strip():
+                        blocks.append({"type": "text", "content": text})
+                thought = match.group(1).strip()
+                if thought:
+                    blocks.append({"type": "thought", "content": thought})
+                last_index = match.end()
+            if last_index < len(content_text):
+                tail = content_text[last_index:]
+                if tail.strip():
+                    blocks.append({"type": "text", "content": tail})
+            if not blocks and content_text.strip():
+                blocks.append({"type": "text", "content": content_text})
+
+        if isinstance(tool_calls, list):
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
+                function = call.get("function") or {}
+                name = function.get("name") or call.get("name")
+                args = function.get("arguments") or call.get("arguments")
+                if args is None:
+                    args_str = None
+                elif isinstance(args, str):
+                    args_str = args
+                else:
+                    args_str = json.dumps(args, ensure_ascii=False)
+                blocks.append(
+                    {
+                        "type": "tool_call",
+                        "toolName": name,
+                        "toolArgs": args_str,
+                    }
+                )
+
+        return blocks or None
 
     @staticmethod
     def _extract_assistant_message(response: dict[str, Any]) -> dict[str, Any] | None:

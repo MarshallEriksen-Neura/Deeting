@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { useSearchParams } from "next/navigation"
 import { useChatStateStore, type Message } from "@/store/chat-state-store"
 import { parseMessageContent } from "@/lib/chat/message-content"
+import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { useI18n } from "@/hooks/use-i18n"
 
 interface LocalAssistantMessageRecord {
@@ -61,22 +62,9 @@ export function useChatHistory({
         }
 
         const windowState = await loadHistory(storedSessionId)
-        const rawMessages = (windowState.messages || [])
-          .filter((msg: any) => msg.role === "user" || msg.role === "assistant")
-        
-        const total = rawMessages.length
-        const mapped = rawMessages.map((msg: any, index: number) => ({
-          id: `${storedSessionId}-${msg.turn_index ?? index}`,
-          role: (msg.role === "assistant" ? "assistant" : "user") as 'user' | 'assistant',
-          ...(() => {
-            const parsed = parseMessageContent(msg.content)
-            return {
-              content: parsed.text,
-              attachments: parsed.attachments.length ? parsed.attachments : undefined,
-            }
-          })(),
-          createdAt: Date.now() - (total - index) * 1000,
-        }))
+        const mapped = normalizeConversationMessages(windowState.messages || [], {
+          idPrefix: storedSessionId ?? undefined,
+        })
 
         if (mapped.length > 0) {
           setMessages(mapped)

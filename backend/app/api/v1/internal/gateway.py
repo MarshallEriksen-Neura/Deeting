@@ -35,6 +35,7 @@
 import asyncio
 import json
 import logging
+import re
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter
@@ -199,6 +200,55 @@ def _build_meta_info(message: dict[str, Any], content: Any) -> dict[str, Any] | 
     return meta_info or None
 
 
+def _build_blocks(
+    *,
+    content_text: str | None,
+    tool_calls: Any,
+) -> list[dict[str, Any]] | None:
+    blocks: list[dict[str, Any]] = []
+    if content_text:
+        think_regex = re.compile(r"<think>([\\s\\S]*?)</think>", re.IGNORECASE)
+        last_index = 0
+        for match in think_regex.finditer(content_text):
+            if match.start() > last_index:
+                text = content_text[last_index:match.start()]
+                if text.strip():
+                    blocks.append({"type": "text", "content": text})
+            thought = match.group(1).strip()
+            if thought:
+                blocks.append({"type": "thought", "content": thought})
+            last_index = match.end()
+        if last_index < len(content_text):
+            tail = content_text[last_index:]
+            if tail.strip():
+                blocks.append({"type": "text", "content": tail})
+        if not blocks and content_text.strip():
+            blocks.append({"type": "text", "content": content_text})
+
+    if isinstance(tool_calls, list):
+        for call in tool_calls:
+            if not isinstance(call, dict):
+                continue
+            function = call.get("function") or {}
+            name = function.get("name") or call.get("name")
+            args = function.get("arguments") or call.get("arguments")
+            if args is None:
+                args_str = None
+            elif isinstance(args, str):
+                args_str = args
+            else:
+                args_str = json.dumps(args, ensure_ascii=False)
+            blocks.append(
+                {
+                    "type": "tool_call",
+                    "toolName": name,
+                    "toolArgs": args_str,
+                }
+            )
+
+    return blocks or None
+
+
 def _prepare_messages(
     messages: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -210,6 +260,12 @@ def _prepare_messages(
         content_for_tokens = _content_for_tokens(content)
         token_est = msg.get("token_estimate")
         meta_info = _build_meta_info(msg, content)
+        blocks = _build_blocks(
+            content_text=content_text,
+            tool_calls=msg.get("tool_calls"),
+        )
+        if blocks and not (meta_info or {}).get("blocks"):
+            meta_info = {**(meta_info or {}), "blocks": blocks}
         normalized = {
             **msg,
             "content": content_text,

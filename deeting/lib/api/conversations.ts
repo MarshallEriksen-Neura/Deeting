@@ -10,7 +10,8 @@ export const ConversationMessageSchema = z.object({
   turn_index: z.number().int().nullable().optional(),
   is_truncated: z.boolean().nullable().optional(),
   name: z.string().nullable().optional(),
-})
+  meta_info: z.record(z.any()).nullable().optional(),
+}).passthrough()
 
 export const ConversationWindowSchema = z.object({
   session_id: z.string(),

@@ -29,8 +29,14 @@ class ImageGenerationStatus(str, enum.Enum):
     CANCELED = "canceled"
 
 
-class ImageGenerationTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    __tablename__ = "image_generation_task"
+class GenerationTaskType(str, enum.Enum):
+    IMAGE_GENERATION = "image_generation"
+    TEXT_TO_SPEECH = "text_to_speech"
+    VIDEO_GENERATION = "video_generation"
+
+
+class GenerationTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "generation_task"
     __table_args__ = (
         Index("ix_image_task_user_id", "user_id"),
         Index("ix_image_task_tenant_id", "tenant_id"),
@@ -95,6 +101,28 @@ class ImageGenerationTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         String(64),
         nullable=True,
         comment="上游厂商标识",
+    )
+
+    task_type: Mapped[GenerationTaskType] = mapped_column(
+        String(32),
+        nullable=False,
+        default=GenerationTaskType.IMAGE_GENERATION,
+        server_default=GenerationTaskType.IMAGE_GENERATION.value,
+        comment="任务类型（image_generation/text_to_speech/video_generation）",
+    )
+    input_params: Mapped[dict] = mapped_column(
+        JSONBCompat,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+        comment="通用输入参数（JSONB）",
+    )
+    output_meta: Mapped[dict] = mapped_column(
+        JSONBCompat,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+        comment="通用输出元信息（JSONB）",
     )
 
     prompt_raw: Mapped[str] = mapped_column(
@@ -235,7 +263,7 @@ class ImageGenerationOutput(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     task_id: Mapped[uuid.UUID] = mapped_column(
         SA_UUID(as_uuid=True),
-        ForeignKey("image_generation_task.id", ondelete="CASCADE"),
+        ForeignKey("generation_task.id", ondelete="CASCADE"),
         nullable=False,
         comment="任务 ID",
     )

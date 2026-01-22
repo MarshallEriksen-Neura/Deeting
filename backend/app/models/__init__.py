@@ -52,9 +52,9 @@ from .notification import (
 )
 from .media_asset import MediaAsset
 from .image_generation import (
+    GenerationTask,
     ImageGenerationOutput,
     ImageGenerationStatus,
-    ImageGenerationTask,
 )
 from .provider_preset import ProviderPreset
 from .provider_instance import ProviderInstance, ProviderModel, ProviderCredential
@@ -81,7 +81,7 @@ __all__ = [
     "NotificationType",
     "NotificationLevel",
     "MediaAsset",
-    "ImageGenerationTask",
+    "GenerationTask",
     "ImageGenerationOutput",
     "ImageGenerationStatus",
     "Assistant",

@@ -116,7 +116,7 @@ export function ChatMessageList({
             {msg.role === 'assistant' ? (
               <div className="flex-1 min-w-0">
                 <AIResponseBubble
-                  parts={normalizeMessage(msg.content)}
+                  parts={msg.blocks ?? normalizeMessage(msg.content)}
                   isActive={msg.id === activeAssistantId}
                   streamEnabled={streamEnabled}
                   statusStage={msg.id === activeAssistantId ? statusStage : null}

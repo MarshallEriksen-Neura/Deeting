@@ -5,7 +5,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import settings
-from app.models.image_generation import ImageGenerationOutput, ImageGenerationStatus, ImageGenerationTask
+from app.models.image_generation import GenerationTask, ImageGenerationOutput, ImageGenerationStatus
 from app.models.media_asset import MediaAsset
 from app.tasks.image_generation import process_image_generation_task
 from app.utils.time_utils import Datetime
@@ -70,7 +70,7 @@ async def test_internal_image_generation_get_task_outputs(
             )
         )
         session.add(
-            ImageGenerationTask(
+            GenerationTask(
                 id=task_id,
                 user_id=uuid.UUID(test_user["id"]),
                 tenant_id=uuid.UUID(test_user["id"]),
@@ -140,7 +140,7 @@ async def test_internal_image_generation_list_tasks(
             )
         )
         session.add(
-            ImageGenerationTask(
+            GenerationTask(
                 id=task_id,
                 user_id=uuid.UUID(test_user["id"]),
                 tenant_id=uuid.UUID(test_user["id"]),
@@ -155,7 +155,7 @@ async def test_internal_image_generation_list_tasks(
             )
         )
         session.add(
-            ImageGenerationTask(
+            GenerationTask(
                 id=encrypted_task_id,
                 user_id=uuid.UUID(test_user["id"]),
                 tenant_id=uuid.UUID(test_user["id"]),
@@ -173,7 +173,7 @@ async def test_internal_image_generation_list_tasks(
             )
         )
         session.add(
-            ImageGenerationTask(
+            GenerationTask(
                 id=other_task_id,
                 user_id=uuid.uuid4(),
                 tenant_id=uuid.uuid4(),

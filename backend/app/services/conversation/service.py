@@ -30,9 +30,10 @@ class ConversationService:
     -- 3 token_estimate
     -- 4 is_truncated (0/1)
     -- 5 name
-    -- 6 max_turns
-    -- 7 max_turns_overflow
-    -- 8 flush_threshold_tokens
+    -- 6 meta_info
+    -- 7 max_turns
+    -- 8 max_turns_overflow
+    -- 9 flush_threshold_tokens
     local msgs = KEYS[1]
     local meta = KEYS[2]
     local role = ARGV[1]
@@ -40,9 +41,17 @@ class ConversationService:
     local token_est = tonumber(ARGV[3]) or 0
     local is_truncated = tonumber(ARGV[4]) or 0
     local name = ARGV[5]
-    local max_turns = tonumber(ARGV[6])
-    local max_turns_over = tonumber(ARGV[7])
-    local flush_tokens = tonumber(ARGV[8])
+    local meta_info_raw = ARGV[6]
+    local max_turns = tonumber(ARGV[7])
+    local max_turns_over = tonumber(ARGV[8])
+    local flush_tokens = tonumber(ARGV[9])
+    local meta_info = cjson.null
+    if meta_info_raw and meta_info_raw ~= '' then
+        local ok, decoded = pcall(cjson.decode, meta_info_raw)
+        if ok and decoded then
+            meta_info = decoded
+        end
+    end
 
     local turn = redis.call('HINCRBY', meta, 'last_turn', 1)
     local total_tokens = redis.call('HINCRBY', meta, 'total_tokens', token_est)
@@ -53,6 +62,7 @@ class ConversationService:
         token_estimate = token_est,
         is_truncated = is_truncated == 1,
         name = (name ~= '' and name or cjson.null),
+        meta_info = meta_info,
         turn_index = turn
     })
     redis.call('RPUSH', msgs, msg)
@@ -119,6 +129,9 @@ class ConversationService:
                     msg.get("token_estimate", 0),
                     1 if msg.get("is_truncated") else 0,
                     msg.get("name") or "",
+                    json.dumps(msg.get("meta_info") or {}, ensure_ascii=False)
+                    if msg.get("meta_info")
+                    else "",
                     max_turns,
                     max_turns_overflow,
                     settings.CONVERSATION_FLUSH_THRESHOLD_TOKENS,

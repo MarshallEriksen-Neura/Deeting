@@ -5,23 +5,16 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { streamChatCompletion, type ChatMessage } from "@/lib/api/chat";
 import {
   buildMessageContent,
-  parseMessageContent,
   type ChatImageAttachment,
 } from "@/lib/chat/message-content";
+import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter";
+import type { Message, MessageRole } from "@/lib/chat/message-types";
 import { createSessionId } from "@/lib/chat/session-id";
 import { fetchConversationWindow } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
 import { signAssets } from "@/lib/api/media-assets";
 
-export type MessageRole = "user" | "assistant" | "system";
-
-export interface Message {
-  id: string;
-  role: MessageRole;
-  content: string;
-  attachments?: ChatImageAttachment[];
-  createdAt: number;
-}
+export type { Message, MessageRole };
 
 export interface ChatAssistant {
   id: string;
@@ -79,20 +72,6 @@ function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessa
   return mapped;
 }
 
-function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
-  const filtered = rawMessages.filter((msg) => msg.role === "user" || msg.role === "assistant");
-  const total = filtered.length;
-  return filtered.map((msg, index) => {
-    const parsed = parseMessageContent(msg.content);
-    return {
-      id: `conv-${msg.turn_index ?? index}`,
-      role: (msg.role === "assistant" ? "assistant" : "user") as MessageRole,
-      content: parsed.text,
-      attachments: parsed.attachments.length ? parsed.attachments : undefined,
-      createdAt: Date.now() - (total - index) * 1000,
-    };
-  });
-}
 
 const resolveMessageAttachments = async (messages: Message[]) => {
   const objectKeys = new Set<string>();
@@ -289,7 +268,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
         if (!sessionId) return;
         try {
           const windowState = await fetchConversationWindow(sessionId);
-          const mapped = mapConversationMessages(windowState.messages ?? []);
+          const mapped = normalizeConversationMessages(windowState.messages ?? []);
           let resolved = mapped;
           try {
             resolved = await resolveMessageAttachments(mapped);

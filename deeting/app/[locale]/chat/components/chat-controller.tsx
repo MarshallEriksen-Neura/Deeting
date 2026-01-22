@@ -8,6 +8,7 @@ import { useI18n } from "@/hooks/use-i18n"
 import { useMarketStore } from "@/store/market-store"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
 import { parseMessageContent } from "@/lib/chat/message-content"
+import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 
 interface ChatControllerProps {
   agentId: string
@@ -176,21 +177,10 @@ export function ChatController({ agentId }: ChatControllerProps) {
             }
             const windowState = await loadHistory(storedSessionId)
             if (cancelled) return
-            const rawMessages = (windowState.messages || [])
-              .filter((msg) => msg.role === "user" || msg.role === "assistant")
-            const total = rawMessages.length
-            const mapped = rawMessages.map((msg, index) => ({
-              id: `${storedSessionId}-${msg.turn_index ?? index}`,
-              role: (msg.role === "assistant" ? "assistant" : "user") as 'user' | 'assistant',
-              ...(() => {
-                const parsed = parseMessageContent(msg.content)
-                return {
-                  content: parsed.text,
-                  attachments: parsed.attachments.length ? parsed.attachments : undefined,
-                }
-              })(),
-              createdAt: Date.now() - (total - index) * 1000,
-            }))
+            const mapped = normalizeConversationMessages(
+              windowState.messages || [],
+              { idPrefix: storedSessionId }
+            )
             if (mapped.length > 0) {
               setMessages(mapped)
               setHistoryLoaded(true)

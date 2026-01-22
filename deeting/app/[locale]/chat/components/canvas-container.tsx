@@ -125,7 +125,7 @@ export default function Canvas() {
               <div key={msg.id} className="flex justify-start w-full">
                 <div className="flex w-full flex-col gap-3 max-w-[92%]">
                   <AIResponseBubble
-                    parts={normalizeMessage(msg.content)}
+                    parts={msg.blocks ?? normalizeMessage(msg.content)}
                     isActive={isActive}
                     streamEnabled={streamEnabled}
                     statusStage={isActive ? statusStage : null}

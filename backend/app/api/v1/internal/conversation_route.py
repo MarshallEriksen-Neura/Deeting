@@ -73,6 +73,7 @@ class ConversationMessage(BaseModel):
     turn_index: int | None = None
     is_truncated: bool | None = None
     name: str | None = None
+    meta_info: dict | None = None
 
 
 class ConversationWindowResponse(BaseModel):

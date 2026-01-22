@@ -5,6 +5,7 @@ import type { ApiError } from "@/lib/http"
 import { swrFetcher, type SWRResult } from "@/lib/swr/fetcher"
 import type { CursorPage } from "@/types/pagination"
 import type { ConversationSessionItem, ConversationSessionsQuery } from "@/lib/api/conversations"
+import { useAuthStore } from "@/store/auth-store"
 
 type ConversationSessionsState = {
   items: ConversationSessionItem[]
@@ -21,11 +22,12 @@ export function useConversationSessions(
   query: ConversationSessionsQuery = {},
   options: { enabled?: boolean } = {}
 ): ConversationSessionsState {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const pageSize = query.size ?? 20
 
   const getKey = React.useCallback(
     (pageIndex: number, previousPageData: CursorPage<ConversationSessionItem> | null) => {
-      if (options.enabled === false) {
+      if (options.enabled === false || !isAuthenticated) {
         return null
       }
       if (previousPageData && !previousPageData.next_page) {
@@ -45,7 +47,7 @@ export function useConversationSessions(
         },
       ]
     },
-    [options.enabled, pageSize, query.assistant_id, query.status, query.cursor]
+    [options.enabled, isAuthenticated, pageSize, query.assistant_id, query.status, query.cursor]
   )
 
   const {

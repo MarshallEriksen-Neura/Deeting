@@ -3,17 +3,9 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
+import type { Message, MessageRole } from "@/lib/chat/message-types"
 import type { ModelInfo } from "@/lib/api/models"
-
-export type MessageRole = "user" | "assistant" | "system"
-
-export interface Message {
-  id: string
-  role: MessageRole
-  content: string
-  attachments?: ChatImageAttachment[]
-  createdAt: number
-}
+export type { Message, MessageRole }
 
 export interface ChatAssistant {
   id: string

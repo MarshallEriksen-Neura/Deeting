@@ -15,9 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.http_client import create_async_http_client
-from app.models.image_generation import ImageGenerationOutput, ImageGenerationStatus
+from app.models.image_generation import (
+    GenerationTaskType,
+    ImageGenerationOutput,
+    ImageGenerationStatus,
+)
 from app.repositories.image_generation_output_repository import ImageGenerationOutputRepository
-from app.repositories.image_generation_task_repository import ImageGenerationTaskRepository
+from app.repositories.generation_task_repository import GenerationTaskRepository
 from app.repositories.media_asset_repository import MediaAssetRepository
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.schemas.image_generation import ImageGenerationOutputItem, ImageGenerationTaskListItem
@@ -36,7 +40,7 @@ DEFAULT_IMAGE_CONTENT_TYPE = "image/png"
 class ImageGenerationService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.task_repo = ImageGenerationTaskRepository(session)
+        self.task_repo = GenerationTaskRepository(session)
         self.output_repo = ImageGenerationOutputRepository(session)
         self.asset_repo = MediaAssetRepository(session)
         self.model_repo = ProviderModelRepository(session)
@@ -56,6 +60,24 @@ class ImageGenerationService:
         prompt = payload.get("prompt_raw") or ""
         negative_prompt = payload.get("negative_prompt")
         payload["prompt_hash"] = build_prompt_hash(prompt, negative_prompt)
+        payload.setdefault("task_type", GenerationTaskType.IMAGE_GENERATION)
+        if not payload.get("input_params"):
+            payload["input_params"] = {
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "width": payload.get("width"),
+                "height": payload.get("height"),
+                "aspect_ratio": payload.get("aspect_ratio"),
+                "num_outputs": payload.get("num_outputs"),
+                "steps": payload.get("steps"),
+                "cfg_scale": payload.get("cfg_scale"),
+                "seed": payload.get("seed"),
+                "sampler_name": payload.get("sampler_name"),
+                "quality": payload.get("quality"),
+                "style": payload.get("style"),
+                "response_format": payload.get("response_format"),
+                "extra_params": payload.get("extra_params") or {},
+            }
 
         if payload.get("prompt_encrypted"):
             ciphertext = self.prompt_cipher.encrypt(prompt)
