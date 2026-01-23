@@ -117,6 +117,7 @@
       "previewTitle": "图片预览",
       "previewEmpty": "暂无预览",
       "promptLabel": "提示词",
+      "sessionCount": "{count} 次生成",
       "sessionTitle": "本会话图库",
       "sessionEmpty": "当前会话暂无图片",
       "footer": "文生图时间线",
@@ -203,6 +204,26 @@
         "label": "提示词",
         "placeholder": "描述你的想象..."
       },
+      "console": {
+        "recent": "最近生成",
+        "recentEmpty": "暂无历史",
+        "historyButton": "历史记录",
+        "historyAlt": "历史生成",
+        "selectHistory": "查看历史图片",
+        "negative": "负面提示词",
+        "negativeSelected": "已选 {count} 个",
+        "negativeCustom": "自定义",
+        "negativeToggle": "负面提示词",
+        "settings": "高级设置",
+        "summary": "当前参数摘要",
+        "clearPrompt": "清空提示词",
+        "shortcuts": {
+          "generate": "生成",
+          "newline": "换行"
+        },
+        "expand": "展开控制中心",
+        "collapse": "收起控制中心"
+      },
       "badges": {
         "cyberpunk": "赛博朋克",
         "cinematicLighting": "电影级光影",
@@ -219,6 +240,10 @@
         "count": "数量",
         "seed": "随机种子",
         "randomize": "随机"
+      },
+      "emptyState": {
+        "title": "开始创作",
+        "description": "在底部输入框描述你的想象"
       }
     },
     "coder": {

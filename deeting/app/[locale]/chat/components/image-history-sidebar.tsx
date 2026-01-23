@@ -22,6 +22,16 @@ interface ImageHistorySidebarProps {
 }
 
 type StatusTone = "default" | "secondary" | "destructive" | "outline";
+type SessionGroup = {
+  id: string;
+  sessionId: string | null;
+  tasks: ImageGenerationTaskItem[];
+  latestTask: ImageGenerationTaskItem;
+  latestAt: string | null;
+  previewUrl: string | null;
+  searchText: string;
+  count: number;
+};
 
 export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProps) {
   const t = useI18n('chat');
@@ -73,18 +83,65 @@ export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProp
     return { labels, tones };
   }, [t]);
 
-  const searchValue = search.trim().toLowerCase();
-  const filteredItems = useMemo(() => {
-    if (!searchValue) return items;
-    return items.filter((item) => {
-      const prompt = item.prompt ?? "";
-      const model = item.model ?? "";
-      const status = item.status ?? "";
-      return [prompt, model, status].some((value) =>
-        value.toLowerCase().includes(searchValue)
-      );
+  const resolveTaskTimestamp = (task: ImageGenerationTaskItem) =>
+    task.completed_at ?? task.updated_at ?? task.created_at ?? null;
+
+  const resolveTaskTimestampValue = (task: ImageGenerationTaskItem) => {
+    const timestamp = resolveTaskTimestamp(task);
+    if (!timestamp) return 0;
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  };
+
+  const sessionGroups = useMemo<SessionGroup[]>(() => {
+    const groupMap = new Map<string, { sessionId: string | null; tasks: ImageGenerationTaskItem[] }>();
+    items.forEach((task) => {
+      const sessionId = task.session_id ?? null;
+      const key = sessionId ?? `task:${task.task_id}`;
+      const existing = groupMap.get(key);
+      if (existing) {
+        existing.tasks.push(task);
+      } else {
+        groupMap.set(key, { sessionId, tasks: [task] });
+      }
     });
-  }, [items, searchValue]);
+
+    return Array.from(groupMap.entries()).map(([id, group]) => {
+      const tasksSorted = [...group.tasks].sort(
+        (a, b) => resolveTaskTimestampValue(b) - resolveTaskTimestampValue(a)
+      );
+      const latestTask = tasksSorted[0];
+      const previewTask =
+        tasksSorted.find((task) => task.preview?.asset_url || task.preview?.source_url) ??
+        latestTask;
+      const previewUrl = previewTask?.preview?.asset_url ?? previewTask?.preview?.source_url ?? null;
+      const searchText = group.tasks
+        .map((task) => [
+          task.prompt_encrypted ? "" : task.prompt ?? "",
+          task.model ?? "",
+          task.status ?? "",
+        ])
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        id,
+        sessionId: group.sessionId,
+        tasks: group.tasks,
+        latestTask,
+        latestAt: resolveTaskTimestamp(latestTask),
+        previewUrl,
+        searchText,
+        count: group.tasks.length,
+      };
+    });
+  }, [items]);
+
+  const searchValue = search.trim().toLowerCase();
+  const filteredGroups = useMemo(() => {
+    if (!searchValue) return sessionGroups;
+    return sessionGroups.filter((group) => group.searchText.includes(searchValue));
+  }, [searchValue, sessionGroups]);
 
   const historyGroups = useMemo(() => {
     const now = new Date();
@@ -101,8 +158,8 @@ export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProp
       earlier: t('imageHistory.groups.earlier'),
     };
 
-    const resolveGroupLabel = (task: ImageGenerationTaskItem) => {
-      const rawDate = task.completed_at ?? task.updated_at ?? task.created_at;
+    const resolveGroupLabel = (group: SessionGroup) => {
+      const rawDate = group.latestAt;
       if (!rawDate) return labels.earlier;
       const date = new Date(rawDate);
       if (Number.isNaN(date.getTime())) return labels.earlier;
@@ -112,21 +169,24 @@ export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProp
       return labels.earlier;
     };
 
-    const buckets = new Map<string, ImageGenerationTaskItem[]>();
-    filteredItems.forEach((task) => {
-      const label = resolveGroupLabel(task);
+    const buckets = new Map<string, SessionGroup[]>();
+    filteredGroups.forEach((group) => {
+      const label = resolveGroupLabel(group);
       const bucket = buckets.get(label) ?? [];
-      bucket.push(task);
+      bucket.push(group);
       buckets.set(label, bucket);
     });
 
     return [labels.today, labels.yesterday, labels.last7Days, labels.earlier]
       .map((label) => {
         const groupItems = buckets.get(label) ?? [];
-        return groupItems.length ? { label, items: groupItems } : null;
+        const sortedItems = [...groupItems].sort(
+          (a, b) => resolveTaskTimestampValue(b.latestTask) - resolveTaskTimestampValue(a.latestTask)
+        );
+        return sortedItems.length ? { label, items: sortedItems } : null;
       })
-      .filter(Boolean) as Array<{ label: string; items: ImageGenerationTaskItem[] }>;
-  }, [filteredItems, t]);
+      .filter(Boolean) as Array<{ label: string; items: SessionGroup[] }>;
+  }, [filteredGroups, t]);
 
   const imageAlt = t("input.image.alt");
 
@@ -241,36 +301,35 @@ export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProp
                             {group.label}
                           </h3>
                           <div className="space-y-2">
-                            {group.items.map((task) => {
+                            {group.items.map((session) => {
+                              const task = session.latestTask;
                               const statusLabel =
                                 statusMeta.labels[task.status] ?? task.status;
                               const statusTone =
                                 statusMeta.tones[task.status] ?? "outline";
-                              const previewUrl =
-                                task.preview?.asset_url ?? task.preview?.source_url ?? null;
                               return (
                                 <Button
-                                  key={task.task_id}
+                                  key={session.id}
                                   type="button"
                                   variant="ghost"
                                   onClick={() => {
-                                    if (task.session_id) {
-                                      router.replace(buildImageUrl(task.session_id));
+                                    if (session.sessionId) {
+                                      router.replace(buildImageUrl(session.sessionId));
                                       onClose();
                                       return;
                                     }
                                     setSelectedTask(task);
                                   }}
                                   className={cn(
-                                    "w-full rounded-2xl px-3 py-3 flex items-start gap-3 text-left",
+                                    "w-full rounded-2xl px-3 py-3 flex items-start gap-3 text-left whitespace-normal overflow-hidden",
                                     "bg-white/70 dark:bg-white/[0.03] hover:bg-white/90 dark:hover:bg-white/10",
                                     "border border-slate-200/60 dark:border-white/5"
                                   )}
                                 >
                                   <div className="relative h-14 w-14 rounded-xl overflow-hidden bg-slate-100 dark:bg-white/5 shrink-0">
-                                    {previewUrl ? (
+                                    {session.previewUrl ? (
                                       <Image
-                                        src={previewUrl}
+                                        src={session.previewUrl}
                                         alt={imageAlt}
                                         fill
                                         className="object-cover"
@@ -282,17 +341,20 @@ export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProp
                                       </div>
                                     )}
                                   </div>
-                                  <div className="flex-1 min-w-0 flex flex-col gap-1">
-                                    <div className="flex items-center gap-2">
+                                  <div className="flex-1 min-w-0 max-w-full flex flex-col gap-1">
+                                    <div className="flex flex-wrap items-center gap-2">
                                       <Badge variant={statusTone}>{statusLabel}</Badge>
                                       <span className="text-[10px] text-slate-400 dark:text-white/30">
-                                        {formatRelativeTime(task.updated_at)}
+                                        {formatRelativeTime(session.latestAt)}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 dark:text-white/30">
+                                        {t("imageHistory.sessionCount", { count: session.count })}
                                       </span>
                                     </div>
-                                    <span className="text-xs text-slate-700 dark:text-white/70 line-clamp-2">
+                                    <span className="text-xs text-slate-700 dark:text-white/70 line-clamp-2 break-words">
                                       {renderPrompt(task)}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 dark:text-white/30">
+                                    <span className="text-[10px] text-slate-400 dark:text-white/30 truncate">
                                       {task.model}
                                     </span>
                                   </div>

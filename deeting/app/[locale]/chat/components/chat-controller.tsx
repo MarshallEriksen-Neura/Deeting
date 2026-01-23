@@ -8,7 +8,6 @@ import { useI18n } from "@/hooks/use-i18n"
 import { useMarketStore } from "@/store/market-store"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
 import { parseMessageContent } from "@/lib/chat/message-content"
-import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 
 interface ChatControllerProps {
   agentId: string
@@ -46,6 +45,7 @@ export function ChatController({ agentId }: ChatControllerProps) {
     setStreamEnabled,
     setErrorMessage,
     setMessages,
+    loadHistoryBySession,
     sendMessage: storeSendMessage,
     setConfig,
     setAssistants
@@ -62,8 +62,7 @@ export function ChatController({ agentId }: ChatControllerProps) {
     assistant: cloudAssistant,
     models: cloudModels,
     modelGroups: cloudModelGroups,
-    isLoadingAssistants,
-    loadHistory,
+    isLoadingAssistants
   } = useChatService({ assistantId: agentId, enabled: !isTauriRuntime })
 
   // Derived state
@@ -175,14 +174,9 @@ export function ChatController({ agentId }: ChatControllerProps) {
             if (querySessionId && typeof window !== "undefined") {
               localStorage.setItem(sessionStorageKey, storedSessionId)
             }
-            const windowState = await loadHistory(storedSessionId)
+            await loadHistoryBySession(storedSessionId)
             if (cancelled) return
-            const mapped = normalizeConversationMessages(
-              windowState.messages || [],
-              { idPrefix: storedSessionId }
-            )
-            if (mapped.length > 0) {
-              setMessages(mapped)
+            if (useChatStore.getState().messages.length > 0) {
               setHistoryLoaded(true)
               return
             }
@@ -252,7 +246,18 @@ export function ChatController({ agentId }: ChatControllerProps) {
 
     void loadLocalHistory()
     return () => { cancelled = true }
-  }, [agent, historyLoaded, isTauriRuntime, loadHistory, searchParams, sessionStorageKey, t, setSessionId, setMessages, agentId])
+  }, [
+    agent,
+    historyLoaded,
+    isTauriRuntime,
+    loadHistoryBySession,
+    searchParams,
+    sessionStorageKey,
+    t,
+    setSessionId,
+    setMessages,
+    agentId,
+  ])
 
   // Tauri Agent Loading
   React.useEffect(() => {

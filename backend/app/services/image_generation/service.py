@@ -385,7 +385,14 @@ class ImageGenerationService:
         if source_url:
             fetched = await _fetch_image(source_url)
             if not fetched:
-                return None
+                # 下载失败，回退到仅存储 source_url
+                logger.warning("failed to fetch image from url=%s; fallback to source_url", source_url)
+                return {
+                    "asset_id": None,
+                    "content_type": None,
+                    "size_bytes": None,
+                    "source_url": source_url,
+                }
             raw, content_type = fetched
             return await self._store_bytes(
                 raw,
@@ -508,12 +515,13 @@ async def _fetch_image(url: str) -> tuple[bytes, str] | None:
     async with create_async_http_client(timeout=timeout) as client:
         try:
             resp = await client.get(url)
-        except Exception:
-            return None
-        if resp.status_code >= 400:
+            resp.raise_for_status()
+        except Exception as exc:
+            logger.warning("fetch_image_error url=%s error=%s", url, exc)
             return None
         data = resp.content or b""
         if settings.MAX_RESPONSE_BYTES and len(data) > settings.MAX_RESPONSE_BYTES:
+            logger.warning("fetch_image_too_large url=%s size=%d", url, len(data))
             return None
         content_type = resp.headers.get("content-type") or DEFAULT_IMAGE_CONTENT_TYPE
         return data, content_type

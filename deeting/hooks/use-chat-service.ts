@@ -8,7 +8,7 @@ import {
   type AssistantInstallItem,
 } from "@/lib/api/assistants"
 import { fetchChatModels, type ModelInfo, type ModelGroup } from "@/lib/api/models"
-import { fetchConversationWindow } from "@/lib/api/conversations"
+import { fetchConversationHistory } from "@/lib/api/conversations"
 import { useAuthStore } from "@/store/auth-store"
 
 const INSTALLS_QUERY_KEY = "/api/v1/assistants/installs"
@@ -107,7 +107,7 @@ export function useChatService({
   const isLoadingModels = isLoadingAllModels
 
   const loadHistory = useCallback(async (sessionId: string) => {
-    return fetchConversationWindow(sessionId)
+    return fetchConversationHistory(sessionId, { limit: 30 })
   }, [])
 
   return {

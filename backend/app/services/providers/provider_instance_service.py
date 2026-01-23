@@ -266,7 +266,8 @@ class ProviderInstanceService:
         - Gemini API: GET https://generativelanguage.googleapis.com/v1beta/models?key=*
         其余按 OpenAI 兼容路径兜底。
         """
-        protocol = (instance.meta or {}).get("protocol") or getattr(preset, "provider", "openai")
+        meta = instance.meta or {}
+        protocol = meta.get("protocol") or getattr(preset, "provider", "openai")
         provider = getattr(preset, "provider", "") or protocol
         base_url = self._normalize_base_url(preset, instance)
         if not base_url:
@@ -284,7 +285,7 @@ class ProviderInstanceService:
             headers["x-api-key"] = secret or ""
             headers["anthropic-version"] = "2023-06-01"
         elif "azure" in proto_lower or "azure" in provider_lower:
-            version = (instance.meta or {}).get("api_version") or "2023-05-15"
+            version = meta.get("api_version") or "2023-05-15"
             url = f"{base_url}/openai/deployments"
             params["api-version"] = version
             headers["api-key"] = secret or ""
@@ -294,7 +295,12 @@ class ProviderInstanceService:
             if secret:
                 headers["x-goog-api-key"] = secret
         else:
-            url = f"{base_url}/v1/models" if not base_url.endswith("/v1") else f"{base_url}/models"
+            url = build_upstream_url(
+                base_url=base_url,
+                upstream_path="models",
+                protocol=protocol,
+                auto_append_v1=meta.get("auto_append_v1"),
+            )
             if secret:
                 headers["Authorization"] = f"Bearer {secret}"
 

@@ -51,16 +51,7 @@
 - 前端 API 基础地址优先使用 `NEXT_PUBLIC_API_BASE_URL`（如需兼容历史变量名，应明确标注为兼容逻辑而非新规范）。
 
 ## 前端 UI 框架使用规范
-- 技术栈与目录
-  - 前端工程位于 `frontend/`，使用 **Next.js(App Router) + Tailwind CSS + shadcn/ui 风格组件库**。
-  - 通用 UI 组件统一放在 `frontend/components/ui`（导入路径为 `@/components/ui`，例如 `button.tsx`, `input.tsx`, `card.tsx`, `dialog.tsx`, `table.tsx` 等）。
-  - 业务组件按功能域划分到 `frontend/components/dashboard`、`frontend/components/layout`、`frontend/components/forms` 等目录，避免在 page 中堆大量 JSX。
 
-- 设计规范与文档
-  - 在设计或改版任何前端页面之前，必须先阅读根目录的 `ui-prompt.md`，遵循极简 / 墨水风格等统一视觉规范。
-  - 新增页面前，优先查阅 `docs/fronted/*.md` 中的对应文档（如 `missing-ui-pages-analysis.md`、页面设计方案等），按文档里的信息架构和交互建议进行实现。
-  - **文档编写原则**：**只有在用户明确要求时才编写或更新文档**。AI Agent 不应主动创建新的设计文档、技术文档或总结文档，除非用户明确声明需要文档输出。
-  - 如任务涉及 API 行为、鉴权或错误码的改动，需在任务结束后更新 `docs/api/*.md` 对应文档，避免前端继续依赖过时说明。
 
 - 组件复用与 shadcn
   - **组件使用优先级**（从高到低）：
@@ -93,29 +84,6 @@
   - 大型组件拆分为“容器组件（负责数据获取）+ 展示组件（只负责渲染）”，减少重复渲染和状态耦合。
   - 避免在客户端组件中做重计算或复杂 DOM 操作；能在服务端完成的数据准备放在 page 的服务端逻辑里完成，减轻客户端负担。
 
-## Testing Guidelines
-- Use `pytest` and `pytest-asyncio` for async tests (`@pytest.mark.asyncio`).
-- Place tests under `tests/` with names like `test_<feature>.py` and `test_<case>()`.
-- Add or update tests for every new endpoint, caching rule, or context behavior.
-- Human developers: run `pytest` and ensure green before opening a PR.
-- AI Agent: run `pytest` and ensure green before merging PRs.
-## Commit & Pull Request Guidelines
-- Existing history uses short, descriptive messages (often in Chinese). Follow that style; e.g., `添加模型缓存错误处理` or `Refine session logging`.
-- Keep commits focused; group related changes (code + tests + docs).
-- PRs should include: purpose, high-level changes, impacted endpoints, and test summary (`pytest`, manual curl examples if behavior changed).
-
-## Spec & Agent Workflow (.specify)
-- `.specify/memory/constitution.md`: Project principles that govern code quality, testing, UX, performance, and security. Read it before large refactors or process changes.
-- `.specify/templates/*.md`: Templates for specs, plans, tasks, and agent files. Update these when you change the standard development workflow.
-- `.specify/scripts/bash/create-new-feature.sh`: Scaffolds a numbered feature spec and branch name. Example: `bash .specify/scripts/bash/create-new-feature.sh 'Add rate limiting' --short-name rate-limit`.
-- `.specify/scripts/bash/setup-plan.sh`: Creates an implementation plan from the template for the current feature branch.
-
-## Security & Automation
-- Secrets scanning is enforced via pre-commit (`detect-secrets` with `.secrets.baseline`).
-- Run `pre-commit install` once, then `pre-commit run --all-files` before pushing.
-- Never commit real API keys or `.env` contents; update the baseline only to reflect intentional, non-sensitive values.
-- 配置 `SECRET_KEY`：请使用系统API `POST /system/secret-key/generate` 生成随机密钥并写入 `.env`，用于对敏感标识做 HMAC/加密，不会存储明文。
-- Configure `SECRET_KEY`: use system API `POST /system/secret-key/generate` to generate a random secret and put it into `.env` for HMAC/encryption of sensitive identifiers (no plaintext storage).
 
 ## AI Agent 交付要求（生产级）
 - 禁止提交“最小实现”占位代码；默认交付可直接上线的生产级实现。

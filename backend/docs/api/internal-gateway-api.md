@@ -328,7 +328,47 @@ print(response.json())
 
 ---
 
-### 4. Conversation Archive
+### 4. Conversation History
+
+历史消息分页加载（仅用于 UI 展示，不影响 Redis 滑动窗口上下文）。
+
+**端点**: `GET /conversations/{session_id}/history`
+
+#### Query 参数
+
+- `cursor`：可选，向前翻页游标（turn_index），返回 `< cursor` 的更早消息。
+- `limit`：可选，每页条数（默认 30，最大 200）。
+
+#### 响应体
+
+```json
+{
+  "session_id": "session-xyz",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello",
+      "turn_index": 8
+    },
+    {
+      "role": "assistant",
+      "content": "Hi!",
+      "turn_index": 9
+    }
+  ],
+  "next_cursor": 8,
+  "has_more": true
+}
+```
+
+**说明**：
+
+- `messages` 按 `turn_index` 升序返回，便于前端直接拼接到顶部。
+- `next_cursor` 用于下一次滚动加载（作为 `cursor` 传入）。
+
+---
+
+### 5. Conversation Archive
 
 归档 / 取消归档会话（内部通道）。
 
@@ -368,7 +408,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 5. Conversation Rename
+### 6. Conversation Rename
 
 更新会话标题（内部通道）。
 

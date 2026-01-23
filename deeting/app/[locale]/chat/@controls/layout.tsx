@@ -8,6 +8,15 @@ export default function ControlsLayout({ children }: { children: ReactNode }) {
   const isCoder = pathname?.includes('/coder');
   const isImage = pathname?.includes('/create/image');
 
+  // 图片页面：使用沉浸式布局，FloatingConsole 占满宽度
+  if (isImage) {
+    return (
+      <div className="w-full">
+        {children}
+      </div>
+    );
+  }
+
   // Morphing Styles
   // Default: Capsule
   // Dark Mode: "bg-black/40 backdrop-blur-2xl border-white/10" (Preserved)

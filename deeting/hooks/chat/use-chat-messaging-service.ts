@@ -4,7 +4,7 @@ import { useCallback } from "react"
 import { streamChatCompletion, type ChatMessage } from "@/lib/api/chat"
 import { buildMessageContent, parseMessageContent } from "@/lib/chat/message-content"
 import { createSessionId } from "@/lib/chat/session-id"
-import { fetchConversationWindow } from "@/lib/api/conversations"
+import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStateStore, type Message, type ChatAssistant } from "@/store/chat-state-store"
 import { useChatSessionStore } from "@/store/chat-session-store"
@@ -123,7 +123,7 @@ export function useChatMessagingService() {
   const loadHistoryBySession = useCallback(async (sessionId: string) => {
     if (!sessionId) return
     try {
-      const windowState = await fetchConversationWindow(sessionId)
+      const windowState = await fetchConversationHistory(sessionId, { limit: 30 })
       const mapped = mapConversationMessages(windowState.messages ?? [])
       let resolved = mapped
       try {

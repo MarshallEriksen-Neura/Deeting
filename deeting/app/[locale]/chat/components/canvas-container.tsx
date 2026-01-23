@@ -1,19 +1,23 @@
 'use client';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useCallback } from 'react';
 import { useI18n } from '@/hooks/use-i18n';
 import { AIResponseBubble } from './ai-response-bubble';
 import { MarkdownViewer } from '@/components/chat/markdown-viewer';
 import { normalizeMessage } from '@/lib/chat/message-normalizer';
 import Image from 'next/image';
 import type { ChatImageAttachment } from '@/lib/chat/message-content';
+import { Loader2 } from 'lucide-react';
 
 export default function Canvas() {
   const t = useI18n('chat');
   const {
     messages,
     isLoading,
+    historyHasMore,
+    historyLoading,
+    loadMoreHistory,
     statusStage,
     statusCode,
     statusMeta,
@@ -21,6 +25,9 @@ export default function Canvas() {
   } = useChatStore(useShallow((state) => ({
     messages: state.messages,
     isLoading: state.isLoading,
+    historyHasMore: state.historyHasMore,
+    historyLoading: state.historyLoading,
+    loadMoreHistory: state.loadMoreHistory,
     statusStage: state.statusStage,
     statusCode: state.statusCode,
     statusMeta: state.statusMeta,
@@ -29,6 +36,7 @@ export default function Canvas() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const restoreScrollRef = useRef<{ height: number; top: number } | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -77,6 +85,37 @@ export default function Canvas() {
     }
   }, [messages, isLoading]);
 
+  const handleLoadMore = useCallback(async () => {
+    if (!historyHasMore || historyLoading) return;
+    const container = containerRef.current;
+    if (!container) return;
+    restoreScrollRef.current = {
+      height: container.scrollHeight,
+      top: container.scrollTop,
+    };
+    await loadMoreHistory();
+    requestAnimationFrame(() => {
+      const snapshot = restoreScrollRef.current;
+      const node = containerRef.current;
+      if (!snapshot || !node) return;
+      const delta = node.scrollHeight - snapshot.height;
+      node.scrollTop = snapshot.top + delta;
+      restoreScrollRef.current = null;
+    });
+  }, [historyHasMore, historyLoading, loadMoreHistory]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      if (container.scrollTop < 120) {
+        void handleLoadMore();
+      }
+    };
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [handleLoadMore]);
+
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'assistant') return messages[i].id;
@@ -116,6 +155,12 @@ export default function Canvas() {
       }}
     >
       <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-2">
+        {historyLoading && (
+          <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>{t("history.loading")}</span>
+          </div>
+        )}
         {messages.map((msg) => {
           const isLastAssistant = msg.id === lastAssistantId;
           const isActive = isLastAssistant && isLoading;

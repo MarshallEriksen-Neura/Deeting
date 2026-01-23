@@ -19,6 +19,15 @@ def test_build_upstream_url_openai_keeps_v1() -> None:
     assert url == "https://api.example.com/v1/chat/completions"
 
 
+def test_build_upstream_url_openai_versioned_base_skips_v1() -> None:
+    url = build_upstream_url(
+        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        upstream_path="chat/completions",
+        protocol="openai",
+    )
+    assert url == "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+
+
 def test_build_upstream_url_non_openai_no_v1() -> None:
     url = build_upstream_url(
         base_url="https://api.anthropic.com",

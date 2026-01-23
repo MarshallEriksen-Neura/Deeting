@@ -31,6 +31,34 @@ export async function fetchConversationWindow(sessionId: string): Promise<Conver
   return ConversationWindowSchema.parse(data)
 }
 
+export const ConversationHistoryResponseSchema = z.object({
+  session_id: z.string(),
+  messages: z.array(ConversationMessageSchema).default([]),
+  next_cursor: z.number().int().nullable().optional(),
+  has_more: z.boolean().default(false),
+})
+
+export type ConversationHistoryResponse = z.infer<typeof ConversationHistoryResponseSchema>
+
+export async function fetchConversationHistory(
+  sessionId: string,
+  options: { cursor?: number; limit?: number } = {}
+): Promise<ConversationHistoryResponse> {
+  const params = new URLSearchParams()
+  if (options.cursor) {
+    params.set("cursor", String(options.cursor))
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  const query = params.toString()
+  const data = await request({
+    url: `${CONVERSATION_BASE}/${sessionId}/history${query ? `?${query}` : ""}`,
+    method: "GET",
+  })
+  return ConversationHistoryResponseSchema.parse(data)
+}
+
 export const ConversationSessionItemSchema = z.object({
   session_id: z.string(),
   title: z.string().nullable().optional(),

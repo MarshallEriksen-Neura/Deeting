@@ -29,6 +29,7 @@ from app.schemas.conversation import (
 )
 from app.models.conversation import ConversationStatus
 from app.services.conversation.session_service import ConversationSessionService
+from app.services.conversation.history_service import ConversationHistoryService
 from app.services.conversation.service import ConversationService
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import (
@@ -43,6 +44,12 @@ def get_conversation_session_service(
     db: AsyncSession = Depends(get_db),
 ) -> ConversationSessionService:
     return ConversationSessionService(db)
+
+
+def get_conversation_history_service(
+    db: AsyncSession = Depends(get_db),
+) -> ConversationHistoryService:
+    return ConversationHistoryService(db)
 
 
 class RegenerateRequest(BaseModel):
@@ -81,6 +88,13 @@ class ConversationWindowResponse(BaseModel):
     messages: list[ConversationMessage] = []
     meta: dict | None = None
     summary: dict | None = None
+
+
+class ConversationHistoryResponse(BaseModel):
+    session_id: str
+    messages: list[ConversationMessage] = []
+    next_cursor: int | None = None
+    has_more: bool = False
 
 
 def _build_error(ctx: WorkflowContext) -> JSONResponse:
@@ -171,6 +185,45 @@ async def rename_conversation(
     return ConversationSessionRenameResponse(
         session_id=session_obj.id,
         title=session_obj.title,
+    )
+
+
+@router.get(
+    "/conversations/{session_id}/history",
+    response_model=ConversationHistoryResponse,
+)
+async def get_conversation_history(
+    session_id: str,
+    cursor: int | None = Query(
+        default=None, gt=0, description="向前翻页游标（turn_index）"
+    ),
+    limit: int = Query(default=30, gt=0, le=200, description="每页条数"),
+    user: User = Depends(get_current_user),
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+) -> ConversationHistoryResponse:
+    session_uuid = UUID(session_id)
+    page = await service.load_history(
+        session_id=session_uuid,
+        user_id=user.id,
+        limit=limit,
+        before_turn=cursor,
+    )
+    messages = [
+        ConversationMessage(
+            role=m.role.value if hasattr(m.role, "value") else m.role,
+            content=m.content,
+            turn_index=m.turn_index,
+            is_truncated=m.is_truncated,
+            name=m.name,
+            meta_info=m.meta_info,
+        )
+        for m in page.get("messages", [])
+    ]
+    return ConversationHistoryResponse(
+        session_id=session_id,
+        messages=messages,
+        next_cursor=page.get("next_cursor"),
+        has_more=bool(page.get("has_more")),
     )
 
 

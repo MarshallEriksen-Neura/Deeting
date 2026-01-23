@@ -10,7 +10,7 @@ import {
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter";
 import type { Message, MessageRole } from "@/lib/chat/message-types";
 import { createSessionId } from "@/lib/chat/session-id";
-import { fetchConversationWindow } from "@/lib/api/conversations";
+import { fetchConversationHistory } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
 import { signAssets } from "@/lib/api/media-assets";
 
@@ -26,6 +26,7 @@ export interface ChatAssistant {
 }
 
 const SESSION_STORAGE_PREFIX = "deeting-chat-session";
+const HISTORY_PAGE_SIZE = 30;
 
 function sessionKeyForAssistant(assistantId: string) {
   return `${SESSION_STORAGE_PREFIX}:${assistantId}`;
@@ -120,6 +121,9 @@ interface ChatState {
   models: ModelInfo[];
   activeAssistantId?: string;
   sessionId?: string;
+  historyCursor?: number | null;
+  historyHasMore: boolean;
+  historyLoading: boolean;
   streamEnabled: boolean;
   errorMessage: string | null;
   statusStage: string | null;
@@ -149,6 +153,7 @@ interface ChatActions {
   resetSession: () => void;
   loadHistory: (assistantId?: string) => Promise<void>;
   loadHistoryBySession: (sessionId: string) => Promise<void>;
+  loadMoreHistory: () => Promise<void>;
   sendMessage: () => Promise<void>;
 }
 
@@ -169,6 +174,9 @@ export const useChatStore = create<ChatState & ChatActions>()(
       models: [],
       activeAssistantId: undefined,
       sessionId: undefined,
+      historyCursor: null,
+      historyHasMore: false,
+      historyLoading: false,
       streamEnabled: false,
       errorMessage: null,
       statusStage: null,
@@ -232,7 +240,14 @@ export const useChatStore = create<ChatState & ChatActions>()(
         if (typeof window !== "undefined" && activeAssistantId) {
           localStorage.removeItem(sessionKeyForAssistant(activeAssistantId));
         }
-        set({ messages: [], sessionId: undefined, attachments: [] });
+        set({
+          messages: [],
+          sessionId: undefined,
+          attachments: [],
+          historyCursor: null,
+          historyHasMore: false,
+          historyLoading: false,
+        });
       },
 
       loadHistory: async (assistantId) => {
@@ -251,7 +266,13 @@ export const useChatStore = create<ChatState & ChatActions>()(
         })();
         const resolvedSessionId = storedSessionId || querySessionId;
         if (!resolvedSessionId) {
-          set({ messages: [], sessionId: undefined });
+          set({
+            messages: [],
+            sessionId: undefined,
+            historyCursor: null,
+            historyHasMore: false,
+            historyLoading: false,
+          });
           return;
         }
         if (!storedSessionId && querySessionId) {
@@ -260,15 +281,26 @@ export const useChatStore = create<ChatState & ChatActions>()(
         try {
           await get().loadHistoryBySession(resolvedSessionId);
         } catch {
-          set({ messages: [], sessionId: undefined });
+          set({
+            messages: [],
+            sessionId: undefined,
+            historyCursor: null,
+            historyHasMore: false,
+            historyLoading: false,
+          });
         }
       },
 
       loadHistoryBySession: async (sessionId) => {
         if (!sessionId) return;
+        set({ historyLoading: true });
         try {
-          const windowState = await fetchConversationWindow(sessionId);
-          const mapped = normalizeConversationMessages(windowState.messages ?? []);
+          const windowState = await fetchConversationHistory(sessionId, {
+            limit: HISTORY_PAGE_SIZE,
+          });
+          const mapped = normalizeConversationMessages(windowState.messages ?? [], {
+            idPrefix: sessionId,
+          });
           let resolved = mapped;
           try {
             resolved = await resolveMessageAttachments(mapped);
@@ -277,13 +309,58 @@ export const useChatStore = create<ChatState & ChatActions>()(
             set({ errorMessage: "i18n:input.image.errorSign" });
             resolved = mapped;
           }
-          set({ messages: resolved, sessionId });
+          set({
+            messages: resolved,
+            sessionId,
+            historyCursor: windowState.next_cursor ?? null,
+            historyHasMore: Boolean(windowState.has_more),
+          });
           const activeAssistantId = get().activeAssistantId;
           if (typeof window !== "undefined" && activeAssistantId) {
             localStorage.setItem(sessionKeyForAssistant(activeAssistantId), sessionId);
           }
         } catch {
-          set({ messages: [], sessionId: undefined });
+          set({
+            messages: [],
+            sessionId: undefined,
+            historyCursor: null,
+            historyHasMore: false,
+          });
+        } finally {
+          set({ historyLoading: false });
+        }
+      },
+
+      loadMoreHistory: async () => {
+        const { sessionId, historyCursor, historyHasMore, historyLoading } = get();
+        if (!sessionId || historyLoading || !historyHasMore) return;
+        if (historyCursor == null) return;
+        set({ historyLoading: true });
+        try {
+          const windowState = await fetchConversationHistory(sessionId, {
+            cursor: historyCursor ?? undefined,
+            limit: HISTORY_PAGE_SIZE,
+          });
+          const mapped = normalizeConversationMessages(windowState.messages ?? [], {
+            idPrefix: sessionId,
+          });
+          let resolved = mapped;
+          try {
+            resolved = await resolveMessageAttachments(mapped);
+          } catch (error) {
+            console.warn("signAssets_failed", error);
+            set({ errorMessage: "i18n:input.image.errorSign" });
+            resolved = mapped;
+          }
+          set((state) => ({
+            messages: [...resolved, ...state.messages],
+            historyCursor: windowState.next_cursor ?? null,
+            historyHasMore: Boolean(windowState.has_more),
+          }));
+        } catch {
+          set({ historyHasMore: false });
+        } finally {
+          set({ historyLoading: false });
         }
       },
 

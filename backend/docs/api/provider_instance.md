@@ -24,7 +24,7 @@
   }
   ```
 - 响应：`ProviderInstanceResponse`
-- 说明：`preset_slug` 必须是已存在且启用的模板 slug，否则返回 404 `preset not found`；`user_id` 自动填当前超管；`credentials_ref` 为密钥引用（仅支持 `db:<uuid>` 或已有凭证别名），不从环境变量读取；若提供 `api_key`，后端会使用 `SECRET_KEY` 加密存储并生成引用（不落库明文）；`auto_append_v1` 仅对 OpenAI 兼容协议生效，默认 `true`。
+- 说明：`preset_slug` 必须是已存在且启用的模板 slug，否则返回 404 `preset not found`；`user_id` 自动填当前超管；`credentials_ref` 为密钥引用（仅支持 `db:<uuid>` 或已有凭证别名），不从环境变量读取；若提供 `api_key`，后端会使用 `SECRET_KEY` 加密存储并生成引用（不落库明文）；`auto_append_v1` 仅对 OpenAI 兼容协议生效，默认 `true`；当 `base_url` 已包含 `/vN` 或 `/api/vN` 时会自动不追加 `/v1`。
 
 示例：
 ```bash

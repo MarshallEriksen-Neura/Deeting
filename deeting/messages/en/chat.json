@@ -117,6 +117,7 @@
       "previewTitle": "Image Preview",
       "previewEmpty": "No preview available",
       "promptLabel": "Prompt",
+      "sessionCount": "{count} generations",
       "sessionTitle": "Session Gallery",
       "sessionEmpty": "No images in this session yet.",
       "footer": "Image generation timeline",
@@ -203,6 +204,26 @@
         "label": "Prompt",
         "placeholder": "Describe your imagination..."
       },
+      "console": {
+        "recent": "Recent",
+        "recentEmpty": "No recent images",
+        "historyButton": "History",
+        "historyAlt": "Recent generation",
+        "selectHistory": "Select history image",
+        "negative": "Negative Prompts",
+        "negativeSelected": "{count} selected",
+        "negativeCustom": "Custom",
+        "negativeToggle": "Negative prompts",
+        "settings": "Advanced settings",
+        "summary": "Current settings",
+        "clearPrompt": "Clear prompt",
+        "shortcuts": {
+          "generate": "Generate",
+          "newline": "New line"
+        },
+        "expand": "Expand controls",
+        "collapse": "Collapse controls"
+      },
       "badges": {
         "cyberpunk": "Cyberpunk",
         "cinematicLighting": "Cinematic Lighting",
@@ -219,6 +240,10 @@
         "count": "Count",
         "seed": "Seed",
         "randomize": "Randomize"
+      },
+      "emptyState": {
+        "title": "Start Creating",
+        "description": "Describe your imagination in the input box below"
       }
     },
     "coder": {

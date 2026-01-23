@@ -40,14 +40,16 @@ export default function ChatLayout({
       </main>
 
       {/* Controls / Morphing Bar (Bottom Center) */}
-      <div
-        data-chat-controls
-        className="absolute bottom-0 left-0 right-0 z-40 flex justify-center pb-8 pointer-events-none"
-      >
-        <div className="pointer-events-auto w-full max-w-5xl 2xl:max-w-6xl px-4">
-          {controls}
+      {controls ? (
+        <div
+          data-chat-controls
+          className="absolute bottom-0 left-0 right-0 z-40 flex justify-center pb-8 pointer-events-none"
+        >
+          <div className="pointer-events-auto w-full max-w-5xl 2xl:max-w-6xl px-4">
+            {controls}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Children (Modals/Intercepting Routes) */}
       <div className="relative z-[100]">

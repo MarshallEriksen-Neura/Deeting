@@ -174,6 +174,60 @@ export default function DefaultControls() {
           autoFocus
           onFocus={() => setShowMenu(false)}
         />
+        <Popover open={isParamsOpen} onOpenChange={handleParamsOpenChange}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
+              title={`${t("hud.temperature")} / ${t("hud.topP")}`}
+              className={`min-h-[44px] min-w-[44px] size-10 rounded-full bg-white/70 dark:bg-white/10 text-slate-600 dark:text-white/70 hover:bg-white/90 dark:hover:bg-white/20 cursor-pointer ${isParamsOpen ? "ring-2 ring-indigo-500/30" : ""}`}
+            >
+              <Sliders className="w-5 h-5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            align="end"
+            className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
+          >
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                    {t("hud.temperature")}
+                  </label>
+                  <span className="text-[11px] font-mono font-bold">{config.temperature}</span>
+                </div>
+                <Slider
+                  value={[config.temperature]}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  aria-label={t("hud.temperature")}
+                  onValueChange={(value) => setConfig({ temperature: Number(value[0].toFixed(2)) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                    {t("hud.topP")}
+                  </label>
+                  <span className="text-[11px] font-mono font-bold">{config.topP}</span>
+                </div>
+                <Slider
+                  value={[config.topP]}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  aria-label={t("hud.topP")}
+                  onValueChange={(value) => setConfig({ topP: Number(value[0].toFixed(2)) })}
+                />
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {attachments.length > 0 ? (
@@ -318,61 +372,6 @@ export default function DefaultControls() {
               <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
             </Link>
           </Button>
-
-          <Popover open={isParamsOpen} onOpenChange={handleParamsOpenChange}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
-                title={`${t("hud.temperature")} / ${t("hud.topP")}`}
-                className={`min-h-[44px] min-w-[44px] size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 cursor-pointer ${isParamsOpen ? "ring-2 ring-indigo-500/30" : ""}`}
-              >
-                <Sliders className="w-5 h-5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              side="top"
-              align="end"
-              className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
-            >
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center px-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
-                      {t("hud.temperature")}
-                    </label>
-                    <span className="text-[11px] font-mono font-bold">{config.temperature}</span>
-                  </div>
-                  <Slider
-                    value={[config.temperature]}
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    aria-label={t("hud.temperature")}
-                    onValueChange={(value) => setConfig({ temperature: Number(value[0].toFixed(2)) })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center px-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
-                      {t("hud.topP")}
-                    </label>
-                    <span className="text-[11px] font-mono font-bold">{config.topP}</span>
-                  </div>
-                  <Slider
-                    value={[config.topP]}
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    aria-label={t("hud.topP")}
-                    onValueChange={(value) => setConfig({ topP: Number(value[0].toFixed(2)) })}
-                  />
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
 
           <Button
             type="button"

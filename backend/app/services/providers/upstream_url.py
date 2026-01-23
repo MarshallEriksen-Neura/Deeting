@@ -1,6 +1,20 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import urlparse
+
+_VERSION_PATH_RE = re.compile(r"/(?:api/)?v\d+(?:\.\d+)?(?:/|$)", re.IGNORECASE)
+
+
+def _has_versioned_path(base_url: str) -> bool:
+    try:
+        path = urlparse(base_url).path or ""
+    except Exception:
+        return False
+    if not path:
+        return False
+    return bool(_VERSION_PATH_RE.search(path.rstrip("/")))
 
 
 def build_upstream_url(
@@ -15,7 +29,10 @@ def build_upstream_url(
     proto = (protocol or "").lower()
 
     if "azure" not in proto and "openai" in proto:
-        append_v1 = True if auto_append_v1 is None else bool(auto_append_v1)
+        if auto_append_v1 is None:
+            append_v1 = not _has_versioned_path(base)
+        else:
+            append_v1 = bool(auto_append_v1)
         if append_v1 and base and not base.endswith("/v1"):
             base = f"{base}/v1"
 

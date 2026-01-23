@@ -179,6 +179,71 @@ async def test_sync_dedupes_duplicate_models(monkeypatch):
         await svc.sync_models_from_upstream(inst.id, None)
 
         repo = ProviderModelRepository(session)
-        models = await repo.get_by_instance_id(inst.id)
-        ids = [m.model_id for m in models]
-        assert ids.count("openai/gpt-oss-120b") == 1
+    models = await repo.get_by_instance_id(inst.id)
+    ids = [m.model_id for m in models]
+    assert ids.count("openai/gpt-oss-120b") == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_respects_versioned_base_url(monkeypatch):
+    async with AsyncSessionLocal() as session:
+        preset = ProviderPreset(
+            id=uuid.uuid4(),
+            name="OpenAI Compat",
+            slug="openai-compat",
+            provider="openai",
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            auth_type="bearer",
+            auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
+            default_headers={},
+            default_params={},
+            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            is_active=True,
+        )
+        session.add(preset)
+        await session.commit()
+
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai-compat",
+            name="inst-versioned",
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        captured: dict[str, str] = {}
+
+        class FakeResp:
+            def __init__(self) -> None:
+                self.status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"data": [{"id": "ark-model"}]}
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, url, headers=None, params=None):
+                captured["url"] = str(url)
+                return FakeResp()
+
+        monkeypatch.setattr(
+            "app.services.providers.provider_instance_service.httpx.AsyncClient",
+            FakeClient,
+        )
+
+        models = await svc._fetch_models_from_upstream(preset, inst, secret="sk-test")
+        assert captured["url"] == "https://ark.cn-beijing.volces.com/api/v3/models"
+        assert models == [{"id": "ark-model"}]

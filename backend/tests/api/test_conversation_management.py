@@ -39,6 +39,37 @@ class _DummyConversationService:
         }
 
 
+class _DummyConversationHistoryMessage:
+    def __init__(self, role: str, content: str, turn_index: int):
+        self.role = role
+        self.content = content
+        self.turn_index = turn_index
+        self.is_truncated = False
+        self.name = None
+        self.meta_info = {"blocks": [{"type": "text", "content": content}]}
+
+
+class _DummyConversationHistoryService:
+    def __init__(self):
+        self.called_with = None
+
+    async def load_history(self, *, session_id, user_id, limit, before_turn=None):
+        self.called_with = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "limit": limit,
+            "before_turn": before_turn,
+        }
+        return {
+            "messages": [
+                _DummyConversationHistoryMessage("user", "hi", 8),
+                _DummyConversationHistoryMessage("assistant", "hey", 9),
+            ],
+            "has_more": True,
+            "next_cursor": 8,
+        }
+
+
 class _DummyConversationSession:
     def __init__(self, session_id: str, status: str, title: str | None = None):
         self.id = session_id
@@ -147,6 +178,30 @@ async def test_list_conversations(monkeypatch):
             assert service.called_with["status"].value == "active"
     finally:
         pass
+
+
+@pytest.mark.asyncio
+async def test_get_conversation_history(monkeypatch):
+    service = _DummyConversationHistoryService()
+    app.dependency_overrides[
+        conversation_route.get_conversation_history_service
+    ] = lambda: service
+    session_id = "e3189116-959f-48f4-8d49-f7300eb527dd"
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get(
+            f"/api/v1/internal/conversations/{session_id}/history?cursor=10&limit=2"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"] == session_id
+        assert data["has_more"] is True
+        assert data["next_cursor"] == 8
+        assert data["messages"][0]["turn_index"] == 8
+        assert data["messages"][1]["turn_index"] == 9
+        assert service.called_with["before_turn"] == 10
+        assert service.called_with["limit"] == 2
 
 
 @pytest.mark.asyncio

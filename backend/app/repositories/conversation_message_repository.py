@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import insert as sa_insert
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -92,3 +93,27 @@ class ConversationMessageRepository(BaseRepository[ConversationMessage]):
         await self.session.commit()
         inserted = result.rowcount if result.rowcount is not None else len(rows)
         return int(inserted)
+
+    async def list_messages(
+        self,
+        *,
+        session_id: uuid.UUID,
+        limit: int,
+        before_turn: int | None = None,
+        include_deleted: bool = False,
+        order_desc: bool = True,
+    ) -> list[ConversationMessage]:
+        stmt = select(ConversationMessage).where(
+            ConversationMessage.session_id == session_id
+        )
+        if not include_deleted:
+            stmt = stmt.where(ConversationMessage.is_deleted.is_(False))
+        if before_turn is not None:
+            stmt = stmt.where(ConversationMessage.turn_index < int(before_turn))
+        if order_desc:
+            stmt = stmt.order_by(ConversationMessage.turn_index.desc())
+        else:
+            stmt = stmt.order_by(ConversationMessage.turn_index.asc())
+        stmt = stmt.limit(int(limit))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
