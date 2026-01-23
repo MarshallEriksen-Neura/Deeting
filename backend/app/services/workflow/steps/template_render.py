@@ -72,13 +72,13 @@ class TemplateRenderStep(BaseStep):
             )
 
             # 渲染请求体
+            mcp_tools = ctx.get("mcp_discovery", "tools") or []
             rendered_body = await self._render_body(
                 request_data=request_data,
                 default_params=default_params,
                 engine=template_engine,
-                request_template=request_template,
-                tools=tools,
                 context=render_context,
+                tools=mcp_tools,
             )
 
             # 渲染请求头
@@ -128,12 +128,13 @@ class TemplateRenderStep(BaseStep):
         request_data: dict,
     ) -> dict[str, Any]:
         """构建模板渲染上下文"""
-        conversation_messages = (
-            ctx.get("resolve_assets", "merged_messages")
-            or ctx.get("conversation", "merged_messages")
-            or request_data.get("messages", [])
-        )
+        conversation_messages = ctx.get("conversation", "merged_messages") or request_data.get("messages", [])
         summary = ctx.get("conversation", "summary")
+        
+        # 获取当前选中的模型对象（由 routing 步骤注入）
+        from app.models.provider_instance import ProviderModel
+        model_obj = ctx.get("routing", "model_obj")
+
         return {
             # 请求数据
             "model": ctx.requested_model or request_data.get("model"),
@@ -142,6 +143,7 @@ class TemplateRenderStep(BaseStep):
             # 路由信息
             "provider": ctx.get("routing", "provider"),
             "capability": ctx.capability,
+            "item_config": model_obj,
             # 会话
             "session_id": ctx.get("conversation", "session_id"),
             "summary": summary,
@@ -223,41 +225,33 @@ class TemplateRenderStep(BaseStep):
         request_data: dict,
         default_params: dict,
         engine: str,
-        request_template: dict,
-        tools: list | None,
         context: dict,
+        tools: list | None = None,
     ) -> dict:
         """
         渲染请求体
 
         通常直接透传请求数据，但可根据配置进行转换
         """
-        merged = {**default_params, **request_data}
-        if merged.get("response_format") is None:
-            merged.pop("response_format", None)
-        merged.pop("status_stream", None)
+        # 使用专用的 request_renderer 处理复杂的厂商适配
+        item_config = context.get("item_config") # 需要确保 context 里有这个，或者从 ctx 获取
+        
+        # 兜底方案：如果 context 里没有，我们手动构建一个简单的
+        if not item_config:
+            from dataclasses import dataclass
+            @dataclass
+            class MockConfig:
+                template_engine: str
+                request_template: dict
+            item_config = MockConfig(template_engine=engine, request_template=default_params)
 
-        template_engine = engine or "simple_replace"
-
-        if not request_template:
-            raise TemplateRenderError("request_template is required for template rendering")
-
-        item_config = SimpleNamespace(
-            template_engine=template_engine,
-            request_template=request_template,
+        from app.services.providers.request_renderer import request_renderer
+        return request_renderer.render(
+            item_config=item_config,
+            internal_req=request_data,
+            tools=tools,
+            extra_context=context
         )
-        try:
-            rendered = request_renderer.render(
-                item_config=item_config,
-                internal_req=merged,
-                tools=tools,
-            )
-        except Exception as exc:
-            raise TemplateRenderError(f"request_template render failed: {exc}") from exc
-
-        if rendered.get("response_format") is None:
-            rendered.pop("response_format", None)
-        return rendered
 
     async def _render_headers(
         self,

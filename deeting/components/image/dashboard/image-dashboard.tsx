@@ -1,76 +1,98 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef, useCallback, memo } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useMemo, useCallback, useRef, memo } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import { Loader2, Sparkles } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { useChatService } from "@/hooks/use-chat-service";
-import { createImageGenerationTask, type ImageGenerationOutputItem } from "@/lib/api/image-generation";
-import { openApiSSE } from "@/lib/http";
 import { useImageGenerationStore } from "@/store/image-generation-store";
-import { buildImageAttachments } from "@/lib/chat/attachments";
-import { createSessionId, normalizeSessionId } from "@/lib/chat/session-id";
-import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { useImageGenerationTasks } from "@/lib/swr/use-image-generation-tasks";
+import { normalizeSessionId } from "@/lib/chat/session-id";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { GlassCard } from "@/components/ui/glass-card";
-import { Input } from "@/components/ui/input";
-import { Sparkles } from "lucide-react";
-import { useStepProgress } from "@/components/chat/visuals/status-visuals";
+import { Badge } from "@/components/ui/badge";
+import { MarkdownViewer } from "@/components/chat/markdown-viewer";
+import type { ImageGenerationTaskItem } from "@/lib/api/image-generation";
 
-// 动态导入状态视觉组件以实现代码分割
-const StatusStream = dynamic(
-  () => import("@/components/chat/visuals/status-visuals").then(mod => ({ default: mod.StatusStream })),
-  { ssr: false }
-);
+type StatusTone = "default" | "secondary" | "destructive" | "outline";
 
-const HolographicPulse = dynamic(
-  () => import("@/components/chat/visuals/status-visuals").then(mod => ({ default: mod.HolographicPulse })),
-  { ssr: false }
-);
+const PromptBubble = memo<{ content: string }>(({ content }) => {
+  return (
+    <div className="flex justify-end w-full">
+      <div className="max-w-[88%] rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm bg-primary text-primary-foreground rounded-tr-sm">
+        <MarkdownViewer content={content} className="chat-markdown chat-markdown-user" />
+      </div>
+    </div>
+  );
+});
+
+PromptBubble.displayName = "PromptBubble";
+
+const ImageResultBubble = memo<{
+  previewUrl: string | null;
+  status: string;
+  statusLabel: string;
+  statusTone: StatusTone;
+  aspectRatio: string;
+  imageAlt: string;
+}>(({ previewUrl, status, statusLabel, statusTone, aspectRatio, imageAlt }) => {
+  const showBadge = status !== "succeeded" && Boolean(statusLabel);
+
+  return (
+    <div className="flex justify-start w-full">
+      <GlassCard
+        blur="sm"
+        theme="surface"
+        hover="none"
+        padding="sm"
+        className="w-full max-w-[460px]"
+        shine={true}
+        innerBorder={true}
+      >
+        {showBadge ? (
+          <div className="mb-3 flex items-center gap-2">
+            <Badge variant={statusTone}>{statusLabel}</Badge>
+          </div>
+        ) : null}
+        {previewUrl ? (
+          <ImageLightbox src={previewUrl} alt={imageAlt}>
+            <div className="relative w-full max-h-[45vh]" style={{ aspectRatio }}>
+              <Image
+                src={previewUrl}
+                alt={imageAlt}
+                fill
+                sizes="(max-width: 768px) 90vw, 640px"
+                className="rounded-xl object-contain bg-slate-50/60 dark:bg-white/5"
+              />
+            </div>
+          </ImageLightbox>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-xs">{statusLabel}</span>
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  );
+});
+
+ImageResultBubble.displayName = "ImageResultBubble";
 
 /**
  * 图像仪表板组件
- * 
+ *
  * 功能：
- * - 图像生成任务管理
- * - 实时状态更新
- * - 画布尺寸自适应
- * - 会话历史管理
- * 
- * 性能优化：
- * - 使用 useMemo 缓存计算结果
- * - 使用 useCallback 缓存事件处理函数
- * - 动态导入大型组件实现代码分割
+ * - 图像生成历史展示
+ * - 聊天式展示提示词与生成结果
+ * - 画布滚动与 HUD/控制条避让
  */
 export default function ImageDashboard() {
   const t = useI18n("chat");
   const searchParams = useSearchParams();
-  const { models } = useChatService({
-    enabled: true,
-    modelCapability: "image_generation",
-  });
+  const { sessionId, setSessionId, ratio } = useImageGenerationStore();
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const [prompt, setPrompt] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [output, setOutput] = useState<ImageGenerationOutputItem | null>(null);
-
-  const stopRef = useRef<(() => void) | null>(null);
-  const {
-    selectedModelId,
-    setSelectedModelId,
-    sessionId,
-    setSessionId,
-    ratio,
-    steps,
-    guidance,
-  } = useImageGenerationStore();
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // 使用 useMemo 缓存查询参数解析
   const querySessionId = useMemo(
     () => normalizeSessionId(searchParams?.get("session") ?? null),
     [searchParams]
@@ -83,29 +105,7 @@ export default function ImageDashboard() {
     }
   }, [querySessionId, sessionId, setSessionId]);
 
-  // 使用 useCallback 缓存会话 ID 确保函数
-  const ensureSessionId = useCallback(() => {
-    if (sessionId) return sessionId;
-    const nextId = createSessionId();
-    setSessionId(nextId);
-    return nextId;
-  }, [sessionId, setSessionId]);
-
-  // 使用 useMemo 缓存选中的模型
-  const selectedModel = useMemo(
-    () =>
-      models.find((model) => model.provider_model_id === selectedModelId || model.id === selectedModelId),
-    [models, selectedModelId]
-  );
-
-  const outputUrl = useMemo(
-    () => output?.asset_url ?? output?.source_url ?? null,
-    [output]
-  );
-
-  const {
-    items: sessionTasks,
-  } = useImageGenerationTasks(
+  const { items: sessionTasks } = useImageGenerationTasks(
     {
       size: 12,
       include_outputs: true,
@@ -114,170 +114,135 @@ export default function ImageDashboard() {
     { enabled: Boolean(sessionId) }
   );
 
-  // 使用 useMemo 缓存会话预览列表
-  const sessionPreviews = useMemo(() => {
-    return sessionTasks
-      .map((task) => ({
-        task,
-        previewUrl: task.preview?.asset_url ?? task.preview?.source_url ?? null,
-      }))
-      .filter((item) => Boolean(item.previewUrl));
-  }, [sessionTasks]);
+  const hasConversation = sessionTasks.length > 0;
 
   useEffect(() => {
-    if (isGenerating) return;
-    if (outputUrl) return;
-    if (!sessionPreviews.length) return;
-    const firstPreview = sessionPreviews[0]?.task.preview;
-    if (firstPreview) {
-      setOutput(firstPreview as ImageGenerationOutputItem);
-    }
-  }, [isGenerating, outputUrl, sessionPreviews]);
+    if (!hasConversation) return;
+    const container = containerRef.current;
+    if (!container) return;
 
-  // 使用 useMemo 缓存步骤视觉配置
-  const stepsVisual = useMemo(() => [
-    { key: "queue", label: t("status.flow.queue") },
-    { key: "process", label: t("status.flow.process") },
-    { key: "refine", label: t("status.flow.refine") },
-    { key: "finish", label: t("status.flow.finish") },
-  ], [t]);
+    const hud = document.querySelector<HTMLElement>("[data-chat-hud]");
+    const controls = document.querySelector<HTMLElement>("[data-chat-controls]");
+    const fallbackTop = 112;
+    const fallbackBottom = 152;
 
-  const timerStep = useStepProgress ? useStepProgress(isGenerating, stepsVisual.length) : 0;
-
-  // 使用 useMemo 缓存活动步骤计算
-  const activeStep = useMemo(() => {
-    if (status === "succeeded") return 3;
-    if (status === "failed") return 0;
-    if (status === "queued") return 0;
-    if (status === "running") {
-      return Math.max(1, timerStep);
-    }
-    return 0;
-  }, [status, timerStep]);
-
-  useEffect(() => {
-    if (!models.length) return;
-    const hasSelected = models.some(
-      (model) => model.provider_model_id === selectedModelId || model.id === selectedModelId
-    );
-    if (!hasSelected) {
-      setSelectedModelId(models[0].provider_model_id ?? models[0].id);
-    }
-  }, [models, selectedModelId, setSelectedModelId]);
-
-  useEffect(() => {
-    return () => {
-      stopRef.current?.();
+    const updateOffsets = () => {
+      const hudHeight = hud?.getBoundingClientRect().height ?? 0;
+      const controlsHeight = controls?.getBoundingClientRect().height ?? 0;
+      const topOffset = Math.max(hudHeight + 24, fallbackTop);
+      const bottomOffset = Math.max(controlsHeight + 24, fallbackBottom);
+      container.style.setProperty("--chat-hud-offset", `${topOffset}px`);
+      container.style.setProperty("--chat-controls-offset", `${bottomOffset}px`);
     };
-  }, []);
 
-  // 使用 useCallback 缓存画布尺寸计算函数
-  const getCanvasDimensions = useCallback(() => {
-    const aspectRatio = ratio === "1:1" ? 1 : ratio === "16:9" ? 16 / 9 : 9 / 16;
-    const maxHeight = typeof window !== "undefined" ? window.innerHeight * 0.55 : 500;
-    const maxWidth = typeof window !== "undefined" ? window.innerWidth * 0.85 : 800;
-    let height = maxHeight;
-    let width = height * aspectRatio;
-    if (width > maxWidth) {
-      width = maxWidth;
-      height = width / aspectRatio;
+    updateOffsets();
+
+    const observers: ResizeObserver[] = [];
+    if (hud) {
+      const observer = new ResizeObserver(updateOffsets);
+      observer.observe(hud);
+      observers.push(observer);
     }
-    return { width: Math.round(width), height: Math.round(height) };
-  }, [ratio]);
-
-  const [canvasDimensions, setCanvasDimensions] = useState({ width: 512, height: 512 });
-
-  useEffect(() => {
-    const updateDimensions = () => setCanvasDimensions(getCanvasDimensions());
-    updateDimensions();
-    window.addEventListener("resize", updateDimensions);
-    return () => window.removeEventListener("resize", updateDimensions);
-  }, [getCanvasDimensions]);
-
-  // 使用 useCallback 缓存文件变更处理函数
-  const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files ? Array.from(event.target.files) : [];
-    if (!files.length) return;
-    setError(null);
-    const result = await buildImageAttachments(files);
-
-    if (result.skipped > 0 && result.attachments.length === 0) {
-      setError(t("input.image.errorInvalid"));
-      return;
+    if (controls) {
+      const observer = new ResizeObserver(updateOffsets);
+      observer.observe(controls);
+      observers.push(observer);
     }
-    event.target.value = "";
+
+    window.addEventListener("resize", updateOffsets);
+
+    return () => {
+      observers.forEach((observer) => observer.disconnect());
+      window.removeEventListener("resize", updateOffsets);
+    };
+  }, [hasConversation]);
+
+  const statusMeta = useMemo(() => {
+    const labels = {
+      queued: t("imageHistory.status.queued"),
+      running: t("imageHistory.status.running"),
+      succeeded: t("imageHistory.status.succeeded"),
+      failed: t("imageHistory.status.failed"),
+      canceled: t("imageHistory.status.canceled"),
+    };
+    const tones: Record<string, StatusTone> = {
+      queued: "secondary",
+      running: "secondary",
+      succeeded: "default",
+      failed: "destructive",
+      canceled: "outline",
+    };
+    return { labels, tones };
   }, [t]);
 
-  // 使用 useCallback 缓存生成处理函数
-  const handleGenerate = useCallback(async () => {
-    const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt) return;
-    if (!selectedModelId) {
-      setError(t("error.modelUnavailable"));
-      return;
-    }
+  const renderPrompt = useCallback(
+    (task: ImageGenerationTaskItem) => {
+      if (task.prompt_encrypted) {
+        return t("imageHistory.promptEncrypted");
+      }
+      if (task.prompt?.trim()) {
+        return task.prompt.trim();
+      }
+      return t("imageHistory.promptEmpty");
+    },
+    [t]
+  );
 
-    const activeSessionId = ensureSessionId();
+  const ratioFallback = useMemo(() => {
+    if (ratio === "16:9") return "16 / 9";
+    if (ratio === "9:16") return "9 / 16";
+    return "1 / 1";
+  }, [ratio]);
 
-    setIsGenerating(true);
-    setError(null);
-    setOutput(null);
-    setStatus("queued");
+  const resolveAspectRatio = useCallback(
+    (task: ImageGenerationTaskItem) => {
+      const width = task.preview?.width;
+      const height = task.preview?.height;
+      if (width && height) {
+        return `${width} / ${height}`;
+      }
+      return ratioFallback;
+    },
+    [ratioFallback]
+  );
 
-    stopRef.current?.();
+  const resolveTaskTimestamp = useCallback(
+    (task: ImageGenerationTaskItem) =>
+      task.completed_at ?? task.updated_at ?? task.created_at ?? null,
+    []
+  );
 
-    try {
-      const task = await createImageGenerationTask({
-        model: selectedModel?.id ?? selectedModelId,
-        prompt: trimmedPrompt || " ",
-        aspect_ratio: ratio,
-        num_outputs: 1,
-        steps,
-        cfg_scale: guidance,
-        provider_model_id: selectedModelId,
-        session_id: activeSessionId,
-      });
+  const resolveTaskTimestampValue = useCallback(
+    (task: ImageGenerationTaskItem) => {
+      const timestamp = resolveTaskTimestamp(task);
+      if (!timestamp) return 0;
+      const date = new Date(timestamp);
+      return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+    },
+    [resolveTaskTimestamp]
+  );
 
-      stopRef.current = openApiSSE(`/api/v1/internal/images/generations/${task.task_id}/events`, {
-        onMessage: (msg) => {
-          const data = msg.data;
-          if (data === "[DONE]") {
-            stopRef.current?.();
-            setIsGenerating(false);
-            return;
-          }
-          if (!data || typeof data !== "object") return;
-          const payload = data as Record<string, unknown>;
-          const type = typeof payload.type === "string" ? payload.type : "";
-          if (type === "status") {
-            const nextStatus = typeof payload.status === "string" ? payload.status : null;
-            if (nextStatus) setStatus(nextStatus);
-            if (Array.isArray(payload.outputs) && payload.outputs.length > 0) {
-              setOutput(payload.outputs[0] as ImageGenerationOutputItem);
-            }
-            if (nextStatus === "failed") {
-              setError((payload.error_message as string) || t("error.requestFailed"));
-              setIsGenerating(false);
-            }
-            if (nextStatus === "succeeded") {
-              setIsGenerating(false);
-            }
-          }
-          if (type === "timeout" || type === "error") {
-            setError(t("error.requestFailed"));
-            setIsGenerating(false);
-          }
-        },
-        onError: () => {
-          setError(t("error.requestFailed"));
-          setIsGenerating(false);
-        },
-      });
-    } catch {
-      setError(t("error.requestFailed"));
-      setIsGenerating(false);
-    }
-  }, [prompt, selectedModelId, t, ensureSessionId, selectedModel, ratio, steps, guidance]);
+  const conversationItems = useMemo(() => {
+    const sortedTasks = [...sessionTasks].sort(
+      (a, b) => resolveTaskTimestampValue(a) - resolveTaskTimestampValue(b)
+    );
+    return sortedTasks.map((task) => {
+      const previewUrl = task.preview?.asset_url ?? task.preview?.source_url ?? null;
+      const statusLabel = statusMeta.labels[task.status] ?? task.status;
+      const statusTone = statusMeta.tones[task.status] ?? "outline";
+      return {
+        id: task.task_id,
+        prompt: renderPrompt(task),
+        previewUrl,
+        status: task.status,
+        statusLabel,
+        statusTone,
+        aspectRatio: resolveAspectRatio(task),
+      };
+    });
+  }, [sessionTasks, resolveTaskTimestampValue, renderPrompt, statusMeta, resolveAspectRatio]);
+
+  const imageAlt = t("input.image.alt");
 
   return (
     <div className="relative w-full h-full overflow-hidden">
@@ -295,66 +260,39 @@ export default function ImageDashboard() {
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
       </div>
 
-      {/* 主画布区域 - 居中悬浮 */}
-      <div className="absolute inset-0 flex items-center justify-center p-8">
-        {outputUrl ? (
-          <ImageLightbox src={outputUrl} alt={t("input.image.alt")}>
-            <GlassCard
-              blur="default"
-              theme="surface"
-              className="relative overflow-hidden cursor-zoom-in group"
-              shine={true}
-              innerBorder={true}
-            >
-              <div
-                style={{
-                  width: canvasDimensions.width,
-                  height: canvasDimensions.height,
-                }}
-              >
-                <Image
-                  src={outputUrl}
-                  alt={t("input.image.alt")}
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 800px"
-                  className="object-contain transition-transform duration-500 group-hover:scale-105"
+      {hasConversation ? (
+        <div
+          ref={containerRef}
+          className="absolute inset-0 overflow-y-auto px-4 scrollbar-hide"
+          style={{
+            paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
+            paddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
+            scrollPaddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
+            scrollPaddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
+          }}
+        >
+          <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-2">
+            {conversationItems.map((item) => (
+              <div key={item.id} className="flex flex-col gap-4">
+                <PromptBubble content={item.prompt} />
+                <ImageResultBubble
+                  previewUrl={item.previewUrl}
+                  status={item.status}
+                  statusLabel={item.statusLabel}
+                  statusTone={item.statusTone}
+                  aspectRatio={item.aspectRatio}
+                  imageAlt={imageAlt}
                 />
-                {/* 悬停遮罩 */}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                  <div className="bg-white/90 dark:bg-black/80 backdrop-blur-sm text-foreground p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                </div>
               </div>
-            </GlassCard>
-          </ImageLightbox>
-        ) : isGenerating ? (
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center p-8">
           <GlassCard
             blur="default"
             theme="surface"
-            className="flex items-center justify-center"
-            style={{
-              width: canvasDimensions.width,
-              height: canvasDimensions.height,
-            }}
-          >
-            {HolographicPulse && (
-              <HolographicPulse
-                label={stepsVisual[activeStep]?.label || t("status.placeholder.batch")}
-                className="h-full max-h-32 w-full"
-              />
-            )}
-          </GlassCard>
-        ) : (
-          /* 空状态 - 画布占位符 */
-          <GlassCard
-            blur="default"
-            theme="surface"
-            className="flex flex-col items-center justify-center text-center"
-            style={{
-              width: canvasDimensions.width,
-              height: canvasDimensions.height,
-            }}
+            className="flex flex-col items-center justify-center text-center px-10 py-12 max-w-md"
           >
             <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center mb-4">
               <Sparkles className="w-10 h-10 text-primary" />
@@ -366,39 +304,8 @@ export default function ImageDashboard() {
               {t("image.emptyState.description") || "在底部输入框描述你的想象"}
             </p>
           </GlassCard>
-        )}
-      </div>
-
-      {/* 画布下方状态指示 */}
-      {isGenerating && StatusStream && (
-        <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-20">
-          <StatusStream
-            steps={stepsVisual}
-            activeIndex={activeStep}
-            label={t("status.flow.stream")}
-            compact={true}
-          />
         </div>
       )}
-
-      {/* 错误提示 */}
-      {error && (
-        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50">
-          <div className="px-4 py-2 rounded-xl bg-red-500/20 text-red-600 dark:text-red-400 text-sm">
-            {error}
-          </div>
-        </div>
-      )}
-
-      {/* 隐藏的文件输入 */}
-      <Input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={handleFileChange}
-      />
     </div>
   );
 }

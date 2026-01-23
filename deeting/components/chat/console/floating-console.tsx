@@ -478,7 +478,7 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
               <PopoverContent
                 side="top"
                 align="end"
-                className="w-[360px] max-w-[92vw] rounded-2xl border border-white/30 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl p-4"
+                className="w-[420px] max-w-[92vw] rounded-2xl border border-white/30 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl p-4"
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -487,18 +487,31 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
                     </span>
                   </div>
 
-                  <div className="text-xs text-muted-foreground/70">
-                    {t("image.console.summary")}: {t("image.aspectRatio")} {ratioLabel} ·{" "}
-                    {t("image.settings.steps")} {steps} · {t("image.settings.guidance")}{" "}
-                    {guidance.toFixed(1)}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/80">
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                      {t("image.console.summary")}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white/60 dark:bg-white/10 px-2.5 py-1 text-xs text-foreground/80 ring-1 ring-white/30">
+                        {t("image.aspectRatio")} {ratioLabel}
+                      </span>
+                      <span className="rounded-full bg-white/60 dark:bg-white/10 px-2.5 py-1 text-xs text-foreground/80 ring-1 ring-white/30">
+                        {t("image.settings.steps")} {steps}
+                      </span>
+                      <span className="rounded-full bg-white/60 dark:bg-white/10 px-2.5 py-1 text-xs text-foreground/80 ring-1 ring-white/30">
+                        {t("image.settings.guidance")} {guidance.toFixed(1)}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                        {t("image.aspectRatio")}
-                      </span>
-                      <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/70 dark:bg-white/5 p-3 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                          {t("image.aspectRatio")}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
                         {(Object.keys(RATIO_CONFIG) as Array<keyof typeof RATIO_CONFIG>).map((r) => {
                           const Icon = RATIO_CONFIG[r].icon;
                           const isActive = ratio === r;
@@ -508,9 +521,9 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
                               type="button"
                               onClick={() => onRatioChange?.(r)}
                               className={cn(
-                                "h-11 flex flex-col items-center justify-center gap-1 rounded-2xl transition-all",
+                                "h-12 flex flex-col items-center justify-center gap-1 rounded-2xl transition-all",
                                 isActive
-                                  ? "bg-primary/10 text-primary ring-1 ring-primary/20"
+                                  ? "bg-primary/12 text-primary ring-1 ring-primary/25 shadow-sm"
                                   : "bg-white/10 text-muted-foreground hover:bg-white/20 hover:text-foreground"
                               )}
                               variant="ghost"
@@ -524,42 +537,44 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                          {t("image.settings.guidance")}
-                        </span>
-                        <span className="text-xs font-mono text-muted-foreground">
-                          {guidance.toFixed(1)}
-                        </span>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/70 dark:bg-white/5 p-3 shadow-sm space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            {t("image.settings.guidance")}
+                          </span>
+                          <span className="rounded-full bg-white/60 dark:bg-white/10 px-2 py-0.5 text-xs font-mono text-foreground/80 ring-1 ring-white/30">
+                            {guidance.toFixed(1)}
+                          </span>
+                        </div>
+                        <Slider
+                          value={[guidance]}
+                          onValueChange={([value]) => onGuidanceChange?.(value)}
+                          min={1}
+                          max={20}
+                          step={0.5}
+                          className="[&_[role=slider]]:bg-primary [&_[role=slider]]:border-primary [&_[data-slot=slider-track]]:bg-white/30"
+                        />
                       </div>
-                      <Slider
-                        value={[guidance]}
-                        onValueChange={([value]) => onGuidanceChange?.(value)}
-                        min={1}
-                        max={20}
-                        step={0.5}
-                        className="[&_[role=slider]]:bg-primary [&_[role=slider]]:border-primary [&_[data-slot=slider-track]]:bg-white/20"
-                      />
-                    </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                          {t("image.settings.steps")}
-                        </span>
-                        <span className="text-xs font-mono text-muted-foreground">
-                          {steps}
-                        </span>
+                      <div className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/70 dark:bg-white/5 p-3 shadow-sm space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            {t("image.settings.steps")}
+                          </span>
+                          <span className="rounded-full bg-white/60 dark:bg-white/10 px-2 py-0.5 text-xs font-mono text-foreground/80 ring-1 ring-white/30">
+                            {steps}
+                          </span>
+                        </div>
+                        <Slider
+                          value={[steps]}
+                          onValueChange={([value]) => onStepsChange?.(value)}
+                          min={10}
+                          max={50}
+                          step={1}
+                          className="[&_[role=slider]]:bg-primary [&_[role=slider]]:border-primary [&_[data-slot=slider-track]]:bg-white/30"
+                        />
                       </div>
-                      <Slider
-                        value={[steps]}
-                        onValueChange={([value]) => onStepsChange?.(value)}
-                        min={10}
-                        max={50}
-                        step={1}
-                        className="[&_[role=slider]]:bg-primary [&_[role=slider]]:border-primary [&_[data-slot=slider-track]]:bg-white/20"
-                      />
                     </div>
                   </div>
                 </div>

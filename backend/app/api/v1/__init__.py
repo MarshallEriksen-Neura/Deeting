@@ -31,6 +31,7 @@ from app.api.v1.dashboard_route import router as dashboard_router
 from app.api.v1.monitoring_route import router as monitoring_router
 from app.api.v1.credits_route import router as credits_router
 from app.api.v1.mcp_route import router as mcp_router
+from app.api.v1.endpoints.mcp import router as user_mcp_router
 from app.api.v1.settings_route import router as settings_router
 
 __all__ = [
@@ -64,5 +65,6 @@ __all__ = [
     "monitoring_router",
     "credits_router",
     "mcp_router",
+    "user_mcp_router",
     "settings_router",
 ]

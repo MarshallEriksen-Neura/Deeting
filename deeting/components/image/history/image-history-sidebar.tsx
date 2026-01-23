@@ -48,29 +48,29 @@ const LazyImage = memo<{
     threshold: 0.01,
   });
 
-  if (error) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-white/30">
-        <ImageIcon className="h-5 w-5" />
-      </div>
-    );
-  }
-
-  if (isLoading || !imageSrc) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-white/5">
-        <div className="w-5 h-5 border-2 border-slate-300 dark:border-white/20 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
-    <img
-      ref={imgRef}
-      src={imageSrc}
-      alt={alt}
-      className={cn("object-cover w-full h-full", className)}
-    />
+    <>
+      <img
+        ref={imgRef}
+        src={imageSrc ?? undefined}
+        alt={alt}
+        className={cn(
+          "object-cover w-full h-full transition-opacity",
+          (isLoading || !imageSrc || error) && "opacity-0",
+          className
+        )}
+      />
+      {error ? (
+        <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-white/30">
+          <ImageIcon className="h-5 w-5" />
+        </div>
+      ) : null}
+      {!error && (isLoading || !imageSrc) ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-white/5">
+          <div className="w-5 h-5 border-2 border-slate-300 dark:border-white/20 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : null}
+    </>
   );
 });
 
@@ -101,16 +101,17 @@ const SessionCard = memo<{
       variant="ghost"
       onClick={() => onSelect(session)}
       className={cn(
-        "w-full rounded-2xl px-3 py-3 flex items-start gap-3 text-left whitespace-normal overflow-hidden",
+        "w-full rounded-2xl px-4 py-3.5 flex items-center justify-start gap-4 text-left whitespace-normal",
         "bg-white/70 dark:bg-white/[0.03] hover:bg-white/90 dark:hover:bg-white/10",
         "border border-slate-200/60 dark:border-white/5"
       )}
     >
-      <div className="relative h-14 w-14 rounded-xl overflow-hidden bg-slate-100 dark:bg-white/5 shrink-0">
+      <div className="relative w-24 aspect-[4/3] rounded-xl overflow-hidden bg-slate-100 dark:bg-white/5 shrink-0 self-start mt-0.5">
         {session.previewUrl ? (
           <LazyImage
             src={session.previewUrl}
             alt={imageAlt}
+            className="object-contain object-center"
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-white/30">

@@ -54,3 +54,17 @@ class AssistantInstallRepository(BaseRepository[AssistantInstall]):
             )
         )
         return int(result.scalar() or 0)
+
+    async def count_by_assistant_exclude_owner(
+        self,
+        assistant_id: UUID,
+        owner_user_id: UUID,
+    ) -> int:
+        """统计其他用户的安装数量（排除所有者），用于判断是否可硬删除"""
+        result = await self.session.execute(
+            select(func.count()).select_from(AssistantInstall).where(
+                AssistantInstall.assistant_id == assistant_id,
+                AssistantInstall.user_id != owner_user_id,
+            )
+        )
+        return int(result.scalar() or 0)

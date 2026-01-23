@@ -110,13 +110,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       <div className="flex flex-col gap-2 w-full items-start">
         <div
           className={cn(
-            "w-full max-w-[92%] rounded-2xl rounded-tl-sm px-1 py-1 text-sm leading-relaxed",
-            "bg-white/90 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-foreground",
-            "shadow-[0_4px_20px_-6px_rgba(15,23,42,0.18)] backdrop-blur-md overflow-hidden"
+            "w-full max-w-[85%] rounded-2xl rounded-tl-none text-[15px] leading-relaxed",
+            "bg-white/95 dark:bg-zinc-900/95 border border-slate-100 dark:border-zinc-800 text-foreground",
+            "shadow-sm backdrop-blur-sm overflow-hidden"
           )}
           data-slot="glass-card"
         >
-          <div className="px-4 py-3">
+          <div className="px-5 py-3.5">
             {isActive && (
               <div className="mb-3">
                 <StatusStream

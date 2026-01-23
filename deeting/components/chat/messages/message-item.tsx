@@ -102,7 +102,7 @@ export const MessageItem = React.memo<MessageItemProps>(
             </div>
           </div>
         ) : (
-          <div className="relative max-w-[88%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm bg-primary text-primary-foreground rounded-tr-sm">
+          <div className="relative max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide shadow-md bg-primary text-primary-foreground">
             {message.attachments?.length ? (
               <div className="mb-3">
                 <MessageAttachments

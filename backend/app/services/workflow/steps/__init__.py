@@ -31,6 +31,8 @@ from app.services.workflow.steps.signature_verify import SignatureVerifyStep
 from app.services.workflow.steps.template_render import TemplateRenderStep
 from app.services.workflow.steps.upstream_call import UpstreamCallStep
 from app.services.workflow.steps.validation import ValidationStep
+from app.services.workflow.steps.mcp_discovery import McpDiscoveryStep
+from app.services.workflow.steps.agent_executor import AgentExecutorStep
 from app.services.workflow.steps.provider_execution import ProviderExecutionStep
 
 __all__ = [
@@ -42,6 +44,8 @@ __all__ = [
     "FailureAction",
     # Steps
     "ValidationStep",
+    "McpDiscoveryStep",
+    "AgentExecutorStep",
     "SignatureVerifyStep",
     "QuotaCheckStep",
     "RateLimitStep",

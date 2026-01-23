@@ -386,7 +386,7 @@ async def delete_custom_assistant(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
 
     install_repo = AssistantInstallRepository(service.assistant_repo.session)
-    install_count = await install_repo.count_by_assistant(assistant_id)
+    install_count = await install_repo.count_by_assistant_exclude_owner(assistant_id, current_user.id)
     if install_count > 0:
         await service.update_assistant(
             assistant_id,

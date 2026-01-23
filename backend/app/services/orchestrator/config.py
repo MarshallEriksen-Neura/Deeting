@@ -42,11 +42,12 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "request_adapter",  # 0) 入口格式适配（OpenAI/Claude/Responses 等）
         "validation",  # 1) 入参校验
         "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
+        "mcp_discovery", # 2.5) MCP 工具发现 (User BYOP)
         "quota_check",  # 3) 配额/额度检查（外部）
         "rate_limit",  # 4) 限流
         "routing",  # 5) 路由决策
         "template_render",  # 6) 模板渲染
-        "upstream_call",  # 7) 上游调用
+        "agent_executor",  # 7) 执行与工具循环 (原 upstream_call)
         "response_transform",  # 8) 响应转换
         "memory_write",  # 9) 记忆写入（外部，异步）
         "sanitize",  # 10) 脱敏（外部）
@@ -57,7 +58,7 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "quota_check": StepConfig(timeout=5.0),
         "rate_limit": StepConfig(timeout=2.0),
         "routing": StepConfig(timeout=10.0, max_retries=1),
-        "upstream_call": StepConfig(timeout=120.0, max_retries=2, retry_delay=1.0),
+        "agent_executor": StepConfig(timeout=120.0, max_retries=2, retry_delay=1.0),
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },
 )
@@ -93,11 +94,12 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "validation",  # 1) 入参校验
         "conversation_load",  # 2) 会话上下文加载
         "resolve_assets",  # 3) 资源引用解析（asset:// -> signed URL）
+        "mcp_discovery", # 3.5) MCP 工具发现 (User BYOP)
         "quota_check",  # 4) 配额/余额检查（与外部一致）
         "rate_limit",  # 5) 限流
         "routing",  # 6) 路由决策
         "template_render",  # 7) 模板渲染
-        "upstream_call",  # 8) 上游调用
+        "agent_executor",  # 8) 执行与工具循环 (原 upstream_call)
         "response_transform",  # 9) 响应转换
         "conversation_append",  # 10) 写入窗口 & 触发摘要
         "memory_write",  # 11) 记忆写入（内部跳过）
@@ -109,7 +111,7 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "quota_check": StepConfig(timeout=5.0),
         "rate_limit": StepConfig(timeout=2.0),
         "routing": StepConfig(timeout=10.0),
-        "upstream_call": StepConfig(timeout=180.0, max_retries=2),  # 内部超时更长
+        "agent_executor": StepConfig(timeout=180.0, max_retries=2),  # 内部超时更长
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },
 )
@@ -141,11 +143,12 @@ INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
     steps=[
         "validation",  # 1) 入参校验
         "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
+        "mcp_discovery", # 2.5) MCP 工具发现 (User BYOP)
         "quota_check",  # 3) 配额/余额检查（与内部一致）
         "rate_limit",  # 4) 限流
         "routing",  # 5) 路由决策
         "template_render",  # 6) 模板渲染
-        "upstream_call",  # 7) 上游调用
+        "agent_executor",  # 7) 执行与工具循环 (原 upstream_call)
         "response_transform",  # 8) 响应转换
         "sanitize",  # 9) 脱敏
         "billing",  # 10) 计费记录
