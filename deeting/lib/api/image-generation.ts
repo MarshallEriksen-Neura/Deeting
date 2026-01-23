@@ -11,6 +11,11 @@ const ImageGenerationTaskCreateResponseSchema = z.object({
   deduped: z.boolean().optional(),
 })
 
+const ImageGenerationCancelResponseSchema = z.object({
+  request_id: z.string(),
+  status: z.string(),
+})
+
 const ImageGenerationOutputItemSchema = z.object({
   output_index: z.number(),
   asset_url: z.string().nullable().optional(),
@@ -89,6 +94,9 @@ export type ImageGenerationTasksQuery = {
 export type ImageGenerationTaskCreateResponse = z.infer<
   typeof ImageGenerationTaskCreateResponseSchema
 >
+export type ImageGenerationCancelResponse = z.infer<
+  typeof ImageGenerationCancelResponseSchema
+>
 export type ImageGenerationOutputItem = z.infer<
   typeof ImageGenerationOutputItemSchema
 >
@@ -130,4 +138,14 @@ export async function fetchImageGenerationTasks(
     params: query,
   })
   return ImageGenerationTaskPageSchema.parse(data)
+}
+
+export async function cancelImageGenerationTask(
+  requestId: string
+): Promise<ImageGenerationCancelResponse> {
+  const data = await request({
+    url: `${INTERNAL_IMAGE_BASE}/${requestId}/cancel`,
+    method: "POST",
+  })
+  return ImageGenerationCancelResponseSchema.parse(data)
 }

@@ -235,3 +235,92 @@ async def test_internal_image_generation_list_tasks(
     assert str(task_id) in session_ids
     assert str(encrypted_task_id) in session_ids
     assert str(other_task_id) not in session_ids
+
+
+@pytest.mark.asyncio
+async def test_internal_image_generation_cancel_task(
+    client: AsyncClient,
+    auth_tokens: dict,
+    AsyncSessionLocal,
+    test_user: dict,
+):
+    task_id = uuid.uuid4()
+    request_id = "req-image-cancel-001"
+    now = Datetime.now()
+
+    async with AsyncSessionLocal() as session:
+        session.add(
+            GenerationTask(
+                id=task_id,
+                user_id=uuid.UUID(test_user["id"]),
+                tenant_id=uuid.UUID(test_user["id"]),
+                api_key_id=uuid.UUID(test_user["id"]),
+                model="gpt-image-1",
+                prompt_raw="draw something",
+                negative_prompt=None,
+                prompt_hash="x" * 64,
+                request_id=request_id,
+                status=ImageGenerationStatus.RUNNING,
+                started_at=now,
+            )
+        )
+        await session.commit()
+
+    resp = await client.post(
+        f"/api/v1/internal/images/generations/{request_id}/cancel",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "canceled"
+    assert data["request_id"] == request_id
+
+    async with AsyncSessionLocal() as session:
+        task = await session.get(GenerationTask, task_id)
+        assert task is not None
+        assert task.status == ImageGenerationStatus.CANCELED
+        assert task.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_internal_image_generation_cancel_terminal_task(
+    client: AsyncClient,
+    auth_tokens: dict,
+    AsyncSessionLocal,
+    test_user: dict,
+):
+    task_id = uuid.uuid4()
+    request_id = "req-image-cancel-terminal-001"
+    now = Datetime.now()
+
+    async with AsyncSessionLocal() as session:
+        session.add(
+            GenerationTask(
+                id=task_id,
+                user_id=uuid.UUID(test_user["id"]),
+                tenant_id=uuid.UUID(test_user["id"]),
+                api_key_id=uuid.UUID(test_user["id"]),
+                model="gpt-image-1",
+                prompt_raw="done",
+                negative_prompt=None,
+                prompt_hash="y" * 64,
+                request_id=request_id,
+                status=ImageGenerationStatus.SUCCEEDED,
+                completed_at=now,
+            )
+        )
+        await session.commit()
+
+    resp = await client.post(
+        f"/api/v1/internal/images/generations/{request_id}/cancel",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "canceled"
+    assert data["request_id"] == request_id
+
+    async with AsyncSessionLocal() as session:
+        task = await session.get(GenerationTask, task_id)
+        assert task is not None
+        assert task.status == ImageGenerationStatus.SUCCEEDED

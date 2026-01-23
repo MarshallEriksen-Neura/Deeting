@@ -36,20 +36,22 @@ import asyncio
 import json
 import logging
 import re
+import time
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter
 
 router = APIRouter(tags=["Internal Gateway"])
 
-from fastapi import Depends, Request, Query
+from fastapi import Depends, HTTPException, Request, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache_keys import CacheKeys
 from app.core.distributed_lock import distributed_lock
 from app.core.database import get_db
-from app.services.orchestrator.context import Channel, WorkflowContext
+from app.services.cancel_service import CancelService
+from app.services.orchestrator.context import Channel, ErrorSource, WorkflowContext
 from app.services.orchestrator.config import INTERNAL_DEBUG_WORKFLOW
 from app.services.orchestrator.orchestrator import GatewayOrchestrator, get_internal_orchestrator
 from app.services.orchestrator.registry import step_registry
@@ -62,6 +64,7 @@ from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract
 from app.schemas.gateway import (
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatCompletionCancelResponse,
     EmbeddingsRequest,
     EmbeddingsResponse,
     ModelGroupListResponse,
@@ -100,6 +103,10 @@ async def _status_stream_chat(
     orchestrator: GatewayOrchestrator,
 ) -> AsyncIterator[bytes]:
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+    request_id = ctx.get("request", "request_id")
+    cancel_service = CancelService()
+    can_check_cancel = bool(request_id and ctx.user_id)
+    last_cancel_check = 0.0
 
     def emitter(payload: dict[str, Any]) -> None:
         try:
@@ -113,6 +120,18 @@ async def _status_stream_chat(
     task = asyncio.create_task(orchestrator.execute(ctx))
 
     while True:
+        if can_check_cancel and time.monotonic() - last_cancel_check > 0.3:
+            last_cancel_check = time.monotonic()
+            if await cancel_service.consume_cancel(
+                capability="chat",
+                user_id=str(ctx.user_id),
+                request_id=str(request_id),
+            ):
+                if not task.done():
+                    task.cancel()
+                ctx.mark_error(ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled")
+                yield _format_sse("[DONE]")
+                return
         if task.done() and queue.empty():
             break
         try:
@@ -537,6 +556,8 @@ async def test_routing(
     ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
+    if request_body.request_id:
+        ctx.set("request", "request_id", request_body.request_id)
 
     orchestrator = GatewayOrchestrator(workflow_config=INTERNAL_DEBUG_WORKFLOW)
     result = await orchestrator.execute(ctx)
@@ -594,6 +615,8 @@ async def chat_completions(
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
+    if request_body.request_id:
+        ctx.set("request", "request_id", request_body.request_id)
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
 
@@ -633,6 +656,26 @@ async def chat_completions(
     response_body = ctx.get("response_transform", "response")
     status_code = ctx.get("upstream_call", "status_code") or 200
     return JSONResponse(content=response_body, status_code=status_code)
+
+
+@router.post(
+    "/chat/completions/{request_id}/cancel",
+    response_model=ChatCompletionCancelResponse,
+)
+async def cancel_chat_completions(
+    request_id: str,
+    user: User = Depends(get_current_user),
+) -> ChatCompletionCancelResponse:
+    req_id = request_id.strip()
+    if not req_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid request_id")
+    cancel_service = CancelService()
+    await cancel_service.mark_cancel(
+        capability="chat",
+        user_id=str(user.id),
+        request_id=req_id,
+    )
+    return ChatCompletionCancelResponse(request_id=req_id)
 
 
 @router.post(

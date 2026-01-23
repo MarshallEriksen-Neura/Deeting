@@ -41,6 +41,11 @@ class ImageGenerationTaskCreateResponse(BaseSchema):
     deduped: bool = Field(False, description="是否命中幂等")
 
 
+class ImageGenerationCancelResponse(BaseSchema):
+    request_id: str = Field(..., description="请求 ID")
+    status: str = Field("canceled", description="取消状态")
+
+
 class ImageGenerationOutputItem(BaseSchema):
     output_index: int
     asset_url: str | None = None
@@ -80,6 +85,7 @@ class ImageGenerationTaskListItem(BaseSchema):
 
 
 __all__ = [
+    "ImageGenerationCancelResponse",
     "ImageGenerationTaskCreateRequest",
     "ImageGenerationTaskCreateResponse",
     "ImageGenerationOutputItem",

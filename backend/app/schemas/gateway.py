@@ -64,6 +64,9 @@ class ChatCompletionRequest(BaseModel):
     )
     temperature: float | None = None
     max_tokens: int | None = None
+    request_id: str | None = Field(
+        default=None, description="客户端请求 ID（用于取消/幂等）"
+    )
     provider_model_id: str | None = Field(
         default=None, description="指定 provider model ID（内部网关必填，外部可选）"
     )
@@ -127,6 +130,11 @@ class ChatCompletionResponse(BaseModel):
     choices: list[ChatChoice] = Field(default_factory=list)
     usage: UsageInfo | None = None
     session_id: str | None = None
+
+
+class ChatCompletionCancelResponse(BaseModel):
+    request_id: str
+    status: str = "canceled"
 
 
 class EmbeddingsRequest(BaseModel):

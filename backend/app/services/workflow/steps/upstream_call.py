@@ -21,6 +21,7 @@ import httpx
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
+from app.services.cancel_service import CancelService
 from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.core.metrics import record_upstream_call
@@ -220,8 +221,22 @@ async def stream_with_billing(
         on_complete: 流完成时的回调函数，用于触发计费
     """
     tool_call_emitted = False
+    request_id = ctx.get("request", "request_id")
+    cancel_service = CancelService()
+    can_check_cancel = bool(request_id and ctx.user_id)
+    last_cancel_check = 0.0
     try:
         async for chunk in stream:
+            if can_check_cancel and time.monotonic() - last_cancel_check > 0.3:
+                last_cancel_check = time.monotonic()
+                if await cancel_service.consume_cancel(
+                    capability="chat",
+                    user_id=str(ctx.user_id),
+                    request_id=str(request_id),
+                ):
+                    ctx.mark_error(ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled")
+                    accumulator.error = "client canceled"
+                    break
             # 解析并累计 token
             accumulator.parse_sse_chunk(chunk)
             if (

@@ -1,6 +1,6 @@
 import { Suspense } from "react"
-import { SelectAgentContainer } from "../components/select-agent-container"
-import { SelectAgentSkeleton } from "../components/select-agent-skeleton"
+import { SelectAgentContainer } from "@/components/common/agent-selection"
+import { SelectAgentSkeleton } from "@/components/common/skeletons"
 
 export default function SelectAgentPage() {
   return (

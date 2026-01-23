@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
-import VoiceInputToolbar from '../../components/voice-toolbar';
-import { VoiceSkeleton } from '../../components/voice-skeleton';
+import { VoiceInputToolbar } from '@/components/common/voice';
+import { VoiceSkeleton } from '@/components/common/skeletons';
 
 export default function VoicePage() {
   return (

@@ -16,11 +16,13 @@ from app.deps.auth import get_current_user
 from app.models import User
 from app.models.image_generation import ImageGenerationStatus
 from app.schemas.image_generation import (
+    ImageGenerationCancelResponse,
     ImageGenerationTaskCreateRequest,
     ImageGenerationTaskCreateResponse,
     ImageGenerationTaskDetail,
     ImageGenerationTaskListItem,
 )
+from app.services.cancel_service import CancelService
 from app.services.image_generation.service import ImageGenerationService
 from app.tasks.image_generation import process_image_generation_task
 from app.utils.time_utils import Datetime
@@ -178,6 +180,31 @@ async def get_image_generation(
         error_message=task.error_message,
         outputs=outputs,
     )
+
+
+@router.post(
+    "/images/generations/{request_id}/cancel",
+    response_model=ImageGenerationCancelResponse,
+)
+async def cancel_image_generation(
+    request_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ImageGenerationCancelResponse:
+    req_id = request_id.strip()
+    if not req_id:
+        raise HTTPException(status_code=400, detail="invalid request_id")
+
+    cancel_service = CancelService()
+    await cancel_service.mark_cancel(
+        capability="image_generation",
+        user_id=str(user.id),
+        request_id=req_id,
+    )
+    service = ImageGenerationService(db)
+    await service.cancel_task_by_request_id(user_id=user.id, request_id=req_id)
+
+    return ImageGenerationCancelResponse(request_id=req_id)
 
 
 @router.get("/images/generations/{task_id}/events")

@@ -18,7 +18,7 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
   
   const { input, attachments, config } = useChatStateStore()
   const { isLoading, errorMessage, setErrorMessage } = useChatSessionStore()
-  const { sendMessage: serviceSendMessage } = useChatMessagingService()
+  const { sendMessage: serviceSendMessage, cancelActiveRequest } = useChatMessagingService()
 
   const handleSendMessage = useCallback(async () => {
     if (isTauriRuntime && agent) {
@@ -71,5 +71,6 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
     hasContent,
     isLoading,
     errorMessage,
+    cancelActiveRequest,
   }
 }

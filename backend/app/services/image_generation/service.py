@@ -25,6 +25,7 @@ from app.repositories.generation_task_repository import GenerationTaskRepository
 from app.repositories.media_asset_repository import MediaAssetRepository
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.schemas.image_generation import ImageGenerationOutputItem, ImageGenerationTaskListItem
+from app.services.cancel_service import CancelService
 from app.services.image_generation.prompt_security import PromptCipher, build_prompt_hash
 from app.services.oss.asset_storage_service import store_asset_bytes
 from app.services.orchestrator.context import Channel, WorkflowContext
@@ -45,6 +46,7 @@ class ImageGenerationService:
         self.asset_repo = MediaAssetRepository(session)
         self.model_repo = ProviderModelRepository(session)
         self.prompt_cipher = PromptCipher()
+        self.cancel_service = CancelService()
 
     async def create_task(self, payload: dict[str, Any]) -> tuple[Any, bool]:
         request_id = payload.get("request_id")
@@ -94,6 +96,8 @@ class ImageGenerationService:
         task = await self.task_repo.get(task_id)
         if not task:
             return
+        if await self._maybe_cancel_task(task):
+            return
         if _status_value(task.status) not in (
             ImageGenerationStatus.QUEUED.value,
             ImageGenerationStatus.RUNNING.value,
@@ -135,6 +139,10 @@ class ImageGenerationService:
         orchestrator = get_internal_orchestrator()
         result = await orchestrator.execute(ctx)
 
+        if await self._is_task_canceled(task.id):
+            logger.info("image_generation_task_canceled_before_finalize task_id=%s", task.id)
+            return
+
         if not result.success or not ctx.is_success:
             await self.task_repo.update_fields(
                 task.id,
@@ -146,6 +154,10 @@ class ImageGenerationService:
                 },
                 commit=True,
             )
+            return
+
+        if await self._is_task_canceled(task.id):
+            logger.info("image_generation_task_canceled_before_persist task_id=%s", task.id)
             return
 
         response = (
@@ -166,6 +178,10 @@ class ImageGenerationService:
                 },
                 commit=True,
             )
+            return
+
+        if await self._is_task_canceled(task.id):
+            logger.info("image_generation_task_canceled_before_commit task_id=%s", task.id)
             return
 
         pricing = ctx.get("routing", "pricing_config") or {}
@@ -202,6 +218,81 @@ class ImageGenerationService:
             task.id,
             len(outputs),
         )
+
+    async def cancel_task(self, task_id) -> Any | None:
+        task = await self.task_repo.get(task_id)
+        if not task:
+            return None
+        status_value = _status_value(task.status)
+        if status_value in (
+            ImageGenerationStatus.SUCCEEDED.value,
+            ImageGenerationStatus.FAILED.value,
+            ImageGenerationStatus.CANCELED.value,
+        ):
+            return task
+        await self.task_repo.update_fields(
+            task.id,
+            {
+                "status": ImageGenerationStatus.CANCELED,
+                "completed_at": Datetime.now(),
+            },
+            commit=True,
+        )
+        return await self.task_repo.get(task.id)
+
+    async def cancel_task_by_request_id(self, *, user_id, request_id: str) -> Any | None:
+        task = await self.task_repo.get_by_request_id(user_id=user_id, request_id=request_id)
+        if not task:
+            return None
+        status_value = _status_value(task.status)
+        if status_value in (
+            ImageGenerationStatus.SUCCEEDED.value,
+            ImageGenerationStatus.FAILED.value,
+            ImageGenerationStatus.CANCELED.value,
+        ):
+            return task
+        await self.task_repo.update_fields(
+            task.id,
+            {
+                "status": ImageGenerationStatus.CANCELED,
+                "completed_at": Datetime.now(),
+            },
+            commit=True,
+        )
+        return await self.task_repo.get(task.id)
+
+    async def _maybe_cancel_task(self, task) -> bool:
+        status_value = _status_value(task.status)
+        if status_value == ImageGenerationStatus.CANCELED.value:
+            return True
+        if status_value in (
+            ImageGenerationStatus.SUCCEEDED.value,
+            ImageGenerationStatus.FAILED.value,
+        ):
+            return False
+        if not task.request_id or not task.user_id:
+            return False
+        if await self.cancel_service.consume_cancel(
+            capability="image_generation",
+            user_id=str(task.user_id),
+            request_id=str(task.request_id),
+        ):
+            await self.task_repo.update_fields(
+                task.id,
+                {
+                    "status": ImageGenerationStatus.CANCELED,
+                    "completed_at": Datetime.now(),
+                },
+                commit=True,
+            )
+            return True
+        return False
+
+    async def _is_task_canceled(self, task_id) -> bool:
+        task = await self.task_repo.get(task_id)
+        if not task:
+            return False
+        return await self._maybe_cancel_task(task)
 
     async def list_outputs(self, task_id) -> list[ImageGenerationOutput]:
         return await self.output_repo.list_by_task(task_id)

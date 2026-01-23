@@ -18,7 +18,7 @@
 - `steps`/`cfg_scale`/`seed`/`sampler_name`/`quality`/`style`，可选
 - `extra_params` object，可选
 - `session_id` string，可选（会话关联）
-- `request_id` string，可选（幂等）
+- `request_id` string，可选（幂等；用于取消）
 - `encrypt_prompt` boolean，是否保存加密提示词（默认 false）
 
 响应示例：
@@ -104,6 +104,17 @@
       "height": 1024
     }
   ]
+}
+```
+
+## POST /internal/images/generations/{request_id}/cancel
+取消任务（最佳努力）。基于 `request_id` 标记取消；任务侧会在运行期间消费取消标记并停止。
+
+响应示例：
+```json
+{
+  "request_id": "req-20260123-abcdef",
+  "status": "canceled"
 }
 ```
 

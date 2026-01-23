@@ -75,6 +75,7 @@ from .media_asset import (
     AssetUploadInitResponse,
 )
 from .image_generation import (
+    ImageGenerationCancelResponse,
     ImageGenerationOutputItem,
     ImageGenerationTaskCreateRequest,
     ImageGenerationTaskCreateResponse,

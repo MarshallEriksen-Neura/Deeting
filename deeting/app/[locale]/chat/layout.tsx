@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
-import { DynamicBackground } from './components/dynamic-background';
-import { WorkspaceShell } from './components/workspace-shell';
+import DynamicBackground from '@/components/chat/visuals/dynamic-background';
+import { WorkspaceShell } from '@/components/common/workspace';
 // import { GlobalAudioPlayer } from './components/global-audio-player';
 
 export default function ChatLayout({

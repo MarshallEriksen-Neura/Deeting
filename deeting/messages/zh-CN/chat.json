@@ -70,7 +70,8 @@
         "errorInvalid": "仅支持图片文件。",
         "errorRead": "读取图片失败，请重试。",
         "errorUpload": "上传图片失败，请检查网络后重试。",
-        "errorSign": "图片签名失败，请刷新或稍后重试。"
+        "errorSign": "图片签名失败，请刷新或稍后重试。",
+        "errorLoad": "图片加载失败"
       }
     },
     "history": {
@@ -167,9 +168,11 @@
     },
     "controls": {
       "image": "图像",
+      "chat": "聊天",
       "code": "代码",
       "placeholder": "输入消息...",
       "menu": "更多功能",
+      "stop": "停止",
       "send": "发送"
     },
     "codeBlock": {

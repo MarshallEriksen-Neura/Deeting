@@ -1,8 +1,9 @@
 "use client"
 
-import { useCallback } from "react"
-import { streamChatCompletion, type ChatMessage } from "@/lib/api/chat"
+import { useCallback, useRef } from "react"
+import { cancelChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat"
 import { buildMessageContent, parseMessageContent } from "@/lib/chat/message-content"
+import { createRequestId } from "@/lib/chat/request-id"
 import { createSessionId } from "@/lib/chat/session-id"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
@@ -96,6 +97,8 @@ const resolveMessageAttachments = async (messages: Message[]) => {
 }
 
 export function useChatMessagingService() {
+  const cancelRef = useRef<(() => void) | null>(null)
+  const requestIdRef = useRef<string | null>(null)
   const {
     input,
     attachments,
@@ -151,6 +154,21 @@ export function useChatMessagingService() {
     clearAttachments()
   }, [setMessages, setSessionId, clearAttachments])
 
+  const cancelActiveRequest = useCallback(async () => {
+    const requestId = requestIdRef.current
+    cancelRef.current?.()
+    cancelRef.current = null
+    requestIdRef.current = null
+    setIsLoading(false)
+    clearStatus()
+    if (!requestId) return
+    try {
+      await cancelChatCompletion(requestId)
+    } catch {
+      // ignore cancel errors
+    }
+  }, [clearStatus, setIsLoading])
+
   const sendMessage = useCallback(async () => {
     const trimmedInput = input.trim()
     if (!trimmedInput && attachments.length === 0) return
@@ -200,9 +218,11 @@ export function useChatMessagingService() {
       messages: requestMessages,
       temperature: config.temperature,
       max_tokens: config.maxTokens,
+      request_id: createRequestId(),
       assistant_id: activeAssistant?.id ?? undefined,
       session_id: resolvedSessionId ?? undefined,
     }
+    requestIdRef.current = payload.request_id ?? null
 
     try {
       await streamChatCompletion(
@@ -247,6 +267,11 @@ export function useChatMessagingService() {
               localStorage.setItem(storageKey, session)
             }
           },
+        },
+        {
+          onCancel: (cancel) => {
+            cancelRef.current = cancel
+          },
         }
       )
     } catch (error) {
@@ -256,6 +281,8 @@ export function useChatMessagingService() {
     } finally {
       setIsLoading(false)
       clearStatus()
+      cancelRef.current = null
+      requestIdRef.current = null
     }
   }, [
     input,
@@ -282,5 +309,6 @@ export function useChatMessagingService() {
     sendMessage,
     loadHistoryBySession,
     resetSession,
+    cancelActiveRequest,
   }
 }

@@ -81,6 +81,7 @@ Content-Type: application/json
   "status_stream": true,
   "temperature": 0.7,
   "max_tokens": 1000,
+  "request_id": "optional-request-id",
   "provider_model_id": "7a0f2c3e-6b7d-4b9c-8a66-93c59f0a3c23",
   "assistant_id": "optional-assistant-id",
   "session_id": "optional-session-id"
@@ -109,6 +110,7 @@ Content-Type: application/json
 | `status_stream` | boolean | 否 | 是否通过 SSE 推送状态事件；为 `true` 时即使 `stream=false` 也会返回 SSE |
 | `temperature` | float | 否 | 温度参数 (0-2) |
 | `max_tokens` | integer | 否 | 最大生成 token 数 |
+| `request_id` | string | 否 | 客户端请求 ID（用于取消/幂等） |
 | `provider_model_id` | string | 是 | 指定 provider model ID（内部网关必填，禁用路由/负载均衡） |
 | `assistant_id` | string | 否 | 助手 ID（用于会话归属） |
 | `session_id` | string | 否 | 会话 ID（用于上下文管理） |
@@ -165,6 +167,22 @@ data: {"type":"status","stage":"remember","step":"routing","state":"success","co
 data: {"id":"chatcmpl-abc123","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"Hello!"}}],"session_id":"session-xyz"}
 
 data: [DONE]
+```
+
+---
+
+#### 取消对话流
+
+**端点**: `POST /chat/completions/{request_id}/cancel`
+
+用于中止正在进行的流式对话。仅对同一用户生效（最佳努力）。
+
+响应示例：
+```json
+{
+  "request_id": "req-20260123-abcdef",
+  "status": "canceled"
+}
 ```
 
 ---

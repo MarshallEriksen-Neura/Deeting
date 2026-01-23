@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/hooks/use-i18n";
 import { useChatService } from "@/hooks/use-chat-service";
-import { createImageGenerationTask } from "@/lib/api/image-generation";
+import { cancelImageGenerationTask, createImageGenerationTask } from "@/lib/api/image-generation";
 import { openApiSSE } from "@/lib/http";
 import { useImageGenerationStore } from "@/store/image-generation-store";
 import { useImageGenerationTasks } from "@/lib/swr/use-image-generation-tasks";
-import { FloatingConsole } from "../../../components/floating-console";
+import { FloatingConsole } from "@/components/chat/console/floating-console";
+import { createRequestId } from "@/lib/chat/request-id";
 import { createSessionId, normalizeSessionId } from "@/lib/chat/session-id";
 
 export default function ImageControlsPage() {
   const t = useI18n("chat");
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { models } = useChatService({
     enabled: true,
@@ -20,14 +23,18 @@ export default function ImageControlsPage() {
   });
 
   const [prompt, setPrompt] = useState("");
+  const [selectedNegatives, setSelectedNegatives] = useState<Set<string>>(new Set());
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+  const activeTaskIdRef = useRef<string | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
 
   const {
     selectedModelId,
-    setSelectedModelId,
     sessionId,
     setSessionId,
+    resetSession,
     ratio,
     setRatio,
     steps,
@@ -48,6 +55,12 @@ export default function ImageControlsPage() {
       setSessionId(querySessionId);
     }
   }, [querySessionId, sessionId, setSessionId]);
+
+  useEffect(() => {
+    return () => {
+      stopRef.current?.();
+    };
+  }, []);
 
   const ensureSessionId = () => {
     if (sessionId) return sessionId;
@@ -73,6 +86,9 @@ export default function ImageControlsPage() {
 
   // 生成历史图库数据
   const recentImages = useMemo(() => {
+    if (!sessionId) {
+      return [];
+    }
     return sessionTasks
       .map((task) => {
         const previewUrl = task.preview?.asset_url ?? task.preview?.source_url ?? null;
@@ -80,7 +96,7 @@ export default function ImageControlsPage() {
         return { url: previewUrl, taskId: task.task_id };
       })
       .filter((item): item is { url: string; taskId: string } => Boolean(item));
-  }, [sessionTasks]);
+  }, [sessionId, sessionTasks]);
 
   const handleGenerate = useCallback(async () => {
     const trimmedPrompt = prompt.trim();
@@ -93,23 +109,41 @@ export default function ImageControlsPage() {
     const activeSessionId = ensureSessionId();
     setIsGenerating(true);
     setError(null);
+    stopRef.current?.();
+    stopRef.current = null;
+    activeTaskIdRef.current = null;
+    activeRequestIdRef.current = null;
 
     try {
+      const negativePrompt = selectedNegatives.size > 0 
+        ? Array.from(selectedNegatives).join(", ") 
+        : undefined;
+
+      const requestId = createRequestId();
+      activeRequestIdRef.current = requestId;
+
       const task = await createImageGenerationTask({
         model: selectedModel?.id ?? selectedModelId,
         prompt: trimmedPrompt,
+        negative_prompt: negativePrompt,
         aspect_ratio: ratio,
         num_outputs: 1,
         steps,
         cfg_scale: guidance,
         provider_model_id: selectedModelId,
         session_id: activeSessionId,
+        request_id: requestId,
       });
 
-      openApiSSE(`/api/v1/internal/images/generations/${task.task_id}/events`, {
+      activeTaskIdRef.current = task.task_id;
+      stopRef.current = openApiSSE(`/api/v1/internal/images/generations/${task.task_id}/events`, {
         onMessage: (msg) => {
           const data = msg.data;
           if (data === "[DONE]") {
+            stopRef.current?.();
+            stopRef.current = null;
+            activeTaskIdRef.current = null;
+            activeRequestIdRef.current = null;
             setIsGenerating(false);
             return;
           }
@@ -121,9 +155,17 @@ export default function ImageControlsPage() {
             if (nextStatus === "failed") {
               setError((payload.error_message as string) || t("error.requestFailed"));
               setIsGenerating(false);
+              stopRef.current?.();
+              stopRef.current = null;
+              activeTaskIdRef.current = null;
+              activeRequestIdRef.current = null;
             }
             if (nextStatus === "succeeded") {
               setIsGenerating(false);
+              stopRef.current?.();
+              stopRef.current = null;
+              activeTaskIdRef.current = null;
+              activeRequestIdRef.current = null;
               // 刷新页面以显示新生成的图片
               window.location.reload();
             }
@@ -131,18 +173,52 @@ export default function ImageControlsPage() {
           if (type === "timeout" || type === "error") {
             setError(t("error.requestFailed"));
             setIsGenerating(false);
+            stopRef.current?.();
+            stopRef.current = null;
+            activeTaskIdRef.current = null;
+            activeRequestIdRef.current = null;
           }
         },
         onError: () => {
           setError(t("error.requestFailed"));
           setIsGenerating(false);
+          stopRef.current?.();
+          stopRef.current = null;
+          activeTaskIdRef.current = null;
+          activeRequestIdRef.current = null;
         },
       });
     } catch {
       setError(t("error.requestFailed"));
       setIsGenerating(false);
+      activeTaskIdRef.current = null;
+      activeRequestIdRef.current = null;
     }
-  }, [prompt, selectedModelId, selectedModel, ratio, steps, guidance, t]);
+  }, [prompt, selectedNegatives, selectedModelId, selectedModel, ratio, steps, guidance, t]);
+
+  const handleNewSession = useCallback(async () => {
+    const requestId = activeRequestIdRef.current;
+    stopRef.current?.();
+    stopRef.current = null;
+    activeTaskIdRef.current = null;
+    activeRequestIdRef.current = null;
+    if (requestId) {
+      try {
+        await cancelImageGenerationTask(requestId);
+      } catch {
+        // ignore cancel errors to keep UX responsive
+      }
+    }
+    resetSession();
+    setPrompt("");
+    setSelectedNegatives(new Set());
+    setError(null);
+    setIsGenerating(false);
+    const params = new URLSearchParams(searchParams?.toString());
+    params.delete("session");
+    const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+    router.replace(url || "/chat/create/image");
+  }, [pathname, resetSession, router, searchParams]);
 
   return (
     <div className="w-full">
@@ -153,18 +229,15 @@ export default function ImageControlsPage() {
         isGenerating={isGenerating}
         disabled={!selectedModelId}
         recentImages={recentImages}
-        selectedModelId={selectedModelId ?? undefined}
-        onModelChange={(modelId) => setSelectedModelId(modelId)}
+        onNewSession={handleNewSession}
         ratio={ratio}
         onRatioChange={setRatio}
         guidance={guidance}
         onGuidanceChange={setGuidance}
         steps={steps}
         onStepsChange={setSteps}
-        models={models.map((model) => ({
-          id: model.provider_model_id ?? model.id,
-          name: model.name,
-        }))}
+        selectedNegatives={selectedNegatives}
+        onSelectedNegativesChange={setSelectedNegatives}
       />
     </div>
   );

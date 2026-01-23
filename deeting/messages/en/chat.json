@@ -70,7 +70,8 @@
         "errorInvalid": "Only image files are supported.",
         "errorRead": "Failed to read image. Please try again.",
         "errorUpload": "Image upload failed. Please check your network and try again.",
-        "errorSign": "Failed to sign image. Please refresh or try again later."
+        "errorSign": "Failed to sign image. Please refresh or try again later.",
+        "errorLoad": "Failed to load image"
       }
     },
     "history": {
@@ -167,9 +168,11 @@
     },
     "controls": {
       "image": "Image",
+      "chat": "Chat",
       "code": "Code",
       "placeholder": "Type a message...",
       "menu": "Actions",
+      "stop": "Stop",
       "send": "Send"
     },
     "codeBlock": {

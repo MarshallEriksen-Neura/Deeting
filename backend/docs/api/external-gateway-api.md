@@ -146,6 +146,7 @@ curl -X POST "https://gateway.example.com/external/v1/chat/completions" \
   "stream": false,
   "temperature": 0.7,
   "max_tokens": 1000,
+  "request_id": "optional-request-id",
   "session_id": "optional-session-id"
 }
 ```
@@ -171,6 +172,7 @@ curl -X POST "https://gateway.example.com/external/v1/chat/completions" \
 说明：`asset://` 为对象存储 Key 的引用，网关会在上游调用前解析为短链签名 URL。
 | `temperature` | float | 否 | 温度参数 (0-2) |
 | `max_tokens` | integer | 否 | 最大生成 token 数 |
+| `request_id` | string | 否 | 客户端请求 ID（用于取消/幂等） |
 | `session_id` | string | 否 | 会话 ID（用于上下文管理） |
 
 #### 响应体（非流式）

@@ -2,13 +2,14 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { streamChatCompletion, type ChatMessage } from "@/lib/api/chat";
+import { cancelChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat";
 import {
   buildMessageContent,
   type ChatImageAttachment,
 } from "@/lib/chat/message-content";
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter";
 import type { Message, MessageRole } from "@/lib/chat/message-types";
+import { createRequestId } from "@/lib/chat/request-id";
 import { createSessionId } from "@/lib/chat/session-id";
 import { fetchConversationHistory } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
@@ -55,6 +56,8 @@ function createMessageId() {
 
   return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
+
+let activeCancel: (() => void) | null = null;
 
 function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessage[] {
   const mapped = history.map((msg) => ({
@@ -131,6 +134,7 @@ interface ChatState {
   statusState: string | null;
   statusCode: string | null;
   statusMeta: Record<string, unknown> | null;
+  activeRequestId: string | null;
 }
 
 interface ChatActions {
@@ -155,6 +159,7 @@ interface ChatActions {
   loadHistoryBySession: (sessionId: string) => Promise<void>;
   loadMoreHistory: () => Promise<void>;
   sendMessage: () => Promise<void>;
+  cancelActiveRequest: () => Promise<void>;
 }
 
 export const useChatStore = create<ChatState & ChatActions>()(
@@ -184,6 +189,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
       statusState: null,
       statusCode: null,
       statusMeta: null,
+      activeRequestId: null,
 
       setInput: (input) => set({ input }),
 
@@ -425,12 +431,16 @@ export const useChatStore = create<ChatState & ChatActions>()(
           }
         }
 
+        const requestId = createRequestId();
+        set({ activeRequestId: requestId });
+
         const payload = {
           model: selectedModel.id,
           provider_model_id: selectedModel.provider_model_id ?? undefined,
           messages: requestMessages,
           temperature: config.temperature,
           max_tokens: config.maxTokens,
+          request_id: requestId,
           assistant_id: activeAssistant?.id ?? undefined,
           session_id: resolvedSessionId ?? undefined,
         };
@@ -478,6 +488,11 @@ export const useChatStore = create<ChatState & ChatActions>()(
                   localStorage.setItem(storageKey, session);
                 }
               },
+            },
+            {
+              onCancel: (cancel) => {
+                activeCancel = cancel;
+              },
             }
           );
         } catch (error) {
@@ -492,7 +507,29 @@ export const useChatStore = create<ChatState & ChatActions>()(
             statusState: null,
             statusCode: null,
             statusMeta: null,
+            activeRequestId: null,
           });
+          activeCancel = null;
+        }
+      },
+      cancelActiveRequest: async () => {
+        const requestId = get().activeRequestId;
+        if (!requestId) return;
+        activeCancel?.();
+        activeCancel = null;
+        set({
+          isLoading: false,
+          statusStage: null,
+          statusStep: null,
+          statusState: null,
+          statusCode: null,
+          statusMeta: null,
+          activeRequestId: null,
+        });
+        try {
+          await cancelChatCompletion(requestId);
+        } catch {
+          // ignore cancel errors
         }
       },
     }),

@@ -156,6 +156,11 @@ class CacheKeys:
     def credits_model_usage(cls, tenant_id: str, days: int) -> str:
         return f"{cls.prefix}:credits:model_usage:{tenant_id}:{days}"
 
+    # ===== Request Cancel =====
+    @classmethod
+    def request_cancel(cls, capability: str, user_id: str, request_id: str) -> str:
+        return f"{cls.prefix}:cancel:{capability}:{user_id}:{request_id}"
+
     # ===== Rate Limit =====
     @classmethod
     def rate_limit_rpm(cls, subject: str, route: str) -> str:

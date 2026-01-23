@@ -13,6 +13,7 @@ export type ChatCompletionRequest = {
   status_stream?: boolean
   temperature?: number
   max_tokens?: number
+  request_id?: string
   provider_model_id?: string
   assistant_id?: string
   session_id?: string
@@ -42,6 +43,9 @@ export async function streamChatCompletion(
   handlers: {
     onDelta?: (delta: string, snapshot: string) => void
     onMessage?: (data: unknown) => void
+  } = {},
+  control: {
+    onCancel?: (cancel: () => void) => void
   } = {}
 ): Promise<string> {
   const body = JSON.stringify({
@@ -92,5 +96,20 @@ export async function streamChatCompletion(
         resolve(fullText)
       },
     })
+
+    const cancel = () => {
+      if (settled) return
+      settled = true
+      close()
+      resolve(fullText)
+    }
+    control.onCancel?.(cancel)
+  })
+}
+
+export async function cancelChatCompletion(requestId: string) {
+  return request<{ request_id: string; status: string }>({
+    url: `${CHAT_COMPLETIONS_PATH}/${requestId}/cancel`,
+    method: "POST",
   })
 }
