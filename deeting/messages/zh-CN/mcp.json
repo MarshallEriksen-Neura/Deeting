@@ -183,7 +183,12 @@
       "stdioNote": "草稿（stdio）服务在 Web 控制台仅支持修改基础信息。",
       "save": "保存修改",
       "saving": "保存中...",
-      "cancel": "取消"
+      "cancel": "取消",
+      "tools": {
+        "title": "工具列表",
+        "description": "可在此禁用或启用该服务下的工具。",
+        "empty": "暂无工具。"
+      }
     },
     "delete": {
       "title": "确认删除该服务？",

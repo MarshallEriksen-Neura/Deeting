@@ -41,25 +41,27 @@ class McpDiscoveryStep(BaseStep):
                 logger.error(f"User MCP discovery failed: {e}")
 
         # 2. Fetch System/Builtin Tools (Native Plugins)
-        # We must filter these strictly to avoid exposing admin tools to standard chat
+        # We filter based on the configuration (plugins.yaml)
         try:
             from app.services.agent_service import agent_service
+            from app.core.plugin_config import plugin_config_loader
+            
             # Ensure initialized
             await agent_service.initialize()
             
             system_tools = agent_service.tools
             
-            # Whitelist for Chat/Agent capability
-            # TODO: Move this configuration to DB or Config
-            ALLOWED_SYSTEM_TOOLS = {
-                "generate_image",
-                "search_knowledge",
-                "add_knowledge_chunk",
-                # "tavily_search" # If provided as system plugin
-            }
+            # Build whitelist from config
+            # Only include tools from plugins that are 'enabled_by_default'
+            # In the future, this can be expanded to check user-specific installation/permissions
+            enabled_plugins = plugin_config_loader.get_enabled_plugins()
+            
+            allowed_tool_names = set()
+            for p in enabled_plugins:
+                allowed_tool_names.update(p.tools)
             
             for tool in system_tools:
-                if tool.name in ALLOWED_SYSTEM_TOOLS:
+                if tool.name in allowed_tool_names:
                     final_tools.append(tool)
                     
         except Exception as e:

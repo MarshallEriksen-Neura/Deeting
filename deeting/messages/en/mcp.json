@@ -183,7 +183,12 @@
       "stdioNote": "Draft (stdio) servers can only edit basic info in the web console.",
       "save": "Save Changes",
       "saving": "Saving...",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "tools": {
+        "title": "Tools",
+        "description": "Toggle tool availability for this server.",
+        "empty": "No tools available."
+      }
     },
     "delete": {
       "title": "Delete this server?",

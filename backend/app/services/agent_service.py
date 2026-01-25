@@ -4,13 +4,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 from app.agent_plugins.core.manager import PluginManager
-from app.agent_plugins.builtins.database.plugin import DatabasePlugin
-from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
-from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
-from app.agent_plugins.builtins.scheduler.plugin import TaskSchedulerPlugin
-from app.agent_plugins.builtins.planner.plugin import PlannerPlugin
-from app.agent_plugins.builtins.vector_store.plugin import VectorStorePlugin # Added VectorStore
-from app.agent_plugins.builtins.image_generation.plugin import ImageGenerationPlugin # Added ImageGeneration
+from app.core.plugin_config import plugin_config_loader
 from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -24,16 +18,21 @@ class AgentService:
     def __init__(self):
         self.plugin_manager = PluginManager()
         
-        # 1. Register ALL available capabilities here
-        self.plugin_manager.register_class(DatabasePlugin)
-        self.plugin_manager.register_class(ProviderRegistryPlugin)
-        self.plugin_manager.register_class(CrawlerPlugin)
-        self.plugin_manager.register_class(TaskSchedulerPlugin)
-        self.plugin_manager.register_class(PlannerPlugin)
-        self.plugin_manager.register_class(VectorStorePlugin) # Register Qdrant Capabilities
-        self.plugin_manager.register_class(ImageGenerationPlugin) # Register Image Capabilities
+        # 1. Register ALL available capabilities from Configuration
+        # This replaces the hardcoded register_class calls.
+        all_plugins = plugin_config_loader.get_all_plugins()
+        for p_config in all_plugins:
+            plugin_class = plugin_config_loader.get_plugin_class(p_config)
+            if plugin_class:
+                try:
+                    self.plugin_manager.register_class(plugin_class)
+                    logger.debug(f"Registered plugin: {p_config.name} ({p_config.id})")
+                except Exception as e:
+                    logger.error(f"Failed to register plugin {p_config.id}: {e}")
         
         self.tools: List[ToolDefinition] = []
+        self.tool_map: Dict[str, Any] = {}
+        self._initialized = False
         self.tool_map: Dict[str, Any] = {}
         self._initialized = False
 

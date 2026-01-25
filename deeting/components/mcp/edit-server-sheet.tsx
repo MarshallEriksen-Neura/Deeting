@@ -17,17 +17,29 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useNotifications } from "@/components/contexts/notification-context"
-import { type McpServer, type McpServerUpdateRequest } from "@/lib/api/mcp"
+import { type McpServer, type McpServerTool, type McpServerUpdateRequest } from "@/lib/api/mcp"
 
 interface EditServerSheetProps {
   server: McpServer | null
+  tools?: McpServerTool[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (serverId: string, payload: McpServerUpdateRequest) => void
+  onToggleTool?: (toolName: string, enabled: boolean) => void
   loading?: boolean
+  toggleLoading?: boolean
 }
 
-export function EditServerSheet({ server, open, onOpenChange, onSave, loading }: EditServerSheetProps) {
+export function EditServerSheet({
+  server,
+  tools = [],
+  open,
+  onOpenChange,
+  onSave,
+  onToggleTool,
+  loading,
+  toggleLoading,
+}: EditServerSheetProps) {
   const t = useTranslations("mcp")
   const { addNotification } = useNotifications()
   const [name, setName] = useState("")
@@ -96,7 +108,8 @@ export function EditServerSheet({ server, open, onOpenChange, onSave, loading }:
           <SheetDescription>{t("server.edit.description")}</SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6 space-y-4 px-6">
+        <div className="flex-1 overflow-y-auto px-6">
+          <div className="mt-6 space-y-4 pb-6">
           <div className="space-y-2">
             <Label>{t("server.edit.fields.name")}</Label>
             <Input value={name} onChange={(event) => setName(event.target.value)} />
@@ -166,9 +179,43 @@ export function EditServerSheet({ server, open, onOpenChange, onSave, loading }:
               {t("server.edit.stdioNote")}
             </div>
           )}
+
+          <div className="mt-6 border-t border-gray-100 pt-4">
+            <div className="mb-3 space-y-1">
+              <h3 className="text-sm font-semibold text-gray-900">{t("server.edit.tools.title")}</h3>
+              <p className="text-xs text-gray-500">{t("server.edit.tools.description")}</p>
+            </div>
+            <div className="space-y-2">
+              {tools.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  {t("server.edit.tools.empty")}
+                </div>
+              ) : (
+                tools.map((tool) => (
+                  <div
+                    key={tool.name}
+                    className="flex items-start justify-between gap-4 rounded-lg border border-gray-200 px-3 py-2"
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                      {tool.description && (
+                        <p className="text-xs text-gray-500">{tool.description}</p>
+                      )}
+                    </div>
+                    <Switch
+                      checked={tool.enabled}
+                      disabled={!onToggleTool || toggleLoading}
+                      onCheckedChange={(checked) => onToggleTool?.(tool.name, checked)}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          </div>
         </div>
 
-        <SheetFooter className="mt-6 gap-2 px-6 pb-6">
+        <SheetFooter className="gap-2 px-6 pb-6">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("server.edit.cancel")}
           </Button>

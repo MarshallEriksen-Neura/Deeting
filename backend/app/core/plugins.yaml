@@ -1,0 +1,81 @@
+# DeetingOS System Plugins Registry
+# 此文件定义了所有内置插件的元数据、加载路径和默认权限策略。
+# 这是迈向 V2 插件生态的第一步：配置驱动，而非代码硬编码。
+
+plugins:
+  # === 核心能力 (默认开启) ===
+  
+  - id: "system.image_generation"
+    name: "AI 画家"
+    module: "app.agent_plugins.builtins.image_generation.plugin"
+    class_name: "ImageGenerationPlugin"
+    enabled_by_default: true
+    description: "提供文生图能力，自动路由至最优模型。"
+    tools:
+      - "generate_image"
+
+  - id: "system.knowledge"
+    name: "知识库助手"
+    module: "app.agent_plugins.builtins.vector_store.plugin"
+    class_name: "VectorStorePlugin"
+    enabled_by_default: true
+    description: "提供本地知识库检索和记忆写入能力。"
+    tools:
+      - "search_knowledge"
+      - "add_knowledge_chunk"
+
+  - id: "system.tavily"
+    name: "联网搜索"
+    # 注意：Tavily 目前可能是通过 ProviderRegistry 或独立的 Crawler 插件提供的？
+    # 暂时指向 CrawlerPlugin 或 ProviderRegistryPlugin，视具体实现而定。
+    # 根据现有代码，Tavily 似乎是 MCP 工具，或者作为 Provider 存在。
+    # 这里我们先配置 CrawlerPlugin 作为系统级搜索/爬虫能力。
+    module: "app.agent_plugins.builtins.crawler.plugin"
+    class_name: "CrawlerPlugin"
+    enabled_by_default: true
+    tools:
+      - "crawl_url"
+      - "search_web" # 假设 CrawlerPlugin 有这个，或者后续补充
+
+  # === 高级/管理能力 (默认关闭 / 受限) ===
+
+  - id: "admin.database"
+    name: "数据库管理员"
+    module: "app.agent_plugins.builtins.database.plugin"
+    class_name: "DatabasePlugin"
+    enabled_by_default: false
+    restricted: true
+    allowed_roles: ["admin", "developer"]
+    description: "直接执行 SQL 语句，高风险操作。"
+    tools:
+      - "database_query"
+      - "list_tables"
+
+  - id: "system.scheduler"
+    name: "任务调度器"
+    module: "app.agent_plugins.builtins.scheduler.plugin"
+    class_name: "TaskSchedulerPlugin"
+    enabled_by_default: false
+    description: "管理定时任务。"
+    tools:
+      - "schedule_task"
+
+  - id: "system.provider_registry"
+    name: "模型注册中心"
+    module: "app.agent_plugins.builtins.provider_registry.plugin"
+    class_name: "ProviderRegistryPlugin"
+    enabled_by_default: false
+    restricted: true
+    description: "管理 LLM 提供商配置。"
+    tools:
+      - "register_provider"
+      - "list_providers"
+
+  - id: "system.planner"
+    name: "任务规划师"
+    module: "app.agent_plugins.builtins.planner.plugin"
+    class_name: "PlannerPlugin"
+    enabled_by_default: true # 规划能力通常是安全的且有用的
+    description: "分解复杂任务。"
+    tools:
+      - "create_plan"

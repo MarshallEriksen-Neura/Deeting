@@ -178,6 +178,13 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     return map
   }, [mcpServers.data])
 
+  const editServerTools = useMemo(() => {
+    if (!editServer) return []
+    return (mcpTools.data ?? [])
+      .filter((tool) => tool.server_id === editServer.id)
+      .map(({ server_id: _serverId, ...tool }) => tool)
+  }, [editServer, mcpTools.data])
+
 
   const mapServerTool = useCallback((tool: McpServerToolRecord): MCPTool => {
     const server = serverById.get(tool.server_id)
@@ -907,6 +914,26 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     }
   }, [addNotification, isTauri, refreshAll, t, updateServer])
 
+  const handleToggleServerTool = useCallback(async (toolName: string, enabled: boolean) => {
+    if (isTauri || !editServer) return
+    try {
+      await toolToggleMutation.trigger({
+        serverId: editServer.id,
+        toolName,
+        enabled,
+      })
+      await refreshTools()
+    } catch (err) {
+      addNotification({
+        type: "error",
+        title: t("toast.updateFailed"),
+        description: String(err),
+        timestamp: Date.now(),
+      })
+      refreshTools()
+    }
+  }, [addNotification, editServer, isTauri, refreshTools, t, toolToggleMutation])
+
   const handleToggleServerEnabled = useCallback(async (tool: MCPTool, enabled: boolean) => {
     if (isTauri) return
     const serverId = tool.sourceId || tool.id
@@ -1048,6 +1075,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
       <EditServerSheet
         server={editServer}
+        tools={editServerTools}
         open={editServerOpen}
         onOpenChange={(nextOpen) => {
           setEditServerOpen(nextOpen)
@@ -1056,7 +1084,9 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
           }
         }}
         onSave={handleUpdateServer}
+        onToggleTool={editServer?.server_type === "sse" ? handleToggleServerTool : undefined}
         loading={updateServer.isMutating}
+        toggleLoading={toolToggleMutation.isMutating}
       />
     </div>
   )
