@@ -1,10 +1,10 @@
-import json
 import logging
-import uuid
 import asyncio
 from typing import Any, Dict, List, Optional
-import httpx
-from app.schemas.tool import ToolDefinition, ToolCall
+
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -14,82 +14,69 @@ class MCPClientError(Exception):
 
 class MCPClient:
     """
-    A lightweight, stateless MCP (Model Context Protocol) client.
-    Used by the Gateway to discover and invoke tools from remote MCP servers.
-    
-    This implementation follows the JSON-RPC 2.0 over SSE/HTTP pattern
-    without requiring the full MCP SDK.
+    A lightweight MCP client wrapper using the official mcp Python SDK.
     """
 
-    def __init__(self, timeout: float = 30.0):
+    def __init__(
+        self,
+        timeout: float = 60.0,
+        max_retries: int = 3,
+        retry_backoff_base: float = 1.0,
+        retry_backoff_max: float = 8.0,
+    ):
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_backoff_base = retry_backoff_base
+        self.retry_backoff_max = retry_backoff_max
 
     async def fetch_tools(self, sse_url: str, headers: Optional[Dict[str, str]] = None) -> List[ToolDefinition]:
         """
-        Discovers tools from a remote MCP server.
-        
-        Note: MCP over SSE is technically stateful. This method performs a 
-        quick handshake to list tools and then closes the connection.
+        Discovers tools from a remote MCP server using official SDK.
         """
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                return await self._fetch_tools_once(sse_url, headers=headers)
+            except Exception as e:
+                last_error = e
+                if attempt >= self.max_retries - 1:
+                    break
+                delay = min(self.retry_backoff_max, self.retry_backoff_base * (2 ** attempt))
+                logger.warning(
+                    "MCP fetch_tools retry %s/%s after error: %s",
+                    attempt + 1,
+                    self.max_retries,
+                    e,
+                )
+                await asyncio.sleep(delay)
+        
+        if last_error:
+            logger.exception("MCP fetch_tools final failure")
+            raise MCPClientError(f"Failed to fetch tools: {last_error}") from last_error
+        raise MCPClientError("Failed to fetch tools: unknown error")
+
+    async def _fetch_tools_once(self, sse_url: str, headers: Optional[Dict[str, str]] = None) -> List[ToolDefinition]:
         try:
-            # 1. Establish SSE connection to get the message endpoint
-            async with httpx.AsyncClient(headers=headers, timeout=self.timeout) as client:
-                async with client.stream("GET", sse_url) as response:
-                    if response.status_code != 200:
-                        raise MCPClientError(f"Failed to connect to MCP SSE: {response.status_code}")
-
-                    # 2. Listen for the 'endpoint' event
-                    post_endpoint = None
-                    async for line in response.aiter_lines():
-                        if line.startswith("event: endpoint"):
-                            continue
-                        if line.startswith("data: "):
-                            post_endpoint = line[6:].strip()
-                            # Resolve relative URL if necessary
-                            if post_endpoint and not post_endpoint.startswith(("http://", "https://")):
-                                from urllib.parse import urljoin
-                                post_endpoint = urljoin(sse_url, post_endpoint)
-                            break
+            # Note: sse_client context manager yields (read_stream, write_stream)
+            # We assume sse_client handles headers if supported, otherwise we might need to modify it or accept defaults.
+            # Currently mcp 1.25.0 sse_client accepts headers.
+            async with sse_client(sse_url, headers=headers, timeout=self.timeout) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
                     
-                    if not post_endpoint:
-                        raise MCPClientError("MCP Server did not provide a message endpoint.")
-
-                    # 3. Call 'tools/list' via the POST endpoint
-                    # We need to stay in the same session context if the server requires it
-                    payload = {
-                        "jsonrpc": "2.0",
-                        "id": str(uuid.uuid4()),
-                        "method": "tools/list",
-                        "params": {}
-                    }
+                    # List tools
+                    result = await session.list_tools()
                     
-                    # Since we are in the stream, we might need a concurrent POST
-                    # But usually, MCP servers allow a separate POST to the endpoint.
-                    list_resp = await client.post(post_endpoint, json=payload)
-                    list_resp.raise_for_status()
-                    
-                    # 4. Wait for the response in the SSE stream
-                    # In standard MCP, the response to a POST message comes back through the SSE stream.
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data = json.loads(line[6:])
-                            if data.get("id") == payload["id"]:
-                                # Found our response!
-                                tools_raw = data.get("result", {}).get("tools", [])
-                                return [
-                                    ToolDefinition(
-                                        name=t["name"],
-                                        description=t.get("description"),
-                                        input_schema=t["inputSchema"]
-                                    )
-                                    for t in tools_raw
-                                ]
-                    
-            raise MCPClientError("Timeout or connection closed before receiving tools/list response.")
-
+                    return [
+                        ToolDefinition(
+                            name=t.name,
+                            description=t.description,
+                            input_schema=t.inputSchema
+                        )
+                        for t in result.tools
+                    ]
         except Exception as e:
-            logger.error(f"MCP fetch_tools failed: {e}")
-            raise MCPClientError(f"Failed to fetch tools: {str(e)}")
+            raise MCPClientError(f"SDK Error: {e}") from e
 
     async def call_tool(
         self, 
@@ -98,50 +85,17 @@ class MCPClient:
         arguments: Dict[str, Any], 
         headers: Optional[Dict[str, str]] = None
     ) -> Any:
-        """
-        Invokes a tool on a remote MCP server.
-        """
         try:
-            async with httpx.AsyncClient(headers=headers, timeout=self.timeout) as client:
-                async with client.stream("GET", sse_url) as response:
-                    # Same handshake as fetch_tools
-                    post_endpoint = None
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            post_endpoint = line[6:].strip()
-                            if post_endpoint and not post_endpoint.startswith(("http://", "https://")):
-                                from urllib.parse import urljoin
-                                post_endpoint = urljoin(sse_url, post_endpoint)
-                            break
+            async with sse_client(sse_url, headers=headers, timeout=self.timeout) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
                     
-                    if not post_endpoint:
-                        raise MCPClientError("MCP Server did not provide a message endpoint.")
-
-                    payload = {
-                        "jsonrpc": "2.0",
-                        "id": str(uuid.uuid4()),
-                        "method": "tools/call",
-                        "params": {
-                            "name": tool_name,
-                            "arguments": arguments
-                        }
-                    }
-
-                    await client.post(post_endpoint, json=payload)
-
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data = json.loads(line[6:])
-                            if data.get("id") == payload["id"]:
-                                # Standard MCP result structure: { content: [...] }
-                                result = data.get("result", {})
-                                return result
-            
-            raise MCPClientError("Timeout or connection closed before receiving tool/call response.")
-
+                    result = await session.call_tool(tool_name, arguments)
+                    return result.content
+                    
         except Exception as e:
-            logger.error(f"MCP call_tool failed: {e}")
-            raise MCPClientError(f"Failed to call tool {tool_name}: {str(e)}")
+            logger.exception("MCP call_tool failed")
+            raise MCPClientError(f"Failed to call tool {tool_name}: {e}") from e
 
 # Singleton
 mcp_client = MCPClient()

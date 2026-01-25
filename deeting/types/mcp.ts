@@ -2,7 +2,7 @@ export type MCPSourceType = "local" | "cloud" | "modelscope" | "github" | "url"
 
 export type MCPSourceTrustLevel = "official" | "community" | "private"
 
-export type MCPSourceStatus = "active" | "inactive" | "syncing" | "error"
+export type MCPSourceStatus = "active" | "inactive" | "syncing" | "error" | "draft"
 
 export interface McpSourceRecord {
   id: string
@@ -26,6 +26,7 @@ export interface MCPSource {
   status: MCPSourceStatus
   isReadOnly: boolean
   trustLevel: MCPSourceTrustLevel
+  serverType?: "sse" | "stdio"
   createdAt?: string
   updatedAt?: string
 }

@@ -32,6 +32,19 @@ class UserMcpServer(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=False,
         comment="Owner of this MCP configuration",
     )
+
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("user_mcp_source.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="Optional source subscription ID",
+    )
+
+    source_key: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Server key within the source payload",
+    )
     
     name: Mapped[str] = mapped_column(
         String(120),
@@ -45,10 +58,18 @@ class UserMcpServer(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="Optional description",
     )
     
-    sse_url: Mapped[str] = mapped_column(
+    sse_url: Mapped[str | None] = mapped_column(
         String(512),
-        nullable=False,
+        nullable=True,
         comment="Full URL to the MCP SSE endpoint",
+    )
+
+    server_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="sse",
+        server_default="sse",
+        comment="Server type: sse (remote) or stdio (draft)",
     )
     
     # Using secret_ref_id to integrate with the project's SecretManager
@@ -64,6 +85,20 @@ class UserMcpServer(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         default="bearer",
         server_default="bearer",
         comment="Authentication type: bearer, api_key, or none",
+    )
+
+    disabled_tools: Mapped[list[str]] = mapped_column(
+        JSONBCompat,
+        nullable=False,
+        default=list,
+        server_default="[]",
+        comment="Tool names disabled by user",
+    )
+
+    draft_config: Mapped[dict | None] = mapped_column(
+        JSONBCompat,
+        nullable=True,
+        comment="Sanitized draft config for stdio imports",
     )
     
     # Cache for tools to avoid constant fetching during chat initialization

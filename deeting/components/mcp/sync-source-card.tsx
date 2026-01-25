@@ -32,6 +32,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
   const isModelScope = source.type === "modelscope"
   const isCloud = source.type === "cloud"
   const isLocal = source.type === "local"
+  const isDraft = source.status === "draft" || source.serverType === "stdio"
 
   return (
     <GlassCard
@@ -83,19 +84,24 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
 
           <div className="flex items-center justify-between border-t border-[var(--border)]/30 pt-2">
           <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
-            {isModelScope || isCloud || source.type === "github" || source.type === "url" ? (
-              <>
-                <Globe size={12} />
-                <span className={cn(source.status === "syncing" && "animate-pulse")}>
-                  {source.status === "syncing" ? t("source.status.syncing") : source.lastSynced || t("source.status.autoSync")}
-                </span>
-              </>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />{" "}
-                {t("source.status.activeLocal")}
+          {isDraft ? (
+            <span className="flex items-center gap-1.5 text-[var(--muted)]">
+              <AlertTriangle size={12} />
+              {t("source.status.draft")}
+            </span>
+          ) : isModelScope || isCloud || source.type === "github" || source.type === "url" ? (
+            <>
+              <Globe size={12} />
+              <span className={cn(source.status === "syncing" && "animate-pulse")}>
+                {source.status === "syncing" ? t("source.status.syncing") : source.lastSynced || t("source.status.autoSync")}
               </span>
-            )}
+            </>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />{" "}
+              {t("source.status.activeLocal")}
+            </span>
+          )}
           </div>
 
           {source.type !== "local" && (
@@ -104,7 +110,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
               variant="ghost"
               className="text-[var(--muted)] hover:text-[var(--foreground)]"
               onClick={() => onSync?.()}
-              disabled={source.status === "syncing"}
+              disabled={source.status === "syncing" || isDraft}
             >
               <RefreshCw
                 size={14}

@@ -1,11 +1,13 @@
 "use client"
 
-import type { MouseEvent } from "react"
-import { Terminal, Lock, Settings, AlertCircle } from "lucide-react"
+import { useState, type MouseEvent } from "react"
+import { Terminal, AlertCircle, RefreshCw, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Switch } from "@/components/ui/switch"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
+import { GlassDropdownMenu, GlassDropdownMenuContent, GlassDropdownMenuItem, GlassDropdownMenuTrigger } from "@/components/ui/glass-dropdown"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { MCPTool, MCPToolStatus } from "@/types/mcp"
@@ -16,7 +18,10 @@ interface ServerCardProps {
   onToggle?: (tool: MCPTool, enabled: boolean) => void
   onClick?: () => void
   onResolveConflict?: () => void
-  onConfigure?: () => void
+  onSync?: () => void
+  syncLoading?: boolean
+  onEdit?: () => void
+  onDelete?: () => void
 }
 
 const StatusIndicator = ({ status }: { status: MCPToolStatus }) => {
@@ -39,20 +44,35 @@ const StatusIndicator = ({ status }: { status: MCPToolStatus }) => {
     }
 }
 
-export function ServerCard({ tool, onToggle, onClick, onResolveConflict, onConfigure }: ServerCardProps) {
+export function ServerCard({
+  tool,
+  onToggle,
+  onClick,
+  onResolveConflict,
+  onSync,
+  syncLoading = false,
+  onEdit,
+  onDelete,
+}: ServerCardProps) {
   const t = useTranslations("mcp")
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const isSynced = tool.source !== 'local'
   const isRunning = tool.status === 'healthy' || tool.status === 'degraded'
   const showConflict = tool.conflictStatus === "conflict"
   const showUpdate = tool.conflictStatus === "update_available"
   const showPending = tool.status === "pending"
   const showNew = tool.isNew
+  const showMenu = Boolean(onEdit || onDelete)
 
   return (
     <GlassCard
       onClick={(e: MouseEvent<HTMLDivElement>) => {
           // Prevent triggering card click when clicking interactive elements
-          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('[role="switch"]')) return;
+          if (
+            (e.target as HTMLElement).closest('button') ||
+            (e.target as HTMLElement).closest('[role="switch"]') ||
+            (e.target as HTMLElement).closest('[data-mcp-action]')
+          ) return;
           onClick?.()
       }}
       blur="lg"
@@ -131,24 +151,100 @@ export function ServerCard({ tool, onToggle, onClick, onResolveConflict, onConfi
              </div>
 
              {/* Actions */}
-             <div className="flex items-center gap-3">
+             <div className="flex items-center gap-3" data-mcp-action>
                 <Switch
                   checked={isRunning || tool.status === 'starting'}
                   onCheckedChange={(checked) => onToggle?.(tool, checked)}
                   disabled={tool.status === 'updating'}
                   className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500"
                 />
-                <GlassButton
-                  size="icon-sm"
-                  variant="ghost"
-                  className="text-gray-400 hover:text-gray-900"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onConfigure?.();
-                  }}
-                >
-                   {tool.isReadOnly ? <Lock size={14} /> : <Settings size={14} />}
-                </GlassButton>
+                {isSynced && onSync && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <GlassButton
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-gray-400 hover:text-gray-900"
+                          loading={syncLoading}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSync?.();
+                          }}
+                        >
+                          <RefreshCw size={14} className={syncLoading ? "animate-spin" : ""} />
+                        </GlassButton>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t("runtime.sync")}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                {showMenu && (
+                  <GlassDropdownMenu>
+                    <GlassDropdownMenuTrigger asChild>
+                      <GlassButton
+                        size="icon-sm"
+                        variant="ghost"
+                        className="text-gray-400 hover:text-gray-900"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <MoreHorizontal size={14} />
+                      </GlassButton>
+                    </GlassDropdownMenuTrigger>
+                    <GlassDropdownMenuContent align="end" className="w-[180px]">
+                      {onEdit && (
+                        <GlassDropdownMenuItem
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onEdit?.()
+                          }}
+                        >
+                          <Pencil size={14} />
+                          {t("server.actions.edit")}
+                        </GlassDropdownMenuItem>
+                      )}
+                      {onDelete && (
+                        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                          <AlertDialogTrigger asChild>
+                            <GlassDropdownMenuItem
+                              variant="destructive"
+                              onSelect={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                setConfirmOpen(true)
+                              }}
+                            >
+                              <Trash2 size={14} />
+                              {t("server.actions.delete")}
+                            </GlassDropdownMenuItem>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>{t("server.delete.title")}</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {t("server.delete.description", { name: tool.name })}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>{t("server.delete.cancel")}</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-red-600 hover:bg-red-500 text-white"
+                                onClick={() => {
+                                  onDelete?.()
+                                  setConfirmOpen(false)
+                                }}
+                              >
+                                {t("server.delete.confirm")}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </GlassDropdownMenuContent>
+                  </GlassDropdownMenu>
+                )}
              </div>
           </div>
 

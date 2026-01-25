@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -306,4 +307,96 @@ class ImageGenerationOutput(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         default=dict,
         server_default="{}",
         comment="扩展元信息",
+    )
+
+
+class ImageGenerationShare(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "image_generation_share"
+    __table_args__ = (
+        Index("uq_image_share_task_id", "task_id", unique=True),
+        Index("ix_image_share_user_id", "user_id"),
+        Index("ix_image_share_is_active", "is_active"),
+        Index("idx_image_share_shared_at", "shared_at"),
+    )
+
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("generation_task.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="任务 ID",
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        nullable=False,
+        comment="分享用户 ID",
+    )
+    model: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        comment="模型标识",
+    )
+    prompt: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="提示词（公开展示）",
+    )
+    prompt_encrypted: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="提示词是否加密（公开时隐藏）",
+    )
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="输出宽度")
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="输出高度")
+    num_outputs: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+        comment="输出数量",
+    )
+    steps: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="推理步数")
+    cfg_scale: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="CFG 指数"
+    )
+    seed: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="随机种子")
+    shared_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        comment="分享时间",
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="取消分享时间",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+        comment="是否公开展示",
+    )
+
+
+class ImageGenerationShareTagLink(Base):
+    __tablename__ = "image_generation_share_tag_link"
+    __table_args__ = (
+        UniqueConstraint("share_id", "tag_id", name="uq_image_share_tag_link"),
+        Index("ix_image_share_tag_link_share", "share_id"),
+        Index("ix_image_share_tag_link_tag", "tag_id"),
+    )
+
+    share_id: Mapped[uuid.UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("image_generation_share.id", ondelete="CASCADE"),
+        primary_key=True,
+        comment="分享 ID",
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("assistant_tag.id", ondelete="CASCADE"),
+        primary_key=True,
+        comment="标签 ID",
     )

@@ -136,6 +136,24 @@
         "canceled": "Canceled"
       }
     },
+    "imageShare": {
+      "action": "Share image",
+      "title": "Share image",
+      "description": "Sharing makes the image, prompt, and generation settings visible on the public gallery.",
+      "tagsLabel": "Tags",
+      "tagsEmpty": "No tags yet",
+      "tagsPlaceholder": "Type a tag and press Enter",
+      "tagsHint": "Add # if you like; press Enter to add",
+      "confirm": "I understand and agree to share the prompt and settings publicly",
+      "submit": "Share",
+      "unshare": "Unshare",
+      "toast": {
+        "shared": "Shared to public gallery",
+        "shareFailed": "Share failed. Please try again.",
+        "unshared": "Unshared",
+        "unshareFailed": "Unshare failed. Please try again."
+      }
+    },
     "footer": {
       "disclaimer": "AI generated content may be inaccurate."
     },

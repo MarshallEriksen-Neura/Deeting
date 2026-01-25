@@ -84,6 +84,54 @@ class ImageGenerationTaskListItem(BaseSchema):
     preview: ImageGenerationOutputItem | None = None
 
 
+class ImageGenerationShareRequest(BaseSchema):
+    tags: list[str] | None = Field(default=None, description="标签列表（用于公开分享检索）")
+
+
+class ImageGenerationShareState(BaseSchema):
+    share_id: UUID
+    task_id: UUID
+    is_active: bool
+    shared_at: datetime | None = None
+    revoked_at: datetime | None = None
+    prompt_encrypted: bool = False
+    tags: list[str] = Field(default_factory=list)
+
+
+class ImageGenerationShareItem(BaseSchema):
+    share_id: UUID
+    task_id: UUID
+    model: str
+    prompt: str | None = None
+    prompt_encrypted: bool = False
+    width: int | None = None
+    height: int | None = None
+    num_outputs: int
+    steps: int | None = None
+    cfg_scale: float | None = None
+    seed: int | None = None
+    shared_at: datetime
+    tags: list[str] = Field(default_factory=list)
+    preview: ImageGenerationOutputItem | None = None
+
+
+class ImageGenerationShareDetail(BaseSchema):
+    share_id: UUID
+    task_id: UUID
+    model: str
+    prompt: str | None = None
+    prompt_encrypted: bool = False
+    width: int | None = None
+    height: int | None = None
+    num_outputs: int
+    steps: int | None = None
+    cfg_scale: float | None = None
+    seed: int | None = None
+    shared_at: datetime
+    tags: list[str] = Field(default_factory=list)
+    outputs: list[ImageGenerationOutputItem] = Field(default_factory=list)
+
+
 __all__ = [
     "ImageGenerationCancelResponse",
     "ImageGenerationTaskCreateRequest",
@@ -91,4 +139,8 @@ __all__ = [
     "ImageGenerationOutputItem",
     "ImageGenerationTaskDetail",
     "ImageGenerationTaskListItem",
+    "ImageGenerationShareRequest",
+    "ImageGenerationShareState",
+    "ImageGenerationShareItem",
+    "ImageGenerationShareDetail",
 ]

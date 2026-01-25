@@ -10,6 +10,7 @@ from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
 from app.agent_plugins.builtins.scheduler.plugin import TaskSchedulerPlugin
 from app.agent_plugins.builtins.planner.plugin import PlannerPlugin
 from app.agent_plugins.builtins.vector_store.plugin import VectorStorePlugin # Added VectorStore
+from app.agent_plugins.builtins.image_generation.plugin import ImageGenerationPlugin # Added ImageGeneration
 from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ class AgentService:
         self.plugin_manager.register_class(TaskSchedulerPlugin)
         self.plugin_manager.register_class(PlannerPlugin)
         self.plugin_manager.register_class(VectorStorePlugin) # Register Qdrant Capabilities
+        self.plugin_manager.register_class(ImageGenerationPlugin) # Register Image Capabilities
         
         self.tools: List[ToolDefinition] = []
         self.tool_map: Dict[str, Any] = {}

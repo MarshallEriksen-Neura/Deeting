@@ -54,6 +54,8 @@ from .media_asset import MediaAsset
 from .image_generation import (
     GenerationTask,
     ImageGenerationOutput,
+    ImageGenerationShare,
+    ImageGenerationShareTagLink,
     ImageGenerationStatus,
 )
 from .provider_preset import ProviderPreset
@@ -67,6 +69,7 @@ from .invite_code import InviteCode, InviteCodeStatus
 from .user import Permission, Role, RolePermission, User, UserRole
 from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 from .user_mcp_server import UserMcpServer
+from .user_mcp_source import UserMcpSource
 
 __all__ = [
     "Base",
@@ -84,6 +87,8 @@ __all__ = [
     "MediaAsset",
     "GenerationTask",
     "ImageGenerationOutput",
+    "ImageGenerationShare",
+    "ImageGenerationShareTagLink",
     "ImageGenerationStatus",
     "Assistant",
     "AssistantVersion",
@@ -140,4 +145,5 @@ __all__ = [
     "McpToolCategory",
     "UserMcpSubscription",
     "UserMcpServer",
+    "UserMcpSource",
 ]

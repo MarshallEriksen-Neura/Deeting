@@ -66,17 +66,17 @@ const iconMap = {
 }
 
 const iconBgMap = {
-  success: "bg-green-100 border-green-200",
-  error: "bg-red-100 border-red-200", 
-  warning: "bg-orange-100 border-orange-200",
-  info: "bg-blue-100 border-blue-200",
+  success: "bg-emerald-50 border-emerald-200 shadow-emerald-100/50 shadow-sm",
+  error: "bg-rose-50 border-rose-200 shadow-rose-100/50 shadow-sm",
+  warning: "bg-amber-50 border-amber-200 shadow-amber-100/50 shadow-sm",
+  info: "bg-blue-50 border-blue-200 shadow-blue-100/50 shadow-sm",
 }
 
 const badgeColorMap = {
-  success: "bg-green-500/10 text-green-700 border-green-200",
-  error: "bg-red-500/10 text-red-700 border-red-200",
-  warning: "bg-orange-500/10 text-orange-700 border-orange-200",
-  info: "bg-blue-500/10 text-blue-700 border-blue-200",
+  success: "bg-emerald-50 text-emerald-700 border-emerald-200/50",
+  error: "bg-rose-50 text-rose-700 border-rose-200/50",
+  warning: "bg-amber-50 text-amber-700 border-amber-200/50",
+  info: "bg-blue-50 text-blue-700 border-blue-200/50",
 }
 
 export function NotificationCenter({

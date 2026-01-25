@@ -17,7 +17,9 @@
       "stopped": "Stopped",
       "conflicts": "Conflicts"
     },
-    "empty": "No servers found for this filter."
+    "empty": "No servers found for this filter.",
+    "sync": "Sync tools",
+    "syncing": "Syncing"
   },
   "source": {
     "trust": {
@@ -28,7 +30,8 @@
     "status": {
       "syncing": "Syncing...",
       "autoSync": "Auto-Sync On",
-      "activeLocal": "Active Local"
+      "activeLocal": "Active Local",
+      "draft": "Migration required (draft)"
     }
   },
   "tool": {
@@ -129,6 +132,9 @@
       "env": "KEY=VALUE",
       "json": "{\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/Users/me/Desktop\"]\n    }\n  }\n}"
     },
+    "errors": {
+      "invalidConfig": "Invalid JSON config. Please check the mcpServers format."
+    },
     "save": "Save Server",
     "transport": {
       "stdio": "Stdio",
@@ -142,6 +148,50 @@
     "save": "Save Configuration",
     "cancel": "Cancel"
   },
+  "server": {
+    "actions": {
+      "add": "Add Server",
+      "edit": "Edit Server",
+      "delete": "Delete Server"
+    },
+    "edit": {
+      "title": "Edit MCP Server",
+      "description": "Update server metadata and connection details.",
+      "fields": {
+        "name": "Name",
+        "description": "Description",
+        "type": "Server Type",
+        "sseUrl": "SSE Endpoint",
+        "authType": "Auth Type",
+        "secretValue": "Access Token",
+        "enabled": "Enabled"
+      },
+      "types": {
+        "sse": "SSE (Remote)",
+        "stdio": "Stdio (Draft)"
+      },
+      "authTypes": {
+        "bearer": "Bearer",
+        "apiKey": "API Key",
+        "none": "None"
+      },
+      "placeholders": {
+        "sseUrl": "https://.../sse",
+        "secretValue": "Leave blank to keep existing secret"
+      },
+      "enabledHint": "Disable to pause this server without removing it.",
+      "stdioNote": "Draft (stdio) servers can only edit basic info in the web console.",
+      "save": "Save Changes",
+      "saving": "Saving...",
+      "cancel": "Cancel"
+    },
+    "delete": {
+      "title": "Delete this server?",
+      "description": "This will remove {name} and its cached tools.",
+      "confirm": "Delete Server",
+      "cancel": "Cancel"
+    }
+  },
   "actions": {
     "start": "Start",
     "stop": "Stop",
@@ -149,15 +199,49 @@
     "sync": "Sync",
     "applyUpdate": "Apply Update"
   },
+  "test": {
+    "title": "Test Tool - {name}",
+    "description": "Provide JSON arguments to run a synchronous test call.",
+    "fields": {
+      "arguments": "Arguments (JSON)"
+    },
+    "placeholders": {
+      "arguments": "{\n  \"query\": \"hello\"\n}"
+    },
+    "result": "Result",
+    "logs": "Logs",
+    "trace": "Trace ID",
+    "actions": {
+      "run": "Run Test",
+      "running": "Running...",
+      "close": "Close"
+    },
+    "invalidJson": "Invalid JSON arguments"
+  },
   "toast": {
     "desktopOnly": "This action is available on desktop only.",
     "missingFields": "Please fill in required fields.",
     "missingToken": "Missing access token.",
     "syncFailed": "Sync failed",
+    "syncSuccess": "Sync complete",
+    "syncSuccessDesc": "Remote tool list refreshed.",
+    "noRemoteServers": "No remote servers to sync.",
     "loadFailed": "Failed to load MCP data",
     "saveFailed": "Failed to save configuration",
+    "saveSuccess": "Saved successfully",
     "startFailed": "Failed to start tool",
-    "stopFailed": "Failed to stop tool"
+    "stopFailed": "Failed to stop tool",
+    "missingServer": "Missing server information",
+    "draftOnly": "Draft servers cannot sync",
+    "invalidConfig": "Invalid configuration format",
+    "importSummary": "Imported {count} configuration(s).",
+    "importFailed": "{count} configuration(s) failed to import.",
+    "testFailed": "Test call failed",
+    "updateSuccess": "Server updated",
+    "updateFailed": "Failed to update server",
+    "deleteSuccess": "Server deleted",
+    "deleteFailed": "Failed to delete server",
+    "toggleUnsupported": "Only remote SSE servers can be enabled or disabled"
   }
 }
 }

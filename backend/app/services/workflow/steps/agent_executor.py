@@ -134,14 +134,20 @@ class AgentExecutorStep(BaseStep):
             # Optimization: We could have a map in context from discovery step
             stmt = select(UserMcpServer).where(
                 UserMcpServer.user_id == user_id,
-                UserMcpServer.is_enabled == True
+                UserMcpServer.is_enabled == True,
+                UserMcpServer.server_type == "sse",
             )
             res = await ctx.db_session.execute(stmt)
             servers = res.scalars().all()
             
             for server in servers:
+                if not server.sse_url:
+                    continue
+                disabled = set(server.disabled_tools or [])
                 for cached_tool in server.tools_cache:
                     if cached_tool["name"] == tool_call.name:
+                        if tool_call.name in disabled:
+                            return {"error": f"Tool '{tool_call.name}' is disabled."}
                         # Found! Call the remote MCP
                         logger.info(f"Calling remote MCP tool '{tool_call.name}' on {server.sse_url}")
                         
@@ -166,6 +172,13 @@ class AgentExecutorStep(BaseStep):
         if plugin:
             handler = getattr(plugin, f"handle_{tool_call.name}", None)
             if handler:
-                return await handler(**tool_call.arguments)
+                # Introspect handler to see if it accepts context
+                import inspect
+                sig = inspect.signature(handler)
+                kwargs = tool_call.arguments.copy()
+                if "__context__" in sig.parameters:
+                    kwargs["__context__"] = ctx
+                
+                return await handler(**kwargs)
         
         return {"error": f"Tool '{tool_call.name}' not found."}

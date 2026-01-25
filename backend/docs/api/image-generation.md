@@ -107,6 +107,121 @@
 }
 ```
 
+## POST /internal/images/generations/{task_id}/share
+将文生图结果分享到公共图片页面。仅任务所属用户可操作。
+
+说明：
+- 仅允许分享 `succeeded` 且有输出的任务。
+- 若任务 `prompt_encrypted=true`，共享接口会返回 `prompt_encrypted=true`，公共列表/详情中的 `prompt` 将为空。
+
+请求体：
+- `tags` string[]，可选，标签列表（例如 `["#城市", "插画"]`）
+
+响应示例：
+```json
+{
+  "share_id": "9c2a7c1e-7f1b-4b6a-91e0-9f8f5f9a3d2f",
+  "task_id": "3f1e7c3d-8b6c-4d5c-8c7f-4c3c2b9d9a12",
+  "is_active": true,
+  "shared_at": "2026-01-24T08:00:00+00:00",
+  "revoked_at": null,
+  "prompt_encrypted": false,
+  "tags": ["#城市", "#插画"]
+}
+```
+
+## DELETE /internal/images/generations/{task_id}/share
+取消分享（下架公共页面展示）。
+
+响应示例：
+```json
+{
+  "share_id": "9c2a7c1e-7f1b-4b6a-91e0-9f8f5f9a3d2f",
+  "task_id": "3f1e7c3d-8b6c-4d5c-8c7f-4c3c2b9d9a12",
+  "is_active": false,
+  "shared_at": "2026-01-24T08:00:00+00:00",
+  "revoked_at": "2026-01-24T08:10:00+00:00",
+  "prompt_encrypted": false,
+  "tags": ["#城市", "#插画"]
+}
+```
+
+## GET /public/images/shares
+公共图片分享列表（无需登录）。
+
+查询参数：
+- `cursor` string，可选
+- `size` number，可选，默认 20
+
+响应示例：
+```json
+{
+  "items": [
+    {
+      "share_id": "9c2a7c1e-7f1b-4b6a-91e0-9f8f5f9a3d2f",
+      "task_id": "3f1e7c3d-8b6c-4d5c-8c7f-4c3c2b9d9a12",
+      "model": "gpt-image-1",
+      "prompt": "a city at night",
+      "prompt_encrypted": false,
+      "width": 1024,
+      "height": 1024,
+      "num_outputs": 1,
+      "steps": 30,
+      "cfg_scale": 7.5,
+      "seed": 123,
+      "shared_at": "2026-01-24T08:00:00+00:00",
+      "tags": ["#城市", "#插画"],
+      "preview": {
+        "output_index": 0,
+        "asset_url": "https://api.example.com/api/v1/media/assets/...",
+        "source_url": null,
+        "seed": 123,
+        "content_type": "image/png",
+        "size_bytes": 123456,
+        "width": 1024,
+        "height": 1024
+      }
+    }
+  ],
+  "next_page": null,
+  "previous_page": null
+}
+```
+
+## GET /public/images/shares/{share_id}
+公共图片分享详情（用于弹窗详情展示，含输出列表）。
+
+响应示例：
+```json
+{
+  "share_id": "9c2a7c1e-7f1b-4b6a-91e0-9f8f5f9a3d2f",
+  "task_id": "3f1e7c3d-8b6c-4d5c-8c7f-4c3c2b9d9a12",
+  "model": "gpt-image-1",
+  "prompt": "a city at night",
+  "prompt_encrypted": false,
+  "width": 1024,
+  "height": 1024,
+  "num_outputs": 1,
+  "steps": 30,
+  "cfg_scale": 7.5,
+  "seed": 123,
+  "shared_at": "2026-01-24T08:00:00+00:00",
+  "tags": ["#城市", "#插画"],
+  "outputs": [
+    {
+      "output_index": 0,
+      "asset_url": "https://api.example.com/api/v1/media/assets/...",
+      "source_url": null,
+      "seed": 123,
+      "content_type": "image/png",
+      "size_bytes": 123456,
+      "width": 1024,
+      "height": 1024
+    }
+  ]
+}
+```
+
 ## POST /internal/images/generations/{request_id}/cancel
 取消任务（最佳努力）。基于 `request_id` 标记取消；任务侧会在运行期间消费取消标记并停止。
 

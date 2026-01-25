@@ -28,38 +28,58 @@ class McpDiscoveryStep(BaseStep):
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         user_id = ctx.user_id
-        if not user_id:
-            # Skip if no user context (e.g. public anonymous chat if allowed)
-            return StepResult(status=StepStatus.SUCCESS)
+        
+        # Initialize tool list
+        final_tools = []
 
+        # 1. Fetch User MCP Tools (if user exists)
+        if user_id:
+            try:
+                user_tools = await mcp_discovery_service.get_active_tools(ctx.db_session, user_id)
+                final_tools.extend(user_tools)
+            except Exception as e:
+                logger.error(f"User MCP discovery failed: {e}")
+
+        # 2. Fetch System/Builtin Tools (Native Plugins)
+        # We must filter these strictly to avoid exposing admin tools to standard chat
         try:
-            # 1. Fetch tools from cache
-            tools = await mcp_discovery_service.get_active_tools(ctx.db_session, user_id)
+            from app.services.agent_service import agent_service
+            # Ensure initialized
+            await agent_service.initialize()
             
-            if tools:
-                # 2. Inject into context
-                # The RequestRenderer and LLMService will look for 'tools' in the context
-                # or we can append to an existing list.
-                existing_tools = ctx.get("mcp_discovery", "tools") or []
-                existing_tools.extend(tools)
-                ctx.set("mcp_discovery", "tools", existing_tools)
-                
-                logger.debug(f"McpDiscoveryStep: Injected {len(tools)} tools for user {user_id}")
-                
-                ctx.emit_status(
-                    stage="discovery",
-                    step=self.name,
-                    state="success",
-                    code="mcp.tools.discovered",
-                    meta={"count": len(tools)}
-                )
+            system_tools = agent_service.tools
             
-            return StepResult(
-                status=StepStatus.SUCCESS,
-                data={"count": len(tools)}
-            )
-
+            # Whitelist for Chat/Agent capability
+            # TODO: Move this configuration to DB or Config
+            ALLOWED_SYSTEM_TOOLS = {
+                "generate_image",
+                "search_knowledge",
+                "add_knowledge_chunk",
+                # "tavily_search" # If provided as system plugin
+            }
+            
+            for tool in system_tools:
+                if tool.name in ALLOWED_SYSTEM_TOOLS:
+                    final_tools.append(tool)
+                    
         except Exception as e:
-            logger.error(f"McpDiscoveryStep failed: {e}")
-            # We don't want to break the whole chat if MCP discovery fails
-            return StepResult(status=StepStatus.SUCCESS, message=f"MCP discovery skipped: {str(e)}")
+            logger.error(f"System tool discovery failed: {e}")
+
+        if final_tools:
+            # 3. Inject into context
+            ctx.set("mcp_discovery", "tools", final_tools)
+            
+            logger.debug(f"McpDiscoveryStep: Injected {len(final_tools)} tools (User+System)")
+            
+            ctx.emit_status(
+                stage="discovery",
+                step=self.name,
+                state="success",
+                code="mcp.tools.discovered",
+                meta={"count": len(final_tools)}
+            )
+        
+        return StepResult(
+            status=StepStatus.SUCCESS,
+            data={"count": len(final_tools)}
+        )

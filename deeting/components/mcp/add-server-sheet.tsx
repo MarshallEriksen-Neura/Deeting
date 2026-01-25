@@ -19,8 +19,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { useNotifications } from "@/components/contexts/notification-context"
 
 interface AddServerSheetProps {
-  children: React.ReactNode
+  children?: React.ReactNode
   onCreate: (payload: { config: Record<string, unknown> }) => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 const parseEnvLines = (value: string) => {
@@ -43,10 +45,10 @@ const parseArgs = (value: string) =>
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
 
-export function AddServerSheet({ children, onCreate }: AddServerSheetProps) {
+export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddServerSheetProps) {
   const t = useTranslations("mcp")
   const { addNotification } = useNotifications()
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"wizard" | "json">("wizard")
   const [name, setName] = useState("")
   const [command, setCommand] = useState("")
@@ -105,11 +107,17 @@ export function AddServerSheet({ children, onCreate }: AddServerSheetProps) {
     }
   }
 
+  const isControlled = typeof open === "boolean"
+  const isOpen = isControlled ? open : internalOpen
+  const setOpen = onOpenChange ?? setInternalOpen
+
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        {children}
-      </SheetTrigger>
+    <Sheet open={isOpen} onOpenChange={setOpen}>
+      {children ? (
+        <SheetTrigger asChild>
+          {children}
+        </SheetTrigger>
+      ) : null}
       <SheetContent className="sm:max-w-md">
         <SheetHeader className="px-6 sm:px-8">
           <SheetTitle>{t("addServer.title")}</SheetTitle>
@@ -161,7 +169,7 @@ export function AddServerSheet({ children, onCreate }: AddServerSheetProps) {
                     <Label>{t("addServer.fields.json")}</Label>
                     <Textarea 
                         className="font-mono text-xs h-[300px]" 
-                        placeholder={t("addServer.placeholders.json")}
+                        placeholder={t.raw("addServer.placeholders.json")}
                         value={jsonText}
                         onChange={(event) => setJsonText(event.target.value)}
                     />

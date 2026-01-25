@@ -136,6 +136,24 @@
         "canceled": "已取消"
       }
     },
+    "imageShare": {
+      "action": "分享图片",
+      "title": "分享图片",
+      "description": "分享到公共画廊后，所有人可查看图片、提示词与生成参数。",
+      "tagsLabel": "标签",
+      "tagsEmpty": "暂无标签",
+      "tagsPlaceholder": "输入标签并回车",
+      "tagsHint": "支持 # 开头，回车添加",
+      "confirm": "我已了解并同意公开提示词与生成参数",
+      "submit": "确认分享",
+      "unshare": "取消分享",
+      "toast": {
+        "shared": "已分享至公共画廊",
+        "shareFailed": "分享失败，请稍后重试",
+        "unshared": "已取消分享",
+        "unshareFailed": "取消分享失败，请稍后重试"
+      }
+    },
     "footer": {
       "disclaimer": "AI 生成内容可能不准确。"
     },

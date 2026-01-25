@@ -8,13 +8,18 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event"
 import { RegistryHeader } from "./registry-header"
 import { SupplyChainSection } from "./supply-chain-section"
 import { RuntimeGridSection } from "./runtime-grid-section"
-import { MCPLogEntry, MCPSource, MCPTool, MCPToolConflict, MCPEnvConfigItem, McpSourceRecord, McpToolRecord } from "@/types/mcp"
+import { MCPLogEntry, MCPSource, MCPTool, MCPToolConflict, MCPEnvConfigItem, MCPToolStatus, McpSourceRecord, McpToolRecord } from "@/types/mcp"
+import { useMcpServers } from "@/lib/swr/use-mcp-servers"
+import { useMcpSources } from "@/lib/swr/use-mcp-sources"
+import { useMcpTools, type McpServerToolRecord } from "@/lib/swr/use-mcp-tools"
+import { useMcpToolToggle } from "@/lib/swr/use-mcp-tool-toggle"
+import { type McpServer, type McpServerUpdateRequest, type McpSource } from "@/lib/api/mcp"
 import { useAuthStore } from "@/store/auth-store"
 import { useNotifications } from "@/components/contexts/notification-context"
 
 const ServerLogsSheet = dynamic(() => import("./server-logs-sheet").then(mod => mod.ServerLogsSheet), { ssr: false })
 const ConflictResolutionDialog = dynamic(() => import("./conflict-resolution-dialog").then(mod => mod.ConflictResolutionDialog), { ssr: false })
-const ToolConfigSheet = dynamic(() => import("./tool-config-sheet").then(mod => mod.ToolConfigSheet), { ssr: false })
+const EditServerSheet = dynamic(() => import("./edit-server-sheet").then(mod => mod.EditServerSheet), { ssr: false })
 
 interface MCPRegistryClientProps {
   initialTools: MCPTool[]
@@ -61,6 +66,19 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
   const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
   const accessToken = useAuthStore((state) => state.accessToken)
   const { addNotification } = useNotifications()
+  const mcpSources = useMcpSources({ enabled: !isTauri })
+  const mcpServers = useMcpServers({ enabled: !isTauri })
+  const mcpTools = useMcpTools(!isTauri ? mcpServers.data : undefined)
+  const toolToggleMutation = useMcpToolToggle()
+  const refreshSources = mcpSources.refresh
+  const refreshServers = mcpServers.refresh
+  const createServer = mcpServers.create
+  const updateServer = mcpServers.update
+  const removeServer = mcpServers.remove
+  const syncServer = mcpServers.sync
+  const refreshTools = mcpTools.mutate
+  const createSource = mcpSources.create
+  const syncSource = mcpSources.sync
 
   const [tools, setTools] = useState<MCPTool[]>(initialTools)
   const [sources, setSources] = useState<MCPSource[]>(initialSources)
@@ -69,14 +87,30 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
   const [logsOpen, setLogsOpen] = useState(false)
   const [conflictTool, setConflictTool] = useState<MCPTool | null>(null)
   const [conflictOpen, setConflictOpen] = useState(false)
-  const [configTool, setConfigTool] = useState<MCPTool | null>(null)
-  const [configOpen, setConfigOpen] = useState(false)
   const [sourceTokens, setSourceTokens] = useState<Record<string, string>>({})
+  const [syncingServers, setSyncingServers] = useState(false)
+  const [syncingServerIds, setSyncingServerIds] = useState<Record<string, boolean>>({})
+  const [editServer, setEditServer] = useState<McpServer | null>(null)
+  const [editServerOpen, setEditServerOpen] = useState(false)
 
   const logListeners = useRef<Record<string, UnlistenFn>>({})
   const autoSyncRef = useRef(false)
+  const initialRefreshRef = useRef(false)
 
   const mapSource = useCallback((source: McpSourceRecord): MCPSource => ({
+    id: source.id,
+    name: source.name,
+    type: source.source_type,
+    pathOrUrl: source.path_or_url,
+    lastSynced: source.last_synced_at || undefined,
+    status: source.status,
+    isReadOnly: source.is_read_only,
+    trustLevel: source.trust_level,
+    createdAt: source.created_at,
+    updatedAt: source.updated_at,
+  }), [])
+
+  const mapRemoteSource = useCallback((source: McpSource): MCPSource => ({
     id: source.id,
     name: source.name,
     type: source.source_type,
@@ -138,10 +172,83 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     }
   }, [t])
 
+  const serverById = useMemo(() => {
+    const map = new Map<string, McpServer>()
+    mcpServers.data?.forEach((server) => map.set(server.id, server))
+    return map
+  }, [mcpServers.data])
+
+
+  const mapServerTool = useCallback((tool: McpServerToolRecord): MCPTool => {
+    const server = serverById.get(tool.server_id)
+    const enabled = tool.enabled
+    return {
+      id: `${tool.server_id}:${tool.name}`,
+      identifier: undefined,
+      name: tool.name,
+      source: server?.server_type === "stdio" ? "local" : "url",
+      sourceId: tool.server_id,
+      status: enabled ? "healthy" : "stopped",
+      ping: "-",
+      pingMs: undefined,
+      capabilities: [],
+      description: tool.description || "",
+      error: undefined,
+      command: undefined,
+      args: undefined,
+      env: undefined,
+      configJson: JSON.stringify({ input_schema: tool.input_schema || {} }),
+      pendingConfigJson: undefined,
+      configHash: tool.name,
+      pendingConfigHash: undefined,
+      conflictStatus: "none",
+      isReadOnly: true,
+      isNew: false,
+      createdAt: server?.created_at,
+      updatedAt: server?.updated_at,
+      envConfig: [],
+    }
+  }, [serverById])
+
+  const mapServerToRuntimeTool = useCallback((server: McpServer): MCPTool => {
+    const isRemote = server.server_type === "sse"
+    const status: MCPToolStatus =
+      server.status === "active" || server.is_enabled
+        ? "healthy"
+        : "stopped"
+    return {
+      id: server.id,
+      identifier: undefined,
+      name: server.name,
+      source: isRemote ? "url" : "local",
+      sourceId: server.id,
+      status,
+      ping: "-",
+      pingMs: undefined,
+      capabilities: [],
+      description: server.description || server.sse_url || "",
+      error: undefined,
+      command: undefined,
+      args: [],
+      env: {},
+      configJson: "",
+      pendingConfigJson: undefined,
+      configHash: "",
+      pendingConfigHash: undefined,
+      conflictStatus: "none",
+      isReadOnly: false,
+      isNew: false,
+      createdAt: server.created_at,
+      updatedAt: server.updated_at,
+      envConfig: [],
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     if (!isTauri) {
-      setTools(initialTools)
-      setSources(initialSources)
+      refreshSources()
+      refreshServers()
+      await refreshTools()
       return
     }
     try {
@@ -159,11 +266,63 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         timestamp: Date.now(),
       })
     }
-  }, [addNotification, initialSources, initialTools, isTauri, mapSource, mapTool, t])
+  }, [addNotification, isTauri, mapSource, mapTool, refreshServers, refreshSources, refreshTools, t])
 
   useEffect(() => {
+    if (initialRefreshRef.current) return
+    initialRefreshRef.current = true
     refreshAll()
   }, [refreshAll])
+
+  useEffect(() => {
+    if (isTauri) return
+    if (mcpSources.data) {
+      setSources(mcpSources.data.map(mapRemoteSource))
+    }
+  }, [isTauri, mapRemoteSource, mcpSources.data])
+
+  useEffect(() => {
+    if (isTauri) return
+    if (mcpTools.data) {
+      setTools(mcpTools.data.map(mapServerTool))
+    }
+  }, [isTauri, mapServerTool, mcpTools.data])
+
+  useEffect(() => {
+    if (isTauri) return
+    if (mcpSources.error) {
+      addNotification({
+        type: "error",
+        title: t("toast.loadFailed"),
+        description: String(mcpSources.error),
+        timestamp: Date.now(),
+      })
+    }
+  }, [addNotification, isTauri, mcpSources.error, t])
+
+  useEffect(() => {
+    if (isTauri) return
+    if (mcpServers.error) {
+      addNotification({
+        type: "error",
+        title: t("toast.loadFailed"),
+        description: String(mcpServers.error),
+        timestamp: Date.now(),
+      })
+    }
+  }, [addNotification, isTauri, mcpServers.error, t])
+
+  useEffect(() => {
+    if (isTauri) return
+    if (mcpTools.error) {
+      addNotification({
+        type: "error",
+        title: t("toast.loadFailed"),
+        description: String(mcpTools.error),
+        timestamp: Date.now(),
+      })
+    }
+  }, [addNotification, isTauri, mcpTools.error, t])
 
   useEffect(() => {
     if (!isTauri || autoSyncRef.current) return
@@ -257,12 +416,40 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
   const handleToggleTool = useCallback(async (tool: MCPTool, enabled: boolean) => {
     if (!isTauri) {
-      addNotification({
-        type: "warning",
-        title: t("toast.desktopOnly"),
-        description: "",
-        timestamp: Date.now(),
-      })
+      if (!tool.sourceId) {
+        addNotification({
+          type: "error",
+          title: t("toast.saveFailed"),
+          description: t("toast.missingServer"),
+          timestamp: Date.now(),
+        })
+        return
+      }
+      setTools((prev) =>
+        prev.map((item) =>
+          item.id === tool.id
+            ? { ...item, status: enabled ? "healthy" : "stopped" }
+            : item
+        )
+      )
+      try {
+        const updated = await toolToggleMutation.trigger({
+          serverId: tool.sourceId,
+          toolName: tool.name,
+          enabled,
+        })
+        const mapped = mapServerTool({ ...updated, server_id: tool.sourceId })
+        setTools((prev) => prev.map((item) => (item.id === mapped.id ? mapped : item)))
+        await refreshTools()
+      } catch (err) {
+        addNotification({
+          type: "error",
+          title: enabled ? t("toast.startFailed") : t("toast.stopFailed"),
+          description: String(err),
+          timestamp: Date.now(),
+        })
+        refreshAll()
+      }
       return
     }
     setTools((prev) =>
@@ -287,16 +474,35 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       })
       refreshAll()
     }
-  }, [addNotification, isTauri, mapTool, refreshAll, t])
+  }, [
+    addNotification,
+    isTauri,
+    mapServerTool,
+    mapTool,
+    refreshTools,
+    refreshAll,
+    t,
+    toolToggleMutation,
+  ])
 
   const handleSyncSource = useCallback(async (source: MCPSource) => {
     if (!isTauri) {
-      addNotification({
-        type: "warning",
-        title: t("toast.desktopOnly"),
-        description: "",
-        timestamp: Date.now(),
-      })
+      setSources((prev) =>
+        prev.map((item) => (item.id === source.id ? { ...item, status: "syncing" } : item))
+      )
+      try {
+        const token = sourceTokens[source.id]
+        await syncSource.trigger([source.id, { auth_token: token || null }])
+        await refreshAll()
+      } catch (err) {
+        addNotification({
+          type: "error",
+          title: t("toast.syncFailed"),
+          description: String(err),
+          timestamp: Date.now(),
+        })
+        refreshAll()
+      }
       return
     }
     setSources((prev) =>
@@ -325,7 +531,94 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       })
       refreshAll()
     }
-  }, [accessToken, addNotification, isTauri, refreshAll, sourceTokens, t])
+  }, [accessToken, addNotification, isTauri, refreshAll, sourceTokens, syncSource, t])
+
+  const handleSyncServers = useCallback(async () => {
+    if (isTauri) {
+      addNotification({
+        type: "warning",
+        title: t("toast.desktopOnly"),
+        description: t("toast.desktopOnly"),
+        timestamp: Date.now(),
+      })
+      return
+    }
+    const servers = mcpServers.data ?? []
+    const remoteServers = servers.filter((server) => server.server_type === "sse" && server.sse_url)
+    if (remoteServers.length === 0) {
+      addNotification({
+        type: "warning",
+        title: t("toast.syncFailed"),
+        description: t("toast.noRemoteServers"),
+        timestamp: Date.now(),
+      })
+      return
+    }
+    setSyncingServers(true)
+    try {
+      await syncServer.trigger(remoteServers[0].id)
+      await refreshAll()
+      addNotification({
+        type: "success",
+        title: t("toast.syncSuccess"),
+        description: t("toast.syncSuccessDesc"),
+        timestamp: Date.now(),
+      })
+    } catch (err) {
+      addNotification({
+        type: "error",
+        title: t("toast.syncFailed"),
+        description: String(err),
+        timestamp: Date.now(),
+      })
+      refreshAll()
+    } finally {
+      setSyncingServers(false)
+    }
+  }, [addNotification, isTauri, mcpServers.data, refreshAll, syncServer, t])
+
+  const handleSyncServer = useCallback(async (tool: MCPTool) => {
+    if (isTauri) {
+      addNotification({
+        type: "warning",
+        title: t("toast.desktopOnly"),
+        description: t("toast.desktopOnly"),
+        timestamp: Date.now(),
+      })
+      return
+    }
+    if (tool.source === "local") {
+      addNotification({
+        type: "warning",
+        title: t("toast.syncFailed"),
+        description: t("toast.noRemoteServers"),
+        timestamp: Date.now(),
+      })
+      return
+    }
+    const serverId = tool.sourceId || tool.id
+    setSyncingServerIds((prev) => ({ ...prev, [serverId]: true }))
+    try {
+      await syncServer.trigger(serverId)
+      await refreshAll()
+      addNotification({
+        type: "success",
+        title: t("toast.syncSuccess"),
+        description: t("toast.syncSuccessDesc"),
+        timestamp: Date.now(),
+      })
+    } catch (err) {
+      addNotification({
+        type: "error",
+        title: t("toast.syncFailed"),
+        description: String(err),
+        timestamp: Date.now(),
+      })
+      refreshAll()
+    } finally {
+      setSyncingServerIds((prev) => ({ ...prev, [serverId]: false }))
+    }
+  }, [addNotification, isTauri, refreshAll, syncServer, t])
 
   const handleCreateSource = useCallback(async (payload: {
     name: string
@@ -335,12 +628,25 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     authToken?: string
   }) => {
     if (!isTauri) {
-      addNotification({
-        type: "warning",
-        title: t("toast.desktopOnly"),
-        description: "",
-        timestamp: Date.now(),
-      })
+      try {
+        const created = await createSource.trigger({
+          name: payload.name,
+          source_type: payload.sourceType,
+          path_or_url: payload.pathOrUrl,
+          trust_level: payload.trustLevel,
+        })
+        setSourceTokens((prev) => ({ ...prev, [created.id]: payload.authToken || "" }))
+        await syncSource.trigger([created.id, { auth_token: payload.authToken || null }])
+        await refreshAll()
+      } catch (err) {
+        addNotification({
+          type: "error",
+          title: t("toast.syncFailed"),
+          description: String(err),
+          timestamp: Date.now(),
+        })
+        refreshAll()
+      }
       return
     }
     try {
@@ -371,18 +677,125 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         timestamp: Date.now(),
       })
     }
-  }, [addNotification, isTauri, mapSource, refreshAll, t])
+  }, [addNotification, createSource, isTauri, refreshAll, syncSource, t])
 
   const handleImportConfig = useCallback(async (payload: {
     config: Record<string, unknown>
   }) => {
     if (!isTauri) {
-      addNotification({
-        type: "warning",
-        title: t("toast.desktopOnly"),
-        description: "",
-        timestamp: Date.now(),
-      })
+      const rawServers = payload.config?.mcpServers
+      if (!rawServers || typeof rawServers !== "object") {
+        addNotification({
+          type: "warning",
+          title: t("toast.invalidConfig"),
+          description: t("addServer.errors.invalidConfig"),
+          timestamp: Date.now(),
+        })
+        return
+      }
+      const entries = Object.entries(rawServers as Record<string, Record<string, unknown>>)
+      if (entries.length === 0) {
+        addNotification({
+          type: "warning",
+          title: t("toast.invalidConfig"),
+          description: t("addServer.errors.invalidConfig"),
+          timestamp: Date.now(),
+        })
+        return
+      }
+      const requests = entries
+        .map(([name, config]) => {
+          if (!config || typeof config !== "object") return null
+          const command = typeof config.command === "string" ? config.command : undefined
+          const args = Array.isArray(config.args)
+            ? config.args.filter((item) => typeof item === "string") as string[]
+            : []
+          const envRaw = (config.env && typeof config.env === "object") ? config.env as Record<string, unknown> : {}
+          const envKeys = Object.keys(envRaw)
+          const env = envKeys.reduce<Record<string, string>>((acc, key) => {
+            acc[key] = ""
+            return acc
+          }, {})
+          const sseUrl =
+            typeof config.sse_url === "string"
+              ? config.sse_url
+              : typeof config.url === "string"
+                ? config.url
+                : undefined
+          const displayName = typeof config.name === "string" ? config.name : name
+          if (sseUrl) {
+            return {
+              name: displayName,
+              server_type: "sse" as const,
+              sse_url: sseUrl,
+              auth_type: "none" as const,
+              is_enabled: true,
+            }
+          }
+          if (command) {
+            return {
+              name: displayName,
+              server_type: "stdio" as const,
+              is_enabled: false,
+              draft_config: {
+                command,
+                args,
+                env,
+              },
+            }
+          }
+          return null
+        })
+        .filter(Boolean)
+
+      if (requests.length === 0) {
+        addNotification({
+          type: "warning",
+          title: t("toast.invalidConfig"),
+          description: t("addServer.errors.invalidConfig"),
+          timestamp: Date.now(),
+        })
+        return
+      }
+
+      const results = await Promise.allSettled(
+        requests.map((req) => createServer.trigger(req!))
+      )
+      const succeeded = results.filter((item) => item.status === "fulfilled").length
+      const failed = results.length - succeeded
+      if (succeeded > 0) {
+        addNotification({
+          type: "success",
+          title: t("toast.saveSuccess"),
+          description: t("toast.importSummary", { count: succeeded }),
+          timestamp: Date.now(),
+        })
+      }
+      if (failed > 0) {
+        addNotification({
+          type: "warning",
+          title: t("toast.saveFailed"),
+          description: t("toast.importFailed", { count: failed }),
+          timestamp: Date.now(),
+        })
+      }
+      const createdServers = results
+        .filter((item): item is PromiseFulfilledResult<McpServer> => item.status === "fulfilled")
+        .map((item) => item.value)
+      const remoteServers = createdServers.filter((server) => server.server_type === "sse" && server.sse_url)
+      if (remoteServers.length > 0) {
+        try {
+          await syncServer.trigger(remoteServers[0].id)
+        } catch (err) {
+          addNotification({
+            type: "warning",
+            title: t("toast.syncFailed"),
+            description: String(err),
+            timestamp: Date.now(),
+          })
+        }
+      }
+      await refreshAll()
       return
     }
     try {
@@ -396,7 +809,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         timestamp: Date.now(),
       })
     }
-  }, [addNotification, isTauri, refreshAll, t])
+  }, [addNotification, createServer, isTauri, refreshAll, syncServer, t])
 
   const handleResolveConflict = useCallback(async (tool: MCPTool, action: "keep" | "update") => {
     if (!isTauri) {
@@ -426,8 +839,45 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     }
   }, [addNotification, isTauri, mapTool, t])
 
-  const handleUpdateEnv = useCallback(async (tool: MCPTool, env: Record<string, string>) => {
-    if (!isTauri) {
+  const handleClearLogs = useCallback(async (tool: MCPTool) => {
+    if (!isTauri) return
+    await invoke("clear_mcp_logs", { tool_id: tool.id })
+    setLogsByTool((prev) => ({ ...prev, [tool.id]: [] }))
+  }, [isTauri])
+
+  const handleShowLogs = useCallback((tool: MCPTool) => {
+    if (!isTauri) return
+    setSelectedTool(tool)
+    setLogsOpen(true)
+  }, [isTauri])
+
+  const handleOpenEditServer = useCallback((tool: MCPTool) => {
+    if (isTauri) {
+      addNotification({
+        type: "warning",
+        title: t("toast.desktopOnly"),
+        description: "",
+        timestamp: Date.now(),
+      })
+      return
+    }
+    const serverId = tool.sourceId || tool.id
+    const server = mcpServers.data?.find((item) => item.id === serverId)
+    if (!server) {
+      addNotification({
+        type: "error",
+        title: t("toast.missingServer"),
+        description: "",
+        timestamp: Date.now(),
+      })
+      return
+    }
+    setEditServer(server)
+    setEditServerOpen(true)
+  }, [addNotification, isTauri, mcpServers.data, t])
+
+  const handleUpdateServer = useCallback(async (serverId: string, payload: McpServerUpdateRequest) => {
+    if (isTauri) {
       addNotification({
         type: "warning",
         title: t("toast.desktopOnly"),
@@ -437,38 +887,96 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       return
     }
     try {
-      const updated = await invoke<McpToolRecord>("update_mcp_tool_env", {
-        tool_id: tool.id,
-        env,
+      await updateServer.trigger([serverId, payload])
+      await refreshAll()
+      setEditServerOpen(false)
+      setEditServer(null)
+      addNotification({
+        type: "success",
+        title: t("toast.updateSuccess"),
+        description: "",
+        timestamp: Date.now(),
       })
-      const mapped = mapTool(updated)
-      setTools((prev) => prev.map((item) => (item.id === mapped.id ? mapped : item)))
-      setConfigOpen(false)
     } catch (err) {
       addNotification({
         type: "error",
-        title: t("toast.saveFailed"),
+        title: t("toast.updateFailed"),
         description: String(err),
         timestamp: Date.now(),
       })
     }
-  }, [addNotification, isTauri, mapTool, t])
+  }, [addNotification, isTauri, refreshAll, t, updateServer])
 
-  const handleClearLogs = useCallback(async (tool: MCPTool) => {
-    if (!isTauri) return
-    await invoke("clear_mcp_logs", { tool_id: tool.id })
-    setLogsByTool((prev) => ({ ...prev, [tool.id]: [] }))
-  }, [isTauri])
+  const handleToggleServerEnabled = useCallback(async (tool: MCPTool, enabled: boolean) => {
+    if (isTauri) return
+    const serverId = tool.sourceId || tool.id
+    const server = mcpServers.data?.find((item) => item.id === serverId)
+    if (!server) {
+      addNotification({
+        type: "error",
+        title: t("toast.missingServer"),
+        description: "",
+        timestamp: Date.now(),
+      })
+      return
+    }
+    if (server.server_type !== "sse") {
+      addNotification({
+        type: "warning",
+        title: t("toast.toggleUnsupported"),
+        description: "",
+        timestamp: Date.now(),
+      })
+      return
+    }
+    try {
+      await updateServer.trigger([serverId, { is_enabled: enabled }])
+      await refreshAll()
+    } catch (err) {
+      addNotification({
+        type: "error",
+        title: t("toast.updateFailed"),
+        description: String(err),
+        timestamp: Date.now(),
+      })
+    }
+  }, [addNotification, isTauri, mcpServers.data, refreshAll, t, updateServer])
 
-  const handleShowLogs = useCallback((tool: MCPTool) => {
-    setSelectedTool(tool)
-    setLogsOpen(true)
-  }, [])
+  const handleDeleteServer = useCallback(async (tool: MCPTool) => {
+    if (isTauri) {
+      addNotification({
+        type: "warning",
+        title: t("toast.desktopOnly"),
+        description: "",
+        timestamp: Date.now(),
+      })
+      return
+    }
+    const serverId = tool.sourceId || tool.id
+    try {
+      await removeServer.trigger(serverId)
+      await refreshAll()
+      addNotification({
+        type: "success",
+        title: t("toast.deleteSuccess"),
+        description: "",
+        timestamp: Date.now(),
+      })
+    } catch (err) {
+      addNotification({
+        type: "error",
+        title: t("toast.deleteFailed"),
+        description: String(err),
+        timestamp: Date.now(),
+      })
+    }
+  }, [addNotification, isTauri, refreshAll, removeServer, t])
 
-  const handleOpenConfig = useCallback((tool: MCPTool) => {
-    setConfigTool(tool)
-    setConfigOpen(true)
-  }, [])
+  const runtimeTools = useMemo(() => {
+    if (isTauri) return tools
+    const servers = mcpServers.data ?? []
+    return servers.map(mapServerToRuntimeTool)
+  }, [isTauri, mapServerToRuntimeTool, mcpServers.data, tools])
 
   const conflictCount = useMemo(
     () => tools.filter((tool) => tool.conflictStatus !== "none").length,
@@ -497,15 +1005,20 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
         <div className="animate-glass-card-in stagger-3">
           <RuntimeGridSection
-            tools={tools}
+            tools={runtimeTools}
             conflictCount={conflictCount}
-            onToggleTool={(tool, enabled) => handleToggleTool(tool, enabled)}
-            onShowLogs={handleShowLogs}
-            onResolveConflict={(tool) => {
+            onToggleTool={isTauri ? (tool, enabled) => handleToggleTool(tool, enabled) : handleToggleServerEnabled}
+            onShowLogs={isTauri ? handleShowLogs : undefined}
+            onResolveConflict={isTauri ? (tool) => {
               setConflictTool(tool)
               setConflictOpen(true)
-            }}
-            onConfigure={handleOpenConfig}
+            } : undefined}
+            onEditServer={!isTauri ? handleOpenEditServer : undefined}
+            onDeleteServer={!isTauri ? handleDeleteServer : undefined}
+            onSyncAll={!isTauri ? handleSyncServers : undefined}
+            syncAllLoading={syncingServers}
+            onSyncTool={!isTauri ? handleSyncServer : undefined}
+            syncingToolIds={!isTauri ? syncingServerIds : undefined}
           />
         </div>
       </div>
@@ -533,11 +1046,17 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         }}
       />
 
-      <ToolConfigSheet
-        tool={configTool}
-        open={configOpen}
-        onOpenChange={setConfigOpen}
-        onSave={(env) => (configTool ? handleUpdateEnv(configTool, env) : undefined)}
+      <EditServerSheet
+        server={editServer}
+        open={editServerOpen}
+        onOpenChange={(nextOpen) => {
+          setEditServerOpen(nextOpen)
+          if (!nextOpen) {
+            setEditServer(null)
+          }
+        }}
+        onSave={handleUpdateServer}
+        loading={updateServer.isMutating}
       />
     </div>
   )

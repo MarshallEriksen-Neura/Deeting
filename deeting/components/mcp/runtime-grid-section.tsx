@@ -1,9 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Terminal } from "lucide-react"
+import { RefreshCw, Terminal } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { GlassButton } from "@/components/ui/glass-button"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ServerCard } from "./server-card"
 import { MCPTool } from "@/types/mcp"
 import { useTranslations } from "next-intl"
@@ -11,10 +13,15 @@ import { useTranslations } from "next-intl"
 interface RuntimeGridSectionProps {
   tools: MCPTool[]
   conflictCount: number
-  onToggleTool: (tool: MCPTool, enabled: boolean) => void
-  onShowLogs: (tool: MCPTool) => void
-  onResolveConflict: (tool: MCPTool) => void
-  onConfigure: (tool: MCPTool) => void
+  onToggleTool?: (tool: MCPTool, enabled: boolean) => void
+  onShowLogs?: (tool: MCPTool) => void
+  onResolveConflict?: (tool: MCPTool) => void
+  onEditServer?: (tool: MCPTool) => void
+  onDeleteServer?: (tool: MCPTool) => void
+  onSyncAll?: () => void
+  syncAllLoading?: boolean
+  onSyncTool?: (tool: MCPTool) => void
+  syncingToolIds?: Record<string, boolean>
 }
 
 export function RuntimeGridSection({ 
@@ -23,7 +30,12 @@ export function RuntimeGridSection({
   onToggleTool, 
   onShowLogs, 
   onResolveConflict,
-  onConfigure,
+  onEditServer,
+  onDeleteServer,
+  onSyncAll,
+  syncAllLoading = false,
+  onSyncTool,
+  syncingToolIds,
 }: RuntimeGridSectionProps) {
   const t = useTranslations("mcp")
   const [activeTab, setActiveTab] = useState("all")
@@ -61,18 +73,42 @@ export function RuntimeGridSection({
                     {conflictCount > 0 && <Badge variant="secondary" className="ml-1.5 bg-amber-100 text-amber-700 px-1 text-[10px] h-4 hover:bg-amber-100">{conflictCount}</Badge>}
                 </TabsTrigger>
              </TabsList>
+             {onSyncAll && (
+               <TooltipProvider>
+                 <Tooltip>
+                   <TooltipTrigger asChild>
+                     <GlassButton
+                       size="sm"
+                       variant="ghost"
+                       className="gap-2 text-xs text-gray-600 hover:text-gray-900"
+                       loading={syncAllLoading}
+                       onClick={() => onSyncAll?.()}
+                     >
+                       <RefreshCw size={14} className={syncAllLoading ? "animate-spin" : ""} />
+                       {syncAllLoading ? t("runtime.syncing") : t("runtime.sync")}
+                     </GlassButton>
+                   </TooltipTrigger>
+                   <TooltipContent>
+                     <p>{t("runtime.sync")}</p>
+                   </TooltipContent>
+                 </Tooltip>
+               </TooltipProvider>
+             )}
           </div>
        </Tabs>
 
-       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
           {filteredTools.map(tool => (
               <ServerCard 
                   key={tool.id} 
                   tool={tool} 
-                  onToggle={onToggleTool}
-                  onClick={() => onShowLogs(tool)}
-                  onResolveConflict={() => onResolveConflict(tool)}
-                  onConfigure={() => onConfigure(tool)}
+                  onToggle={onToggleTool ? (item, enabled) => onToggleTool(item, enabled) : undefined}
+                  onClick={onShowLogs ? () => onShowLogs(tool) : undefined}
+                  onResolveConflict={onResolveConflict ? () => onResolveConflict(tool) : undefined}
+                  onSync={onSyncTool ? () => onSyncTool(tool) : undefined}
+                  syncLoading={Boolean(syncingToolIds?.[tool.sourceId ?? tool.id])}
+                  onEdit={onEditServer ? () => onEditServer(tool) : undefined}
+                  onDelete={onDeleteServer ? () => onDeleteServer(tool) : undefined}
               />
           ))}
           

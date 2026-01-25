@@ -134,6 +134,7 @@ def register_routes(app: FastAPI) -> None:
         internal_gateway_router,
         internal_conversation_router,
         internal_image_generation_router,
+        public_image_share_router,
         media_router,
         users_router,
         provider_router,
@@ -191,6 +192,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         internal_image_generation_router, prefix=f"{api_prefix}/internal", tags=["Image Generation"]
+    )
+    app.include_router(
+        public_image_share_router, prefix=api_prefix, tags=["Public Image Share"]
     )
     app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])

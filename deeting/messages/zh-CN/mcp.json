@@ -17,7 +17,9 @@
       "stopped": "已停止",
       "conflicts": "待处理"
     },
-    "empty": "当前筛选条件下没有找到服务。"
+    "empty": "当前筛选条件下没有找到服务。",
+    "sync": "同步工具",
+    "syncing": "同步中"
   },
   "source": {
     "trust": {
@@ -28,7 +30,8 @@
     "status": {
       "syncing": "同步中...",
       "autoSync": "自动同步已开启",
-      "activeLocal": "本地可用"
+      "activeLocal": "本地可用",
+      "draft": "需迁移（本地草稿）"
     }
   },
   "tool": {
@@ -129,6 +132,9 @@
       "env": "KEY=VALUE",
       "json": "{\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/Users/me/Desktop\"]\n    }\n  }\n}"
     },
+    "errors": {
+      "invalidConfig": "JSON 配置不合法，请检查 mcpServers 格式。"
+    },
     "save": "保存服务",
     "transport": {
       "stdio": "Stdio",
@@ -142,6 +148,50 @@
     "save": "保存配置",
     "cancel": "取消"
   },
+  "server": {
+    "actions": {
+      "add": "添加服务",
+      "edit": "编辑服务",
+      "delete": "删除服务"
+    },
+    "edit": {
+      "title": "编辑 MCP 服务",
+      "description": "更新服务信息与连接配置。",
+      "fields": {
+        "name": "名称",
+        "description": "描述",
+        "type": "服务类型",
+        "sseUrl": "SSE 地址",
+        "authType": "鉴权方式",
+        "secretValue": "访问令牌",
+        "enabled": "启用状态"
+      },
+      "types": {
+        "sse": "SSE（远程）",
+        "stdio": "Stdio（草稿）"
+      },
+      "authTypes": {
+        "bearer": "Bearer",
+        "apiKey": "API Key",
+        "none": "无"
+      },
+      "placeholders": {
+        "sseUrl": "https://.../sse",
+        "secretValue": "留空则保留原有密钥"
+      },
+      "enabledHint": "关闭后可暂停该服务，无需删除。",
+      "stdioNote": "草稿（stdio）服务在 Web 控制台仅支持修改基础信息。",
+      "save": "保存修改",
+      "saving": "保存中...",
+      "cancel": "取消"
+    },
+    "delete": {
+      "title": "确认删除该服务？",
+      "description": "将移除 {name} 及其缓存工具。",
+      "confirm": "删除服务",
+      "cancel": "取消"
+    }
+  },
   "actions": {
     "start": "启动",
     "stop": "停止",
@@ -149,15 +199,49 @@
     "sync": "同步",
     "applyUpdate": "应用更新"
   },
+  "test": {
+    "title": "调试工具 - {name}",
+    "description": "填写 JSON 参数后进行一次同步测试调用。",
+    "fields": {
+      "arguments": "请求参数（JSON）"
+    },
+    "placeholders": {
+      "arguments": "{\n  \"query\": \"hello\"\n}"
+    },
+    "result": "返回结果",
+    "logs": "运行日志",
+    "trace": "Trace ID",
+    "actions": {
+      "run": "开始测试",
+      "running": "测试中...",
+      "close": "关闭"
+    },
+    "invalidJson": "参数 JSON 解析失败"
+  },
   "toast": {
     "desktopOnly": "该操作仅在桌面端可用。",
     "missingFields": "请先填写必填项。",
     "missingToken": "缺少访问令牌。",
     "syncFailed": "同步失败",
+    "syncSuccess": "同步完成",
+    "syncSuccessDesc": "已更新远程工具列表。",
+    "noRemoteServers": "暂无可同步的远程服务。",
     "loadFailed": "加载 MCP 数据失败",
     "saveFailed": "保存配置失败",
+    "saveSuccess": "保存成功",
     "startFailed": "启动失败",
-    "stopFailed": "停止失败"
+    "stopFailed": "停止失败",
+    "missingServer": "缺少服务器信息",
+    "draftOnly": "草稿服务器无法同步",
+    "invalidConfig": "配置格式不正确",
+    "importSummary": "已导入 {count} 个配置。",
+    "importFailed": "{count} 个配置导入失败。",
+    "testFailed": "测试调用失败",
+    "updateSuccess": "服务已更新",
+    "updateFailed": "更新服务失败",
+    "deleteSuccess": "服务已删除",
+    "deleteFailed": "删除服务失败",
+    "toggleUnsupported": "仅远程 SSE 服务支持启用或停用"
   }
 }
 }

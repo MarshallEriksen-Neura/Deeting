@@ -27,7 +27,8 @@ class MCPDiscoveryService:
         """
         stmt = select(UserMcpServer).where(
             UserMcpServer.user_id == user_id,
-            UserMcpServer.is_enabled == True
+            UserMcpServer.is_enabled == True,
+            UserMcpServer.server_type == "sse",
         )
         result = await session.execute(stmt)
         servers = result.scalars().all()
@@ -35,6 +36,8 @@ class MCPDiscoveryService:
         total_tools = 0
         for server in servers:
             try:
+                if not server.sse_url:
+                    continue
                 # 1. Get Auth Headers
                 headers = await self._get_auth_headers(session, server)
                 
@@ -62,16 +65,20 @@ class MCPDiscoveryService:
         Retrieves all currently active tools for a user from their MCP servers.
         Uses the tools_cache for performance.
         """
-        stmt = select(UserMcpServer.tools_cache).where(
+        stmt = select(UserMcpServer.tools_cache, UserMcpServer.disabled_tools).where(
             UserMcpServer.user_id == user_id,
-            UserMcpServer.is_enabled == True
+            UserMcpServer.is_enabled == True,
+            UserMcpServer.server_type == "sse",
         )
         result = await session.execute(stmt)
-        all_caches = result.scalars().all()
+        all_rows = result.all()
         
         tools = []
-        for cache in all_caches:
-            for t_data in cache:
+        for cache, disabled_tools in all_rows:
+            disabled = set(disabled_tools or [])
+            for t_data in cache or []:
+                if t_data.get("name") in disabled:
+                    continue
                 tools.append(ToolDefinition(**t_data))
         
         return tools

@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button"
 import { CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { getIconComponent } from "@/lib/constants/provider-icons"
@@ -31,18 +34,22 @@ export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
   const t = useTranslations("assistants")
   const isInstalled = agent.installed
   const [isInstalling, setIsInstalling] = React.useState(false)
+  const [followLatest, setFollowLatest] = React.useState(true)
+  const [openPopover, setOpenPopover] = React.useState(false)
+  
   const Icon = getIconComponent(agent.iconId || "lucide:bot")
   const isImageIcon = Boolean(
     agent.iconId && (agent.iconId.startsWith("http") || agent.iconId.startsWith("data:"))
   )
 
-  const handleInstall = async (e: React.MouseEvent) => {
-    e.stopPropagation() // 防止触发 Dialog
+  const handleInstallClick = async (e?: React.MouseEvent) => {
+    e?.stopPropagation()
     if (isInstalled || !onInstall) return
 
+    setOpenPopover(false)
     setIsInstalling(true)
     try {
-      await onInstall(agent.id)
+      await onInstall(agent.id, { followLatest })
       toast.success(t("toast.installedTitle", { name: agent.name }), {
         description: t("toast.installedDesc"),
         icon: <Sparkles className="w-4 h-4 text-yellow-400" />,
@@ -107,25 +114,52 @@ export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
            </div>
            
            {/* 安装按钮 */}
-           <Button 
-             size="sm" 
-             onClick={handleInstall}
-             disabled={isInstalled || isInstalling || !onInstall}
-             className={cn(
-               "rounded-full px-4 h-8 text-xs font-bold transition-all duration-300",
-               isInstalled 
-                 ? "bg-green-600 hover:bg-green-700 text-white" 
-                 : "shadow-lg"
-             )}
-           >
-              {isInstalling ? (
-                <>{t("card.adding")}</>
-              ) : isInstalled ? (
-                <>{t("card.installed")}</>
-              ) : (
-                <><Plus size={14} className="mr-1" /> {t("card.install")}</>
-              )}
-           </Button>
+           {isInstalled ? (
+             <Button 
+               size="sm" 
+               disabled
+               className="rounded-full px-4 h-8 text-xs font-bold bg-green-600 text-white"
+             >
+                {t("card.installed")}
+             </Button>
+           ) : (
+             <Popover open={openPopover} onOpenChange={setOpenPopover}>
+               <PopoverTrigger asChild>
+                  <Button 
+                    size="sm" 
+                    onClick={(e) => e.stopPropagation()}
+                    disabled={isInstalling || !onInstall}
+                    className="rounded-full px-4 h-8 text-xs font-bold shadow-lg transition-all duration-300"
+                  >
+                     {isInstalling ? t("card.adding") : (
+                       <><Plus size={14} className="mr-1" /> {t("card.install")}</>
+                     )}
+                  </Button>
+               </PopoverTrigger>
+               <PopoverContent className="w-72 p-4" align="end" onClick={(e) => e.stopPropagation()}>
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                       <div className="space-y-1">
+                          <Label htmlFor="follow-latest" className="font-medium">
+                            {t("modal.followLatestLabel")}
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            {t("modal.followLatestDesc")}
+                          </p>
+                       </div>
+                       <Switch 
+                         id="follow-latest" 
+                         checked={followLatest} 
+                         onCheckedChange={setFollowLatest} 
+                       />
+                    </div>
+                    <Button onClick={handleInstallClick} className="w-full" size="sm">
+                       {t("card.install")}
+                    </Button>
+                  </div>
+               </PopoverContent>
+             </Popover>
+           )}
         </CardFooter>
 
       </div>

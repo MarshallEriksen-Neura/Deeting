@@ -22,6 +22,8 @@ from .review_repository import ReviewTaskRepository
 from .media_asset_repository import MediaAssetRepository
 from .generation_task_repository import GenerationTaskRepository
 from .image_generation_output_repository import ImageGenerationOutputRepository
+from .image_generation_share_repository import ImageGenerationShareRepository
+from .image_generation_share_tag_repository import ImageGenerationShareTagLinkRepository
 from .mcp_market_repository import McpMarketRepository
 
 __all__ = [
@@ -56,5 +58,7 @@ __all__ = [
     "MediaAssetRepository",
     "GenerationTaskRepository",
     "ImageGenerationOutputRepository",
+    "ImageGenerationShareRepository",
+    "ImageGenerationShareTagLinkRepository",
     "McpMarketRepository",
 ]

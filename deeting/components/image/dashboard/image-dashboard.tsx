@@ -12,6 +12,7 @@ import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
+import { ImageShareAction } from "@/components/image/share/image-share-action";
 import type { ImageGenerationTaskItem } from "@/lib/api/image-generation";
 
 type StatusTone = "default" | "secondary" | "destructive" | "outline";
@@ -29,13 +30,25 @@ const PromptBubble = memo<{ content: string }>(({ content }) => {
 PromptBubble.displayName = "PromptBubble";
 
 const ImageResultBubble = memo<{
+  taskId: string;
   previewUrl: string | null;
   status: string;
   statusLabel: string;
   statusTone: StatusTone;
   aspectRatio: string;
   imageAlt: string;
-}>(({ previewUrl, status, statusLabel, statusTone, aspectRatio, imageAlt }) => {
+  shareEnabled: boolean;
+}>(
+  ({
+    taskId,
+    previewUrl,
+    status,
+    statusLabel,
+    statusTone,
+    aspectRatio,
+    imageAlt,
+    shareEnabled,
+  }) => {
   const showBadge = status !== "succeeded" && Boolean(statusLabel);
 
   return (
@@ -72,10 +85,16 @@ const ImageResultBubble = memo<{
             <span className="text-xs">{statusLabel}</span>
           </div>
         )}
+        {shareEnabled ? (
+          <div className="mt-2 flex justify-end">
+            <ImageShareAction taskId={taskId} />
+          </div>
+        ) : null}
       </GlassCard>
     </div>
   );
-});
+}
+);
 
 ImageResultBubble.displayName = "ImageResultBubble";
 
@@ -230,14 +249,17 @@ export default function ImageDashboard() {
       const previewUrl = task.preview?.asset_url ?? task.preview?.source_url ?? null;
       const statusLabel = statusMeta.labels[task.status] ?? task.status;
       const statusTone = statusMeta.tones[task.status] ?? "outline";
+      const shareEnabled = task.status === "succeeded" && Boolean(previewUrl);
       return {
         id: task.task_id,
+        taskId: task.task_id,
         prompt: renderPrompt(task),
         previewUrl,
         status: task.status,
         statusLabel,
         statusTone,
         aspectRatio: resolveAspectRatio(task),
+        shareEnabled,
       };
     });
   }, [sessionTasks, resolveTaskTimestampValue, renderPrompt, statusMeta, resolveAspectRatio]);
@@ -276,12 +298,14 @@ export default function ImageDashboard() {
               <div key={item.id} className="flex flex-col gap-4">
                 <PromptBubble content={item.prompt} />
                 <ImageResultBubble
+                  taskId={item.taskId}
                   previewUrl={item.previewUrl}
                   status={item.status}
                   statusLabel={item.statusLabel}
                   statusTone={item.statusTone}
                   aspectRatio={item.aspectRatio}
                   imageAlt={imageAlt}
+                  shareEnabled={item.shareEnabled}
                 />
               </div>
             ))}

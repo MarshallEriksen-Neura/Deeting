@@ -17,6 +17,8 @@ from app.models import User
 from app.models.image_generation import ImageGenerationStatus
 from app.schemas.image_generation import (
     ImageGenerationCancelResponse,
+    ImageGenerationShareRequest,
+    ImageGenerationShareState,
     ImageGenerationTaskCreateRequest,
     ImageGenerationTaskCreateResponse,
     ImageGenerationTaskDetail,
@@ -24,6 +26,7 @@ from app.schemas.image_generation import (
 )
 from app.services.cancel_service import CancelService
 from app.services.image_generation.service import ImageGenerationService
+from app.services.image_generation.share_service import ImageGenerationShareService
 from app.tasks.image_generation import process_image_generation_task
 from app.utils.time_utils import Datetime
 
@@ -180,6 +183,56 @@ async def get_image_generation(
         error_message=task.error_message,
         outputs=outputs,
     )
+
+
+@router.post(
+    "/images/generations/{task_id}/share",
+    response_model=ImageGenerationShareState,
+)
+async def share_image_generation(
+    task_id: str,
+    payload: ImageGenerationShareRequest | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ImageGenerationShareState:
+    try:
+        task_uuid = uuid.UUID(task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="invalid task_id") from exc
+
+    service = ImageGenerationShareService(db)
+    try:
+        return await service.share_task(
+            user_id=user.id,
+            task_id=task_uuid,
+            tags=payload.tags if payload else None,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if message == "task not found":
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=400, detail=message) from exc
+
+
+@router.delete(
+    "/images/generations/{task_id}/share",
+    response_model=ImageGenerationShareState,
+)
+async def unshare_image_generation(
+    task_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ImageGenerationShareState:
+    try:
+        task_uuid = uuid.UUID(task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="invalid task_id") from exc
+
+    service = ImageGenerationShareService(db)
+    result = await service.unshare_task(user_id=user.id, task_id=task_uuid)
+    if not result:
+        raise HTTPException(status_code=404, detail="share not found")
+    return result
 
 
 @router.post(
