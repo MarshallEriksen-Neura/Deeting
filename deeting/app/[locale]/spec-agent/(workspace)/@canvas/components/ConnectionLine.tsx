@@ -2,9 +2,10 @@ interface ConnectionLineProps {
   from: { x: number; y: number }
   to: { x: number; y: number }
   isActive: boolean
+  isDimmed?: boolean
 }
 
-export function ConnectionLine({ from, to, isActive }: ConnectionLineProps) {
+export function ConnectionLine({ from, to, isActive, isDimmed }: ConnectionLineProps) {
   // 计算贝塞尔曲线路径
   const dx = to.x - from.x
   const dy = to.y - from.y
@@ -18,7 +19,7 @@ export function ConnectionLine({ from, to, isActive }: ConnectionLineProps) {
   const pathData = `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`
 
   return (
-    <g>
+    <g opacity={isDimmed ? 0.2 : 1}>
       {/* 主连接线 */}
       <path
         d={pathData}

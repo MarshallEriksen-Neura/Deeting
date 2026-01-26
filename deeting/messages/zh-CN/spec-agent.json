@@ -19,6 +19,16 @@
         "placeholder": "输入任务目标..."
       }
     },
+    "history": {
+      "title": "历史记录",
+      "subtitle": "选择最近的任务蓝图",
+      "loading": "加载中...",
+      "empty": "暂无历史任务",
+      "loadFailed": "加载失败，请重试。",
+      "loadMore": "加载更多",
+      "noMore": "没有更多了",
+      "untitled": "未命名任务"
+    },
     "canvas": {
       "empty": {
         "title": "开始你的 Spec Agent 任务",
@@ -35,6 +45,17 @@
           "auto": "自动"
         }
       }
+    },
+    "nav": {
+      "brand": "Spec Agent",
+      "specAgent": "Spec Agent",
+      "chat": "对话",
+      "assistants": "助手库",
+      "market": "市场",
+      "dashboard": "控制台",
+      "mcp": "MCP",
+      "profile": "个人中心",
+      "settings": "设置"
     },
     "node": {
       "modal": {
@@ -87,6 +108,12 @@
       "modelSearchPlaceholder": "搜索模型",
       "modelEmpty": "暂无可用模型",
       "modelNoResults": "未找到匹配模型"
+    },
+    "layout": {
+      "consoleClose": "关闭对话面板",
+      "consoleOpen": "打开对话面板",
+      "canvasClose": "关闭蓝图面板",
+      "canvasOpen": "打开蓝图面板"
     }
   }
 }

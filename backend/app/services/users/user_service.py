@@ -39,6 +39,7 @@ class UserService:
             id=user.id,
             email=user.email,
             username=user.username,
+            avatar_url=user.avatar_url,
             is_active=user.is_active,
             is_superuser=user.is_superuser,
             created_at=user.created_at,

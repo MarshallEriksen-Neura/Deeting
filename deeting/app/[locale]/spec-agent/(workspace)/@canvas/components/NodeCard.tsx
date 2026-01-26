@@ -2,7 +2,7 @@
 
 import { CheckCircle, Play, Clock, AlertTriangle, PauseCircle } from 'lucide-react'
 import { useI18n } from '@/hooks/use-i18n'
-import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface Node {
   id: string
@@ -13,11 +13,14 @@ interface Node {
   duration: string | null
   pulse: string | null
   modelOverride?: string | null
+  outputPreview?: string | null
+  logs?: string[]
 }
 
 interface NodeCardProps {
   node: Node
   isSelected: boolean
+  isDimmed?: boolean
   onClick: () => void
 }
 
@@ -54,86 +57,89 @@ const statusConfig = {
   }
 }
 
-export function NodeCard({ node, isSelected, onClick }: NodeCardProps) {
+export function NodeCard({ node, isSelected, isDimmed, onClick }: NodeCardProps) {
   const t = useI18n('spec-agent')
   const config = statusConfig[node.status]
   const Icon = config.icon
-  const modelLabel = node.modelOverride ?? t('canvas.node.model.auto')
+  const previewLines = node.logs?.slice(0, 3) ?? []
+  const hasPreview =
+    Boolean(node.pulse) || Boolean(node.outputPreview) || previewLines.length > 0
 
-  return (
+  const card = (
     <div
       className={`absolute cursor-pointer transition-all duration-200 ${
-        isSelected ? 'scale-105 z-10' : 'hover:scale-102'
-      }`}
+        isSelected ? 'scale-[1.04] z-10' : 'hover:scale-[1.02]'
+      } ${isDimmed ? 'opacity-20' : 'opacity-100'}`}
       style={{
         left: node.position.x,
         top: node.position.y,
-        transform: 'translate(-50%, -50%)'
+        transform: 'translate(-50%, -50%)',
       }}
       onClick={onClick}
     >
-      <div className={`
-        relative p-4 rounded-lg border-2 bg-card shadow-lg
-        ${config.borderColor} ${isSelected ? 'ring-2 ring-primary/50' : ''}
-      `}>
+      <div
+        className={`relative px-3 py-2 rounded-md border bg-card shadow-sm ${
+          config.borderColor
+        } ${isSelected ? 'ring-2 ring-primary/40' : ''}`}
+      >
         {/* 状态指示器 */}
         <div className="absolute -top-2 -left-2">
-          <div className={`w-6 h-6 rounded-full ${config.bgColor} border-2 ${config.borderColor} flex items-center justify-center`}>
+          <div
+            className={`w-5 h-5 rounded-full ${config.bgColor} border ${config.borderColor} flex items-center justify-center`}
+          >
             <Icon className={`w-3 h-3 ${config.color}`} />
           </div>
         </div>
 
-        {/* 节点内容 */}
-        <div className="min-w-48">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-foreground">
-              {node.id}: {node.title}
+        {/* 紧凑节点内容 */}
+        <div className="min-w-40">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-foreground">
+              {node.id}
             </span>
-            {node.duration && (
-              <span className="text-xs text-muted-foreground">
-                {node.duration}
-              </span>
-            )}
-          </div>
-
-          {/* 脉冲日志 */}
-          {node.pulse && (
-            <div className="text-xs text-muted-foreground font-mono bg-muted/50 rounded px-2 py-1">
-              {node.pulse}
-            </div>
-          )}
-
-          {/* 类型标签 */}
-          <div className="mt-2">
-            <span className={`inline-block px-2 py-1 text-xs rounded ${
-              node.type === 'logic_gate'
-                ? 'bg-primary-soft/20 text-primary-soft'
-                : node.type === 'replan_trigger'
-                  ? 'bg-destructive/10 text-destructive'
-                  : 'bg-teal-accent/20 text-teal-accent'
-            }`}>
-              {node.type === 'logic_gate'
-                ? t('canvas.node.type.logic')
-                : node.type === 'replan_trigger'
-                  ? t('canvas.node.type.replan')
-                  : t('canvas.node.type.action')}
+            <span className="text-xs text-muted-foreground truncate">
+              {node.title}
             </span>
           </div>
-
-          {node.type === 'action' && (
-            <div className="mt-2 flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                {t('canvas.node.model.label')}: {modelLabel}
-              </Badge>
-            </div>
-          )}
         </div>
 
         {/* 活跃状态的光晕效果 */}
         {node.status === 'active' && (
-          <div className="absolute inset-0 rounded-lg border-2 border-primary animate-pulse opacity-50" />
+          <div className="absolute inset-0 rounded-md border border-primary animate-pulse opacity-40" />
         )}
       </div>
     </div>
+  )
+
+  if (!hasPreview) return card
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{card}</TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-xs">
+        <div className="space-y-1 text-xs text-muted-foreground">
+          {node.pulse && (
+            <div className="font-mono text-[10px] text-foreground/80">
+              {node.pulse}
+            </div>
+          )}
+          {node.outputPreview && <div>{node.outputPreview}</div>}
+          {previewLines.length > 0 && (
+            <div className="space-y-0.5">
+              {previewLines.map((line, index) => (
+                <div key={`${node.id}-log-${index}`} className="truncate">
+                  {line}
+                </div>
+              ))}
+            </div>
+          )}
+          {node.type === 'action' && node.modelOverride && (
+            <div className="text-[10px] text-muted-foreground">
+              {t('canvas.node.model.label')}: {node.modelOverride}
+            </div>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   )
 }

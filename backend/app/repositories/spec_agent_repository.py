@@ -21,12 +21,14 @@ class SpecAgentRepository:
         user_id: uuid.UUID,
         project_name: str,
         manifest_data: Dict[str, Any],
+        conversation_session_id: uuid.UUID | None = None,
         priority: int = 0
     ) -> SpecPlan:
         plan = SpecPlan(
             user_id=user_id,
             project_name=project_name,
             manifest_data=manifest_data,
+            conversation_session_id=conversation_session_id,
             priority=priority,
             status="DRAFT",
             version=1
@@ -209,3 +211,28 @@ class SpecAgentRepository:
             current_messages = list(session.internal_messages) if session.internal_messages else []
             current_messages.append(message)
             session.internal_messages = current_messages
+
+    async def get_sessions_by_log_ids(self, log_ids: List[uuid.UUID]) -> Dict[uuid.UUID, SpecWorkerSession]:
+        """
+        Batch retrieve the latest session for each log_id.
+        Usually 1 log has 1 session, but if multiple, we take the latest.
+        """
+        if not log_ids:
+            return {}
+        
+        stmt = (
+            select(SpecWorkerSession)
+            .where(SpecWorkerSession.log_id.in_(log_ids))
+            .order_by(SpecWorkerSession.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        sessions = result.scalars().all()
+        
+        # Map log_id -> session (latest overwrites earlier if multiple, though usually 1:1)
+        # Reversing first to ensure first found (latest) keeps its place if we iterate? 
+        # Actually sessions are ordered by desc, so the first one we see for a log_id is the latest.
+        session_map = {}
+        for s in sessions:
+            if s.log_id not in session_map:
+                session_map[s.log_id] = s
+        return session_map

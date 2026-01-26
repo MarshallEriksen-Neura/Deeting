@@ -25,12 +25,14 @@ class UserCreate(BaseSchema):
 class UserUpdate(BaseSchema):
     """用户更新请求（自助修改）"""
     username: str | None = Field(None, max_length=100, description="展示名")
+    avatar_url: str | None = Field(None, max_length=512, description="头像 URL")
 
 
 class UserRead(IDSchema, TimestampSchema):
     """用户读取响应（排除敏感字段）"""
     email: str = Field(..., description="邮箱")
     username: str | None = Field(None, description="展示名")
+    avatar_url: str | None = Field(None, description="头像 URL")
     is_active: bool = Field(..., description="是否启用")
     is_superuser: bool = Field(..., description="是否超级管理员")
 
@@ -62,6 +64,7 @@ class UserAdminUpdate(BaseSchema):
     is_active: bool | None = Field(None, description="是否启用")
     is_superuser: bool | None = Field(None, description="是否超级管理员")
     username: str | None = Field(None, max_length=100, description="展示名")
+    avatar_url: str | None = Field(None, max_length=512, description="头像 URL")
 
 
 class UserListResponse(BaseSchema):

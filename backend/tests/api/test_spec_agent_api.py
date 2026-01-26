@@ -44,7 +44,7 @@ async def test_spec_agent_draft_non_stream(client, auth_tokens, monkeypatch):
         return ([], {})
 
     monkeypatch.setattr(
-        "app.services.spec_agent_service.llm_service.chat_completion", fake_chat_completion
+        "app.services.agent.spec_agent_service.llm_service.chat_completion", fake_chat_completion
     )
     monkeypatch.setattr(spec_agent_service, "initialize_plugins", noop)
     monkeypatch.setattr(spec_agent_service, "_load_mcp_tools", fake_mcp_tools)
@@ -377,3 +377,42 @@ async def test_spec_agent_update_node_model_invalid_model(
     )
     assert resp.status_code == 400
     assert resp.json()["detail"] == "model_not_available"
+
+
+@pytest.mark.asyncio
+async def test_spec_agent_list_plans(client, auth_tokens, AsyncSessionLocal, test_user):
+    user_id = uuid.UUID(test_user["id"])
+    manifest = SpecManifest(
+        spec_v="1.2",
+        project_name="List_Plan",
+        nodes=[
+            {
+                "id": "T1",
+                "type": "action",
+                "instruction": "do work",
+                "needs": [],
+            }
+        ],
+    )
+
+    async with AsyncSessionLocal() as session:
+        for idx in range(2):
+            plan = SpecPlan(
+                user_id=user_id,
+                project_name=f"List_Plan_{idx}",
+                manifest_data=manifest.model_dump(),
+                current_context={},
+                execution_config={},
+                status="DRAFT",
+            )
+            session.add(plan)
+        await session.commit()
+
+    resp = await client.get(
+        "/api/v1/spec-agent/plans?size=10",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "items" in payload
+    assert len(payload["items"]) >= 2

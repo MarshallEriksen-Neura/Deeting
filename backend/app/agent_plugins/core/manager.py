@@ -149,6 +149,19 @@ class PluginManager:
         """获取已激活的插件实例。"""
         return self._plugins.get(name)
 
+    def get_plugin_for_tool(self, tool_name: str) -> AgentPlugin | None:
+        """Find the plugin instance that owns the given tool."""
+        for plugin in self._plugins.values():
+            try:
+                tools = plugin.get_tools() or []
+                for tool in tools:
+                    func_def = tool.get("function", {})
+                    if func_def.get("name") == tool_name:
+                        return plugin
+            except Exception as exc:
+                logger.warning(f"get_tools failed for {plugin}: {exc}")
+        return None
+
     def get_all_tools(self) -> list[dict]:
         """汇总所有插件暴露的工具。"""
         tools: list[dict] = []

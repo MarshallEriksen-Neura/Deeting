@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown, Clock, DollarSign, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -8,7 +9,7 @@ import { GlassButton } from '@/components/ui/glass-button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ModelPicker, resolveModelVisual } from '@/components/models/model-picker'
 import { useSpecAgentStore } from '@/store/spec-agent-store'
-import { useSpecPlanActions, useSpecPlanStatus } from '@/lib/swr/use-spec-agent'
+import { useSpecPlanActions, useSpecPlanDetail, useSpecPlanStatus } from '@/lib/swr/use-spec-agent'
 import { useI18n } from '@/hooks/use-i18n'
 import { useChatService } from '@/hooks/use-chat-service'
 
@@ -22,13 +23,24 @@ export default function StatusBar() {
   const plannerModel = useSpecAgentStore((state) => state.plannerModel)
   const setPlannerModel = useSpecAgentStore((state) => state.setPlannerModel)
   const { start, startState } = useSpecPlanActions(planId)
+  const pathname = usePathname()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { modelGroups, models, isLoadingModels } = useChatService({
     modelCapability: 'chat',
   })
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [restorePlanId, setRestorePlanId] = useState<string | null>(null)
+  const queryPlanId = useMemo(
+    () => searchParams?.get('plan')?.trim() || null,
+    [searchParams]
+  )
 
   const running = execution?.status === 'running' || execution?.status === 'waiting'
   useSpecPlanStatus(planId, { enabled: running && !!planId })
+  const restoreDetail = useSpecPlanDetail(restorePlanId, {
+    enabled: !!restorePlanId,
+  })
 
   useEffect(() => {
     if (!models.length) return
@@ -42,6 +54,41 @@ export default function StatusBar() {
       setPlannerModel(models[0].id)
     }
   }, [models, plannerModel, setPlannerModel])
+
+  useEffect(() => {
+    if (!planId || typeof window === 'undefined') return
+    localStorage.setItem('deeting-spec-agent:last-plan', planId)
+  }, [planId])
+
+  useEffect(() => {
+    if (planId) return
+    if (typeof window === 'undefined') return
+    const stored = localStorage.getItem('deeting-spec-agent:last-plan')
+    const candidate = queryPlanId || stored
+    if (!candidate || candidate === restorePlanId) return
+    setRestorePlanId(candidate)
+  }, [planId, queryPlanId, restorePlanId])
+
+  useEffect(() => {
+    if (!planId || !pathname) return
+    const params = new URLSearchParams(searchParams?.toString())
+    if (params.get('plan') === planId) return
+    params.set('plan', planId)
+    const next = params.toString()
+    router.replace(next ? `${pathname}?${next}` : pathname)
+  }, [planId, pathname, router, searchParams])
+
+  useEffect(() => {
+    if (!restorePlanId || !restoreDetail.error || typeof window === 'undefined') return
+    const params = new URLSearchParams(searchParams?.toString())
+    if (params.get('plan') === restorePlanId) {
+      params.delete('plan')
+      const next = params.toString()
+      router.replace(next ? `${pathname}?${next}` : pathname)
+    }
+    localStorage.removeItem('deeting-spec-agent:last-plan')
+    setRestorePlanId(null)
+  }, [restoreDetail.error, restorePlanId, pathname, router, searchParams])
 
   const handleModelChange = useCallback(
     (modelId: string) => {

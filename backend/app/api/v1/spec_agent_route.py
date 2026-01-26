@@ -6,6 +6,7 @@ import uuid
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,7 @@ from app.schemas.spec_agent_api import (
     SpecPlanDetailResponse,
     SpecPlanInteractRequest,
     SpecPlanInteractResponse,
+    SpecPlanListItem,
     SpecPlanNodeUpdateRequest,
     SpecPlanNodeUpdateResponse,
     SpecPlanStartResponse,
@@ -94,6 +96,18 @@ async def get_spec_plan(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return detail
+
+
+@router.get("/plans", response_model=CursorPage[SpecPlanListItem])
+async def list_spec_plans(
+    params: CursorParams = Depends(),
+    status_filter: str | None = Query(None, alias="status", description="按状态过滤"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await spec_agent_service.list_plans(
+        db, user.id, params=params, status=status_filter
+    )
 
 
 @router.get("/plans/{plan_id}/status", response_model=SpecPlanStatusResponse)

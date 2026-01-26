@@ -39,6 +39,13 @@ class SpecPlan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="任务发起人",
     )
 
+    conversation_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("conversation_session.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联会话 ID",
+    )
+
     project_name: Mapped[str] = mapped_column(
         String(200),
         nullable=False,

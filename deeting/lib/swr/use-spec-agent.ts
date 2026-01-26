@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import useSWR from "swr"
+import useSWRInfinite from "swr/infinite"
 import useSWRMutation from "swr/mutation"
 
 import {
@@ -12,14 +13,18 @@ import {
   updateSpecPlanNode,
   type SpecDraftRequest,
   type SpecPlanDetail,
+  type SpecPlanListItem,
+  type SpecPlanListResponse,
   type SpecPlanStatus,
   type SpecPlanNodeUpdateResponse,
 } from "@/lib/api/spec-agent"
 import { useSpecAgentStore } from "@/store/spec-agent-store"
 import type { ApiError } from "@/lib/http"
+import { swrFetcher } from "@/lib/swr/fetcher"
 
 const SPEC_PLAN_DETAIL_KEY = "/api/v1/spec-agent/plans/detail"
 const SPEC_PLAN_STATUS_KEY = "/api/v1/spec-agent/plans/status"
+const SPEC_PLAN_LIST_KEY = "/api/v1/spec-agent/plans"
 
 export function useSpecDraftStream() {
   const cancelRef = useRef<null | (() => void)>(null)
@@ -60,6 +65,7 @@ export function useSpecDraftStream() {
                   .then((detail) => {
                     setPlanDetail({
                       planId: detail.id,
+                      conversationSessionId: detail.conversation_session_id ?? null,
                       projectName: detail.project_name,
                       manifest: detail.manifest,
                       connections: detail.connections,
@@ -155,6 +161,7 @@ export function useSpecPlanDetail(planId: string | null, options: { enabled?: bo
     if (!swr.data) return
     setPlanDetail({
       planId: swr.data.id,
+      conversationSessionId: swr.data.conversation_session_id ?? null,
       projectName: swr.data.project_name,
       manifest: swr.data.manifest,
       connections: swr.data.connections,
@@ -264,4 +271,75 @@ export function useSpecPlanNodeUpdate(planId: string | null) {
     }),
     [mutation, update]
   )
+}
+
+export function useSpecPlanHistory(options: { enabled?: boolean; size?: number; status?: string } = {}) {
+  const pageSize = options.size ?? 20
+
+  const getKey = useCallback(
+    (pageIndex: number, previousPageData: SpecPlanListResponse | null) => {
+      if (options.enabled === false) {
+        return null
+      }
+      if (previousPageData && !previousPageData.next_page) {
+        return null
+      }
+      const cursor = pageIndex === 0 ? null : previousPageData?.next_page
+      return [
+        SPEC_PLAN_LIST_KEY,
+        {
+          params: {
+            cursor,
+            size: pageSize,
+            status: options.status ?? undefined,
+          },
+        },
+      ]
+    },
+    [options.enabled, options.status, pageSize]
+  )
+
+  const {
+    data,
+    error,
+    isLoading,
+    size,
+    setSize,
+    mutate,
+  } = useSWRInfinite<SpecPlanListResponse, ApiError>(getKey, swrFetcher, {
+    revalidateOnFocus: false,
+  })
+
+  const items = useMemo<SpecPlanListItem[]>(() => {
+    if (!data) return []
+    return data.flatMap((page) => page.items || [])
+  }, [data])
+
+  const hasMore = useMemo(() => {
+    if (!data || data.length === 0) return false
+    return Boolean(data[data.length - 1]?.next_page)
+  }, [data])
+
+  const isLoadingMore =
+    isLoading || (size > 0 && !!data && typeof data[size - 1] === "undefined")
+
+  const loadMore = useCallback(() => {
+    if (hasMore) {
+      setSize(size + 1)
+    }
+  }, [hasMore, setSize, size])
+
+  const refresh = useCallback(() => {
+    void mutate()
+  }, [mutate])
+
+  return {
+    items,
+    error,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    loadMore,
+    refresh,
+  }
 }

@@ -79,10 +79,25 @@ export const SpecConnectionSchema = z.object({
 
 export const SpecPlanDetailSchema = z.object({
   id: z.string(),
+  conversation_session_id: z.string().nullable().optional(),
   project_name: z.string(),
   manifest: SpecManifestSchema,
   connections: z.array(SpecConnectionSchema).default([]),
   execution: SpecExecutionStatusSchema,
+})
+
+export const SpecPlanListItemSchema = z.object({
+  id: z.string(),
+  project_name: z.string(),
+  status: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const SpecPlanListResponseSchema = z.object({
+  items: z.array(SpecPlanListItemSchema).default([]),
+  next_page: z.string().nullable().optional(),
+  previous_page: z.string().nullable().optional(),
 })
 
 export const SpecNodeStatusSchema = z.object({
@@ -92,6 +107,7 @@ export const SpecNodeStatusSchema = z.object({
   output_preview: z.string().nullable().optional(),
   pulse: z.string().nullable().optional(),
   skipped: z.boolean().optional().default(false),
+  logs: z.array(z.string()).optional(),
 })
 
 export const SpecPlanStatusSchema = z.object({
@@ -139,6 +155,8 @@ export type SpecDraftResponse = z.infer<typeof SpecDraftResponseSchema>
 export type SpecExecutionStatus = z.infer<typeof SpecExecutionStatusSchema>
 export type SpecConnection = z.infer<typeof SpecConnectionSchema>
 export type SpecPlanDetail = z.infer<typeof SpecPlanDetailSchema>
+export type SpecPlanListItem = z.infer<typeof SpecPlanListItemSchema>
+export type SpecPlanListResponse = z.infer<typeof SpecPlanListResponseSchema>
 export type SpecNodeStatus = z.infer<typeof SpecNodeStatusSchema>
 export type SpecPlanStatus = z.infer<typeof SpecPlanStatusSchema>
 export type SpecPlanStartResponse = z.infer<typeof SpecPlanStartResponseSchema>
@@ -229,6 +247,23 @@ export async function fetchSpecPlanDetail(planId: string): Promise<SpecPlanDetai
     method: "GET",
   })
   return SpecPlanDetailSchema.parse(data)
+}
+
+export async function fetchSpecPlanList(options: {
+  cursor?: string | null
+  size?: number
+  status?: string
+} = {}): Promise<SpecPlanListResponse> {
+  const data = await request<SpecPlanListResponse>({
+    url: `${SPEC_AGENT_BASE}/plans`,
+    method: "GET",
+    params: {
+      cursor: options.cursor ?? undefined,
+      size: options.size ?? undefined,
+      status: options.status ?? undefined,
+    },
+  })
+  return SpecPlanListResponseSchema.parse(data)
 }
 
 export async function fetchSpecPlanStatus(planId: string): Promise<SpecPlanStatus> {

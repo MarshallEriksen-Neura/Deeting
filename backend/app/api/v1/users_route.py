@@ -4,7 +4,7 @@
 端点:
 - POST /users/reset-password (deprecated) - 已移除密码体系
 - GET /users/me - 获取当前用户信息 + 权限 flags
-- PATCH /users/me - 更新个人信息（username 等）
+- PATCH /users/me - 更新个人信息（username、avatar_url 等）
 - POST /users/me/change-password (deprecated) - 已移除密码体系
 
 遵循 AGENTS.md 最佳实践:
@@ -56,6 +56,7 @@ async def get_current_user_info(
         id=user.id,
         email=user.email,
         username=user.username,
+        avatar_url=user.avatar_url,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         created_at=user.created_at,
@@ -73,7 +74,7 @@ async def update_current_user(
     """
     更新当前用户信息
 
-    - 允许修改 username 等非敏感字段
+    - 允许修改 username、avatar_url 等非敏感字段
     """
     service = UserService(db)
     return await service.update_profile(user, request)

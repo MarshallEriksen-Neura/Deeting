@@ -62,7 +62,35 @@ data: {"plan_id":"uuid"}
 
 ---
 
-## 2. 获取计划详情
+## 2. 获取计划列表
+
+**GET** `/spec-agent/plans`
+
+Query：
+- `cursor` (string, 可选)：游标
+- `size` (int, 可选)：每页条数
+- `status` (string, 可选)：按状态过滤（DRAFT/RUNNING/PAUSED/COMPLETED/FAILED）
+
+响应：
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "project_name": "Laptop_Purchase_2026",
+      "status": "RUNNING",
+      "created_at": "2026-01-26T03:21:12.123Z",
+      "updated_at": "2026-01-26T03:25:45.456Z"
+    }
+  ],
+  "next_page": "cursor",
+  "previous_page": null
+}
+```
+
+---
+
+## 3. 获取计划详情
 
 **GET** `/spec-agent/plans/{plan_id}`
 
@@ -70,6 +98,7 @@ data: {"plan_id":"uuid"}
 ```json
 {
   "id": "uuid",
+  "conversation_session_id": "uuid",
   "project_name": "Laptop_Purchase_2026",
   "manifest": { "spec_v": "1.2", "project_name": "Laptop_Purchase_2026", "nodes": [] },
   "connections": [{ "source": "T1", "target": "G1" }],
@@ -79,7 +108,7 @@ data: {"plan_id":"uuid"}
 
 ---
 
-## 3. 获取执行状态（轮询）
+## 4. 获取执行状态（轮询）
 
 **GET** `/spec-agent/plans/{plan_id}/status`
 
@@ -88,7 +117,7 @@ data: {"plan_id":"uuid"}
 {
   "execution": { "status": "running", "progress": 45 },
   "nodes": [
-    { "id": "T1", "status": "completed", "duration_ms": 2500, "output_preview": "..." },
+    { "id": "T1", "status": "completed", "duration_ms": 2500, "output_preview": "...", "logs": ["> Node started. Tool count: 2"] },
     { "id": "G1", "status": "active", "pulse": "waiting_approval" }
   ],
   "checkpoint": { "node_id": "G1" }
@@ -97,7 +126,7 @@ data: {"plan_id":"uuid"}
 
 ---
 
-## 4. 启动执行
+## 5. 启动执行
 
 **POST** `/spec-agent/plans/{plan_id}/start`
 
@@ -110,7 +139,7 @@ data: {"plan_id":"uuid"}
 
 ---
 
-## 5. 审批交互
+## 6. 审批交互
 
 **POST** `/spec-agent/plans/{plan_id}/interact`
 
@@ -130,7 +159,7 @@ data: {"plan_id":"uuid"}
 
 ---
 
-## 6. 节点模型覆盖
+## 7. 节点模型覆盖
 
 **PATCH** `/spec-agent/plans/{plan_id}/nodes/{node_id}`
 
@@ -161,3 +190,6 @@ data: {"plan_id":"uuid"}
 变更记录：
 - 2026-01-26：新增 Spec Agent Draft SSE、Plan 状态与交互接口。
 - 2026-01-26：新增节点级模型覆盖接口。
+- 2026-01-26：新增计划列表接口。
+- 2026-01-26：Plan 状态节点返回执行日志 logs。
+- 2026-01-26：Plan 详情新增 conversation_session_id，用于关联会话历史。

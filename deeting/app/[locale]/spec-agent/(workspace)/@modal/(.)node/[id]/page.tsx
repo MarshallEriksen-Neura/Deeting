@@ -1,18 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { use, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useChatService } from '@/hooks/use-chat-service'
 import { useI18n } from '@/hooks/use-i18n'
 import { useSpecAgentStore } from '@/store/spec-agent-store'
 import { useSpecPlanNodeUpdate } from '@/lib/swr/use-spec-agent'
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -36,11 +36,13 @@ interface NodeDetailModalProps {
 }
 
 export default function NodeDetailModal({ params }: NodeDetailModalProps) {
+  const resolvedParams = use(params)
   const router = useRouter()
   const t = useI18n('spec-agent')
   const planId = useSpecAgentStore((state) => state.planId)
+  const setSelectedNodeId = useSpecAgentStore((state) => state.setSelectedNodeId)
   const node = useSpecAgentStore((state) =>
-    state.nodes.find((item) => item.id === params.id)
+    state.nodes.find((item) => item.id === resolvedParams.id)
   )
   const { modelGroups, isLoadingModels } = useChatService({
     modelCapability: 'chat',
@@ -56,6 +58,7 @@ export default function NodeDetailModal({ params }: NodeDetailModalProps) {
   )
 
   const handleClose = () => {
+    setSelectedNodeId(null)
     router.back()
   }
 
@@ -86,20 +89,18 @@ export default function NodeDetailModal({ params }: NodeDetailModalProps) {
   }
 
   return (
-    <Dialog open={true} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
-        <DialogHeader>
-          <DialogTitle>
-            {t('node.modal.title', { id: params.id })}
-          </DialogTitle>
-        </DialogHeader>
+    <Sheet open={true} onOpenChange={handleClose}>
+      <SheetContent side="right" className="sm:max-w-xl">
+        <SheetHeader>
+          <SheetTitle>{t('node.modal.title', { id: params.id })}</SheetTitle>
+        </SheetHeader>
 
         {!node ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
             {t('node.modal.notFound')}
           </div>
         ) : (
-          <ScrollArea className="max-h-96">
+          <ScrollArea className="h-[calc(100vh-14rem)] pr-1">
             <div className="space-y-4 pr-4">
               {/* 基本信息 */}
               <div className="grid grid-cols-2 gap-4">
@@ -215,7 +216,7 @@ export default function NodeDetailModal({ params }: NodeDetailModalProps) {
           </ScrollArea>
         )}
 
-        <DialogFooter className="gap-2">
+        <SheetFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={handleClose}>
             {t('node.modal.close')}
           </Button>
@@ -226,8 +227,8 @@ export default function NodeDetailModal({ params }: NodeDetailModalProps) {
           >
             {isSaving ? t('node.modal.saving') : t('node.modal.save')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   )
 }

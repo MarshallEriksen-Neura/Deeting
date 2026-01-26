@@ -19,6 +19,16 @@
         "placeholder": "Describe the task goal..."
       }
     },
+    "history": {
+      "title": "History",
+      "subtitle": "Select a recent blueprint",
+      "loading": "Loading...",
+      "empty": "No history yet",
+      "loadFailed": "Failed to load. Please retry.",
+      "loadMore": "Load more",
+      "noMore": "No more records",
+      "untitled": "Untitled task"
+    },
     "canvas": {
       "empty": {
         "title": "Start your Spec Agent task",
@@ -35,6 +45,17 @@
           "auto": "Auto"
         }
       }
+    },
+    "nav": {
+      "brand": "Spec Agent",
+      "specAgent": "Spec Agent",
+      "chat": "Chat",
+      "assistants": "Assistants",
+      "market": "Marketplace",
+      "dashboard": "Dashboard",
+      "mcp": "MCP",
+      "profile": "Profile",
+      "settings": "Settings"
     },
     "node": {
       "modal": {
@@ -87,6 +108,12 @@
       "modelSearchPlaceholder": "Search models",
       "modelEmpty": "No available models",
       "modelNoResults": "No matching models"
+    },
+    "layout": {
+      "consoleClose": "Close console panel",
+      "consoleOpen": "Open console panel",
+      "canvasClose": "Close canvas panel",
+      "canvasOpen": "Open canvas panel"
     }
   }
 }

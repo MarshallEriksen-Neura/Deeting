@@ -53,10 +53,18 @@ class UserProvisioningService:
             # 先按身份查询，避免同一 provider/sub 重复创建
             by_identity = await self.user_repo.get_by_identity(auth_provider, external_id)
             if by_identity:
+                if avatar and not (by_identity.avatar_url or "").strip():
+                    by_identity = await self.user_repo.update_user(by_identity.id, avatar_url=avatar)
+                    await self.db.commit()
+                    await self.db.refresh(by_identity)
                 return by_identity
 
         existing = await self.user_repo.get_by_email(email)
         if existing:
+            if avatar and not (existing.avatar_url or "").strip():
+                existing = await self.user_repo.update_user(existing.id, avatar_url=avatar)
+                await self.db.commit()
+                await self.db.refresh(existing)
             if external_id and auth_provider:
                 await self._ensure_identity(existing.id, auth_provider, external_id, display_name=username)
             return existing
@@ -79,6 +87,7 @@ class UserProvisioningService:
                 email=email,
                 hashed_password=hashed_password,
                 username=username or email.split("@")[0],
+                avatar_url=avatar,
                 is_active=is_active,
             )
             await self.db.commit()

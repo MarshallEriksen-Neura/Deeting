@@ -86,6 +86,7 @@ class TestUserProfile:
         data = response.json()
         assert "id" in data
         assert "email" in data
+        assert "avatar_url" in data
         assert "permission_flags" in data
 
     @pytest.mark.asyncio
@@ -94,10 +95,14 @@ class TestUserProfile:
         response = await client.patch(
             "/api/v1/users/me",
             headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
-            json={"username": "Updated Name"},
+            json={
+                "username": "Updated Name",
+                "avatar_url": "https://example.com/avatar.png",
+            },
         )
         assert response.status_code == 200
         assert response.json()["username"] == "Updated Name"
+        assert response.json()["avatar_url"] == "https://example.com/avatar.png"
 
 
 class TestChangePassword:

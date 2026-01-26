@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Literal
 from uuid import UUID
 
@@ -36,6 +37,7 @@ class SpecNodeStatus(BaseSchema):
     output_preview: Optional[str] = Field(None, description="输出预览或错误摘要")
     pulse: Optional[str] = Field(None, description="运行中提示文案")
     skipped: bool = Field(False, description="是否被剪枝跳过")
+    logs: List[str] = Field(default_factory=list, description="节点执行日志")
 
 
 class SpecPlanStatusResponse(BaseSchema):
@@ -48,10 +50,19 @@ class SpecPlanStatusResponse(BaseSchema):
 
 class SpecPlanDetailResponse(BaseSchema):
     id: UUID
+    conversation_session_id: UUID | None = None
     project_name: str
     manifest: SpecManifest
     connections: List[Dict[str, str]]
     execution: SpecExecutionStatus
+
+
+class SpecPlanListItem(BaseSchema):
+    id: UUID
+    project_name: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class SpecPlanStartResponse(BaseSchema):

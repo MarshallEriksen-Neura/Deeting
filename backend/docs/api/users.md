@@ -6,11 +6,12 @@
 
 - `GET /users/me`
 - 响应：`UserWithPermissions`
+- 字段补充：`avatar_url`（头像 URL，可为空）
 
 ## 更新用户信息
 
 - `PATCH /users/me`
-- Body：`UserUpdate`
+- Body：`UserUpdate`（支持 `username` / `avatar_url`）
 - 响应：`UserRead`
 
 ## 获取秘书配置

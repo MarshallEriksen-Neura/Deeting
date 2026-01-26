@@ -1,5 +1,8 @@
 import { ReactNode } from 'react'
 
+import { SpecAgentSidebar } from './components/spec-agent-sidebar'
+import { SpecAgentSplitLayout } from './components/spec-agent-split-layout'
+
 interface SpecAgentLayoutProps {
   statusbar: ReactNode
   console: ReactNode
@@ -20,17 +23,11 @@ export default function SpecAgentLayout({
         {statusbar}
       </div>
 
-      {/* 主体区域：Console + Canvas */}
+      {/* 主体区域：Nav + Console + Canvas */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧对话流 */}
-        <div className="w-96 flex-shrink-0 border-r border-border bg-card">
-          {console}
-        </div>
+        <SpecAgentSidebar />
 
-        {/* 右侧任务画布 */}
-        <div className="flex-1 relative bg-surface">
-          {canvas}
-        </div>
+        <SpecAgentSplitLayout console={console} canvas={canvas} />
       </div>
 
       {/* 模态层 */}

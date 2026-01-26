@@ -5,20 +5,28 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi_pagination.cursor import CursorPage, CursorParams
+from fastapi_pagination.ext.sqlalchemy import paginate
 
 from app.agent_plugins.core.manager import PluginManager
 from app.core.plugin_config import plugin_config_loader
+from app.models.spec_agent import SpecPlan
 from app.models.user_mcp_server import UserMcpServer
+from app.models.conversation import ConversationChannel
 from app.prompts.spec_planner import SPEC_PLANNER_SYSTEM_PROMPT
+from app.repositories.conversation_message_repository import ConversationMessageRepository
+from app.repositories.conversation_session_repository import ConversationSessionRepository
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest, SpecNode
 from app.schemas.tool import ToolCall, ToolDefinition
+from app.services.conversation.service import ConversationService
 from app.services.mcp.client import mcp_client
 from app.services.mcp.discovery import mcp_discovery_service
 from app.services.providers.llm import llm_service
+from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
 
@@ -595,15 +603,43 @@ class SpecAgentService:
 
     @staticmethod
     def _extract_json_payload(raw_text: str) -> dict[str, Any]:
+        """
+        Robust JSON extraction from LLM output.
+        Handles:
+        1. Pure JSON
+        2. Markdown code blocks (```json ... ```)
+        3. Text with JSON embedded
+        """
         cleaned = raw_text.strip()
+        
+        # 1. Try finding markdown code block first
+        code_block_pattern = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+        match = code_block_pattern.search(cleaned)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass # Fallback to wider search
+
+        # 2. Try direct parsing
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
+            pass
+
+        # 3. Fuzzy search for outer braces
+        try:
             start = cleaned.find("{")
             end = cleaned.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise
-            return json.loads(cleaned[start : end + 1])
+            if start != -1 and end != -1 and end > start:
+                potential_json = cleaned[start : end + 1]
+                return json.loads(potential_json)
+        except json.JSONDecodeError:
+            pass
+            
+        # 4. If strict parsing fails, try to repair common issues (optional, risky but helpful)
+        # For now, we just re-raise the last error or a generic one
+        raise ValueError("Failed to extract valid JSON from response")
 
     def _parse_manifest(self, planner_output: Any) -> SpecManifest:
         if isinstance(planner_output, list):
@@ -612,6 +648,113 @@ class SpecAgentService:
             raise ValueError("planner_output_invalid_type")
         payload = self._extract_json_payload(planner_output)
         return SpecManifest(**payload)
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        return max(1, int(len(text) / 4)) if text else 1
+
+    async def _append_conversation_messages(
+        self,
+        session: AsyncSession,
+        *,
+        session_id: uuid.UUID,
+        user_id: uuid.UUID,
+        query: str,
+        project_name: str,
+    ) -> None:
+        created_at = Datetime.now().isoformat()
+        messages = [
+            {
+                "role": "user",
+                "content": query,
+                "token_estimate": self._estimate_tokens(query),
+                "is_truncated": False,
+                "meta_info": {"created_at": created_at},
+            },
+            {
+                "role": "system",
+                "content": "Drafting execution blueprint...",
+                "token_estimate": self._estimate_tokens("Drafting execution blueprint..."),
+                "is_truncated": False,
+                "meta_info": {
+                    "spec_agent_event": "drafting",
+                    "created_at": created_at,
+                },
+            },
+            {
+                "role": "system",
+                "content": f"Blueprint ready: {project_name}",
+                "token_estimate": self._estimate_tokens(
+                    f"Blueprint ready: {project_name}"
+                ),
+                "is_truncated": False,
+                "meta_info": {
+                    "spec_agent_event": "ready",
+                    "project_name": project_name,
+                    "created_at": Datetime.now().isoformat(),
+                },
+            },
+        ]
+
+        redis_messages = [dict(message) for message in messages]
+        db_messages = [dict(message) for message in messages]
+        redis_available = True
+        conv_service: ConversationService | None = None
+        result: dict[str, Any] = {"last_turn": None}
+
+        try:
+            conv_service = ConversationService()
+        except Exception as exc:
+            redis_available = False
+            logger.warning("spec_agent_conversation_redis_unavailable: %s", exc)
+
+        if redis_available and conv_service:
+            try:
+                result = await conv_service.append_messages(
+                    session_id=str(session_id),
+                    messages=redis_messages,
+                    channel=ConversationChannel.INTERNAL,
+                )
+            except Exception as exc:
+                redis_available = False
+                logger.warning("spec_agent_conversation_append_failed: %s", exc)
+
+        session_repo = ConversationSessionRepository(session)
+        message_repo = ConversationMessageRepository(session)
+
+        if redis_available:
+            for idx, msg in enumerate(db_messages):
+                if idx < len(redis_messages):
+                    msg["turn_index"] = redis_messages[idx].get("turn_index")
+            last_turn = result.get("last_turn") if isinstance(result, dict) else None
+        else:
+            turn_indexes = await session_repo.reserve_turn_indexes(
+                session_id=session_id,
+                user_id=user_id,
+                tenant_id=None,
+                assistant_id=None,
+                channel=ConversationChannel.INTERNAL,
+                count=len(db_messages),
+            )
+            last_turn = turn_indexes[-1] if turn_indexes else None
+            for msg, turn_index in zip(db_messages, turn_indexes, strict=False):
+                msg["turn_index"] = turn_index
+
+        await session_repo.upsert_session(
+            session_id=session_id,
+            user_id=user_id,
+            tenant_id=None,
+            assistant_id=None,
+            channel=ConversationChannel.INTERNAL,
+            last_active_at=Datetime.now(),
+            message_count=last_turn,
+            first_message_at=Datetime.now(),
+            title=project_name,
+        )
+        await message_repo.bulk_insert_messages(
+            session_id=session_id,
+            messages=db_messages,
+        )
 
     async def generate_plan(
         self,
@@ -623,12 +766,13 @@ class SpecAgentService:
     ) -> tuple["SpecPlan", SpecManifest]:
         await self.initialize_plugins(user_id=user_id)
 
+        trimmed_query = query.strip()
         local_tools, _ = self._load_local_tools()
         mcp_tools, _ = await self._load_mcp_tools(session, user_id)
         tools_desc = self._build_tools_description(local_tools + mcp_tools)
         system_prompt = SPEC_PLANNER_SYSTEM_PROMPT.replace("{{available_tools}}", tools_desc)
 
-        user_prompt = query.strip()
+        user_prompt = trimmed_query
         if context:
             user_prompt = (
                 f"{user_prompt}\n\nContext JSON: "
@@ -652,15 +796,27 @@ class SpecAgentService:
             manifest.context.update(context)
 
         repo = SpecAgentRepository(session)
+        conversation_session_id = uuid.uuid4()
         plan = await repo.create_plan(
             user_id=user_id,
             project_name=manifest.project_name,
             manifest_data=manifest.model_dump(),
+            conversation_session_id=conversation_session_id,
         )
         if manifest.context:
             await repo.update_plan_context(plan.id, manifest.context)
         await session.commit()
         await session.refresh(plan)
+        try:
+            await self._append_conversation_messages(
+                session,
+                session_id=conversation_session_id,
+                user_id=user_id,
+                query=trimmed_query,
+                project_name=manifest.project_name,
+            )
+        except Exception as exc:
+            logger.warning("spec_agent_conversation_append_failed: %s", exc)
         return plan, manifest
 
     async def start_plan(
@@ -794,6 +950,19 @@ class SpecAgentService:
                 connections.append({"source": dep, "target": node.id})
         return connections
 
+    async def list_plans(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        params: CursorParams,
+        status: Optional[str] = None,
+    ) -> CursorPage[SpecPlan]:
+        stmt = select(SpecPlan).where(SpecPlan.user_id == user_id)
+        if status:
+            stmt = stmt.where(SpecPlan.status == status)
+        stmt = stmt.order_by(desc(SpecPlan.created_at), desc(SpecPlan.id))
+        return await paginate(session, stmt, params=params)
+
     async def get_plan_detail(
         self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
     ) -> Dict[str, Any]:
@@ -813,6 +982,11 @@ class SpecAgentService:
 
         return {
             "id": plan.id,
+            "conversation_session_id": (
+                str(plan.conversation_session_id)
+                if plan.conversation_session_id
+                else None
+            ),
             "project_name": plan.project_name,
             "manifest": manifest,
             "connections": self._build_connections(manifest.nodes),
@@ -821,6 +995,28 @@ class SpecAgentService:
                 "progress": progress,
             },
         }
+
+    @staticmethod
+    def _format_trace_to_logs(trace: List[Dict[str, Any]]) -> List[str]:
+        logs = []
+        if not trace:
+            return logs
+        for step in trace:
+            kind = step.get("step")
+            if kind == "start":
+                logs.append(f"> Node started. Tool count: {step.get('tool_count')}")
+            elif kind == "tool_calls":
+                tools = step.get("tools", [])
+                logs.append(f"> Calling tools: {', '.join(tools)}")
+            elif kind == "tool_result":
+                tool = step.get("tool")
+                preview = step.get("result_preview")
+                logs.append(f"> Tool '{tool}' returned: {preview}")
+            elif kind == "final":
+                preview = step.get("preview")
+                logs.append(f"> Final answer: {preview}")
+                logs.append("> Success.")
+        return logs
 
     async def get_plan_status(
         self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
@@ -834,6 +1030,10 @@ class SpecAgentService:
         logs = await repo.get_latest_node_logs(plan_id)
         log_map = {log.node_id: log for log in logs}
 
+        # Batch fetch sessions for logs
+        log_ids = [log.id for log in logs]
+        worker_sessions = await repo.get_sessions_by_log_ids(log_ids)
+
         nodes_payload: list[dict[str, Any]] = []
         completed = 0
         waiting_nodes: list[str] = []
@@ -844,6 +1044,8 @@ class SpecAgentService:
             output_preview = None
             pulse = None
             skipped = False
+            node_logs: List[str] = []
+
             if log:
                 status = self._map_log_status(log.status)
                 skipped = log.status == "SKIPPED"
@@ -862,6 +1064,13 @@ class SpecAgentService:
                     )[:200]
                 if log.error_message:
                     output_preview = log.error_message[:200]
+                    node_logs.append(f"> Error: {log.error_message}")
+                
+                # Format session trace to logs
+                worker_session = worker_sessions.get(log.id)
+                if worker_session and worker_session.thought_trace:
+                    node_logs.extend(self._format_trace_to_logs(worker_session.thought_trace))
+
             nodes_payload.append(
                 {
                     "id": node.id,
@@ -870,6 +1079,7 @@ class SpecAgentService:
                     "output_preview": output_preview,
                     "pulse": pulse,
                     "skipped": skipped,
+                    "logs": node_logs,
                 }
             )
 

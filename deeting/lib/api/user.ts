@@ -10,6 +10,7 @@ export const UserProfileSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   username: z.string().nullable(),
+  avatar_url: z.string().nullable(),
   is_active: z.boolean(),
   is_superuser: z.boolean(),
   created_at: z.string(),

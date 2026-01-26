@@ -171,6 +171,9 @@ class AgentExecutorStep(BaseStep):
         plugin = global_plugin_manager.get_plugin_for_tool(tool_call.name)
         if plugin:
             handler = getattr(plugin, f"handle_{tool_call.name}", None)
+            if not handler:
+                handler = getattr(plugin, tool_call.name, None)
+            
             if handler:
                 # Introspect handler to see if it accepts context
                 import inspect
