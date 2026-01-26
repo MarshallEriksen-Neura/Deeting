@@ -93,6 +93,7 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     steps=[
         "validation",  # 1) 入参校验
         "conversation_load",  # 2) 会话上下文加载
+        "assistant_prompt_injection",  # 2.5) 助手提示词注入 (Spec Agent 能力)
         "resolve_assets",  # 3) 资源引用解析（asset:// -> signed URL）
         "mcp_discovery", # 3.5) MCP 工具发现 (User BYOP)
         "quota_check",  # 4) 配额/余额检查（与外部一致）
@@ -101,6 +102,7 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "template_render",  # 7) 模板渲染
         "agent_executor",  # 8) 执行与工具循环 (原 upstream_call)
         "response_transform",  # 9) 响应转换
+        "spec_agent_detector",  # 9.5) Spec Agent 建议检测
         "conversation_append",  # 10) 写入窗口 & 触发摘要
         "memory_write",  # 11) 记忆写入（内部跳过）
         "sanitize",  # 12) 脱敏

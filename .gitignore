@@ -10,6 +10,7 @@ __pycache__/
 .codex/
 .workflow/
 .specify/
+.mcp.json
 backend/__pycache__
 backend/*.py[oc]
 backend/build/

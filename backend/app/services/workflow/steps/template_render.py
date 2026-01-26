@@ -38,6 +38,7 @@ class TemplateRenderStep(BaseStep):
         - routing.template_engine: 模板引擎类型
         - routing.template_config: 模板配置
         - validation.validated: 已校验的请求数据
+        - assistant.enhanced_prompt: 增强后的 assistant system_prompt (可选)
 
     写入上下文:
         - template_render.upstream_url: 渲染后的 URL
@@ -46,7 +47,7 @@ class TemplateRenderStep(BaseStep):
     """
 
     name = "template_render"
-    depends_on = ["routing"]
+    depends_on = ["routing", "assistant_prompt_injection"]
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """执行模板渲染"""
@@ -130,10 +131,13 @@ class TemplateRenderStep(BaseStep):
         """构建模板渲染上下文"""
         conversation_messages = ctx.get("conversation", "merged_messages") or request_data.get("messages", [])
         summary = ctx.get("conversation", "summary")
-        
+
         # 获取当前选中的模型对象（由 routing 步骤注入）
         from app.models.provider_instance import ProviderModel
         model_obj = ctx.get("routing", "model_obj")
+
+        # 获取增强后的 assistant prompt (由 assistant_prompt_injection 步骤注入)
+        enhanced_prompt = ctx.get("assistant", "enhanced_prompt")
 
         return {
             # 请求数据
@@ -152,6 +156,8 @@ class TemplateRenderStep(BaseStep):
             "api_key_id": ctx.api_key_id,
             # 原始请求
             "request": request_data,
+            # Assistant 增强 prompt
+            "enhanced_prompt": enhanced_prompt,
         }
 
     async def _render_template(
@@ -235,7 +241,7 @@ class TemplateRenderStep(BaseStep):
         """
         # 使用专用的 request_renderer 处理复杂的厂商适配
         item_config = context.get("item_config") # 需要确保 context 里有这个，或者从 ctx 获取
-        
+
         # 兜底方案：如果 context 里没有，我们手动构建一个简单的
         if not item_config:
             from dataclasses import dataclass
@@ -246,12 +252,30 @@ class TemplateRenderStep(BaseStep):
             item_config = MockConfig(template_engine=engine, request_template=default_params)
 
         from app.services.providers.request_renderer import request_renderer
-        return request_renderer.render(
+        rendered_body = request_renderer.render(
             item_config=item_config,
             internal_req=request_data,
             tools=tools,
             extra_context=context
         )
+
+        # 注入增强后的 assistant system_prompt (如果有)
+        enhanced_prompt = context.get("enhanced_prompt")
+        if enhanced_prompt and "messages" in rendered_body:
+            messages = rendered_body["messages"]
+            # 查找并替换 system 消息
+            system_msg_found = False
+            for i, msg in enumerate(messages):
+                if msg.get("role") == "system":
+                    messages[i]["content"] = enhanced_prompt
+                    system_msg_found = True
+                    break
+
+            # 如果没有 system 消息,在开头插入
+            if not system_msg_found:
+                messages.insert(0, {"role": "system", "content": enhanced_prompt})
+
+        return rendered_body
 
     async def _render_headers(
         self,

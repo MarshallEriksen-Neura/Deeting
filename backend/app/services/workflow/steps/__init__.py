@@ -34,6 +34,8 @@ from app.services.workflow.steps.validation import ValidationStep
 from app.services.workflow.steps.mcp_discovery import McpDiscoveryStep
 from app.services.workflow.steps.agent_executor import AgentExecutorStep
 from app.services.workflow.steps.provider_execution import ProviderExecutionStep
+from app.services.workflow.steps.assistant_prompt_injection import AssistantPromptInjectionStep
+from app.services.workflow.steps.spec_agent_detector import SpecAgentDetectorStep
 
 __all__ = [
     # Base
@@ -50,6 +52,7 @@ __all__ = [
     "QuotaCheckStep",
     "RateLimitStep",
     "ConversationLoadStep",
+    "AssistantPromptInjectionStep",
     "ResolveAssetsStep",
     "ConversationAppendStep",
     "MemoryWriteStep",
@@ -59,6 +62,7 @@ __all__ = [
     "UpstreamCallStep",
     "ProviderExecutionStep",
     "ResponseTransformStep",
+    "SpecAgentDetectorStep",
     "SanitizeStep",
     "BillingStep",
     "AuditLogStep",

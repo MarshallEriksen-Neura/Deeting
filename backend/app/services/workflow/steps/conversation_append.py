@@ -36,7 +36,7 @@ class ConversationAppendStep(BaseStep):
     """
 
     name = "conversation_append"
-    depends_on = ["response_transform"]
+    depends_on = ["response_transform", "spec_agent_detector"]
 
     async def execute(self, ctx: WorkflowContext) -> StepResult:
         # 仅 chat 能力处理；流式暂跳过
@@ -61,6 +61,13 @@ class ConversationAppendStep(BaseStep):
         assistant_msg = self._extract_assistant_message(
             ctx.get("response_transform", "response") or {}
         )
+
+        # 添加 spec_agent_suggestion 到 assistant 消息的 meta_info
+        spec_suggestion = ctx.get("spec_agent_detector", "suggestion")
+        if spec_suggestion and assistant_msg:
+            meta_info = assistant_msg.get("meta_info") or {}
+            meta_info["spec_agent_suggestion"] = spec_suggestion
+            assistant_msg["meta_info"] = meta_info
 
         channel = (
             ConversationChannel.EXTERNAL
