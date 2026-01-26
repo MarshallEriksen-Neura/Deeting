@@ -28,6 +28,9 @@ class ActionNode(SpecNodeBase):
     
     output_as: Optional[str] = Field(None, description="输出变量名，供后续节点引用")
     check_in: bool = Field(False, description="是否需要用户审批 (策略熔断点)")
+    model_override: Optional[str] = Field(
+        None, description="节点级模型覆盖 (优先于全局/默认模型)"
+    )
 
 class LogicRule(BaseModel):
     """

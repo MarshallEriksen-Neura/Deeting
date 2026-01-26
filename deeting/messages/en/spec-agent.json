@@ -11,7 +11,8 @@
         "drafting": "Drafting execution blueprint...",
         "ready": "Blueprint ready: {projectName}",
         "defaultProject": "Untitled task",
-        "error": "Draft failed. Please retry."
+        "error": "Draft failed. Please retry.",
+        "modelMissing": "Planner model not configured. Please select a model first."
       },
       "empty": "Enter a goal below to generate a blueprint.",
       "input": {
@@ -28,6 +29,41 @@
           "logic": "Logic Gate",
           "action": "Action",
           "replan": "Replan"
+        },
+        "model": {
+          "label": "Model",
+          "auto": "Auto"
+        }
+      }
+    },
+    "node": {
+      "modal": {
+        "title": "Node details: {id}",
+        "notFound": "Node not found or removed.",
+        "close": "Close",
+        "save": "Save settings",
+        "saving": "Saving...",
+        "saveFailed": "Save failed. Please try again.",
+        "modelPlaceholder": "Select a model",
+        "modelAuto": "Auto assign (inherit default)",
+        "modelUnknown": "Current model: {model}",
+        "modelHint": "Applies to action nodes only and overrides the default model.",
+        "modelDisabled": "Model override is not available for this node.",
+        "durationPlaceholder": "No duration yet",
+        "fields": {
+          "type": "Node type",
+          "status": "Status",
+          "duration": "Duration",
+          "title": "Title",
+          "model": "Model configuration",
+          "payload": "Node payload"
+        },
+        "status": {
+          "pending": "Pending",
+          "active": "Running",
+          "completed": "Completed",
+          "error": "Failed",
+          "waiting": "Waiting approval"
         }
       }
     },
@@ -45,7 +81,12 @@
       "nodes": "Nodes: {completed}/{total}",
       "launch": "Launch",
       "running": "Running",
-      "ready": "Ready"
+      "ready": "Ready",
+      "modelLabel": "Planner model",
+      "modelPlaceholder": "Select model",
+      "modelSearchPlaceholder": "Search models",
+      "modelEmpty": "No available models",
+      "modelNoResults": "No matching models"
     }
   }
 }

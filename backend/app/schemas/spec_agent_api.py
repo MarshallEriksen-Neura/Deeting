@@ -12,6 +12,7 @@ from app.schemas.spec_agent import SpecManifest
 class SpecDraftRequest(BaseSchema):
     query: str = Field(..., min_length=1, description="用户需求描述")
     context: Optional[Dict[str, Any]] = Field(default=None, description="上下文补充信息")
+    model: Optional[str] = Field(default=None, description="规划阶段使用的模型")
 
 
 class SpecDraftResponse(BaseSchema):
@@ -69,3 +70,15 @@ class SpecPlanInteractResponse(BaseSchema):
     plan_id: UUID
     node_id: str
     decision: Literal["approve", "reject", "modify"]
+
+
+class SpecPlanNodeUpdateRequest(BaseSchema):
+    model_override: Optional[str] = Field(
+        None, description="节点级模型覆盖，传 null 则清空"
+    )
+
+
+class SpecPlanNodeUpdateResponse(BaseSchema):
+    plan_id: UUID
+    node_id: str
+    model_override: Optional[str] = None

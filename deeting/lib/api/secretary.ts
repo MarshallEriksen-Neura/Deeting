@@ -7,7 +7,6 @@ const USERS_BASE = "/api/v1/users"
 export const UserSecretarySchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  current_phase_id: z.string().uuid(),
   name: z.string(),
   model_name: z.string().nullable().optional(),
   created_at: z.string(),

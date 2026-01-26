@@ -15,7 +15,7 @@ import {
 import { CloudSettingsCard } from "./cloud-settings-card"
 import { PersonalSettingsCard } from "./personal-settings-card"
 import { SettingsFormActions } from "./settings-form-actions"
-import { EMBEDDING_MODELS, type SettingsFormValues } from "../types"
+import { type SettingsFormValues } from "../types"
 
 interface SettingsFormProps {
   isAuthenticated: boolean
@@ -34,15 +34,24 @@ export function SettingsForm({ isAuthenticated, isAdmin }: SettingsFormProps) {
     isLoading: isLoadingSecretary,
     mutate: mutateSecretary,
   } = useUserSecretary({ enabled: isAuthenticated })
-  const { modelGroups, isLoadingModels } = useChatService({
+  
+  // Fetch chat models for personal settings
+  const { modelGroups: chatModelGroups, isLoadingModels: isLoadingChatModels } = useChatService({
     enabled: isAuthenticated,
     modelCapability: "chat",
   })
+
+  // Fetch embedding models for cloud settings
+  const { modelGroups: embeddingModelGroups, isLoadingModels: isLoadingEmbeddingModels } = useChatService({
+    enabled: isAuthenticated && isAdmin,
+    modelCapability: "embedding",
+  })
+
   const [isSaving, setIsSaving] = React.useState(false)
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
-      cloudModel: EMBEDDING_MODELS[0],
+      cloudModel: "",
       secretaryModel: "",
     },
   })
@@ -50,13 +59,13 @@ export function SettingsForm({ isAuthenticated, isAdmin }: SettingsFormProps) {
   const canEditCloud = isAuthenticated && isAdmin
   const canEditPersonal = isAuthenticated
   const canSave = isAuthenticated && (canEditCloud || canEditPersonal)
-  const hasAvailableModels = modelGroups.length > 0
+  const hasAvailableModels = chatModelGroups.length > 0
 
   React.useEffect(() => {
     if (!isAuthenticated) return
     if (isLoadingSystem || isLoadingSecretary) return
     form.reset({
-      cloudModel: systemSetting?.model_name ?? EMBEDDING_MODELS[0],
+      cloudModel: systemSetting?.model_name ?? "",
       secretaryModel: secretarySetting?.model_name ?? "",
     })
   }, [
@@ -80,8 +89,8 @@ export function SettingsForm({ isAuthenticated, isAdmin }: SettingsFormProps) {
     setIsSaving(true)
     try {
       const tasks: Promise<unknown>[] = []
-      if (canEditCloud) {
-        tasks.push(updateEmbeddingSetting({ model_name: values.cloudModel }))
+      if (canEditCloud && values.cloudModel?.trim()) {
+        tasks.push(updateEmbeddingSetting({ model_name: values.cloudModel.trim() }))
       }
       const secretaryPayload: UserSecretaryUpdate = {}
       if (canEditPersonal && values.secretaryModel?.trim()) {
@@ -103,17 +112,21 @@ export function SettingsForm({ isAuthenticated, isAdmin }: SettingsFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <CloudSettingsCard
-            control={form.control}
-            canEditCloud={canEditCloud}
-          />
+        <div className={isAdmin ? "grid gap-6 lg:grid-cols-2" : "flex flex-col gap-6"}>
+          {isAdmin && (
+            <CloudSettingsCard
+              control={form.control}
+              canEditCloud={canEditCloud}
+              modelGroups={embeddingModelGroups}
+              isLoadingModels={isLoadingEmbeddingModels}
+            />
+          )}
           <PersonalSettingsCard
             control={form.control}
             canEditPersonal={canEditPersonal}
             hasAvailableModels={hasAvailableModels}
-            modelGroups={modelGroups}
-            isLoadingModels={isLoadingModels}
+            modelGroups={chatModelGroups}
+            isLoadingModels={isLoadingChatModels}
           />
         </div>
 

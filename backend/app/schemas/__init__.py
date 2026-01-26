@@ -115,6 +115,8 @@ from .spec_agent_api import (
     SpecPlanDetailResponse,
     SpecPlanInteractRequest,
     SpecPlanInteractResponse,
+    SpecPlanNodeUpdateRequest,
+    SpecPlanNodeUpdateResponse,
     SpecPlanStartResponse,
     SpecPlanStatusResponse,
 )

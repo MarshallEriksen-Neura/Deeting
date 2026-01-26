@@ -4,6 +4,7 @@ import { NodeCard } from './components/NodeCard'
 import { ConnectionLine } from './components/ConnectionLine'
 import { useSpecAgentStore } from '@/store/spec-agent-store'
 import { useI18n } from '@/hooks/use-i18n'
+import { useRouter } from '@/i18n/routing'
 
 export default function Canvas() {
   const t = useI18n('spec-agent')
@@ -11,6 +12,7 @@ export default function Canvas() {
   const connections = useSpecAgentStore((state) => state.connections)
   const selectedNodeId = useSpecAgentStore((state) => state.selectedNodeId)
   const setSelectedNodeId = useSpecAgentStore((state) => state.setSelectedNodeId)
+  const router = useRouter()
 
   return (
     <div className="h-full relative overflow-hidden bg-surface">
@@ -51,7 +53,10 @@ export default function Canvas() {
           key={node.id}
           node={node}
           isSelected={selectedNodeId === node.id}
-          onClick={() => setSelectedNodeId(node.id)}
+          onClick={() => {
+            setSelectedNodeId(node.id)
+            router.push(`/spec-agent/node/${node.id}`)
+          }}
         />
       ))}
 

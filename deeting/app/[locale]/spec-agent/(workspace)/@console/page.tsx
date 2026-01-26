@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useSpecDraftStream } from '@/lib/swr/use-spec-agent'
@@ -31,6 +31,7 @@ export default function Console() {
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
   const drafting = useSpecAgentStore((state) => state.drafting)
   const projectName = useSpecAgentStore((state) => state.projectName)
+  const plannerModel = useSpecAgentStore((state) => state.plannerModel)
   const { start } = useSpecDraftStream()
   const lastDraftStatus = useRef(drafting.status)
 
@@ -82,13 +83,21 @@ export default function Console() {
       content: query,
       timestamp: formatTime(new Date()),
     })
+    if (!plannerModel) {
+      appendMessage({
+        type: 'system',
+        content: t('console.system.modelMissing'),
+        timestamp: formatTime(new Date()),
+      })
+      return
+    }
     setInput('')
-    start({ query })
-  }, [appendMessage, input, start])
+    start({ query, model: plannerModel })
+  }, [appendMessage, input, plannerModel, start, t])
 
   const handleKeyPress = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && e.shiftKey) {
         e.preventDefault()
         handleSend()
       }
@@ -144,13 +153,13 @@ export default function Console() {
       {/* 输入框 */}
       <div className="flex-shrink-0 p-4">
         <div className="flex gap-2">
-          <Input
-            type="text"
+          <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             placeholder={t('console.input.placeholder')}
-            className="flex-1"
+            className="flex-1 min-h-[40px] resize-none"
+            rows={1}
           />
           <Button
             onClick={handleSend}

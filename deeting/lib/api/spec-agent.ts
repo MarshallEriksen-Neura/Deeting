@@ -21,6 +21,7 @@ export const SpecActionNodeSchema = SpecNodeBaseSchema.extend({
   args: z.record(z.any()).optional().default({}),
   output_as: z.string().nullable().optional(),
   check_in: z.boolean().optional().default(false),
+  model_override: z.string().nullable().optional(),
 })
 
 export const SpecLogicRuleSchema = z.object({
@@ -58,6 +59,7 @@ export const SpecManifestSchema = z.object({
 export const SpecDraftRequestSchema = z.object({
   query: z.string().min(1),
   context: z.record(z.any()).optional().nullable(),
+  model: z.string().nullable().optional(),
 })
 
 export const SpecDraftResponseSchema = z.object({
@@ -115,6 +117,16 @@ export const SpecPlanInteractResponseSchema = z.object({
   decision: z.string(),
 })
 
+export const SpecPlanNodeUpdateRequestSchema = z.object({
+  model_override: z.string().nullable().optional(),
+})
+
+export const SpecPlanNodeUpdateResponseSchema = z.object({
+  plan_id: z.string(),
+  node_id: z.string(),
+  model_override: z.string().nullable().optional(),
+})
+
 // Types
 export type SpecNodeBase = z.infer<typeof SpecNodeBaseSchema>
 export type SpecActionNode = z.infer<typeof SpecActionNodeSchema>
@@ -132,6 +144,8 @@ export type SpecPlanStatus = z.infer<typeof SpecPlanStatusSchema>
 export type SpecPlanStartResponse = z.infer<typeof SpecPlanStartResponseSchema>
 export type SpecPlanInteractRequest = z.infer<typeof SpecPlanInteractRequestSchema>
 export type SpecPlanInteractResponse = z.infer<typeof SpecPlanInteractResponseSchema>
+export type SpecPlanNodeUpdateRequest = z.infer<typeof SpecPlanNodeUpdateRequestSchema>
+export type SpecPlanNodeUpdateResponse = z.infer<typeof SpecPlanNodeUpdateResponseSchema>
 
 export type SpecDraftSseEvent =
   | { event: "drafting"; data: { status?: string } }
@@ -243,4 +257,17 @@ export async function interactSpecPlan(
     data: payload,
   })
   return SpecPlanInteractResponseSchema.parse(data)
+}
+
+export async function updateSpecPlanNode(
+  planId: string,
+  nodeId: string,
+  payload: SpecPlanNodeUpdateRequest
+): Promise<SpecPlanNodeUpdateResponse> {
+  const data = await request<SpecPlanNodeUpdateResponse>({
+    url: `${SPEC_AGENT_BASE}/plans/${planId}/nodes/${nodeId}`,
+    method: "PATCH",
+    data: payload,
+  })
+  return SpecPlanNodeUpdateResponseSchema.parse(data)
 }

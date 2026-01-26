@@ -12,6 +12,7 @@ from app.agent_plugins.core.manager import PluginManager
 from app.core.plugin_config import plugin_config_loader
 from app.models.user_mcp_server import UserMcpServer
 from app.prompts.spec_planner import SPEC_PLANNER_SYSTEM_PROMPT
+from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest, SpecNode
 from app.schemas.tool import ToolCall, ToolDefinition
@@ -168,7 +169,7 @@ class SpecExecutor:
                     self.context[node.output_as] = result
                 self.node_outputs[node.id] = result
                 worker_snapshot = {
-                    "model": "gpt-4o",
+                    "model": getattr(node, "model_override", None) or "auto",
                     "max_turns": self.max_turns,
                     "required_tools": getattr(node, "required_tools", None) or [],
                     "tools_available": [t.name for t in self._filter_tools_for_node(node)],
@@ -283,10 +284,12 @@ class SpecExecutor:
         turns = 0
         for _ in range(self.max_turns):
             turns += 1
+            model_hint = getattr(node, "model_override", None)
             response = await llm_service.chat_completion(
                 messages=messages,
                 tools=tools_for_llm,
                 temperature=0,
+                model=model_hint,
                 tenant_id=str(self.user_id),
                 user_id=str(self.user_id),
                 api_key_id=str(self.user_id),
@@ -616,6 +619,7 @@ class SpecAgentService:
         user_id: uuid.UUID,
         query: str,
         context: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None,
     ) -> tuple["SpecPlan", SpecManifest]:
         await self.initialize_plugins(user_id=user_id)
 
@@ -636,6 +640,7 @@ class SpecAgentService:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
+            model=model,
             temperature=0.4,
             max_tokens=2048,
             tenant_id=str(user_id),
@@ -717,6 +722,47 @@ class SpecAgentService:
 
         await session.commit()
         return {"plan_id": str(plan_id), "node_id": node_id, "decision": decision_lower}
+
+    async def update_plan_node_model(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        node_id: str,
+        model_override: Optional[str],
+    ) -> Dict[str, Any]:
+        repo = SpecAgentRepository(session)
+        plan = await repo.get_plan(plan_id)
+        if not plan or plan.user_id != user_id:
+            raise ValueError("plan_not_found")
+
+        manifest = SpecManifest(**plan.manifest_data)
+        target_node = next((node for node in manifest.nodes if node.id == node_id), None)
+        if not target_node:
+            raise ValueError("node_not_found")
+        if getattr(target_node, "type", None) != "action":
+            raise ValueError("node_not_action")
+
+        normalized_model = model_override.strip() if model_override else None
+        if normalized_model:
+            model_repo = ProviderModelRepository(session)
+            candidates = await model_repo.get_candidates(
+                capability="chat",
+                model_id=normalized_model,
+                user_id=str(user_id),
+                include_public=True,
+            )
+            if not candidates:
+                raise ValueError("model_not_available")
+
+        target_node.model_override = normalized_model
+        await repo.update_plan_manifest(plan_id, manifest.model_dump())
+        await session.commit()
+        return {
+            "plan_id": str(plan_id),
+            "node_id": node_id,
+            "model_override": normalized_model,
+        }
 
     @staticmethod
     def _map_plan_status(status: str) -> str:

@@ -12,20 +12,6 @@ from app.core.celery_app import celery_app
 from app.services.memory.extractor import memory_extractor
 
 
-from __future__ import annotations
-
-import asyncio
-import time
-import uuid
-
-from loguru import logger
-
-from app.core.cache import cache
-from app.core.cache_keys import CacheKeys
-from app.core.celery_app import celery_app
-from app.services.memory.extractor import memory_extractor
-
-
 @celery_app.task(name="memory.process_extraction", bind=True)
 def process_memory_extraction(self, session_id: str, user_id: str | None) -> str:
     """

@@ -9,9 +9,11 @@ import {
   interactSpecPlan,
   startSpecPlan,
   streamSpecDraft,
+  updateSpecPlanNode,
   type SpecDraftRequest,
   type SpecPlanDetail,
   type SpecPlanStatus,
+  type SpecPlanNodeUpdateResponse,
 } from "@/lib/api/spec-agent"
 import { useSpecAgentStore } from "@/store/spec-agent-store"
 import type { ApiError } from "@/lib/http"
@@ -226,5 +228,40 @@ export function useSpecPlanActions(planId: string | null) {
       interact,
     }),
     [interact, start, startAndSync]
+  )
+}
+
+export function useSpecPlanNodeUpdate(planId: string | null) {
+  const { applyNodeModelOverride } = useSpecAgentStore()
+
+  const mutation = useSWRMutation(
+    planId ? `${SPEC_PLAN_DETAIL_KEY}/${planId}/nodes` : null,
+    (_key, { arg }: { arg: { nodeId: string; modelOverride: string | null } }) =>
+      updateSpecPlanNode(planId as string, arg.nodeId, {
+        model_override: arg.modelOverride,
+      })
+  )
+
+  const update = useCallback(
+    async (nodeId: string, modelOverride: string | null) => {
+      if (!planId) return null
+      const result = (await mutation.trigger({
+        nodeId,
+        modelOverride,
+      })) as SpecPlanNodeUpdateResponse | undefined
+      if (result) {
+        applyNodeModelOverride(nodeId, result.model_override ?? null)
+      }
+      return result ?? null
+    },
+    [applyNodeModelOverride, mutation, planId]
+  )
+
+  return useMemo(
+    () => ({
+      update,
+      updateState: mutation,
+    }),
+    [mutation, update]
   )
 }

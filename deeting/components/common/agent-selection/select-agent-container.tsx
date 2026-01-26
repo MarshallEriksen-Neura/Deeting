@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { X, MessageSquare, Plus, Pencil } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { CreateAgentModal } from '@/components/assistants/create-agent-modal';
+import { GlassButton } from '@/components/ui/glass-button';
+import { GlassCard } from '@/components/ui/glass-card';
 import { useMarketStore } from '@/store/market-store';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useUserProfile } from '@/hooks/use-user';
@@ -26,6 +28,7 @@ import { useUserProfile } from '@/hooks/use-user';
 export function SelectAgentContainer() {
   const router = useRouter();
   const t = useTranslations('assistants');
+  const tCommon = useTranslations('common');
   const installedAgents = useMarketStore((state) => state.installedAgents);
   const localAssistants = useMarketStore((state) => state.localAssistants);
   const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants);
@@ -95,12 +98,16 @@ export function SelectAgentContainer() {
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-48 h-48 bg-purple-500/10 blur-[80px] rounded-full" />
         <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-48 h-48 bg-blue-500/10 blur-[80px] rounded-full" />
 
-        <button 
+        <GlassButton
+          type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={handleClose}
-          className="absolute top-6 right-6 text-white/30 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-full"
+          className="absolute top-6 right-6 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10"
+          aria-label={tCommon('gallery.detail.close')}
         >
-          <X className="w-5 h-5" />
-        </button>
+          <X className="w-4 h-4" />
+        </GlassButton>
 
         <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">{t('select.title')}</h2>
         <p className="text-white/40 mb-8 font-light">{t('select.subtitle')}</p>
@@ -142,16 +149,20 @@ export function SelectAgentContainer() {
                         // Refresh logic or just select it
                         handleSelectAgent(assistantId);
                       }}
-                      onDeleted={handleClose}
+                      onDeleted={() => {
+                        // 删除助手后不跳转，保持在当前页面
+                      }}
                       trigger={
-                        <button
+                        <GlassButton
                           type="button"
-                          className="h-8 w-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-colors flex items-center justify-center"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white"
                           onClick={(event) => event.stopPropagation()}
                           aria-label={t('edit.trigger')}
                         >
                           <Pencil className="w-4 h-4" />
-                        </button>
+                        </GlassButton>
                       }
                     />
                   ) : null
@@ -198,19 +209,27 @@ const AgentCard = React.memo<AgentCardProps>(function AgentCard({
   }, [onClick]);
 
   return (
-    <div
+    <GlassCard
       role="button"
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="relative flex flex-col text-left p-5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-all hover:scale-[1.01] hover:shadow-xl group cursor-pointer"
+      blur="lg"
+      theme="surface"
+      hover="none"
+      padding="sm"
+      className="relative flex min-h-[120px] flex-col justify-between text-left cursor-pointer border-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:bg-white/8 hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
     >
-      {action ? <div className="absolute top-4 right-4 z-10">{action}</div> : null}
-      <div className="mb-4 p-3 bg-white/5 rounded-xl w-fit group-hover:bg-white/10 transition-colors shadow-inner">
-        {icon}
+      {action ? <div className="absolute right-3 top-3 z-10">{action}</div> : null}
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-white/90">{name}</h3>
+          <p className="mt-1 text-xs text-white/45 line-clamp-2">{desc}</p>
+        </div>
       </div>
-      <h3 className="text-lg font-semibold text-white mb-1 group-hover:text-white/90">{name}</h3>
-      <p className="text-sm text-white/50 leading-relaxed font-light">{desc}</p>
-    </div>
+    </GlassCard>
   )
 })

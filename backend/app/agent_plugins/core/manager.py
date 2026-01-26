@@ -27,6 +27,11 @@ class PluginManager:
         # Cache of initialized system plugins (singletons) - Optional optimization
         self._system_plugins: dict[str, AgentPlugin] = {}
 
+    @property
+    def plugins(self) -> dict[str, AgentPlugin]:
+        """Expose active plugins."""
+        return self._plugins
+
     def register_class(self, plugin_cls: Type[AgentPlugin]) -> None:
         """
         Register a plugin class.

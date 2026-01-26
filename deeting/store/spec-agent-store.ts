@@ -25,6 +25,7 @@ export interface SpecUiNode {
   input?: string | null
   outputPreview?: string | null
   checkIn?: boolean
+  modelOverride?: string | null
   raw?: SpecNode
 }
 
@@ -42,8 +43,10 @@ interface SpecAgentState {
   execution: SpecExecutionStatus | null
   checkpoint: Record<string, unknown> | null
   drafting: DraftingState
+  plannerModel: string | null
   selectedNodeId: string | null
   setSelectedNodeId: (nodeId: string | null) => void
+  setPlannerModel: (model: string | null) => void
   reset: () => void
   startDrafting: () => void
   setDraftingError: (message?: string | null) => void
@@ -61,9 +64,10 @@ interface SpecAgentState {
   setExecution: (execution: SpecExecutionStatus) => void
   setCheckpoint: (checkpoint: Record<string, unknown> | null) => void
   applyStatusNodes: (nodes: SpecNodeStatus[]) => void
+  applyNodeModelOverride: (nodeId: string, modelOverride: string | null) => void
 }
 
-const emptyState: Omit<SpecAgentState, "setSelectedNodeId" | "reset" | "startDrafting" | "setDraftingError" | "setPlanInit" | "setPlanReady" | "setPlanDetail" | "applyNodeAdded" | "applyLinkAdded" | "setExecution" | "setCheckpoint" | "applyStatusNodes"> = {
+const emptyState: Omit<SpecAgentState, "setSelectedNodeId" | "setPlannerModel" | "reset" | "startDrafting" | "setDraftingError" | "setPlanInit" | "setPlanReady" | "setPlanDetail" | "applyNodeAdded" | "applyLinkAdded" | "setExecution" | "setCheckpoint" | "applyStatusNodes" | "applyNodeModelOverride"> = {
   planId: null,
   projectName: null,
   manifest: null,
@@ -72,6 +76,7 @@ const emptyState: Omit<SpecAgentState, "setSelectedNodeId" | "reset" | "startDra
   execution: null,
   checkpoint: null,
   drafting: { status: "idle" },
+  plannerModel: null,
   selectedNodeId: null,
 }
 
@@ -150,6 +155,8 @@ const layoutNodes = (nodes: SpecNode[], prev: SpecUiNode[]) => {
       input: node.type === "logic_gate" ? node.input : null,
       outputPreview: previous?.outputPreview ?? null,
       checkIn: node.type === "action" ? node.check_in : false,
+      modelOverride:
+        node.type === "action" ? node.model_override ?? null : null,
       raw: node,
     } satisfies SpecUiNode
   })
@@ -166,12 +173,14 @@ const normalizeDuration = (durationMs: number | null | undefined) => {
 export const useSpecAgentStore = create<SpecAgentState>()((set, get) => ({
   ...emptyState,
   setSelectedNodeId: (nodeId) => set({ selectedNodeId: nodeId }),
+  setPlannerModel: (model) => set({ plannerModel: model }),
   reset: () => set({ ...emptyState }),
   startDrafting: () =>
-    set({
+    set((state) => ({
       ...emptyState,
+      plannerModel: state.plannerModel,
       drafting: { status: "drafting" },
-    }),
+    })),
   setDraftingError: (message) =>
     set((state) => ({
       drafting: { status: "error", message: message ?? null },
@@ -239,5 +248,17 @@ export const useSpecAgentStore = create<SpecAgentState>()((set, get) => ({
         }
       })
       return { nodes: nextUiNodes }
+    }),
+  applyNodeModelOverride: (nodeId, modelOverride) =>
+    set((state) => {
+      if (!state.manifest) return state
+      const nextNodes = state.manifest.nodes.map((node) => {
+        if (node.id !== nodeId || node.type !== "action") return node
+        return { ...node, model_override: modelOverride }
+      })
+      return {
+        manifest: { ...state.manifest, nodes: nextNodes },
+        nodes: layoutNodes(nextNodes, state.nodes),
+      }
     }),
 }))

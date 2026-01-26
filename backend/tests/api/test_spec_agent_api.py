@@ -7,6 +7,7 @@ import pytest
 
 from app.models.spec_agent import SpecExecutionLog, SpecPlan
 from app.schemas.spec_agent import SpecManifest
+from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.services.agent import spec_agent_service
 from app.utils.time_utils import Datetime
 
@@ -27,7 +28,10 @@ async def test_spec_agent_draft_non_stream(client, auth_tokens, monkeypatch):
         ],
     }
 
-    async def fake_chat_completion(*_args, **_kwargs):
+    called: dict[str, str | None] = {}
+
+    async def fake_chat_completion(*_args, **kwargs):
+        called["model"] = kwargs.get("model")
         return json.dumps(manifest_payload, ensure_ascii=False)
 
     async def noop(*_args, **_kwargs):
@@ -48,13 +52,14 @@ async def test_spec_agent_draft_non_stream(client, auth_tokens, monkeypatch):
 
     resp = await client.post(
         "/api/v1/spec-agent/draft?stream=false",
-        json={"query": "hello", "context": {"foo": "bar"}},
+        json={"query": "hello", "context": {"foo": "bar"}, "model": "gpt-4o-mini"},
         headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["manifest"]["project_name"] == "Draft_Test"
     assert data["manifest"]["context"]["foo"] == "bar"
+    assert called["model"] == "gpt-4o-mini"
 
 
 @pytest.mark.asyncio
@@ -218,3 +223,157 @@ async def test_spec_agent_interact_approve(
         result = await session.get(SpecExecutionLog, log_id)
         assert result is not None
         assert result.status == "SUCCESS"
+
+
+@pytest.mark.asyncio
+async def test_spec_agent_update_node_model_success(
+    client, auth_tokens, AsyncSessionLocal, test_user, monkeypatch
+):
+    user_id = uuid.UUID(test_user["id"])
+    manifest = SpecManifest(
+        spec_v="1.2",
+        project_name="Update_Model",
+        nodes=[
+            {
+                "id": "T1",
+                "type": "action",
+                "instruction": "do work",
+                "needs": [],
+            }
+        ],
+    )
+
+    async with AsyncSessionLocal() as session:
+        plan = SpecPlan(
+            user_id=user_id,
+            project_name="Update_Model",
+            manifest_data=manifest.model_dump(),
+            current_context={},
+            execution_config={},
+            status="DRAFT",
+        )
+        session.add(plan)
+        await session.commit()
+        plan_id = plan.id
+
+    async def fake_candidates(
+        self, capability, model_id, user_id, include_public=True
+    ):
+        if model_id == "gpt-4o":
+            return [object()]
+        return []
+
+    monkeypatch.setattr(ProviderModelRepository, "get_candidates", fake_candidates)
+
+    resp = await client.patch(
+        f"/api/v1/spec-agent/plans/{plan_id}/nodes/T1",
+        json={"model_override": "gpt-4o"},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["model_override"] == "gpt-4o"
+
+    async with AsyncSessionLocal() as session:
+        reloaded = await session.get(SpecPlan, plan_id)
+        assert reloaded is not None
+        reloaded_manifest = SpecManifest(**reloaded.manifest_data)
+        node = next(item for item in reloaded_manifest.nodes if item.id == "T1")
+        assert node.model_override == "gpt-4o"
+
+    resp = await client.patch(
+        f"/api/v1/spec-agent/plans/{plan_id}/nodes/T1",
+        json={"model_override": None},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["model_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_spec_agent_update_node_model_non_action(
+    client, auth_tokens, AsyncSessionLocal, test_user
+):
+    user_id = uuid.UUID(test_user["id"])
+    manifest = SpecManifest(
+        spec_v="1.2",
+        project_name="Update_Model_Non_Action",
+        nodes=[
+            {
+                "id": "G1",
+                "type": "logic_gate",
+                "input": "ctx",
+                "rules": [{"condition": "true", "next_node": "G1", "desc": "noop"}],
+                "default": "G1",
+                "needs": [],
+            }
+        ],
+    )
+
+    async with AsyncSessionLocal() as session:
+        plan = SpecPlan(
+            user_id=user_id,
+            project_name="Update_Model_Non_Action",
+            manifest_data=manifest.model_dump(),
+            current_context={},
+            execution_config={},
+            status="DRAFT",
+        )
+        session.add(plan)
+        await session.commit()
+        plan_id = plan.id
+
+    resp = await client.patch(
+        f"/api/v1/spec-agent/plans/{plan_id}/nodes/G1",
+        json={"model_override": "gpt-4o"},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "node_not_action"
+
+
+@pytest.mark.asyncio
+async def test_spec_agent_update_node_model_invalid_model(
+    client, auth_tokens, AsyncSessionLocal, test_user, monkeypatch
+):
+    user_id = uuid.UUID(test_user["id"])
+    manifest = SpecManifest(
+        spec_v="1.2",
+        project_name="Update_Model_Invalid",
+        nodes=[
+            {
+                "id": "T2",
+                "type": "action",
+                "instruction": "do work",
+                "needs": [],
+            }
+        ],
+    )
+
+    async with AsyncSessionLocal() as session:
+        plan = SpecPlan(
+            user_id=user_id,
+            project_name="Update_Model_Invalid",
+            manifest_data=manifest.model_dump(),
+            current_context={},
+            execution_config={},
+            status="DRAFT",
+        )
+        session.add(plan)
+        await session.commit()
+        plan_id = plan.id
+
+    async def fake_candidates(
+        self, capability, model_id, user_id, include_public=True
+    ):
+        return []
+
+    monkeypatch.setattr(ProviderModelRepository, "get_candidates", fake_candidates)
+
+    resp = await client.patch(
+        f"/api/v1/spec-agent/plans/{plan_id}/nodes/T2",
+        json={"model_override": "unknown-model"},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "model_not_available"

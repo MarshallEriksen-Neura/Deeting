@@ -14,9 +14,3 @@ export interface ModelGroup {
     provider_model_id?: string
   }>
 }
-
-export const EMBEDDING_MODELS = [
-  "text-embedding-3-small",
-  "text-embedding-3-large",
-  "text-embedding-ada-002",
-] as const

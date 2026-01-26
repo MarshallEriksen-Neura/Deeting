@@ -48,6 +48,10 @@ class SpecAgentRepository:
         stmt = update(SpecPlan).where(SpecPlan.id == plan_id).values(current_context=context)
         await self.session.execute(stmt)
 
+    async def update_plan_manifest(self, plan_id: uuid.UUID, manifest_data: Dict[str, Any]) -> None:
+        stmt = update(SpecPlan).where(SpecPlan.id == plan_id).values(manifest_data=manifest_data)
+        await self.session.execute(stmt)
+
     # ==========================================
     # Execution Log (State Machine)
     # ==========================================

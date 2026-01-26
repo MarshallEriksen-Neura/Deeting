@@ -18,6 +18,8 @@ from app.schemas.spec_agent_api import (
     SpecPlanDetailResponse,
     SpecPlanInteractRequest,
     SpecPlanInteractResponse,
+    SpecPlanNodeUpdateRequest,
+    SpecPlanNodeUpdateResponse,
     SpecPlanStartResponse,
     SpecPlanStatusResponse,
 )
@@ -46,7 +48,7 @@ async def draft_spec_plan(
     if not stream:
         try:
             plan, manifest = await spec_agent_service.generate_plan(
-                db, user.id, payload.query, payload.context
+                db, user.id, payload.query, payload.context, payload.model
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("spec_agent_draft_failed")
@@ -59,7 +61,7 @@ async def draft_spec_plan(
         yield _format_sse_event("drafting", {"status": "thinking"})
         try:
             plan, manifest = await spec_agent_service.generate_plan(
-                db, user.id, payload.query, payload.context
+                db, user.id, payload.query, payload.context, payload.model
             )
             yield _format_sse_event(
                 "plan_init",
@@ -139,3 +141,25 @@ async def interact_spec_plan(
     return SpecPlanInteractResponse(
         plan_id=plan_id, node_id=payload.node_id, decision=payload.decision
     )
+
+
+@router.patch(
+    "/plans/{plan_id}/nodes/{node_id}", response_model=SpecPlanNodeUpdateResponse
+)
+async def update_spec_plan_node(
+    plan_id: uuid.UUID,
+    node_id: str,
+    payload: SpecPlanNodeUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await spec_agent_service.update_plan_node_model(
+            db, user.id, plan_id, node_id, payload.model_override
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if detail in ("plan_not_found", "node_not_found"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+    return SpecPlanNodeUpdateResponse(**result)

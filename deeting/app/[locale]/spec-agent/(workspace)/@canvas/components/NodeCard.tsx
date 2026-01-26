@@ -2,6 +2,7 @@
 
 import { CheckCircle, Play, Clock, AlertTriangle, PauseCircle } from 'lucide-react'
 import { useI18n } from '@/hooks/use-i18n'
+import { Badge } from '@/components/ui/badge'
 
 interface Node {
   id: string
@@ -11,6 +12,7 @@ interface Node {
   position: { x: number; y: number }
   duration: string | null
   pulse: string | null
+  modelOverride?: string | null
 }
 
 interface NodeCardProps {
@@ -56,6 +58,7 @@ export function NodeCard({ node, isSelected, onClick }: NodeCardProps) {
   const t = useI18n('spec-agent')
   const config = statusConfig[node.status]
   const Icon = config.icon
+  const modelLabel = node.modelOverride ?? t('canvas.node.model.auto')
 
   return (
     <div
@@ -116,6 +119,14 @@ export function NodeCard({ node, isSelected, onClick }: NodeCardProps) {
                   : t('canvas.node.type.action')}
             </span>
           </div>
+
+          {node.type === 'action' && (
+            <div className="mt-2 flex items-center gap-2">
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                {t('canvas.node.model.label')}: {modelLabel}
+              </Badge>
+            </div>
+          )}
         </div>
 
         {/* 活跃状态的光晕效果 */}

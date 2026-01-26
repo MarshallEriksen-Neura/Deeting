@@ -11,7 +11,8 @@
         "drafting": "正在规划执行蓝图...",
         "ready": "蓝图已生成：{projectName}",
         "defaultProject": "未命名任务",
-        "error": "规划失败，请重试。"
+        "error": "规划失败，请重试。",
+        "modelMissing": "未配置规划模型，请先选择模型。"
       },
       "empty": "在下方输入目标，开始生成蓝图。",
       "input": {
@@ -28,6 +29,41 @@
           "logic": "逻辑网关",
           "action": "执行节点",
           "replan": "重规划"
+        },
+        "model": {
+          "label": "模型",
+          "auto": "自动"
+        }
+      }
+    },
+    "node": {
+      "modal": {
+        "title": "节点详情: {id}",
+        "notFound": "未找到该节点或节点已被移除。",
+        "close": "关闭",
+        "save": "保存设置",
+        "saving": "保存中...",
+        "saveFailed": "保存失败，请稍后重试。",
+        "modelPlaceholder": "选择模型",
+        "modelAuto": "自动分配（继承默认）",
+        "modelUnknown": "当前模型：{model}",
+        "modelHint": "仅对执行节点生效，优先于全局/默认模型。",
+        "modelDisabled": "当前节点不支持模型覆盖。",
+        "durationPlaceholder": "暂无耗时",
+        "fields": {
+          "type": "节点类型",
+          "status": "执行状态",
+          "duration": "执行耗时",
+          "title": "节点标题",
+          "model": "模型配置",
+          "payload": "节点数据"
+        },
+        "status": {
+          "pending": "等待中",
+          "active": "执行中",
+          "completed": "已完成",
+          "error": "失败",
+          "waiting": "等待审批"
         }
       }
     },
@@ -45,7 +81,12 @@
       "nodes": "节点：{completed}/{total}",
       "launch": "确认启动",
       "running": "运行中",
-      "ready": "准备就绪"
+      "ready": "准备就绪",
+      "modelLabel": "规划模型",
+      "modelPlaceholder": "选择模型",
+      "modelSearchPlaceholder": "搜索模型",
+      "modelEmpty": "暂无可用模型",
+      "modelNoResults": "未找到匹配模型"
     }
   }
 }

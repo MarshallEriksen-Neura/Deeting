@@ -24,7 +24,8 @@ Query：
 ```json
 {
   "query": "帮我买一台 1 万以内的笔记本",
-  "context": { "budget": 10000 }
+  "context": { "budget": 10000 },
+  "model": "gpt-4o"
 }
 ```
 
@@ -129,5 +130,34 @@ data: {"plan_id":"uuid"}
 
 ---
 
+## 6. 节点模型覆盖
+
+**PATCH** `/spec-agent/plans/{plan_id}/nodes/{node_id}`
+
+请求体（传 `null` 清空覆盖）：
+```json
+{
+  "model_override": "gpt-4o"
+}
+```
+
+响应：
+```json
+{
+  "plan_id": "uuid",
+  "node_id": "T1",
+  "model_override": "gpt-4o"
+}
+```
+
+错误码：
+- 404 `plan_not_found`：计划不存在或不属于当前用户
+- 404 `node_not_found`：节点不存在
+- 400 `node_not_action`：仅 action 节点支持模型覆盖
+- 400 `model_not_available`：模型不可用或不可访问
+
+---
+
 变更记录：
 - 2026-01-26：新增 Spec Agent Draft SSE、Plan 状态与交互接口。
+- 2026-01-26：新增节点级模型覆盖接口。
