@@ -67,7 +67,13 @@ async def draft_spec_plan(
             )
             yield _format_sse_event(
                 "plan_init",
-                {"plan_id": str(plan.id), "project_name": manifest.project_name},
+                {
+                    "plan_id": str(plan.id),
+                    "project_name": manifest.project_name,
+                    "conversation_session_id": str(plan.conversation_session_id)
+                    if plan.conversation_session_id
+                    else None,
+                },
             )
             for node in manifest.nodes:
                 yield _format_sse_event(

@@ -40,7 +40,7 @@ SSE 事件：
 SSE 示例：
 ```
 event: plan_init
-data: {"plan_id":"uuid","project_name":"Laptop_Purchase_2026"}
+data: {"plan_id":"uuid","project_name":"Laptop_Purchase_2026","conversation_session_id":"uuid"}
 
 event: node_added
 data: {"node":{"id":"T1","type":"action","instruction":"..."}}

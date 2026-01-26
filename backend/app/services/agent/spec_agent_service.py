@@ -770,7 +770,17 @@ class SpecAgentService:
         local_tools, _ = self._load_local_tools()
         mcp_tools, _ = await self._load_mcp_tools(session, user_id)
         tools_desc = self._build_tools_description(local_tools + mcp_tools)
+        
+        # Fetch available models for the user
+        model_repo = ProviderModelRepository(session)
+        user_models = await model_repo.get_available_models_for_user(str(user_id))
+        if user_models:
+            models_desc = "\n".join([f"- {m}" for m in user_models])
+        else:
+            models_desc = "(No user-configured models found. Leave model_override empty.)"
+
         system_prompt = SPEC_PLANNER_SYSTEM_PROMPT.replace("{{available_tools}}", tools_desc)
+        system_prompt = system_prompt.replace("{{available_models}}", models_desc)
 
         user_prompt = trimmed_query
         if context:

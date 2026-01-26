@@ -34,6 +34,12 @@
         "title": "开始你的 Spec Agent 任务",
         "description": "在 Console 中输入指令，AI 将自动规划并执行任务流程"
       },
+      "stage": {
+        "search": "检索层",
+        "process": "处理层",
+        "summary": "汇总层",
+        "action": "执行层"
+      },
       "node": {
         "type": {
           "logic": "逻辑网关",

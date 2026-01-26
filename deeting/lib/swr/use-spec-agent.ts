@@ -26,7 +26,15 @@ const SPEC_PLAN_DETAIL_KEY = "/api/v1/spec-agent/plans/detail"
 const SPEC_PLAN_STATUS_KEY = "/api/v1/spec-agent/plans/status"
 const SPEC_PLAN_LIST_KEY = "/api/v1/spec-agent/plans"
 
-export function useSpecDraftStream() {
+export function useSpecDraftStream(
+  options: {
+    onPlanInit?: (data: {
+      plan_id: string
+      project_name?: string
+      conversation_session_id?: string | null
+    }) => void
+  } = {}
+) {
   const cancelRef = useRef<null | (() => void)>(null)
   const {
     startDrafting,
@@ -51,7 +59,12 @@ export function useSpecDraftStream() {
               case "drafting":
                 return
               case "plan_init":
-                setPlanInit(event.data.plan_id, event.data.project_name ?? null)
+                setPlanInit(
+                  event.data.plan_id,
+                  event.data.project_name ?? null,
+                  event.data.conversation_session_id ?? null
+                )
+                options.onPlanInit?.(event.data)
                 return
               case "node_added":
                 applyNodeAdded(event.data.node)

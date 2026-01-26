@@ -21,6 +21,7 @@ interface NodeCardProps {
   node: Node
   isSelected: boolean
   isDimmed?: boolean
+  isCritical?: boolean
   onClick: () => void
 }
 
@@ -57,7 +58,13 @@ const statusConfig = {
   }
 }
 
-export function NodeCard({ node, isSelected, isDimmed, onClick }: NodeCardProps) {
+export function NodeCard({
+  node,
+  isSelected,
+  isDimmed,
+  isCritical,
+  onClick,
+}: NodeCardProps) {
   const t = useI18n('spec-agent')
   const config = statusConfig[node.status]
   const Icon = config.icon
@@ -80,7 +87,9 @@ export function NodeCard({ node, isSelected, isDimmed, onClick }: NodeCardProps)
       <div
         className={`relative px-3 py-2 rounded-md border bg-card shadow-sm ${
           config.borderColor
-        } ${isSelected ? 'ring-2 ring-primary/40' : ''}`}
+        } ${isSelected ? 'ring-2 ring-primary/40' : ''} ${
+          isCritical && !isSelected ? 'ring-1 ring-primary/20' : ''
+        }`}
       >
         {/* 状态指示器 */}
         <div className="absolute -top-2 -left-2">

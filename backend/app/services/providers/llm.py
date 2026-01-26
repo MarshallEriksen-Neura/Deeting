@@ -40,8 +40,22 @@ class LLMService:
         """
         async with AsyncSessionLocal() as session:
             # 1. Determine Target Model
-            # If no model is specified, use the system default internal model ID
-            target_model = model or getattr(settings, "INTERNAL_LLM_MODEL_ID", "gpt-4o")
+            target_model = model
+            if not target_model:
+                # Dynamic default: Find first available chat model for user
+                from app.repositories.provider_instance_repository import ProviderModelRepository
+                model_repo = ProviderModelRepository(session)
+                # We try to get any valid model for this user
+                # We can use get_available_models_for_user which returns IDs
+                if user_id:
+                     user_models = await model_repo.get_available_models_for_user(str(user_id))
+                     if user_models:
+                         target_model = user_models[0]
+                         logger.info(f"LLMService: Auto-selected default model '{target_model}' for user {user_id}")
+            
+            # Fallback only if still empty (system default or panic)
+            if not target_model:
+                 target_model = getattr(settings, "INTERNAL_LLM_MODEL_ID", "gpt-4o")
             
             # 2. Build Request Object
             internal_req = ChatCompletionRequest(

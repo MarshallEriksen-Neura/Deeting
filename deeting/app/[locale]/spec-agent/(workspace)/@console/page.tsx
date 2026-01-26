@@ -66,13 +66,14 @@ export default function Console() {
            nodes.find((n) => n.status === 'error' && (n.logs?.length ?? 0) > 0)
   }, [nodes])
 
-  const { start } = useSpecDraftStream()
   const { items, isLoading, isLoadingMore, hasMore, loadMore } = useSpecPlanHistory({
     enabled: historyOpen,
     size: 20,
   })
   const lastDraftStatus = useRef(drafting.status)
   const hydratedSessionRef = useRef<string | null>(null)
+  const hydrationRequestRef = useRef(0)
+  const isMountedRef = useRef(true)
 
   const appendMessage = useCallback((message: Omit<ConsoleMessage, 'id'>) => {
     setMessages((prev) => [
@@ -85,73 +86,95 @@ export default function Console() {
   }, [])
 
   useEffect(() => {
-    if (!conversationSessionId) return
-    if (hydratedSessionRef.current === conversationSessionId) return
-    let active = true
-
-    const normalizeTimestamp = (value: unknown) => {
-      if (typeof value !== 'string') return ''
-      const date = new Date(value)
-      if (Number.isNaN(date.getTime())) return ''
-      return formatTime(date)
-    }
-
-    const normalizeContent = (content: unknown, metaInfo?: Record<string, unknown>) => {
-      const event = metaInfo?.spec_agent_event
-      if (event === 'drafting') {
-        return t('console.system.drafting')
-      }
-      if (event === 'ready') {
-        const name =
-          typeof metaInfo?.project_name === 'string'
-            ? metaInfo.project_name
-            : t('console.system.defaultProject')
-        return t('console.system.ready', { projectName: name })
-      }
-      if (event === 'error') {
-        return t('console.system.error')
-      }
-      if (typeof content === 'string') return content
-      if (content == null) return ''
-      try {
-        return JSON.stringify(content)
-      } catch {
-        return String(content)
-      }
-    }
-
-    fetchConversationHistory(conversationSessionId, { limit: 200 })
-      .then((payload) => {
-        if (!active) return
-        const normalized = payload.messages.map((message, index) => {
-          const metaInfo = message.meta_info ?? {}
-          const timestamp =
-            normalizeTimestamp(metaInfo.created_at) ||
-            formatTime(new Date())
-          const type =
-            message.role === 'user'
-              ? 'user'
-              : message.role === 'assistant'
-                ? 'agent'
-                : 'system'
-          return {
-            id: `${message.turn_index ?? index}-${message.role}`,
-            type,
-            content: normalizeContent(message.content, metaInfo),
-            timestamp,
-          }
-        })
-        hydratedSessionRef.current = conversationSessionId
-        setMessages(normalized)
-      })
-      .catch(() => {
-        if (!active) return
-      })
-
     return () => {
-      active = false
+      isMountedRef.current = false
     }
-  }, [conversationSessionId, t])
+  }, [])
+
+  const hydrateConversation = useCallback(
+    (sessionId: string) => {
+      if (!sessionId) return
+      if (hydratedSessionRef.current === sessionId) return
+      const requestId = ++hydrationRequestRef.current
+
+      const normalizeTimestamp = (value: unknown) => {
+        if (typeof value !== 'string') return ''
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return ''
+        return formatTime(date)
+      }
+
+      const normalizeContent = (
+        content: unknown,
+        metaInfo?: Record<string, unknown>
+      ) => {
+        const event = metaInfo?.spec_agent_event
+        if (event === 'drafting') {
+          return t('console.system.drafting')
+        }
+        if (event === 'ready') {
+          const name =
+            typeof metaInfo?.project_name === 'string'
+              ? metaInfo.project_name
+              : t('console.system.defaultProject')
+          return t('console.system.ready', { projectName: name })
+        }
+        if (event === 'error') {
+          return t('console.system.error')
+        }
+        if (typeof content === 'string') return content
+        if (content == null) return ''
+        try {
+          return JSON.stringify(content)
+        } catch {
+          return String(content)
+        }
+      }
+
+      fetchConversationHistory(sessionId, { limit: 200 })
+        .then((payload) => {
+          if (!isMountedRef.current) return
+          if (hydrationRequestRef.current !== requestId) return
+          const normalized = payload.messages.map((message, index) => {
+            const metaInfo = message.meta_info ?? {}
+            const timestamp =
+              normalizeTimestamp(metaInfo.created_at) ||
+              formatTime(new Date())
+            const type =
+              message.role === 'user'
+                ? 'user'
+                : message.role === 'assistant'
+                  ? 'agent'
+                  : 'system'
+            return {
+              id: `${message.turn_index ?? index}-${message.role}`,
+              type,
+              content: normalizeContent(message.content, metaInfo),
+              timestamp,
+            }
+          })
+          hydratedSessionRef.current = sessionId
+          setMessages(normalized)
+        })
+        .catch(() => {
+          if (!isMountedRef.current) return
+        })
+    },
+    [t]
+  )
+
+  const { start } = useSpecDraftStream({
+    onPlanInit: (data) => {
+      if (data.conversation_session_id) {
+        hydrateConversation(data.conversation_session_id)
+      }
+    },
+  })
+
+  useEffect(() => {
+    if (!conversationSessionId) return
+    hydrateConversation(conversationSessionId)
+  }, [conversationSessionId, hydrateConversation])
 
   useEffect(() => {
     if (lastDraftStatus.current === drafting.status) return

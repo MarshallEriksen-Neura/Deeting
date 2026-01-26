@@ -34,6 +34,12 @@
         "title": "Start your Spec Agent task",
         "description": "Enter instructions in Console and the AI will plan and execute the workflow."
       },
+      "stage": {
+        "search": "Search",
+        "process": "Process",
+        "summary": "Summary",
+        "action": "Action"
+      },
       "node": {
         "type": {
           "logic": "Logic Gate",

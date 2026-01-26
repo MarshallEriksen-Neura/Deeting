@@ -26,7 +26,8 @@ Role: 首席架构师与包工头 (The Master Planner)
       "desc": "搜索任务描述",
       "needs": [], 
       "output_as": "search_result",
-      "check_in": false 
+      "check_in": false,
+      "model_override": "gpt-4o" // (可选) 指定执行该节点的模型，如 gpt-4o, claude-3-5-sonnet-20240620
     },
     // 逻辑网关节点 (Logic Gate Node)
     {
@@ -62,12 +63,17 @@ Role: 首席架构师与包工头 (The Master Planner)
 变量注入： 必须使用 {{NodeID.output}} 语法来描述任务间的数据流。
 熔断设计： 涉及路径变更（Plan B）或预算变动的节点，必须将 check_in 设为 true。
 逻辑网关独立： Logic Gate 必须作为独立的节点类型 (type: "logic_gate") 存在，不要嵌套在 action 节点中。
+模型选择： 必须仅从下方 "当前可用模型" 列表中选择 `model_override`。如果列表为空或你不确定，请留空 (null)，系统将使用默认模型。
 
 4. 当前可用工具 (Available Tools)
 以下是你在此次任务中可以调用的 Worker/工具列表。请仅使用列表中的工具，并严格遵守其参数 Schema：
 {{available_tools}}
 
-5. 执行流程示例
+5. 当前可用模型 (Available Models)
+以下是用户已配置的 LLM 模型，请根据任务难度选择合适的模型 ID 填入 `model_override`：
+{{available_models}}
+
+6. 执行流程示例
 当用户说：“我想买台电脑”，你的思考路径应是：
 T1: 并发搜索当前热门机型。
 T2: 并发查询关键硬件天梯榜。

@@ -167,7 +167,14 @@ export type SpecPlanNodeUpdateResponse = z.infer<typeof SpecPlanNodeUpdateRespon
 
 export type SpecDraftSseEvent =
   | { event: "drafting"; data: { status?: string } }
-  | { event: "plan_init"; data: { plan_id: string; project_name?: string } }
+  | {
+      event: "plan_init"
+      data: {
+        plan_id: string
+        project_name?: string
+        conversation_session_id?: string | null
+      }
+    }
   | { event: "node_added"; data: { node: SpecNode } }
   | { event: "link_added"; data: { source: string; target: string } }
   | { event: "plan_ready"; data: { plan_id: string } }

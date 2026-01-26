@@ -70,7 +70,11 @@ interface SpecAgentState {
   reset: () => void
   startDrafting: () => void
   setDraftingError: (message?: string | null) => void
-  setPlanInit: (planId: string, projectName?: string | null) => void
+  setPlanInit: (
+    planId: string,
+    projectName?: string | null,
+    conversationSessionId?: string | null
+  ) => void
   setPlanReady: (planId?: string | null) => void
   setPlanDetail: (detail: {
     planId: string
@@ -176,6 +180,18 @@ const deriveNodeStage = (node: SpecNode): SpecUiNodeStage => {
   return "process"
 }
 
+const STAGE_ORDER: SpecUiNodeStage[] = [
+  "search",
+  "process",
+  "summary",
+  "action",
+  "unknown",
+]
+const STAGE_PADDING = 80
+const STAGE_GAP = 120
+const STAGE_MIN_HEIGHT = 220
+const STAGE_NODE_GAP = 140
+
 const buildDepthMap = (nodes: SpecNode[]) => {
   const byId = new Map(nodes.map((node) => [node.id, node]))
   const depthMap = new Map<string, number>()
@@ -210,6 +226,41 @@ const layoutNodes = (nodes: SpecNode[], prev: SpecUiNode[]) => {
   const depthMap = buildDepthMap(nodes)
   const grouped = new Map<number, string[]>()
   const orderedIds = nodes.map((node) => node.id)
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+  const stageById = new Map<string, SpecUiNodeStage>()
+  orderedIds.forEach((id) => {
+    const node = nodeById.get(id)
+    if (!node) return
+    stageById.set(id, deriveNodeStage(node))
+  })
+
+  const stageBuckets = new Map<SpecUiNodeStage, string[]>()
+  STAGE_ORDER.forEach((stage) => stageBuckets.set(stage, []))
+  orderedIds.forEach((id) => {
+    const stage = stageById.get(id) ?? "unknown"
+    const bucket = stageBuckets.get(stage)
+    if (bucket) bucket.push(id)
+  })
+
+  const stageIndexMap = new Map<string, number>()
+  stageBuckets.forEach((ids) => {
+    ids.forEach((id, index) => {
+      stageIndexMap.set(id, index)
+    })
+  })
+
+  const stageLayout = new Map<SpecUiNodeStage, { top: number; height: number }>()
+  let currentTop = 120
+  STAGE_ORDER.forEach((stage) => {
+    const ids = stageBuckets.get(stage) ?? []
+    if (!ids.length) return
+    const height = Math.max(
+      STAGE_MIN_HEIGHT,
+      STAGE_PADDING * 2 + Math.max(ids.length - 1, 0) * STAGE_NODE_GAP
+    )
+    stageLayout.set(stage, { top: currentTop, height })
+    currentTop += height + STAGE_GAP
+  })
   orderedIds.forEach((id) => {
     const depth = depthMap.get(id) ?? 0
     const list = grouped.get(depth) ?? []
@@ -220,9 +271,12 @@ const layoutNodes = (nodes: SpecNode[], prev: SpecUiNode[]) => {
   const positions = new Map<string, { x: number; y: number }>()
   grouped.forEach((ids, depth) => {
     ids.forEach((id, idx) => {
+      const stage = stageById.get(id) ?? "unknown"
+      const stageTop = stageLayout.get(stage)?.top ?? 120
+      const stageIndex = stageIndexMap.get(id) ?? idx
       positions.set(id, {
         x: 140 + depth * 280,
-        y: 120 + idx * 160,
+        y: stageTop + STAGE_PADDING + stageIndex * STAGE_NODE_GAP,
       })
     })
   })
@@ -239,7 +293,7 @@ const layoutNodes = (nodes: SpecNode[], prev: SpecUiNode[]) => {
       position: positions.get(node.id) ?? { x: 140, y: 120 },
       duration: previous?.duration ?? null,
       pulse: previous?.pulse ?? null,
-      stage: deriveNodeStage(node),
+      stage: stageById.get(node.id) ?? deriveNodeStage(node),
       desc: node.desc ?? null,
       input: node.type === "logic_gate" ? node.input : null,
       outputPreview: previous?.outputPreview ?? null,
@@ -288,9 +342,10 @@ export const useSpecAgentStore = create<SpecAgentState>()(
           drafting: { status: "error", message: message ?? null },
           planId: state.planId,
         })),
-      setPlanInit: (planId, projectName) =>
+      setPlanInit: (planId, projectName, conversationSessionId) =>
         set({
           planId,
+          conversationSessionId: conversationSessionId ?? null,
           projectName: projectName ?? null,
           drafting: { status: "drafting" },
         }),
