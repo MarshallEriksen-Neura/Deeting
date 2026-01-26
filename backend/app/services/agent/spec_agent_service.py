@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent_plugins.core.manager import PluginManager
 from app.core.plugin_config import plugin_config_loader
 from app.models.user_mcp_server import UserMcpServer
+from app.prompts.spec_planner import SPEC_PLANNER_SYSTEM_PROMPT
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest, SpecNode
 from app.schemas.tool import ToolCall, ToolDefinition
@@ -285,8 +286,10 @@ class SpecExecutor:
             response = await llm_service.chat_completion(
                 messages=messages,
                 tools=tools_for_llm,
-                model="gpt-4o",
                 temperature=0,
+                tenant_id=str(self.user_id),
+                user_id=str(self.user_id),
+                api_key_id=str(self.user_id),
             )
 
             if isinstance(response, list):
@@ -574,6 +577,274 @@ class SpecAgentService:
 
         await self.plugin_manager.activate_all(user_id=user_id)
         self._initialized = True
+
+    @staticmethod
+    def _build_tools_description(tools: List[ToolDefinition]) -> str:
+        if not tools:
+            return "- None"
+        lines: list[str] = []
+        for tool in tools:
+            schema = json.dumps(tool.input_schema or {}, ensure_ascii=False, default=str)
+            lines.append(
+                f"- Tool: {tool.name}\n  Desc: {tool.description or ''}\n  Schema: {schema}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _extract_json_payload(raw_text: str) -> dict[str, Any]:
+        cleaned = raw_text.strip()
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                raise
+            return json.loads(cleaned[start : end + 1])
+
+    def _parse_manifest(self, planner_output: Any) -> SpecManifest:
+        if isinstance(planner_output, list):
+            raise ValueError("planner_output_is_tool_call")
+        if not isinstance(planner_output, str):
+            raise ValueError("planner_output_invalid_type")
+        payload = self._extract_json_payload(planner_output)
+        return SpecManifest(**payload)
+
+    async def generate_plan(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        query: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> tuple["SpecPlan", SpecManifest]:
+        await self.initialize_plugins(user_id=user_id)
+
+        local_tools, _ = self._load_local_tools()
+        mcp_tools, _ = await self._load_mcp_tools(session, user_id)
+        tools_desc = self._build_tools_description(local_tools + mcp_tools)
+        system_prompt = SPEC_PLANNER_SYSTEM_PROMPT.replace("{{available_tools}}", tools_desc)
+
+        user_prompt = query.strip()
+        if context:
+            user_prompt = (
+                f"{user_prompt}\n\nContext JSON: "
+                f"{json.dumps(context, ensure_ascii=False, default=str)}"
+            )
+
+        response = await llm_service.chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.4,
+            max_tokens=2048,
+            tenant_id=str(user_id),
+            user_id=str(user_id),
+            api_key_id=str(user_id),
+        )
+        manifest = self._parse_manifest(response)
+        if context:
+            manifest.context.update(context)
+
+        repo = SpecAgentRepository(session)
+        plan = await repo.create_plan(
+            user_id=user_id,
+            project_name=manifest.project_name,
+            manifest_data=manifest.model_dump(),
+        )
+        if manifest.context:
+            await repo.update_plan_context(plan.id, manifest.context)
+        await session.commit()
+        await session.refresh(plan)
+        return plan, manifest
+
+    async def start_plan(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        max_steps: int = 8,
+    ) -> Dict[str, Any]:
+        executor = await self.execute_plan(session, user_id, plan_id)
+        executed_total = 0
+        result: Dict[str, Any] = {}
+        for _ in range(max_steps):
+            result = await executor.run_step()
+            executed_total += int(result.get("executed", 0) or 0)
+            status = result.get("status")
+            if status in ("waiting_approval", "completed", "failed", "stalled"):
+                break
+        if executed_total and "executed" not in result:
+            result["executed"] = executed_total
+        return result
+
+    async def interact_with_plan(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        node_id: str,
+        decision: str,
+        feedback: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        repo = SpecAgentRepository(session)
+        plan = await repo.get_plan(plan_id)
+        if not plan or plan.user_id != user_id:
+            raise ValueError("plan_not_found")
+
+        log = await repo.get_latest_log_for_node(plan_id, node_id)
+        if not log or log.status != "WAITING_APPROVAL":
+            raise ValueError("checkpoint_not_found")
+
+        decision_lower = decision.lower()
+        payload = {"decision": decision_lower, "feedback": feedback}
+        if decision_lower == "approve":
+            await repo.finish_node_execution(log.id, "SUCCESS", output_data=payload)
+            await repo.update_plan_status(plan_id, "RUNNING")
+        elif decision_lower == "reject":
+            await repo.finish_node_execution(
+                log.id,
+                "FAILED",
+                output_data=payload,
+                error_message="rejected_by_user",
+            )
+            await repo.update_plan_status(plan_id, "FAILED")
+        elif decision_lower == "modify":
+            await repo.finish_node_execution(log.id, "SUCCESS", output_data=payload)
+            await repo.update_plan_status(plan_id, "RUNNING")
+        else:
+            raise ValueError("invalid_decision")
+
+        await session.commit()
+        return {"plan_id": str(plan_id), "node_id": node_id, "decision": decision_lower}
+
+    @staticmethod
+    def _map_plan_status(status: str) -> str:
+        mapping = {
+            "DRAFT": "drafting",
+            "RUNNING": "running",
+            "PAUSED": "waiting",
+            "COMPLETED": "completed",
+            "FAILED": "error",
+        }
+        return mapping.get(status.upper(), "drafting")
+
+    @staticmethod
+    def _map_log_status(status: str) -> str:
+        mapping = {
+            "RUNNING": "active",
+            "SUCCESS": "completed",
+            "FAILED": "error",
+            "WAITING_APPROVAL": "waiting",
+            "SKIPPED": "completed",
+        }
+        return mapping.get(status.upper(), "pending")
+
+    @staticmethod
+    def _build_connections(nodes: List[SpecNode]) -> List[Dict[str, str]]:
+        connections: list[dict[str, str]] = []
+        for node in nodes:
+            for dep in node.needs:
+                connections.append({"source": dep, "target": node.id})
+        return connections
+
+    async def get_plan_detail(
+        self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
+    ) -> Dict[str, Any]:
+        repo = SpecAgentRepository(session)
+        plan = await repo.get_plan(plan_id)
+        if not plan or plan.user_id != user_id:
+            raise ValueError("plan_not_found")
+
+        manifest = SpecManifest(**plan.manifest_data)
+        logs = await repo.get_latest_node_logs(plan_id)
+        progress = 0
+        if manifest.nodes:
+            done = len([log for log in logs if log.status in ("SUCCESS", "SKIPPED")])
+            progress = int((done / len(manifest.nodes)) * 100)
+        elif plan.status == "COMPLETED":
+            progress = 100
+
+        return {
+            "id": plan.id,
+            "project_name": plan.project_name,
+            "manifest": manifest,
+            "connections": self._build_connections(manifest.nodes),
+            "execution": {
+                "status": self._map_plan_status(plan.status),
+                "progress": progress,
+            },
+        }
+
+    async def get_plan_status(
+        self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
+    ) -> Dict[str, Any]:
+        repo = SpecAgentRepository(session)
+        plan = await repo.get_plan(plan_id)
+        if not plan or plan.user_id != user_id:
+            raise ValueError("plan_not_found")
+
+        manifest = SpecManifest(**plan.manifest_data)
+        logs = await repo.get_latest_node_logs(plan_id)
+        log_map = {log.node_id: log for log in logs}
+
+        nodes_payload: list[dict[str, Any]] = []
+        completed = 0
+        waiting_nodes: list[str] = []
+        for node in manifest.nodes:
+            log = log_map.get(node.id)
+            status = "pending"
+            duration_ms = None
+            output_preview = None
+            pulse = None
+            skipped = False
+            if log:
+                status = self._map_log_status(log.status)
+                skipped = log.status == "SKIPPED"
+                if log.status in ("SUCCESS", "SKIPPED"):
+                    completed += 1
+                if log.status == "WAITING_APPROVAL":
+                    waiting_nodes.append(node.id)
+                    pulse = "waiting_approval"
+                if log.started_at and log.completed_at:
+                    duration_ms = int(
+                        (log.completed_at - log.started_at).total_seconds() * 1000
+                    )
+                if log.output_data:
+                    output_preview = json.dumps(
+                        log.output_data, ensure_ascii=False, default=str
+                    )[:200]
+                if log.error_message:
+                    output_preview = log.error_message[:200]
+            nodes_payload.append(
+                {
+                    "id": node.id,
+                    "status": status,
+                    "duration_ms": duration_ms,
+                    "output_preview": output_preview,
+                    "pulse": pulse,
+                    "skipped": skipped,
+                }
+            )
+
+        progress = 0
+        if manifest.nodes:
+            progress = int((completed / len(manifest.nodes)) * 100)
+        elif plan.status == "COMPLETED":
+            progress = 100
+
+        checkpoint = None
+        if waiting_nodes:
+            checkpoint = {"node_id": waiting_nodes[0]}
+
+        return {
+            "execution": {
+                "status": self._map_plan_status(plan.status),
+                "progress": progress,
+            },
+            "nodes": nodes_payload,
+            "checkpoint": checkpoint,
+        }
 
     async def execute_plan(
         self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID

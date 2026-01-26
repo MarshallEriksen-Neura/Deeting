@@ -30,6 +30,10 @@ class LLMService:
         model: Optional[str] = None,
         temperature: float = 0.0,
         max_tokens: int = 1024,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        api_key_id: str | None = None,
+        trace_id: str | None = None,
     ) -> Any: # Returns str (content) or List[ToolCall]
         """
         Executes a chat completion using the internal orchestrator.
@@ -57,6 +61,17 @@ class LLMService:
                 requested_model=target_model,
                 db_session=session,
             )
+            if trace_id:
+                ctx.trace_id = trace_id
+            if tenant_id:
+                ctx.tenant_id = str(tenant_id)
+            if user_id:
+                ctx.user_id = str(user_id)
+            if api_key_id:
+                ctx.api_key_id = str(api_key_id)
+            elif user_id:
+                # 内部调用默认用 user_id 作为 api_key 维度
+                ctx.api_key_id = str(user_id)
             
             # 4. Configure Context
             ctx.set("validation", "request", internal_req)

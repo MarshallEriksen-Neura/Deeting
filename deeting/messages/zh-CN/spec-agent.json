@@ -1,0 +1,51 @@
+{
+  "spec-agent": {
+    "console": {
+      "title": "控制台",
+      "role": {
+        "user": "用户",
+        "system": "系统",
+        "agent": "代理"
+      },
+      "system": {
+        "drafting": "正在规划执行蓝图...",
+        "ready": "蓝图已生成：{projectName}",
+        "defaultProject": "未命名任务",
+        "error": "规划失败，请重试。"
+      },
+      "empty": "在下方输入目标，开始生成蓝图。",
+      "input": {
+        "placeholder": "输入任务目标..."
+      }
+    },
+    "canvas": {
+      "empty": {
+        "title": "开始你的 Spec Agent 任务",
+        "description": "在 Console 中输入指令，AI 将自动规划并执行任务流程"
+      },
+      "node": {
+        "type": {
+          "logic": "逻辑网关",
+          "action": "执行节点",
+          "replan": "重规划"
+        }
+      }
+    },
+    "statusbar": {
+      "project": "项目：",
+      "projectPlaceholder": "尚未命名",
+      "status": {
+        "drafting": "规划中",
+        "running": "执行中",
+        "waiting": "等待审批",
+        "completed": "已完成",
+        "error": "失败"
+      },
+      "costPlaceholder": "成本估算中",
+      "nodes": "节点：{completed}/{total}",
+      "launch": "确认启动",
+      "running": "运行中",
+      "ready": "准备就绪"
+    }
+  }
+}

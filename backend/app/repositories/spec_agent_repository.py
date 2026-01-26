@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import List, Optional, Dict, Any
 
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.spec_agent import SpecPlan, SpecExecutionLog, SpecWorkerSession
@@ -131,6 +131,18 @@ class SpecAgentRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_latest_log_for_node(
+        self, plan_id: uuid.UUID, node_id: str
+    ) -> Optional[SpecExecutionLog]:
+        stmt = (
+            select(SpecExecutionLog)
+            .where(SpecExecutionLog.plan_id == plan_id, SpecExecutionLog.node_id == node_id)
+            .order_by(desc(SpecExecutionLog.created_at))
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def get_pending_nodes(self, plan_id: uuid.UUID) -> List[SpecExecutionLog]:
         """Find nodes that are PENDING or WAITING_APPROVAL"""

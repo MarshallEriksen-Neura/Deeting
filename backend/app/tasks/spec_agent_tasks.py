@@ -3,7 +3,7 @@ import uuid
 import logging
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
-from app.services.spec_agent_service import spec_agent_service
+from app.services.agent import spec_agent_service
 from app.repositories.spec_agent_repository import SpecAgentRepository
 
 logger = logging.getLogger(__name__)

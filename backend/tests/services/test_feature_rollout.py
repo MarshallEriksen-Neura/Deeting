@@ -2,7 +2,7 @@ import pytest
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
-from app.services.feature_rollout import FeatureRollout
+from app.services.system import FeatureRollout
 
 
 class DummyRedis:

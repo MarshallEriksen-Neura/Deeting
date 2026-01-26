@@ -13,7 +13,7 @@ from app.models.spec_agent import SpecExecutionLog, SpecPlan, SpecWorkerSession
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest
 from app.schemas.tool import ToolCall, ToolDefinition
-from app.services.spec_agent_service import SpecAgentService, SpecExecutor
+from app.services.agent import SpecAgentService, SpecExecutor
 from app.utils.time_utils import Datetime
 from tests.api.conftest import AsyncSessionLocal, engine
 

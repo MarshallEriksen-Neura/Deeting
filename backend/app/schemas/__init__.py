@@ -107,6 +107,17 @@ from .mcp_server import (
     UserMcpServerResponse,
     UserMcpServerUpdate,
 )
+from .spec_agent_api import (
+    SpecDraftRequest,
+    SpecDraftResponse,
+    SpecExecutionStatus,
+    SpecNodeStatus,
+    SpecPlanDetailResponse,
+    SpecPlanInteractRequest,
+    SpecPlanInteractResponse,
+    SpecPlanStartResponse,
+    SpecPlanStatusResponse,
+)
 from .mcp_source import (
     McpSourceStatus,
     McpSourceSyncRequest,
@@ -237,6 +248,15 @@ __all__ = [
     "UserMcpServerCreate",
     "UserMcpServerResponse",
     "UserMcpServerUpdate",
+    "SpecDraftRequest",
+    "SpecDraftResponse",
+    "SpecExecutionStatus",
+    "SpecNodeStatus",
+    "SpecPlanDetailResponse",
+    "SpecPlanInteractRequest",
+    "SpecPlanInteractResponse",
+    "SpecPlanStartResponse",
+    "SpecPlanStatusResponse",
     "McpSourceStatus",
     "McpSourceSyncRequest",
     "McpSourceSyncResponse",

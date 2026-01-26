@@ -50,7 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache_keys import CacheKeys
 from app.core.distributed_lock import distributed_lock
 from app.core.database import get_db
-from app.services.cancel_service import CancelService
+from app.services.system import CancelService
 from app.services.orchestrator.context import Channel, ErrorSource, WorkflowContext
 from app.services.orchestrator.config import INTERNAL_DEBUG_WORKFLOW
 from app.services.orchestrator.orchestrator import GatewayOrchestrator, get_internal_orchestrator

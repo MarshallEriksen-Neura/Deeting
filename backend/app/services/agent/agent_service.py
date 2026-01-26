@@ -83,7 +83,11 @@ class AgentService:
         user_query: str, 
         system_instruction: str,
         model_hint: str = "gpt-4-turbo", 
-        conversation_history: List[Dict] = None
+        conversation_history: List[Dict] = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        api_key_id: str | None = None,
+        trace_id: str | None = None,
     ) -> str:
         """
         Execute a chat turn with the Agent using a specific Persona (System Instruction).
@@ -107,7 +111,11 @@ class AgentService:
                     messages=messages, 
                     tools=self.tools, 
                     model=model_hint, 
-                    temperature=0
+                    temperature=0,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    api_key_id=api_key_id,
+                    trace_id=trace_id,
                 )
             except Exception as e:
                 logger.error(f"Agent LLM Error: {e}")

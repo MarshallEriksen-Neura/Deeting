@@ -1,0 +1,51 @@
+{
+  "spec-agent": {
+    "console": {
+      "title": "Console",
+      "role": {
+        "user": "USER",
+        "system": "SYSTEM",
+        "agent": "AGENT"
+      },
+      "system": {
+        "drafting": "Drafting execution blueprint...",
+        "ready": "Blueprint ready: {projectName}",
+        "defaultProject": "Untitled task",
+        "error": "Draft failed. Please retry."
+      },
+      "empty": "Enter a goal below to generate a blueprint.",
+      "input": {
+        "placeholder": "Describe the task goal..."
+      }
+    },
+    "canvas": {
+      "empty": {
+        "title": "Start your Spec Agent task",
+        "description": "Enter instructions in Console and the AI will plan and execute the workflow."
+      },
+      "node": {
+        "type": {
+          "logic": "Logic Gate",
+          "action": "Action",
+          "replan": "Replan"
+        }
+      }
+    },
+    "statusbar": {
+      "project": "Project:",
+      "projectPlaceholder": "Untitled",
+      "status": {
+        "drafting": "Drafting",
+        "running": "Running",
+        "waiting": "Waiting approval",
+        "completed": "Completed",
+        "error": "Failed"
+      },
+      "costPlaceholder": "Estimating cost",
+      "nodes": "Nodes: {completed}/{total}",
+      "launch": "Launch",
+      "running": "Running",
+      "ready": "Ready"
+    }
+  }
+}

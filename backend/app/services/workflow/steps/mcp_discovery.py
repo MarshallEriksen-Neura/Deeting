@@ -43,7 +43,7 @@ class McpDiscoveryStep(BaseStep):
         # 2. Fetch System/Builtin Tools (Native Plugins)
         # We filter based on the configuration (plugins.yaml)
         try:
-            from app.services.agent_service import agent_service
+            from app.services.agent import agent_service
             from app.core.plugin_config import plugin_config_loader
             
             # Ensure initialized

@@ -24,7 +24,7 @@ from app.schemas.image_generation import (
     ImageGenerationTaskDetail,
     ImageGenerationTaskListItem,
 )
-from app.services.cancel_service import CancelService
+from app.services.system import CancelService
 from app.services.image_generation.service import ImageGenerationService
 from app.services.image_generation.share_service import ImageGenerationShareService
 from app.tasks.image_generation import process_image_generation_task

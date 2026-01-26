@@ -17,6 +17,7 @@ const namespaces = [
   "settings",
   "assistants",
   "mcp",
+  "spec-agent",
   "chat",
 ] as const
 

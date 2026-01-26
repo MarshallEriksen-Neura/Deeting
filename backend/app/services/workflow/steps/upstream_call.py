@@ -21,7 +21,7 @@ import httpx
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
-from app.services.cancel_service import CancelService
+from app.services.system import CancelService
 from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.core.metrics import record_upstream_call

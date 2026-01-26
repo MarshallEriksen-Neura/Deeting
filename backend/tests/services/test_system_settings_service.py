@@ -6,7 +6,7 @@ import pytest_asyncio
 from app.models import Base
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.repositories import ProviderModelRepository, SystemSettingRepository
-from app.services.system_settings_service import SystemSettingsService
+from app.services.system import SystemSettingsService
 from tests.api.conftest import AsyncSessionLocal, engine
 
 

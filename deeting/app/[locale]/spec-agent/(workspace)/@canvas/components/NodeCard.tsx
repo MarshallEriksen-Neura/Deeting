@@ -1,10 +1,13 @@
-import { CheckCircle, Play, Clock, AlertTriangle } from 'lucide-react'
+'use client'
+
+import { CheckCircle, Play, Clock, AlertTriangle, PauseCircle } from 'lucide-react'
+import { useI18n } from '@/hooks/use-i18n'
 
 interface Node {
   id: string
-  type: 'action' | 'logic_gate'
+  type: 'action' | 'logic_gate' | 'replan_trigger'
   title: string
-  status: 'pending' | 'active' | 'completed' | 'error'
+  status: 'pending' | 'active' | 'completed' | 'error' | 'waiting'
   position: { x: number; y: number }
   duration: string | null
   pulse: string | null
@@ -29,6 +32,12 @@ const statusConfig = {
     bgColor: 'bg-primary/10',
     borderColor: 'border-primary'
   },
+  waiting: {
+    icon: PauseCircle,
+    color: 'text-primary-soft',
+    bgColor: 'bg-primary-soft/10',
+    borderColor: 'border-primary-soft'
+  },
   completed: {
     icon: CheckCircle,
     color: 'text-teal-accent',
@@ -44,6 +53,7 @@ const statusConfig = {
 }
 
 export function NodeCard({ node, isSelected, onClick }: NodeCardProps) {
+  const t = useI18n('spec-agent')
   const config = statusConfig[node.status]
   const Icon = config.icon
 
@@ -95,9 +105,15 @@ export function NodeCard({ node, isSelected, onClick }: NodeCardProps) {
             <span className={`inline-block px-2 py-1 text-xs rounded ${
               node.type === 'logic_gate'
                 ? 'bg-primary-soft/20 text-primary-soft'
-                : 'bg-teal-accent/20 text-teal-accent'
+                : node.type === 'replan_trigger'
+                  ? 'bg-destructive/10 text-destructive'
+                  : 'bg-teal-accent/20 text-teal-accent'
             }`}>
-              {node.type === 'logic_gate' ? '逻辑网关' : '执行节点'}
+              {node.type === 'logic_gate'
+                ? t('canvas.node.type.logic')
+                : node.type === 'replan_trigger'
+                  ? t('canvas.node.type.replan')
+                  : t('canvas.node.type.action')}
             </span>
           </div>
         </div>

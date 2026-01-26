@@ -6,7 +6,7 @@ from app.deps.superuser import get_current_superuser
 from app.models import User
 from app.repositories import ProviderModelRepository, SystemSettingRepository
 from app.schemas import SystemEmbeddingSettingDTO, SystemEmbeddingSettingUpdateRequest
-from app.services.system_settings_service import SystemSettingsService
+from app.services.system import SystemSettingsService
 
 router = APIRouter(prefix="/admin/settings", tags=["Admin - Settings"])
 

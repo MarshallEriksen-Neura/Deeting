@@ -25,7 +25,7 @@ from app.repositories.generation_task_repository import GenerationTaskRepository
 from app.repositories.media_asset_repository import MediaAssetRepository
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.schemas.image_generation import ImageGenerationOutputItem, ImageGenerationTaskListItem
-from app.services.cancel_service import CancelService
+from app.services.system import CancelService
 from app.services.image_generation.prompt_security import PromptCipher, build_prompt_hash
 from app.services.oss.asset_storage_service import store_asset_bytes
 from app.services.orchestrator.context import Channel, WorkflowContext

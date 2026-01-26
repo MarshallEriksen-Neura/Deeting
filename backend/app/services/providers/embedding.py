@@ -1,7 +1,7 @@
 from typing import List
 import openai
 from app.core.config import settings
-from app.services.system_settings_service import get_cached_embedding_model
+from app.services.system import get_cached_embedding_model
 
 class EmbeddingService:
     """
