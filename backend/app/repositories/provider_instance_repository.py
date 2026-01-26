@@ -121,8 +121,8 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
                 return []
             
             # 使用 capabilities 数组包含任意候选能力的过滤逻辑
-            # PostgreSQL: capabilities && ARRAY[...]
-            # SQLAlchemy: ProviderModel.capabilities.overlap(capability_candidates)
+            # PostgreSQL: capabilities @> ARRAY[...]
+            # SQLAlchemy: ProviderModel.capabilities.contains([capability]) + OR 组合
             stmt = (
                 select(ProviderModel)
                 .join(ProviderInstance, ProviderModel.instance_id == ProviderInstance.id)
@@ -135,7 +135,11 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             )
             dialect = self.session.bind.dialect.name if getattr(self.session, "bind", None) else None
             if dialect == "postgresql":
-                stmt = stmt.where(ProviderModel.capabilities.overlap(capability_candidates))
+                overlap_filters = [
+                    ProviderModel.capabilities.contains([candidate])
+                    for candidate in capability_candidates
+                ]
+                stmt = stmt.where(or_(*overlap_filters))
 
             if user_id is not None:
                 if include_public:

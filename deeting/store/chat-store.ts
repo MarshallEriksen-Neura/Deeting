@@ -11,6 +11,7 @@ import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter";
 import type { Message, MessageRole } from "@/lib/chat/message-types";
 import { createRequestId } from "@/lib/chat/request-id";
 import { createSessionId } from "@/lib/chat/session-id";
+import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage";
 import { fetchConversationHistory } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
 import { signAssets } from "@/lib/api/media-assets";
@@ -423,6 +424,16 @@ export const useChatStore = create<ChatState & ChatActions>()(
         const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant.systemPrompt);
         let resolvedSessionId = sessionId;
         const storageKey = sessionKeyForAssistant(activeAssistant.id);
+        if (!resolvedSessionId) {
+          const fallbackSessionId = resolveSessionIdFromBrowser(storageKey);
+          if (fallbackSessionId) {
+            resolvedSessionId = fallbackSessionId;
+            setSessionId(resolvedSessionId);
+            if (typeof window !== "undefined") {
+              localStorage.setItem(storageKey, resolvedSessionId);
+            }
+          }
+        }
         if (!resolvedSessionId) {
           resolvedSessionId = createSessionId();
           setSessionId(resolvedSessionId);

@@ -98,7 +98,38 @@ class GatewayOrchestrator:
                         f"Make sure it's registered."
                     )
 
+        self._align_response_transform_dependencies(steps)
+
         return OrchestrationEngine(steps)
+
+    @staticmethod
+    def _align_response_transform_dependencies(steps: list[BaseStep]) -> None:
+        """
+        调整 response_transform 的依赖，匹配当前编排中的上游执行步骤。
+        """
+        step_names = {step.name for step in steps}
+        response_step = next(
+            (step for step in steps if step.name == "response_transform"),
+            None,
+        )
+        if not response_step:
+            return
+
+        if "agent_executor" in step_names:
+            response_step.depends_on = ["agent_executor"]
+            return
+        if "provider_execution" in step_names:
+            response_step.depends_on = ["provider_execution"]
+            return
+        if "upstream_call" in step_names:
+            response_step.depends_on = ["upstream_call"]
+            return
+
+        response_step.depends_on = []
+        logger.warning(
+            "response_transform dependency unresolved, steps=%s",
+            sorted(step_names),
+        )
 
     async def execute(self, ctx: WorkflowContext) -> ExecutionResult:
         """

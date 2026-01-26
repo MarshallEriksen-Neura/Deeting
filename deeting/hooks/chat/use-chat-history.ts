@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useSearchParams } from "next/navigation"
 import { useChatStateStore, type Message } from "@/store/chat-state-store"
+import { useChatSessionStore } from "@/store/chat-session-store"
 import { parseMessageContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { useI18n } from "@/hooks/use-i18n"
@@ -34,6 +35,7 @@ export function useChatHistory({
   const [historyLoaded, setHistoryLoaded] = useState(false)
   
   const { setMessages } = useChatStateStore()
+  const { setSessionId } = useChatSessionStore()
 
   const sessionStorageKey = `deeting-chat-session:${agentId}`
 
@@ -57,6 +59,7 @@ export function useChatHistory({
         (typeof window !== "undefined" ? localStorage.getItem(sessionStorageKey) : null)
 
       if (storedSessionId) {
+        setSessionId(storedSessionId)
         if (querySessionId && typeof window !== "undefined") {
           localStorage.setItem(sessionStorageKey, storedSessionId)
         }
@@ -85,6 +88,7 @@ export function useChatHistory({
     searchParams,
     sessionStorageKey,
     setMessages,
+    setSessionId,
     createGreeting
   ])
 

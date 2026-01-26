@@ -5,6 +5,7 @@ import { cancelChatCompletion, streamChatCompletion, type ChatMessage } from "@/
 import { buildMessageContent, parseMessageContent } from "@/lib/chat/message-content"
 import { createRequestId } from "@/lib/chat/request-id"
 import { createSessionId } from "@/lib/chat/session-id"
+import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStateStore, type Message, type ChatAssistant } from "@/store/chat-state-store"
@@ -204,6 +205,16 @@ export function useChatMessagingService() {
     const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant.systemPrompt)
     let resolvedSessionId = sessionId
     const storageKey = `deeting-chat-session:${activeAssistant.id}`
+    if (!resolvedSessionId) {
+      const fallbackSessionId = resolveSessionIdFromBrowser(storageKey)
+      if (fallbackSessionId) {
+        resolvedSessionId = fallbackSessionId
+        setSessionId(resolvedSessionId)
+        if (typeof window !== "undefined") {
+          localStorage.setItem(storageKey, resolvedSessionId)
+        }
+      }
+    }
     if (!resolvedSessionId) {
       resolvedSessionId = createSessionId()
       setSessionId(resolvedSessionId)

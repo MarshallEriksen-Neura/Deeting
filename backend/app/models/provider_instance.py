@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint, DateTime, text, JSON
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint, DateTime, text, JSON, cast
 from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -81,6 +81,18 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 class CapabilityListType(TypeDecorator):
     impl = JSON
     cache_ok = True
+
+    class Comparator(TypeDecorator.Comparator):
+        def _as_array(self):
+            return cast(self.expr, ARRAY(String(32)))
+
+        def overlap(self, other):
+            return self._as_array().overlap(other)
+
+        def contains(self, other, **kwargs):
+            return self._as_array().contains(other, **kwargs)
+
+    comparator_factory = Comparator
 
     def load_dialect_impl(self, dialect):
         if dialect.name == "postgresql":

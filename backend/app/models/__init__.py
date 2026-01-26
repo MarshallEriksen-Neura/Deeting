@@ -70,6 +70,7 @@ from .user import Permission, Role, RolePermission, User, UserRole
 from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
+from .spec_agent import SpecPlan, SpecExecutionLog, SpecWorkerSession
 
 __all__ = [
     "Base",
@@ -146,4 +147,8 @@ __all__ = [
     "UserMcpSubscription",
     "UserMcpServer",
     "UserMcpSource",
+    # Spec Agent
+    "SpecPlan",
+    "SpecExecutionLog",
+    "SpecWorkerSession",
 ]

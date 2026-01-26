@@ -1,6 +1,7 @@
 "use client"
 
 import { Search, Settings } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 import { GlassButton } from "@/components/ui/glass-button"
 import {
@@ -12,6 +13,8 @@ import { ThemeToggle } from "@/components/theme-provider"
 import { NotificationBell } from "@/components/notifications/notification-center"
 
 export function ActionButtons() {
+  const router = useRouter()
+
   return (
     <div className="flex items-center gap-1">
       <Tooltip>
@@ -47,6 +50,7 @@ export function ActionButtons() {
           <GlassButton
             variant="ghost"
             size="icon-sm"
+            onClick={() => router.push('/settings')}
             className="text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--primary)]/10"
           >
             <Settings className="size-4" />

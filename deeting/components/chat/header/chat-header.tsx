@@ -60,6 +60,10 @@ export const ChatHeader = React.memo<ChatHeaderProps>(function ChatHeader({
     onNewChat()
   }, [onNewChat])
 
+  const handleSettings = React.useCallback(() => {
+    router.push('/settings')
+  }, [router])
+
   return (
     <header className="h-14 border-b flex items-center px-4 justify-between bg-background/80 backdrop-blur sticky top-0 z-10">
       <div className="flex items-center gap-3">
@@ -131,7 +135,7 @@ export const ChatHeader = React.memo<ChatHeaderProps>(function ChatHeader({
            <Plus className="w-5 h-5 text-muted-foreground" />
         </Button>
 
-        <Button variant="ghost" size="icon">
+        <Button variant="ghost" size="icon" onClick={handleSettings} title={t("header.settings")}>
           <Sparkles className="w-4 h-4 text-muted-foreground" />
         </Button>
       </div>
