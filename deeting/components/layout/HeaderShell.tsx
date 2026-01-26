@@ -11,7 +11,10 @@ type HeaderShellProps = HeaderProps & {
 }
 
 function shouldHideHeader(pathname: string | null) {
-  return Boolean(pathname?.startsWith("/chat"))
+  return Boolean(
+    pathname?.startsWith("/chat") ||
+    pathname?.startsWith("/spec-agent")
+  )
 }
 
 export function HeaderShell({ children, ...headerProps }: HeaderShellProps) {

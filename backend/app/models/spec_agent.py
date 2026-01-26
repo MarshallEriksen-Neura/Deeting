@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy import (
     String,
     Text,
     Boolean,
+    DateTime,
     Integer,
     ForeignKey,
     Index,
@@ -175,13 +177,13 @@ class SpecExecutionLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     started_at: Mapped[datetime | None] = mapped_column(
-        TimestampMixin.created_at.type,
+        DateTime(timezone=True),
         nullable=True,
         comment="开始执行时间",
     )
 
     completed_at: Mapped[datetime | None] = mapped_column(
-        TimestampMixin.created_at.type,
+        DateTime(timezone=True),
         nullable=True,
         comment="完成/失败时间",
     )
