@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import { CheckCircle, Play, Clock, AlertTriangle, PauseCircle } from 'lucide-react'
 import { useI18n } from '@/hooks/use-i18n'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -58,7 +59,7 @@ const statusConfig = {
   }
 }
 
-export function NodeCard({
+export const NodeCard = memo(function NodeCard({
   node,
   isSelected,
   isDimmed,
@@ -151,4 +152,4 @@ export function NodeCard({
       </TooltipContent>
     </Tooltip>
   )
-}
+})

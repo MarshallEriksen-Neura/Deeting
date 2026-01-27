@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 interface ConnectionLineProps {
   from: { x: number; y: number }
   to: { x: number; y: number }
@@ -7,7 +9,7 @@ interface ConnectionLineProps {
   badge?: string
 }
 
-export function ConnectionLine({
+export const ConnectionLine = memo(function ConnectionLine({
   from,
   to,
   isActive,
@@ -85,4 +87,4 @@ export function ConnectionLine({
       )}
     </g>
   )
-}
+})

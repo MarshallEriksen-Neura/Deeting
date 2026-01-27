@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { memo, useMemo, useRef, useState } from 'react'
 import type { SpecUiNode, SpecUiNodeStage } from '@/store/spec-agent-store'
 
 interface CanvasMinimapProps {
@@ -28,7 +28,7 @@ const stageColorMap: Record<SpecUiNodeStage, string> = {
   unknown: 'fill-slate-400',
 }
 
-export function CanvasMinimap({
+export const CanvasMinimap = memo(function CanvasMinimap({
   nodes,
   canvasWidth,
   canvasHeight,
@@ -170,4 +170,4 @@ export function CanvasMinimap({
       </svg>
     </div>
   )
-}
+})
