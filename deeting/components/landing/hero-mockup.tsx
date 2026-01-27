@@ -24,11 +24,11 @@ export function LandingHero() {
             {/* 装饰性光点 */}
             <div className="absolute -left-20 top-0 w-40 h-40 bg-blue-500/20 blur-3xl rounded-full pointer-events-none" />
 
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-xs font-medium text-blue-300 shadow-lg shadow-blue-500/10"
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/50 border border-border backdrop-blur-md text-xs font-medium text-primary shadow-lg shadow-primary/10"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -47,7 +47,7 @@ export function LandingHero() {
                 谛听 Deeting
               </span>
               <br />
-              <span className="text-white drop-shadow-2xl">
+              <span className="text-foreground drop-shadow-2xl">
                 掌控万千模型
               </span>
             </motion.h1>
@@ -56,7 +56,7 @@ export function LandingHero() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
-              className="text-lg text-gray-400 max-w-xl mx-auto lg:mx-0 leading-relaxed font-light"
+              className="text-lg text-muted-foreground max-w-xl mx-auto lg:mx-0 leading-relaxed font-light"
             >
               Your Ultimate Local AI Command Center. <br className="hidden lg:block" />
               Connect Ollama, DeepSeek, and OpenAI in one elegant, privacy-first interface.
@@ -71,7 +71,7 @@ export function LandingHero() {
               {/* 主 CTA：下载 */}
               <Link href="/download" className="relative group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-75 transition duration-200"></div>
-                <button className="relative w-full sm:w-auto px-8 py-4 bg-white text-black rounded-xl font-bold text-base hover:bg-gray-50 transition-all flex items-center justify-center gap-2 shadow-xl">
+                <button className="relative w-full sm:w-auto px-8 py-4 bg-card text-card-foreground rounded-xl font-bold text-base hover:bg-accent transition-all flex items-center justify-center gap-2 shadow-xl">
                   <Download className="w-5 h-5" />
                   Download App
                 </button>
@@ -79,7 +79,7 @@ export function LandingHero() {
 
               {/* 副 CTA：Web 预览 */}
               <Link href="/market">
-                <button className="w-full sm:w-auto px-8 py-4 rounded-xl font-medium text-white border border-white/10 hover:bg-white/5 hover:border-white/20 transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
+                <button className="w-full sm:w-auto px-8 py-4 rounded-xl font-medium text-foreground border border-border hover:bg-accent hover:border-border transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
                   <LayoutGrid className="w-5 h-5" />
                   Live Demo
                 </button>
@@ -90,7 +90,7 @@ export function LandingHero() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.5, delay: 0.5 }}
-              className="pt-8 flex flex-wrap items-center justify-center lg:justify-start gap-6 text-gray-500 text-xs font-medium uppercase tracking-wider"
+              className="pt-8 flex flex-wrap items-center justify-center lg:justify-start gap-6 text-muted-foreground text-xs font-medium uppercase tracking-wider"
             >
               <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-emerald-500" /> Local Privacy</div>
               <div className="flex items-center gap-2"><Cpu className="w-4 h-4 text-blue-500" /> Apple Silicon</div>

@@ -37,10 +37,10 @@ export function FeatureBento() {
   return (
     <div className="container mx-auto px-6 py-24">
       <div className="text-center mb-16 space-y-4">
-         <h2 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+         <h2 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60">
             Why Deeting?
          </h2>
-         <p className="text-gray-400 max-w-2xl mx-auto">
+         <p className="text-muted-foreground max-w-2xl mx-auto">
             Build for developers who refuse to compromise on privacy or performance.
          </p>
       </div>
@@ -53,20 +53,20 @@ export function FeatureBento() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.1 }}
-            className={`relative group overflow-hidden rounded-3xl border ${f.border} bg-[#0A0A0F]/60 backdrop-blur-xl p-8 hover:bg-white/5 transition-all duration-500 hover:-translate-y-1`}
+            className={`relative group overflow-hidden rounded-3xl border ${f.border} bg-card/60 backdrop-blur-xl p-8 hover:bg-accent/50 transition-all duration-500 hover:-translate-y-1`}
           >
             {/* Hover Gradient */}
             <div className={`absolute inset-0 bg-gradient-to-br ${f.color} opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-2xl`} />
             
             <div className="relative z-10 flex flex-col h-full items-start">
-              <div className={`p-3 rounded-2xl bg-white/5 border border-white/10 mb-6 ${f.iconColor} group-hover:scale-110 transition-transform duration-300`}>
+              <div className={`p-3 rounded-2xl bg-accent/50 border border-border mb-6 ${f.iconColor} group-hover:scale-110 transition-transform duration-300`}>
                  <f.icon className="size-6" />
               </div>
               
-              <h3 className="text-xl font-bold text-white mb-1">{f.title}</h3>
-              <p className="text-xs font-mono text-gray-500 mb-4 uppercase tracking-wider">{f.titleEn}</p>
-              
-              <p className="text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">
+              <h3 className="text-xl font-bold text-foreground mb-1">{f.title}</h3>
+              <p className="text-xs font-mono text-muted-foreground mb-4 uppercase tracking-wider">{f.titleEn}</p>
+
+              <p className="text-muted-foreground leading-relaxed group-hover:text-foreground transition-colors">
                 {f.desc}
               </p>
             </div>
