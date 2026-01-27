@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import select, and_, or_, func, case
 
-from app.models.assistant import Assistant, AssistantVersion
+from app.models.assistant import Assistant, AssistantStatus, AssistantVersion
 from app.models.assistant_install import AssistantInstall
 from app.models.assistant_tag import AssistantTag, AssistantTagLink
 from app.models.review import ReviewTask, ReviewStatus
@@ -99,6 +99,7 @@ class AssistantMarketRepository:
             .join(Assistant, Assistant.id == ai.assistant_id)
             .join(av, av.id == version_id_expr)
             .where(ai.user_id == user_id)
+            .where(Assistant.status != AssistantStatus.ARCHIVED)
             .order_by(ai.sort_order.desc(), ai.created_at.desc(), ai.id.desc())
         )
         if install_id:

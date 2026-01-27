@@ -13,6 +13,7 @@ class PluginConfigItem:
     module: str
     class_name: str
     enabled_by_default: bool = False
+    is_always_on: bool = False
     restricted: bool = False
     allowed_roles: List[str] = field(default_factory=list)
     description: str = ""
@@ -43,6 +44,7 @@ class PluginConfigLoader:
                         module=p.get("module"),
                         class_name=p.get("class_name"),
                         enabled_by_default=p.get("enabled_by_default", False),
+                        is_always_on=p.get("is_always_on", False),
                         restricted=p.get("restricted", False),
                         allowed_roles=p.get("allowed_roles", []),
                         description=p.get("description", ""),

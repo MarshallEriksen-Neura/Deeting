@@ -197,7 +197,7 @@ async def append_spec_plan_node_event(
 ):
     try:
         result = await spec_agent_service.append_plan_node_event(
-            db, user.id, plan_id, node_id, payload.event, payload.source
+            db, user.id, plan_id, node_id, payload.event, payload.source, payload.payload
         )
     except ValueError as exc:
         detail_text = str(exc)

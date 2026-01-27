@@ -22,6 +22,9 @@
     "greeting": {
       "content": "你好！我是 **{name}**。\n{desc}\n\n准备好开始协作了吗？"
     },
+    "loading": {
+      "global": "正在创建会话..."
+    },
     "status": {
       "thinking": "{name} 正在思考...",
       "flow": {

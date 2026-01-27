@@ -19,7 +19,7 @@
 - `GET /assistants/installs`
 - Query：`cursor` / `size`
 - 响应：`CursorPage[AssistantInstallItem]`
-- 说明：安装相关响应包含 `assistant.version.system_prompt`（系统提示词）。
+- 说明：安装相关响应包含 `assistant.version.system_prompt`（系统提示词）；已归档（删除）助手不会出现在安装列表中。
 
 ## 安装助手
 
@@ -144,3 +144,4 @@
 - 2026-01-15：新增助手市场/安装/提交审核/评分/标签列表/体验预览 API；提交审核默认自动审核。
 - 2026-01-17：创建助手支持 `share_to_market`，可在创建时自动提交审核。
 - 2026-01-19：安装支持 `follow_latest`；更新助手支持创建新版本；删除已安装助手改为归档。
+- 2026-01-27：安装列表过滤已归档助手。

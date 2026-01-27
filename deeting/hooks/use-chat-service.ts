@@ -6,6 +6,7 @@ import useSWR from "swr"
 import {
   fetchAssistantInstalls,
   type AssistantInstallItem,
+  type AssistantInstallPage,
 } from "@/lib/api/assistants"
 import { fetchChatModels, type ModelInfo, type ModelGroup } from "@/lib/api/models"
 import { fetchConversationHistory } from "@/lib/api/conversations"
@@ -71,7 +72,8 @@ export function useChatService({
   const {
     data: installPage,
     isLoading: isLoadingAssistants,
-  } = useSWR(shouldFetch, () => fetchAssistantInstalls({ size: installSize }))
+    mutate: mutateInstalls,
+  } = useSWR<AssistantInstallPage>(shouldFetch, () => fetchAssistantInstalls({ size: installSize }))
 
   const modelQueryKey = isEnabled
     ? [MODELS_QUERY_KEY, modelCapability ?? "all"]
@@ -94,6 +96,23 @@ export function useChatService({
     if (!installPage?.items?.length) return []
     return installPage.items.map(mapInstallToAssistant)
   }, [installPage])
+
+  const removeAssistantOptimistic = useCallback(
+    (assistantId: string) => {
+      if (!assistantId || !isEnabled) return
+      void mutateInstalls(
+        (current) => {
+          if (!current?.items?.length) return current
+          return {
+            ...current,
+            items: current.items.filter((item) => item.assistant_id !== assistantId),
+          }
+        },
+        { revalidate: false }
+      )
+    },
+    [isEnabled, mutateInstalls]
+  )
 
   const modelGroups = useMemo<ModelGroup[]>(() => {
     return (modelList?.instances ?? []).filter((group) => group.models.length > 0)
@@ -118,5 +137,6 @@ export function useChatService({
     isLoadingAssistants,
     isLoadingModels,
     loadHistory,
+    removeAssistantOptimistic,
   }
 }

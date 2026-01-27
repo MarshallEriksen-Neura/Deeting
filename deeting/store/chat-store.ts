@@ -10,7 +10,6 @@ import {
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter";
 import type { Message, MessageRole } from "@/lib/chat/message-types";
 import { createRequestId } from "@/lib/chat/request-id";
-import { createSessionId } from "@/lib/chat/session-id";
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage";
 import { fetchConversationHistory } from "@/lib/api/conversations";
 import type { ModelInfo } from "@/lib/api/models";
@@ -120,6 +119,7 @@ interface ChatState {
   attachments: ChatImageAttachment[];
   messages: Message[];
   isLoading: boolean;
+  globalLoading: boolean;
   config: ChatConfig;
   assistants: ChatAssistant[];
   models: ModelInfo[];
@@ -151,6 +151,7 @@ interface ChatActions {
   setSessionId: (sessionId?: string) => void;
   setStreamEnabled: (enabled: boolean) => void;
   setErrorMessage: (error: string | null) => void;
+  setGlobalLoading: (loading: boolean) => void;
   setMessages: (messages: Message[]) => void;
   updateMessage: (id: string, content: string) => void;
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void;
@@ -170,6 +171,7 @@ export const useChatStore = create<ChatState & ChatActions>()(
       attachments: [],
       messages: [],
       isLoading: false,
+      globalLoading: false,
       config: {
         model: "gpt-4o",
         temperature: 0.7,
@@ -221,6 +223,8 @@ export const useChatStore = create<ChatState & ChatActions>()(
       setStreamEnabled: (enabled) => set({ streamEnabled: enabled }),
 
       setErrorMessage: (errorMessage) => set({ errorMessage }),
+
+      setGlobalLoading: (loading) => set({ globalLoading: loading }),
 
       setMessages: (messages) => set({ messages }),
 
@@ -434,14 +438,6 @@ export const useChatStore = create<ChatState & ChatActions>()(
             }
           }
         }
-        if (!resolvedSessionId) {
-          resolvedSessionId = createSessionId();
-          setSessionId(resolvedSessionId);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(storageKey, resolvedSessionId);
-          }
-        }
-
         const requestId = createRequestId();
         set({ activeRequestId: requestId });
 

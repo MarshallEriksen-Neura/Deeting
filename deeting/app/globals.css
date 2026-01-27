@@ -176,18 +176,49 @@ body {
 }
 
 .chat-markdown {
-  font-size: 0.875rem;
-  line-height: 1.6;
+  --chat-link-color: var(--primary);
+  font-size: 0.9375rem;
+  line-height: 1.65;
 }
 
-.chat-markdown pre {
+.chat-markdown a {
+  color: var(--chat-link-color);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: from-font;
+  transition: opacity 0.2s ease;
+}
+
+.chat-markdown a:hover {
+  opacity: 0.85;
+}
+
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown blockquote,
+.chat-markdown pre,
+.chat-markdown table {
+  margin-top: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.chat-markdown li + li {
+  margin-top: 0.4rem;
+}
+
+.chat-markdown > pre {
   background-color: color-mix(in oklch, var(--bgColor-muted) 85%, transparent);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 0.6rem;
+  padding: 0.75rem 0.9rem;
 }
 
 .chat-markdown-user {
+  --chat-link-color: #7dd3fc;
   --fgColor-default: var(--primary-foreground);
   --fgColor-muted: color-mix(in oklch, var(--primary-foreground) 75%, transparent);
-  --fgColor-accent: var(--primary-foreground);
+  --fgColor-accent: var(--chat-link-color);
   --bgColor-muted: color-mix(in oklch, var(--primary-foreground) 12%, transparent);
   --borderColor-default: color-mix(in oklch, var(--primary-foreground) 24%, transparent);
   --color-prettylights-syntax-comment: color-mix(in oklch, var(--primary-foreground) 70%, transparent);
@@ -199,9 +230,10 @@ body {
 }
 
 .chat-markdown-assistant {
+  --chat-link-color: var(--primary);
   --fgColor-default: var(--foreground);
   --fgColor-muted: color-mix(in oklch, var(--foreground) 68%, transparent);
-  --fgColor-accent: var(--primary);
+  --fgColor-accent: var(--chat-link-color);
   --bgColor-muted: color-mix(in oklch, var(--foreground) 6%, transparent);
   --borderColor-default: color-mix(in oklch, var(--foreground) 14%, transparent);
   --color-prettylights-syntax-comment: color-mix(in oklch, var(--foreground) 58%, transparent);

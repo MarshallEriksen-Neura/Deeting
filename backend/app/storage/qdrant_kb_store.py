@@ -132,6 +132,40 @@ async def upsert_point(
     _safe_raise(resp)
 
 
+async def upsert_points(
+    qdrant: httpx.AsyncClient,
+    *,
+    collection_name: str,
+    points: list[dict[str, Any]],
+    wait: bool = True,
+    vector_name: str = QDRANT_DEFAULT_VECTOR_NAME,
+) -> None:
+    name = str(collection_name or "").strip()
+    if not name:
+        raise ValueError("empty collection_name")
+    if not isinstance(points, list) or not points:
+        raise ValueError("points must be non-empty list")
+    vn = str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip() or QDRANT_DEFAULT_VECTOR_NAME
+
+    normalized: list[dict[str, Any]] = []
+    for point in points:
+        pid = str(point.get("id", "") or "").strip()
+        vector = point.get("vector")
+        payload = point.get("payload")
+        if not pid:
+            raise ValueError("point id is required")
+        if not isinstance(vector, list) or not vector:
+            raise ValueError("point vector must be non-empty list")
+        if not isinstance(payload, dict):
+            raise ValueError("point payload must be dict")
+        normalized.append({"id": pid, "vector": {vn: vector}, "payload": payload})
+
+    params = {"wait": "true" if wait else "false"}
+    body = {"points": normalized}
+    resp = await qdrant.put(f"/collections/{name}/points", params=params, json=body)
+    _safe_raise(resp)
+
+
 async def search_points(
     qdrant: httpx.AsyncClient,
     *,
@@ -140,6 +174,7 @@ async def search_points(
     limit: int = 3,
     query_filter: dict[str, Any] | None = None,
     with_payload: bool = True,
+    score_threshold: float | None = None,
     vector_name: str = QDRANT_DEFAULT_VECTOR_NAME,
 ) -> list[dict[str, Any]]:
     name = str(collection_name or "").strip()
@@ -158,6 +193,8 @@ async def search_points(
         "limit": k,
         "with_payload": bool(with_payload),
     }
+    if score_threshold is not None:
+        body["score_threshold"] = float(score_threshold)
     if query_filter is not None:
         body["filter"] = query_filter
 
@@ -242,4 +279,5 @@ __all__ = [
     "scroll_points",
     "search_points",
     "upsert_point",
+    "upsert_points",
 ]

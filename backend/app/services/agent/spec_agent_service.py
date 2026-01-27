@@ -24,9 +24,11 @@ from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest, SpecNode
 from app.schemas.tool import ToolCall, ToolDefinition
 from app.services.conversation.service import ConversationService
+from app.services.conversation.turn_index_sync import sync_redis_last_turn
 from app.services.mcp.client import mcp_client
 from app.services.mcp.discovery import mcp_discovery_service
 from app.services.providers.llm import llm_service
+from app.services.knowledge import SpecKnowledgeService
 from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
@@ -751,6 +753,12 @@ class SpecAgentService:
 
         if redis_available and conv_service:
             try:
+                await sync_redis_last_turn(
+                    redis=conv_service.redis,
+                    db_session=session,
+                    session_id=str(session_id),
+                    session_uuid=session_id,
+                )
                 result = await asyncio.wait_for(
                     conv_service.append_messages(
                         session_id=str(session_id),
@@ -841,6 +849,12 @@ class SpecAgentService:
 
         if redis_available and conv_service:
             try:
+                await sync_redis_last_turn(
+                    redis=conv_service.redis,
+                    db_session=session,
+                    session_id=str(session_id),
+                    session_uuid=session_id,
+                )
                 result = await asyncio.wait_for(
                     conv_service.append_messages(
                         session_id=str(session_id),
@@ -1019,6 +1033,16 @@ class SpecAgentService:
             raise ValueError("invalid_decision")
 
         await session.commit()
+        try:
+            knowledge_service = SpecKnowledgeService(session)
+            await knowledge_service.record_feedback_event(
+                user_id=user_id,
+                plan_id=plan_id,
+                event=decision_lower,
+                payload={"feedback": feedback} if feedback else None,
+            )
+        except Exception as exc:  # pragma: no cover - fail-open
+            logger.warning("spec_kb_feedback_record_failed: %s", exc)
         return {"plan_id": str(plan_id), "node_id": node_id, "decision": decision_lower}
 
     async def update_plan_node_model(
@@ -1394,6 +1418,7 @@ class SpecAgentService:
         node_id: str,
         event: str,
         source: str,
+        payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
@@ -1417,6 +1442,16 @@ class SpecAgentService:
             content=content,
             source=source,
         )
+        try:
+            knowledge_service = SpecKnowledgeService(session)
+            await knowledge_service.record_feedback_event(
+                user_id=user_id,
+                plan_id=plan_id,
+                event=event,
+                payload=payload,
+            )
+        except Exception as exc:  # pragma: no cover - fail-open
+            logger.warning("spec_kb_event_record_failed: %s", exc)
         return {"status": "ok"}
 
     async def execute_plan(

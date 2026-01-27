@@ -20,6 +20,7 @@ from app.services.conversation.session_service import ConversationSessionService
 from app.repositories.conversation_message_repository import ConversationMessageRepository
 from app.services.conversation.service import ConversationService
 from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
+from app.services.conversation.turn_index_sync import sync_redis_last_turn
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
@@ -91,6 +92,13 @@ class ConversationAppendStep(BaseStep):
                 "ConversationAppend redis unavailable, fallback to db: %s", exc
             )
 
+        session_uuid: uuid.UUID | None = None
+        if ctx.db_session is not None:
+            try:
+                session_uuid = uuid.UUID(session_id)
+            except Exception:
+                session_uuid = None
+
         if redis_available and conv_service:
             try:
                 # 使用分布式锁防止并发写入冲突（P1-4）
@@ -114,6 +122,20 @@ class ConversationAppendStep(BaseStep):
 
                     # 持有锁，执行会话追加
                     try:
+                        if ctx.db_session is not None and session_uuid is not None:
+                            try:
+                                await sync_redis_last_turn(
+                                    redis=conv_service.redis,
+                                    db_session=ctx.db_session,
+                                    session_id=session_id,
+                                    session_uuid=session_uuid,
+                                )
+                            except Exception as exc:
+                                logger.warning(
+                                    "conversation_sync_turn_failed session=%s exc=%s",
+                                    session_id,
+                                    exc,
+                                )
                         result = await conv_service.append_messages(
                             session_id=session_id,
                             messages=redis_messages,
@@ -141,7 +163,8 @@ class ConversationAppendStep(BaseStep):
 
         if ctx.db_session is not None:
             try:
-                session_uuid = uuid.UUID(session_id)
+                if session_uuid is None:
+                    session_uuid = uuid.UUID(session_id)
                 user_uuid = uuid.UUID(ctx.user_id) if ctx.user_id else None
                 tenant_uuid = uuid.UUID(ctx.tenant_id) if ctx.tenant_id else None
                 assistant_uuid = (

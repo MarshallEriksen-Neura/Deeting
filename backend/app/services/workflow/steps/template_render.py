@@ -140,6 +140,19 @@ class TemplateRenderStep(BaseStep):
         # 获取增强后的 assistant prompt (由 assistant_prompt_injection 步骤注入)
         enhanced_prompt = ctx.get("assistant", "enhanced_prompt")
 
+        # 构建工具描述 (Tool Description) 以增强 System Prompt
+        mcp_tools = ctx.get("mcp_discovery", "tools") or []
+        tools_desc = ""
+        if mcp_tools:
+            lines = ["\n\n# Available Tools\nYou have access to the following tools. Use them when necessary:\n"]
+            for t in mcp_tools:
+                lines.append(f"- {t.name}: {t.description}")
+            lines.append(
+                "\nNote: Only the most relevant tools are shown above. "
+                "If a necessary tool is missing, ask the user to clarify or rephrase."
+            )
+            tools_desc = "\n".join(lines)
+
         return {
             # 请求数据
             "model": ctx.requested_model or request_data.get("model"),
@@ -159,6 +172,8 @@ class TemplateRenderStep(BaseStep):
             "request": request_data,
             # Assistant 增强 prompt
             "enhanced_prompt": enhanced_prompt,
+            # 工具描述 (新增)
+            "tools_desc": tools_desc,
         }
 
     async def _render_template(

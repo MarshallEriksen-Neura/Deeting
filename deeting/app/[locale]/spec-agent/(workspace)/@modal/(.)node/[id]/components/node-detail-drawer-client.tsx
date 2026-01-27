@@ -1,11 +1,12 @@
 'use client'
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useChatService } from '@/hooks/use-chat-service'
 import { useI18n } from '@/hooks/use-i18n'
 import { useSpecAgentStore } from '@/store/spec-agent-store'
 import {
+  useSpecPlanDetail,
   useSpecPlanNodeDetail,
   useSpecPlanNodeEvent,
   useSpecPlanNodeUpdate,
@@ -26,19 +27,34 @@ function NodeDetailDrawerClient({ params }: NodeDetailDrawerClientProps) {
   const router = useRouter()
   const t = useI18n('spec-agent')
   const planId = useSpecAgentStore((state) => state.planId)
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const queryPlanId = useMemo(
+    () => searchParams?.get('plan')?.trim() || null,
+    [searchParams]
+  )
+  const [restoredPlanId, setRestoredPlanId] = useState<string | null>(null)
+  const activePlanId = queryPlanId ?? planId ?? restoredPlanId
+  const fallbackNodeId = useMemo(() => {
+    if (!pathname) return null
+    const parts = pathname.split('/')
+    return parts[parts.length - 1] || null
+  }, [pathname])
+  const nodeId = params.id || fallbackNodeId
   const setSelectedNodeId = useSpecAgentStore((state) => state.setSelectedNodeId)
   const node = useSpecAgentStore((state) =>
-    state.nodes.find((item) => item.id === params.id)
+    state.nodes.find((item) => item.id === nodeId)
   )
-  const { data: nodeDetail } = useSpecPlanNodeDetail(planId, params.id, {
-    enabled: Boolean(planId),
+  useSpecPlanDetail(activePlanId, { enabled: Boolean(activePlanId) })
+  const { data: nodeDetail } = useSpecPlanNodeDetail(activePlanId, nodeId, {
+    enabled: Boolean(activePlanId && nodeId),
   })
   const { modelGroups, isLoadingModels } = useChatService({
     modelCapability: 'chat',
   })
-  const { update, updateState } = useSpecPlanNodeUpdate(planId)
-  const { rerun, rerunState } = useSpecPlanNodeRerun(planId)
-  const { send: sendNodeEvent } = useSpecPlanNodeEvent(planId)
+  const { update, updateState } = useSpecPlanNodeUpdate(activePlanId)
+  const { rerun, rerunState } = useSpecPlanNodeRerun(activePlanId)
+  const { send: sendNodeEvent } = useSpecPlanNodeEvent(activePlanId)
 
   const rawNode = nodeDetail?.node ?? node?.raw
   const isAction = rawNode?.type === 'action'
@@ -60,13 +76,13 @@ function NodeDetailDrawerClient({ params }: NodeDetailDrawerClientProps) {
 
   useEffect(() => {
     setSelectedModel(currentOverride ?? AUTO_VALUE)
-  }, [AUTO_VALUE, currentOverride, params.id])
+  }, [AUTO_VALUE, currentOverride, nodeId])
 
   useEffect(() => {
     if (rawNode?.type === 'action') {
       setInstruction(rawNode.pending_instruction ?? rawNode.instruction ?? '')
     }
-  }, [params.id, rawNode])
+  }, [nodeId, rawNode])
 
   const knownModelValues = useMemo(() => {
     const values = new Set<string>()
@@ -113,7 +129,7 @@ function NodeDetailDrawerClient({ params }: NodeDetailDrawerClientProps) {
   const isSaving = updateState.isMutating
 
   const handleSave = async () => {
-    if (!planId || !isAction || !node) return
+    if (!activePlanId || !isAction || !node) return
     if (!isDirty) return
     await update(node.id, {
       ...(nextOverride !== currentOverride && { modelOverride: nextOverride }),
@@ -124,61 +140,82 @@ function NodeDetailDrawerClient({ params }: NodeDetailDrawerClientProps) {
   }
 
   const handleRerun = async () => {
-    if (!planId || !node || !pendingInstruction) return
+    if (!activePlanId || !node || !pendingInstruction) return
     await rerun(node.id)
   }
 
   useEffect(() => {
+    if (planId || queryPlanId || typeof window === 'undefined') return
+    const stored = localStorage.getItem('deeting-spec-agent:last-plan')
+    if (!stored || stored === restoredPlanId) return
+    setRestoredPlanId(stored)
+  }, [planId, queryPlanId, restoredPlanId])
+
+  useEffect(() => {
     if (!pendingInstruction) return
     if (!['completed', 'error'].includes(executionStatus)) return
-    const key = `${params.id}-${pendingInstruction}`
+    const key = `${nodeId ?? 'unknown'}-${pendingInstruction}`
     if (lastPromptRef.current === key) return
     lastPromptRef.current = key
     setRerunDialogOpen(true)
-    if (planId) {
-      void sendNodeEvent(params.id, 'rerun_prompt', 'auto_drawer')
+    if (activePlanId && nodeId) {
+      void sendNodeEvent(nodeId, 'rerun_prompt', 'auto_drawer')
     }
-  }, [executionStatus, params.id, pendingInstruction, planId, sendNodeEvent])
+  }, [
+    activePlanId,
+    executionStatus,
+    nodeId,
+    pendingInstruction,
+    sendNodeEvent,
+  ])
 
   return (
     <Sheet open={true} onOpenChange={handleClose}>
-      <SheetContent side="right" className="sm:max-w-xl">
-        <SheetHeader>
-          <SheetTitle>{t('node.modal.title', { id: params.id })}</SheetTitle>
-        </SheetHeader>
+      <SheetContent side="right" className="sm:max-w-xl w-full p-0 h-full max-h-screen">
+        <div className="flex h-full flex-col">
+          <SheetHeader className="border-b border-border/60 bg-background/90 backdrop-blur px-6 py-4">
+            <SheetTitle className="text-base font-semibold text-foreground">
+              {t('node.modal.title', { id: nodeId ?? '' })}
+            </SheetTitle>
+          </SheetHeader>
 
-        <NodeDetailContent
-          t={t}
-          node={node}
-          rawNode={rawNode}
-          nodeDetail={nodeDetail ?? null}
-          isAction={isAction}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          instruction={instruction}
-          setInstruction={setInstruction}
-          instructionMode={instructionMode}
-          instructionNote={instructionNote}
-          pendingInstruction={pendingInstruction}
-          canRerunPending={canRerunPending}
-          isRerunning={rerunState.isMutating}
-          onRerunPending={handleRerun}
-          isSaving={isSaving}
-          isLoadingModels={isLoadingModels}
-          isUnknownModel={isUnknownModel}
-          modelGroups={modelGroups}
-          updateError={Boolean(updateState.error)}
-        />
+          <div className="flex-1 min-h-0 overflow-hidden px-6 py-4">
+            <NodeDetailContent
+              t={t}
+              node={node}
+              rawNode={rawNode}
+              nodeDetail={nodeDetail ?? null}
+              isAction={isAction}
+              selectedModel={selectedModel}
+              setSelectedModel={setSelectedModel}
+              instruction={instruction}
+              setInstruction={setInstruction}
+              instructionMode={instructionMode}
+              instructionNote={instructionNote}
+              pendingInstruction={pendingInstruction}
+              canRerunPending={canRerunPending}
+              isRerunning={rerunState.isMutating}
+              onRerunPending={handleRerun}
+              isSaving={isSaving}
+              isLoadingModels={isLoadingModels}
+              isUnknownModel={isUnknownModel}
+              modelGroups={modelGroups}
+              updateError={Boolean(updateState.error)}
+            />
+          </div>
 
-        <NodeDetailFooter
-          t={t}
-          isSaving={isSaving}
-          isDirty={isDirty}
-          isAction={isAction}
-          hasNode={Boolean(node)}
-          onClose={handleClose}
-          onSave={handleSave}
-        />
+          <div className="border-t border-border/60 bg-background/95 px-6 py-3">
+            <NodeDetailFooter
+              t={t}
+              isSaving={isSaving}
+              isDirty={isDirty}
+              isAction={isAction}
+              hasNode={Boolean(node)}
+              onClose={handleClose}
+              onSave={handleSave}
+            />
+          </div>
+        </div>
       </SheetContent>
 
       <NodeDetailRerunDialog

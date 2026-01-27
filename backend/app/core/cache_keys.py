@@ -199,6 +199,12 @@ class CacheKeys:
         """路由亲和状态机 Key（会话级别）"""
         return f"{cls.prefix}:routing:affinity:{session_id}:{model}"
 
+    # ===== Tool Index =====
+    @classmethod
+    def tool_system_index_hash(cls) -> str:
+        """系统工具索引的内容指纹缓存"""
+        return f"{cls.prefix}:tool:index:system:hash"
+
     # ===== Security =====
     @classmethod
     def nonce(cls, tenant_id: str | None, nonce: str) -> str:

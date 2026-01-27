@@ -74,6 +74,9 @@ class SpecPlanNodeRerunResponse(BaseSchema):
 class SpecPlanNodeEventRequest(BaseSchema):
     event: str = Field(..., description="事件名称")
     source: str = Field(..., description="触发来源")
+    payload: Optional[Dict[str, Any]] = Field(
+        default=None, description="事件附加信息（如 edit_distance/error_code 等）"
+    )
 
 
 class SpecPlanNodeEventResponse(BaseSchema):

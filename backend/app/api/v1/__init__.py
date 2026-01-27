@@ -14,6 +14,7 @@ from app.api.v1.admin import provider_preset_router as admin_provider_preset_rou
 from app.api.v1.admin import discovery_router as admin_discovery_router
 from app.api.v1.admin import notification_router as admin_notification_router
 from app.api.v1.admin import settings_router as admin_settings_router
+from app.api.v1.admin import spec_knowledge_reviews_router as admin_spec_knowledge_reviews_router
 from app.api.v1.auth_route import router as auth_router
 from app.api.v1.assistants_route import router as assistants_router
 from app.api.v1.notification_ws_route import router as notification_ws_router
@@ -50,6 +51,7 @@ __all__ = [
     "admin_discovery_router",
     "admin_notification_router",
     "admin_settings_router",
+    "admin_spec_knowledge_reviews_router",
     "auth_router",
     "assistants_router",
     "notification_ws_router",

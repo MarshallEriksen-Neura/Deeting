@@ -6,12 +6,18 @@ from app.core.config import settings
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.services.providers.embedding import EmbeddingService
 from app.models.agent_plugin import AgentPlugin
-from app.storage.qdrant_kb_collections import get_kb_system_collection_name
+from app.storage.qdrant_kb_collections import (
+    get_kb_candidates_collection_name,
+    get_kb_system_collection_name,
+    get_tool_system_collection_name,
+)
 
 # Constants for Collection Names
 COLLECTION_PLUGIN_MARKETPLACE = "plugin_marketplace"
 COLLECTION_SEMANTIC_CACHE = "semantic_cache"
 COLLECTION_KB_SYSTEM = get_kb_system_collection_name()
+COLLECTION_KB_CANDIDATES = get_kb_candidates_collection_name()
+COLLECTION_SYS_TOOL_INDEX = get_tool_system_collection_name()
 
 # Constants for System Scopes
 SCOPE_SYSTEM_PUBLIC = "SYSTEM_PUBLIC"
@@ -23,8 +29,8 @@ class SystemQdrantService:
     System-level Qdrant Service (The 'OS Kernel' for Vectors).
     
     Responsibilities:
-    1. Manage Global Collections (Marketplace, Cache, Memory).
-    2. Execute 'Root' level queries (Discovery, Cache Lookup).
+    1. Manage Global Collections (Marketplace, Cache, Memory, Tools).
+    2. Execute 'Root' level queries (Discovery, Cache Lookup, Tool Retrieval).
     3. Maintain Data Integrity (Index creation).
     """
 
@@ -53,6 +59,12 @@ class SystemQdrantService:
 
         # 3. System KB（平台维护，用户不可写）
         await self._ensure_collection(COLLECTION_KB_SYSTEM, vector_size=1536)
+
+        # 4. Candidate KB（候选知识暂存）
+        await self._ensure_collection(COLLECTION_KB_CANDIDATES, vector_size=1536)
+
+        # 5. System Tool Index (Shared, ReadOnly for users)
+        await self._ensure_collection(COLLECTION_SYS_TOOL_INDEX, vector_size=1536)
 
     async def _ensure_collection(self, name: str, vector_size: int) -> None:
         """Create collection if not exists."""

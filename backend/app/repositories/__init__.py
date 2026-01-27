@@ -25,6 +25,7 @@ from .image_generation_output_repository import ImageGenerationOutputRepository
 from .image_generation_share_repository import ImageGenerationShareRepository
 from .image_generation_share_tag_repository import ImageGenerationShareTagLinkRepository
 from .mcp_market_repository import McpMarketRepository
+from .spec_knowledge_repository import SpecKnowledgeCandidateRepository
 
 __all__ = [
     "ApiKeyRepository",
@@ -61,4 +62,5 @@ __all__ = [
     "ImageGenerationShareRepository",
     "ImageGenerationShareTagLinkRepository",
     "McpMarketRepository",
+    "SpecKnowledgeCandidateRepository",
 ]

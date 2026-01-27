@@ -16,4 +16,5 @@ from app.tasks import (  # noqa: F401
     reports,
     upstream,
     image_generation,
+    spec_knowledge_tasks,
 )

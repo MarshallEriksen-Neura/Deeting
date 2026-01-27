@@ -9,6 +9,7 @@ from app.models.user_mcp_server import UserMcpServer
 from app.services.mcp.client import mcp_client, MCPClientError
 from app.services.secrets.manager import SecretManager
 from app.schemas.tool import ToolDefinition
+from app.services.tools.tool_sync_service import tool_sync_service
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class MCPDiscoveryService:
             try:
                 if not server.sse_url:
                     continue
+                old_cache = list(server.tools_cache or [])
+                old_disabled = set(server.disabled_tools or [])
                 # 1. Get Auth Headers
                 headers = await self._get_auth_headers(session, server)
                 
@@ -50,6 +53,20 @@ class MCPDiscoveryService:
                 total_tools += len(tools)
                 
                 logger.info(f"Synced {len(tools)} tools from MCP server '{server.name}' for user {user_id}")
+
+                # 4. Sync to Qdrant Tool Index (delta)
+                disabled = set(server.disabled_tools or [])
+                try:
+                    await tool_sync_service.sync_user_tools_delta(
+                        user_id=user_id,
+                        origin=str(server.id),
+                        old_payloads=old_cache,
+                        new_tools=tools,
+                        old_disabled=old_disabled,
+                        new_disabled=disabled,
+                    )
+                except Exception as exc:
+                    logger.warning("Sync user tools to Qdrant failed: %s", exc)
             
             except MCPClientError as e:
                 logger.error(f"Failed to sync MCP server '{server.name}': {e}")
@@ -60,9 +77,9 @@ class MCPDiscoveryService:
         await session.commit()
         return total_tools
 
-    async def get_active_tools(self, session: AsyncSession, user_id: uuid.UUID) -> List[ToolDefinition]:
+    async def get_active_tool_payloads(self, session: AsyncSession, user_id: uuid.UUID) -> list[dict]:
         """
-        Retrieves all currently active tools for a user from their MCP servers.
+        Retrieves raw tool payloads for a user from their MCP servers.
         Uses the tools_cache for performance.
         """
         stmt = select(UserMcpServer.tools_cache, UserMcpServer.disabled_tools).where(
@@ -73,15 +90,23 @@ class MCPDiscoveryService:
         result = await session.execute(stmt)
         all_rows = result.all()
         
-        tools = []
+        tools: list[dict] = []
         for cache, disabled_tools in all_rows:
             disabled = set(disabled_tools or [])
             for t_data in cache or []:
                 if t_data.get("name") in disabled:
                     continue
-                tools.append(ToolDefinition(**t_data))
+                tools.append(t_data)
         
         return tools
+
+    async def get_active_tools(self, session: AsyncSession, user_id: uuid.UUID) -> List[ToolDefinition]:
+        """
+        Retrieves all currently active tools for a user from their MCP servers.
+        Uses the tools_cache for performance.
+        """
+        payloads = await self.get_active_tool_payloads(session, user_id)
+        return [ToolDefinition(**payload) for payload in payloads]
 
     async def _get_auth_headers(self, session: AsyncSession, server: UserMcpServer) -> dict:
         """

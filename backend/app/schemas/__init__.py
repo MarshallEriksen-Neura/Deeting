@@ -126,6 +126,12 @@ from .spec_agent_api import (
     SpecPlanStartResponse,
     SpecPlanStatusResponse,
 )
+from .spec_knowledge import (
+    SpecKnowledgeCandidateDTO,
+    SpecKnowledgeEvalSnapshot,
+    SpecKnowledgeReviewDecisionRequest,
+    SpecKnowledgeUsageStats,
+)
 from .mcp_source import (
     McpSourceStatus,
     McpSourceSyncRequest,
@@ -273,6 +279,10 @@ __all__ = [
     "SpecPlanNodeUpdateResponse",
     "SpecPlanStartResponse",
     "SpecPlanStatusResponse",
+    "SpecKnowledgeCandidateDTO",
+    "SpecKnowledgeEvalSnapshot",
+    "SpecKnowledgeReviewDecisionRequest",
+    "SpecKnowledgeUsageStats",
     "McpSourceStatus",
     "McpSourceSyncRequest",
     "McpSourceSyncResponse",

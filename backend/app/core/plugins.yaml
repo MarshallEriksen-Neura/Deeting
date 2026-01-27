@@ -19,6 +19,7 @@ plugins:
     module: "app.agent_plugins.builtins.vector_store.plugin"
     class_name: "VectorStorePlugin"
     enabled_by_default: true
+    is_always_on: true
     description: "提供本地知识库检索和记忆写入能力。"
     tools:
       - "search_knowledge"
@@ -76,6 +77,7 @@ plugins:
     module: "app.agent_plugins.builtins.planner.plugin"
     class_name: "PlannerPlugin"
     enabled_by_default: true # 规划能力通常是安全的且有用的
+    is_always_on: true
     description: "分解复杂任务。"
     tools:
       - "create_plan"

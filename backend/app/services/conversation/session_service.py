@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -68,6 +69,28 @@ class ConversationSessionService:
             channel=channel,
             last_active_at=Datetime.now(),
             message_count=message_count,
+        )
+
+    async def create_session(
+        self,
+        *,
+        user_id: UUID | None,
+        tenant_id: UUID | None,
+        assistant_id: UUID | None,
+        title: str | None = None,
+    ) -> ConversationSession:
+        normalized_title = title.strip() if title else None
+        session_id = uuid.uuid4()
+        return await self.session_repo.upsert_session(
+            session_id=session_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            assistant_id=assistant_id,
+            channel=ConversationChannel.INTERNAL,
+            last_active_at=Datetime.now(),
+            message_count=0,
+            first_message_at=None,
+            title=normalized_title,
         )
 
     async def update_session_status(

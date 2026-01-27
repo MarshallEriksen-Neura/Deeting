@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useSearchParams } from "next/navigation"
-import { useChatStateStore, type Message } from "@/store/chat-state-store"
+import { useChatStateStore } from "@/store/chat-state-store"
 import { useChatSessionStore } from "@/store/chat-session-store"
 import { parseMessageContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
-import { useI18n } from "@/hooks/use-i18n"
 
 interface LocalAssistantMessageRecord {
   id: string
@@ -30,7 +29,6 @@ export function useChatHistory({
   isTauriRuntime,
   loadHistory,
 }: UseChatHistoryProps) {
-  const t = useI18n("chat")
   const searchParams = useSearchParams()
   const [historyLoaded, setHistoryLoaded] = useState(false)
   
@@ -38,16 +36,6 @@ export function useChatHistory({
   const { setSessionId } = useChatSessionStore()
 
   const sessionStorageKey = `deeting-chat-session:${agentId}`
-
-  const createGreeting = useCallback((): Message => ({
-    id: 'init',
-    role: 'assistant',
-    content: t("greeting.content", {
-      name: agent?.name || "",
-      desc: agent?.desc || "",
-    }),
-    createdAt: Date.now()
-  }), [agent?.name, agent?.desc, t])
 
   const loadCloudHistory = useCallback(async () => {
     if (!loadHistory || historyLoaded) return
@@ -76,10 +64,10 @@ export function useChatHistory({
         }
       }
 
-      setMessages([createGreeting()])
+      setMessages([])
       setHistoryLoaded(true)
     } catch {
-      setMessages([createGreeting()])
+      setMessages([])
       setHistoryLoaded(true)
     }
   }, [
@@ -89,7 +77,6 @@ export function useChatHistory({
     sessionStorageKey,
     setMessages,
     setSessionId,
-    createGreeting
   ])
 
   const loadLocalHistory = useCallback(async () => {
@@ -119,25 +106,13 @@ export function useChatHistory({
         return
       }
 
-      const greeting = createGreeting()
-      setMessages([greeting])
-      
-      try {
-        await invoke("append_assistant_message", {
-          assistant_id: agent.id,
-          role: "assistant",
-          content: greeting.content
-        })
-      } catch {
-        // ignore persist errors
-      }
-      
+      setMessages([])
       setHistoryLoaded(true)
     } catch {
-      setMessages([createGreeting()])
+      setMessages([])
       setHistoryLoaded(true)
     }
-  }, [agent, historyLoaded, setMessages, createGreeting])
+  }, [agent, historyLoaded, setMessages])
 
   const resetHistory = useCallback(() => {
     setHistoryLoaded(false)
@@ -145,7 +120,7 @@ export function useChatHistory({
   }, [setMessages])
 
   useEffect(() => {
-    if (!agent) return
+    if (isTauriRuntime && !agent) return
 
     if (isTauriRuntime) {
       loadLocalHistory()
@@ -156,7 +131,7 @@ export function useChatHistory({
 
   // Ensure history is loaded on mount if not already loaded
   useEffect(() => {
-    if (!agent || historyLoaded) return
+    if ((isTauriRuntime && !agent) || historyLoaded) return
 
     if (isTauriRuntime) {
       loadLocalHistory()

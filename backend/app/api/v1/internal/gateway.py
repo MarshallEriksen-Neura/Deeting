@@ -38,6 +38,7 @@ import logging
 import re
 import time
 from typing import Any, AsyncIterator
+from uuid import UUID
 
 from fastapi import APIRouter
 
@@ -59,6 +60,7 @@ from app.deps.auth import get_current_user
 from app.models.conversation import ConversationChannel
 from app.services.conversation.service import ConversationService
 from app.services.conversation.session_service import ConversationSessionService
+from app.services.conversation.turn_index_sync import sync_redis_last_turn
 from app.repositories.conversation_message_repository import ConversationMessageRepository
 from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
 from app.schemas.gateway import (
@@ -342,6 +344,13 @@ async def _append_stream_conversation(
     db_messages, redis_messages = _prepare_messages(raw_messages)
 
     result: dict[str, Any] = {"should_flush": False, "last_turn": None}
+    session_uuid: UUID | None = None
+    if ctx.db_session is not None:
+        try:
+            session_uuid = UUID(session_id)
+        except Exception:
+            session_uuid = None
+
     if redis_available and conv_service:
         try:
             lock_key = CacheKeys.session_lock(session_id)
@@ -353,6 +362,21 @@ async def _append_stream_conversation(
                         ctx.trace_id,
                     )
                     return
+
+                if ctx.db_session is not None and session_uuid is not None:
+                    try:
+                        await sync_redis_last_turn(
+                            redis=conv_service.redis,
+                            db_session=ctx.db_session,
+                            session_id=session_id,
+                            session_uuid=session_uuid,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "conversation_sync_turn_failed session=%s exc=%s",
+                            session_id,
+                            exc,
+                        )
 
                 result = await conv_service.append_messages(
                     session_id=session_id,
@@ -374,9 +398,8 @@ async def _append_stream_conversation(
 
     if ctx.db_session is not None:
         try:
-            from uuid import UUID
-
-            session_uuid = UUID(session_id)
+            if session_uuid is None:
+                session_uuid = UUID(session_id)
             user_uuid = UUID(ctx.user_id) if ctx.user_id else None
             tenant_uuid = UUID(ctx.tenant_id) if ctx.tenant_id else None
             assistant_uuid = UUID(str(assistant_id)) if assistant_id else None

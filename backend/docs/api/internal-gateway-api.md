@@ -283,6 +283,34 @@ Authorization: Bearer <access_token>
 }
 ```
 
+**端点**: `POST /conversations`
+
+创建一个新的会话记录（内部通道），用于前端“新建聊天”先占位拿到 `session_id`。
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 请求体
+
+```json
+{
+  "assistant_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+  "title": "New Chat"
+}
+```
+
+#### 响应体（201）
+
+```json
+{
+  "session_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+  "title": "New Chat"
+}
+```
+
 **端点**: `GET /conversations/{session_id}`
 
 #### 请求头

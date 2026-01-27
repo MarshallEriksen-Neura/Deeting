@@ -38,15 +38,33 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str | None = None
     QDRANT_TIMEOUT_SECONDS: float = 10.0
     QDRANT_KB_SYSTEM_COLLECTION: str = "kb_system"
+    QDRANT_KB_CANDIDATES_COLLECTION: str = "kb_candidates"
     QDRANT_KB_USER_COLLECTION: str = "kb_user"
     QDRANT_KB_USER_SHARED_COLLECTION: str = "kb_shared_v1"
     QDRANT_KB_USER_COLLECTION_STRATEGY: str = "per_user"  # shared | per_user | sharded_by_model
     QDRANT_KB_USER_COLLECTION_SHARDS: int = 16
+    QDRANT_TOOL_SYSTEM_COLLECTION: str = "sys_tool_index"
+    QDRANT_TOOL_USER_COLLECTION_PREFIX: str = "kb_user"
     KB_GLOBAL_EMBEDDING_LOGICAL_MODEL: str | None = None
     EMBEDDING_MODELS_REQUIRE_INPUT_TYPE: str = (
         "embed-english-v3,embed-multilingual-v3,cohere-embed,nemoretriever,"
         "nvidia/llama-3.2-nemoretriever"
     )
+
+    # MCP 工具检索配置
+    MCP_TOOL_JIT_THRESHOLD: int = 15
+    MCP_TOOL_USER_TOPK: int = 5
+    MCP_TOOL_SYSTEM_TOPK: int = 3
+    MCP_TOOL_SCORE_THRESHOLD: float = 0.75
+    MCP_TOOL_SYSTEM_INDEX_HASH_TTL_SECONDS: int = 86400
+
+    # Spec Knowledge 三层漏斗配置
+    SPEC_KB_OBSERVATION_WINDOW_SECONDS: int = 900
+    SPEC_KB_EVAL_MIN_SCORE: int = 85
+    SPEC_KB_AUTO_PROMOTE_UNIQUE_SESSIONS: int = 5
+    SPEC_KB_AUTO_PROMOTE_WINDOW_DAYS: int = 7
+    SPEC_KB_EDIT_DISTANCE_THRESHOLD: float = 0.3
+    SPEC_KB_EVAL_MODEL: str | None = None
 
     # 限流默认值(可被 provider preset / API Key 覆盖)
     RATE_LIMIT_EXTERNAL_RPM: int = 60

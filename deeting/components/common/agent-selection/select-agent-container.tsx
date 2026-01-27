@@ -35,7 +35,7 @@ export function SelectAgentContainer() {
   const loaded = useMarketStore((state) => state.loaded);
   const { profile } = useUserProfile();
   const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
-  const { assistants: cloudAssistants } = useChatService({ enabled: !isTauri });
+  const { assistants: cloudAssistants, removeAssistantOptimistic } = useChatService({ enabled: !isTauri });
 
   React.useEffect(() => {
     if (loaded || !isTauri) return;
@@ -149,7 +149,11 @@ export function SelectAgentContainer() {
                         // Refresh logic or just select it
                         handleSelectAgent(assistantId);
                       }}
-                      onDeleted={() => {
+                      onDeleted={(assistantId) => {
+                        if (!assistantId) return
+                        if (!isTauri) {
+                          removeAssistantOptimistic(assistantId)
+                        }
                         // 删除助手后不跳转，保持在当前页面
                       }}
                       trigger={

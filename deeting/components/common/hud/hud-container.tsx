@@ -5,7 +5,7 @@ import { Link } from '@/i18n/routing';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { HistorySidebar } from '@/components/chat/sidebar/history-sidebar';
 import { ImageHistorySidebar } from '@/components/image/history/image-history-sidebar';
 import { useChatStore } from '@/store/chat-store';
@@ -16,6 +16,7 @@ import { ModelPicker, resolveModelVisual } from '@/components/models/model-picke
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useImageGenerationStore } from '@/store/image-generation-store';
+import { createConversation } from '@/lib/api/conversations';
 
 /**
  * HUD Container Component
@@ -36,7 +37,6 @@ export default function HUD() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const t = useI18n('chat');
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isImage = pathname?.includes('/create/image');
@@ -56,7 +56,9 @@ export default function HUD() {
     isLoading,
     statusCode,
     statusMeta,
-    resetSession
+    resetSession,
+    setSessionId,
+    setGlobalLoading
   } = useChatStore(
     useShallow((state) => ({
       config: state.config,
@@ -71,7 +73,9 @@ export default function HUD() {
       isLoading: state.isLoading,
       statusCode: state.statusCode,
       statusMeta: state.statusMeta,
-      resetSession: state.resetSession
+      resetSession: state.resetSession,
+      setSessionId: state.setSessionId,
+      setGlobalLoading: state.setGlobalLoading,
     }))
   );
 
@@ -142,13 +146,39 @@ export default function HUD() {
   [assistants, activeAssistantId]);
 
   // 使用 useCallback 缓存事件处理函数
-  const handleNewChat = useCallback(() => {
+  const handleNewChat = useCallback(async () => {
      resetSession();
-     const params = new URLSearchParams(searchParams?.toString());
-     params.delete("session");
-     const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-     router.replace(url || "/chat");
-  }, [resetSession, searchParams, pathname, router]);
+     const targetAssistantId = activeAssistantId ?? assistants[0]?.id ?? undefined;
+     setGlobalLoading(true);
+     try {
+       const created = await createConversation({
+         assistant_id: targetAssistantId ?? null,
+       });
+       if (created.session_id) {
+         setSessionId(created.session_id);
+         if (typeof window !== "undefined") {
+           const params = new URLSearchParams(searchParams?.toString());
+           params.set("session", created.session_id);
+           params.delete("agentId");
+           const basePath = targetAssistantId ? `/chat/${targetAssistantId}` : (pathname || "/chat");
+           const query = params.toString();
+           const nextUrl = query ? `${basePath}?${query}` : basePath;
+           window.history.replaceState(null, "", nextUrl);
+         }
+         return;
+       }
+     } catch (error) {
+       console.warn("create_conversation_failed", error);
+     } finally {
+       setGlobalLoading(false);
+     }
+     if (typeof window !== "undefined") {
+       const params = new URLSearchParams(searchParams?.toString());
+       params.delete("session");
+       const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+       window.history.replaceState(null, "", url || "/chat");
+     }
+  }, [resetSession, searchParams, pathname, activeAssistantId, assistants, setSessionId, setGlobalLoading]);
 
   const handleToggleControlCenter = useCallback(() => {
     setIsControlCenterOpen(prev => !prev);

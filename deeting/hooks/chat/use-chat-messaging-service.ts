@@ -2,9 +2,9 @@
 
 import { useCallback, useRef } from "react"
 import { cancelChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat"
-import { buildMessageContent, parseMessageContent } from "@/lib/chat/message-content"
+import { buildMessageContent } from "@/lib/chat/message-content"
+import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { createRequestId } from "@/lib/chat/request-id"
-import { createSessionId } from "@/lib/chat/session-id"
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
@@ -53,18 +53,7 @@ function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessa
 }
 
 function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
-  const filtered = rawMessages.filter((msg) => msg.role === "user" || msg.role === "assistant")
-  const total = filtered.length
-  return filtered.map((msg, index) => {
-    const parsed = parseMessageContent(msg.content)
-    return {
-      id: `conv-${msg.turn_index ?? index}`,
-      role: (msg.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
-      content: parsed.text,
-      attachments: parsed.attachments.length ? parsed.attachments : undefined,
-      createdAt: Date.now() - (total - index) * 1000,
-    }
-  })
+  return normalizeConversationMessages(rawMessages as any, { idPrefix: "conv" })
 }
 
 const resolveMessageAttachments = async (messages: Message[]) => {
@@ -215,14 +204,6 @@ export function useChatMessagingService() {
         }
       }
     }
-    if (!resolvedSessionId) {
-      resolvedSessionId = createSessionId()
-      setSessionId(resolvedSessionId)
-      if (typeof window !== "undefined") {
-        localStorage.setItem(storageKey, resolvedSessionId)
-      }
-    }
-
     const payload = {
       model: selectedModel.id,
       provider_model_id: selectedModel.provider_model_id ?? undefined,

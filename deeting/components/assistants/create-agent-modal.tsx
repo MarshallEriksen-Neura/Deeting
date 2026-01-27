@@ -28,7 +28,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
   Form,
@@ -118,6 +117,9 @@ export function CreateAgentModal({
     if (!isControlled) {
       setInternalOpen(nextOpen)
     }
+    if (!nextOpen) {
+      setDeleteDialogOpen(false)
+    }
     onOpenChange?.(nextOpen)
   }
   const createLocalAssistant = useMarketStore((state) => state.createLocalAssistant)
@@ -125,6 +127,7 @@ export function CreateAgentModal({
   const deleteLocalAssistant = useMarketStore((state) => state.deleteLocalAssistant)
   const isEditMode = Boolean(assistant)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const { tags: assistantTags } = useAssistantTags()
   const stripTagPrefix = React.useCallback((value: string) => value.replace(/^#+/, ""), [])
   const tagOptions = React.useMemo(() => {
@@ -289,6 +292,7 @@ export function CreateAgentModal({
       toast.success(t("toast.assistantDeletedTitle"), {
         description: t("toast.assistantDeletedDesc", { name: assistant.name }),
       })
+      setDeleteDialogOpen(false)
       handleOpenChange(false)
       onDeleted?.(assistant.id)
     } catch (error) {
@@ -310,7 +314,11 @@ export function CreateAgentModal({
   return (
     <Sheet open={currentOpen} onOpenChange={handleOpenChange}>
       {triggerNode ? <SheetTrigger asChild>{triggerNode}</SheetTrigger> : null}
-      <SheetContent side="right" className="w-full sm:max-w-xl max-h-screen overflow-y-auto p-0">
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-xl max-h-screen overflow-y-auto p-0"
+        onClick={(event) => event.stopPropagation()}
+      >
         <SheetHeader className="px-6 pt-6">
           <SheetTitle>{isEditMode ? t("edit.title") : t("create.title")}</SheetTitle>
           <SheetDescription>
@@ -361,13 +369,20 @@ export function CreateAgentModal({
 
             <SheetFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               {isEditMode ? (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button type="button" variant="outline" className="w-full sm:w-auto">
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      {t("edit.delete")}
-                    </Button>
-                  </AlertDialogTrigger>
+                <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setDeleteDialogOpen(true)
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {t("edit.delete")}
+                  </Button>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>{t("edit.deleteConfirmTitle")}</AlertDialogTitle>

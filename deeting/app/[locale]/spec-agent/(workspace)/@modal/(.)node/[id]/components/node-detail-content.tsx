@@ -4,7 +4,6 @@ import { memo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import type { SpecUiNode } from '@/store/spec-agent-store'
 import type { SpecNode, SpecPlanNodeDetail } from '@/lib/api/spec-agent'
@@ -65,7 +64,8 @@ export const NodeDetailContent = memo(function NodeDetailContent({
   modelGroups,
   updateError,
 }: NodeDetailContentProps) {
-  if (!node) {
+  const detailNode = nodeDetail?.node ?? rawNode
+  if (!node && !detailNode) {
     return (
       <div className="py-8 text-center text-sm text-muted-foreground">
         {t('node.modal.notFound')}
@@ -73,62 +73,88 @@ export const NodeDetailContent = memo(function NodeDetailContent({
     )
   }
 
-  const detailNode = nodeDetail?.node ?? rawNode
-  const detailStatus = nodeDetail?.execution?.status ?? node.status
+  const resolveTitle = (target?: SpecNode) => {
+    if (!target) return null
+    if (target.desc) return target.desc
+    if (target.type === 'action') return target.instruction
+    if (target.type === 'logic_gate') {
+      return target.rules?.[0]?.desc ?? target.id
+    }
+    if (target.type === 'replan_trigger') return target.reason
+    return target.id
+  }
+
+  const normalizeDuration = (durationMs?: number | null) => {
+    if (!durationMs || durationMs <= 0) return null
+    const seconds = durationMs / 1000
+    if (seconds < 1) return `${seconds.toFixed(2)}s`
+    if (seconds < 10) return `${seconds.toFixed(1)}s`
+    return `${seconds.toFixed(0)}s`
+  }
+
+  const detailStatus = nodeDetail?.execution?.status ?? node?.status ?? 'pending'
+  const nodeType = detailNode?.type ?? rawNode?.type
+  const title = node?.title ?? resolveTitle(detailNode) ?? detailNode?.id ?? ''
+  const duration =
+    node?.duration ?? normalizeDuration(nodeDetail?.execution?.duration_ms)
 
   return (
-    <ScrollArea className="h-[calc(100vh-14rem)] pr-1">
-      <div className="space-y-4 pr-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              {t('node.modal.fields.type')}
-            </Label>
-            <p className="text-sm text-foreground">
-              {rawNode?.type === 'logic_gate'
-                ? t('canvas.node.type.logic')
-                : rawNode?.type === 'replan_trigger'
-                  ? t('canvas.node.type.replan')
-                  : t('canvas.node.type.action')}
-            </p>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              {t('node.modal.fields.status')}
-            </Label>
-            <Badge variant="outline">
-              {t(`node.modal.status.${detailStatus}`)}
-            </Badge>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              {t('node.modal.fields.duration')}
-            </Label>
-            <p className="text-sm text-foreground">
-              {node.duration ?? t('node.modal.durationPlaceholder')}
-            </p>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              {t('node.modal.fields.title')}
-            </Label>
-            <p className="text-sm text-foreground">{node.title}</p>
+    <ScrollArea className="h-full max-h-[calc(100vh-16rem)] pr-1">
+      <div className="space-y-5 pr-2">
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                {t('node.modal.fields.type')}
+              </Label>
+              <p className="text-sm text-foreground">
+                {nodeType === 'logic_gate'
+                  ? t('canvas.node.type.logic')
+                  : nodeType === 'replan_trigger'
+                    ? t('canvas.node.type.replan')
+                    : t('canvas.node.type.action')}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                {t('node.modal.fields.status')}
+              </Label>
+              <Badge variant="outline">
+                {t(`node.modal.status.${detailStatus}`)}
+              </Badge>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                {t('node.modal.fields.duration')}
+              </Label>
+              <p className="text-sm text-foreground">
+                {duration ?? t('node.modal.durationPlaceholder')}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                {t('node.modal.fields.title')}
+              </Label>
+              <p className="text-sm text-foreground">{title}</p>
+            </div>
           </div>
         </div>
 
-        <NodeDetailModel
-          t={t}
-          isAction={isAction}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          isSaving={isSaving}
-          isLoadingModels={isLoadingModels}
-          isUnknownModel={isUnknownModel}
-          modelGroups={modelGroups}
-          updateError={updateError}
-        />
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+          <NodeDetailModel
+            t={t}
+            isAction={isAction}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
+            isSaving={isSaving}
+            isLoadingModels={isLoadingModels}
+            isUnknownModel={isUnknownModel}
+            modelGroups={modelGroups}
+            updateError={updateError}
+          />
+        </div>
 
-        <div className="space-y-3">
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
           <Label className="text-xs text-muted-foreground">
             {t('node.modal.fields.instruction')}
           </Label>
@@ -141,7 +167,7 @@ export const NodeDetailContent = memo(function NodeDetailContent({
                 : t('node.modal.instructionPlaceholder')
             }
             disabled={!isAction || instructionMode === 'locked'}
-            className="min-h-[96px]"
+            className="min-h-[110px] bg-background/80"
           />
           <p className="text-xs text-muted-foreground">
             {instructionMode === 'shadow'
@@ -155,12 +181,6 @@ export const NodeDetailContent = memo(function NodeDetailContent({
           )}
         </div>
 
-        <NodeDetailLineage t={t} rawNode={detailNode} nodeDetail={nodeDetail} />
-
-        <NodeDetailTimeline t={t} nodeDetail={nodeDetail} />
-
-        <NodeDetailPayload t={t} nodeDetail={nodeDetail} />
-
         <NodeDetailPendingAction
           t={t}
           pendingInstruction={pendingInstruction ?? ''}
@@ -169,24 +189,33 @@ export const NodeDetailContent = memo(function NodeDetailContent({
           onRerun={onRerunPending}
         />
 
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+            <NodeDetailLineage t={t} rawNode={detailNode} nodeDetail={nodeDetail} />
+          </div>
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+            <NodeDetailTimeline t={t} nodeDetail={nodeDetail} />
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+          <NodeDetailPayload t={t} nodeDetail={nodeDetail} />
+        </div>
+
         {pendingInstruction && rawNode?.type === 'action' && (
-          <>
-            <Separator />
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
             <NodeDetailInstructionDiff
               t={t}
               original={rawNode.instruction ?? ''}
               updated={pendingInstruction}
             />
-          </>
+          </div>
         )}
 
         {detailStatus === 'waiting' && (
-          <>
-            <Separator />
-            <div className="text-xs text-amber-600">
-              {t('node.modal.waitingHint')}
-            </div>
-          </>
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+            {t('node.modal.waitingHint')}
+          </div>
         )}
       </div>
     </ScrollArea>

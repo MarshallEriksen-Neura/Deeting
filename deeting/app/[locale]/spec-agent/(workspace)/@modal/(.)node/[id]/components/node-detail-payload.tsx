@@ -43,7 +43,7 @@ export const NodeDetailPayload = memo(function NodeDetailPayload({
           <span className="text-xs text-muted-foreground">
             {t('node.modal.payload.input')}
           </span>
-          <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto font-mono">
+          <pre className="text-xs bg-background/80 border border-border/60 p-3 rounded-md overflow-x-auto font-mono">
             {inputText || t('node.modal.payload.empty')}
           </pre>
         </div>
@@ -51,7 +51,7 @@ export const NodeDetailPayload = memo(function NodeDetailPayload({
           <span className="text-xs text-muted-foreground">
             {t('node.modal.payload.raw')}
           </span>
-          <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto font-mono">
+          <pre className="text-xs bg-background/80 border border-border/60 p-3 rounded-md overflow-x-auto font-mono">
             {rawText || t('node.modal.payload.empty')}
           </pre>
         </div>

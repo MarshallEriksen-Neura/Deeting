@@ -22,6 +22,9 @@
     "greeting": {
       "content": "Hi! I'm **{name}**.\n{desc}\n\nReady to collaborate?"
     },
+    "loading": {
+      "global": "Creating a new session..."
+    },
     "status": {
       "thinking": "{name} is thinking...",
       "flow": {

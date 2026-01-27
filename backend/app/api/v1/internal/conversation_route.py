@@ -23,6 +23,8 @@ from app.deps.auth import get_current_user
 from app.models import User
 from app.schemas.gateway import ChatCompletionRequest, ChatCompletionResponse, GatewayError
 from app.schemas.conversation import (
+    ConversationSessionCreateRequest,
+    ConversationSessionCreateResponse,
     ConversationSessionItem,
     ConversationSessionRenameRequest,
     ConversationSessionRenameResponse,
@@ -127,6 +129,28 @@ async def list_conversations(
         params=params,
         status=status,
         assistant_id=assistant_id,
+    )
+
+
+@router.post(
+    "/conversations",
+    response_model=ConversationSessionCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_conversation(
+    payload: ConversationSessionCreateRequest,
+    user: User = Depends(get_current_user),
+    service: ConversationSessionService = Depends(get_conversation_session_service),
+) -> ConversationSessionCreateResponse:
+    session_obj = await service.create_session(
+        user_id=user.id if user else None,
+        tenant_id=None,
+        assistant_id=payload.assistant_id,
+        title=payload.title,
+    )
+    return ConversationSessionCreateResponse(
+        session_id=session_obj.id,
+        title=session_obj.title,
     )
 
 

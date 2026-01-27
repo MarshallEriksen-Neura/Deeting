@@ -28,9 +28,11 @@ from app.schemas.mcp_source import (
     UserMcpSourceCreate,
     UserMcpSourceResponse,
 )
+from app.schemas.tool import ToolDefinition
 from app.services.secrets.manager import SecretManager
 from app.services.mcp.discovery import mcp_discovery_service
 from app.services.mcp.client import mcp_client
+from app.services.tools.tool_sync_service import tool_sync_service
 from app.utils.security import is_safe_upstream_url
 
 router = APIRouter()
@@ -233,6 +235,19 @@ async def update_mcp_server(
 
     await session.commit()
     await session.refresh(server)
+
+    try:
+        if server.server_type == "sse" and server.sse_url and server.is_enabled:
+            await mcp_discovery_service.sync_user_tools(session, current_user.id)
+            await session.refresh(server)
+        else:
+            await tool_sync_service.delete_user_tools(
+                user_id=current_user.id,
+                origin=str(server.id),
+            )
+    except Exception:
+        pass
+
     return UserMcpServerResponse.from_orm_model(server)
 
 @router.post("/servers/{server_id}/sync", response_model=UserMcpServerResponse)
@@ -417,6 +432,21 @@ async def delete_mcp_source(
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_db),
 ) -> Response:
+    server_stmt = select(UserMcpServer.id).where(
+        UserMcpServer.user_id == current_user.id,
+        UserMcpServer.source_id == source_id,
+    )
+    server_result = await session.execute(server_stmt)
+    server_ids = [row[0] for row in server_result.all()]
+    for server_id in server_ids:
+        try:
+            await tool_sync_service.delete_user_tools(
+                user_id=current_user.id,
+                origin=str(server_id),
+            )
+        except Exception:
+            pass
+
     stmt = delete(UserMcpSource).where(
         UserMcpSource.id == source_id,
         UserMcpSource.user_id == current_user.id,
@@ -486,6 +516,7 @@ async def toggle_mcp_server_tool(
         raise HTTPException(status_code=404, detail="MCP tool not found")
 
     disabled_tools = set(server.disabled_tools or [])
+    old_disabled_tools = set(disabled_tools)
     if payload.enabled:
         disabled_tools.discard(tool_name)
     else:
@@ -494,6 +525,18 @@ async def toggle_mcp_server_tool(
 
     await session.commit()
     await session.refresh(server)
+
+    try:
+        await tool_sync_service.sync_user_tools_delta(
+            user_id=current_user.id,
+            origin=str(server.id),
+            old_payloads=server.tools_cache or [],
+            new_tools=[ToolDefinition(**item) for item in (server.tools_cache or []) if item.get("name")],
+            old_disabled=old_disabled_tools,
+            new_disabled=disabled_tools,
+        )
+    except Exception:
+        pass
 
     return McpServerToolItem(
         name=tool_name,
@@ -569,6 +612,14 @@ async def delete_mcp_server(
         # SecretManager currently doesn't have a delete method exposed directly in this context easily?
         # Assuming we can just leave it or implementing delete later.
         # Ideally: await secret_manager.delete(...)
+        pass
+
+    try:
+        await tool_sync_service.delete_user_tools(
+            user_id=current_user.id,
+            origin=str(server.id),
+        )
+    except Exception:
         pass
 
     await session.delete(server)

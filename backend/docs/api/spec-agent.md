@@ -189,7 +189,11 @@ Query：
 ```json
 {
   "event": "rerun_prompt",
-  "source": "auto_drawer"
+  "source": "auto_drawer",
+  "payload": {
+    "edit_distance": 0.12,
+    "error_code": "none"
+  }
 }
 ```
 
@@ -200,6 +204,7 @@ Query：
 
 说明：
 - 用于记录 UI 行为触发来源（例如 rerun 弹窗的自动提示来源），写入会话日志便于审计。
+- payload 可选，承载编辑距离、错误码、应用结果等扩展信息。
 - 当 plan 未绑定 `conversation_session_id` 时返回 `status=skip`。
 
 错误码：

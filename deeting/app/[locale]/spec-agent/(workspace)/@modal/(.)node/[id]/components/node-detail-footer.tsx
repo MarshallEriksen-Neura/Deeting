@@ -24,7 +24,7 @@ export const NodeDetailFooter = memo(function NodeDetailFooter({
   onSave,
 }: NodeDetailFooterProps) {
   return (
-    <SheetFooter className="gap-2">
+    <SheetFooter className="gap-2 justify-end p-0 flex-row">
       <Button variant="outline" size="sm" onClick={onClose}>
         {t('node.modal.close')}
       </Button>

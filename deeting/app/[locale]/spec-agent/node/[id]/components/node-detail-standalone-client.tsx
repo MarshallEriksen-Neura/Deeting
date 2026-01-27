@@ -1,12 +1,13 @@
 'use client'
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { useChatService } from '@/hooks/use-chat-service'
 import { useI18n } from '@/hooks/use-i18n'
 import { useSpecAgentStore } from '@/store/spec-agent-store'
 import {
+  useSpecPlanDetail,
   useSpecPlanNodeDetail,
   useSpecPlanNodeEvent,
   useSpecPlanNodeUpdate,
@@ -23,18 +24,33 @@ function NodeDetailStandaloneClient({ params }: NodeDetailStandaloneProps) {
   const router = useRouter()
   const t = useI18n('spec-agent')
   const planId = useSpecAgentStore((state) => state.planId)
-  const node = useSpecAgentStore((state) =>
-    state.nodes.find((item) => item.id === params.id)
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const queryPlanId = useMemo(
+    () => searchParams?.get('plan')?.trim() || null,
+    [searchParams]
   )
-  const { data: nodeDetail } = useSpecPlanNodeDetail(planId, params.id, {
-    enabled: Boolean(planId),
+  const [restoredPlanId, setRestoredPlanId] = useState<string | null>(null)
+  const activePlanId = queryPlanId ?? planId ?? restoredPlanId
+  const fallbackNodeId = useMemo(() => {
+    if (!pathname) return null
+    const parts = pathname.split('/')
+    return parts[parts.length - 1] || null
+  }, [pathname])
+  const nodeId = params.id || fallbackNodeId
+  const node = useSpecAgentStore((state) =>
+    state.nodes.find((item) => item.id === nodeId)
+  )
+  useSpecPlanDetail(activePlanId, { enabled: Boolean(activePlanId) })
+  const { data: nodeDetail } = useSpecPlanNodeDetail(activePlanId, nodeId, {
+    enabled: Boolean(activePlanId && nodeId),
   })
   const { modelGroups, isLoadingModels } = useChatService({
     modelCapability: 'chat',
   })
-  const { update, updateState } = useSpecPlanNodeUpdate(planId)
-  const { rerun, rerunState } = useSpecPlanNodeRerun(planId)
-  const { send: sendNodeEvent } = useSpecPlanNodeEvent(planId)
+  const { update, updateState } = useSpecPlanNodeUpdate(activePlanId)
+  const { rerun, rerunState } = useSpecPlanNodeRerun(activePlanId)
+  const { send: sendNodeEvent } = useSpecPlanNodeEvent(activePlanId)
 
   const rawNode = nodeDetail?.node ?? node?.raw
   const isAction = rawNode?.type === 'action'
@@ -51,13 +67,13 @@ function NodeDetailStandaloneClient({ params }: NodeDetailStandaloneProps) {
 
   useEffect(() => {
     setSelectedModel(currentOverride ?? AUTO_VALUE)
-  }, [AUTO_VALUE, currentOverride, params.id])
+  }, [AUTO_VALUE, currentOverride, nodeId])
 
   useEffect(() => {
     if (rawNode?.type === 'action') {
       setInstruction(rawNode.pending_instruction ?? rawNode.instruction ?? '')
     }
-  }, [params.id, rawNode])
+  }, [nodeId, rawNode])
 
   const knownModelValues = useMemo(() => {
     const values = new Set<string>()
@@ -104,7 +120,7 @@ function NodeDetailStandaloneClient({ params }: NodeDetailStandaloneProps) {
   const isSaving = updateState.isMutating
 
   const handleSave = async () => {
-    if (!planId || !isAction || !node) return
+    if (!activePlanId || !isAction || !node) return
     if (!isDirty) return
     await update(node.id, {
       ...(nextOverride !== currentOverride && { modelOverride: nextOverride }),
@@ -115,21 +131,34 @@ function NodeDetailStandaloneClient({ params }: NodeDetailStandaloneProps) {
   }
 
   const handleRerun = async () => {
-    if (!planId || !node || !pendingInstruction) return
+    if (!activePlanId || !node || !pendingInstruction) return
     await rerun(node.id)
   }
 
   useEffect(() => {
+    if (planId || queryPlanId || typeof window === 'undefined') return
+    const stored = localStorage.getItem('deeting-spec-agent:last-plan')
+    if (!stored || stored === restoredPlanId) return
+    setRestoredPlanId(stored)
+  }, [planId, queryPlanId, restoredPlanId])
+
+  useEffect(() => {
     if (!pendingInstruction) return
     if (!['completed', 'error'].includes(executionStatus)) return
-    const key = `${params.id}-${pendingInstruction}`
+    const key = `${nodeId ?? 'unknown'}-${pendingInstruction}`
     if (lastPromptRef.current === key) return
     lastPromptRef.current = key
     setRerunDialogOpen(true)
-    if (planId) {
-      void sendNodeEvent(params.id, 'rerun_prompt', 'auto_drawer')
+    if (activePlanId && nodeId) {
+      void sendNodeEvent(nodeId, 'rerun_prompt', 'auto_drawer')
     }
-  }, [executionStatus, params.id, pendingInstruction, planId, sendNodeEvent])
+  }, [
+    activePlanId,
+    executionStatus,
+    nodeId,
+    pendingInstruction,
+    sendNodeEvent,
+  ])
 
   return (
     <div className="min-h-screen bg-background">
@@ -137,7 +166,7 @@ function NodeDetailStandaloneClient({ params }: NodeDetailStandaloneProps) {
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-foreground">
-              {t('node.modal.title', { id: params.id })}
+              {t('node.modal.title', { id: nodeId ?? '' })}
             </h1>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => router.back()}>

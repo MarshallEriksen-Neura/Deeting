@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useConversationSessions } from '@/lib/swr/use-conversation-sessions';
-import { archiveConversation, unarchiveConversation, renameConversation } from '@/lib/api/conversations';
+import { archiveConversation, createConversation, unarchiveConversation, renameConversation } from '@/lib/api/conversations';
 import { useI18n } from '@/hooks/use-i18n';
 import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
@@ -61,12 +61,16 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     sessionId,
     loadHistoryBySession,
     resetSession,
+    setSessionId,
+    setGlobalLoading,
   } = useChatStore(
     useShallow((state) => ({
       activeAssistantId: state.activeAssistantId,
       sessionId: state.sessionId,
       loadHistoryBySession: state.loadHistoryBySession,
       resetSession: state.resetSession,
+      setSessionId: state.setSessionId,
+      setGlobalLoading: state.setGlobalLoading,
     }))
   );
 
@@ -165,10 +169,46 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     onClose();
   }, [loadHistoryBySession, router, buildChatUrl, onClose]);
 
-  const handleResetSession = useCallback(() => {
+  const handleResetSession = useCallback(async () => {
     resetSession();
-    router.replace(buildChatUrl());
-  }, [resetSession, router, buildChatUrl]);
+    setGlobalLoading(true);
+    try {
+      const created = await createConversation({
+        assistant_id: activeAssistantId ?? null,
+      });
+      if (created.session_id) {
+        setSessionId(created.session_id);
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(searchParams?.toString());
+          params.set("session", created.session_id);
+          params.delete("agentId");
+          const basePath = activeAssistantId ? `/chat/${activeAssistantId}` : "/chat";
+          const query = params.toString();
+          const nextUrl = query ? `${basePath}?${query}` : basePath;
+          window.history.replaceState(null, "", nextUrl);
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("create_conversation_failed", error);
+    } finally {
+      setGlobalLoading(false);
+    }
+    if (typeof window !== "undefined") {
+      const fallbackUrl = buildChatUrl();
+      window.history.replaceState(null, "", fallbackUrl);
+    } else {
+      router.replace(buildChatUrl());
+    }
+  }, [
+    resetSession,
+    activeAssistantId,
+    searchParams,
+    setSessionId,
+    setGlobalLoading,
+    buildChatUrl,
+    router,
+  ]);
 
   const handleArchiveToggle = useCallback(async (
     targetSessionId: string,

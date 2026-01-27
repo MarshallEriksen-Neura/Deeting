@@ -8,7 +8,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react'
-import type { ImperativePanelHandle } from 'react-resizable-panels'
+import type { Layout, PanelImperativeHandle } from 'react-resizable-panels'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -28,11 +28,13 @@ export function SpecAgentSplitLayout({
   console,
   canvas,
 }: SpecAgentSplitLayoutProps) {
+  const consolePanelId = 'spec-agent-console'
+  const canvasPanelId = 'spec-agent-canvas'
   const t = useI18n('spec-agent')
   const layout = useSpecAgentStore((state) => state.layout)
   const setLayout = useSpecAgentStore((state) => state.setLayout)
-  const consolePanelRef = useRef<ImperativePanelHandle>(null)
-  const canvasPanelRef = useRef<ImperativePanelHandle>(null)
+  const consolePanelRef = useRef<PanelImperativeHandle>(null)
+  const canvasPanelRef = useRef<PanelImperativeHandle>(null)
   const consoleCollapsedRef = useRef(layout.consoleCollapsed)
   const canvasCollapsedRef = useRef(layout.canvasCollapsed)
   const lastSizesRef = useRef({
@@ -56,50 +58,74 @@ export function SpecAgentSplitLayout({
     }
   }, [layout.consoleSize, layout.canvasSize])
 
+  const syncConsoleCollapsed = useCallback(
+    (collapsed: boolean) => {
+      const shouldForceCanvasExpand = collapsed && canvasCollapsedRef.current
+      if (!shouldForceCanvasExpand && collapsed === consoleCollapsedRef.current) return
+      setLayout({
+        consoleCollapsed: collapsed,
+        ...(collapsed ? { canvasCollapsed: false } : null),
+      })
+      if (shouldForceCanvasExpand) {
+        canvasPanelRef.current?.expand()
+      }
+    },
+    [setLayout]
+  )
+
+  const syncCanvasCollapsed = useCallback(
+    (collapsed: boolean) => {
+      const shouldForceConsoleExpand = collapsed && consoleCollapsedRef.current
+      if (!shouldForceConsoleExpand && collapsed === canvasCollapsedRef.current) return
+      setLayout({
+        canvasCollapsed: collapsed,
+        ...(collapsed ? { consoleCollapsed: false } : null),
+      })
+      if (shouldForceConsoleExpand) {
+        consolePanelRef.current?.expand()
+      }
+    },
+    [setLayout]
+  )
+
   const collapseConsole = useCallback(() => {
     consolePanelRef.current?.collapse()
-  }, [])
+    syncConsoleCollapsed(true)
+  }, [syncConsoleCollapsed])
 
   const expandConsole = useCallback(() => {
     consolePanelRef.current?.expand()
-  }, [])
+    syncConsoleCollapsed(false)
+  }, [syncConsoleCollapsed])
 
   const collapseCanvas = useCallback(() => {
     canvasPanelRef.current?.collapse()
-  }, [])
+    syncCanvasCollapsed(true)
+  }, [syncCanvasCollapsed])
 
   const expandCanvas = useCallback(() => {
     canvasPanelRef.current?.expand()
-  }, [])
+    syncCanvasCollapsed(false)
+  }, [syncCanvasCollapsed])
 
-  const handleConsoleCollapse = useCallback(() => {
-    setLayout({ consoleCollapsed: true })
-    if (canvasCollapsedRef.current) {
-      canvasPanelRef.current?.expand()
-    }
-  }, [setLayout])
+  const handleConsoleResize = useCallback(() => {
+    const collapsed = consolePanelRef.current?.isCollapsed() ?? false
+    syncConsoleCollapsed(collapsed)
+  }, [syncConsoleCollapsed])
 
-  const handleConsoleExpand = useCallback(() => {
-    setLayout({ consoleCollapsed: false })
-  }, [setLayout])
+  const handleCanvasResize = useCallback(() => {
+    const collapsed = canvasPanelRef.current?.isCollapsed() ?? false
+    syncCanvasCollapsed(collapsed)
+  }, [syncCanvasCollapsed])
 
-  const handleCanvasCollapse = useCallback(() => {
-    setLayout({ canvasCollapsed: true })
-    if (consoleCollapsedRef.current) {
-      consolePanelRef.current?.expand()
-    }
-  }, [setLayout])
-
-  const handleCanvasExpand = useCallback(() => {
-    setLayout({ canvasCollapsed: false })
-  }, [setLayout])
-
-  const handleLayout = useCallback(
-    (sizes: number[]) => {
-      if (sizes.length < 2) return
-      if (!(sizes[0] > 0 && sizes[1] > 0)) return
-      const nextConsoleSize = sizes[0]
-      const nextCanvasSize = sizes[1]
+  const handleLayoutChanged = useCallback(
+    (sizes: Layout) => {
+      const nextConsoleSize = sizes[consolePanelId]
+      const nextCanvasSize = sizes[canvasPanelId]
+      if (!Number.isFinite(nextConsoleSize) || !Number.isFinite(nextCanvasSize)) {
+        return
+      }
+      if (!(nextConsoleSize > 0 && nextCanvasSize > 0)) return
       lastSizesRef.current = {
         consoleSize: nextConsoleSize,
         canvasSize: nextCanvasSize,
@@ -109,7 +135,7 @@ export function SpecAgentSplitLayout({
         canvasSize: nextCanvasSize,
       })
     },
-    [setLayout]
+    [canvasPanelId, consolePanelId, setLayout]
   )
 
   const resolvedSizes = useMemo(() => {
@@ -149,16 +175,16 @@ export function SpecAgentSplitLayout({
       <ResizablePanelGroup
         direction="horizontal"
         className="h-full"
-        onLayout={handleLayout}
+        onLayoutChanged={handleLayoutChanged}
       >
         <ResizablePanel
-          ref={consolePanelRef}
+          id={consolePanelId}
+          panelRef={consolePanelRef}
           defaultSize={resolvedSizes.consoleSize}
           minSize={20}
           collapsedSize={0}
           collapsible
-          onCollapse={handleConsoleCollapse}
-          onExpand={handleConsoleExpand}
+          onResize={handleConsoleResize}
           className="min-w-0"
         >
           <div className="relative h-full bg-card">
@@ -182,13 +208,13 @@ export function SpecAgentSplitLayout({
         <ResizableHandle withHandle />
 
         <ResizablePanel
-          ref={canvasPanelRef}
+          id={canvasPanelId}
+          panelRef={canvasPanelRef}
           defaultSize={resolvedSizes.canvasSize}
           minSize={40}
           collapsedSize={0}
           collapsible
-          onCollapse={handleCanvasCollapse}
-          onExpand={handleCanvasExpand}
+          onResize={handleCanvasResize}
           className="min-w-0"
         >
           <div className="relative h-full bg-surface">

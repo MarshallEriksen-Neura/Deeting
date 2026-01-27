@@ -13,7 +13,7 @@ from app.repositories import (
     AssistantVersionRepository,
     ReviewTaskRepository,
 )
-from app.schemas.assistant import AssistantCreate, AssistantVersionCreate
+from app.schemas.assistant import AssistantCreate, AssistantUpdate, AssistantVersionCreate
 from app.schemas.assistant_market import AssistantInstallCreate, AssistantInstallUpdate
 from app.services.assistant.assistant_market_service import AssistantMarketService, ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_service import AssistantService
@@ -111,6 +111,72 @@ async def test_market_install_flow_marks_installed():
         assert install_item.pinned_version_id == assistant.current_version_id
         assert install_item.follow_latest is False
         assert install_item.assistant.version.system_prompt == "You are a helpful assistant."
+
+
+@pytest.mark.asyncio
+async def test_list_installs_filters_archived_assistants():
+    async with AsyncSessionLocal() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email="market_archived@example.com",
+            hashed_password="hash",
+        )
+        session.add(user)
+        await session.commit()
+
+        assistant_service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session),
+        )
+
+        assistant = await assistant_service.create_assistant(
+            payload=AssistantCreate(
+                visibility=AssistantVisibility.PUBLIC,
+                status=AssistantStatus.PUBLISHED,
+                icon_id="lucide:bot",
+                version=AssistantVersionCreate(
+                    name="Market Assistant",
+                    system_prompt="You are a helpful assistant.",
+                    tags=["Python", "Debug"],
+                ),
+            ),
+            owner_user_id=user.id,
+        )
+
+        review_service = ReviewService(ReviewTaskRepository(session))
+        await review_service.submit(
+            entity_type=ASSISTANT_MARKET_ENTITY,
+            entity_id=assistant.id,
+            submitter_user_id=user.id,
+        )
+        await review_service.approve(
+            entity_type=ASSISTANT_MARKET_ENTITY,
+            entity_id=assistant.id,
+            reviewer_user_id=user.id,
+        )
+
+        market_service = AssistantMarketService(
+            AssistantRepository(session),
+            AssistantInstallRepository(session),
+            ReviewTaskRepository(session),
+            AssistantMarketRepository(session),
+        )
+
+        await market_service.install_assistant(user_id=user.id, assistant_id=assistant.id)
+
+        await assistant_service.update_assistant(
+            assistant.id,
+            AssistantUpdate(
+                status=AssistantStatus.ARCHIVED,
+                visibility=AssistantVisibility.PRIVATE,
+            ),
+        )
+
+        install_page = await market_service.list_installs(
+            user_id=user.id,
+            params=CursorParams(size=10),
+        )
+        assert install_page.items == []
 
 
 @pytest.mark.asyncio

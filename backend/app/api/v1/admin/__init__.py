@@ -14,6 +14,7 @@ from app.api.v1.admin.provider_credential_route import router as provider_creden
 from app.api.v1.admin.provider_preset_route import router as provider_preset_router
 from app.api.v1.admin.notification_route import router as notification_router
 from app.api.v1.admin.settings_route import router as settings_router
+from app.api.v1.admin.spec_knowledge_review_route import router as spec_knowledge_reviews_router
 
 __all__ = [
     "agent_router",
@@ -28,4 +29,5 @@ __all__ = [
     "provider_preset_router",
     "notification_router",
     "settings_router",
+    "spec_knowledge_reviews_router",
 ]

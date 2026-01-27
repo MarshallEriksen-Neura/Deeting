@@ -24,3 +24,15 @@ class ConversationSessionRenameRequest(BaseSchema):
 class ConversationSessionRenameResponse(BaseSchema):
     session_id: UUID
     title: str | None = None
+
+
+class ConversationSessionCreateRequest(BaseSchema):
+    assistant_id: UUID | None = Field(default=None, description="助手 ID（可选）")
+    title: str | None = Field(
+        default=None, max_length=200, description="会话标题（可选）"
+    )
+
+
+class ConversationSessionCreateResponse(BaseSchema):
+    session_id: UUID
+    title: str | None = None

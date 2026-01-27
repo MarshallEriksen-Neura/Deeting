@@ -71,6 +71,7 @@ from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
 from .spec_agent import SpecPlan, SpecExecutionLog, SpecWorkerSession
+from .spec_knowledge import SpecKnowledgeCandidate
 
 __all__ = [
     "Base",
@@ -151,4 +152,5 @@ __all__ = [
     "SpecPlan",
     "SpecExecutionLog",
     "SpecWorkerSession",
+    "SpecKnowledgeCandidate",
 ]

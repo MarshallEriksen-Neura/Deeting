@@ -6,6 +6,15 @@ import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 const DEFAULT_ROLES = ["user", "assistant"] as const
 
+const normalizeRole = (role: unknown): "user" | "assistant" | "system" | "" => {
+  if (typeof role !== "string") return ""
+  const normalized = role.trim().toLowerCase()
+  if (normalized === "assistant") return "assistant"
+  if (normalized === "system") return "system"
+  if (normalized === "user") return "user"
+  return ""
+}
+
 const isToolCallArray = (value: unknown): value is ToolCall[] =>
   Array.isArray(value)
 
@@ -40,9 +49,13 @@ export function normalizeConversationMessages(
   } = {}
 ): Message[] {
   const roleSet = new Set(options.includeRoles ?? DEFAULT_ROLES)
-  const filtered = messages.filter((msg) => msg.role && roleSet.has(msg.role as any))
+  const filtered = messages.filter((msg) => {
+    const normalizedRole = normalizeRole(msg.role)
+    return normalizedRole ? roleSet.has(normalizedRole) : false
+  })
   const total = filtered.length
   return filtered.map((msg, index) => {
+    const normalizedRole = normalizeRole(msg.role)
     const candidate = readContentCandidate(msg)
     const parsed = parseMessageContent(candidate)
     const metaInfo = msg.meta_info as MessageMetaInfo | undefined
@@ -56,7 +69,7 @@ export function normalizeConversationMessages(
       : normalizeMessage(parsed.text)
     return {
       id: `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`,
-      role: msg.role === "assistant" ? "assistant" : "user",
+      role: normalizedRole === "assistant" ? "assistant" : normalizedRole === "system" ? "system" : "user",
       content: parsed.text,
       attachments: parsed.attachments.length ? parsed.attachments : undefined,
       createdAt: Date.now() - (total - index) * 1000,

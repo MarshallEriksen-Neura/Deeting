@@ -82,6 +82,7 @@ class _DummyConversationSessionService:
         self.called_with = None
         self.updated = None
         self.title_updated = None
+        self.created = None
 
     async def list_user_sessions(self, *args, **kwargs):
         self.called_with = kwargs
@@ -121,6 +122,21 @@ class _DummyConversationSessionService:
             session_id=session_id,
             status="active",
             title=normalized,
+        )
+
+    async def create_session(self, *, user_id, tenant_id, assistant_id, title):
+        session_id = UUID("2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d")
+        self.created = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "tenant_id": tenant_id,
+            "assistant_id": assistant_id,
+            "title": title.strip() if title else None,
+        }
+        return _DummyConversationSession(
+            session_id=session_id,
+            status="active",
+            title=self.created["title"],
         )
 
 
@@ -178,6 +194,25 @@ async def test_list_conversations(monkeypatch):
             assert service.called_with["status"].value == "active"
     finally:
         pass
+
+
+@pytest.mark.asyncio
+async def test_create_conversation(monkeypatch):
+    service = _DummyConversationSessionService()
+    app.dependency_overrides[
+        conversation_route.get_conversation_session_service
+    ] = lambda: service
+    payload = {
+        "assistant_id": "e3189116-959f-48f4-8d49-f7300eb527dd",
+        "title": "New Chat",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post("/api/v1/internal/conversations", json=payload)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["session_id"] == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+        assert data["title"] == "New Chat"
+        assert service.created["assistant_id"] == UUID(payload["assistant_id"])
 
 
 @pytest.mark.asyncio

@@ -4,9 +4,8 @@ import * as React from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useChatService } from "@/hooks/use-chat-service"
-import { useI18n } from "@/hooks/use-i18n"
 import { useMarketStore } from "@/store/market-store"
-import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
+import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 import { parseMessageContent } from "@/lib/chat/message-content"
 
 interface ChatControllerProps {
@@ -36,11 +35,9 @@ interface LocalAssistantMessageRecord {
  * - 使用 useMemo 缓存计算值
  */
 function ChatController({ agentId }: ChatControllerProps) {
-  const t = useI18n("chat")
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  
   // Stores
   const installedAgents = useMarketStore((state) => state.installedAgents)
   const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
@@ -51,6 +48,7 @@ function ChatController({ agentId }: ChatControllerProps) {
     config,
     activeAssistantId,
     sessionId,
+    isLoading,
     streamEnabled,
     setInput,
     setModels,
@@ -106,11 +104,17 @@ function ChatController({ agentId }: ChatControllerProps) {
   // Initialization & Sync
   React.useEffect(() => {
     if (!agentId) return
+    const storeState = useChatStore.getState()
+    const shouldPreserve =
+      storeState.activeAssistantId === agentId &&
+      (storeState.messages.length > 0 || storeState.isLoading)
     setActiveAssistantId(agentId)
     setHistoryLoaded(false)
     setErrorMessage(null)
-    setMessages([])
-    setInput("")
+    if (!shouldPreserve) {
+      setMessages([])
+      setInput("")
+    }
   }, [agentId, setActiveAssistantId, setErrorMessage, setMessages, setInput])
 
   // Sync Stream Enabled from LocalStorage
@@ -154,6 +158,8 @@ function ChatController({ agentId }: ChatControllerProps) {
   React.useEffect(() => {
     if (!agentId || !sessionId) return
     if (pathname?.includes("/chat/create/assistant")) return
+    if (typeof window === "undefined") return
+    if (isLoading) return
     const params = new URLSearchParams(searchParams?.toString())
     params.set("session", sessionId)
     params.delete("agentId")
@@ -163,28 +169,19 @@ function ChatController({ agentId }: ChatControllerProps) {
     const currentQuery = searchParams?.toString()
     const currentUrl = currentQuery ? `${pathname}?${currentQuery}` : pathname ?? ""
     if (nextUrl === currentUrl) return
-    router.replace(nextUrl)
-  }, [agentId, pathname, router, searchParams, sessionId])
-
-  // Load History Logic - 缓存 greeting 消息
-  const greeting = React.useMemo<Message | null>(() => {
-    if (!agent) return null
-    return {
-      id: 'init',
-      role: 'assistant',
-      content: t("greeting.content", {
-        name: agent.name,
-        desc: agent.desc || "",
-      }),
-      createdAt: Date.now()
-    }
-  }, [agent, t])
+    window.history.replaceState(null, "", nextUrl)
+  }, [agentId, pathname, searchParams, sessionId, isLoading])
 
   React.useEffect(() => {
-    if (!agent || !greeting) return
+    if (isTauriRuntime && !agent) return
 
     if (!isTauriRuntime) {
       if (historyLoaded) return
+      const storeState = useChatStore.getState()
+      if (storeState.messages.length > 0 || storeState.isLoading) {
+        setHistoryLoaded(true)
+        return
+      }
       let cancelled = false
       const loadRemoteHistory = async () => {
         try {
@@ -204,11 +201,11 @@ function ChatController({ agentId }: ChatControllerProps) {
               return
             }
           }
-          setMessages([greeting])
+          setMessages([])
           setHistoryLoaded(true)
         } catch {
           if (!cancelled) {
-            setMessages([greeting])
+            setMessages([])
             setHistoryLoaded(true)
           }
         }
@@ -248,20 +245,11 @@ function ChatController({ agentId }: ChatControllerProps) {
           return
         }
 
-        setMessages([greeting])
-        try {
-          await invoke("append_assistant_message", {
-            assistant_id: agent.id,
-            role: "assistant",
-            content: greeting.content
-          })
-        } catch (error) {
-           // ignore persist errors
-        }
+        setMessages([])
         if (!cancelled) setHistoryLoaded(true)
       } catch (error) {
         if (!cancelled) {
-          setMessages([greeting])
+          setMessages([])
           setHistoryLoaded(true)
         }
       }
@@ -271,7 +259,6 @@ function ChatController({ agentId }: ChatControllerProps) {
     return () => { cancelled = true }
   }, [
     agent,
-    greeting,
     historyLoaded,
     isTauriRuntime,
     loadHistoryBySession,

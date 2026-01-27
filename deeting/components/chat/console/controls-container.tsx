@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { buildImageAttachments, UPLOAD_ERROR_CODES } from '@/lib/chat/attachments';
+import { createConversation } from '@/lib/api/conversations';
 
 /**
  * ControlsContainer - 聊天控制面板组件
@@ -56,6 +57,8 @@ function ControlsContainer() {
     config,
     setConfig,
     setActiveAssistantId,
+    setSessionId,
+    setGlobalLoading,
     resetSession,
     addAttachments,
     removeAttachment,
@@ -74,6 +77,8 @@ function ControlsContainer() {
       config: state.config,
       setConfig: state.setConfig,
       setActiveAssistantId: state.setActiveAssistantId,
+      setSessionId: state.setSessionId,
+      setGlobalLoading: state.setGlobalLoading,
       resetSession: state.resetSession,
       addAttachments: state.addAttachments,
       removeAttachment: state.removeAttachment,
@@ -100,13 +105,49 @@ function ControlsContainer() {
     setIsParamsOpen(open);
   }, []);
 
-  const handleNewChat = useCallback(() => {
+  const handleNewChat = useCallback(async () => {
     resetSession();
-    const params = new URLSearchParams(searchParams?.toString());
-    params.delete("session");
-    const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-    router.replace(url || "/chat");
-  }, [resetSession, searchParams, pathname, router]);
+    const targetAssistantId =
+      activeAssistantId ?? assistants[0]?.id ?? installedAgents[0]?.id ?? undefined;
+    setGlobalLoading(true);
+    try {
+      const created = await createConversation({
+        assistant_id: targetAssistantId ?? null,
+      });
+      if (created.session_id) {
+        setSessionId(created.session_id);
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(searchParams?.toString());
+          params.set("session", created.session_id);
+          params.delete("agentId");
+          const basePath = targetAssistantId ? `/chat/${targetAssistantId}` : (pathname || "/chat");
+          const query = params.toString();
+          const nextUrl = query ? `${basePath}?${query}` : basePath;
+          window.history.replaceState(null, "", nextUrl);
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("create_conversation_failed", error);
+    } finally {
+      setGlobalLoading(false);
+    }
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(searchParams?.toString());
+      params.delete("session");
+      const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+      window.history.replaceState(null, "", url || "/chat");
+    }
+  }, [
+    resetSession,
+    searchParams,
+    pathname,
+    activeAssistantId,
+    assistants,
+    installedAgents,
+    setSessionId,
+    setGlobalLoading,
+  ]);
 
   const handleSelectAssistant = useCallback((assistantId: string) => {
     setActiveAssistantId(assistantId);

@@ -79,6 +79,18 @@ export type ConversationSessionPage = z.infer<typeof ConversationSessionPageSche
 
 export type ConversationSessionStatus = "active" | "archived" | "closed"
 
+export const ConversationCreateResponseSchema = z.object({
+  session_id: z.string(),
+  title: z.string().nullable().optional(),
+})
+
+export type ConversationCreateResponse = z.infer<typeof ConversationCreateResponseSchema>
+
+export type ConversationCreateRequest = {
+  assistant_id?: string | null
+  title?: string | null
+}
+
 export const ConversationArchiveResponseSchema = z.object({
   session_id: z.string(),
   status: z.enum(["active", "archived", "closed"]),
@@ -109,6 +121,17 @@ export async function fetchConversationSessions(
     params: query,
   })
   return ConversationSessionPageSchema.parse(data)
+}
+
+export async function createConversation(
+  payload: ConversationCreateRequest = {}
+): Promise<ConversationCreateResponse> {
+  const data = await request({
+    url: CONVERSATION_BASE,
+    method: "POST",
+    data: payload,
+  })
+  return ConversationCreateResponseSchema.parse(data)
 }
 
 export async function archiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
