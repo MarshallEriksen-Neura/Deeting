@@ -370,6 +370,22 @@ header[data-slot="header"] {
   animation: glow-pulse 2s ease-in-out infinite;
 }
 
+@keyframes spec-agent-soft-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.spec-agent-soft-pulse {
+  animation: spec-agent-soft-pulse 2.6s ease-out infinite;
+}
+
 /* Smooth dropdown menu appearance */
 [data-radix-popper-content-wrapper] {
   animation: dropdown-in 0.2s ease-out;

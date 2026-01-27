@@ -80,7 +80,10 @@ async def create_subscription(
         tool_id=payload.tool_id,
         alias=payload.alias,
     )
-    if not created:
+    if created:
+        response.status_code = status.HTTP_201_CREATED
+        await db.commit()
+    else:
         response.status_code = status.HTTP_200_OK
     return McpSubscriptionItem(
         id=subscription.id,
@@ -104,4 +107,5 @@ async def delete_subscription(
     deleted = await svc.unsubscribe(user_id=user.id, tool_id=tool_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="subscription not found")
+    await db.commit()
     return MessageResponse(message="subscription removed")

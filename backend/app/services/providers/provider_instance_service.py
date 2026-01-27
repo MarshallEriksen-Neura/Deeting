@@ -1,3 +1,4 @@
+import inspect
 import uuid
 import httpx
 import time
@@ -421,7 +422,8 @@ class ProviderInstanceService:
         preset = await self.preset_repo.get_by_slug(instance.preset_slug)
         if not preset:
             raise ValueError("preset_not_found")
-        secret = await self._get_secret(preset, instance)
+        secret_result = self._get_secret(preset, instance)
+        secret = await secret_result if inspect.isawaitable(secret_result) else secret_result
         models_raw = await self._fetch_models_from_upstream(preset, instance, secret)
         payloads = self._build_model_payloads(models_raw, instance)
 
@@ -706,9 +708,10 @@ class ProviderInstanceService:
             return model
 
         updated = await self.model_repo.update_fields(model, updates)
+        capability = model.capabilities[0] if model.capabilities else None
         await self._invalidator.on_provider_model_changed(
             str(model.instance_id),
-            capabilities=model.capabilities,
+            capability=capability,
             model_id=model.model_id,
         )
         return updated

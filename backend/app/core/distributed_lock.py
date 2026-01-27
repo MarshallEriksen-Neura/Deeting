@@ -186,7 +186,7 @@ class DistributedLock:
 async def distributed_lock(
     key: str,
     ttl: int = 30,
-    retry_times: int = 3,
+    retry_times: int = 50,
     retry_delay: float = 0.1,
     raise_on_failure: bool = False,
 ) -> AsyncGenerator[bool, None]:

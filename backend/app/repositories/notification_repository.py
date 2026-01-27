@@ -84,7 +84,7 @@ class NotificationReceiptRepository:
             .where(or_(Notification.expires_at.is_(None), Notification.expires_at > now))
         )
         if since:
-            stmt = stmt.where(NotificationReceipt.created_at >= since)
+            stmt = stmt.where(NotificationReceipt.created_at > since)
 
         order_by = NotificationReceipt.created_at.desc() if order_desc else NotificationReceipt.created_at.asc()
         stmt = stmt.order_by(order_by).limit(limit)

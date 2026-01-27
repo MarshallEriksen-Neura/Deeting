@@ -31,7 +31,7 @@ async def test_set_and_get_system_embedding_model():
 
         model = ProviderModel(
             instance_id=instance.id,
-            capability="embedding",
+            capabilities=["embedding"],
             model_id="text-embedding-3-small",
             upstream_path="/embeddings",
         )

@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useCallback, useRef, memo } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, Clapperboard } from "lucide-react";
+import { Link } from "@/i18n/routing";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/hooks/use-i18n";
 import { useImageGenerationStore } from "@/store/image-generation-store";
 import { useImageGenerationTasks } from "@/lib/swr/use-image-generation-tasks";
@@ -86,7 +88,18 @@ const ImageResultBubble = memo<{
           </div>
         )}
         {shareEnabled ? (
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 flex justify-end gap-2">
+             <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 rounded-full hover:bg-slate-100 dark:hover:bg-white/10"
+                title="Create Video from Image"
+             >
+                <Link href={`/video?image_url=${encodeURIComponent(previewUrl!)}`}>
+                    <Clapperboard className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </Link>
+             </Button>
             <ImageShareAction taskId={taskId} />
           </div>
         ) : null}

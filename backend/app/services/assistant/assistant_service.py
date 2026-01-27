@@ -226,7 +226,7 @@ class AssistantService:
     # ===== 内部工具 =====
     @staticmethod
     def _bump_semver(version: str) -> str:
-        match = re.match(r"^(\\d+)\\.(\\d+)\\.(\\d+)$", version)
+        match = re.match(r"^(\d+)\.(\d+)\.(\d+)$", version)
         if not match:
             return "0.1.0"
         major, minor, patch = (int(part) for part in match.groups())

@@ -20,6 +20,10 @@ from app.schemas.spec_agent_api import (
     SpecPlanInteractRequest,
     SpecPlanInteractResponse,
     SpecPlanListItem,
+    SpecPlanNodeDetailResponse,
+    SpecPlanNodeEventRequest,
+    SpecPlanNodeEventResponse,
+    SpecPlanNodeRerunResponse,
     SpecPlanNodeUpdateRequest,
     SpecPlanNodeUpdateResponse,
     SpecPlanStartResponse,
@@ -129,6 +133,84 @@ async def get_spec_plan_status(
     return status_payload
 
 
+@router.get(
+    "/plans/{plan_id}/nodes/{node_id}", response_model=SpecPlanNodeDetailResponse
+)
+async def get_spec_plan_node_detail(
+    plan_id: uuid.UUID,
+    node_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        detail = await spec_agent_service.get_plan_node_detail(
+            db, user.id, plan_id, node_id
+        )
+    except ValueError as exc:
+        detail_text = str(exc)
+        if detail_text in ("plan_not_found", "node_not_found"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=detail_text
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail_text
+        ) from exc
+    return detail
+
+
+@router.post(
+    "/plans/{plan_id}/nodes/{node_id}/rerun",
+    response_model=SpecPlanNodeRerunResponse,
+)
+async def rerun_spec_plan_node(
+    plan_id: uuid.UUID,
+    node_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        detail = await spec_agent_service.rerun_plan_node(
+            db, user.id, plan_id, node_id
+        )
+    except ValueError as exc:
+        detail_text = str(exc)
+        if detail_text in ("plan_not_found", "node_not_found"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=detail_text
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail_text
+        ) from exc
+    return detail
+
+
+@router.post(
+    "/plans/{plan_id}/nodes/{node_id}/events",
+    response_model=SpecPlanNodeEventResponse,
+)
+async def append_spec_plan_node_event(
+    plan_id: uuid.UUID,
+    node_id: str,
+    payload: SpecPlanNodeEventRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await spec_agent_service.append_plan_node_event(
+            db, user.id, plan_id, node_id, payload.event, payload.source
+        )
+    except ValueError as exc:
+        detail_text = str(exc)
+        if detail_text in ("plan_not_found", "node_not_found"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=detail_text
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail_text
+        ) from exc
+    return result
+
+
 @router.post("/plans/{plan_id}/start", response_model=SpecPlanStartResponse)
 async def start_spec_plan(
     plan_id: uuid.UUID,
@@ -175,7 +257,13 @@ async def update_spec_plan_node(
 ):
     try:
         result = await spec_agent_service.update_plan_node_model(
-            db, user.id, plan_id, node_id, payload.model_override
+            db,
+            user.id,
+            plan_id,
+            node_id,
+            payload.model_override,
+            payload.instruction,
+            "model_override" in payload.__fields_set__,
         )
     except ValueError as exc:
         detail = str(exc)

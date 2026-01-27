@@ -522,6 +522,7 @@ Authorization: Bearer <access_token>
 {
   "model": "gpt-4",
   "capability": "chat",
+  "request_id": "debug-req-001",
   "provider_model_id": "3a5e9c7f-2f18-4d3c-9e87-15b1c6b3f2a1"
 }
 ```
@@ -530,6 +531,7 @@ Authorization: Bearer <access_token>
 |------|------|------|------|
 | `model` | string | 是 | 模型名称 |
 | `capability` | string | 否 | 能力类型，默认 `chat`（支持 `image_generation` / `text_to_speech` / `speech_to_text` / `video_generation` 等） |
+| `request_id` | string | 否 | 客户端请求 ID（用于取消/幂等） |
 | `provider_model_id` | string | 是 | 指定 provider model ID（内部网关必填，禁用路由/负载均衡） |
 
 #### 响应体

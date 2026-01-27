@@ -26,6 +26,10 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
   const nodes = useSpecAgentStore((state) => state.nodes)
   const setPlanDetail = useSpecAgentStore((state) => state.setPlanDetail)
   const setSelectedNodeId = useSpecAgentStore((state) => state.setSelectedNodeId)
+  const setHighlightNodeId = useSpecAgentStore(
+    (state) => state.setHighlightNodeId
+  )
+  const setFocusNodeId = useSpecAgentStore((state) => state.setFocusNodeId)
 
   const activeNode = useMemo(() => {
     return (
@@ -41,6 +45,8 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
   const hydratedSessionRef = useRef<string | null>(null)
   const hydrationRequestRef = useRef(0)
   const isMountedRef = useRef(true)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const locateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const appendMessage = useCallback((message: Omit<ConsoleMessage, 'id'>) => {
     setMessages((prev) => [
@@ -55,8 +61,82 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
   useEffect(() => {
     return () => {
       isMountedRef.current = false
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current)
+        highlightTimerRef.current = null
+      }
+      if (locateTimerRef.current) {
+        clearTimeout(locateTimerRef.current)
+        locateTimerRef.current = null
+      }
     }
   }, [])
+
+  useEffect(() => {
+    const cached = sessionStorage.getItem('deeting-spec-agent:console-state')
+    if (!cached) return
+    try {
+      const parsed = JSON.parse(cached) as {
+        input?: string
+        historyOpen?: boolean
+      }
+      if (typeof parsed.input === 'string') setInput(parsed.input)
+      if (typeof parsed.historyOpen === 'boolean') setHistoryOpen(parsed.historyOpen)
+    } catch {
+      // ignore malformed cache
+    }
+  }, [])
+
+  useEffect(() => {
+    sessionStorage.setItem(
+      'deeting-spec-agent:console-state',
+      JSON.stringify({ input, historyOpen })
+    )
+  }, [historyOpen, input])
+
+  const highlightKey = useMemo(() => {
+    if (!activeNode) return ''
+    return `${activeNode.id}-${activeNode.status}-${activeNode.logs?.length ?? 0}`
+  }, [activeNode])
+
+  useEffect(() => {
+    if (!activeNode?.id) {
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current)
+        highlightTimerRef.current = null
+      }
+      setHighlightNodeId(null)
+      return
+    }
+    setHighlightNodeId(activeNode.id)
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current)
+    }
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightNodeId(null)
+    }, 1200)
+    return () => {
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current)
+        highlightTimerRef.current = null
+      }
+    }
+  }, [activeNode?.id, highlightKey, setHighlightNodeId])
+
+  const handleLocateNode = useCallback(
+    (nodeId: string) => {
+      if (!nodeId) return
+      setFocusNodeId(nodeId)
+      setHighlightNodeId(nodeId)
+      if (locateTimerRef.current) {
+        clearTimeout(locateTimerRef.current)
+      }
+      locateTimerRef.current = setTimeout(() => {
+        setHighlightNodeId(null)
+      }, 1800)
+    },
+    [setFocusNodeId, setHighlightNodeId]
+  )
 
   const hydrateConversation = useCallback(
     (sessionId: string) => {
@@ -76,6 +156,12 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
         metaInfo?: Record<string, unknown>
       ) => {
         const event = metaInfo?.spec_agent_event
+        const nodeId =
+          typeof metaInfo?.spec_agent_node_id === 'string'
+            ? metaInfo.spec_agent_node_id
+            : typeof metaInfo?.node_id === 'string'
+              ? metaInfo.node_id
+              : ''
         if (event === 'drafting') {
           return t('console.system.drafting')
         }
@@ -88,6 +174,15 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
         }
         if (event === 'error') {
           return t('console.system.error')
+        }
+        if (event === 'node_started') {
+          return t('console.system.nodeStarted', { nodeId })
+        }
+        if (event === 'node_waiting') {
+          return t('console.system.nodeWaiting', { nodeId })
+        }
+        if (event === 'node_failed') {
+          return t('console.system.nodeFailed', { nodeId })
         }
         if (typeof content === 'string') return content
         if (content == null) return ''
@@ -117,6 +212,7 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
               type,
               content: normalizeContent(message.content, metaInfo),
               timestamp,
+              meta: metaInfo,
             }
           })
           hydratedSessionRef.current = sessionId
@@ -253,6 +349,7 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
     messages,
     hasMessages,
     activeNode,
+    nodes,
     historyOpen,
     setHistoryOpen,
     historyError,
@@ -266,5 +363,6 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
     handleKeyPress,
     resolvePlanStatus,
     handleSelectPlan,
+    handleLocateNode,
   }
 }

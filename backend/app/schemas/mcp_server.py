@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Literal
 import uuid
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from app.models.provider_preset import JSONBCompat
 
@@ -44,8 +44,7 @@ class UserMcpServerResponse(UserMcpServerBase):
     tools_count: int = Field(0, description="Number of cached tools")
     status: str = Field("unknown", description="Sync status: active, error, unknown")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @staticmethod
     def from_orm_model(model: Any) -> "UserMcpServerResponse":

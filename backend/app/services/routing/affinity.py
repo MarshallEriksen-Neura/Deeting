@@ -88,28 +88,51 @@ class RoutingAffinityStateMachine:
             if not data:
                 return AffinityContext(state=AffinityState.INIT)
 
-            # 解析 Redis Hash
-            state = AffinityState(data.get(b"state", b"init").decode())
-            locked_provider = data.get(b"locked_provider")
-            locked_item_id = data.get(b"locked_item_id")
-            explore_count = int(data.get(b"explore_count", 0))
-            success_count = int(data.get(b"success_count", 0))
-            failure_count = int(data.get(b"failure_count", 0))
-            last_updated_str = data.get(b"last_updated")
-            lock_expires_str = data.get(b"lock_expires_at")
+            def _to_text(value, default: str | None = None) -> str | None:
+                if value is None:
+                    return default
+                if isinstance(value, (bytes, bytearray)):
+                    return value.decode()
+                return str(value)
+
+            def _to_int(value, default: int = 0) -> int:
+                if value is None:
+                    return default
+                if isinstance(value, (bytes, bytearray)):
+                    value = value.decode()
+                try:
+                    return int(float(value))
+                except (TypeError, ValueError):
+                    return default
+
+            def _get(key: str) -> str | bytes | None:
+                return data.get(key) or data.get(key.encode())
+
+            # 解析 Redis Hash（兼容 bytes/str）
+            state_raw = _to_text(_get("state"), "init")
+            state = AffinityState(state_raw or "init")
+            locked_provider = _get("locked_provider")
+            locked_item_id = _get("locked_item_id")
+            explore_count = _to_int(_get("explore_count"))
+            success_count = _to_int(_get("success_count"))
+            failure_count = _to_int(_get("failure_count"))
+            last_updated_str = _get("last_updated")
+            lock_expires_str = _get("lock_expires_at")
 
             last_updated = None
-            if last_updated_str:
-                last_updated = datetime.fromisoformat(last_updated_str.decode())
+            last_updated_text = _to_text(last_updated_str)
+            if last_updated_text:
+                last_updated = datetime.fromisoformat(last_updated_text)
 
             lock_expires_at = None
-            if lock_expires_str:
-                lock_expires_at = datetime.fromisoformat(lock_expires_str.decode())
+            lock_expires_text = _to_text(lock_expires_str)
+            if lock_expires_text:
+                lock_expires_at = datetime.fromisoformat(lock_expires_text)
 
             return AffinityContext(
                 state=state,
-                locked_provider=locked_provider.decode() if locked_provider else None,
-                locked_item_id=locked_item_id.decode() if locked_item_id else None,
+                locked_provider=_to_text(locked_provider),
+                locked_item_id=_to_text(locked_item_id),
                 explore_count=explore_count,
                 success_count=success_count,
                 failure_count=failure_count,

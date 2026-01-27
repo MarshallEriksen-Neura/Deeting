@@ -34,6 +34,13 @@ async def test_ip_whitelist_validation(monkeypatch):
         return False
         
     monkeypatch.setattr(ApiKeyService, "check_ip", mock_check_ip)
+    # 避免 MCP discovery 初始化插件导致测试阻塞
+    from app.services.workflow.steps.mcp_discovery import McpDiscoveryStep
+    monkeypatch.setattr(
+        McpDiscoveryStep,
+        "execute",
+        AsyncMock(return_value=StepResult(status=StepStatus.SUCCESS, data={"count": 0})),
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # 1. 不在白名单的 IP

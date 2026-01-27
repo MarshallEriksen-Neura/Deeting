@@ -1,4 +1,5 @@
 import httpx
+from uuid import UUID
 import pytest
 from sqlalchemy import select
 
@@ -67,7 +68,7 @@ async def test_create_and_sync_source(
     assert sync_data["source"]["last_synced_at"] is not None
 
     async with AsyncSessionLocal() as session:
-        source = await session.get(UserMcpSource, source_id)
+        source = await session.get(UserMcpSource, UUID(source_id))
         assert source is not None
         stmt = select(UserMcpServer).where(UserMcpServer.source_id == source.id)
         result = await session.execute(stmt)

@@ -50,7 +50,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import get_external_orchestrator, GatewayOrchestrator
-from app.deps.external_auth import ExternalPrincipal
+from app.deps.external_auth import ExternalPrincipal, get_external_principal
 from app.schemas.gateway import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -551,6 +551,7 @@ async def chat_completions(
     request: Request,
     request_body: ChatCompletionRequest,
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
+    principal: ExternalPrincipal = Depends(get_external_principal),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
     path = request.url.path if request else ""
@@ -558,7 +559,7 @@ async def chat_completions(
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=None,
+        principal=principal,
         db=db,
         capability="chat",
         user_id=user_id,
@@ -578,6 +579,7 @@ async def messages(
     request: Request,
     request_body: AnthropicMessagesRequest,
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
+    principal: ExternalPrincipal = Depends(get_external_principal),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
     path = request.url.path if request else ""
@@ -585,7 +587,7 @@ async def messages(
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=None,
+        principal=principal,
         db=db,
         capability="chat",
         adapter_vendor="anthropic",
@@ -606,6 +608,7 @@ async def responses(
     request: Request,
     request_body: ResponsesRequest,
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
+    principal: ExternalPrincipal = Depends(get_external_principal),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
     path = request.url.path if request else ""
@@ -613,7 +616,7 @@ async def responses(
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=None,
+        principal=principal,
         db=db,
         capability="chat",
         adapter_vendor="responses",
@@ -634,6 +637,7 @@ async def embeddings(
     request: Request,
     request_body: EmbeddingsRequest,
     orchestrator: GatewayOrchestrator = Depends(get_external_orchestrator),
+    principal: ExternalPrincipal = Depends(get_external_principal),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
     path = request.url.path if request else ""
@@ -641,7 +645,7 @@ async def embeddings(
     ctx = build_external_context(
         request=request,
         request_body=request_body,
-        principal=None,
+        principal=principal,
         db=db,
         capability="embedding",
         user_id=user_id,

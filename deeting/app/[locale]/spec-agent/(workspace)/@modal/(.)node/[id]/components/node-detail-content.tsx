@@ -3,28 +3,34 @@
 import { memo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
 import type { SpecUiNode } from '@/store/spec-agent-store'
-import type { SpecNode } from '@/lib/api/spec-agent'
+import type { SpecNode, SpecPlanNodeDetail } from '@/lib/api/spec-agent'
+import { NodeDetailLineage } from './node-detail-lineage'
+import { NodeDetailTimeline } from './node-detail-timeline'
+import { NodeDetailPayload } from './node-detail-payload'
+import { NodeDetailModel } from './node-detail-model'
+import { NodeDetailPendingAction } from './node-detail-pending-action'
+import { NodeDetailInstructionDiff } from './node-detail-instruction-diff'
 
 type NodeDetailContentProps = {
   t: (key: string, params?: Record<string, string>) => string
   node: SpecUiNode | undefined
   rawNode: SpecNode | undefined
+  nodeDetail: SpecPlanNodeDetail | null
   isAction: boolean
   selectedModel: string
   setSelectedModel: (value: string) => void
+  instruction: string
+  setInstruction: (value: string) => void
+  instructionMode: 'edit' | 'shadow' | 'locked'
+  instructionNote?: string | null
+  pendingInstruction: string | null
+  canRerunPending: boolean
+  isRerunning: boolean
+  onRerunPending: () => void
   isSaving: boolean
   isLoadingModels: boolean
   isUnknownModel: boolean
@@ -41,17 +47,24 @@ export const NodeDetailContent = memo(function NodeDetailContent({
   t,
   node,
   rawNode,
+  nodeDetail,
   isAction,
   selectedModel,
   setSelectedModel,
+  instruction,
+  setInstruction,
+  instructionMode,
+  instructionNote,
+  pendingInstruction,
+  canRerunPending,
+  isRerunning,
+  onRerunPending,
   isSaving,
   isLoadingModels,
   isUnknownModel,
   modelGroups,
   updateError,
 }: NodeDetailContentProps) {
-  const AUTO_VALUE = '__auto__'
-
   if (!node) {
     return (
       <div className="py-8 text-center text-sm text-muted-foreground">
@@ -59,6 +72,9 @@ export const NodeDetailContent = memo(function NodeDetailContent({
       </div>
     )
   }
+
+  const detailNode = nodeDetail?.node ?? rawNode
+  const detailStatus = nodeDetail?.execution?.status ?? node.status
 
   return (
     <ScrollArea className="h-[calc(100vh-14rem)] pr-1">
@@ -81,7 +97,7 @@ export const NodeDetailContent = memo(function NodeDetailContent({
               {t('node.modal.fields.status')}
             </Label>
             <Badge variant="outline">
-              {t(`node.modal.status.${node.status}`)}
+              {t(`node.modal.status.${detailStatus}`)}
             </Badge>
           </div>
           <div className="space-y-1">
@@ -100,74 +116,78 @@ export const NodeDetailContent = memo(function NodeDetailContent({
           </div>
         </div>
 
-        <Separator />
+        <NodeDetailModel
+          t={t}
+          isAction={isAction}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          isSaving={isSaving}
+          isLoadingModels={isLoadingModels}
+          isUnknownModel={isUnknownModel}
+          modelGroups={modelGroups}
+          updateError={updateError}
+        />
 
         <div className="space-y-3">
           <Label className="text-xs text-muted-foreground">
-            {t('node.modal.fields.model')}
+            {t('node.modal.fields.instruction')}
           </Label>
-          <Select
-            value={selectedModel}
-            onValueChange={setSelectedModel}
-            disabled={!isAction || isSaving || isLoadingModels}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder={t('node.modal.modelPlaceholder')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={AUTO_VALUE}>
-                {t('node.modal.modelAuto')}
-              </SelectItem>
-              <SelectSeparator />
-              {isUnknownModel && (
-                <SelectItem value={selectedModel}>
-                  {t('node.modal.modelUnknown', { model: selectedModel })}
-                </SelectItem>
-              )}
-              {modelGroups.map((group) => (
-                <SelectGroup key={group.instance_id}>
-                  <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                    {group.instance_name}
-                  </SelectLabel>
-                  {group.models.map((model) => {
-                    const modelValue = model.id
-                    return (
-                      <SelectItem key={modelValue} value={modelValue}>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-medium text-foreground">
-                            {model.id}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {group.provider || model.owned_by || 'provider'}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    )
-                  })}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
+          <Textarea
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder={
+              instructionMode === 'shadow'
+                ? t('node.modal.instructionShadowPlaceholder')
+                : t('node.modal.instructionPlaceholder')
+            }
+            disabled={!isAction || instructionMode === 'locked'}
+            className="min-h-[96px]"
+          />
           <p className="text-xs text-muted-foreground">
-            {isAction ? t('node.modal.modelHint') : t('node.modal.modelDisabled')}
+            {instructionMode === 'shadow'
+              ? t('node.modal.instructionShadowHint')
+              : instructionMode === 'edit'
+                ? t('node.modal.instructionHint')
+                : t('node.modal.instructionDisabled')}
           </p>
-          {updateError && (
-            <p className="text-xs text-destructive">
-              {t('node.modal.saveFailed')}
-            </p>
+          {instructionNote && (
+            <p className="text-xs text-sky-500/80">{instructionNote}</p>
           )}
         </div>
 
-        <Separator />
+        <NodeDetailLineage t={t} rawNode={detailNode} nodeDetail={nodeDetail} />
 
-        <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">
-            {t('node.modal.fields.payload')}
-          </Label>
-          <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto font-mono">
-            {JSON.stringify(rawNode ?? {}, null, 2)}
-          </pre>
-        </div>
+        <NodeDetailTimeline t={t} nodeDetail={nodeDetail} />
+
+        <NodeDetailPayload t={t} nodeDetail={nodeDetail} />
+
+        <NodeDetailPendingAction
+          t={t}
+          pendingInstruction={pendingInstruction ?? ''}
+          canRerun={canRerunPending}
+          isRerunning={isRerunning}
+          onRerun={onRerunPending}
+        />
+
+        {pendingInstruction && rawNode?.type === 'action' && (
+          <>
+            <Separator />
+            <NodeDetailInstructionDiff
+              t={t}
+              original={rawNode.instruction ?? ''}
+              updated={pendingInstruction}
+            />
+          </>
+        )}
+
+        {detailStatus === 'waiting' && (
+          <>
+            <Separator />
+            <div className="text-xs text-amber-600">
+              {t('node.modal.waitingHint')}
+            </div>
+          </>
+        )}
       </div>
     </ScrollArea>
   )

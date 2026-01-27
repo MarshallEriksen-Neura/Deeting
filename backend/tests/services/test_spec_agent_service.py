@@ -13,6 +13,8 @@ from app.models.spec_agent import SpecExecutionLog, SpecPlan, SpecWorkerSession
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest
 from app.schemas.tool import ToolCall, ToolDefinition
+import importlib
+
 from app.services.agent import SpecAgentService, SpecExecutor
 from app.utils.time_utils import Datetime
 from tests.api.conftest import AsyncSessionLocal, engine
@@ -222,7 +224,14 @@ async def test_tool_call_flow_returns_json_output(monkeypatch):
                 return [ToolCall(id="1", name="tool.echo", arguments={"text": "hi"})]
             return "{\"answer\": \"ok\"}"
 
-        monkeypatch.setattr("app.services.spec_agent_service.llm_service.chat_completion", fake_chat_completion)
+        spec_agent_module = importlib.import_module(
+            "app.services.agent.spec_agent_service"
+        )
+        monkeypatch.setattr(
+            spec_agent_module.llm_service,
+            "chat_completion",
+            fake_chat_completion,
+        )
 
         repo = SpecAgentRepository(session)
         executor = SpecExecutor(

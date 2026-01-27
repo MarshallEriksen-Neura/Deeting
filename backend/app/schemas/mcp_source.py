@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 McpSourceType = Literal["local", "cloud", "modelscope", "github", "url"]
 McpSourceTrustLevel = Literal["official", "community", "private"]
@@ -36,8 +36,7 @@ class UserMcpSourceResponse(UserMcpSourceBase):
     created_at: Any
     updated_at: Any
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @staticmethod
     def from_orm_model(model: Any) -> "UserMcpSourceResponse":

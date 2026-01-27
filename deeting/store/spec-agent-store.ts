@@ -41,6 +41,7 @@ export interface SpecUiNode {
   outputPreview?: string | null
   checkIn?: boolean
   modelOverride?: string | null
+  pendingInstruction?: string | null
   logs?: string[]
   raw?: SpecNode
 }
@@ -63,7 +64,11 @@ interface SpecAgentState {
   plannerModel: string | null
   layout: SpecAgentLayoutState
   selectedNodeId: string | null
+  highlightNodeId: string | null
+  focusNodeId: string | null
   setSelectedNodeId: (nodeId: string | null) => void
+  setHighlightNodeId: (nodeId: string | null) => void
+  setFocusNodeId: (nodeId: string | null) => void
   setPlannerModel: (model: string | null) => void
   setConversationSessionId: (sessionId: string | null) => void
   setLayout: (layout: Partial<SpecAgentLayoutState>) => void
@@ -90,6 +95,8 @@ interface SpecAgentState {
   setCheckpoint: (checkpoint: Record<string, unknown> | null) => void
   applyStatusNodes: (nodes: SpecNodeStatus[]) => void
   applyNodeModelOverride: (nodeId: string, modelOverride: string | null) => void
+  applyNodeInstructionUpdate: (nodeId: string, instruction: string) => void
+  applyNodePendingInstruction: (nodeId: string, instruction: string | null) => void
 }
 
 const defaultLayoutState: SpecAgentLayoutState = {
@@ -99,7 +106,7 @@ const defaultLayoutState: SpecAgentLayoutState = {
   canvasCollapsed: false,
 }
 
-const emptyState: Omit<SpecAgentState, "setSelectedNodeId" | "setPlannerModel" | "setConversationSessionId" | "setLayout" | "reset" | "startDrafting" | "setDraftingError" | "setPlanInit" | "setPlanReady" | "setPlanDetail" | "applyNodeAdded" | "applyLinkAdded" | "setExecution" | "setCheckpoint" | "applyStatusNodes" | "applyNodeModelOverride"> = {
+const emptyState: Omit<SpecAgentState, "setSelectedNodeId" | "setHighlightNodeId" | "setFocusNodeId" | "setPlannerModel" | "setConversationSessionId" | "setLayout" | "reset" | "startDrafting" | "setDraftingError" | "setPlanInit" | "setPlanReady" | "setPlanDetail" | "applyNodeAdded" | "applyLinkAdded" | "setExecution" | "setCheckpoint" | "applyStatusNodes" | "applyNodeModelOverride" | "applyNodeInstructionUpdate" | "applyNodePendingInstruction"> = {
   planId: null,
   conversationSessionId: null,
   projectName: null,
@@ -112,6 +119,8 @@ const emptyState: Omit<SpecAgentState, "setSelectedNodeId" | "setPlannerModel" |
   plannerModel: null,
   layout: { ...defaultLayoutState },
   selectedNodeId: null,
+  highlightNodeId: null,
+  focusNodeId: null,
 }
 
 const buildNodeTitle = (node: SpecNode) => {
@@ -187,10 +196,10 @@ const STAGE_ORDER: SpecUiNodeStage[] = [
   "action",
   "unknown",
 ]
-const STAGE_PADDING = 80
-const STAGE_GAP = 120
-const STAGE_MIN_HEIGHT = 220
-const STAGE_NODE_GAP = 140
+const STAGE_PADDING = 100
+const STAGE_GAP = 160
+const STAGE_MIN_HEIGHT = 260
+const STAGE_NODE_GAP = 180
 
 const buildDepthMap = (nodes: SpecNode[]) => {
   const byId = new Map(nodes.map((node) => [node.id, node]))
@@ -250,7 +259,7 @@ const layoutNodes = (nodes: SpecNode[], prev: SpecUiNode[]) => {
   })
 
   const stageLayout = new Map<SpecUiNodeStage, { top: number; height: number }>()
-  let currentTop = 120
+  let currentTop = 160
   STAGE_ORDER.forEach((stage) => {
     const ids = stageBuckets.get(stage) ?? []
     if (!ids.length) return
@@ -275,7 +284,7 @@ const layoutNodes = (nodes: SpecNode[], prev: SpecUiNode[]) => {
       const stageTop = stageLayout.get(stage)?.top ?? 120
       const stageIndex = stageIndexMap.get(id) ?? idx
       positions.set(id, {
-        x: 140 + depth * 280,
+        x: 180 + depth * 360,
         y: stageTop + STAGE_PADDING + stageIndex * STAGE_NODE_GAP,
       })
     })
@@ -300,6 +309,8 @@ const layoutNodes = (nodes: SpecNode[], prev: SpecUiNode[]) => {
       checkIn: node.type === "action" ? node.check_in : false,
       modelOverride:
         node.type === "action" ? node.model_override ?? null : null,
+      pendingInstruction:
+        node.type === "action" ? node.pending_instruction ?? null : null,
       raw: node,
     } satisfies SpecUiNode
   })
@@ -318,6 +329,8 @@ export const useSpecAgentStore = create<SpecAgentState>()(
     (set, get) => ({
       ...emptyState,
       setSelectedNodeId: (nodeId) => set({ selectedNodeId: nodeId }),
+      setHighlightNodeId: (nodeId) => set({ highlightNodeId: nodeId }),
+      setFocusNodeId: (nodeId) => set({ focusNodeId: nodeId }),
       setPlannerModel: (model) => set({ plannerModel: model }),
       setConversationSessionId: (sessionId) => set({ conversationSessionId: sessionId }),
       setLayout: (layout) =>
@@ -414,6 +427,30 @@ export const useSpecAgentStore = create<SpecAgentState>()(
           const nextNodes = state.manifest.nodes.map((node) => {
             if (node.id !== nodeId || node.type !== "action") return node
             return { ...node, model_override: modelOverride }
+          })
+          return {
+            manifest: { ...state.manifest, nodes: nextNodes },
+            nodes: layoutNodes(nextNodes, state.nodes),
+          }
+        }),
+      applyNodeInstructionUpdate: (nodeId, instruction) =>
+        set((state) => {
+          if (!state.manifest) return state
+          const nextNodes = state.manifest.nodes.map((node) => {
+            if (node.id !== nodeId || node.type !== "action") return node
+            return { ...node, instruction, pending_instruction: null }
+          })
+          return {
+            manifest: { ...state.manifest, nodes: nextNodes },
+            nodes: layoutNodes(nextNodes, state.nodes),
+          }
+        }),
+      applyNodePendingInstruction: (nodeId, instruction) =>
+        set((state) => {
+          if (!state.manifest) return state
+          const nextNodes = state.manifest.nodes.map((node) => {
+            if (node.id !== nodeId || node.type !== "action") return node
+            return { ...node, pending_instruction: instruction }
           })
           return {
             manifest: { ...state.manifest, nodes: nextNodes },

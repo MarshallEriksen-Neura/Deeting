@@ -37,7 +37,7 @@ async def test_update_secretary_model_with_user_provider():
 
         model = ProviderModel(
             instance_id=instance.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4o",
             upstream_path="/chat/completions",
         )
@@ -74,7 +74,7 @@ async def test_update_secretary_model_with_public_provider():
 
         model = ProviderModel(
             instance_id=instance.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4o",
             upstream_path="/chat/completions",
         )
@@ -88,7 +88,6 @@ async def test_update_secretary_model_with_public_provider():
 
         secretary = await service.update_model(user_id=user.id, model_name="gpt-4o")
         assert secretary.model_name == "gpt-4o"
-
 
 
 

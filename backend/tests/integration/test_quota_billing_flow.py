@@ -235,9 +235,9 @@ async def test_quota_billing_flow_with_sync(db_session):
     assert result[0] == 1
     
     # 3. 执行同步任务
-    from app.tasks.quota_sync import sync_quota_from_redis_to_db
+    from app.tasks.quota_sync import sync_quota_from_redis_to_db_async
     
-    sync_result = sync_quota_from_redis_to_db(tenant_id)
+    sync_result = await sync_quota_from_redis_to_db_async(tenant_id, session=db_session)
     
     assert sync_result["status"] == "synced"
     assert abs(sync_result["balance_diff"] - deduct_amount) < 0.000001

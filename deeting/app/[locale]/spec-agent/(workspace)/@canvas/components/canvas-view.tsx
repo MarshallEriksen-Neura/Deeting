@@ -21,6 +21,7 @@ type CanvasViewProps = {
   stageLanes: CanvasStageLane[]
   focusSet: Set<string> | null
   selectedNodeId: string | null
+  highlightNodeId: string | null
   criticalPath: { nodes: Set<string>; edges: Set<string> }
   branchToggles: Array<{
     id: string
@@ -46,6 +47,7 @@ export const CanvasView = memo(function CanvasView({
   stageLanes,
   focusSet,
   selectedNodeId,
+  highlightNodeId,
   criticalPath,
   branchToggles,
   branchBadges,
@@ -63,6 +65,7 @@ export const CanvasView = memo(function CanvasView({
           stageLanes={stageLanes}
           focusSet={focusSet}
           selectedNodeId={selectedNodeId}
+          highlightNodeId={highlightNodeId}
           criticalPath={criticalPath}
           branchToggles={branchToggles}
           branchBadges={branchBadges}

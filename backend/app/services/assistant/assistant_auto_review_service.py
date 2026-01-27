@@ -62,10 +62,17 @@ class AssistantAutoReviewService:
             raise ValueError("助手版本不存在")
 
         superuser = await self.user_repo.get_primary_superuser()
+        secretary = None
+        if superuser:
+            secretary = await self.secretary_repo.get_by_user_id(superuser.id)
+
+        if not superuser or not secretary or not secretary.model_name:
+            fallback = await self.secretary_repo.get_primary_superuser_secretary()
+            if fallback:
+                superuser, secretary = fallback
+
         if not superuser:
             raise ValueError("未找到超级用户，无法自动审核")
-
-        secretary = await self.secretary_repo.get_by_user_id(superuser.id)
         if not secretary:
             raise ValueError("未找到超级用户秘书配置")
         if not secretary.model_name:

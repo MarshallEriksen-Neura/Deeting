@@ -271,14 +271,41 @@ class RoutingStep(BaseStep):
             "auth_config": {},
             "default_headers": {},
             "default_params": {},
+            "async_config": {},
+            "http_method": "POST",
             "routing_config": {},
+            "config_override": {},
             "weight": 1,
             "priority": 1,
         }
+        ctx.set("routing", "preset_id", fallback["preset_id"])
+        ctx.set("routing", "preset_item_id", fallback["preset_item_id"])
+        ctx.set("routing", "instance_id", fallback["instance_id"])
+        ctx.set("routing", "provider_model_id", fallback["provider_model_id"])
+        ctx.set("routing", "upstream_url", fallback["upstream_url"])
+        ctx.set("routing", "provider", fallback["provider"])
+        ctx.set("routing", "template_engine", fallback["template_engine"])
+        ctx.set("routing", "request_template", fallback["request_template"])
+        ctx.set("routing", "response_transform", fallback["response_transform"])
+        ctx.set("routing", "async_config", fallback["async_config"])
+        ctx.set("routing", "http_method", fallback["http_method"])
+        ctx.set("routing", "routing_config", fallback["routing_config"])
+        ctx.set("routing", "config_override", fallback["config_override"])
+        ctx.set("routing", "limit_config", fallback["limit_config"])
+        ctx.set("routing", "pricing_config", fallback["pricing_config"])
+        ctx.set("routing", "auth_type", fallback["auth_type"])
+        ctx.set("routing", "auth_config", fallback["auth_config"])
+        ctx.set("routing", "default_headers", fallback["default_headers"])
+        ctx.set("routing", "default_params", fallback["default_params"])
         ctx.set("routing", "candidates", [fallback])
-        ctx.set("routing", "preset_id", None)
+        ctx.set("routing", "candidate_index", 0)
+        ctx.set("routing", "affinity_hit", False)
+        ctx.set("routing", "affinity_provider_model_id", None)
+        ctx.selected_preset_id = fallback["preset_id"]
+        ctx.selected_preset_item_id = fallback["preset_item_id"]
+        ctx.selected_instance_id = fallback["instance_id"]
+        ctx.selected_provider_model_id = fallback["provider_model_id"]
         ctx.selected_upstream = fallback["upstream_url"]
-        ctx.selected_provider_model_id = None
         ctx.routing_weight = fallback["weight"]
         return StepResult(status=StepStatus.SUCCESS, data=fallback)
 

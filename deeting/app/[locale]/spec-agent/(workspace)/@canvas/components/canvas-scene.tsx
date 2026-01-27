@@ -15,6 +15,7 @@ type CanvasSceneProps = {
   stageLanes: CanvasStageLane[]
   focusSet: Set<string> | null
   selectedNodeId: string | null
+  highlightNodeId: string | null
   criticalPath: { nodes: Set<string>; edges: Set<string> }
   branchToggles: Array<{
     id: string
@@ -36,6 +37,7 @@ export const CanvasScene = memo(function CanvasScene({
   stageLanes,
   focusSet,
   selectedNodeId,
+  highlightNodeId,
   criticalPath,
   branchToggles,
   branchBadges,
@@ -50,23 +52,23 @@ export const CanvasScene = memo(function CanvasScene({
   return (
     <div className="relative" style={{ width: canvasWidth, height: canvasHeight }}>
       <div
-        className="absolute inset-0 opacity-30"
+        className="absolute inset-0 opacity-20"
         style={{
           backgroundImage: `
             linear-gradient(to right, var(--border) 1px, transparent 1px),
             linear-gradient(to bottom, var(--border) 1px, transparent 1px)
           `,
-          backgroundSize: '20px 20px',
+          backgroundSize: '32px 32px',
         }}
       />
 
       {stageLanes.map((lane) => (
         <div
           key={lane.key}
-          className={`absolute left-0 right-0 rounded-xl border pointer-events-none ${lane.tone}`}
+          className={`absolute left-0 right-0 rounded-2xl pointer-events-none ${lane.tone}`}
           style={{ top: lane.top, height: lane.height }}
         >
-          <div className="absolute left-6 top-3 text-xs font-medium uppercase tracking-[0.2em]">
+          <div className="absolute left-6 top-3 text-[10px] font-semibold uppercase tracking-[0.24em]">
             {lane.label}
           </div>
         </div>
@@ -112,6 +114,7 @@ export const CanvasScene = memo(function CanvasScene({
             isSelected={selectedNodeId === node.id}
             isDimmed={!!focusSet && !focusSet.has(node.id)}
             isCritical={criticalPath.nodes.has(node.id)}
+            isHighlighted={highlightNodeId === node.id}
             onClick={() => onNodeClick(node.id)}
           />
         ))}

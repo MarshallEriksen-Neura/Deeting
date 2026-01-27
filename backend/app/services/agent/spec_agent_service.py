@@ -1,9 +1,10 @@
 import inspect
+import asyncio
 import json
 import logging
 import re
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable, Awaitable
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,11 @@ class SpecExecutor:
         mcp_tools_map: Dict[str, Dict[str, Any]],
         available_tool_defs: List[ToolDefinition],
         local_tool_handlers: Dict[str, Any],
+        conversation_session_id: uuid.UUID | None = None,
+        conversation_append: Callable[
+            [AsyncSession, uuid.UUID, uuid.UUID, str, str, str], Awaitable[None]
+        ]
+        | None = None,
     ):
         self.plan_id = plan_id
         self.manifest = manifest
@@ -55,6 +61,8 @@ class SpecExecutor:
         self.mcp_tools_map = mcp_tools_map
         self.available_tool_defs = available_tool_defs
         self.local_tool_handlers = local_tool_handlers
+        self.conversation_session_id = conversation_session_id
+        self.conversation_append = conversation_append
 
         self.context: Dict[str, Any] = self.manifest.context.copy()
         self.node_outputs: Dict[str, Any] = {}
@@ -67,6 +75,21 @@ class SpecExecutor:
             for dep in n.needs:
                 if dep in self.dag_children:
                     self.dag_children[dep].append(n.id)
+
+    async def _emit_node_event(self, event: str, node_id: str, content: str) -> None:
+        if not self.conversation_append or not self.conversation_session_id:
+            return
+        try:
+            await self.conversation_append(
+                self.repo.session,
+                self.conversation_session_id,
+                self.user_id,
+                node_id,
+                event,
+                content,
+            )
+        except Exception as exc:
+            logger.warning("spec_agent_conversation_event_failed: %s", exc)
 
     async def initialize(self) -> None:
         """Rebuild state from DB logs for resume."""
@@ -83,6 +106,7 @@ class SpecExecutor:
     async def run_step(self) -> Dict[str, Any]:
         """Execute a single scheduling step."""
         latest_logs = await self.repo.get_latest_node_logs(self.plan_id)
+        latest_status = {log.node_id: log.status for log in latest_logs}
         completed_ids = {l.node_id for l in latest_logs if l.status == "SUCCESS"}
         skipped_ids = {l.node_id for l in latest_logs if l.status == "SKIPPED"}
         failed_ids = {l.node_id for l in latest_logs if l.status == "FAILED"}
@@ -95,6 +119,8 @@ class SpecExecutor:
 
         executable_nodes: List[SpecNode] = []
         for node in self.manifest.nodes:
+            if latest_status.get(node.id) in ("RUNNING", "WAITING_APPROVAL"):
+                continue
             if node.id in completed_ids or node.id in skipped_ids:
                 continue
 
@@ -155,10 +181,20 @@ class SpecExecutor:
             worker_info="generic_task_runner",
         )
         await self._commit()
+        await self._emit_node_event(
+            "node_started",
+            node.id,
+            f"Node {node.id} started",
+        )
 
         if getattr(node, "check_in", False):
             await self.repo.finish_node_execution(log_entry.id, "WAITING_APPROVAL")
             await self._commit()
+            await self._emit_node_event(
+                "node_waiting",
+                node.id,
+                f"Node {node.id} waiting approval",
+            )
             return {"status": "check_in_required"}
 
         if node.type == "action":
@@ -213,6 +249,11 @@ class SpecExecutor:
                     worker_snapshot={"error": str(exc)},
                 )
                 await self._commit()
+                await self._emit_node_event(
+                    "node_failed",
+                    node.id,
+                    f"Node {node.id} failed",
+                )
                 return {"status": "failed"}
 
         if node.type == "logic_gate":
@@ -710,10 +751,13 @@ class SpecAgentService:
 
         if redis_available and conv_service:
             try:
-                result = await conv_service.append_messages(
-                    session_id=str(session_id),
-                    messages=redis_messages,
-                    channel=ConversationChannel.INTERNAL,
+                result = await asyncio.wait_for(
+                    conv_service.append_messages(
+                        session_id=str(session_id),
+                        messages=redis_messages,
+                        channel=ConversationChannel.INTERNAL,
+                    ),
+                    timeout=1.0,
                 )
             except Exception as exc:
                 redis_available = False
@@ -750,6 +794,94 @@ class SpecAgentService:
             message_count=last_turn,
             first_message_at=Datetime.now(),
             title=project_name,
+        )
+        await message_repo.bulk_insert_messages(
+            session_id=session_id,
+            messages=db_messages,
+        )
+
+    async def _append_spec_agent_event(
+        self,
+        session: AsyncSession,
+        session_id: uuid.UUID,
+        user_id: uuid.UUID,
+        node_id: str,
+        event: str,
+        content: str,
+        source: Optional[str] = None,
+    ) -> None:
+        created_at = Datetime.now().isoformat()
+        meta_info = {
+            "spec_agent_event": event,
+            "spec_agent_node_id": node_id,
+            "created_at": created_at,
+        }
+        if source:
+            meta_info["spec_agent_source"] = source
+
+        message = {
+            "role": "system",
+            "content": content,
+            "token_estimate": self._estimate_tokens(content),
+            "is_truncated": False,
+            "meta_info": meta_info,
+        }
+
+        redis_messages = [dict(message)]
+        db_messages = [dict(message)]
+        redis_available = True
+        conv_service: ConversationService | None = None
+        result: dict[str, Any] = {"last_turn": None}
+
+        try:
+            conv_service = ConversationService()
+        except Exception as exc:
+            redis_available = False
+            logger.warning("spec_agent_conversation_redis_unavailable: %s", exc)
+
+        if redis_available and conv_service:
+            try:
+                result = await asyncio.wait_for(
+                    conv_service.append_messages(
+                        session_id=str(session_id),
+                        messages=redis_messages,
+                        channel=ConversationChannel.INTERNAL,
+                    ),
+                    timeout=1.0,
+                )
+            except Exception as exc:
+                redis_available = False
+                logger.warning("spec_agent_conversation_append_failed: %s", exc)
+
+        session_repo = ConversationSessionRepository(session)
+        message_repo = ConversationMessageRepository(session)
+
+        if redis_available:
+            for idx, msg in enumerate(db_messages):
+                if idx < len(redis_messages):
+                    msg["turn_index"] = redis_messages[idx].get("turn_index")
+            last_turn = result.get("last_turn") if isinstance(result, dict) else None
+        else:
+            turn_indexes = await session_repo.reserve_turn_indexes(
+                session_id=session_id,
+                user_id=user_id,
+                tenant_id=None,
+                assistant_id=None,
+                channel=ConversationChannel.INTERNAL,
+                count=len(db_messages),
+            )
+            last_turn = turn_indexes[-1] if turn_indexes else None
+            for msg, turn_index in zip(db_messages, turn_indexes, strict=False):
+                msg["turn_index"] = turn_index
+
+        await session_repo.upsert_session(
+            session_id=session_id,
+            user_id=user_id,
+            tenant_id=None,
+            assistant_id=None,
+            channel=ConversationChannel.INTERNAL,
+            last_active_at=Datetime.now(),
+            message_count=last_turn,
         )
         await message_repo.bulk_insert_messages(
             session_id=session_id,
@@ -896,6 +1028,8 @@ class SpecAgentService:
         plan_id: uuid.UUID,
         node_id: str,
         model_override: Optional[str],
+        instruction: Optional[str] = None,
+        model_override_set: bool = True,
     ) -> Dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
@@ -909,25 +1043,46 @@ class SpecAgentService:
         if getattr(target_node, "type", None) != "action":
             raise ValueError("node_not_action")
 
-        normalized_model = model_override.strip() if model_override else None
-        if normalized_model:
-            model_repo = ProviderModelRepository(session)
-            candidates = await model_repo.get_candidates(
-                capability="chat",
-                model_id=normalized_model,
-                user_id=str(user_id),
-                include_public=True,
-            )
-            if not candidates:
-                raise ValueError("model_not_available")
+        normalized_model = target_node.model_override
+        if model_override_set:
+            normalized_model = model_override.strip() if model_override else None
+            if normalized_model:
+                model_repo = ProviderModelRepository(session)
+                candidates = await model_repo.get_candidates(
+                    capability="chat",
+                    model_id=normalized_model,
+                    user_id=str(user_id),
+                    include_public=True,
+                )
+                if not candidates:
+                    raise ValueError("model_not_available")
 
-        target_node.model_override = normalized_model
+        instruction_value = instruction.strip() if instruction is not None else None
+        pending_instruction: Optional[str] = None
+        if instruction is not None:
+            if not instruction_value:
+                raise ValueError("instruction_empty")
+            log = await repo.get_latest_log_for_node(plan_id, node_id)
+            log_status = log.status if log else None
+            if log_status == "RUNNING":
+                target_node.pending_instruction = instruction_value
+                pending_instruction = instruction_value
+            elif log_status in ("WAITING_APPROVAL", None) or plan.status == "DRAFT":
+                target_node.instruction = instruction_value
+                target_node.pending_instruction = None
+            else:
+                raise ValueError("node_not_waiting")
+
+        if model_override_set:
+            target_node.model_override = normalized_model
         await repo.update_plan_manifest(plan_id, manifest.model_dump())
         await session.commit()
         return {
             "plan_id": str(plan_id),
             "node_id": node_id,
             "model_override": normalized_model,
+            "instruction": instruction_value if pending_instruction is None else None,
+            "pending_instruction": pending_instruction,
         }
 
     @staticmethod
@@ -944,6 +1099,7 @@ class SpecAgentService:
     @staticmethod
     def _map_log_status(status: str) -> str:
         mapping = {
+            "PENDING": "pending",
             "RUNNING": "active",
             "SUCCESS": "completed",
             "FAILED": "error",
@@ -1003,6 +1159,62 @@ class SpecAgentService:
             "execution": {
                 "status": self._map_plan_status(plan.status),
                 "progress": progress,
+            },
+        }
+
+    async def get_plan_node_detail(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        repo = SpecAgentRepository(session)
+        plan = await repo.get_plan(plan_id)
+        if not plan or plan.user_id != user_id:
+            raise ValueError("plan_not_found")
+
+        manifest = SpecManifest(**plan.manifest_data)
+        target_node = next((node for node in manifest.nodes if node.id == node_id), None)
+        if not target_node:
+            raise ValueError("node_not_found")
+
+        log = await repo.get_latest_log_for_node(plan_id, node_id)
+        worker_sessions = await repo.get_sessions_by_log_ids(
+            [log.id] if log else []
+        )
+        node_logs: List[str] = []
+        execution_status = "pending"
+        duration_ms = None
+
+        if log:
+            execution_status = self._map_log_status(log.status)
+            if log.started_at and log.completed_at:
+                duration_ms = int(
+                    (log.completed_at - log.started_at).total_seconds() * 1000
+                )
+            if log.error_message:
+                node_logs.append(f"> Error: {log.error_message}")
+            worker_session = worker_sessions.get(log.id)
+            if worker_session and worker_session.thought_trace:
+                node_logs.extend(self._format_trace_to_logs(worker_session.thought_trace))
+
+        return {
+            "plan_id": str(plan_id),
+            "node_id": node_id,
+            "node": target_node,
+            "execution": {
+                "status": execution_status,
+                "created_at": log.created_at if log else None,
+                "started_at": log.started_at if log else None,
+                "completed_at": log.completed_at if log else None,
+                "duration_ms": duration_ms,
+                "input_snapshot": log.input_snapshot if log else None,
+                "output_data": log.output_data if log else None,
+                "raw_response": log.raw_response if log else None,
+                "error_message": log.error_message if log else None,
+                "worker_snapshot": log.worker_snapshot if log else None,
+                "logs": node_logs,
             },
         }
 
@@ -1112,6 +1324,101 @@ class SpecAgentService:
             "checkpoint": checkpoint,
         }
 
+    async def rerun_plan_node(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        repo = SpecAgentRepository(session)
+        plan = await repo.get_plan(plan_id)
+        if not plan or plan.user_id != user_id:
+            raise ValueError("plan_not_found")
+
+        manifest = SpecManifest(**plan.manifest_data)
+        node_map = {node.id: node for node in manifest.nodes}
+        if node_id not in node_map:
+            raise ValueError("node_not_found")
+
+        target_node = node_map[node_id]
+        if getattr(target_node, "type", None) == "action" and getattr(
+            target_node, "pending_instruction", None
+        ):
+            target_node.instruction = target_node.pending_instruction
+            target_node.pending_instruction = None
+
+        dependents: dict[str, list[str]] = {n.id: [] for n in manifest.nodes}
+        for n in manifest.nodes:
+            for dep in n.needs:
+                if dep in dependents:
+                    dependents[dep].append(n.id)
+
+        queue = [node_id]
+        visited: set[str] = set()
+        while queue:
+            current = queue.pop(0)
+            if current in visited:
+                continue
+            visited.add(current)
+            for child in dependents.get(current, []):
+                queue.append(child)
+
+        queued_nodes = sorted(visited)
+
+        for queued_id in queued_nodes:
+            await repo.mark_node_pending(
+                plan_id=plan_id,
+                node_id=queued_id,
+                reason="manual_rerun",
+            )
+
+        context = dict(plan.current_context or {})
+        for queued_id in queued_nodes:
+            node = node_map.get(queued_id)
+            output_key = getattr(node, "output_as", None)
+            if output_key and output_key in context:
+                context.pop(output_key, None)
+        await repo.update_plan_context(plan_id, context)
+        await repo.update_plan_manifest(plan_id, manifest.model_dump())
+        await repo.update_plan_status(plan_id, "RUNNING")
+        await session.commit()
+
+        return {"plan_id": str(plan_id), "node_id": node_id, "queued_nodes": queued_nodes}
+
+    async def append_plan_node_event(
+        self,
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        node_id: str,
+        event: str,
+        source: str,
+    ) -> Dict[str, Any]:
+        repo = SpecAgentRepository(session)
+        plan = await repo.get_plan(plan_id)
+        if not plan or plan.user_id != user_id:
+            raise ValueError("plan_not_found")
+
+        manifest = SpecManifest(**plan.manifest_data)
+        if not any(node.id == node_id for node in manifest.nodes):
+            raise ValueError("node_not_found")
+
+        content = f"node_event:{event}"
+        if not plan.conversation_session_id:
+            return {"status": "skip"}
+
+        await self._append_spec_agent_event(
+            session,
+            session_id=plan.conversation_session_id,
+            user_id=user_id,
+            node_id=node_id,
+            event=event,
+            content=content,
+            source=source,
+        )
+        return {"status": "ok"}
+
     async def execute_plan(
         self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
     ) -> SpecExecutor:
@@ -1141,6 +1448,8 @@ class SpecAgentService:
             mcp_tools_map=mcp_map,
             available_tool_defs=available_tools,
             local_tool_handlers=local_handlers,
+            conversation_session_id=plan.conversation_session_id,
+            conversation_append=self._append_spec_agent_event,
         )
 
         if plan.current_context:

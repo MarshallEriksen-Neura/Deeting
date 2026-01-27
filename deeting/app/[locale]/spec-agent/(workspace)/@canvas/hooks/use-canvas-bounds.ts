@@ -26,7 +26,7 @@ export const useCanvasBounds = (
     )
   }, [nodes])
 
-  const canvasPadding = 240
+  const canvasPadding = 360
   const canvasWidth = Math.max(bounds.maxX + canvasPadding, viewport.width || 1200)
   const canvasHeight = Math.max(
     bounds.maxY + canvasPadding,

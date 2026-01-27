@@ -22,6 +22,7 @@ export const SpecActionNodeSchema = SpecNodeBaseSchema.extend({
   output_as: z.string().nullable().optional(),
   check_in: z.boolean().optional().default(false),
   model_override: z.string().nullable().optional(),
+  pending_instruction: z.string().nullable().optional(),
 })
 
 export const SpecLogicRuleSchema = z.object({
@@ -135,12 +136,51 @@ export const SpecPlanInteractResponseSchema = z.object({
 
 export const SpecPlanNodeUpdateRequestSchema = z.object({
   model_override: z.string().nullable().optional(),
+  instruction: z.string().nullable().optional(),
 })
 
 export const SpecPlanNodeUpdateResponseSchema = z.object({
   plan_id: z.string(),
   node_id: z.string(),
   model_override: z.string().nullable().optional(),
+  instruction: z.string().nullable().optional(),
+  pending_instruction: z.string().nullable().optional(),
+})
+
+export const SpecNodeExecutionDetailSchema = z.object({
+  status: z.enum(["pending", "active", "completed", "error", "waiting"]),
+  created_at: z.string().nullable().optional(),
+  started_at: z.string().nullable().optional(),
+  completed_at: z.string().nullable().optional(),
+  duration_ms: z.number().int().nullable().optional(),
+  input_snapshot: z.record(z.any()).nullable().optional(),
+  output_data: z.record(z.any()).nullable().optional(),
+  raw_response: z.any().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  worker_snapshot: z.record(z.any()).nullable().optional(),
+  logs: z.array(z.string()).default([]),
+})
+
+export const SpecPlanNodeDetailSchema = z.object({
+  plan_id: z.string(),
+  node_id: z.string(),
+  node: SpecNodeSchema,
+  execution: SpecNodeExecutionDetailSchema,
+})
+
+export const SpecPlanNodeRerunResponseSchema = z.object({
+  plan_id: z.string(),
+  node_id: z.string(),
+  queued_nodes: z.array(z.string()).default([]),
+})
+
+export const SpecPlanNodeEventRequestSchema = z.object({
+  event: z.string(),
+  source: z.string(),
+})
+
+export const SpecPlanNodeEventResponseSchema = z.object({
+  status: z.string(),
 })
 
 // Types
@@ -164,6 +204,11 @@ export type SpecPlanInteractRequest = z.infer<typeof SpecPlanInteractRequestSche
 export type SpecPlanInteractResponse = z.infer<typeof SpecPlanInteractResponseSchema>
 export type SpecPlanNodeUpdateRequest = z.infer<typeof SpecPlanNodeUpdateRequestSchema>
 export type SpecPlanNodeUpdateResponse = z.infer<typeof SpecPlanNodeUpdateResponseSchema>
+export type SpecNodeExecutionDetail = z.infer<typeof SpecNodeExecutionDetailSchema>
+export type SpecPlanNodeDetail = z.infer<typeof SpecPlanNodeDetailSchema>
+export type SpecPlanNodeRerunResponse = z.infer<typeof SpecPlanNodeRerunResponseSchema>
+export type SpecPlanNodeEventRequest = z.infer<typeof SpecPlanNodeEventRequestSchema>
+export type SpecPlanNodeEventResponse = z.infer<typeof SpecPlanNodeEventResponseSchema>
 
 export type SpecDraftSseEvent =
   | { event: "drafting"; data: { status?: string } }
@@ -312,4 +357,39 @@ export async function updateSpecPlanNode(
     data: payload,
   })
   return SpecPlanNodeUpdateResponseSchema.parse(data)
+}
+
+export async function fetchSpecPlanNodeDetail(
+  planId: string,
+  nodeId: string
+): Promise<SpecPlanNodeDetail> {
+  const data = await request<SpecPlanNodeDetail>({
+    url: `${SPEC_AGENT_BASE}/plans/${planId}/nodes/${nodeId}`,
+    method: "GET",
+  })
+  return SpecPlanNodeDetailSchema.parse(data)
+}
+
+export async function rerunSpecPlanNode(
+  planId: string,
+  nodeId: string
+): Promise<SpecPlanNodeRerunResponse> {
+  const data = await request<SpecPlanNodeRerunResponse>({
+    url: `${SPEC_AGENT_BASE}/plans/${planId}/nodes/${nodeId}/rerun`,
+    method: "POST",
+  })
+  return SpecPlanNodeRerunResponseSchema.parse(data)
+}
+
+export async function appendSpecPlanNodeEvent(
+  planId: string,
+  nodeId: string,
+  payload: SpecPlanNodeEventRequest
+): Promise<SpecPlanNodeEventResponse> {
+  const data = await request<SpecPlanNodeEventResponse>({
+    url: `${SPEC_AGENT_BASE}/plans/${planId}/nodes/${nodeId}/events`,
+    method: "POST",
+    data: payload,
+  })
+  return SpecPlanNodeEventResponseSchema.parse(data)
 }

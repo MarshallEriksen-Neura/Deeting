@@ -13,7 +13,7 @@ import logging
 import uuid
 from typing import TYPE_CHECKING
 
-from app.services.memory.external_memory import extract_user_message, persist_external_memory
+from app.services.memory import external_memory
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
@@ -46,7 +46,7 @@ class MemoryWriteStep(BaseStep):
         except (ValueError, TypeError):
             return StepResult(status=StepStatus.SUCCESS, message="invalid_user")
 
-        text = extract_user_message(ctx.get("validation", "request"))
+        text = external_memory.extract_user_message(ctx.get("validation", "request"))
         if not text:
             return StepResult(status=StepStatus.SUCCESS, message="no_text")
 
@@ -56,7 +56,7 @@ class MemoryWriteStep(BaseStep):
             return StepResult(status=StepStatus.SUCCESS, message="no_loop")
 
         task = loop.create_task(
-            persist_external_memory(
+            external_memory.persist_external_memory(
                 user_id=user_uuid,
                 text=text,
                 db_session=ctx.db_session,

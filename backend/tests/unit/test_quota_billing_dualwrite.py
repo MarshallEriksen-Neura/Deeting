@@ -76,6 +76,78 @@ class DummyRedis:
     async def unlink(self, *keys):
         return await self.delete(*keys)
 
+    async def evalsha(self, sha, *keys_and_args, keys=None, args=None):
+        if keys is None and args is None:
+            if not keys_and_args:
+                return None
+            numkeys = keys_and_args[0]
+            if not isinstance(numkeys, int):
+                return None
+            keys = list(keys_and_args[1:1 + numkeys])
+            args = list(keys_and_args[1 + numkeys:])
+        if not keys or not args:
+            return None
+        key = keys[0]
+        bucket = self.hash_store.get(key)
+        if not bucket or len(args) < 6:
+            return None
+
+        # quota_deduct.lua 模拟
+        def _get_num(field, default=0.0):
+            field_key = field.decode() if isinstance(field, (bytes, bytearray)) else str(field)
+            raw = bucket.get(field_key)
+            if raw is None:
+                return default
+            try:
+                return float(raw)
+            except Exception:
+                return default
+
+        balance = _get_num("balance", 0.0)
+        credit_limit = _get_num("credit_limit", 0.0)
+        daily_quota = int(_get_num("daily_quota", 0))
+        daily_used = int(_get_num("daily_used", 0))
+        daily_date = str(bucket.get("daily_date") or "")
+        monthly_quota = int(_get_num("monthly_quota", 0))
+        monthly_used = int(_get_num("monthly_used", 0))
+        monthly_month = str(bucket.get("monthly_month") or "")
+        version = int(_get_num("version", 0))
+
+        amount = float(args[0])
+        daily_requests = int(args[1])
+        monthly_requests = int(args[2])
+        today = str(args[3])
+        month = str(args[4])
+        allow_negative = int(args[5])
+
+        effective_balance = balance + credit_limit
+        if allow_negative == 0 and effective_balance < amount:
+            return [0, "INSUFFICIENT_BALANCE", balance, credit_limit, amount]
+
+        if daily_date != today:
+            daily_used = 0
+            daily_date = today
+        new_daily_used = daily_used + daily_requests
+        if daily_quota > 0 and new_daily_used > daily_quota:
+            return [0, "DAILY_QUOTA_EXCEEDED", daily_quota, daily_used]
+
+        if monthly_month != month:
+            monthly_used = 0
+            monthly_month = month
+        new_monthly_used = monthly_used + monthly_requests
+        if monthly_quota > 0 and new_monthly_used > monthly_quota:
+            return [0, "MONTHLY_QUOTA_EXCEEDED", monthly_quota, monthly_used]
+
+        new_balance = balance - amount
+        bucket["balance"] = str(new_balance)
+        bucket["daily_used"] = str(new_daily_used)
+        bucket["daily_date"] = daily_date
+        bucket["monthly_used"] = str(new_monthly_used)
+        bucket["monthly_month"] = monthly_month
+        bucket["version"] = str(version + 1)
+
+        return [1, "OK", new_balance, new_daily_used, new_monthly_used, version + 1]
+
 
 @pytest.fixture(scope="module")
 def event_loop():

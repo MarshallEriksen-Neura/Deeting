@@ -16,22 +16,22 @@ export const useStageLanes = (nodes: SpecUiNode[], t: (key: string) => string) =
       {
         key: 'search',
         label: t('canvas.stage.search'),
-        tone: 'bg-blue-500/5 border-blue-500/20 text-blue-500/70',
+        tone: 'bg-muted/40 text-muted-foreground',
       },
       {
         key: 'process',
         label: t('canvas.stage.process'),
-        tone: 'bg-violet-500/5 border-violet-500/20 text-violet-500/70',
+        tone: 'bg-muted/40 text-muted-foreground',
       },
       {
         key: 'summary',
         label: t('canvas.stage.summary'),
-        tone: 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500/70',
+        tone: 'bg-muted/40 text-muted-foreground',
       },
       {
         key: 'action',
         label: t('canvas.stage.action'),
-        tone: 'bg-amber-500/5 border-amber-500/20 text-amber-500/70',
+        tone: 'bg-muted/40 text-muted-foreground',
       },
     ]
 

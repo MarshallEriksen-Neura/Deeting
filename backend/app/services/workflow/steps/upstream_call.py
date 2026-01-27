@@ -1252,6 +1252,13 @@ class UpstreamCallStep(BaseStep):
         cred_part = secret_ref or "default"
         return f"{host}:{cred_part}"
 
+    def _normalize_cb_key(self, cb_key: str) -> str:
+        if "://" in cb_key:
+            host = urlparse(cb_key).hostname
+            if host:
+                return host
+        return cb_key
+
     async def _is_circuit_open(self, cb_key: str) -> bool:
         state = await self._get_cb_state(cb_key)
         if state["state"] != "open":
@@ -1288,36 +1295,57 @@ class UpstreamCallStep(BaseStep):
         """从 Redis 读取熔断状态，失败时使用进程内兜底"""
         redis_client = getattr(cache, "_redis", None)
         default = {"failures": 0, "state": "closed", "opened_at": 0, "success_count": 0}
+        normalized_key = self._normalize_cb_key(cb_key)
 
         if not redis_client:
-            return self._cb_state.setdefault(cb_key, default.copy())
+            return self._cb_state.setdefault(normalized_key, default.copy())
 
-        key = f"{settings.CACHE_PREFIX}{CacheKeys.circuit_breaker(cb_key)}"
+        key = f"{settings.CACHE_PREFIX}{CacheKeys.circuit_breaker(normalized_key)}"
         try:
             data = await redis_client.hgetall(key)
             if not data:
                 return default.copy()
+            def _pick(field: bytes, fallback: str, default_val: Any) -> Any:
+                if field in data:
+                    return data.get(field)
+                if fallback in data:
+                    return data.get(fallback)
+                return default_val
+
+            def _to_str(value: Any, default_val: str) -> str:
+                if value is None:
+                    return default_val
+                if isinstance(value, (bytes, bytearray)):
+                    return value.decode()
+                return str(value)
+
+            failures_raw = _pick(b"failures", "failures", "0")
+            state_raw = _pick(b"state", "state", "closed")
+            opened_at_raw = _pick(b"opened_at", "opened_at", "0")
+            success_raw = _pick(b"success_count", "success_count", "0")
+
             state = {
-                "failures": int(data.get(b"failures", b"0")),
-                "state": data.get(b"state", b"closed").decode(),
-                "opened_at": float(data.get(b"opened_at", b"0")),
-                "success_count": int(data.get(b"success_count", b"0")),
+                "failures": int(_to_str(failures_raw, "0")),
+                "state": _to_str(state_raw, "closed"),
+                "opened_at": float(_to_str(opened_at_raw, "0")),
+                "success_count": int(_to_str(success_raw, "0")),
             }
             return state
         except Exception as exc:
             logger.warning(f"read circuit state failed key={cb_key}: {exc}")
-            return self._cb_state.setdefault(cb_key, default.copy())
+            return self._cb_state.setdefault(normalized_key, default.copy())
 
     async def _set_cb_state(self, cb_key: str, state: dict[str, Any]) -> None:
         """写入熔断状态到 Redis，失败时写入进程内兜底"""
         redis_client = getattr(cache, "_redis", None)
         ttl = settings.CIRCUIT_BREAKER_RESET_SECONDS * 2
+        normalized_key = self._normalize_cb_key(cb_key)
 
         if not redis_client:
-            self._cb_state[cb_key] = state
+            self._cb_state[normalized_key] = state
             return
 
-        key = f"{settings.CACHE_PREFIX}{CacheKeys.circuit_breaker(cb_key)}"
+        key = f"{settings.CACHE_PREFIX}{CacheKeys.circuit_breaker(normalized_key)}"
         try:
             await redis_client.hset(
                 key,
@@ -1331,4 +1359,4 @@ class UpstreamCallStep(BaseStep):
             await redis_client.expire(key, ttl)
         except Exception as exc:
             logger.warning(f"write circuit state failed key={cb_key}: {exc}")
-            self._cb_state[cb_key] = state
+            self._cb_state[normalized_key] = state

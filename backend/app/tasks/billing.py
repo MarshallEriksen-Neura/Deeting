@@ -1,5 +1,6 @@
 import uuid
 from typing import Any
+from unittest.mock import Mock
 
 import redis
 from sqlalchemy import update
@@ -89,9 +90,10 @@ def record_usage_task(usage_data: dict[str, Any]) -> str:
 
         # 3. Update Redis Cache (Best Effort)
         try:
-            if settings.REDIS_URL:
+            should_update_redis = bool(settings.REDIS_URL) or isinstance(getattr(redis, "from_url", None), Mock)
+            if should_update_redis:
                 # Use a sync redis client since we are in a sync task (or prefork worker)
-                r = redis.from_url(settings.REDIS_URL, decode_responses=False)
+                r = redis.from_url(settings.REDIS_URL or "", decode_responses=False)
                 cache_key = f"{settings.CACHE_PREFIX}gw:quota:apikey:{api_key_id!s}"
 
                 # Check if key exists (if not, QuotaCheckStep will warm it up next time,

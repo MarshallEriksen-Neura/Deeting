@@ -178,6 +178,23 @@ class SpecAgentRepository:
         await self.session.refresh(log)
         return log
 
+    async def mark_node_pending(
+        self,
+        plan_id: uuid.UUID,
+        node_id: str,
+        reason: Optional[str] = None,
+    ) -> SpecExecutionLog:
+        log = SpecExecutionLog(
+            plan_id=plan_id,
+            node_id=node_id,
+            status="PENDING",
+            input_snapshot={"reason": reason} if reason else None,
+        )
+        self.session.add(log)
+        await self.session.flush()
+        await self.session.refresh(log)
+        return log
+
     # ==========================================
     # Worker Session (CoT Trace)
     # ==========================================

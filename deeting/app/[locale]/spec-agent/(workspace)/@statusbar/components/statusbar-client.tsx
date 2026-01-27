@@ -41,8 +41,9 @@ function StatusbarClient() {
         modelVisual={state.modelVisual}
         onModelChange={state.handleModelChange}
         showLaunch={state.showLaunch}
+        launching={state.launching}
         running={state.running}
-        start={state.start}
+        start={state.handleStart}
         startLoading={state.startState.isMutating}
       />
     </div>

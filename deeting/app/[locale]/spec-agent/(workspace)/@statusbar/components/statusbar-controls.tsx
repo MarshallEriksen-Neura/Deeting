@@ -27,6 +27,7 @@ export const StatusControls = memo(function StatusControls({
   modelVisual,
   onModelChange,
   showLaunch,
+  launching,
   running,
   start,
   startLoading,
@@ -41,6 +42,7 @@ export const StatusControls = memo(function StatusControls({
   modelVisual: ModelVisual
   onModelChange: (modelId: string) => void
   showLaunch: boolean
+  launching: boolean
   running: boolean
   start: () => Promise<unknown>
   startLoading: boolean
@@ -108,10 +110,10 @@ export const StatusControls = memo(function StatusControls({
           size="sm"
           variant="default"
           onClick={() => void start()}
-          disabled={startLoading}
+          disabled={startLoading || launching}
         >
           <Play className="w-3 h-3" />
-          {t('statusbar.launch')}
+          {launching ? t('statusbar.running') : t('statusbar.launch')}
         </Button>
       ) : (
         <Button size="sm" variant="secondary" disabled>

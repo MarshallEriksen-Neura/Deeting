@@ -23,6 +23,7 @@ from app.api.v1.internal import bridge_router as internal_bridge_router
 from app.api.v1.internal import gateway_router as internal_gateway_router
 from app.api.v1.internal import conversation_router as internal_conversation_router
 from app.api.v1.internal import image_generation_router as internal_image_generation_router
+from app.api.v1.internal import video_generation_router as internal_video_generation_router
 from app.api.v1.public import image_generation_share_router as public_image_share_router
 from app.api.v1.media_routes import router as media_router
 from app.api.v1.users_route import router as users_router
@@ -59,6 +60,7 @@ __all__ = [
     "internal_gateway_router",
     "internal_conversation_router",
     "internal_image_generation_router",
+    "internal_video_generation_router",
     "public_image_share_router",
     "media_router",
     "users_router",

@@ -6,6 +6,7 @@
 - 用内存 Redis 替身挂载到 CacheService
 - 通过登录接口获取真实 JWT 作为测试 token
 """
+import json
 import os
 import asyncio
 import sys
@@ -112,6 +113,93 @@ class DummyRedis:
         sha = f"sha:{len(self.scripts)+1}"
         self.scripts[sha] = script
         return sha
+
+    def register_script(self, script: str):
+        async def _runner(*, keys=None, args=None, **_kwargs):
+            keys = list(keys or [])
+            args = list(args or [])
+            if self._is_conversation_append_script(script):
+                return await self._run_conversation_append_script(keys, args)
+            return None
+
+        return _runner
+
+    @staticmethod
+    def _is_conversation_append_script(script: str) -> bool:
+        return "RPUSH" in script and "HINCRBY" in script and "LTRIM" in script
+
+    async def _run_conversation_append_script(self, keys: list[str], args: list):
+        if len(keys) < 2 or len(args) < 9:
+            return None
+
+        msgs_key, meta_key = keys[0], keys[1]
+
+        def _decode_text(val):
+            if isinstance(val, (bytes, bytearray)):
+                return val.decode()
+            if val is None:
+                return ""
+            return str(val)
+
+        def _decode_int(val, default=0):
+            try:
+                if isinstance(val, (bytes, bytearray)):
+                    val = val.decode()
+                return int(float(val))
+            except Exception:
+                return default
+
+        role = _decode_text(args[0])
+        content = _decode_text(args[1])
+        token_est = _decode_int(args[2], 0)
+        is_truncated = _decode_int(args[3], 0)
+        name_raw = _decode_text(args[4])
+        meta_info_raw = args[5]
+        max_turns = _decode_int(args[6], 0)
+        max_turns_over = _decode_int(args[7], 0)
+        flush_tokens = _decode_int(args[8], 0)
+
+        bucket = self.hash_store.setdefault(meta_key, {})
+        last_turn = _decode_int(bucket.get(b"last_turn"), 0) + 1
+        total_tokens = _decode_int(bucket.get(b"total_tokens"), 0) + token_est
+        bucket[b"last_turn"] = str(last_turn)
+        bucket[b"total_tokens"] = str(total_tokens)
+
+        meta_info = None
+        if meta_info_raw not in (None, ""):
+            raw_text = meta_info_raw
+            if isinstance(raw_text, (bytes, bytearray)):
+                raw_text = raw_text.decode()
+            try:
+                meta_info = json.loads(raw_text)
+            except Exception:
+                meta_info = raw_text
+
+        msg = {
+            "role": role,
+            "content": content,
+            "token_estimate": token_est,
+            "is_truncated": bool(is_truncated),
+            "name": name_raw or None,
+            "meta_info": meta_info,
+            "turn_index": last_turn,
+        }
+        msg_payload = json.dumps(msg, ensure_ascii=False).encode()
+
+        lst = self.store.setdefault(msgs_key, [])
+        if not isinstance(lst, list):
+            lst = []
+        lst.append(msg_payload)
+
+        length = len(lst)
+        if max_turns_over and length > max_turns_over:
+            trim_start = max(length - max_turns, 0)
+            lst = lst[trim_start:]
+            self.store[msgs_key] = lst
+            length = len(lst)
+
+        should_flush = 1 if flush_tokens and total_tokens >= flush_tokens else 0
+        return [total_tokens, length, should_flush, last_turn]
 
     async def evalsha(self, sha, *keys_and_args, keys=None, args=None):
         if keys is None and args is None:

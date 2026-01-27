@@ -22,6 +22,7 @@ export const useStatusbarState = () => {
   })
   const [pickerOpen, setPickerOpen] = useState(false)
   const [restorePlanId, setRestorePlanId] = useState<string | null>(null)
+  const [launching, setLaunching] = useState(false)
   const queryPlanId = useMemo(
     () => searchParams?.get('plan')?.trim() || null,
     [searchParams]
@@ -116,6 +117,25 @@ export const useStatusbarState = () => {
     drafting.status === 'ready' &&
     (!execution || execution.status === 'drafting')
 
+  useEffect(() => {
+    if (!execution) return
+    if (execution.status === 'running' || execution.status === 'waiting') {
+      setLaunching(false)
+    }
+    if (execution.status === 'error') {
+      setLaunching(false)
+    }
+  }, [execution])
+
+  const handleStart = useCallback(async () => {
+    setLaunching(true)
+    try {
+      await start()
+    } catch {
+      setLaunching(false)
+    }
+  }, [start])
+
   return {
     planId,
     projectName,
@@ -123,6 +143,7 @@ export const useStatusbarState = () => {
     stats,
     running,
     showLaunch,
+    launching,
     pickerOpen,
     setPickerOpen,
     isLoadingModels,
@@ -131,7 +152,7 @@ export const useStatusbarState = () => {
     selectedModel,
     modelVisual,
     handleModelChange,
-    start,
+    handleStart,
     startState,
   }
 }

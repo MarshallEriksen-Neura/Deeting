@@ -89,7 +89,7 @@ async def _seed_user_internal_provider(session, user_id: uuid.UUID) -> ProviderM
     model = ProviderModel(
         id=uuid.uuid4(),
         instance_id=instance.id,
-        capability="chat",
+        capabilities=["chat"],
         model_id="gpt-4-user",
         unified_model_id=None,
         display_name="GPT-4 User",
@@ -140,7 +140,7 @@ async def test_internal_models_filter_by_capability(client, auth_tokens, AsyncSe
         image_model = ProviderModel(
             id=uuid.uuid4(),
             instance_id=base_model.instance_id,
-            capability="image_generation",
+            capabilities=["image_generation"],
             model_id="sdxl-user",
             unified_model_id=None,
             display_name="SDXL User",

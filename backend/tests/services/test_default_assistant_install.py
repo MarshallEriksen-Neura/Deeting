@@ -33,8 +33,13 @@ async def ensure_tables():
 
 
 async def _seed_default_assistant(session):
+    assistant_repo = AssistantRepository(session)
+    existing = await assistant_repo.get_by_share_slug(DEFAULT_ASSISTANT_SLUG)
+    if existing:
+        return existing
+
     assistant_service = AssistantService(
-        AssistantRepository(session),
+        assistant_repo,
         AssistantVersionRepository(session),
     )
     return await assistant_service.create_assistant(

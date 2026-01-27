@@ -92,7 +92,7 @@ async def test_topic_naming_updates_title(monkeypatch):
 
         model = ProviderModel(
             instance_id=instance.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4o-mini",
             upstream_path="/chat/completions",
         )

@@ -63,39 +63,76 @@ class RateLimitStep(BaseStep):
         
         # 0. 白名单检查
         if ctx.get("signature_verify", "is_whitelist"):
-            return StepResult(status=StepStatus.SUCCESS, data={"skipped": True})
+            rpm_remaining = (
+                settings.RATE_LIMIT_EXTERNAL_RPM
+                if ctx.is_external
+                else settings.RATE_LIMIT_INTERNAL_RPM
+            )
+            tpm_remaining = (
+                settings.RATE_LIMIT_EXTERNAL_TPM
+                if ctx.is_external
+                else settings.RATE_LIMIT_INTERNAL_TPM
+            )
+            rpm_remaining = int(rpm_remaining or 1)
+            tpm_remaining = int(tpm_remaining or 1)
+            ctx.set("rate_limit", "rpm_remaining", rpm_remaining)
+            ctx.set("rate_limit", "tpm_remaining", tpm_remaining)
+            return StepResult(
+                status=StepStatus.SUCCESS,
+                data={
+                    "skipped": True,
+                    "rpm_remaining": rpm_remaining,
+                    "tpm_remaining": tpm_remaining,
+                },
+            )
 
         try:
             # 1. 准备多级限流配置
+            limit_config = ctx.get("routing", "limit_config") or {}
             specs = self._build_rate_limit_specs(ctx)
-            
-            if not specs:
-                # 无限流配置，直接放行
+            tpm_spec = self._select_strict_tpm_spec(specs, limit_config, ctx)
+
+            if not specs and not tpm_spec:
+                # 无任何限流配置，直接放行
                 return StepResult(status=StepStatus.SUCCESS, data={})
 
             # 2. 执行原子检查 (RPM)
-            rate_info = await self._check_multi_level_rpm(specs)
+            rate_info: dict[str, Any] = {}
+            if specs:
+                rate_info = await self._check_multi_level_rpm(specs)
 
             # 3. TPM 检查 (暂未合并到多级 Lua，仍单独检查 API Key 层级)
             # 理由：TPM 通常只配在 API Key 或 Tenant 上，不需要像 RPM 那样复杂的层级组合
             # 且 TPM 消耗需要计算 cost，逻辑不同。
             # 这里选取最严格的一个 TPM 配置执行。
-            tpm_spec = self._select_strict_tpm_spec(specs)
+            tpm_remaining: float | None = None
             if tpm_spec:
-                 await self._check_tpm(tpm_spec)
+                tpm_remaining = await self._check_tpm(tpm_spec)
 
             # 写入上下文
-            ctx.set("rate_limit", "rpm_remaining", rate_info.get("remaining"))
-            ctx.set("rate_limit", "reset_after", rate_info.get("reset"))
+            if rate_info:
+                ctx.set("rate_limit", "rpm_remaining", rate_info.get("remaining"))
+                ctx.set("rate_limit", "reset_after", rate_info.get("reset"))
+            if tpm_remaining is not None:
+                ctx.set("rate_limit", "tpm_remaining", tpm_remaining)
 
             logger.debug(
                 f"Rate limit passed trace_id={ctx.trace_id} "
                 f"remaining={rate_info.get('remaining')}"
             )
 
+            result_data: dict[str, Any] = {}
+            if rate_info:
+                result_data["remaining"] = rate_info.get("remaining")
+                result_data["reset"] = rate_info.get("reset")
+                result_data["rpm_remaining"] = rate_info.get("remaining")
+                result_data["rpm_reset"] = rate_info.get("reset")
+            if tpm_remaining is not None:
+                result_data["tpm_remaining"] = tpm_remaining
+
             return StepResult(
                 status=StepStatus.SUCCESS,
-                data=rate_info,
+                data=result_data,
             )
 
         except RateLimitExceededError as e:
@@ -103,9 +140,10 @@ class RateLimitStep(BaseStep):
             ctx.mark_error(
                 ErrorSource.GATEWAY,
                 f"RATE_LIMIT_{e.limit_type.upper()}",
-                str(e),
+                "Too Many Requests",
             )
             ctx.set("rate_limit", "retry_after", e.retry_after)
+            ctx.set("rate_limit", "detail", str(e))
             return StepResult(
                 status=StepStatus.FAILED,
                 message=str(e),
@@ -125,12 +163,18 @@ class RateLimitStep(BaseStep):
         specs = []
         limit_config = ctx.get("routing", "limit_config") or {}
         default_window = int(limit_config.get("window") or settings.RATE_LIMIT_WINDOW_SECONDS)
+        base_rpm = limit_config.get("rpm")
+        base_tpm = limit_config.get("tpm")
 
         # 1. API Key 级 (最细粒度)
         if ctx.api_key_id:
             ak_rpm = ctx.get("signature_verify", "rate_limit_rpm")
             ak_tpm = ctx.get("signature_verify", "rate_limit_tpm")
-            
+            if ak_rpm is None:
+                ak_rpm = base_rpm
+            if ak_tpm is None:
+                ak_tpm = base_tpm
+
             # 只有当显式配置了 API Key 限制时才生效
             if ak_rpm:
                 specs.append({
@@ -153,7 +197,7 @@ class RateLimitStep(BaseStep):
         if ctx.client_ip:
             # 假设默认 IP 限制
             ip_rpm = settings.RATE_LIMIT_IP_DEFAULT_RPM  # 需在 settings 增加此配置，暂定 600
-            if ip_rpm > 0:
+            if ip_rpm is not None and ip_rpm > 0:
                 specs.append({
                     "key": CacheKeys.rate_limit_rpm(f"ip:{ctx.client_ip}", "chat"),
                     "rpm": ip_rpm,
@@ -177,18 +221,41 @@ class RateLimitStep(BaseStep):
 
         return specs
 
-    def _select_strict_tpm_spec(self, specs: list[dict]) -> dict | None:
-        """从多级配置中选出有 TPM 配置且最严格的一个（通常只有 API Key 级有 TPM）"""
+    def _select_strict_tpm_spec(self, specs: list[dict], limit_config: dict, ctx: "WorkflowContext") -> dict | None:
+        """从多级配置中选出有 TPM 配置且最严格的一个（支持 limit_config 兜底）"""
         target = None
-        min_tpm = float('inf')
-        
+        min_tpm = float("inf")
+
         for spec in specs:
             t = spec.get("tpm")
             if t is not None and t < min_tpm:
                 min_tpm = t
                 target = spec
-        
-        return target
+
+        if target:
+            return target
+
+        tpm = limit_config.get("tpm")
+        if tpm is None:
+            return None
+
+        if ctx.api_key_id:
+            subject = f"ak:{ctx.api_key_id}"
+            scope = "apikey"
+        elif ctx.tenant_id:
+            subject = f"tenant:{ctx.tenant_id}"
+            scope = "tenant"
+        else:
+            subject = "global"
+            scope = "global"
+
+        default_window = int(limit_config.get("window") or settings.RATE_LIMIT_WINDOW_SECONDS)
+        return {
+            "tpm": tpm,
+            "tpm_key": CacheKeys.rate_limit_tpm(subject, "chat"),
+            "window": default_window,
+            "scope": scope,
+        }
 
     async def _check_multi_level_rpm(self, specs: list[dict[str, Any]]) -> dict:
         """调用 Lua 脚本执行原子多级 RPM 检查"""
@@ -238,11 +305,18 @@ class RateLimitStep(BaseStep):
             
             if res[0] == 0:
                 # 拒绝
-                rejected_idx = int(res[1]) - 1 # Lua index 1-based -> Py 0-based
-                rejected_spec = specs[rejected_idx] if 0 <= rejected_idx < len(specs) else specs[0]
-                limit = res[2]
-                retry_after = res[3]
-                raise RateLimitExceededError("rpm", limit, retry_after, scope=rejected_spec["scope"])
+                if len(res) >= 4:
+                    rejected_idx = int(res[1]) - 1  # Lua index 1-based -> Py 0-based
+                    rejected_spec = specs[rejected_idx] if 0 <= rejected_idx < len(specs) else specs[0]
+                    limit = res[2]
+                    retry_after = res[3]
+                    raise RateLimitExceededError("rpm", limit, retry_after, scope=rejected_spec["scope"])
+                if len(res) >= 3:
+                    rejected_spec = specs[0]
+                    limit = res[1]
+                    retry_after = res[2]
+                    raise RateLimitExceededError("rpm", limit, retry_after, scope=rejected_spec["scope"])
+                raise RateLimitExceededError("rpm", 0, 60, scope=specs[0]["scope"])
             
             # 通过
             return {
@@ -257,10 +331,11 @@ class RateLimitStep(BaseStep):
             # 发生未知 Redis 错误时，默认放行 (Fail-Open) 以保障可用性
             return {"remaining": -1, "reset": 0}
 
-    async def _check_tpm(self, spec: dict) -> None:
+    async def _check_tpm(self, spec: dict) -> float | None:
         """检查单级 TPM (Token Bucket)"""
         redis_client = getattr(cache, "_redis", None)
-        if not redis_client: return
+        if not redis_client:
+            return None
 
         tpm_limit = spec["tpm"]
         key = spec["tpm_key"]
@@ -288,7 +363,8 @@ class RateLimitStep(BaseStep):
                 )
                 # res: [allowed, tokens, retry_after]
                 if res[0] == 0:
-                     raise RateLimitExceededError("tpm", tpm_limit, int(res[2]), scope=spec["scope"])
+                    raise RateLimitExceededError("tpm", tpm_limit, int(res[2]), scope=spec["scope"])
+                return float(res[1])
             else:
                 # Python Fallback
                 bucket = await redis_client.hgetall(key)
@@ -303,15 +379,17 @@ class RateLimitStep(BaseStep):
                     await redis_client.hset(key, mapping={"tokens": tokens, "last_update": now_sec})
                     await redis_client.expire(key, window + 1)
                     raise RateLimitExceededError("tpm", tpm_limit, retry_after, scope=spec["scope"])
-                
+
                 tokens -= cost
                 await redis_client.hset(key, mapping={"tokens": tokens, "last_update": now_sec})
                 await redis_client.expire(key, window + 1)
+                return tokens
 
         except RateLimitExceededError:
             raise
         except Exception as e:
             logger.warning(f"TPM check failed: {e}")
+            return None
 
     async def _check_rpm_fallback_memory(self, spec: dict) -> dict:
         """内存降级 (仅支持单 Key)"""

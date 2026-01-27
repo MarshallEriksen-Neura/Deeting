@@ -3,4 +3,5 @@ export interface ConsoleMessage {
   type: 'user' | 'system' | 'agent'
   content: string
   timestamp: string
+  meta?: Record<string, unknown>
 }

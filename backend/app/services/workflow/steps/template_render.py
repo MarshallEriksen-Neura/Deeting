@@ -59,7 +59,7 @@ class TemplateRenderStep(BaseStep):
         tools = ctx.get("validation", "tools") or None
         default_params = ctx.get("routing", "default_params") or {}
         default_headers = ctx.get("routing", "default_headers") or {}
-        request_template = ctx.get("routing", "request_template") or {}
+        request_template = ctx.get("routing", "request_template")
 
         try:
             # 构建渲染上下文
@@ -77,6 +77,7 @@ class TemplateRenderStep(BaseStep):
             rendered_body = await self._render_body(
                 request_data=request_data,
                 default_params=default_params,
+                request_template=request_template,
                 engine=template_engine,
                 context=render_context,
                 tools=mcp_tools,
@@ -230,6 +231,7 @@ class TemplateRenderStep(BaseStep):
         self,
         request_data: dict,
         default_params: dict,
+        request_template: dict | str | None,
         engine: str,
         context: dict,
         tools: list | None = None,
@@ -239,17 +241,18 @@ class TemplateRenderStep(BaseStep):
 
         通常直接透传请求数据，但可根据配置进行转换
         """
-        # 使用专用的 request_renderer 处理复杂的厂商适配
-        item_config = context.get("item_config") # 需要确保 context 里有这个，或者从 ctx 获取
+        effective_template = self._merge_request_template(default_params, request_template)
+        if not effective_template:
+            raise TemplateRenderError("request_template_missing")
 
-        # 兜底方案：如果 context 里没有，我们手动构建一个简单的
-        if not item_config:
-            from dataclasses import dataclass
-            @dataclass
-            class MockConfig:
-                template_engine: str
-                request_template: dict
-            item_config = MockConfig(template_engine=engine, request_template=default_params)
+        from dataclasses import dataclass
+
+        @dataclass
+        class MockConfig:
+            template_engine: str
+            request_template: dict | str
+
+        item_config = MockConfig(template_engine=engine, request_template=effective_template)
 
         from app.services.providers.request_renderer import request_renderer
         rendered_body = request_renderer.render(
@@ -258,6 +261,25 @@ class TemplateRenderStep(BaseStep):
             tools=tools,
             extra_context=context
         )
+        return self._drop_none_fields(rendered_body)
+
+    @staticmethod
+    def _merge_request_template(default_params: dict, request_template: dict | str | None):
+        if isinstance(request_template, dict):
+            if not request_template and not default_params:
+                return {}
+            merged = dict(default_params or {})
+            merged.update(request_template or {})
+            return merged
+        if request_template:
+            return request_template
+        return default_params or {}
+
+    @staticmethod
+    def _drop_none_fields(payload: dict) -> dict:
+        if not isinstance(payload, dict):
+            return payload
+        return {k: v for k, v in payload.items() if v is not None}
 
         # 注入增强后的 assistant system_prompt (如果有)
         enhanced_prompt = context.get("enhanced_prompt")

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, ImagePlus, X, Square } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, ImagePlus, X, Square, Clapperboard } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useRef, useState, useCallback, memo } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -376,6 +376,16 @@ function ControlsContainer() {
                       </div>
                       <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
                         {t("controls.image")}
+                      </span>
+                    </div>
+                  </Link>
+                  <Link href="/video" scroll={false}>
+                    <div className="flex items-center gap-3 p-3 min-h-[44px] hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
+                      <div className="w-9 h-9 rounded-lg bg-red-500/10 dark:bg-red-500/20 flex items-center justify-center text-red-600 dark:text-red-400 group-hover:scale-110 transition-all">
+                        <Clapperboard className="w-5 h-5" />
+                      </div>
+                      <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
+                        {t("controls.video") || "Video"}
                       </span>
                     </div>
                   </Link>

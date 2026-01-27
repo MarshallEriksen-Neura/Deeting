@@ -1,7 +1,7 @@
 'use client'
 
 import { memo } from 'react'
-import { CheckCircle, Play, Clock, AlertTriangle, PauseCircle } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import { useI18n } from '@/hooks/use-i18n'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -14,6 +14,7 @@ interface Node {
   duration: string | null
   pulse: string | null
   modelOverride?: string | null
+  pendingInstruction?: string | null
   outputPreview?: string | null
   logs?: string[]
 }
@@ -23,39 +24,35 @@ interface NodeCardProps {
   isSelected: boolean
   isDimmed?: boolean
   isCritical?: boolean
+  isHighlighted?: boolean
   onClick: () => void
 }
 
 const statusConfig = {
   pending: {
-    icon: Clock,
-    color: 'text-muted-foreground',
-    bgColor: 'bg-muted',
-    borderColor: 'border-muted-foreground/20'
+    dot: 'bg-slate-300',
+    dotRing: 'ring-slate-200/60',
+    border: 'border-border/40',
   },
   active: {
-    icon: Play,
-    color: 'text-primary',
-    bgColor: 'bg-primary/10',
-    borderColor: 'border-primary'
+    dot: 'bg-primary shadow-[0_0_10px_rgba(37,99,235,0.55)]',
+    dotRing: 'ring-primary/40 animate-pulse',
+    border: 'border-primary/40',
   },
   waiting: {
-    icon: PauseCircle,
-    color: 'text-primary-soft',
-    bgColor: 'bg-primary-soft/10',
-    borderColor: 'border-primary-soft'
+    dot: 'bg-amber-400 shadow-[0_0_10px_rgba(251,146,60,0.55)]',
+    dotRing: 'ring-amber-300/50 animate-pulse',
+    border: 'border-amber-200/50',
   },
   completed: {
-    icon: CheckCircle,
-    color: 'text-teal-accent',
-    bgColor: 'bg-teal-accent/10',
-    borderColor: 'border-teal-accent'
+    dot: 'bg-emerald-400',
+    dotRing: 'ring-emerald-200/60',
+    border: 'border-emerald-200/40',
   },
   error: {
-    icon: AlertTriangle,
-    color: 'text-destructive',
-    bgColor: 'bg-destructive/10',
-    borderColor: 'border-destructive'
+    dot: 'bg-rose-400',
+    dotRing: 'ring-rose-200/60',
+    border: 'border-rose-200/40',
   }
 }
 
@@ -64,11 +61,11 @@ export const NodeCard = memo(function NodeCard({
   isSelected,
   isDimmed,
   isCritical,
+  isHighlighted,
   onClick,
 }: NodeCardProps) {
   const t = useI18n('spec-agent')
   const config = statusConfig[node.status]
-  const Icon = config.icon
   const previewLines = node.logs?.slice(0, 3) ?? []
   const hasPreview =
     Boolean(node.pulse) || Boolean(node.outputPreview) || previewLines.length > 0
@@ -77,7 +74,9 @@ export const NodeCard = memo(function NodeCard({
     <div
       className={`absolute cursor-pointer transition-all duration-200 ${
         isSelected ? 'scale-[1.04] z-10' : 'hover:scale-[1.02]'
-      } ${isDimmed ? 'opacity-20' : 'opacity-100'}`}
+      } ${isDimmed && !isHighlighted ? 'opacity-20' : 'opacity-100'} ${
+        isHighlighted ? 'z-20' : ''
+      }`}
       style={{
         left: node.position.x,
         top: node.position.y,
@@ -85,37 +84,53 @@ export const NodeCard = memo(function NodeCard({
       }}
       onClick={onClick}
     >
+      {node.status === 'active' && (
+        <div className="absolute inset-0 rounded-md spec-agent-soft-pulse opacity-60 pointer-events-none" />
+      )}
       <div
-        className={`relative px-3 py-2 rounded-md border bg-card shadow-sm ${
-          config.borderColor
-        } ${isSelected ? 'ring-2 ring-primary/40' : ''} ${
-          isCritical && !isSelected ? 'ring-1 ring-primary/20' : ''
+        className={`relative z-10 px-3 py-2 rounded-md border bg-background/80 shadow-sm backdrop-blur ${
+          config.border
+        } ${
+          isSelected
+            ? 'ring-2 ring-primary/50 shadow-[0_0_18px_rgba(59,130,246,0.35)]'
+            : ''
+        } ${isCritical && !isSelected ? 'ring-1 ring-primary/20' : ''} ${
+          isHighlighted
+            ? 'ring-2 ring-sky-400/60 shadow-[0_0_22px_rgba(56,189,248,0.55)] animate-pulse'
+            : ''
         }`}
       >
-        {/* 状态指示器 */}
-        <div className="absolute -top-2 -left-2">
+        {/* 状态指示灯 */}
+        <div className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2">
           <div
-            className={`w-5 h-5 rounded-full ${config.bgColor} border ${config.borderColor} flex items-center justify-center`}
-          >
-            <Icon className={`w-3 h-3 ${config.color}`} />
-          </div>
+            className={`h-3.5 w-3.5 rounded-full ${config.dot} ring-2 ${config.dotRing}`}
+          />
         </div>
 
         {/* 紧凑节点内容 */}
-        <div className="min-w-40">
+        <div className="min-w-44">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-foreground">
               {node.id}
             </span>
-            <span className="text-xs text-muted-foreground truncate">
+            <span className="text-xs text-muted-foreground/80 truncate">
               {node.title}
             </span>
           </div>
         </div>
 
+        {node.pendingInstruction && (
+          <div
+            className="absolute right-1 top-1 rounded-full bg-sky-500/10 p-1 text-sky-500/80"
+            title={t('canvas.node.pendingInstruction')}
+          >
+            <Settings2 className="h-3 w-3" />
+          </div>
+        )}
+
         {/* 活跃状态的光晕效果 */}
         {node.status === 'active' && (
-          <div className="absolute inset-0 rounded-md border border-primary animate-pulse opacity-40" />
+          <div className="absolute inset-0 rounded-md border border-primary/60 animate-pulse opacity-40" />
         )}
       </div>
     </div>

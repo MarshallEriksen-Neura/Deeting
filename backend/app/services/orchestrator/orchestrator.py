@@ -98,9 +98,37 @@ class GatewayOrchestrator:
                         f"Make sure it's registered."
                     )
 
+        self._align_template_render_dependencies(steps)
         self._align_response_transform_dependencies(steps)
 
         return OrchestrationEngine(steps)
+
+    @staticmethod
+    def _align_template_render_dependencies(steps: list[BaseStep]) -> None:
+        """
+        调整 template_render 的依赖，避免缺少可选步骤导致 DAG 校验失败。
+        """
+        step_names = {step.name for step in steps}
+        template_step = next(
+            (step for step in steps if step.name == "template_render"),
+            None,
+        )
+        if not template_step:
+            return
+
+        depends_on: list[str] = []
+        if "routing" in step_names:
+            depends_on.append("routing")
+        else:
+            logger.warning(
+                "template_render dependency unresolved, steps=%s",
+                sorted(step_names),
+            )
+
+        if "assistant_prompt_injection" in step_names:
+            depends_on.append("assistant_prompt_injection")
+
+        template_step.depends_on = depends_on
 
     @staticmethod
     def _align_response_transform_dependencies(steps: list[BaseStep]) -> None:

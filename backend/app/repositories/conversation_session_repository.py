@@ -122,7 +122,12 @@ class ConversationSessionRepository(BaseRepository[ConversationSession]):
             return []
 
         now = Datetime.now()
-        async with self.session.begin():
+        begin_ctx = (
+            self.session.begin_nested()
+            if self.session.in_transaction()
+            else self.session.begin()
+        )
+        async with begin_ctx:
             session_obj = await self.session.get(
                 ConversationSession, session_id, with_for_update=True
             )

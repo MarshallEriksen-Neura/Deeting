@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.schemas.base import BaseSchema
-from app.schemas.spec_agent import SpecManifest
+from app.schemas.spec_agent import SpecManifest, SpecNode
 
 
 class SpecDraftRequest(BaseSchema):
@@ -38,6 +38,46 @@ class SpecNodeStatus(BaseSchema):
     pulse: Optional[str] = Field(None, description="运行中提示文案")
     skipped: bool = Field(False, description="是否被剪枝跳过")
     logs: List[str] = Field(default_factory=list, description="节点执行日志")
+
+
+class SpecNodeExecutionDetail(BaseSchema):
+    status: Literal["pending", "active", "completed", "error", "waiting"] = Field(
+        ..., description="节点状态"
+    )
+    created_at: Optional[datetime] = Field(None, description="日志创建时间")
+    started_at: Optional[datetime] = Field(None, description="节点开始时间")
+    completed_at: Optional[datetime] = Field(None, description="节点完成时间")
+    duration_ms: Optional[int] = Field(None, description="节点耗时（毫秒）")
+    input_snapshot: Optional[Dict[str, Any]] = Field(None, description="输入快照")
+    output_data: Optional[Dict[str, Any]] = Field(None, description="输出数据")
+    raw_response: Optional[Any] = Field(None, description="原始响应")
+    error_message: Optional[str] = Field(None, description="错误信息")
+    worker_snapshot: Optional[Dict[str, Any]] = Field(
+        None, description="执行器快照"
+    )
+    logs: List[str] = Field(default_factory=list, description="节点执行日志")
+
+
+class SpecPlanNodeDetailResponse(BaseSchema):
+    plan_id: UUID
+    node_id: str
+    node: SpecNode
+    execution: SpecNodeExecutionDetail
+
+
+class SpecPlanNodeRerunResponse(BaseSchema):
+    plan_id: UUID
+    node_id: str
+    queued_nodes: List[str] = Field(default_factory=list, description="被重跑的节点")
+
+
+class SpecPlanNodeEventRequest(BaseSchema):
+    event: str = Field(..., description="事件名称")
+    source: str = Field(..., description="触发来源")
+
+
+class SpecPlanNodeEventResponse(BaseSchema):
+    status: str = Field(..., description="处理结果")
 
 
 class SpecPlanStatusResponse(BaseSchema):
@@ -87,9 +127,14 @@ class SpecPlanNodeUpdateRequest(BaseSchema):
     model_override: Optional[str] = Field(
         None, description="节点级模型覆盖，传 null 则清空"
     )
+    instruction: Optional[str] = Field(
+        None, description="节点指令更新（仅 action 节点，等待审批时可用）"
+    )
 
 
 class SpecPlanNodeUpdateResponse(BaseSchema):
     plan_id: UUID
     node_id: str
     model_override: Optional[str] = None
+    instruction: Optional[str] = None
+    pending_instruction: Optional[str] = None

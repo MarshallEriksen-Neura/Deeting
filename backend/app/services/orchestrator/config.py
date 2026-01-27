@@ -41,6 +41,7 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     steps=[
         "request_adapter",  # 0) 入口格式适配（OpenAI/Claude/Responses 等）
         "validation",  # 1) 入参校验
+        "signature_verify",  # 1.5) 外部签名校验
         "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
         "mcp_discovery", # 2.5) MCP 工具发现 (User BYOP)
         "quota_check",  # 3) 配额/额度检查（外部）
@@ -69,6 +70,7 @@ EXTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
     steps=[
         "request_adapter",
         "validation",
+        "signature_verify",
         "resolve_assets",
         "quota_check",
         "rate_limit",

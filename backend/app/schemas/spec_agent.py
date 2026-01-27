@@ -31,6 +31,9 @@ class ActionNode(SpecNodeBase):
     model_override: Optional[str] = Field(
         None, description="节点级模型覆盖 (优先于全局/默认模型)"
     )
+    pending_instruction: Optional[str] = Field(
+        None, description="运行中指令预约修改（执行完成后可重跑）"
+    )
 
 class LogicRule(BaseModel):
     """

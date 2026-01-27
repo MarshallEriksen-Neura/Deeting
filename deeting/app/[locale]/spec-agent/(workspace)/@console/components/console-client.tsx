@@ -34,6 +34,8 @@ function ConsoleClient() {
         messages={state.messages}
         hasMessages={state.hasMessages}
         activeNode={state.activeNode}
+        nodes={state.nodes}
+        onLocateNode={state.handleLocateNode}
       />
 
       <ConsoleInput

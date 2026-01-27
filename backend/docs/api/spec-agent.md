@@ -126,7 +126,89 @@ Query：
 
 ---
 
-## 5. 启动执行
+## 5. 获取节点详情（抽屉/审查）
+
+**GET** `/spec-agent/plans/{plan_id}/nodes/{node_id}`
+
+响应：
+```json
+{
+  "plan_id": "uuid",
+  "node_id": "T1",
+  "node": { "id": "T1", "type": "action", "instruction": "..." },
+  "execution": {
+    "status": "waiting",
+    "created_at": "2026-01-27T03:21:12.123Z",
+    "started_at": "2026-01-27T03:21:20.123Z",
+    "completed_at": null,
+    "duration_ms": null,
+    "input_snapshot": { "resolved_args": {} },
+    "output_data": null,
+    "raw_response": null,
+    "error_message": null,
+    "worker_snapshot": null,
+    "logs": ["> Node started. Tool count: 2"]
+  }
+}
+```
+
+错误码：
+- 404 `plan_not_found`
+- 404 `node_not_found`
+
+---
+
+## 6. 节点重跑（应用预约指令）
+
+**POST** `/spec-agent/plans/{plan_id}/nodes/{node_id}/rerun`
+
+响应：
+```json
+{
+  "plan_id": "uuid",
+  "node_id": "T1",
+  "queued_nodes": ["T1", "T2"]
+}
+```
+
+说明：
+- 如果节点存在 `pending_instruction`，调用后会自动应用并清空。
+- 会把该节点及其下游节点重置为 PENDING，等待重新执行。
+
+错误码：
+- 404 `plan_not_found`
+- 404 `node_not_found`
+
+---
+
+## 7. 节点事件记录（审计）
+
+**POST** `/spec-agent/plans/{plan_id}/nodes/{node_id}/events`
+
+请求体：
+```json
+{
+  "event": "rerun_prompt",
+  "source": "auto_drawer"
+}
+```
+
+响应：
+```json
+{ "status": "ok" }
+```
+
+说明：
+- 用于记录 UI 行为触发来源（例如 rerun 弹窗的自动提示来源），写入会话日志便于审计。
+- 当 plan 未绑定 `conversation_session_id` 时返回 `status=skip`。
+
+错误码：
+- 404 `plan_not_found`
+- 404 `node_not_found`
+
+---
+
+## 8. 启动执行
 
 **POST** `/spec-agent/plans/{plan_id}/start`
 
@@ -139,7 +221,7 @@ Query：
 
 ---
 
-## 6. 审批交互
+## 9. 审批交互
 
 **POST** `/spec-agent/plans/{plan_id}/interact`
 
@@ -159,14 +241,15 @@ Query：
 
 ---
 
-## 7. 节点模型覆盖
+## 10. 节点模型覆盖 / 指令热修改
 
 **PATCH** `/spec-agent/plans/{plan_id}/nodes/{node_id}`
 
 请求体（传 `null` 清空覆盖）：
 ```json
 {
-  "model_override": "gpt-4o"
+  "model_override": "gpt-4o",
+  "instruction": "重新生成对比表，包含价格与汇率"
 }
 ```
 
@@ -175,15 +258,25 @@ Query：
 {
   "plan_id": "uuid",
   "node_id": "T1",
-  "model_override": "gpt-4o"
+  "model_override": "gpt-4o",
+  "instruction": "重新生成对比表，包含价格与汇率",
+  "pending_instruction": null
 }
 ```
+
+说明：
+- 当节点处于 RUNNING 状态且传入 instruction 时，会写入 `pending_instruction`，不打断当前执行。
+- 当节点处于 WAITING_APPROVAL/DRAFT 时，instruction 会直接覆盖并清空 `pending_instruction`。
 
 错误码：
 - 404 `plan_not_found`：计划不存在或不属于当前用户
 - 404 `node_not_found`：节点不存在
 - 400 `node_not_action`：仅 action 节点支持模型覆盖
 - 400 `model_not_available`：模型不可用或不可访问
+- 400 `node_not_waiting`：仅等待审批节点可修改指令（运行中将进入预约）
+- 400 `instruction_empty`：指令不能为空
+- 400 `node_not_waiting`：仅等待审批节点可修改指令
+- 400 `instruction_empty`：指令不能为空
 
 ---
 
@@ -192,4 +285,7 @@ Query：
 - 2026-01-26：新增节点级模型覆盖接口。
 - 2026-01-26：新增计划列表接口。
 - 2026-01-26：Plan 状态节点返回执行日志 logs。
+- 2026-01-27：新增节点事件记录接口（审计 UI 触发来源）。
 - 2026-01-26：Plan 详情新增 conversation_session_id，用于关联会话历史。
+- 2026-01-27：新增节点详情接口与指令热修改字段。
+- 2026-01-27：新增节点重跑接口与预约指令合并逻辑。

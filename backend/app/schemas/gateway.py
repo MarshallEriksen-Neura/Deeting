@@ -160,6 +160,9 @@ class EmbeddingsResponse(BaseModel):
 class RoutingTestRequest(BaseModel):
     model: str = Field(..., description="目标模型")
     capability: str = Field(default="chat", description="能力类型: chat/embedding 等")
+    request_id: str | None = Field(
+        default=None, description="客户端请求 ID（用于取消/幂等）"
+    )
     provider_model_id: str | None = Field(
         default=None, description="指定 provider model ID（内部网关必填）"
     )

@@ -56,6 +56,7 @@ DEFAULT_CAPABILITY_CONFIGS = {
 }
 
 import pytest_asyncio
+from sqlalchemy import select
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -64,25 +65,40 @@ async def ensure_tables():
         await conn.run_sync(Base.metadata.create_all)
 
 
+async def _seed_preset(session, *, slug: str, name: str, base_url: str) -> ProviderPreset:
+    existing = (
+        await session.execute(select(ProviderPreset).where(ProviderPreset.slug == slug))
+    ).scalars().first()
+    if existing:
+        return existing
+    preset = ProviderPreset(
+        id=uuid.uuid4(),
+        name=name,
+        slug=slug,
+        provider=slug.split("-", 1)[0],
+        base_url=base_url,
+        auth_type="bearer",
+        auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
+        default_headers={},
+        default_params={},
+        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+        is_active=True,
+    )
+    session.add(preset)
+    await session.commit()
+    return preset
+
+
 @pytest.mark.asyncio
 async def test_sync_preserves_manual_overrides(monkeypatch):
     async with AsyncSessionLocal() as session:
         # 准备 preset 与实例
-        preset = ProviderPreset(
-            id=uuid.uuid4(),
-            name="OpenAI",
+        preset = await _seed_preset(
+            session,
             slug="openai",
-            provider="openai",
+            name="OpenAI",
             base_url="https://api.openai.com",
-            auth_type="bearer",
-            auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-            default_headers={},
-            default_params={},
-            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
-            is_active=True,
         )
-        session.add(preset)
-        await session.commit()
 
         svc = ProviderInstanceService(session)
         inst = await svc.create_instance(
@@ -141,21 +157,12 @@ async def test_sync_preserves_manual_overrides(monkeypatch):
 @pytest.mark.asyncio
 async def test_sync_dedupes_duplicate_models(monkeypatch):
     async with AsyncSessionLocal() as session:
-        preset = ProviderPreset(
-            id=uuid.uuid4(),
-            name="OpenAI",
+        preset = await _seed_preset(
+            session,
             slug="openai",
-            provider="openai",
+            name="OpenAI",
             base_url="https://api.openai.com",
-            auth_type="bearer",
-            auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-            default_headers={},
-            default_params={},
-            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
-            is_active=True,
         )
-        session.add(preset)
-        await session.commit()
 
         svc = ProviderInstanceService(session)
         inst = await svc.create_instance(
@@ -187,21 +194,12 @@ async def test_sync_dedupes_duplicate_models(monkeypatch):
 @pytest.mark.asyncio
 async def test_fetch_models_respects_versioned_base_url(monkeypatch):
     async with AsyncSessionLocal() as session:
-        preset = ProviderPreset(
-            id=uuid.uuid4(),
-            name="OpenAI Compat",
+        preset = await _seed_preset(
+            session,
             slug="openai-compat",
-            provider="openai",
+            name="OpenAI Compat",
             base_url="https://ark.cn-beijing.volces.com/api/v3",
-            auth_type="bearer",
-            auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-            default_headers={},
-            default_params={},
-            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
-            is_active=True,
         )
-        session.add(preset)
-        await session.commit()
 
         svc = ProviderInstanceService(session)
         inst = await svc.create_instance(

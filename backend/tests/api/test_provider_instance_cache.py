@@ -149,7 +149,7 @@ async def test_provider_model_candidates_cache_and_invalidate():
         payload = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4",
             display_name="GPT-4",
             upstream_path="/v1/chat",
@@ -176,7 +176,7 @@ async def test_provider_model_candidates_cache_and_invalidate():
         updated = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4",
             display_name="GPT-4",
             upstream_path="/v1/chat",
@@ -215,7 +215,7 @@ async def test_provider_model_list_returns_all():
         model_a = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4",
             display_name="GPT-4",
             upstream_path="/v1/chat",
@@ -232,7 +232,7 @@ async def test_provider_model_list_returns_all():
         model_b = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-3.5",
             display_name="GPT-3.5",
             upstream_path="/v1/chat-35",
@@ -316,7 +316,7 @@ async def test_provider_model_alias_match():
         payload = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id=upstream_name,
             unified_model_id=alias_name,
             display_name="Alias Claude",
@@ -356,7 +356,7 @@ async def test_provider_model_list_cache_and_update_invalidate():
         model = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4o",
             display_name="gpt-4o",
             upstream_path="chat/completions",
@@ -407,7 +407,7 @@ async def test_provider_instance_model_count_updates_with_models():
         payload = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4o",
             display_name="gpt-4o",
             upstream_path="/v1/chat/completions",
@@ -497,7 +497,7 @@ async def test_provider_model_test_ping(monkeypatch):
         model = ProviderModel(
             id=uuid.uuid4(),
             instance_id=inst.id,
-            capability="chat",
+            capabilities=["chat"],
             model_id="gpt-4o",
             display_name="gpt-4o",
             upstream_path="chat/completions",

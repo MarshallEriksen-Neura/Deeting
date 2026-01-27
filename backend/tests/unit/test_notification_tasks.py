@@ -21,7 +21,7 @@ def sync_session_factory():
         poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
-    SessionLocal = sessionmaker(bind=engine)
+    SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
     try:
         yield SessionLocal
     finally:

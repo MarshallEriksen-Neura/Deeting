@@ -3,15 +3,17 @@ import type { SpecConnection } from '@/lib/api/spec-agent'
 
 export const useCanvasFocus = (
   selectedNodeId: string | null,
+  activeNodeId: string | null,
   connections: SpecConnection[]
 ) => {
   return useMemo(() => {
-    if (!selectedNodeId) return null
-    const next = new Set([selectedNodeId])
+    const focusId = selectedNodeId || activeNodeId
+    if (!focusId) return null
+    const next = new Set([focusId])
     connections.forEach((conn) => {
-      if (conn.source === selectedNodeId) next.add(conn.target)
-      if (conn.target === selectedNodeId) next.add(conn.source)
+      if (conn.source === focusId) next.add(conn.target)
+      if (conn.target === focusId) next.add(conn.source)
     })
     return next
-  }, [connections, selectedNodeId])
+  }, [connections, selectedNodeId, activeNodeId])
 }

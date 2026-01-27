@@ -11,11 +11,15 @@ import {
   startSpecPlan,
   streamSpecDraft,
   updateSpecPlanNode,
+  fetchSpecPlanNodeDetail,
+  rerunSpecPlanNode,
+  appendSpecPlanNodeEvent,
   type SpecDraftRequest,
   type SpecPlanDetail,
   type SpecPlanListItem,
   type SpecPlanListResponse,
   type SpecPlanStatus,
+  type SpecPlanNodeDetail,
   type SpecPlanNodeUpdateResponse,
 } from "@/lib/api/spec-agent"
 import { useSpecAgentStore } from "@/store/spec-agent-store"
@@ -25,6 +29,8 @@ import { swrFetcher } from "@/lib/swr/fetcher"
 const SPEC_PLAN_DETAIL_KEY = "/api/v1/spec-agent/plans/detail"
 const SPEC_PLAN_STATUS_KEY = "/api/v1/spec-agent/plans/status"
 const SPEC_PLAN_LIST_KEY = "/api/v1/spec-agent/plans"
+const SPEC_PLAN_NODE_DETAIL_KEY = "/api/v1/spec-agent/plans/node-detail"
+const SPEC_PLAN_NODE_RERUN_KEY = "/api/v1/spec-agent/plans/node-rerun"
 
 export function useSpecDraftStream(
   options: {
@@ -252,29 +258,67 @@ export function useSpecPlanActions(planId: string | null) {
 }
 
 export function useSpecPlanNodeUpdate(planId: string | null) {
-  const { applyNodeModelOverride } = useSpecAgentStore()
+  const { applyNodeModelOverride, applyNodeInstructionUpdate, applyNodePendingInstruction } =
+    useSpecAgentStore()
 
   const mutation = useSWRMutation(
     planId ? `${SPEC_PLAN_DETAIL_KEY}/${planId}/nodes` : null,
-    (_key, { arg }: { arg: { nodeId: string; modelOverride: string | null } }) =>
-      updateSpecPlanNode(planId as string, arg.nodeId, {
-        model_override: arg.modelOverride,
-      })
+    (
+      _key,
+      {
+        arg,
+      }: {
+        arg: {
+          nodeId: string
+          modelOverride?: string | null
+          instruction?: string | null
+        }
+      }
+    ) => {
+      const payload: Record<string, string | null> = {}
+      if ("modelOverride" in arg) {
+        payload.model_override = arg.modelOverride ?? null
+      }
+      if ("instruction" in arg) {
+        payload.instruction = arg.instruction ?? null
+      }
+      return updateSpecPlanNode(planId as string, arg.nodeId, payload)
+    }
   )
 
   const update = useCallback(
-    async (nodeId: string, modelOverride: string | null) => {
+    async (
+      nodeId: string,
+      payload: { modelOverride?: string | null; instruction?: string | null }
+    ) => {
       if (!planId) return null
       const result = (await mutation.trigger({
         nodeId,
-        modelOverride,
+        ...(payload.modelOverride !== undefined && {
+          modelOverride: payload.modelOverride,
+        }),
+        ...(payload.instruction !== undefined && { instruction: payload.instruction }),
       })) as SpecPlanNodeUpdateResponse | undefined
       if (result) {
-        applyNodeModelOverride(nodeId, result.model_override ?? null)
+        if (typeof result.model_override !== "undefined") {
+          applyNodeModelOverride(nodeId, result.model_override ?? null)
+        }
+        if (typeof result.instruction === "string") {
+          applyNodeInstructionUpdate(nodeId, result.instruction)
+        }
+        if (typeof result.pending_instruction !== "undefined") {
+          applyNodePendingInstruction(nodeId, result.pending_instruction ?? null)
+        }
       }
       return result ?? null
     },
-    [applyNodeModelOverride, mutation, planId]
+    [
+      applyNodeInstructionUpdate,
+      applyNodeModelOverride,
+      applyNodePendingInstruction,
+      mutation,
+      planId,
+    ]
   )
 
   return useMemo(
@@ -283,6 +327,94 @@ export function useSpecPlanNodeUpdate(planId: string | null) {
       updateState: mutation,
     }),
     [mutation, update]
+  )
+}
+
+export function useSpecPlanNodeDetail(
+  planId: string | null,
+  nodeId: string | null,
+  options: { enabled?: boolean } = {}
+) {
+  const enabled = options.enabled !== false && !!planId && !!nodeId
+  const key = enabled ? [SPEC_PLAN_NODE_DETAIL_KEY, planId, nodeId] : null
+  return useSWR<SpecPlanNodeDetail, ApiError>(
+    key,
+    () => fetchSpecPlanNodeDetail(planId as string, nodeId as string),
+    { revalidateOnFocus: false }
+  )
+}
+
+export function useSpecPlanNodeRerun(planId: string | null) {
+  const {
+    applyNodeInstructionUpdate,
+    applyNodePendingInstruction,
+    setFocusNodeId,
+    setHighlightNodeId,
+  } = useSpecAgentStore()
+  const mutation = useSWRMutation(
+    planId ? `${SPEC_PLAN_NODE_RERUN_KEY}/${planId}` : null,
+    (_key, { arg }: { arg: { nodeId: string } }) =>
+      rerunSpecPlanNode(planId as string, arg.nodeId)
+  )
+
+  const rerun = useCallback(
+    async (nodeId: string) => {
+      if (!planId) return null
+      const result = (await mutation.trigger({ nodeId })) ?? null
+      const current = useSpecAgentStore.getState().nodes.find(
+        (node) => node.id === nodeId
+      )
+      if (current?.pendingInstruction) {
+        applyNodeInstructionUpdate(nodeId, current.pendingInstruction)
+        applyNodePendingInstruction(nodeId, null)
+      }
+      setFocusNodeId(nodeId)
+      setHighlightNodeId(nodeId)
+      return result
+    },
+    [
+      applyNodeInstructionUpdate,
+      applyNodePendingInstruction,
+      mutation,
+      planId,
+      setFocusNodeId,
+      setHighlightNodeId,
+    ]
+  )
+
+  return useMemo(
+    () => ({
+      rerun,
+      rerunState: mutation,
+    }),
+    [mutation, rerun]
+  )
+}
+
+export function useSpecPlanNodeEvent(planId: string | null) {
+  const mutation = useSWRMutation(
+    planId ? `/spec-agent/${planId}/node-event` : null,
+    (_key, { arg }: { arg: { nodeId: string; event: string; source: string } }) =>
+      appendSpecPlanNodeEvent(planId as string, arg.nodeId, {
+        event: arg.event,
+        source: arg.source,
+      })
+  )
+
+  const send = useCallback(
+    async (nodeId: string, event: string, source: string) => {
+      if (!planId) return null
+      return (await mutation.trigger({ nodeId, event, source })) ?? null
+    },
+    [mutation, planId]
+  )
+
+  return useMemo(
+    () => ({
+      send,
+      eventState: mutation,
+    }),
+    [mutation, send]
   )
 }
 

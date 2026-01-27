@@ -40,7 +40,7 @@ async def test_create_stdio_server_draft(
     assert data.get("sse_url") in (None, "")
 
     async with AsyncSessionLocal() as session:
-        server = await session.get(UserMcpServer, data["id"])
+        server = await session.get(UserMcpServer, UUID(data["id"]))
         assert server is not None
         assert server.server_type == "stdio"
         assert server.is_enabled is False

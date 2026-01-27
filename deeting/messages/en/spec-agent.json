@@ -2,6 +2,7 @@
   "spec-agent": {
     "console": {
       "title": "Console",
+      "locate": "Locate node",
       "role": {
         "user": "USER",
         "system": "SYSTEM",
@@ -12,6 +13,9 @@
         "ready": "Blueprint ready: {projectName}",
         "defaultProject": "Untitled task",
         "error": "Draft failed. Please retry.",
+        "nodeStarted": "Node [{nodeId}] started",
+        "nodeWaiting": "Node [{nodeId}] waiting approval",
+        "nodeFailed": "Node [{nodeId}] failed",
         "modelMissing": "Planner model not configured. Please select a model first."
       },
       "empty": "Enter a goal below to generate a blueprint.",
@@ -49,7 +53,8 @@
         "model": {
           "label": "Model",
           "auto": "Auto"
-        }
+        },
+        "pendingInstruction": "Instruction pending"
       }
     },
     "nav": {
@@ -82,15 +87,62 @@
           "status": "Status",
           "duration": "Duration",
           "title": "Title",
+          "instruction": "Instruction hot-fix",
           "model": "Model configuration",
           "payload": "Node payload"
         },
+        "instructionPlaceholder": "Edit instruction while waiting approval",
+        "instructionHint": "Changes apply to the next execution.",
+        "instructionDisabled": "Instruction can only be edited while waiting approval.",
+        "instructionShadowPlaceholder": "Queue edits while running; you can rerun after completion",
+        "instructionShadowHint": "Node is running. Your edit will be saved as a preset.",
+        "instructionShadowSaved": "Pending instruction saved. You can rerun after completion.",
+        "instructionDiff": "Diff",
+        "instructionBefore": "Before",
+        "instructionAfter": "After",
         "status": {
           "pending": "Pending",
           "active": "Running",
           "completed": "Completed",
           "error": "Failed",
           "waiting": "Waiting approval"
+        },
+        "lineage": {
+          "title": "Data lineage",
+          "source": "Source",
+          "transformLabel": "Transform",
+          "result": "Result",
+          "root": "ROOT",
+          "pending": "Pending",
+          "resultJson": "JSON output",
+          "transformType": {
+            "logic": "Logic gate",
+            "action": "Instruction",
+            "replan": "Replan"
+          }
+        },
+        "timeline": {
+          "title": "Execution timeline",
+          "created": "Created",
+          "started": "Started",
+          "completed": "Completed",
+          "pending": "Not yet"
+        },
+        "payload": {
+          "title": "Execution data",
+          "input": "Input snapshot",
+          "raw": "Raw output",
+          "empty": "No data"
+        },
+        "waitingHint": "Node is waiting approval. You can adjust model or instruction.",
+        "pendingInstruction": "Instruction pending",
+        "rerun": "Apply & rerun",
+        "rerunRunning": "Rerunning...",
+        "rerunDialog": {
+          "title": "Apply pending instruction?",
+          "desc": "This node is complete, but a pending instruction is queued. Rerun with the new instruction?",
+          "confirm": "Rerun",
+          "cancel": "Not now"
         }
       }
     },

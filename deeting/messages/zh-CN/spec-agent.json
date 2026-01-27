@@ -2,6 +2,7 @@
   "spec-agent": {
     "console": {
       "title": "控制台",
+      "locate": "定位节点",
       "role": {
         "user": "用户",
         "system": "系统",
@@ -12,6 +13,9 @@
         "ready": "蓝图已生成：{projectName}",
         "defaultProject": "未命名任务",
         "error": "规划失败，请重试。",
+        "nodeStarted": "节点 [{nodeId}] 开始执行",
+        "nodeWaiting": "节点 [{nodeId}] 等待审批",
+        "nodeFailed": "节点 [{nodeId}] 执行失败",
         "modelMissing": "未配置规划模型，请先选择模型。"
       },
       "empty": "在下方输入目标，开始生成蓝图。",
@@ -49,7 +53,8 @@
         "model": {
           "label": "模型",
           "auto": "自动"
-        }
+        },
+        "pendingInstruction": "指令待同步"
       }
     },
     "nav": {
@@ -82,15 +87,62 @@
           "status": "执行状态",
           "duration": "执行耗时",
           "title": "节点标题",
+          "instruction": "指令热修改",
           "model": "模型配置",
           "payload": "节点数据"
         },
+        "instructionPlaceholder": "等待审批时可调整执行指令",
+        "instructionHint": "修改后保存将应用于下一次执行。",
+        "instructionDisabled": "仅在等待审批时允许修改指令。",
+        "instructionShadowPlaceholder": "运行中可预约修改，执行完成后可按新指令重跑",
+        "instructionShadowHint": "执行进行中，修改将保存为预设方案。",
+        "instructionShadowSaved": "已保存预约指令，节点完成后可选择重跑。",
+        "instructionDiff": "修改对比",
+        "instructionBefore": "原指令",
+        "instructionAfter": "新指令",
         "status": {
           "pending": "等待中",
           "active": "执行中",
           "completed": "已完成",
           "error": "失败",
           "waiting": "等待审批"
+        },
+        "lineage": {
+          "title": "数据流向",
+          "source": "来源",
+          "transformLabel": "处理",
+          "result": "结果",
+          "root": "ROOT",
+          "pending": "待生成",
+          "resultJson": "JSON 输出",
+          "transformType": {
+            "logic": "逻辑网关",
+            "action": "执行指令",
+            "replan": "重规划"
+          }
+        },
+        "timeline": {
+          "title": "执行时间轴",
+          "created": "创建",
+          "started": "开始",
+          "completed": "完成",
+          "pending": "未发生"
+        },
+        "payload": {
+          "title": "执行数据",
+          "input": "输入快照",
+          "raw": "原始输出",
+          "empty": "暂无数据"
+        },
+        "waitingHint": "节点等待审批中，可进行模型或指令调整后继续。",
+        "pendingInstruction": "指令待同步",
+        "rerun": "应用并重跑",
+        "rerunRunning": "重跑中...",
+        "rerunDialog": {
+          "title": "应用预约指令并重跑？",
+          "desc": "当前节点已完成，但存在预约指令。是否按新指令重新执行？",
+          "confirm": "确认重跑",
+          "cancel": "暂不"
         }
       }
     },
