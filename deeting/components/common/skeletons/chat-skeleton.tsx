@@ -19,8 +19,6 @@ export const ChatSkeleton = React.memo(() => {
         <div className="flex items-center gap-3">
           {/* Back Button Skeleton (Mobile) */}
           <Skeleton className="h-8 w-8 rounded-md md:hidden" />
-          {/* Avatar Skeleton */}
-          <Skeleton className="h-8 w-8 rounded-lg" />
           {/* Name & Status Skeleton */}
           <div className="space-y-1">
             <Skeleton className="h-4 w-24" />
@@ -40,8 +38,7 @@ export const ChatSkeleton = React.memo(() => {
         <div className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-8 py-4">
           
           {/* Greeting from Assistant */}
-          <div className="flex gap-3">
-            <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+          <div className="flex">
             <div className="space-y-2 max-w-[88%]">
               <Skeleton className="h-4 w-[200px]" />
               <Skeleton className="h-4 w-[140px]" />
@@ -49,16 +46,14 @@ export const ChatSkeleton = React.memo(() => {
           </div>
 
           {/* Fake History (Right) */}
-          <div className="flex gap-3 flex-row-reverse">
-            <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+          <div className="flex flex-row-reverse">
             <div className="space-y-2 max-w-[88%]">
                <Skeleton className="h-10 w-[240px] rounded-2xl rounded-tr-sm" />
             </div>
           </div>
 
            {/* Fake Response (Left) */}
-           <div className="flex gap-3">
-            <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+           <div className="flex">
             <div className="space-y-2 w-full max-w-[92%]">
               <Skeleton className="h-32 w-full rounded-2xl rounded-tl-sm" />
             </div>

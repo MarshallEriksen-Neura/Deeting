@@ -175,9 +175,6 @@ MessageItem 使用自定义比较函数，只在以下情况重渲染：
 
 ```
 MessageItem
-├── Avatar (头像)
-│   ├── 助手：使用 dicebear 生成的头像
-│   └── 用户：使用 User 图标
 └── Message Bubble (消息气泡)
     ├── 助手消息
     │   ├── AIResponseBubble (AI 响应气泡)
@@ -216,7 +213,6 @@ interface MessageAttachmentsProps {
 ChatMessageList
 ├── @/components/ui/scroll-area (shadcn/ui)
 ├── @/components/ui/button (shadcn/ui)
-├── @/components/ui/avatar (shadcn/ui)
 ├── @/components/chat/messages/message-item
 ├── @/app/[locale]/chat/components/ai-response-bubble
 ├── @/store/chat-state-store
@@ -224,7 +220,6 @@ ChatMessageList
 └── react-virtuoso (虚拟滚动库)
 
 MessageItem
-├── @/components/ui/avatar (shadcn/ui)
 ├── @/components/ui/image-lightbox
 ├── @/components/chat/markdown-viewer
 ├── @/app/[locale]/chat/components/ai-response-bubble
@@ -364,12 +359,11 @@ import { MessageItem } from "@/components/chat/messages"
 
 3. **国际化**：所有用户可见文案都使用 useI18n Hook
 
-4. **UI 规范**：使用 shadcn/ui 组件（Avatar, Button, ScrollArea, ImageLightbox）
+4. **UI 规范**：使用 shadcn/ui 组件（Button, ScrollArea, ImageLightbox）
 
 5. **响应式设计**：支持移动端和桌面端显示
 
 6. **可访问性**：
-   - 头像有 fallback
    - 图片有 alt 文本
    - 滚动按钮有 aria-label
 

@@ -2,8 +2,6 @@
 
 import * as React from "react"
 import Image from "next/image"
-import { User } from "lucide-react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
@@ -37,7 +35,6 @@ interface MessageItemProps {
 export const MessageItem = React.memo<MessageItemProps>(
   ({
     message,
-    agent,
     isActive = false,
     streamEnabled = false,
     statusStage = null,
@@ -61,22 +58,6 @@ export const MessageItem = React.memo<MessageItemProps>(
           message.role === "user" ? "flex-row-reverse" : "flex-row"
         )}
       >
-        {/* 头像 */}
-        <Avatar className="w-8 h-8 mt-1 border shadow-sm">
-          {message.role === "assistant" ? (
-            <>
-              <AvatarImage
-                src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.name}`}
-              />
-              <AvatarFallback>AI</AvatarFallback>
-            </>
-          ) : (
-            <AvatarFallback>
-              <User className="w-4 h-4" />
-            </AvatarFallback>
-          )}
-        </Avatar>
-
         {/* 消息气泡 */}
         {message.role === "assistant" ? (
           <div className="flex-1 min-w-0">

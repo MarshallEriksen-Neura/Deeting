@@ -51,6 +51,7 @@ from pydantic import BaseModel, Field
 class ChatMessage(BaseModel):
     role: str = Field(..., description="消息角色: system/user/assistant/tool")
     content: str | list | None = Field(default=None, description="消息内容")
+    reasoning_content: str | None = Field(default=None, description="思维链内容")
     tool_calls: list | None = Field(default=None, description="工具调用列表")
     tool_call_id: str | None = Field(default=None, description="工具调用 ID (role=tool)")
 

@@ -1,40 +1,31 @@
 "use client"
 
 import { ChatMessageList } from "../messages"
-import { useChatMessages } from "./chat-messages-context"
-import { useChatConfig } from "./chat-config-context"
-import { useChatStateStore, type ChatAssistant } from "@/store/chat-state-store"
-import { useChatStream } from "@/hooks/chat/use-chat-stream"
+import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 
 /**
- * ChatContent - 聊天内容组件
- * 
- * 职责：
- * - 渲染聊天消息列表
- * - HUD/Controls 负责顶部状态与输入交互
- * 
- * 数据流：
- * 1. 从 store 读取消息与状态
- * 2. 渲染消息列表并处理滚动状态
- * 
- * Requirements: 1.1, 3.3, 11.1
+ * ChatContent - 聊天内容组件（重构版）
+ *
+ * 直接从 useChatStore 读取状态，不再需要 Context
  */
 
 interface ChatContentProps {
   agent: ChatAssistant
 }
 
-export function ChatContent({
-  agent,
-}: ChatContentProps) {
-  const { isTyping } = useChatMessages()
-  const { statusStage, statusCode, statusMeta } = useChatConfig()
-  const { messages } = useChatStateStore()
-  const { streamEnabled } = useChatStream()
+export function ChatContent({ agent }: ChatContentProps) {
+  // 直接从 store 读取状态（使用选择器优化重渲染）
+  const messages = useChatStore((state) => state.messages)
+  // isLoading = history loading, NOT typing. Only treat as typing when streaming.
+  const isTyping = useChatStore((state) => state.statusStage !== null)
+  const streamEnabled = useChatStore((state) => state.streamEnabled)
+  const statusStage = useChatStore((state) => state.statusStage)
+  const statusCode = useChatStore((state) => state.statusCode)
+  const statusMeta = useChatStore((state) => state.statusMeta)
 
   return (
     <div className="flex flex-1 min-h-0">
-      <ChatMessageList 
+      <ChatMessageList
         messages={messages}
         agent={agent}
         isTyping={isTyping}

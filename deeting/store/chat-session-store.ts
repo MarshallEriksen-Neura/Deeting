@@ -1,117 +1,95 @@
 "use client"
 
-import { create } from "zustand"
+/**
+ * chat-session-store.ts - 兼容层
+ *
+ * 此文件保留用于向后兼容。新代码应直接使用 @/store/chat-store
+ *
+ * @deprecated 请使用 @/store/chat-store
+ */
 
-// 会话管理 Store
-interface ChatSessionStore {
-  // 会话相关
-  sessionId?: string
-  setSessionId: (sessionId?: string) => void
-  
-  // 全局加载状态（如新建会话等）
-  globalLoading: boolean
-  setGlobalLoading: (loading: boolean) => void
+import { useChatStore } from "./chat-store"
 
-  // 加载状态
-  isLoading: boolean
-  setIsLoading: (loading: boolean) => void
+/**
+ * @deprecated 请使用 useChatStore
+ */
+export const useChatSessionStore = <T = ReturnType<typeof createSessionStoreApi>>(
+  selector?: (state: ReturnType<typeof createSessionStoreApi>) => T
+): T => {
+  const api = createSessionStoreApi()
 
-  // 历史记录加载
-  historyCursor: number | null
-  historyHasMore: boolean
-  historyLoading: boolean
-  setHistoryState: (state: {
-    cursor?: number | null
-    hasMore?: boolean
-    loading?: boolean
-  }) => void
-  
-  // 错误状态
-  errorMessage: string | null
-  setErrorMessage: (error: string | null) => void
-  
-  // 状态信息
-  statusStage: string | null
-  statusStep: string | null
-  statusState: string | null
-  statusCode: string | null
-  statusMeta: Record<string, unknown> | null
-  setStatus: (status: {
-    stage?: string | null
-    step?: string | null
-    state?: string | null
-    code?: string | null
-    meta?: Record<string, unknown> | null
-  }) => void
-  clearStatus: () => void
-  
-  // 重置会话
-  resetSession: () => void
+  if (selector) {
+    return selector(api)
+  }
+  return api as T
 }
 
-export const useChatSessionStore = create<ChatSessionStore>((set) => ({
-  // 会话相关
-  sessionId: undefined,
-  setSessionId: (sessionId) => set({ sessionId }),
+function createSessionStoreApi() {
+  const store = useChatStore.getState()
+  const setState = useChatStore.setState
 
-  // 全局加载状态
-  globalLoading: false,
-  setGlobalLoading: (globalLoading) => set({ globalLoading }),
+  return {
+    // 会话相关
+    sessionId: store.sessionId,
+    setSessionId: (sessionId?: string) => setState({ sessionId: sessionId ?? null }),
 
-  // 加载状态
-  isLoading: false,
-  setIsLoading: (isLoading) => set({ isLoading }),
+    // 全局加载状态
+    globalLoading: store.globalLoading,
+    setGlobalLoading: (globalLoading: boolean) => setState({ globalLoading }),
 
-  // 历史记录加载
-  historyCursor: null,
-  historyHasMore: false,
-  historyLoading: false,
-  setHistoryState: (state) => set((prev) => ({
-    historyCursor: state.cursor !== undefined ? state.cursor : prev.historyCursor,
-    historyHasMore: state.hasMore !== undefined ? state.hasMore : prev.historyHasMore,
-    historyLoading: state.loading !== undefined ? state.loading : prev.historyLoading,
-  })),
+    // 加载状态
+    isLoading: store.isLoading,
+    setIsLoading: (isLoading: boolean) => setState({ isLoading }),
 
-  // 错误状态
-  errorMessage: null,
-  setErrorMessage: (errorMessage) => set({ errorMessage }),
+    // 历史记录加载
+    historyCursor: store.historyCursor,
+    historyHasMore: store.historyHasMore,
+    historyLoading: store.isLoading,
+    setHistoryState: (state: {
+      cursor?: number | null
+      hasMore?: boolean
+      loading?: boolean
+    }) => {
+      const updates: Partial<typeof store> = {}
+      if (state.cursor !== undefined) updates.historyCursor = state.cursor
+      if (state.hasMore !== undefined) updates.historyHasMore = state.hasMore
+      if (state.loading !== undefined) updates.isLoading = state.loading
+      setState(updates)
+    },
 
-  // 状态信息
-  statusStage: null,
-  statusStep: null,
-  statusState: null,
-  statusCode: null,
-  statusMeta: null,
-  
-  setStatus: (status) => set((state) => ({
-    statusStage: status.stage !== undefined ? status.stage : state.statusStage,
-    statusStep: status.step !== undefined ? status.step : state.statusStep,
-    statusState: status.state !== undefined ? status.state : state.statusState,
-    statusCode: status.code !== undefined ? status.code : state.statusCode,
-    statusMeta: status.meta !== undefined ? status.meta : state.statusMeta,
-  })),
+    // 错误状态
+    errorMessage: store.errorMessage,
+    setErrorMessage: (errorMessage: string | null) => setState({ errorMessage }),
 
-  clearStatus: () => set({
-    statusStage: null,
-    statusStep: null,
-    statusState: null,
-    statusCode: null,
-    statusMeta: null,
-  }),
+    // 状态信息
+    statusStage: store.statusStage,
+    statusStep: null as string | null,
+    statusState: null as string | null,
+    statusCode: store.statusCode,
+    statusMeta: store.statusMeta,
 
-  // 重置会话
-  resetSession: () => set({
-    sessionId: undefined,
-    globalLoading: false,
-    isLoading: false,
-    errorMessage: null,
-    statusStage: null,
-    statusStep: null,
-    statusState: null,
-    statusCode: null,
-    statusMeta: null,
-    historyCursor: null,
-    historyHasMore: false,
-    historyLoading: false,
-  }),
-}))
+    setStatus: (status: {
+      stage?: string | null
+      step?: string | null
+      state?: string | null
+      code?: string | null
+      meta?: Record<string, unknown> | null
+    }) => {
+      const updates: Partial<typeof store> = {}
+      if (status.stage !== undefined) updates.statusStage = status.stage
+      if (status.code !== undefined) updates.statusCode = status.code
+      if (status.meta !== undefined) updates.statusMeta = status.meta
+      setState(updates)
+    },
+
+    clearStatus: () =>
+      setState({
+        statusStage: null,
+        statusCode: null,
+        statusMeta: null,
+      }),
+
+    // 重置会话
+    resetSession: () => useChatStore.getState().resetSession(),
+  }
+}

@@ -40,6 +40,46 @@ export const ConversationHistoryResponseSchema = z.object({
 
 export type ConversationHistoryResponse = z.infer<typeof ConversationHistoryResponseSchema>
 
+const isConversationMessageLike = (value: unknown): value is ConversationMessage =>
+  Boolean(value) && typeof value === "object" && "role" in value
+
+const normalizeConversationHistoryPayload = (
+  sessionId: string,
+  payload: unknown
+): ConversationHistoryResponse => {
+  if (Array.isArray(payload)) {
+    return {
+      session_id: sessionId,
+      messages: payload.filter(isConversationMessageLike),
+      next_cursor: null,
+      has_more: false,
+    }
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return { session_id: sessionId, messages: [], next_cursor: null, has_more: false }
+  }
+
+  const record = payload as Record<string, unknown>
+  const rawMessages = Array.isArray(record.messages) ? record.messages : []
+  const nextCursor =
+    typeof record.next_cursor === "number"
+      ? record.next_cursor
+      : typeof record.next_cursor === "string" && record.next_cursor.trim()
+        ? Number(record.next_cursor)
+        : null
+
+  return {
+    session_id:
+      typeof record.session_id === "string" && record.session_id.trim()
+        ? record.session_id
+        : sessionId,
+    messages: rawMessages.filter(isConversationMessageLike),
+    next_cursor: Number.isFinite(nextCursor) ? nextCursor : null,
+    has_more: typeof record.has_more === "boolean" ? record.has_more : false,
+  }
+}
+
 export async function fetchConversationHistory(
   sessionId: string,
   options: { cursor?: number; limit?: number } = {}
@@ -52,11 +92,33 @@ export async function fetchConversationHistory(
     params.set("limit", String(options.limit))
   }
   const query = params.toString()
-  const data = await request({
-    url: `${CONVERSATION_BASE}/${sessionId}/history${query ? `?${query}` : ""}`,
-    method: "GET",
-  })
-  return ConversationHistoryResponseSchema.parse(data)
+
+  try {
+    const data = await request({
+      url: `${CONVERSATION_BASE}/${sessionId}/history${query ? `?${query}` : ""}`,
+      method: "GET",
+    })
+
+    const normalized = normalizeConversationHistoryPayload(sessionId, data)
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return normalized
+    }
+
+    try {
+      const result = ConversationHistoryResponseSchema.safeParse(data)
+      if (result.success) {
+        return result.data
+      }
+      console.warn("Conversation history schema mismatch, fallback to normalized payload.", result.error)
+    } catch (error) {
+      console.warn("Conversation history schema parse failed, fallback to normalized payload.", error)
+    }
+
+    return normalized
+  } catch (error) {
+    console.error("Failed to fetch conversation history:", error)
+    return { session_id: sessionId, messages: [], next_cursor: null, has_more: false }
+  }
 }
 
 export const ConversationSessionItemSchema = z.object({

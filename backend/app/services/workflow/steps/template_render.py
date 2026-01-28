@@ -9,6 +9,7 @@ TemplateRenderStep: 模板渲染步骤
 
 import logging
 import re
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -276,6 +277,50 @@ class TemplateRenderStep(BaseStep):
             tools=tools,
             extra_context=context
         )
+
+        # --- System Prompt & Capability Injection ---
+        enhanced_prompt = context.get("enhanced_prompt")
+
+        # 1. 注入当前时间 (Time Injection) - 避免时间幻觉
+        # 使用 UTC 时间 + 星期几，通用且无歧义
+        now_utc = datetime.now(timezone.utc)
+        time_str = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC (%A)")
+        time_instruction = f"Current Date: {time_str}"
+        
+        if enhanced_prompt:
+            enhanced_prompt = f"{time_instruction}\n{enhanced_prompt}"
+        else:
+            enhanced_prompt = time_instruction
+
+        # 2. 注入记忆能力提醒 (Memory Reminder)
+        if tools and any(t.name == "search_knowledge" for t in tools):
+            memory_reminder = (
+                "\n\n**Memory Capability**:\n"
+                "You have access to a long-term memory via the 'search_knowledge' tool. "
+                "If the user asks about past interactions, personal preferences, or facts you should know, "
+                "you MUST use this tool to retrieve relevant information before answering."
+            )
+            # 这里使用 += 因为上面已经初始化过 enhanced_prompt (至少包含时间)
+            enhanced_prompt += memory_reminder
+
+        # 3. 注入到消息列表
+        if enhanced_prompt and isinstance(rendered_body, dict) and "messages" in rendered_body:
+            messages = rendered_body["messages"]
+            if isinstance(messages, list):
+                system_msg_index = -1
+                for i, msg in enumerate(messages):
+                    if isinstance(msg, dict) and msg.get("role") == "system":
+                        system_msg_index = i
+                        break
+                
+                if system_msg_index != -1:
+                    # 如果已有 system 消息 (如 Summary), 则前置追加
+                    original_content = messages[system_msg_index].get("content", "")
+                    messages[system_msg_index]["content"] = f"{enhanced_prompt}\n\n{original_content}"
+                else:
+                    # 如果没有, 则插入头部
+                    messages.insert(0, {"role": "system", "content": enhanced_prompt})
+
         return self._drop_none_fields(rendered_body)
 
     @staticmethod
@@ -295,24 +340,6 @@ class TemplateRenderStep(BaseStep):
         if not isinstance(payload, dict):
             return payload
         return {k: v for k, v in payload.items() if v is not None}
-
-        # 注入增强后的 assistant system_prompt (如果有)
-        enhanced_prompt = context.get("enhanced_prompt")
-        if enhanced_prompt and "messages" in rendered_body:
-            messages = rendered_body["messages"]
-            # 查找并替换 system 消息
-            system_msg_found = False
-            for i, msg in enumerate(messages):
-                if msg.get("role") == "system":
-                    messages[i]["content"] = enhanced_prompt
-                    system_msg_found = True
-                    break
-
-            # 如果没有 system 消息,在开头插入
-            if not system_msg_found:
-                messages.insert(0, {"role": "system", "content": enhanced_prompt})
-
-        return rendered_body
 
     async def _render_headers(
         self,

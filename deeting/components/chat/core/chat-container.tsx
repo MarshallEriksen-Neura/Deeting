@@ -1,65 +1,42 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter } from "next/navigation"
-import { useChatService } from "@/hooks/use-chat-service"
-import { useChatStateStore } from "@/store/chat-state-store"
-import { useChatSessionStore } from "@/store/chat-session-store"
-import { useChatAgent } from "@/hooks/chat/use-chat-agent"
-import { useChatHistory } from "@/hooks/chat/use-chat-history"
-import { useChatSession } from "@/hooks/chat/use-chat-session"
-import { ChatProvider } from "./chat-provider"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useChatStore, type ChatAssistant } from "@/store/chat-store"
+import { useMarketStore } from "@/store/market-store"
 import { ChatLayout } from "./chat-layout"
 import { ChatContent } from "./chat-content"
 import { ChatErrorBoundary } from "./chat-error-boundary"
 
 /**
- * ChatContainer - 聊天容器组件
- * 
- * 职责：
- * - 管理聊天会话的生命周期
- * - 协调数据获取（云端/本地）
- * - 处理路由和导航
- * - 提供错误边界保护
- * 
+ * ChatContainer - 聊天容器组件（重构版 v2）
+ *
+ * 架构原则：
+ * 1. 组件只负责调用 store.initSession() 一次
+ * 2. Store 内部处理所有数据获取和状态管理
+ * 3. 没有 useEffect 链式依赖，不会产生无限循环
+ *
  * 数据流：
- * 1. 根据运行环境（Tauri/Web）选择数据源
- * 2. 通过 SWR Hooks 获取助手和模型数据
- * 3. 管理会话状态和历史记录
- * 4. 将数据传递给子组件渲染
- * 
- * 性能优化：
- * - 使用 useCallback 缓存事件处理函数
- * - 使用 useMemo 缓存计算结果
- * - 通过 Context 拆分减少不必要的重渲染
- * 
- * @example
- * ```tsx
- * // 在页面中使用
- * <ChatContainer agentId="assistant-123" />
- * ```
- * 
- * @see {@link ChatProvider} - Context 提供者
- * @see {@link ChatLayout} - 布局组件
- * @see {@link ChatContent} - 内容组件
- * 
- * Requirements: 1.1, 3.3, 11.1
+ * props.agentId + URL.sessionId → store.initSession() → 渲染
  */
 
 interface ChatContainerProps {
-  /** 助手 ID，用于标识当前聊天的助手 */
   agentId: string
 }
 
 export function ChatContainer({ agentId }: ChatContainerProps) {
   const router = useRouter()
   const pathname = usePathname()
-  
-  const { setMessages, setInput } = useChatStateStore()
-  const { setErrorMessage } = useChatSessionStore()
+  const searchParams = useSearchParams()
 
-  // 环境检测（运行时安全的浏览器开发）
-  // 使用 useMemo 缓存环境检测结果，避免每次渲染都重新计算
+  // 从 store 获取状态和 action
+  const initSession = useChatStore((state) => state.initSession)
+  const agent = useChatStore((state) => state.agent)
+  const isLoading = useChatStore((state) => state.isLoading)
+  const initialized = useChatStore((state) => state.initialized)
+  const storeAgentId = useChatStore((state) => state.agentId)
+
+  // 环境检测
   const isTauriRuntime = React.useMemo(
     () =>
       process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -67,6 +44,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
       ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
     []
   )
+
   const chatRootPath = React.useMemo(() => {
     if (!pathname) return "/chat"
     const index = pathname.indexOf("/chat")
@@ -74,91 +52,79 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     return pathname.slice(0, index + 5)
   }, [pathname])
 
-  // 云端服务 hook - 使用 SWR 获取数据
-  const {
-    assistant: cloudAssistant,
-    isLoadingAssistants,
-    loadHistory,
-  } = useChatService({ assistantId: agentId, enabled: !isTauriRuntime })
+  // Tauri 本地代理
+  const installedAgents = useMarketStore((state) => state.installedAgents)
+  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
+  const marketLoaded = useMarketStore((state) => state.loaded)
 
-  // 代理管理 - 合并云端/本地代理
-  const { agent, marketLoaded } = useChatAgent({
-    agentId,
-    isTauriRuntime,
-    cloudAssistant,
-  })
+  const localAgent = React.useMemo<ChatAssistant | null>(
+    () => installedAgents.find((a) => a.id === agentId) ?? null,
+    [installedAgents, agentId]
+  )
 
-  // 会话管理 - 处理新聊天和会话存储
-  // 保持 sessionId 与 localStorage 同步（用于历史恢复）
-  useChatSession({ agentId })
-
-  // 历史记录管理 - 加载和同步历史消息
-  useChatHistory({
-    agentId,
-    agent,
-    isTauriRuntime,
-    loadHistory,
-  })
-
-  // 初始化和同步 - 清理状态
-  // 使用 ref 跟踪上一个 agentId，只在切换 agent 时清空消息
-  const prevAgentIdRef = React.useRef<string | null>(null)
-
-  const resetChatState = React.useCallback(() => {
-    setErrorMessage(null)
-    setMessages([])
-    setInput("")
-  }, [setErrorMessage, setMessages, setInput])
-
-  React.useEffect(() => {
-    // 只有在切换 agent 时才清空状态，首次加载不清空（等待历史加载）
-    if (prevAgentIdRef.current !== null && prevAgentIdRef.current !== agentId) {
-      resetChatState()
+  // 获取 sessionId（稳定计算，不依赖 state）
+  const sessionId = React.useMemo(() => {
+    const querySessionId = searchParams?.get("session")?.trim()
+    if (querySessionId) return querySessionId
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(`deeting-chat-session:${agentId}`) ?? null
     }
-    prevAgentIdRef.current = agentId
-  }, [agentId, resetChatState])
+    return null
+  }, [searchParams, agentId])
 
-  // 路由检查 - 处理助手不存在的情况
-  // 使用 useCallback 缓存路由检查逻辑
-  const checkAndRedirect = React.useCallback(() => {
-    // 跳过创建助手页面
-    if (pathname?.includes("/chat/create/assistant")) return
-    
+  // 使用 ref 追踪是否已调用 initSession，避免重复调用
+  const initCalledRef = React.useRef<string | null>(null)
+
+  // 唯一的 Effect：初始化会话
+  // 只在 agentId 或 sessionId 变化时调用
+  React.useEffect(() => {
+    // 生成唯一 key，避免重复初始化
+    const initKey = `${agentId}:${sessionId ?? ""}`
+    if (initCalledRef.current === initKey) return
+    initCalledRef.current = initKey
+
+    // Tauri 环境：使用本地 agent
     if (isTauriRuntime) {
-      // 桌面端：等待市场数据加载完成
-      if (!marketLoaded) return
-      // 如果助手不存在，重定向到选择页
-      if (!agent) {
-        if (pathname === chatRootPath) return
-        router.replace(chatRootPath)
-      }
-      return
+      if (!marketLoaded) return // 等待市场数据加载
+      void initSession(agentId, sessionId, localAgent)
+    } else {
+      // 云端环境：store 内部会获取 agent 数据
+      void initSession(agentId, sessionId, null)
     }
-    
-    // Web 端：等待助手数据加载完成
-    // 不强制重定向，避免在助手信息未加载完时产生跳转循环
-    if (isLoadingAssistants) return
-  }, [
-    agent,
-    marketLoaded,
-    router,
-    isTauriRuntime,
-    isLoadingAssistants,
-    pathname,
-    chatRootPath,
-  ])
+  }, [agentId, sessionId, isTauriRuntime, marketLoaded, localAgent, initSession])
 
+  // 同步 sessionId 到 localStorage
   React.useEffect(() => {
-    checkAndRedirect()
-  }, [checkAndRedirect])
+    const querySessionId = searchParams?.get("session")?.trim()
+    if (querySessionId && typeof window !== "undefined") {
+      localStorage.setItem(`deeting-chat-session:${agentId}`, querySessionId)
+    }
+  }, [searchParams, agentId])
+
+  // Tauri 环境：加载本地 assistants
+  React.useEffect(() => {
+    if (!isTauriRuntime || marketLoaded) return
+    void loadLocalAssistants()
+  }, [isTauriRuntime, marketLoaded, loadLocalAssistants])
+
+  // 路由检查：如果 agent 不存在，重定向到 chat 根路径
+  React.useEffect(() => {
+    if (pathname?.includes("/chat/create/assistant")) return
+    if (!isTauriRuntime) return
+
+    if (marketLoaded && !localAgent && pathname !== chatRootPath) {
+      router.replace(chatRootPath)
+    }
+  }, [isTauriRuntime, marketLoaded, localAgent, pathname, chatRootPath, router])
+
+  // 显示加载状态
+  const showLoading = !initialized || (isLoading && !agent)
 
   return (
     <ChatErrorBoundary>
-      <ChatProvider>
-        <ChatLayout agent={agent || undefined} isLoadingAssistants={isLoadingAssistants}>
-          {agent && <ChatContent agent={agent} />}
-        </ChatLayout>
-      </ChatProvider>
+      <ChatLayout agent={agent ?? undefined} isLoadingAssistants={showLoading}>
+        {agent && <ChatContent agent={agent} />}
+      </ChatLayout>
     </ChatErrorBoundary>
   )
 }

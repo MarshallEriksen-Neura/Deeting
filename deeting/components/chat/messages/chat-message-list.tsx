@@ -3,12 +3,10 @@
 import * as React from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
 import { Virtuoso, VirtuosoHandle } from "react-virtuoso"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { MessageItem } from "./message-item"
 import { AIResponseBubble } from "./ai-response-bubble"
-import type { Message, ChatAssistant } from "@/store/chat-state-store"
+import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 
 interface ChatMessageListProps {
@@ -21,17 +19,41 @@ interface ChatMessageListProps {
   statusMeta: Record<string, unknown> | null
 }
 
+// ============== Virtuoso 自定义组件（必须在组件外部定义）==============
+
+interface VirtuosoListProps extends React.HTMLAttributes<HTMLDivElement> {
+  children: React.ReactNode
+}
+
+const VirtuosoList = React.forwardRef<HTMLDivElement, VirtuosoListProps>(
+  ({ children, style, ...props }, ref) => (
+    <div
+      ref={ref}
+      {...props}
+      className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
+      style={{
+        ...style,
+        paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top) + 16px)",
+        paddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom) + 32px)",
+      }}
+    >
+      {children}
+    </div>
+  )
+)
+VirtuosoList.displayName = "VirtuosoList"
+
 /**
  * ChatMessageList 组件 - 消息列表展示
- * 
+ *
  * 功能特性：
  * - 当消息数量 > 50 时启用虚拟滚动（react-virtuoso）
- * - 当消息数量 <= 50 时使用普通滚动（ScrollArea）
+ * - 当消息数量 <= 50 时使用普通滚动
  * - 自动滚动到底部（新消息到达时）
  * - 滚动位置保持（用户向上滚动查看历史时）
  * - 使用 MessageItem 组件渲染单条消息
  * - 支持滚动到顶部/底部按钮
- * 
+ *
  * Requirements: 4.1, 4.3, 4.4, 4.5
  */
 export function ChatMessageList({
@@ -45,12 +67,20 @@ export function ChatMessageList({
 }: ChatMessageListProps) {
   const t = useI18n("chat")
   const virtuosoRef = React.useRef<VirtuosoHandle>(null)
-  const scrollRef = React.useRef<HTMLDivElement>(null)
-  const scrollAreaRef = React.useRef<HTMLDivElement>(null)
+  const scrollEndRef = React.useRef<HTMLDivElement>(null)
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const [showScrollToBottom, setShowScrollToBottom] = React.useState(false)
-  const [showScrollToTop, setShowScrollToTop] = React.useState(false)
-  const [autoScrollEnabled, setAutoScrollEnabled] = React.useState(true)
+
+  // 使用 ref 存储滚动状态，避免 setState 触发重渲染循环
+  const scrollStateRef = React.useRef({
+    showBottom: false,
+    showTop: false,
+    autoScroll: true,
+  })
+
+  // 只在需要更新 UI 时才使用 state
+  const [scrollButtons, setScrollButtons] = React.useState({ showTop: false, showBottom: false })
+  const autoScrollEnabledRef = React.useRef(true)
 
   // 计算最后一条助手消息的 ID
   const lastAssistantId = React.useMemo(() => {
@@ -115,66 +145,48 @@ export function ChatMessageList({
 
   // 自动滚动到底部（普通滚动模式）
   React.useEffect(() => {
-    if (useVirtualScroll || !autoScrollEnabled) return
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" })
-    }
-  }, [messages, isTyping, autoScrollEnabled, useVirtualScroll])
+    if (useVirtualScroll || !autoScrollEnabledRef.current) return
+    scrollEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages.length, isTyping, useVirtualScroll])
 
   // 自动滚动到底部（虚拟滚动模式）
   React.useEffect(() => {
-    if (!useVirtualScroll || !autoScrollEnabled) return
+    if (!useVirtualScroll || !autoScrollEnabledRef.current) return
     virtuosoRef.current?.scrollToIndex({
       index: messages.length - 1,
       behavior: "smooth",
       align: "end",
     })
-  }, [messages, isTyping, autoScrollEnabled, useVirtualScroll])
+  }, [messages.length, isTyping, useVirtualScroll])
 
-  // 获取滚动视口（普通滚动模式）
-  const getViewport = React.useCallback(() => {
-    return (
-      scrollAreaRef.current?.querySelector<HTMLElement>(
-        '[data-slot="scroll-area-viewport"]'
-      ) ?? null
-    )
+  // 更新滚动按钮状态（使用 ref 比较避免不必要的 setState）
+  const updateScrollButtons = React.useCallback((showTop: boolean, showBottom: boolean, nearBottom: boolean) => {
+    const prev = scrollStateRef.current
+    if (prev.showTop !== showTop || prev.showBottom !== showBottom) {
+      scrollStateRef.current = { showTop, showBottom, autoScroll: nearBottom }
+      setScrollButtons({ showTop, showBottom })
+    }
+    autoScrollEnabledRef.current = nearBottom
   }, [])
 
   // 监听滚动事件（普通滚动模式）
   React.useEffect(() => {
     if (useVirtualScroll) return
-
-    const viewport = getViewport()
-    if (!viewport) return
+    const container = scrollContainerRef.current
+    if (!container) return
 
     const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = viewport
+      const { scrollTop, scrollHeight, clientHeight } = container
       const distanceToBottom = scrollHeight - (scrollTop + clientHeight)
       const nearBottom = distanceToBottom < 120
-      setShowScrollToBottom(!nearBottom)
-      setShowScrollToTop(scrollTop > 120)
-      setAutoScrollEnabled(nearBottom)
+      updateScrollButtons(scrollTop > 120, !nearBottom, nearBottom)
     }
 
+    // 初始检查
     handleScroll()
-    viewport.addEventListener("scroll", handleScroll)
-    return () => viewport.removeEventListener("scroll", handleScroll)
-  }, [getViewport, useVirtualScroll])
-
-  // 初始化滚动按钮状态（普通滚动模式）
-  React.useEffect(() => {
-    if (useVirtualScroll) return
-
-    const viewport = getViewport()
-    if (!viewport) return
-
-    const { scrollTop, scrollHeight, clientHeight } = viewport
-    const distanceToBottom = scrollHeight - (scrollTop + clientHeight)
-    const nearBottom = distanceToBottom < 120
-    setShowScrollToBottom(!nearBottom)
-    setShowScrollToTop(scrollTop > 120)
-    setAutoScrollEnabled(nearBottom)
-  }, [messages, isTyping, getViewport, useVirtualScroll])
+    container.addEventListener("scroll", handleScroll, { passive: true })
+    return () => container.removeEventListener("scroll", handleScroll)
+  }, [useVirtualScroll, updateScrollButtons])
 
   // 滚动到顶部
   const scrollToTop = React.useCallback(() => {
@@ -185,14 +197,13 @@ export function ChatMessageList({
         align: "start",
       })
     } else {
-      const viewport = getViewport()
-      viewport?.scrollTo({ top: 0, behavior: "smooth" })
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" })
     }
-  }, [useVirtualScroll, getViewport])
+  }, [useVirtualScroll])
 
   // 滚动到底部
   const scrollToBottom = React.useCallback(() => {
-    setAutoScrollEnabled(true)
+    autoScrollEnabledRef.current = true
     if (useVirtualScroll) {
       virtuosoRef.current?.scrollToIndex({
         index: messages.length - 1,
@@ -200,9 +211,15 @@ export function ChatMessageList({
         align: "end",
       })
     } else {
-      scrollRef.current?.scrollIntoView({ behavior: "smooth" })
+      scrollEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
   }, [useVirtualScroll, messages.length])
+
+  // Virtuoso rangeChanged 处理（使用 ref 避免循环）
+  const handleRangeChanged = React.useCallback((range: { startIndex: number; endIndex: number }) => {
+    const nearBottom = range.endIndex >= messages.length - 2
+    updateScrollButtons(range.startIndex > 2, !nearBottom, nearBottom)
+  }, [messages.length, updateScrollButtons])
 
   // 渲染单条消息
   const renderMessage = React.useCallback(
@@ -242,13 +259,7 @@ export function ChatMessageList({
     if (!isTyping || lastAssistantId) return null
 
     return (
-      <div className="flex gap-3">
-        <Avatar className="w-8 h-8 border shadow-sm">
-          <AvatarImage
-            src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.name}`}
-          />
-          <AvatarFallback>AI</AvatarFallback>
-        </Avatar>
+      <div className="flex">
         <div className="flex-1 min-w-0">
           <AIResponseBubble
             parts={[]}
@@ -264,6 +275,14 @@ export function ChatMessageList({
     )
   }
 
+  // Virtuoso Footer 组件
+  const VirtuosoFooter = React.useCallback(() => (
+    <>
+      {renderTypingIndicator()}
+      <div style={{ height: "1px" }} />
+    </>
+  ), [isTyping, lastAssistantId, streamEnabled, statusStage, statusCode, statusMeta])
+
   return (
     <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden">
       {useVirtualScroll ? (
@@ -277,54 +296,31 @@ export function ChatMessageList({
           className="h-full"
           style={{ height: "100%" }}
           components={{
-            List: React.forwardRef(({ children, ...props }, ref) => (
-              <div
-                ref={ref}
-                {...props}
-                className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
-                style={listPaddingStyle}
-              >
-                {children}
-              </div>
-            )),
-            Footer: () => (
-              <>
-                {renderTypingIndicator()}
-                <div style={{ height: "1px" }} />
-              </>
-            ),
+            List: VirtuosoList,
+            Footer: VirtuosoFooter,
           }}
-          rangeChanged={(range) => {
-            // 更新滚动按钮状态
-            if (range.endIndex >= messages.length - 2) {
-              setShowScrollToBottom(false)
-              setAutoScrollEnabled(true)
-            } else {
-              setShowScrollToBottom(true)
-              setAutoScrollEnabled(false)
-            }
-            setShowScrollToTop(range.startIndex > 2)
-          }}
+          rangeChanged={handleRangeChanged}
         />
       ) : (
-        // 普通滚动模式（消息数量 <= 50）
-        <div ref={scrollAreaRef} className="h-full min-h-0">
-          <ScrollArea className="h-full">
-            <div
-              className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
-              style={listPaddingStyle}
-            >
-              {messages.map((msg, index) => renderMessage(index))}
-              {renderTypingIndicator()}
-              <div ref={scrollRef} />
-            </div>
-          </ScrollArea>
+        // 普通滚动模式（消息数量 <= 50）- 使用原生 div 避免 ScrollArea ref 问题
+        <div
+          ref={scrollContainerRef}
+          className="h-full overflow-y-auto overflow-x-hidden"
+        >
+          <div
+            className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
+            style={listPaddingStyle}
+          >
+            {messages.map((_, index) => renderMessage(index))}
+            {renderTypingIndicator()}
+            <div ref={scrollEndRef} />
+          </div>
         </div>
       )}
 
       {/* 滚动按钮 */}
       <div className="pointer-events-none absolute bottom-4 right-4 flex flex-col gap-2">
-        {showScrollToTop && (
+        {scrollButtons.showTop && (
           <Button
             variant="secondary"
             size="icon"
@@ -335,7 +331,7 @@ export function ChatMessageList({
             <ArrowUp className="h-4 w-4" />
           </Button>
         )}
-        {showScrollToBottom && (
+        {scrollButtons.showBottom && (
           <Button
             variant="secondary"
             size="icon"
