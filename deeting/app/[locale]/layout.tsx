@@ -6,6 +6,7 @@ import { defaultNavItems } from "@/components/layout/header/constants"
 import { routing, type AppLocale } from "@/i18n/routing"
 import { NotificationProvider } from "@/components/contexts/notification-context"
 import { NotificationSystem } from "@/components/notifications/notification-system"
+import { AppLoadingOverlay } from "@/components/common/app-loading-overlay"
 
 export const dynamicParams = false
 
@@ -32,6 +33,7 @@ export default async function LocaleLayout({
   return (
     <NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC">
       <NotificationProvider>
+        <AppLoadingOverlay />
         <HeaderShell
           logoText={t("brand")}
           navItems={defaultNavItems}

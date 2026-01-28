@@ -17,7 +17,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { ModelGroup } from "@/lib/api/models"
-import type { ChatAssistant } from "@/store/chat-store"
+import type { ChatAssistant } from "@/store/chat-state-store"
 import { useI18n } from "@/hooks/use-i18n"
 
 interface ChatHeaderProps {

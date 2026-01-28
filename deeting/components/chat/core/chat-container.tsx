@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useChatService } from "@/hooks/use-chat-service"
 import { useChatStateStore } from "@/store/chat-state-store"
 import { useChatSessionStore } from "@/store/chat-session-store"
@@ -54,7 +54,6 @@ interface ChatContainerProps {
 export function ChatContainer({ agentId }: ChatContainerProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
   
   const { setMessages, setInput } = useChatStateStore()
   const { setErrorMessage } = useChatSessionStore()
@@ -68,14 +67,17 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
       ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
     []
   )
+  const chatRootPath = React.useMemo(() => {
+    if (!pathname) return "/chat"
+    const index = pathname.indexOf("/chat")
+    if (index === -1) return "/chat"
+    return pathname.slice(0, index + 5)
+  }, [pathname])
 
   // 云端服务 hook - 使用 SWR 获取数据
   const {
     assistant: cloudAssistant,
-    models: cloudModels,
-    modelGroups: cloudModelGroups,
     isLoadingAssistants,
-    isLoadingModels,
     loadHistory,
   } = useChatService({ assistantId: agentId, enabled: !isTauriRuntime })
 
@@ -87,10 +89,11 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   })
 
   // 会话管理 - 处理新聊天和会话存储
-  const { handleNewChat } = useChatSession({ agentId })
+  // 保持 sessionId 与 localStorage 同步（用于历史恢复）
+  useChatSession({ agentId })
 
   // 历史记录管理 - 加载和同步历史消息
-  const { historyLoaded } = useChatHistory({
+  useChatHistory({
     agentId,
     agent,
     isTauriRuntime,
@@ -98,7 +101,9 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   })
 
   // 初始化和同步 - 清理状态
-  // 使用 useCallback 缓存清理函数，避免依赖变化导致重复执行
+  // 使用 ref 跟踪上一个 agentId，只在切换 agent 时清空消息
+  const prevAgentIdRef = React.useRef<string | null>(null)
+
   const resetChatState = React.useCallback(() => {
     setErrorMessage(null)
     setMessages([])
@@ -106,7 +111,11 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   }, [setErrorMessage, setMessages, setInput])
 
   React.useEffect(() => {
-    resetChatState()
+    // 只有在切换 agent 时才清空状态，首次加载不清空（等待历史加载）
+    if (prevAgentIdRef.current !== null && prevAgentIdRef.current !== agentId) {
+      resetChatState()
+    }
+    prevAgentIdRef.current = agentId
   }, [agentId, resetChatState])
 
   // 路由检查 - 处理助手不存在的情况
@@ -119,57 +128,35 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
       // 桌面端：等待市场数据加载完成
       if (!marketLoaded) return
       // 如果助手不存在，重定向到选择页
-      if (!agent) router.replace("/chat")
+      if (!agent) {
+        if (pathname === chatRootPath) return
+        router.replace(chatRootPath)
+      }
       return
     }
     
     // Web 端：等待助手数据加载完成
     // 不强制重定向，避免在助手信息未加载完时产生跳转循环
     if (isLoadingAssistants) return
-  }, [agent, marketLoaded, router, isTauriRuntime, isLoadingAssistants, pathname])
+  }, [
+    agent,
+    marketLoaded,
+    router,
+    isTauriRuntime,
+    isLoadingAssistants,
+    pathname,
+    chatRootPath,
+  ])
 
   React.useEffect(() => {
     checkAndRedirect()
   }, [checkAndRedirect])
 
-  // 新聊天处理器 - 清理会话并更新 URL
-  // 使用 useCallback 缓存处理函数，避免每次渲染都创建新函数
-  const handleNewChatWithNavigation = React.useCallback(() => {
-    handleNewChat()
-    
-    // 清理 URL 中的 session 参数
-    const params = new URLSearchParams(searchParams?.toString())
-    params.delete("session")
-    const query = params.toString()
-    const url = query ? `${pathname}?${query}` : pathname
-    router.replace(url || "/chat")
-  }, [handleNewChat, searchParams, pathname, router])
-
-  // 使用 useMemo 缓存 ChatContent 的 props，减少不必要的重渲染
-  const chatContentProps = React.useMemo(
-    () => ({
-      agent: agent || undefined,
-      cloudModels,
-      cloudModelGroups,
-      isLoadingModels,
-      isTauriRuntime,
-      onNewChat: handleNewChatWithNavigation,
-    }),
-    [
-      agent,
-      cloudModels,
-      cloudModelGroups,
-      isLoadingModels,
-      isTauriRuntime,
-      handleNewChatWithNavigation,
-    ]
-  )
-
   return (
     <ChatErrorBoundary>
       <ChatProvider>
         <ChatLayout agent={agent || undefined} isLoadingAssistants={isLoadingAssistants}>
-          {agent && <ChatContent {...chatContentProps} />}
+          {agent && <ChatContent agent={agent} />}
         </ChatLayout>
       </ChatProvider>
     </ChatErrorBoundary>

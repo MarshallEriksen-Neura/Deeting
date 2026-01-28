@@ -1,37 +1,51 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { useThemeStore } from "@/store/theme-store";
+import { useEffect, useMemo, useState } from "react"
+import { useShallow } from "zustand/react/shallow"
+import { useThemeStore } from "@/store/theme-store"
+import { useChatSessionStore } from "@/store/chat-session-store"
+import { useI18n } from "@/hooks/use-i18n"
 
-/**
- * 主题切换过渡遮罩组件
- * 在主题切换时显示一个柔和的遮罩层，实现平滑过渡
- */
-export function ThemeTransitionOverlay() {
-  const isTransitioning = useThemeStore((state) => state.isTransitioning);
-  const [isVisible, setIsVisible] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(false);
+export function AppLoadingOverlay() {
+  const tCommon = useI18n("common")
+  const tChat = useI18n("chat")
+  const { isTransitioning } = useThemeStore(
+    useShallow((state) => ({
+      isTransitioning: state.isTransitioning,
+    }))
+  )
+  const { globalLoading } = useChatSessionStore(
+    useShallow((state) => ({
+      globalLoading: state.globalLoading,
+    }))
+  )
+  const isActive = isTransitioning || globalLoading
+  const label = useMemo(() => {
+    if (isTransitioning) return tCommon("loading.theme")
+    if (globalLoading) return tChat("loading.global")
+    return ""
+  }, [isTransitioning, globalLoading, tCommon, tChat])
+  const [isVisible, setIsVisible] = useState(false)
+  const [isAnimating, setIsAnimating] = useState(false)
 
   useEffect(() => {
-    if (isTransitioning) {
-      setIsVisible(true);
-      // 短暂延迟后开始动画，确保 DOM 已更新
+    if (isActive) {
+      setIsVisible(true)
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          setIsAnimating(true);
-        });
-      });
+          setIsAnimating(true)
+        })
+      })
     } else {
-      setIsAnimating(false);
-      // 等待淡出动画完成后移除元素
+      setIsAnimating(false)
       const timer = setTimeout(() => {
-        setIsVisible(false);
-      }, 400);
-      return () => clearTimeout(timer);
+        setIsVisible(false)
+      }, 400)
+      return () => clearTimeout(timer)
     }
-  }, [isTransitioning]);
+  }, [isActive])
 
-  if (!isVisible) return null;
+  if (!isVisible) return null
 
   return (
     <div
@@ -43,7 +57,6 @@ export function ThemeTransitionOverlay() {
       `}
       aria-hidden="true"
     >
-      {/* 毛玻璃遮罩背景 */}
       <div
         className={`
           absolute inset-0
@@ -54,7 +67,6 @@ export function ThemeTransitionOverlay() {
         `}
       />
 
-      {/* 中心加载指示器 - iOS 风格 */}
       <div
         className={`
           relative z-10
@@ -63,26 +75,20 @@ export function ThemeTransitionOverlay() {
           ${isAnimating ? "scale-100 opacity-100" : "scale-95 opacity-0"}
         `}
       >
-        {/* 旋转光环 */}
         <div className="relative w-12 h-12">
-          {/* 外环 */}
           <div
             className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--primary)]/60 border-r-[var(--primary)]/30 animate-spin"
             style={{ animationDuration: "0.8s" }}
           />
-          {/* 内环发光 */}
           <div className="absolute inset-1 rounded-full bg-gradient-to-br from-[var(--primary)]/20 to-transparent animate-pulse" />
-          {/* 中心点 */}
           <div className="absolute inset-0 m-auto w-2 h-2 rounded-full bg-[var(--primary)]/80 shadow-[0_0_12px_rgba(124,109,255,0.6)]" />
         </div>
 
-        {/* 切换文字提示 */}
         <span className="text-sm font-medium text-[var(--muted)] animate-pulse">
-          切换主题中...
+          {label}
         </span>
       </div>
 
-      {/* 装饰性光晕 */}
       <div
         className={`
           absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
@@ -95,5 +101,5 @@ export function ThemeTransitionOverlay() {
         `}
       />
     </div>
-  );
+  )
 }

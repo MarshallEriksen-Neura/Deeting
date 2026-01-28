@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useSearchParams } from "next/navigation"
 import { useChatStateStore } from "@/store/chat-state-store"
@@ -31,17 +31,27 @@ export function useChatHistory({
 }: UseChatHistoryProps) {
   const searchParams = useSearchParams()
   const [historyLoaded, setHistoryLoaded] = useState(false)
-  
+  const isLoadingRef = useRef(false)
+
   const { setMessages } = useChatStateStore()
-  const { setSessionId } = useChatSessionStore()
+  const { setSessionId, setHistoryState } = useChatSessionStore()
 
   const sessionStorageKey = `deeting-chat-session:${agentId}`
 
+  // 稳定化 sessionId 获取，避免 searchParams 引用变化导致重复加载
+  const querySessionIdRef = useRef<string | null>(null)
+  if (searchParams) {
+    querySessionIdRef.current = searchParams.get("session")?.trim() || null
+  }
+
   const loadCloudHistory = useCallback(async () => {
-    if (!loadHistory || historyLoaded) return
+    // 使用 ref 防止并发调用
+    if (!loadHistory || isLoadingRef.current) return
+    isLoadingRef.current = true
 
     try {
-      const querySessionId = searchParams?.get("session")?.trim() || null
+      setHistoryState({ loading: true })
+      const querySessionId = querySessionIdRef.current
       const storedSessionId =
         querySessionId ??
         (typeof window !== "undefined" ? localStorage.getItem(sessionStorageKey) : null)
@@ -59,30 +69,41 @@ export function useChatHistory({
 
         if (mapped.length > 0) {
           setMessages(mapped)
+          setHistoryState({
+            cursor: windowState.next_cursor ?? null,
+            hasMore: Boolean(windowState.has_more),
+          })
           setHistoryLoaded(true)
           return
         }
       }
 
       setMessages([])
+      setHistoryState({ cursor: null, hasMore: false })
       setHistoryLoaded(true)
     } catch {
       setMessages([])
+      setHistoryState({ cursor: null, hasMore: false })
       setHistoryLoaded(true)
+    } finally {
+      setHistoryState({ loading: false })
+      isLoadingRef.current = false
     }
   }, [
     loadHistory,
-    historyLoaded,
-    searchParams,
     sessionStorageKey,
     setMessages,
     setSessionId,
+    setHistoryState,
   ])
 
   const loadLocalHistory = useCallback(async () => {
-    if (!agent || historyLoaded) return
+    // 使用 ref 防止并发调用
+    if (!agent || isLoadingRef.current) return
+    isLoadingRef.current = true
 
     try {
+      setHistoryState({ loading: true })
       const records = await invoke<LocalAssistantMessageRecord[]>(
         "list_assistant_messages",
         { assistant_id: agent.id }
@@ -102,24 +123,36 @@ export function useChatHistory({
             }
           })
         )
+        setHistoryState({ cursor: null, hasMore: false })
         setHistoryLoaded(true)
         return
       }
 
       setMessages([])
+      setHistoryState({ cursor: null, hasMore: false })
       setHistoryLoaded(true)
     } catch {
       setMessages([])
+      setHistoryState({ cursor: null, hasMore: false })
       setHistoryLoaded(true)
+    } finally {
+      setHistoryState({ loading: false })
+      isLoadingRef.current = false
     }
-  }, [agent, historyLoaded, setMessages])
+  }, [agent, setMessages, setHistoryState])
 
   const resetHistory = useCallback(() => {
     setHistoryLoaded(false)
+    isLoadingRef.current = false
     setMessages([])
   }, [setMessages])
 
+  // 单一 effect 处理历史加载，避免重复调用
   useEffect(() => {
+    // 如果已加载或正在加载，跳过
+    if (historyLoaded || isLoadingRef.current) return
+
+    // Tauri 运行时需要等待 agent 加载
     if (isTauriRuntime && !agent) return
 
     if (isTauriRuntime) {
@@ -127,18 +160,7 @@ export function useChatHistory({
     } else {
       loadCloudHistory()
     }
-  }, [agent, isTauriRuntime, loadLocalHistory, loadCloudHistory])
-
-  // Ensure history is loaded on mount if not already loaded
-  useEffect(() => {
-    if ((isTauriRuntime && !agent) || historyLoaded) return
-
-    if (isTauriRuntime) {
-      loadLocalHistory()
-    } else {
-      loadCloudHistory()
-    }
-  }, [agent, historyLoaded, isTauriRuntime, loadCloudHistory, loadLocalHistory])
+  }, [agent, historyLoaded, isTauriRuntime, loadLocalHistory, loadCloudHistory])
 
   return {
     historyLoaded,

@@ -8,7 +8,8 @@ import { useTheme } from 'next-themes';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { HistorySidebar } from '@/components/chat/sidebar/history-sidebar';
 import { ImageHistorySidebar } from '@/components/image/history/image-history-sidebar';
-import { useChatStore } from '@/store/chat-store';
+import { useChatStateStore } from '@/store/chat-state-store';
+import { useChatSessionStore } from '@/store/chat-session-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useI18n } from '@/hooks/use-i18n';
@@ -52,14 +53,9 @@ export default function HUD() {
     setAssistants,
     setModels,
     setActiveAssistantId,
-    loadHistory,
-    isLoading,
-    statusCode,
-    statusMeta,
-    resetSession,
-    setSessionId,
-    setGlobalLoading
-  } = useChatStore(
+    setMessages,
+    clearAttachments,
+  } = useChatStateStore(
     useShallow((state) => ({
       config: state.config,
       setConfig: state.setConfig,
@@ -69,7 +65,20 @@ export default function HUD() {
       setAssistants: state.setAssistants,
       setModels: state.setModels,
       setActiveAssistantId: state.setActiveAssistantId,
-      loadHistory: state.loadHistory,
+      setMessages: state.setMessages,
+      clearAttachments: state.clearAttachments,
+    }))
+  );
+
+  const {
+    isLoading,
+    statusCode,
+    statusMeta,
+    resetSession,
+    setSessionId,
+    setGlobalLoading,
+  } = useChatSessionStore(
+    useShallow((state) => ({
       isLoading: state.isLoading,
       statusCode: state.statusCode,
       statusMeta: state.statusMeta,
@@ -128,11 +137,6 @@ export default function HUD() {
     }
   }, [imageModels, isImage, selectedModelId, setSelectedModelId]);
 
-  useEffect(() => {
-    if (!activeAssistantId) return;
-    void loadHistory(activeAssistantId);
-  }, [activeAssistantId, loadHistory]);
-
   const activeModelSource = isImage ? imageModels : models;
   const activeModelId = isImage ? selectedModelId : config.model;
   const activeModel =
@@ -148,6 +152,11 @@ export default function HUD() {
   // 使用 useCallback 缓存事件处理函数
   const handleNewChat = useCallback(async () => {
      resetSession();
+     setMessages([]);
+     clearAttachments();
+     if (typeof window !== "undefined" && activeAssistantId) {
+       localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`);
+     }
      const targetAssistantId = activeAssistantId ?? assistants[0]?.id ?? undefined;
      setGlobalLoading(true);
      try {
@@ -178,7 +187,17 @@ export default function HUD() {
        const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
        window.history.replaceState(null, "", url || "/chat");
      }
-  }, [resetSession, searchParams, pathname, activeAssistantId, assistants, setSessionId, setGlobalLoading]);
+  }, [
+    resetSession,
+    setMessages,
+    clearAttachments,
+    searchParams,
+    pathname,
+    activeAssistantId,
+    assistants,
+    setSessionId,
+    setGlobalLoading,
+  ]);
 
   const handleToggleControlCenter = useCallback(() => {
     setIsControlCenterOpen(prev => !prev);

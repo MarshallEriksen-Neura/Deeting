@@ -111,10 +111,12 @@ export function useChatMessagingService() {
     setErrorMessage,
     setStatus,
     clearStatus,
+    setHistoryState,
   } = useChatSessionStore()
 
   const loadHistoryBySession = useCallback(async (sessionId: string) => {
     if (!sessionId) return
+    setHistoryState({ loading: true })
     try {
       const windowState = await fetchConversationHistory(sessionId, { limit: 30 })
       const mapped = mapConversationMessages(windowState.messages ?? [])
@@ -128,11 +130,18 @@ export function useChatMessagingService() {
       }
       setMessages(resolved)
       setSessionId(sessionId)
+      setHistoryState({
+        cursor: windowState.next_cursor ?? null,
+        hasMore: Boolean(windowState.has_more),
+      })
     } catch {
       setMessages([])
       setSessionId(undefined)
+      setHistoryState({ cursor: null, hasMore: false })
+    } finally {
+      setHistoryState({ loading: false })
     }
-  }, [setMessages, setSessionId, setErrorMessage])
+  }, [setMessages, setSessionId, setErrorMessage, setHistoryState])
 
   const resetSession = useCallback(() => {
     const activeAssistantId = useChatStateStore.getState().activeAssistantId
@@ -142,7 +151,47 @@ export function useChatMessagingService() {
     setMessages([])
     setSessionId(undefined)
     clearAttachments()
-  }, [setMessages, setSessionId, clearAttachments])
+    setHistoryState({ cursor: null, hasMore: false, loading: false })
+  }, [setMessages, setSessionId, clearAttachments, setHistoryState])
+
+  const loadMoreHistory = useCallback(async () => {
+    const {
+      sessionId,
+      historyCursor,
+      historyHasMore,
+      historyLoading,
+    } = useChatSessionStore.getState()
+
+    if (!sessionId || historyLoading || !historyHasMore) return
+    if (historyCursor == null) return
+
+    setHistoryState({ loading: true })
+    try {
+      const windowState = await fetchConversationHistory(sessionId, {
+        cursor: historyCursor ?? undefined,
+        limit: 30,
+      })
+      const mapped = mapConversationMessages(windowState.messages ?? [])
+      let resolved = mapped
+      try {
+        resolved = await resolveMessageAttachments(mapped)
+      } catch (error) {
+        console.warn("signAssets_failed", error)
+        setErrorMessage("i18n:input.image.errorSign")
+        resolved = mapped
+      }
+      const currentMessages = useChatStateStore.getState().messages
+      setMessages([...resolved, ...currentMessages])
+      setHistoryState({
+        cursor: windowState.next_cursor ?? null,
+        hasMore: Boolean(windowState.has_more),
+      })
+    } catch {
+      setHistoryState({ hasMore: false })
+    } finally {
+      setHistoryState({ loading: false })
+    }
+  }, [setErrorMessage, setHistoryState, setMessages])
 
   const cancelActiveRequest = useCallback(async () => {
     const requestId = requestIdRef.current
@@ -300,6 +349,7 @@ export function useChatMessagingService() {
   return {
     sendMessage,
     loadHistoryBySession,
+    loadMoreHistory,
     resetSession,
     cancelActiveRequest,
   }

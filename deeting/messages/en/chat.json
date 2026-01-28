@@ -5,7 +5,8 @@
       "stream": "Stream",
       "streamOn": "Live output",
       "streamOff": "Full response",
-      "newChat": "New chat"
+      "newChat": "New chat",
+      "settings": "Settings"
     },
     "model": {
       "label": "Model",
@@ -161,6 +162,10 @@
       "disclaimer": "AI generated content may be inaccurate."
     },
     "error": {
+      "title": "Something went wrong",
+      "description": "The chat component encountered an error. Please try refreshing the page.",
+      "retry": "Retry",
+      "refresh": "Refresh page",
       "requestFailed": "Request failed. Please try again.",
       "modelUnavailable": "No available models. Please configure a provider."
     },

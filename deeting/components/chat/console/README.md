@@ -35,10 +35,12 @@ function ChatPage() {
 ```
 
 **依赖：**
-- `@/store/chat-store` - 聊天状态管理
+- `@/store/chat-state-store` - 聊天状态管理
+- `@/store/chat-session-store` - 会话状态管理
 - `@/store/market-store` - 市场/助手数据
 - `@/hooks/use-i18n` - 国际化
 - `@/lib/chat/attachments` - 附件处理
+- `@/hooks/chat/use-chat-messaging` - 消息发送与取消
 
 **迁移说明：**
 - 原路径：`deeting/app/[locale]/chat/components/controls-container.tsx`

@@ -219,7 +219,7 @@ ChatMessageList
 ├── @/components/ui/avatar (shadcn/ui)
 ├── @/components/chat/messages/message-item
 ├── @/app/[locale]/chat/components/ai-response-bubble
-├── @/store/chat-store
+├── @/store/chat-state-store
 ├── @/hooks/use-i18n
 └── react-virtuoso (虚拟滚动库)
 
@@ -230,7 +230,7 @@ MessageItem
 ├── @/app/[locale]/chat/components/ai-response-bubble
 ├── @/lib/chat/message-normalizer
 ├── @/lib/chat/message-content
-├── @/store/chat-store
+├── @/store/chat-state-store
 └── @/hooks/use-i18n
 ```
 

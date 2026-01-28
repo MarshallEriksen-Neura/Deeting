@@ -5,7 +5,8 @@
       "stream": "流式",
       "streamOn": "逐字生成",
       "streamOff": "整段输出",
-      "newChat": "新建会话"
+      "newChat": "新建会话",
+      "settings": "设置"
     },
     "model": {
       "label": "模型",
@@ -161,6 +162,10 @@
       "disclaimer": "AI 生成内容可能不准确。"
     },
     "error": {
+      "title": "出现错误",
+      "description": "聊天组件遇到了一个错误，请尝试刷新页面。",
+      "retry": "重试",
+      "refresh": "刷新页面",
       "requestFailed": "请求失败，请稍后重试。",
       "modelUnavailable": "暂无可用模型，请先配置提供商。"
     },

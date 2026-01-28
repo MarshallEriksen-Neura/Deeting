@@ -35,6 +35,22 @@ async def lifespan(app: FastAPI):
         await cache.preload_scripts()
     except Exception as exc:
         logger.warning(f"cache_init_failed: {exc}")
+    try:
+        from app.qdrant_client import qdrant_is_configured
+
+        if not qdrant_is_configured():
+            logger.info("qdrant_init_skipped")
+        else:
+            from app.services.memory.qdrant_service import system_qdrant
+            from app.services.agent import agent_service
+            from app.services.tools.tool_sync_service import tool_sync_service
+
+            await system_qdrant.initialize_collections()
+            await agent_service.initialize()
+            synced = await tool_sync_service.sync_system_tools(agent_service.tools)
+            logger.info(f"qdrant_init_done: synced={synced}")
+    except Exception as exc:
+        logger.warning(f"qdrant_init_failed: {exc}")
 
     yield
 

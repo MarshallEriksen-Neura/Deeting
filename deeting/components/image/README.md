@@ -141,7 +141,8 @@ export default function ChatPage() {
 - ✅ Suspense 支持：优雅的加载状态
 
 **依赖：**
-- `@/store/chat-store` - 聊天状态管理
+- `@/store/chat-state-store` - 聊天状态管理
+- `@/store/chat-session-store` - 会话状态管理
 - `@/hooks/use-i18n` - 国际化
 - `@/components/chat/markdown-viewer` - Markdown 渲染
 - `@/components/common/skeletons` - 骨架屏
@@ -230,19 +231,18 @@ const {
 } = useImageGenerationStore();
 ```
 
-### ChatStore
+### Chat Stores
 
 聊天相关的状态管理：
 
 ```typescript
-import { useChatStore } from "@/store/chat-store";
+import { useChatStateStore } from "@/store/chat-state-store";
+import { useChatSessionStore } from "@/store/chat-session-store";
+import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service";
 
-const {
-  messages,
-  isLoading,
-  historyHasMore,
-  loadMoreHistory,
-} = useChatStore();
+const { messages } = useChatStateStore();
+const { isLoading, historyHasMore, historyLoading } = useChatSessionStore();
+const { loadMoreHistory } = useChatMessagingService();
 ```
 
 ## 数据获取

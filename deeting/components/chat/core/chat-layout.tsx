@@ -5,7 +5,7 @@ import { Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/hooks/use-i18n"
 import { useRouter } from "next/navigation"
-import type { ChatAssistant } from "@/store/chat-store"
+import type { ChatAssistant } from "@/store/chat-state-store"
 
 interface ChatLayoutProps {
   children: React.ReactNode
@@ -79,7 +79,7 @@ export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
 
   // 正常聊天布局
   return (
-    <div className="flex flex-col h-[calc(100vh-60px)] bg-background">
+    <div className="flex flex-col h-[calc(100vh-60px)] min-h-0 overflow-hidden bg-transparent">
       {children}
     </div>
   )

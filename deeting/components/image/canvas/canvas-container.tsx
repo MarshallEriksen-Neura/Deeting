@@ -3,7 +3,9 @@
 import { useEffect, useRef, useMemo, useCallback, memo, Suspense, lazy } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Loader2 } from 'lucide-react';
-import { useChatStore } from '@/store/chat-store';
+import { useChatStateStore } from '@/store/chat-state-store';
+import { useChatSessionStore } from '@/store/chat-session-store';
+import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useI18n } from '@/hooks/use-i18n';
 import { normalizeMessage } from '@/lib/chat/message-normalizer';
 import type { ChatImageAttachment } from '@/lib/chat/message-content';
@@ -148,25 +150,29 @@ export default function Canvas() {
   const t = useI18n('chat');
   const {
     messages,
+    streamEnabled
+  } = useChatStateStore(useShallow((state) => ({
+    messages: state.messages,
+    streamEnabled: state.streamEnabled
+  })));
+
+  const {
     isLoading,
     historyHasMore,
     historyLoading,
-    loadMoreHistory,
     statusStage,
     statusCode,
     statusMeta,
-    streamEnabled
-  } = useChatStore(useShallow((state) => ({
-    messages: state.messages,
+  } = useChatSessionStore(useShallow((state) => ({
     isLoading: state.isLoading,
     historyHasMore: state.historyHasMore,
     historyLoading: state.historyLoading,
-    loadMoreHistory: state.loadMoreHistory,
     statusStage: state.statusStage,
     statusCode: state.statusCode,
     statusMeta: state.statusMeta,
-    streamEnabled: state.streamEnabled
   })));
+
+  const { loadMoreHistory } = useChatMessagingService();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

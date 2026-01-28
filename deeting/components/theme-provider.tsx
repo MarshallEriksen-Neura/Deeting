@@ -6,7 +6,6 @@ import { GlassButton } from "@/components/ui/glass-button";
 import { cn } from "@/lib/utils";
 import { useShallow } from "zustand/react/shallow";
 import { useThemeStore } from "@/store/theme-store";
-import { ThemeTransitionOverlay } from "@/components/theme-transition-overlay";
 
 interface ThemeProviderProps {
   children: React.ReactNode;
@@ -43,7 +42,6 @@ export function ThemeProvider({
       storageKey="deeting-theme"
     >
       {children}
-      {!disableTransition && <ThemeTransitionOverlay />}
     </NextThemesProvider>
   );
 }

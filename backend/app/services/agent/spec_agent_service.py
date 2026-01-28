@@ -27,6 +27,7 @@ from app.services.conversation.service import ConversationService
 from app.services.conversation.turn_index_sync import sync_redis_last_turn
 from app.services.mcp.client import mcp_client
 from app.services.mcp.discovery import mcp_discovery_service
+from app.services.tools.tool_context_service import tool_context_service
 from app.services.providers.llm import llm_service
 from app.services.knowledge import SpecKnowledgeService
 from app.utils.time_utils import Datetime
@@ -913,9 +914,12 @@ class SpecAgentService:
         await self.initialize_plugins(user_id=user_id)
 
         trimmed_query = query.strip()
-        local_tools, _ = self._load_local_tools()
-        mcp_tools, _ = await self._load_mcp_tools(session, user_id)
-        tools_desc = self._build_tools_description(local_tools + mcp_tools)
+        tools = await tool_context_service.build_tools(
+            session=session,
+            user_id=user_id,
+            query=trimmed_query,
+        )
+        tools_desc = self._build_tools_description(tools)
         
         # Fetch available models for the user
         model_repo = ProviderModelRepository(session)
@@ -1469,10 +1473,14 @@ class SpecAgentService:
         manifest = SpecManifest(**plan.manifest_data)
 
         await self.initialize_plugins(user_id=user_id)
-        local_tools, local_handlers = self._load_local_tools()
-        mcp_tools, mcp_map = await self._load_mcp_tools(session, user_id)
-
-        available_tools = local_tools + mcp_tools
+        tool_query = self._build_tool_query_from_manifest(manifest)
+        available_tools = await tool_context_service.build_tools(
+            session=session,
+            user_id=user_id,
+            query=tool_query,
+        )
+        local_handlers = self._build_local_handlers({tool.name for tool in available_tools})
+        mcp_map = await self._build_mcp_tool_map(session, user_id)
 
         executor = SpecExecutor(
             plan_id=plan_id,
@@ -1493,30 +1501,20 @@ class SpecAgentService:
         await executor.initialize()
         return executor
 
-    def _load_local_tools(self) -> tuple[List[ToolDefinition], Dict[str, Any]]:
-        tools: List[ToolDefinition] = []
+    def _build_local_handlers(self, tool_names: set[str]) -> Dict[str, Any]:
         handlers: Dict[str, Any] = {}
-
         raw_tools = self.plugin_manager.get_all_tools()
         for tool_def in raw_tools:
-            func_def = tool_def["function"]
-            t_name = func_def["name"]
-
-            tools.append(
-                ToolDefinition(
-                    name=t_name,
-                    description=func_def["description"],
-                    input_schema=func_def["parameters"],
-                )
-            )
-
+            func_def = tool_def.get("function", {})
+            t_name = func_def.get("name")
+            if not t_name or t_name not in tool_names:
+                continue
             handler = self._find_handler(t_name)
             if handler:
                 handlers[t_name] = handler
             else:
                 logger.warning("Tool '%s' advertised but no handler found.", t_name)
-
-        return tools, handlers
+        return handlers
 
     def _find_handler(self, tool_name: str):
         method_name = f"handle_{tool_name}"
@@ -1528,11 +1526,9 @@ class SpecAgentService:
                 return getattr(plugin, method_name)
         return None
 
-    async def _load_mcp_tools(
+    async def _build_mcp_tool_map(
         self, session: AsyncSession, user_id: uuid.UUID
-    ) -> tuple[List[ToolDefinition], Dict[str, Dict[str, Any]]]:
-        tools = await mcp_discovery_service.get_active_tools(session, user_id)
-
+    ) -> Dict[str, Dict[str, Any]]:
         stmt = select(UserMcpServer).where(
             UserMcpServer.user_id == user_id,
             UserMcpServer.is_enabled == True,
@@ -1555,7 +1551,32 @@ class SpecAgentService:
                     continue
                 tool_map[name] = {"sse_url": server.sse_url, "headers": headers}
 
-        return tools, tool_map
+        return tool_map
+
+    @staticmethod
+    def _build_tool_query_from_manifest(manifest: SpecManifest) -> str:
+        parts = [manifest.project_name]
+        instructions: list[str] = []
+        required_tools: list[str] = []
+        for node in manifest.nodes or []:
+            if getattr(node, "type", None) == "action":
+                instruction = getattr(node, "instruction", None)
+                if instruction:
+                    instructions.append(instruction)
+                for tool_name in getattr(node, "required_tools", None) or []:
+                    if tool_name:
+                        required_tools.append(str(tool_name))
+            if len(instructions) >= 3:
+                break
+            if len(required_tools) >= 5:
+                break
+        if instructions:
+            parts.extend(instructions)
+        if required_tools:
+            # 权重：required_tools 通过重复加入 query 来提升召回概率
+            parts.extend(required_tools)
+            parts.extend(required_tools)
+        return "\n".join([p for p in parts if p])
 
 
 spec_agent_service = SpecAgentService()

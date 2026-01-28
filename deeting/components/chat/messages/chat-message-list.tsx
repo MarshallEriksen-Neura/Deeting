@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { MessageItem } from "./message-item"
 import { AIResponseBubble } from "./ai-response-bubble"
-import type { Message, ChatAssistant } from "@/store/chat-store"
+import type { Message, ChatAssistant } from "@/store/chat-state-store"
 import { useI18n } from "@/hooks/use-i18n"
 
 interface ChatMessageListProps {
@@ -47,6 +47,7 @@ export function ChatMessageList({
   const virtuosoRef = React.useRef<VirtuosoHandle>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const scrollAreaRef = React.useRef<HTMLDivElement>(null)
+  const containerRef = React.useRef<HTMLDivElement>(null)
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false)
   const [showScrollToTop, setShowScrollToTop] = React.useState(false)
   const [autoScrollEnabled, setAutoScrollEnabled] = React.useState(true)
@@ -61,6 +62,56 @@ export function ChatMessageList({
 
   // 判断是否启用虚拟滚动（消息数量 > 50）
   const useVirtualScroll = messages.length > 50
+
+  // 根据 HUD/Controls 高度为消息列表预留空间
+  React.useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const hud = document.querySelector<HTMLElement>('[data-chat-hud]')
+    const controls = document.querySelector<HTMLElement>('[data-chat-controls]')
+    const fallbackTop = 112
+    const fallbackBottom = 152
+
+    const updateOffsets = () => {
+      const hudHeight = hud?.getBoundingClientRect().height ?? 0
+      const controlsHeight = controls?.getBoundingClientRect().height ?? 0
+      const topOffset = Math.max(hudHeight + 24, fallbackTop)
+      const bottomOffset = Math.max(controlsHeight + 24, fallbackBottom)
+      container.style.setProperty("--chat-hud-offset", `${topOffset}px`)
+      container.style.setProperty("--chat-controls-offset", `${bottomOffset}px`)
+    }
+
+    updateOffsets()
+
+    const observers: ResizeObserver[] = []
+    if (hud) {
+      const observer = new ResizeObserver(updateOffsets)
+      observer.observe(hud)
+      observers.push(observer)
+    }
+    if (controls) {
+      const observer = new ResizeObserver(updateOffsets)
+      observer.observe(controls)
+      observers.push(observer)
+    }
+
+    window.addEventListener("resize", updateOffsets)
+
+    return () => {
+      observers.forEach((observer) => observer.disconnect())
+      window.removeEventListener("resize", updateOffsets)
+    }
+  }, [])
+
+  const listPaddingStyle = React.useMemo(
+    () => ({
+      paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top) + 16px)",
+      paddingBottom:
+        "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom) + 32px)",
+    }),
+    []
+  )
 
   // 自动滚动到底部（普通滚动模式）
   React.useEffect(() => {
@@ -203,6 +254,7 @@ export function ChatMessageList({
             parts={[]}
             isActive={true}
             streamEnabled={streamEnabled}
+            typingEnabled={false}
             statusStage={statusStage}
             statusCode={statusCode}
             statusMeta={statusMeta}
@@ -213,7 +265,7 @@ export function ChatMessageList({
   }
 
   return (
-    <div className="relative flex-1">
+    <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden">
       {useVirtualScroll ? (
         // 虚拟滚动模式（消息数量 > 50）
         <Virtuoso
@@ -229,7 +281,8 @@ export function ChatMessageList({
               <div
                 ref={ref}
                 {...props}
-                className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 py-4 px-4"
+                className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
+                style={listPaddingStyle}
               >
                 {children}
               </div>
@@ -255,9 +308,12 @@ export function ChatMessageList({
         />
       ) : (
         // 普通滚动模式（消息数量 <= 50）
-        <div ref={scrollAreaRef} className="h-full">
-          <ScrollArea className="h-full p-4">
-            <div className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 py-4">
+        <div ref={scrollAreaRef} className="h-full min-h-0">
+          <ScrollArea className="h-full">
+            <div
+              className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
+              style={listPaddingStyle}
+            >
               {messages.map((msg, index) => renderMessage(index))}
               {renderTypingIndicator()}
               <div ref={scrollRef} />

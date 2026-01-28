@@ -1,6 +1,5 @@
 import { ReactNode } from 'react';
 import DynamicBackground from '@/components/chat/visuals/dynamic-background';
-import { GlobalLoadingOverlay } from '@/components/chat/visuals/global-loading-overlay';
 import { WorkspaceShell } from '@/components/common/workspace';
 // import { GlobalAudioPlayer } from './components/global-audio-player';
 
@@ -52,13 +51,15 @@ export default function ChatLayout({
         </div>
       ) : null}
 
-      {/* Children (Modals/Intercepting Routes) */}
-      <div className="relative z-[100]">
+      {/* Chat content */}
+      <div className="relative z-10">
         {children}
-        {assistant}
       </div>
 
-        <GlobalLoadingOverlay />
+      {/* Modals / Assistants overlays */}
+      <div className="relative z-[120]">
+        {assistant}
+      </div>
 
         {/* Global TTS Audio Player */}
         {/* <GlobalAudioPlayer /> */}

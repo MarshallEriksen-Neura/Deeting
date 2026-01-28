@@ -6,7 +6,8 @@ import { useMemo, useRef, useState, useCallback, memo } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
-import { useChatStore } from '@/store/chat-store';
+import { useChatStateStore } from '@/store/chat-state-store';
+import { useChatSessionStore } from '@/store/chat-session-store';
 import { useMarketStore } from '@/store/market-store';
 import { useI18n } from '@/hooks/use-i18n';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { buildImageAttachments, UPLOAD_ERROR_CODES } from '@/lib/chat/attachments';
 import { createConversation } from '@/lib/api/conversations';
+import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
 
 /**
  * ControlsContainer - 聊天控制面板组件
@@ -49,43 +51,60 @@ function ControlsContainer() {
     input,
     attachments,
     setInput,
-    sendMessage,
-    isLoading,
+    setMessages,
     activeAssistantId,
     assistants,
     models,
     config,
     setConfig,
     setActiveAssistantId,
-    setSessionId,
-    setGlobalLoading,
-    resetSession,
     addAttachments,
     removeAttachment,
     clearAttachments,
-    cancelActiveRequest,
-  } = useChatStore(
+  } = useChatStateStore(
     useShallow((state) => ({
       input: state.input,
       attachments: state.attachments,
       setInput: state.setInput,
-      sendMessage: state.sendMessage,
-      isLoading: state.isLoading,
+      setMessages: state.setMessages,
       activeAssistantId: state.activeAssistantId,
       assistants: state.assistants,
       models: state.models,
       config: state.config,
       setConfig: state.setConfig,
       setActiveAssistantId: state.setActiveAssistantId,
-      setSessionId: state.setSessionId,
-      setGlobalLoading: state.setGlobalLoading,
-      resetSession: state.resetSession,
       addAttachments: state.addAttachments,
       removeAttachment: state.removeAttachment,
       clearAttachments: state.clearAttachments,
-      cancelActiveRequest: state.cancelActiveRequest,
     }))
   );
+
+  const { isLoading, setSessionId, setGlobalLoading, resetSession } = useChatSessionStore(
+    useShallow((state) => ({
+      isLoading: state.isLoading,
+      setSessionId: state.setSessionId,
+      setGlobalLoading: state.setGlobalLoading,
+      resetSession: state.resetSession,
+    }))
+  );
+
+  const isTauriRuntime = useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  );
+
+  const activeAssistant = useMemo(
+    () => assistants.find((assistant) => assistant.id === activeAssistantId),
+    [assistants, activeAssistantId]
+  );
+
+  const { handleSendMessage, cancelActiveRequest } = useChatMessaging({
+    agent: activeAssistant ? { id: activeAssistant.id, name: activeAssistant.name } : undefined,
+    isTauriRuntime,
+  });
 
   // 缓存计算值
   const canSend = useMemo(
@@ -95,11 +114,6 @@ function ControlsContainer() {
   
   const isGenerating = isLoading;
   
-  const activeAssistant = useMemo(
-    () => assistants.find((assistant) => assistant.id === activeAssistantId),
-    [assistants, activeAssistantId]
-  );
-  
   // 缓存事件处理函数
   const handleParamsOpenChange = useCallback((open: boolean) => {
     setIsParamsOpen(open);
@@ -107,6 +121,11 @@ function ControlsContainer() {
 
   const handleNewChat = useCallback(async () => {
     resetSession();
+    setMessages([]);
+    clearAttachments();
+    if (typeof window !== "undefined" && activeAssistantId) {
+      localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`);
+    }
     const targetAssistantId =
       activeAssistantId ?? assistants[0]?.id ?? installedAgents[0]?.id ?? undefined;
     setGlobalLoading(true);
@@ -140,6 +159,8 @@ function ControlsContainer() {
     }
   }, [
     resetSession,
+    setMessages,
+    clearAttachments,
     searchParams,
     pathname,
     activeAssistantId,
@@ -162,14 +183,14 @@ function ControlsContainer() {
       if (defaultAgent) {
         setActiveAssistantId(defaultAgent.id);
         router.replace(`/chat/${defaultAgent.id}`);
-        sendMessage();
+        handleSendMessage();
       } else {
         console.warn("No agents available to start chat");
       }
     } else {
-      sendMessage();
+      handleSendMessage();
     }
-  }, [canSend, activeAssistantId, installedAgents, assistants, setActiveAssistantId, router, sendMessage]);
+  }, [canSend, activeAssistantId, installedAgents, assistants, setActiveAssistantId, router, handleSendMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

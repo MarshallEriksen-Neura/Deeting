@@ -17,15 +17,16 @@ import {
   useStepProgress, 
   resolveStageIndex 
 } from "@/components/chat/visuals/status-visuals";
+import { useTypewriter } from "@/hooks/chat/use-typewriter";
 
 interface AIResponseBubbleProps {
   parts: MessageBlock[];
   isActive?: boolean;
   streamEnabled?: boolean;
+  typingEnabled?: boolean;
   statusStage?: string | null;
   statusCode?: string | null;
   statusMeta?: Record<string, unknown> | null;
-  reveal?: boolean;
 }
 
 /**
@@ -50,6 +51,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     parts,
     isActive = false,
     streamEnabled = false,
+    typingEnabled = false,
     statusStage = null,
     statusCode = null,
     statusMeta = null,
@@ -177,9 +179,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
                     return (
                       <motion.div key={`text-${index}`} variants={itemVariants}>
-                        <MarkdownViewer
+                        <TypingTextBlock
                           content={part.content}
-                          className="chat-markdown chat-markdown-assistant"
+                          typingEnabled={typingEnabled}
                         />
                       </motion.div>
                     );
@@ -227,10 +229,24 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     return (
       prevProps.isActive === nextProps.isActive &&
       prevProps.streamEnabled === nextProps.streamEnabled &&
+      prevProps.typingEnabled === nextProps.typingEnabled &&
       prevProps.statusStage === nextProps.statusStage &&
       prevProps.statusCode === nextProps.statusCode &&
       // statusMeta 进行浅比较
       JSON.stringify(prevProps.statusMeta) === JSON.stringify(nextProps.statusMeta)
+    );
+  }
+);
+
+const TypingTextBlock = memo<{ content: string; typingEnabled: boolean }>(
+  function TypingTextBlock({ content, typingEnabled }) {
+    const { displayed } = useTypewriter(content ?? "", typingEnabled);
+
+    return (
+      <MarkdownViewer
+        content={displayed}
+        className="chat-markdown chat-markdown-assistant"
+      />
     );
   }
 );

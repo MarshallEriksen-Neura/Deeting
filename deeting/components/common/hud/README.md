@@ -37,7 +37,8 @@ export default function ChatPage() {
 
 ## 依赖
 
-- `@/store/chat-store` - 聊天状态管理
+- `@/store/chat-state-store` - 聊天状态管理
+- `@/store/chat-session-store` - 会话状态管理
 - `@/store/image-generation-store` - 图像生成状态管理
 - `@/hooks/use-chat-service` - 聊天服务 Hook
 - `@/hooks/use-i18n` - 国际化 Hook

@@ -116,6 +116,9 @@ graph TD
         ctx.set("mcp_discovery", "tools", final_tools)
     ```
 
+**统一复用说明**：
+- Chat 主链路与 Spec-Agent 统一复用 `ToolContextService`，避免两套检索逻辑分叉。
+
 **检索参数（已配置项）**
 - `MCP_TOOL_USER_TOPK=5`、`MCP_TOOL_SYSTEM_TOPK=3`
 - `MCP_TOOL_SCORE_THRESHOLD=0.75`

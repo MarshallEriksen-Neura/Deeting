@@ -19,6 +19,9 @@
       "contact": "Contact Admin",
       "hint": "Tip: Navigation or search can guide you to the right place."
     },
+    "loading": {
+      "theme": "Switching theme..."
+    },
     "globalError": {
       "title": "System ripple detected",
       "description": "We are calming the waves. Please try again shortly or go back home.",

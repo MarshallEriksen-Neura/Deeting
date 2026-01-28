@@ -8,9 +8,23 @@ interface ChatSessionStore {
   sessionId?: string
   setSessionId: (sessionId?: string) => void
   
+  // 全局加载状态（如新建会话等）
+  globalLoading: boolean
+  setGlobalLoading: (loading: boolean) => void
+
   // 加载状态
   isLoading: boolean
   setIsLoading: (loading: boolean) => void
+
+  // 历史记录加载
+  historyCursor: number | null
+  historyHasMore: boolean
+  historyLoading: boolean
+  setHistoryState: (state: {
+    cursor?: number | null
+    hasMore?: boolean
+    loading?: boolean
+  }) => void
   
   // 错误状态
   errorMessage: string | null
@@ -40,9 +54,23 @@ export const useChatSessionStore = create<ChatSessionStore>((set) => ({
   sessionId: undefined,
   setSessionId: (sessionId) => set({ sessionId }),
 
+  // 全局加载状态
+  globalLoading: false,
+  setGlobalLoading: (globalLoading) => set({ globalLoading }),
+
   // 加载状态
   isLoading: false,
   setIsLoading: (isLoading) => set({ isLoading }),
+
+  // 历史记录加载
+  historyCursor: null,
+  historyHasMore: false,
+  historyLoading: false,
+  setHistoryState: (state) => set((prev) => ({
+    historyCursor: state.cursor !== undefined ? state.cursor : prev.historyCursor,
+    historyHasMore: state.hasMore !== undefined ? state.hasMore : prev.historyHasMore,
+    historyLoading: state.loading !== undefined ? state.loading : prev.historyLoading,
+  })),
 
   // 错误状态
   errorMessage: null,
@@ -74,11 +102,16 @@ export const useChatSessionStore = create<ChatSessionStore>((set) => ({
   // 重置会话
   resetSession: () => set({
     sessionId: undefined,
+    globalLoading: false,
+    isLoading: false,
     errorMessage: null,
     statusStage: null,
     statusStep: null,
     statusState: null,
     statusCode: null,
     statusMeta: null,
+    historyCursor: null,
+    historyHasMore: false,
+    historyLoading: false,
   }),
 }))

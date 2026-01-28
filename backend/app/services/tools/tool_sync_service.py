@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
@@ -301,6 +302,12 @@ class ToolSyncService:
         query: str,
         user_id: Optional[uuid.UUID] = None,
     ) -> List[ToolDefinition]:
+        start_time = time.perf_counter()
+        logger.info(
+            "ToolSyncService: search_tools start query_len=%s user_id=%s",
+            len(query or ""),
+            user_id,
+        )
         if not qdrant_is_configured():
             return []
 
@@ -308,20 +315,43 @@ class ToolSyncService:
         if not q:
             return []
 
+        embed_start = time.perf_counter()
         vector = await self._embedding_service.embed_text(q)
+        logger.info(
+            "ToolSyncService: embedding duration_ms=%.2f",
+            (time.perf_counter() - embed_start) * 1000,
+        )
 
         sys_limit = int(getattr(settings, "MCP_TOOL_SYSTEM_TOPK", 3) or 3)
         user_limit = int(getattr(settings, "MCP_TOOL_USER_TOPK", 5) or 5)
         total_limit = max(1, sys_limit + user_limit)
         threshold = float(getattr(settings, "MCP_TOOL_SCORE_THRESHOLD", 0.75) or 0.75)
 
+        sys_start = time.perf_counter()
         sys_hits = await self._search_system(vector, limit=total_limit, threshold=threshold)
+        logger.info(
+            "ToolSyncService: system search duration_ms=%.2f hits=%s",
+            (time.perf_counter() - sys_start) * 1000,
+            len(sys_hits),
+        )
         user_hits: list[dict[str, Any]] = []
         if user_id:
+            user_start = time.perf_counter()
             user_hits = await self._search_user(user_id, vector, limit=user_limit, threshold=threshold)
+            logger.info(
+                "ToolSyncService: user search duration_ms=%.2f hits=%s",
+                (time.perf_counter() - user_start) * 1000,
+                len(user_hits),
+            )
 
         final_hits = self._merge_hits(user_hits, sys_hits, total_limit)
-        return [self._hit_to_def(hit) for hit in final_hits]
+        result = [self._hit_to_def(hit) for hit in final_hits]
+        logger.info(
+            "ToolSyncService: search_tools done duration_ms=%.2f final_hits=%s",
+            (time.perf_counter() - start_time) * 1000,
+            len(result),
+        )
+        return result
 
     async def _search_system(
         self,

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { normalizeMessage } from "@/lib/chat/message-normalizer"
-import type { Message, ChatAssistant } from "@/store/chat-store"
+import type { Message, ChatAssistant } from "@/store/chat-state-store"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
@@ -52,6 +52,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     // 判断是否为最后一条助手消息（用于 reveal 动画）
     const isLastAssistantMessage = message.role === "assistant" && message.id === lastAssistantId
     const shouldReveal = !isTyping && !streamEnabled && isLastAssistantMessage
+    const typingEnabled = isLastAssistantMessage && (streamEnabled || shouldReveal)
 
     return (
       <div
@@ -83,10 +84,10 @@ export const MessageItem = React.memo<MessageItemProps>(
               parts={message.blocks ?? normalizeMessage(message.content)}
               isActive={isActive}
               streamEnabled={streamEnabled}
+              typingEnabled={typingEnabled}
               statusStage={isActive ? statusStage : null}
               statusCode={isActive ? statusCode : null}
               statusMeta={isActive ? statusMeta : null}
-              reveal={shouldReveal}
             />
             {message.attachments?.length ? (
               <MessageAttachments
