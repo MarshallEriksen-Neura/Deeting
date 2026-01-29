@@ -26,8 +26,9 @@ from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.core.metrics import record_upstream_call
 from app.repositories.bandit_repository import BanditRepository
-from app.services.providers.routing_selector import RoutingSelector
 from app.services.providers.config_utils import deep_merge, extract_by_path, render_value
+from app.services.providers.blocks_transformer import extract_stream_blocks
+from app.services.providers.routing_selector import RoutingSelector
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.proxy.proxy_pool import get_proxy_pool, mask_proxy_url
@@ -201,6 +202,45 @@ class StreamTokenAccumulator:
         return max(1, self.chunks_count * 3)
 
 
+def _emit_blocks_for_chunk(
+    ctx: "WorkflowContext",
+    chunk: bytes,
+    stream_transform: dict[str, Any] | None,
+) -> None:
+    if not ctx.is_internal or not ctx.status_emitter:
+        return
+    try:
+        text = chunk.decode("utf-8")
+    except Exception:
+        return
+    config = stream_transform or {}
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line or line == "data: [DONE]":
+            continue
+        if not line.startswith("data: "):
+            continue
+        json_str = line[6:]
+        try:
+            payload = json.loads(json_str)
+        except json.JSONDecodeError:
+            continue
+        blocks = extract_stream_blocks(payload, config)
+        if not blocks:
+            continue
+        event = {
+            "type": "blocks",
+            "blocks": blocks,
+            "trace_id": ctx.trace_id,
+            "timestamp": ctx.created_at.isoformat(),
+        }
+        result = ctx.status_emitter(event)
+        if hasattr(result, "__await__"):
+            import asyncio
+
+            asyncio.create_task(result)
+
+
 async def stream_with_billing(
     stream: AsyncIterator[bytes],
     ctx: "WorkflowContext",
@@ -222,6 +262,9 @@ async def stream_with_billing(
     """
     tool_call_emitted = False
     request_id = ctx.get("request", "request_id")
+    stream_transform = (
+        (ctx.get("routing", "response_transform") or {}).get("stream_transform") or {}
+    )
     cancel_service = CancelService()
     can_check_cancel = bool(request_id and ctx.user_id)
     last_cancel_check = 0.0
@@ -239,6 +282,7 @@ async def stream_with_billing(
                     break
             # 解析并累计 token
             accumulator.parse_sse_chunk(chunk)
+            _emit_blocks_for_chunk(ctx, chunk, stream_transform)
             if (
                 not tool_call_emitted
                 and accumulator.tool_call_names
