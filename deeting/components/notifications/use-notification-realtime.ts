@@ -179,7 +179,13 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
       return
     }
 
-    const wsUrl = buildApiWsUrl("/api/v1/notifications/ws", { token })
+    // 在生产环境中不将token放在URL中，而是依赖cookies进行认证
+    // 只在开发环境中保留URL参数方式以方便调试
+    const isProd = process.env.NODE_ENV === 'production';
+    const wsUrl = isProd 
+      ? buildApiWsUrl("/api/v1/notifications/ws") 
+      : buildApiWsUrl("/api/v1/notifications/ws", { token });
+      
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 

@@ -33,7 +33,7 @@ async def test_upsert_creates_user_collection_and_writes_points():
                 return httpx.Response(404, json={})
             if request.method == "PUT":
                 body = json.loads(request.content.decode())
-                assert body["vectors"]["size"] == 2
+                assert body["vectors"]["text"]["size"] == 2
                 return httpx.Response(200, json={"result": {"status": "ok"}})
         if path == f"/collections/{collection_name}/points":
             body = json.loads(request.content.decode())
@@ -75,7 +75,7 @@ async def test_upsert_raises_on_vector_mismatch():
             if request.method == "GET":
                 return httpx.Response(
                     200,
-                    json={"result": {"config": {"params": {"vectors": {"size": 4}}}}},
+                    json={"result": {"config": {"params": {"vectors": {"text": {"size": 4}}}}}},
                 )
         return httpx.Response(404)
 

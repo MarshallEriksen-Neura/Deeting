@@ -1,3 +1,4 @@
+import json
 import uuid
 import httpx
 import pytest
@@ -16,6 +17,8 @@ async def test_ensure_user_collection_create_when_missing():
             return httpx.Response(404, json={})
         if request.method == "PUT":
             collection_name = request.url.path.split("/")[-1]
+            body = json.loads(request.content.decode())
+            assert body["vectors"]["text"]["size"] == 3
             return httpx.Response(200, json={"result": {"status": "ok"}})
         return httpx.Response(400)
 

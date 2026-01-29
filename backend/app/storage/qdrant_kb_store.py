@@ -41,13 +41,15 @@ async def get_collection_vector_size(
 
     vectors = _dig(payload, "result", "config", "params", "vectors")
     size = None
+    vn = str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip() or QDRANT_DEFAULT_VECTOR_NAME
     if isinstance(vectors, dict):
-        # 平铺结构 {"size": 2, "distance": "..."}
+        # 平铺结构 {"size": 2, "distance": "..."}（未命名向量）
         if "size" in vectors:
-            size = vectors.get("size")
-        else:
-            vn = str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip() or QDRANT_DEFAULT_VECTOR_NAME
-            size = _dig(vectors, vn, "size")
+            raise RuntimeError(
+                f"qdrant collection uses unnamed vectors; expected named vector '{vn}' "
+                f"(collection={name}). Recreate the collection with named vectors."
+            )
+        size = _dig(vectors, vn, "size")
     else:
         size = _dig(payload, "result", "config", "params", "vectors", "size")
     if isinstance(size, int) and size > 0:
@@ -70,7 +72,13 @@ async def create_collection(
     if size <= 0:
         raise ValueError("vector_size must be positive")
 
-    body = {"vectors": {"size": size, "distance": str(distance or "Cosine")}}
+    vn = str(vector_name or "").strip()
+    vectors: dict[str, Any]
+    if vn:
+        vectors = {vn: {"size": size, "distance": str(distance or "Cosine")}}
+    else:
+        vectors = {"size": size, "distance": str(distance or "Cosine")}
+    body = {"vectors": vectors}
     resp = await qdrant.put(f"/collections/{name}", json=body)
     _safe_raise(resp)
 

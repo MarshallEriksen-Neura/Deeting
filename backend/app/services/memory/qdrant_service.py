@@ -11,6 +11,7 @@ from app.storage.qdrant_kb_collections import (
     get_kb_system_collection_name,
     get_tool_system_collection_name,
 )
+from app.storage.qdrant_kb_store import ensure_collection_vector_size
 
 # Constants for Collection Names
 COLLECTION_PLUGIN_MARKETPLACE = "plugin_marketplace"
@@ -68,21 +69,11 @@ class SystemQdrantService:
 
     async def _ensure_collection(self, name: str, vector_size: int) -> None:
         """Create collection if not exists."""
-        try:
-            resp = await self.client.get(f"/collections/{name}")
-            if resp.status_code == 200:
-                return
-        except Exception:
-            pass
-
-        logger.info(f"Creating Qdrant collection: {name}")
-        body = {
-            "vectors": {
-                "size": vector_size,
-                "distance": "Cosine"
-            }
-        }
-        await self.client.put(f"/collections/{name}", json=body)
+        await ensure_collection_vector_size(
+            self.client,
+            collection_name=name,
+            vector_size=vector_size,
+        )
 
     async def sync_plugin_to_marketplace(self, plugin: AgentPlugin) -> None:
         """
