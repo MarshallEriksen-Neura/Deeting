@@ -1,7 +1,37 @@
 {
   "spec-agent": {
+    "welcome": {
+      "title": "我能为你做什么？",
+      "subtitle": "分配一个任务或提问任何问题",
+      "inputPlaceholder": "输入一个任务目标，开始规划执行蓝图",
+      "hint": "开始输入任务来探索 Spec Agent",
+      "attach": "添加附件",
+      "emoji": "表情",
+      "settings": "配置",
+      "mcpHint": "将您的工具连接到 Spec Agent",
+      "quickActions": {
+        "slides": "制作幻灯片",
+        "website": "创建网站",
+        "app": "开发应用",
+        "design": "设计",
+        "more": "更多"
+      }
+    },
+    "execution": {
+      "title": "AI 执行",
+      "thinking": "思考过程",
+      "toolExecution": "工具执行"
+    },
+    "fileChanges": {
+      "title": "文件变更",
+      "files": "{count} 个文件",
+      "added": "+{count} 新增",
+      "fileList": "文件列表",
+      "fileContent": "文件内容",
+      "empty": "暂无文件变更"
+    },
     "console": {
-      "title": "控制台",
+      "title": "AI 执行",
       "locate": "定位节点",
       "role": {
         "user": "用户",
@@ -171,7 +201,17 @@
       "consoleClose": "关闭对话面板",
       "consoleOpen": "打开对话面板",
       "canvasClose": "关闭蓝图面板",
-      "canvasOpen": "打开蓝图面板"
+      "canvasOpen": "打开蓝图面板",
+      "canvasTab": "流程图"
+    },
+    "taskHistory": {
+      "newTask": "新建任务",
+      "searchPlaceholder": "搜索",
+      "library": "库",
+      "newProject": "新项目",
+      "allTasks": "所有任务",
+      "empty": "暂无历史任务",
+      "noResults": "未找到匹配任务"
     }
   }
 }

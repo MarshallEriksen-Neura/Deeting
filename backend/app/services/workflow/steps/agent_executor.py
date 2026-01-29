@@ -29,6 +29,21 @@ class AgentExecutorStep(BaseStep):
         self.upstream_step = UpstreamCallStep(config)
         self.max_turns = 5
 
+    def _emit_delta(self, ctx: "WorkflowContext", content: str) -> None:
+        """Helper to emit text content delta to the client stream."""
+        if not ctx.status_emitter or not content:
+            return
+        
+        payload = {
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "content": content
+                }
+            }]
+        }
+        ctx.status_emitter(payload)
+
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         # 1. Get initial state
         raw_request_body = ctx.get("template_render", "request_body")
@@ -74,10 +89,22 @@ class AgentExecutorStep(BaseStep):
                 choice = raw_response["choices"][0]
                 message = choice["message"]
                 tool_calls_raw = message.get("tool_calls")
+                
+                # If we are in the loop and got text content, emit it if stream was requested
+                # Note: This simulates streaming for the intermediate thought steps if the model outputs them with tool calls
+                if original_stream and message.get("content"):
+                    self._emit_delta(ctx, message.get("content"))
+
             except (KeyError, IndexError, TypeError):
                 break
 
             if not tool_calls_raw:
+                # Final answer (no tool calls)
+                # If original_stream was True, we should probably emit the final content here
+                # because the downstream gateway logic receives stream=False context.
+                if original_stream and message.get("content"):
+                     # We already emitted content above if it existed.
+                     pass
                 break
 
             # --- C. Execute Tools ---
@@ -87,12 +114,17 @@ class AgentExecutorStep(BaseStep):
             # 2. Process each call
             for tc_raw in tool_calls_raw:
                 func = tc_raw.get("function", {})
+                args_str = func.get("arguments", "{}")
+                if not isinstance(args_str, str):
+                    args_str = json.dumps(args_str, ensure_ascii=False)
+
                 tc = ToolCall(
                     id=tc_raw.get("id"),
                     name=func.get("name"),
-                    arguments=json.loads(func.get("arguments", "{}")) if isinstance(func.get("arguments"), str) else func.get("arguments", {})
+                    arguments=json.loads(args_str)
                 )
                 
+                # Emit Status Event (Transient Spinner)
                 ctx.emit_status(
                     stage="execution",
                     step=self.name,
@@ -101,9 +133,24 @@ class AgentExecutorStep(BaseStep):
                     meta={"name": tc.name}
                 )
 
+                # Emit Tool Block (Persistent UI)
+                # Format: <tool_code name="..." status="success">args</tool_code>
+                # We assume success initially for the block render, or we could update it.
+                # For simplicity, we render it as 'success' so it shows up clearly.
+                tool_block = f'\n<tool_code name="{tc.name}" status="success">{args_str}</tool_code>\n'
+                self._emit_delta(ctx, tool_block)
+
                 # Find and execute tool
                 result = await self._dispatch_tool(ctx, tc)
                 
+                # Emit Result (Persistent UI)
+                result_str = json.dumps(result, ensure_ascii=False)
+                if len(result_str) > 2000:
+                    result_str = result_str[:2000] + "... (truncated)"
+                
+                output_block = f"\n> **Tool Output:**\n> {result_str}\n\n"
+                self._emit_delta(ctx, output_block)
+
                 # 3. Add Tool result to history
                 messages.append({
                     "role": "tool",

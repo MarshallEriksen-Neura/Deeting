@@ -244,7 +244,7 @@ export function useChatMessagingService() {
     let resolvedSessionId = sessionId
     const storageKey = `deeting-chat-session:${activeAssistant.id}`
     if (!resolvedSessionId) {
-      const fallbackSessionId = resolveSessionIdFromBrowser(storageKey)
+      const fallbackSessionId = resolveSessionIdFromBrowser(storageKey, { allowStorageFallback: false })
       if (fallbackSessionId) {
         resolvedSessionId = fallbackSessionId
         setSessionId(resolvedSessionId)

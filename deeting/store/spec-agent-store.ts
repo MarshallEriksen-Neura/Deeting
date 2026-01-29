@@ -100,8 +100,8 @@ interface SpecAgentState {
 }
 
 const defaultLayoutState: SpecAgentLayoutState = {
-  consoleSize: 28,
-  canvasSize: 72,
+  consoleSize: 55,
+  canvasSize: 45,
   consoleCollapsed: false,
   canvasCollapsed: false,
 }

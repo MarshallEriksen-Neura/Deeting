@@ -1,12 +1,14 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  FileCode,
+  GitGraph,
 } from 'lucide-react'
 import type { Layout, PanelImperativeHandle } from 'react-resizable-panels'
 
@@ -16,13 +18,17 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useI18n } from '@/hooks/use-i18n'
 import { useSpecAgentStore } from '@/store/spec-agent-store'
+import { FileChangesPanel } from './file-changes-panel'
 
 interface SpecAgentSplitLayoutProps {
   console: ReactNode
   canvas: ReactNode
 }
+
+type RightPanelView = 'fileChanges' | 'canvas'
 
 export function SpecAgentSplitLayout({
   console,
@@ -42,6 +48,9 @@ export function SpecAgentSplitLayout({
     canvasSize: layout.canvasSize,
   })
   const initializedRef = useRef(false)
+
+  // 右侧面板视图切换：默认显示文件变更
+  const [rightPanelView, setRightPanelView] = useState<RightPanelView>('fileChanges')
 
   useEffect(() => {
     consoleCollapsedRef.current = layout.consoleCollapsed
@@ -141,12 +150,12 @@ export function SpecAgentSplitLayout({
   const resolvedSizes = useMemo(() => {
     const consoleSize = Number.isFinite(layout.consoleSize)
       ? layout.consoleSize
-      : 28
+      : 55
     const canvasSize = Number.isFinite(layout.canvasSize)
       ? layout.canvasSize
-      : 72
+      : 45
     const total = consoleSize + canvasSize
-    if (total <= 0) return { consoleSize: 28, canvasSize: 72 }
+    if (total <= 0) return { consoleSize: 55, canvasSize: 45 }
     return {
       consoleSize: (consoleSize / total) * 100,
       canvasSize: (canvasSize / total) * 100,
@@ -193,7 +202,7 @@ export function SpecAgentSplitLayout({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full bg-background/80 shadow-sm backdrop-blur"
+                  className="h-8 w-8 rounded-xl bg-muted/30 hover:bg-muted/50 border border-border/30 shadow-sm backdrop-blur transition-colors"
                   onClick={collapseConsole}
                 >
                   <PanelLeftClose className="h-4 w-4" />
@@ -211,19 +220,38 @@ export function SpecAgentSplitLayout({
           id={canvasPanelId}
           panelRef={canvasPanelRef}
           defaultSize={resolvedSizes.canvasSize}
-          minSize={40}
+          minSize={30}
           collapsedSize={0}
           collapsible
           onResize={handleCanvasResize}
           className="min-w-0"
         >
-          <div className="relative h-full bg-surface">
+          <div className="relative h-full bg-card flex flex-col">
+            {/* 视图切换标签 - 精致毛玻璃风格 */}
             {!layout.canvasCollapsed && (
-              <div className="absolute left-2 top-2 z-20">
+              <div className="flex-shrink-0 px-3 py-2.5 border-b border-border/30 bg-card/80 backdrop-blur-sm flex items-center justify-between">
+                <Tabs value={rightPanelView} onValueChange={(v) => setRightPanelView(v as RightPanelView)}>
+                  <TabsList className="h-9 p-1 bg-muted/30 border border-border/30 rounded-xl">
+                    <TabsTrigger
+                      value="fileChanges"
+                      className="text-xs gap-1.5 px-3.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all duration-200"
+                    >
+                      <FileCode className="h-3.5 w-3.5" />
+                      {t('fileChanges.title')}
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="canvas"
+                      className="text-xs gap-1.5 px-3.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all duration-200"
+                    >
+                      <GitGraph className="h-3.5 w-3.5" />
+                      {t('layout.canvasTab')}
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full bg-background/80 shadow-sm backdrop-blur"
+                  className="h-8 w-8 rounded-xl bg-muted/30 hover:bg-muted/50 border border-border/30 shadow-sm transition-colors"
                   onClick={collapseCanvas}
                 >
                   <PanelRightClose className="h-4 w-4" />
@@ -231,7 +259,14 @@ export function SpecAgentSplitLayout({
                 </Button>
               </div>
             )}
-            <div className="h-full">{canvas}</div>
+            {/* 内容区域 */}
+            <div className="flex-1 overflow-hidden">
+              {rightPanelView === 'fileChanges' ? (
+                <FileChangesPanel />
+              ) : (
+                canvas
+              )}
+            </div>
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -240,7 +275,7 @@ export function SpecAgentSplitLayout({
         <Button
           variant="ghost"
           size="icon"
-          className="absolute left-2 top-1/2 z-20 h-9 w-9 -translate-y-1/2 rounded-full bg-background/90 shadow-sm backdrop-blur"
+          className="absolute left-2 top-1/2 z-20 h-9 w-9 -translate-y-1/2 rounded-xl bg-card/90 hover:bg-card border border-border/30 shadow-md backdrop-blur transition-colors"
           onClick={expandConsole}
         >
           <PanelLeftOpen className="h-4 w-4" />
@@ -252,7 +287,7 @@ export function SpecAgentSplitLayout({
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-2 top-1/2 z-20 h-9 w-9 -translate-y-1/2 rounded-full bg-background/90 shadow-sm backdrop-blur"
+          className="absolute right-2 top-1/2 z-20 h-9 w-9 -translate-y-1/2 rounded-xl bg-card/90 hover:bg-card border border-border/30 shadow-md backdrop-blur transition-colors"
           onClick={expandCanvas}
         >
           <PanelRightOpen className="h-4 w-4" />

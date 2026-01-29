@@ -66,9 +66,6 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   const sessionId = React.useMemo(() => {
     const querySessionId = searchParams?.get("session")?.trim()
     if (querySessionId) return querySessionId
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(`deeting-chat-session:${agentId}`) ?? null
-    }
     return null
   }, [searchParams, agentId])
 

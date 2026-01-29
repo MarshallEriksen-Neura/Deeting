@@ -133,7 +133,9 @@ export function Header({
               size="sm"
               className="h-9 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-all duration-200 ease-out active:scale-95"
             >
-              <Link href="/login">{tHeader("login")}</Link>
+              <Link href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`}>
+                {tHeader("login")}
+              </Link>
             </GlassButton>
           )}
         </div>

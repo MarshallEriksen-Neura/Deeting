@@ -177,6 +177,12 @@ async def _status_stream_chat(
             on_complete=_stream_internal_callback,
         )
         async for chunk in wrapped_stream:
+            while not queue.empty():
+                try:
+                    payload = queue.get_nowait()
+                    yield _format_sse(payload)
+                except asyncio.QueueEmpty:
+                    break
             yield chunk
         return
 

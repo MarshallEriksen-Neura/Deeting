@@ -357,7 +357,7 @@ export default function HUD() {
                         <span className="text-[9px] opacity-40 uppercase">{theme}</span>
                      </button>
                      
-                     <Link href="/login" className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
+                     <Link href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`} className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
                         <LogOut className="w-4 h-4" />
                         <span>{t("hud.menu.terminateSession")}</span>
                      </Link>

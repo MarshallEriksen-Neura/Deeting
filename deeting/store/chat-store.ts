@@ -48,6 +48,24 @@ const hashToIndex = (value: string, modulo: number) => {
   return hash
 }
 
+const normalizeAssistantId = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : null
+  }
+  if (value && typeof value === "object") {
+    const candidate = value as { id?: unknown; assistant_id?: unknown; assistantId?: unknown }
+    const rawId =
+      (typeof candidate.id === "string" && candidate.id) ||
+      (typeof candidate.assistant_id === "string" && candidate.assistant_id) ||
+      (typeof candidate.assistantId === "string" && candidate.assistantId) ||
+      ""
+    const trimmed = rawId.trim()
+    return trimmed.length ? trimmed : null
+  }
+  return null
+}
+
 function mapInstallToAssistant(item: AssistantInstallItem): ChatAssistant {
   const color = COLOR_PRESETS[hashToIndex(item.assistant_id, COLOR_PRESETS.length)]
   const version = item.assistant.version
@@ -199,24 +217,31 @@ export const useChatStore = create<ChatStore>()(
       // 所有操作在一个函数内完成，没有循环依赖。
       // ============================================================
       initSession: async (agentId: string, sessionId: string | null, localAgent?: ChatAssistant | null) => {
+        const normalizedAgentId = normalizeAssistantId(agentId)
+        if (!normalizedAgentId) {
+          console.warn("initSession skipped due to invalid agentId", agentId)
+          return
+        }
         const state = get()
 
         // 防止重复初始化同一个 agent + session
-        if (state.initialized && state.agentId === agentId && state.sessionId === sessionId) {
+        if (state.initialized && state.agentId === normalizedAgentId && state.sessionId === sessionId) {
           return
         }
 
-        // 如果是新的 agentId，需要重置状态
-        const isNewAgent = state.agentId !== agentId
+        // 如果是新的 agentId 或 sessionId，需要重置状态
+        const isNewAgent = state.agentId !== normalizedAgentId
+        const isNewSession = state.sessionId !== sessionId
+        const shouldReset = isNewAgent || isNewSession
 
         // 先设置基础状态
         set({
-          agentId,
+          agentId: normalizedAgentId,
           sessionId,
           initialized: true,
           isLoading: true,
           // 如果是新 agent，清空消息
-          ...(isNewAgent ? {
+          ...(shouldReset ? {
             messages: [],
             input: "",
             attachments: [],
@@ -237,7 +262,7 @@ export const useChatStore = create<ChatStore>()(
             // 从 API 获取 assistant 列表
             try {
               const installPage = await fetchAssistantInstalls({ size: 100 })
-              const found = installPage.items.find((item) => item.assistant_id === agentId)
+              const found = installPage.items.find((item) => item.assistant_id === normalizedAgentId)
               if (found) {
                 agent = mapInstallToAssistant(found)
               }
@@ -247,11 +272,11 @@ export const useChatStore = create<ChatStore>()(
           }
 
           // Step 2: 加载历史消息（如果有 sessionId 且是新 agent 或新 session）
-          let messages: Message[] = isNewAgent ? [] : state.messages
+          let messages: Message[] = shouldReset ? [] : state.messages
           let historyCursor: number | null = null
           let historyHasMore = false
 
-          if (sessionId && (isNewAgent || state.sessionId !== sessionId)) {
+          if (sessionId && shouldReset) {
             try {
               const response = await fetchConversationHistory(sessionId, { limit: 30 })
               messages = normalizeConversationMessages(response.messages || [], {
@@ -385,9 +410,14 @@ export const useChatStore = create<ChatStore>()(
       },
 
       switchAgent: (agentId: string, agent: ChatAssistant | null) => {
+        const normalizedAgentId = normalizeAssistantId(agentId)
+        if (!normalizedAgentId) {
+          console.warn("switchAgent skipped due to invalid agentId", agentId)
+          return
+        }
         const current = get()
 
-        if (current.agentId === agentId) {
+        if (current.agentId === normalizedAgentId) {
           if (agent && current.agent?.id !== agent.id) {
             set({ agent })
           }
@@ -395,7 +425,7 @@ export const useChatStore = create<ChatStore>()(
         }
 
         set({
-          agentId,
+          agentId: normalizedAgentId,
           agent,
           messages: [],
           input: "",

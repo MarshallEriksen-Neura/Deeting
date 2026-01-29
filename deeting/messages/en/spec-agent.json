@@ -1,7 +1,37 @@
 {
   "spec-agent": {
+    "welcome": {
+      "title": "What can I help you with?",
+      "subtitle": "Assign a task or ask any question",
+      "inputPlaceholder": "Describe a task goal to start planning",
+      "hint": "Start typing to explore Spec Agent",
+      "attach": "Attach file",
+      "emoji": "Emoji",
+      "settings": "Settings",
+      "mcpHint": "Connect your tools to Spec Agent",
+      "quickActions": {
+        "slides": "Create Slides",
+        "website": "Build Website",
+        "app": "Develop App",
+        "design": "Design",
+        "more": "More"
+      }
+    },
+    "execution": {
+      "title": "AI Execution",
+      "thinking": "Thinking",
+      "toolExecution": "Tool Execution"
+    },
+    "fileChanges": {
+      "title": "File Changes",
+      "files": "{count} files",
+      "added": "+{count} added",
+      "fileList": "File List",
+      "fileContent": "File Content",
+      "empty": "No file changes"
+    },
     "console": {
-      "title": "Console",
+      "title": "AI Execution",
       "locate": "Locate node",
       "role": {
         "user": "USER",
@@ -171,7 +201,17 @@
       "consoleClose": "Close console panel",
       "consoleOpen": "Open console panel",
       "canvasClose": "Close canvas panel",
-      "canvasOpen": "Open canvas panel"
+      "canvasOpen": "Open canvas panel",
+      "canvasTab": "Flow Chart"
+    },
+    "taskHistory": {
+      "newTask": "New Task",
+      "searchPlaceholder": "Search",
+      "library": "Library",
+      "newProject": "New Project",
+      "allTasks": "All Tasks",
+      "empty": "No history yet",
+      "noResults": "No matching tasks"
     }
   }
 }

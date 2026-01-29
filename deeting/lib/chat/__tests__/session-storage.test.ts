@@ -20,6 +20,15 @@ describe("resolveSessionIdFromBrowser", () => {
     expect(resolveSessionIdFromBrowser("session-key")).toBe("stored-session")
   })
 
+  it("does not fall back to localStorage when fallback is disabled", () => {
+    localStorage.setItem("session-key", "stored-session")
+    window.history.pushState({}, "", "/chat/agent")
+
+    expect(
+      resolveSessionIdFromBrowser("session-key", { allowStorageFallback: false })
+    ).toBeNull()
+  })
+
   it("returns null when no session is available", () => {
     window.history.pushState({}, "", "/chat/agent")
 

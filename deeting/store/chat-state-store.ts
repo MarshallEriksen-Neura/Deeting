@@ -16,52 +16,64 @@ export type { Message, MessageRole, ChatAssistant }
 /**
  * @deprecated 请使用 useChatStore
  */
-export const useChatStateStore = () => {
+const buildChatStateApi = (store: ReturnType<typeof useChatStore>) => ({
+  // 消息相关
+  messages: store.messages,
+  setMessages: store.setMessages,
+  addMessage: store.addMessage,
+  updateMessage: store.updateMessage,
+  clearMessages: store.clearMessages,
+
+  // 输入相关
+  input: store.input,
+  setInput: store.setInput,
+
+  // 附件相关
+  attachments: store.attachments,
+  setAttachments: store.setAttachments,
+  addAttachments: store.addAttachments,
+  removeAttachment: store.removeAttachment,
+  clearAttachments: store.clearAttachments,
+
+  // 配置相关
+  config: store.config,
+  setConfig: store.setConfig,
+
+  // 代理和模型
+  assistants: store.agent ? [store.agent] : [],
+  models: store.models,
+  setAssistants: (assistants: ChatAssistant[]) => {
+    if (assistants.length > 0) {
+      store.setAgent(assistants[0])
+    }
+  },
+  setModels: store.setModels,
+
+  // 活跃状态
+  activeAssistantId: store.agentId,
+  setActiveAssistantId: (assistantId?: string) => {
+    if (assistantId) {
+      store.switchAgent(assistantId, store.agent)
+    }
+  },
+
+  // 流式设置
+  streamEnabled: store.streamEnabled,
+  setStreamEnabled: store.setStreamEnabled,
+})
+
+type ChatStateApi = ReturnType<typeof buildChatStateApi>
+
+/**
+ * @deprecated 请使用 useChatStore
+ */
+export const useChatStateStore = <T = ChatStateApi>(
+  selector?: (state: ChatStateApi) => T
+): T => {
   const store = useChatStore()
-
-  return {
-    // 消息相关
-    messages: store.messages,
-    setMessages: store.setMessages,
-    addMessage: store.addMessage,
-    updateMessage: store.updateMessage,
-    clearMessages: store.clearMessages,
-
-    // 输入相关
-    input: store.input,
-    setInput: store.setInput,
-
-    // 附件相关
-    attachments: store.attachments,
-    setAttachments: store.setAttachments,
-    addAttachments: store.addAttachments,
-    removeAttachment: store.removeAttachment,
-    clearAttachments: store.clearAttachments,
-
-    // 配置相关
-    config: store.config,
-    setConfig: store.setConfig,
-
-    // 代理和模型
-    assistants: store.agent ? [store.agent] : [],
-    models: store.models,
-    setAssistants: (assistants: ChatAssistant[]) => {
-      if (assistants.length > 0) {
-        store.setAgent(assistants[0])
-      }
-    },
-    setModels: store.setModels,
-
-    // 活跃状态
-    activeAssistantId: store.agentId,
-    setActiveAssistantId: (assistantId?: string) => {
-      if (assistantId) {
-        store.switchAgent(assistantId, store.agent)
-      }
-    },
-
-    // 流式设置
-    streamEnabled: store.streamEnabled,
-    setStreamEnabled: store.setStreamEnabled,
+  const api = buildChatStateApi(store)
+  if (selector) {
+    return selector(api)
   }
+  return api as T
 }
