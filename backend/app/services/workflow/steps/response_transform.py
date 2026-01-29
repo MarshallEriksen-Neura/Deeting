@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
+from app.services.providers.blocks_transformer import build_blocks_from_message
 from app.services.providers.response_transformer import response_transformer
 
 if TYPE_CHECKING:
@@ -89,6 +90,26 @@ class ResponseTransformStep(BaseStep):
 
             # 写入转换后的响应
             ctx.set("response_transform", "response", transformed)
+
+            if isinstance(transformed, dict):
+                choices = transformed.get("choices") or []
+                if choices:
+                    message = (
+                        choices[0].get("message") if isinstance(choices[0], dict) else None
+                    )
+                    if isinstance(message, dict):
+                        content = message.get("content")
+                        reasoning = message.get("reasoning_content")
+                        tool_calls = message.get("tool_calls")
+                        blocks = build_blocks_from_message(
+                            content=content if isinstance(content, str) else None,
+                            reasoning=reasoning if isinstance(reasoning, str) else None,
+                            tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                        )
+                        if blocks:
+                            meta_info = message.get("meta_info") or {}
+                            meta_info["blocks"] = blocks
+                            message["meta_info"] = meta_info
 
             tool_calls = []
             if isinstance(transformed, dict):
