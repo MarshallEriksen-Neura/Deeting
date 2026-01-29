@@ -161,6 +161,16 @@ data: {"type":"status","stage":"listen","step":"validation","state":"running","c
 data: {"type":"status","stage":"remember","step":"routing","state":"success","code":"routing.selected","meta":{"candidates":2,"provider":"openai"}}
 ```
 
+当内部通道启用 blocks 事件时，SSE 会额外包含结构化块事件（示例）：
+
+```
+data: {"type":"blocks","blocks":[{"type":"thought","content":"我正在思考..."}]}
+
+data: {"type":"blocks","blocks":[{"type":"text","content":"你好！我是谛听。"}]}
+```
+
+`blocks` 列表支持 `text` / `thought` / `tool_call` 类型，前端可直接渲染。
+
 若 `stream=false` 且 `status_stream=true`，会在状态事件之后返回一次完整结果：
 
 ```
