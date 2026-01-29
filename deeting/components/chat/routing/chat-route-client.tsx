@@ -22,8 +22,6 @@ function ChatRouteClient() {
   const params = useParams<{ agentId?: string | string[] }>()
   const searchParams = useSearchParams()
   const storedAgentId = useChatStateStore((state) => state.activeAssistantId)
-  const [resolvedAgentId, setResolvedAgentId] = React.useState<string | null>(null)
-
   // 缓存路径中的 agentId
   const pathAgentId = React.useMemo(() => {
     const value = params?.agentId
@@ -36,18 +34,23 @@ function ChatRouteClient() {
     [searchParams]
   )
 
-  // 处理自动重定向：如果当前在根路径且没有查询参数，但有存储的助手 ID，则跳转
+  // 解析最终的 agentId（优先级：路径 > 查询参数 > 存储）
+  const resolvedAgentId = pathAgentId || queryAgentId || storedAgentId || null
+
+  // 处理自动重定向：使用 ref 防止重复调用 router.replace
+  const redirectedRef = React.useRef(false)
+
   React.useEffect(() => {
-    if (!pathAgentId && !queryAgentId && storedAgentId) {
+    if (pathAgentId || queryAgentId) {
+      // 已有路由参数，不需要重定向
+      redirectedRef.current = false
+      return
+    }
+    if (storedAgentId && !redirectedRef.current) {
+      redirectedRef.current = true
       router.replace(`/chat/${storedAgentId}`)
     }
   }, [pathAgentId, queryAgentId, storedAgentId, router])
-
-  // 解析最终的 agentId（优先级：路径 > 查询参数 > 存储）
-  React.useEffect(() => {
-    const nextId = pathAgentId || queryAgentId || storedAgentId || null
-    setResolvedAgentId(nextId)
-  }, [pathAgentId, queryAgentId, storedAgentId])
 
   // Chat UI container (uses chat-state-store)
   return <ChatContainer agentId={resolvedAgentId || ""} />

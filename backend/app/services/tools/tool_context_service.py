@@ -8,7 +8,6 @@ from app.core.config import settings
 from app.core.plugin_config import plugin_config_loader
 from app.qdrant_client import qdrant_is_configured
 from app.schemas.tool import ToolDefinition
-from app.services.agent import agent_service
 from app.services.mcp.discovery import mcp_discovery_service
 from app.services.tools.tool_sync_service import tool_sync_service
 
@@ -32,6 +31,8 @@ class ToolContextService:
         user_id,
         query: str | None,
     ) -> list[ToolDefinition]:
+        from app.services.agent.agent_service import agent_service
+
         start_time = time.perf_counter()
         logger.info(
             "ToolContextService: start user_id=%s has_session=%s query_len=%s",
