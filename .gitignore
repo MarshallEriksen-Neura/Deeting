@@ -120,3 +120,4 @@ media/
 # ============================================
 ai_higress/
 ai_higress_front/
+.worktrees
