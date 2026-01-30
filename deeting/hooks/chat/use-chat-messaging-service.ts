@@ -1,10 +1,31 @@
 "use client"
 
-import { useCallback, useRef } from "react"
+import { useCallback, useMemo, useRef } from "react"
 import { cancelChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat"
 import { buildMessageContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { createRequestId } from "@/lib/chat/request-id"
+
+const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
+
+export function resolveAssistantRequestContext({
+  isTauriRuntime,
+  activeAssistantId,
+}: {
+  isTauriRuntime: boolean
+  activeAssistantId?: string | null
+}) {
+  if (!isTauriRuntime) {
+    return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
+  }
+  if (!activeAssistantId) {
+    return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
+  }
+  return {
+    assistantId: activeAssistantId,
+    sessionStorageKey: `deeting-chat-session:${activeAssistantId}`,
+  }
+}
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
@@ -114,6 +135,14 @@ export function useChatMessagingService() {
     setHistoryState,
   } = useChatSessionStore()
 
+  const isTauriRuntime = useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  )
+
   const loadHistoryBySession = useCallback(async (sessionId: string) => {
     if (!sessionId) return
     setHistoryState({ loading: true })
@@ -216,7 +245,12 @@ export function useChatMessagingService() {
       models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
       models[0]
     const activeAssistant = assistants.find((assistant) => assistant.id === activeAssistantId)
-    if (!selectedModel || !activeAssistant) return
+    if (!selectedModel || (isTauriRuntime && !activeAssistant)) return
+
+    const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
+      isTauriRuntime,
+      activeAssistantId: activeAssistant?.id ?? null,
+    })
 
     const userMessage: Message = {
       id: createMessageId(),
@@ -240,9 +274,9 @@ export function useChatMessagingService() {
     setIsLoading(true)
     clearStatus()
 
-    const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant.systemPrompt)
+    const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant?.systemPrompt)
     let resolvedSessionId = sessionId
-    const storageKey = `deeting-chat-session:${activeAssistant.id}`
+    const storageKey = sessionStorageKey
     if (!resolvedSessionId) {
       const fallbackSessionId = resolveSessionIdFromBrowser(storageKey, { allowStorageFallback: false })
       if (fallbackSessionId) {
@@ -260,7 +294,7 @@ export function useChatMessagingService() {
       temperature: config.temperature,
       max_tokens: config.maxTokens,
       request_id: createRequestId(),
-      assistant_id: activeAssistant?.id ?? undefined,
+      assistant_id: assistantId,
       session_id: resolvedSessionId ?? undefined,
     }
     requestIdRef.current = payload.request_id ?? null
