@@ -218,11 +218,62 @@ export const useChatStore = create<ChatStore>()(
       // ============================================================
       initSession: async (agentId: string, sessionId: string | null, localAgent?: ChatAssistant | null) => {
         const normalizedAgentId = normalizeAssistantId(agentId)
+        const state = get()
         if (!normalizedAgentId) {
-          console.warn("initSession skipped due to invalid agentId", agentId)
+          if (state.initialized && state.agentId === null && state.sessionId === sessionId) {
+            return
+          }
+
+          const isNewSession = state.sessionId !== sessionId
+          const shouldReset = isNewSession
+
+          set({
+            agentId: null,
+            agent: null,
+            sessionId,
+            initialized: true,
+            isLoading: true,
+            ...(shouldReset
+              ? {
+                  messages: [],
+                  input: "",
+                  attachments: [],
+                  errorMessage: null,
+                  statusStage: null,
+                  statusCode: null,
+                  statusMeta: null,
+                  historyCursor: null,
+                  historyHasMore: false,
+                }
+              : {}),
+          })
+
+          let messages: Message[] = shouldReset ? [] : state.messages
+          let historyCursor: number | null = null
+          let historyHasMore = false
+
+          if (sessionId && shouldReset) {
+            try {
+              const response = await fetchConversationHistory(sessionId, { limit: 30 })
+              messages = normalizeConversationMessages(response.messages || [], {
+                idPrefix: sessionId,
+              })
+              historyCursor = response.next_cursor ?? null
+              historyHasMore = Boolean(response.has_more)
+            } catch (error) {
+              console.error("Failed to load history:", error)
+              messages = []
+            }
+          }
+
+          set({
+            messages,
+            historyCursor,
+            historyHasMore,
+            isLoading: false,
+          })
           return
         }
-        const state = get()
 
         // 防止重复初始化同一个 agent + session
         if (state.initialized && state.agentId === normalizedAgentId && state.sessionId === sessionId) {

@@ -67,4 +67,16 @@ describe("useChatStore agent id normalization", () => {
     expect(useChatStore.getState().sessionId).toBeNull()
     expect(useChatStore.getState().messages).toHaveLength(0)
   })
+
+  it("initSession should allow empty agentId on web", async () => {
+    sessionStorage.clear()
+    useChatStore.getState().resetSession()
+
+    await useChatStore.getState().initSession("", null, null)
+
+    expect(useChatStore.getState().initialized).toBe(true)
+    expect(useChatStore.getState().agentId).toBeNull()
+    expect(useChatStore.getState().agent).toBeNull()
+    expect(useChatStore.getState().isLoading).toBe(false)
+  })
 })
