@@ -22,6 +22,13 @@ function ChatRouteClient() {
   const params = useParams<{ agentId?: string | string[] }>()
   const searchParams = useSearchParams()
   const storedAgentId = useChatStateStore((state) => state.activeAssistantId)
+  const isTauriRuntime = React.useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  )
   // 缓存路径中的 agentId
   const pathAgentId = React.useMemo(() => {
     const value = params?.agentId
@@ -35,12 +42,15 @@ function ChatRouteClient() {
   )
 
   // 解析最终的 agentId（优先级：路径 > 查询参数 > 存储）
-  const resolvedAgentId = pathAgentId || queryAgentId || storedAgentId || null
+  const resolvedAgentId = isTauriRuntime
+    ? pathAgentId || queryAgentId || storedAgentId || null
+    : null
 
   // 处理自动重定向：使用 ref 防止重复调用 router.replace
   const redirectedRef = React.useRef(false)
 
   React.useEffect(() => {
+    if (!isTauriRuntime) return
     if (pathAgentId || queryAgentId) {
       // 已有路由参数，不需要重定向
       redirectedRef.current = false
@@ -50,7 +60,7 @@ function ChatRouteClient() {
       redirectedRef.current = true
       router.replace(`/chat/${storedAgentId}`)
     }
-  }, [pathAgentId, queryAgentId, storedAgentId, router])
+  }, [isTauriRuntime, pathAgentId, queryAgentId, storedAgentId, router])
 
   // Chat UI container (uses chat-state-store)
   return <ChatContainer agentId={resolvedAgentId || ""} />
