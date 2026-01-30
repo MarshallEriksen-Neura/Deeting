@@ -4,30 +4,40 @@ import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock
 
-from app.models import Base, User
-from app.models.assistant import AssistantStatus, AssistantVisibility
-from app.repositories import (
-    AssistantRepository,
-    AssistantVersionRepository,
-    ReviewTaskRepository,
-    UserRepository,
-    UserSecretaryRepository,
-)
-from app.schemas.assistant import AssistantCreate, AssistantVersionCreate
-from app.services.assistant.assistant_auto_review_service import AutoReviewResult, AssistantAutoReviewService
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.models import User
+from app.models.review import ReviewStatus, ReviewTask
+from app.repositories import ReviewTaskRepository
+from app.services.assistant.assistant_auto_review_service import AutoReviewResult
+from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_review_service import AssistantReviewService
-from app.services.assistant.assistant_service import AssistantService
 from app.services.review.review_service import ReviewService
-from tests.api.conftest import AsyncSessionLocal, engine
+
+engine = create_async_engine(
+    "sqlite+aiosqlite:///:memory:",
+    echo=False,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+)
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def ensure_tables():
     async with engine.begin() as conn:  # type: ignore[attr-defined]
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(User.__table__.create)
+        await conn.run_sync(ReviewTask.__table__.create)
     yield
     async with engine.begin() as conn:  # type: ignore[attr-defined]
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(ReviewTask.__table__.drop)
+        await conn.run_sync(User.__table__.drop)
 
 
 @pytest_asyncio.fixture
@@ -46,47 +56,106 @@ async def test_review_approved_enqueues_sync(mocker, async_session):
     async_session.add(user)
     await async_session.commit()
 
-    assistant_service = AssistantService(
-        AssistantRepository(async_session),
-        AssistantVersionRepository(async_session),
-    )
-    assistant = await assistant_service.create_assistant(
-        payload=AssistantCreate(
-            visibility=AssistantVisibility.PUBLIC,
-            status=AssistantStatus.PUBLISHED,
-            version=AssistantVersionCreate(
-                name="Review Assistant",
-                system_prompt="You are a helpful assistant.",
-                tags=["Python"],
-            ),
-        ),
-        owner_user_id=user.id,
-    )
+    assistant_id = uuid.uuid4()
 
     review_service = ReviewService(ReviewTaskRepository(async_session))
-    auto_review_service = AssistantAutoReviewService(
-        assistant_repo=AssistantRepository(async_session),
-        user_repo=UserRepository(async_session),
-        secretary_repo=UserSecretaryRepository(async_session),
-        version_repo=AssistantVersionRepository(async_session),
-    )
-
     service = AssistantReviewService(
         review_service=review_service,
-        auto_review_service=auto_review_service,
+        auto_review_service=mocker.Mock(),
     )
 
     mocker.patch.object(
         service,
         "auto_review",
         new_callable=AsyncMock,
-        return_value=AutoReviewResult(approved=True, reason=None),
+        return_value=AutoReviewResult(
+            status=ReviewStatus.APPROVED,
+            reviewer_user_id=user.id,
+            reason=None,
+        ),
     )
     enqueue = mocker.patch("app.tasks.assistant.sync_assistant_to_qdrant.delay")
 
     await service.submit_and_review(
-        assistant_id=assistant.id,
+        assistant_id=assistant_id,
         submitter_user_id=user.id,
     )
 
-    enqueue.assert_called_once_with(str(assistant.id))
+    enqueue.assert_called_once_with(str(assistant_id))
+
+
+@pytest.mark.asyncio
+async def test_review_rejected_skips_sync(mocker, async_session):
+    user = User(
+        id=uuid.uuid4(),
+        email="reject@example.com",
+        hashed_password="hash",
+    )
+    async_session.add(user)
+    await async_session.commit()
+
+    assistant_id = uuid.uuid4()
+
+    review_service = ReviewService(ReviewTaskRepository(async_session))
+    service = AssistantReviewService(
+        review_service=review_service,
+        auto_review_service=mocker.Mock(),
+    )
+
+    mocker.patch.object(
+        service,
+        "auto_review",
+        new_callable=AsyncMock,
+        return_value=AutoReviewResult(
+            status=ReviewStatus.REJECTED,
+            reviewer_user_id=user.id,
+            reason="bad",
+        ),
+    )
+    enqueue = mocker.patch("app.tasks.assistant.sync_assistant_to_qdrant.delay")
+
+    await service.submit_and_review(
+        assistant_id=assistant_id,
+        submitter_user_id=user.id,
+    )
+
+    enqueue.assert_not_called()
+    task = await ReviewTaskRepository(async_session).get_by_entity(ASSISTANT_MARKET_ENTITY, assistant_id)
+    assert task is not None
+    assert task.status == ReviewStatus.REJECTED.value
+
+
+@pytest.mark.asyncio
+async def test_review_auto_review_error_marks_rejected(mocker, async_session):
+    user = User(
+        id=uuid.uuid4(),
+        email="error@example.com",
+        hashed_password="hash",
+    )
+    async_session.add(user)
+    await async_session.commit()
+
+    assistant_id = uuid.uuid4()
+
+    review_service = ReviewService(ReviewTaskRepository(async_session))
+    service = AssistantReviewService(
+        review_service=review_service,
+        auto_review_service=mocker.Mock(),
+    )
+
+    mocker.patch.object(
+        service,
+        "auto_review",
+        new_callable=AsyncMock,
+        side_effect=ValueError("auto review failed"),
+    )
+
+    await service.submit_and_review(
+        assistant_id=assistant_id,
+        submitter_user_id=user.id,
+    )
+
+    task = await ReviewTaskRepository(async_session).get_by_entity(ASSISTANT_MARKET_ENTITY, assistant_id)
+    assert task is not None
+    assert task.status == ReviewStatus.REJECTED.value
+    assert task.reason == "auto review failed"
