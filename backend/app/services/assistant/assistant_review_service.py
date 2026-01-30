@@ -54,6 +54,17 @@ class AssistantReviewService:
             )
 
         if result.status == ReviewStatus.APPROVED:
+            if not result.reviewer_user_id:
+                logger.warning(
+                    "assistant_auto_review_missing_reviewer",
+                    extra={"assistant_id": str(assistant_id)},
+                )
+                return await self.review_service.reject(
+                    entity_type=ASSISTANT_MARKET_ENTITY,
+                    entity_id=assistant_id,
+                    reviewer_user_id=None,
+                    reason="missing_reviewer",
+                )
             task = await self.review_service.approve(
                 entity_type=ASSISTANT_MARKET_ENTITY,
                 entity_id=assistant_id,
@@ -71,6 +82,10 @@ class AssistantReviewService:
                 reason=result.reason,
             )
 
+        logger.warning(
+            "assistant_auto_review_invalid_status",
+            extra={"assistant_id": str(assistant_id), "status": str(result.status)},
+        )
         return await self.review_service.reject(
             entity_type=ASSISTANT_MARKET_ENTITY,
             entity_id=assistant_id,
