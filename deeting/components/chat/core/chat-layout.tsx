@@ -11,6 +11,7 @@ interface ChatLayoutProps {
   children: React.ReactNode
   agent?: ChatAssistant
   isLoadingAssistants?: boolean
+  allowMissingAgent?: boolean
 }
 
 /**
@@ -36,10 +37,11 @@ interface ChatLayoutProps {
  * </ChatLayout>
  * ```
  */
-export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({ 
-  children, 
-  agent, 
-  isLoadingAssistants 
+export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
+  children,
+  agent,
+  isLoadingAssistants,
+  allowMissingAgent,
 }) {
   const t = useI18n("chat")
   const router = useRouter()
@@ -63,6 +65,9 @@ export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
 
   // 代理不存在
   if (!agent) {
+    if (allowMissingAgent) {
+      return <>{children}</>
+    }
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-60px)] space-y-4">
         <div className="bg-muted p-4 rounded-full">

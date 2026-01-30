@@ -13,7 +13,7 @@ import { ImageLightbox } from "@/components/ui/image-lightbox"
 
 interface MessageItemProps {
   message: Message
-  agent: ChatAssistant
+  agent?: ChatAssistant
   isActive?: boolean
   streamEnabled?: boolean
   statusStage?: string | null
@@ -140,7 +140,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     const streamUnchanged = prevProps.streamEnabled === nextProps.streamEnabled
 
     // 助手信息未变化
-    const agentUnchanged = prevProps.agent.id === nextProps.agent.id
+    const agentUnchanged = prevProps.agent?.id === nextProps.agent?.id
 
     // lastAssistantId 未变化
     const lastAssistantIdUnchanged =

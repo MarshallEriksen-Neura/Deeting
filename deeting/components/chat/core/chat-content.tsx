@@ -10,7 +10,7 @@ import { useChatStore, type ChatAssistant } from "@/store/chat-store"
  */
 
 interface ChatContentProps {
-  agent: ChatAssistant
+  agent?: ChatAssistant
 }
 
 export function ChatContent({ agent }: ChatContentProps) {

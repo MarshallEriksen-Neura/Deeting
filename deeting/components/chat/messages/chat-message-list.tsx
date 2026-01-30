@@ -11,7 +11,7 @@ import { useI18n } from "@/hooks/use-i18n"
 
 interface ChatMessageListProps {
   messages: Message[]
-  agent: ChatAssistant
+  agent?: ChatAssistant
   isTyping: boolean
   streamEnabled: boolean
   statusStage: string | null
