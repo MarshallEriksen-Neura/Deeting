@@ -1,6 +1,7 @@
 # 使 Celery 自动发现任务模块（按需在 Celery 配置里 include）
 from app.tasks import (  # noqa: F401
     agent,
+    assistant,
     apikey_sync,
     async_inference,
     audit,
