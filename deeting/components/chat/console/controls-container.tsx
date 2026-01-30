@@ -130,16 +130,17 @@ function ControlsContainer() {
       activeAssistantId ?? assistants[0]?.id ?? installedAgents[0]?.id ?? undefined;
     setGlobalLoading(true);
     try {
-      const created = await createConversation({
-        assistant_id: targetAssistantId ?? null,
-      });
+      const created = await createConversation(
+        isTauriRuntime ? { assistant_id: targetAssistantId ?? null } : {}
+      );
       if (created.session_id) {
         setSessionId(created.session_id);
         if (typeof window !== "undefined") {
           const params = new URLSearchParams(searchParams?.toString());
           params.set("session", created.session_id);
           params.delete("agentId");
-          const basePath = targetAssistantId ? `/chat/${targetAssistantId}` : (pathname || "/chat");
+          const basePath =
+            isTauriRuntime && targetAssistantId ? `/chat/${targetAssistantId}` : "/chat";
           const query = params.toString();
           const nextUrl = query ? `${basePath}?${query}` : basePath;
           window.history.replaceState(null, "", nextUrl);
@@ -479,25 +480,27 @@ function ControlsContainer() {
           </Button>
 
           {/* Agent Selector (Opens Select Agent Modal) */}
-          <Button
-            asChild
-            variant="ghost"
-            className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <Link href="/chat/select-agent" scroll={false} aria-label={t("hud.selectAgent")}>
-              <span
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
-                  activeAssistant?.color ?? "from-slate-400 to-slate-600"
-                }`}
-              >
-                {(activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
-              </span>
-              <span className="text-[13px] font-semibold text-slate-700 dark:text-white/70 max-w-[100px] truncate">
-                {activeAssistant?.name ?? t("hud.selectAgent")}
-              </span>
-              <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
-            </Link>
-          </Button>
+          {isTauriRuntime ? (
+            <Button
+              asChild
+              variant="ghost"
+              className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <Link href="/chat/select-agent" scroll={false} aria-label={t("hud.selectAgent")}>
+                <span
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
+                    activeAssistant?.color ?? "from-slate-400 to-slate-600"
+                  }`}
+                >
+                  {(activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
+                </span>
+                <span className="text-[13px] font-semibold text-slate-700 dark:text-white/70 max-w-[100px] truncate">
+                  {activeAssistant?.name ?? t("hud.selectAgent")}
+                </span>
+                <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
+              </Link>
+            </Button>
+          ) : null}
 
           <Button
             type="button"

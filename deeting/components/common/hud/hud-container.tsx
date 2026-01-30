@@ -149,6 +149,14 @@ export default function HUD() {
     assistants.find(a => a.id === activeAssistantId), 
   [assistants, activeAssistantId]);
 
+  const isTauriRuntime = useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  );
+
   // 使用 useCallback 缓存事件处理函数
   const handleNewChat = useCallback(async () => {
      resetSession();
@@ -160,16 +168,17 @@ export default function HUD() {
      const targetAssistantId = activeAssistantId ?? assistants[0]?.id ?? undefined;
      setGlobalLoading(true);
      try {
-       const created = await createConversation({
-         assistant_id: targetAssistantId ?? null,
-       });
+      const created = await createConversation(
+        isTauriRuntime ? { assistant_id: targetAssistantId ?? null } : {}
+      );
        if (created.session_id) {
          setSessionId(created.session_id);
          if (typeof window !== "undefined") {
            const params = new URLSearchParams(searchParams?.toString());
            params.set("session", created.session_id);
            params.delete("agentId");
-           const basePath = targetAssistantId ? `/chat/${targetAssistantId}` : (pathname || "/chat");
+          const basePath =
+            isTauriRuntime && targetAssistantId ? `/chat/${targetAssistantId}` : "/chat";
            const query = params.toString();
            const nextUrl = query ? `${basePath}?${query}` : basePath;
            window.history.replaceState(null, "", nextUrl);

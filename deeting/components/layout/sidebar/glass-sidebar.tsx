@@ -252,6 +252,13 @@ function DesktopSidebar({ navigation }: DesktopSidebarProps) {
   const installedAgents = useMarketStore((state) => state.installedAgents)
   const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
   const loaded = useMarketStore((state) => state.loaded)
+  const isTauriRuntime = React.useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  )
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
@@ -265,7 +272,7 @@ function DesktopSidebar({ navigation }: DesktopSidebarProps) {
 
   // Construct My Agents group
   const myAgentsGroup: NavGroup | null = React.useMemo(() => {
-    if (!mounted || installedAgents.length === 0) return null
+    if (!isTauriRuntime || !mounted || installedAgents.length === 0) return null
     return {
       title: "My Agents",
       items: installedAgents.map(agent => ({
@@ -275,7 +282,7 @@ function DesktopSidebar({ navigation }: DesktopSidebarProps) {
         icon: "Bot" as const, // 使用 Bot 图标，需要在 icon-map 中确保有映射或直接在这里处理图标
       }))
     }
-  }, [mounted, installedAgents])
+  }, [isTauriRuntime, mounted, installedAgents])
 
   return (
     <aside
