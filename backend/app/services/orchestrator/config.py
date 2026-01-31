@@ -98,6 +98,7 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "assistant_prompt_injection",  # 2.5) 助手提示词注入 (Spec Agent 能力)
         "resolve_assets",  # 3) 资源引用解析（asset:// -> signed URL）
         "mcp_discovery", # 3.5) MCP 工具发现 (User BYOP)
+        "jit_persona_tool_injection", # 3.6) JIT Persona 工具注入（仅 auto）
         "quota_check",  # 4) 配额/余额检查（与外部一致）
         "rate_limit",  # 5) 限流
         "routing",  # 6) 路由决策
@@ -148,6 +149,7 @@ INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
         "validation",  # 1) 入参校验
         "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
         "mcp_discovery", # 2.5) MCP 工具发现 (User BYOP)
+        "jit_persona_tool_injection", # 2.6) JIT Persona 工具注入（仅 auto）
         "quota_check",  # 3) 配额/余额检查（与内部一致）
         "rate_limit",  # 4) 限流
         "routing",  # 5) 路由决策
