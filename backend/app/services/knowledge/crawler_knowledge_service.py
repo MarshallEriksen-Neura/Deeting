@@ -18,50 +18,13 @@ class CrawlerKnowledgeService:
     def __init__(self, repository: KnowledgeRepository):
         self.repo = repository
 
-    async def trigger_recon_mission(
-        self, 
-        url: str, 
-        artifact_type: str = "documentation",
-        js_mode: bool = True
-    ) -> KnowledgeArtifact:
-        """
-        1. Send Scout to the URL (Single Page).
-        2. Save Raw Intelligence as KnowledgeArtifact.
-        3. Trigger Async Indexing.
-        """
-        logger.info(f"Triggering recon mission for: {url}")
-        
-        # 1. Call Scout
-        scout_url = f"{settings.SCOUT_SERVICE_URL}/v1/scout/inspect"
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.post(
-                    scout_url, 
-                    json={"url": url, "js_mode": js_mode},
-                    timeout=120.0
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            except Exception as e:
-                logger.error(f"Scout mission failed: {e}")
-                raise Exception(f"Failed to communicate with Scout: {str(e)}")
-
-        if data.get("status") == "failed":
-            raise Exception(f"Scout reported failure: {data.get('error')}")
-
-        return await self._save_and_index_artifact(
-            url, 
-            data.get("markdown", ""), 
-            artifact_type, 
-            data.get("metadata", {})
-        )
-
     async def ingest_deep_dive(
         self, 
         seed_url: str, 
         max_depth: int = 2, 
         max_pages: int = 20,
-        artifact_type: str = "documentation"
+        artifact_type: str = "documentation",
+        embedding_config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Trigger a Deep Dive on Scout and ingest ALL returned artifacts.
@@ -92,7 +55,6 @@ class CrawlerKnowledgeService:
         saved_ids = []
         for item in artifacts_data:
             try:
-                # Merge deep dive metadata (like depth) with page metadata
                 meta = item.get("metadata", {})
                 meta["depth"] = item.get("depth")
                 
@@ -101,7 +63,8 @@ class CrawlerKnowledgeService:
                     item["markdown"],
                     artifact_type,
                     meta,
-                    title=item.get("title")
+                    title=item.get("title"),
+                    embedding_config=embedding_config
                 )
                 saved_ids.append(str(artifact.id))
             except Exception as e:
@@ -121,15 +84,25 @@ class CrawlerKnowledgeService:
         markdown: str, 
         artifact_type: str, 
         meta_info: Dict[str, Any],
-        title: Optional[str] = None
+        title: Optional[str] = None,
+        embedding_config: Optional[Dict[str, Any]] = None
     ) -> KnowledgeArtifact:
         """Helper to deduplicate logic"""
         content_hash = hashlib.md5(markdown.encode()).hexdigest()
 
+        # Determine which model will be used
+        # Note: Even if config is None, EmbeddingService defaults to settings.EMBEDDING_MODEL
+        # We try to resolve it here for the DB record.
+        model_name = getattr(settings, "EMBEDDING_MODEL", "text-embedding-3-small")
+        if embedding_config and embedding_config.get("model"):
+            model_name = embedding_config["model"]
+
         existing = await self.repo.get_artifact_by_url(url)
         if existing:
-            if existing.content_hash == content_hash:
-                logger.info(f"Content for {url} unchanged. Skipping.")
+            # If content hash AND model matches, skip.
+            # If model changed, we must re-process even if content is same.
+            if existing.content_hash == content_hash and existing.embedding_model == model_name:
+                logger.info(f"Content for {url} unchanged and model matches. Skipping.")
                 return existing
             
             # Update existing
@@ -138,7 +111,8 @@ class CrawlerKnowledgeService:
                 "content_hash": content_hash,
                 "status": "processing",
                 "meta_info": meta_info,
-                "title": title or existing.title
+                "title": title or existing.title,
+                "embedding_model": model_name 
             })
         else:
             artifact = await self.repo.create_artifact({
@@ -148,23 +122,11 @@ class CrawlerKnowledgeService:
                 "artifact_type": artifact_type,
                 "status": "processing",
                 "meta_info": meta_info,
-                "title": title
+                "title": title,
+                "embedding_model": model_name
             })
 
-        # Trigger Indexing Task (Celery)
-        index_knowledge_artifact_task.delay(str(artifact.id))
+        # Trigger Indexing Task (Celery) with Dynamic Config
+        index_knowledge_artifact_task.delay(str(artifact.id), embedding_config)
         
         return artifact
-
-    async def get_artifact_status(self, artifact_id: uuid.UUID) -> Dict[str, Any]:
-        artifact = await self.repo.get(artifact_id)
-        if not artifact:
-            return {"status": "not_found"}
-        
-        return {
-            "id": str(artifact.id),
-            "url": artifact.source_url,
-            "status": artifact.status,
-            "type": artifact.artifact_type,
-            "updated_at": artifact.updated_at
-        }

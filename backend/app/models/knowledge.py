@@ -51,6 +51,13 @@ class KnowledgeArtifact(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         server_default="'pending'",
         comment="状态: pending, processing, indexed, failed"
     )
+
+    # 新增：记录该 Artifact 是用哪个模型进行索引的
+    embedding_model: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="索引使用的 Embedding 模型名称 (如 text-embedding-3-small)"
+    )
     
     meta_info: Mapped[Dict[str, Any]] = mapped_column(
         JSONBCompat, 
