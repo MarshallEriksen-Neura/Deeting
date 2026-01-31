@@ -140,6 +140,8 @@ interface ChatStore {
   // === 同步 Actions ===
   setSessionId: (sessionId: string | null) => void
   setAgent: (agent: ChatAssistant | null) => void
+  setOverrideAssistantId: (assistantId: string | null) => void
+  clearOverrideAssistantId: () => void
   setMessages: (messages: Message[]) => void
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
   updateMessage: (id: string, content: string) => void
@@ -365,6 +367,19 @@ export const useChatStore = create<ChatStore>()(
         if (current?.id === agent?.id) return
         set({ agent })
       },
+
+      setOverrideAssistantId: (assistantId) => {
+        const normalized = normalizeAssistantId(assistantId)
+        set({
+          agentId: normalized,
+        })
+      },
+
+      clearOverrideAssistantId: () =>
+        set({
+          agentId: null,
+          agent: null,
+        }),
 
       setMessages: (messages) => set({ messages }),
 

@@ -51,6 +51,12 @@ const buildChatStateApi = (store: ReturnType<typeof useChatStore>) => ({
 
   // 活跃状态
   activeAssistantId: store.agentId,
+  setOverrideAssistantId: (assistantId?: string | null) => {
+    store.setOverrideAssistantId(assistantId ?? null)
+  },
+  clearOverrideAssistantId: () => {
+    store.clearOverrideAssistantId()
+  },
   setActiveAssistantId: (assistantId?: string) => {
     if (assistantId) {
       store.switchAgent(assistantId, store.agent)

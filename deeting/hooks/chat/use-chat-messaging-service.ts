@@ -15,11 +15,11 @@ export function resolveAssistantRequestContext({
   isTauriRuntime: boolean
   activeAssistantId?: string | null
 }) {
-  if (!isTauriRuntime) {
-    return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
-  }
   if (!activeAssistantId) {
     return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
+  }
+  if (!isTauriRuntime) {
+    return { assistantId: activeAssistantId, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
   }
   return {
     assistantId: activeAssistantId,

@@ -53,6 +53,7 @@ export default function HUD() {
     setAssistants,
     setModels,
     setActiveAssistantId,
+    clearOverrideAssistantId,
     setMessages,
     clearAttachments,
   } = useChatStateStore(
@@ -65,6 +66,7 @@ export default function HUD() {
       setAssistants: state.setAssistants,
       setModels: state.setModels,
       setActiveAssistantId: state.setActiveAssistantId,
+      clearOverrideAssistantId: state.clearOverrideAssistantId,
       setMessages: state.setMessages,
       clearAttachments: state.clearAttachments,
     }))
@@ -101,6 +103,14 @@ export default function HUD() {
   });
   const { selectedModelId, setSelectedModelId } = useImageGenerationStore();
 
+  const isTauriRuntime = useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  );
+
   useEffect(() => {
     if (isImage) return;
     if (serviceAssistants.length) {
@@ -114,10 +124,11 @@ export default function HUD() {
   }, [isImage, serviceModels, setModels]);
 
   useEffect(() => {
+    if (!isTauriRuntime) return;
     if (!activeAssistantId && assistants.length) {
       setActiveAssistantId(assistants[0].id);
     }
-  }, [activeAssistantId, assistants, setActiveAssistantId]);
+  }, [isTauriRuntime, activeAssistantId, assistants, setActiveAssistantId]);
 
   useEffect(() => {
     if (isImage || !models.length) return;
@@ -149,19 +160,14 @@ export default function HUD() {
     assistants.find(a => a.id === activeAssistantId), 
   [assistants, activeAssistantId]);
 
-  const isTauriRuntime = useMemo(
-    () =>
-      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-      typeof window !== "undefined" &&
-      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
-    []
-  );
-
   // 使用 useCallback 缓存事件处理函数
   const handleNewChat = useCallback(async () => {
      resetSession();
      setMessages([]);
      clearAttachments();
+     if (!isTauriRuntime) {
+       clearOverrideAssistantId();
+     }
      if (typeof window !== "undefined" && activeAssistantId) {
        localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`);
      }
@@ -200,12 +206,14 @@ export default function HUD() {
     resetSession,
     setMessages,
     clearAttachments,
+    clearOverrideAssistantId,
     searchParams,
     pathname,
     activeAssistantId,
     assistants,
     setSessionId,
     setGlobalLoading,
+    isTauriRuntime,
   ]);
 
   const handleToggleControlCenter = useCallback(() => {

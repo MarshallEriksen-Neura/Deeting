@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, ImagePlus, X, Square, Clapperboard } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, ImagePlus, X, Square, Clapperboard, Lock } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useRef, useState, useCallback, memo } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -10,6 +10,7 @@ import { useChatStateStore } from '@/store/chat-state-store';
 import { useChatSessionStore } from '@/store/chat-session-store';
 import { useMarketStore } from '@/store/market-store';
 import { useI18n } from '@/hooks/use-i18n';
+import { useChatService } from '@/hooks/use-chat-service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Image from 'next/image';
@@ -58,6 +59,8 @@ function ControlsContainer() {
     config,
     setConfig,
     setActiveAssistantId,
+    setOverrideAssistantId,
+    clearOverrideAssistantId,
     addAttachments,
     removeAttachment,
     clearAttachments,
@@ -73,6 +76,8 @@ function ControlsContainer() {
       config: state.config,
       setConfig: state.setConfig,
       setActiveAssistantId: state.setActiveAssistantId,
+      setOverrideAssistantId: state.setOverrideAssistantId,
+      clearOverrideAssistantId: state.clearOverrideAssistantId,
       addAttachments: state.addAttachments,
       removeAttachment: state.removeAttachment,
       clearAttachments: state.clearAttachments,
@@ -96,10 +101,22 @@ function ControlsContainer() {
     []
   );
 
+  const { assistants: serviceAssistants } = useChatService({ enabled: !isTauriRuntime });
+
   const activeAssistant = useMemo(
-    () => assistants.find((assistant) => assistant.id === activeAssistantId),
-    [assistants, activeAssistantId]
+    () => {
+      const source = isTauriRuntime ? assistants : serviceAssistants;
+      return source.find((assistant) => assistant.id === activeAssistantId);
+    },
+    [assistants, serviceAssistants, activeAssistantId, isTauriRuntime]
   );
+
+  const availableAssistants = useMemo(() => {
+    if (isTauriRuntime) {
+      return installedAgents;
+    }
+    return serviceAssistants;
+  }, [isTauriRuntime, installedAgents, serviceAssistants]);
 
   const { handleSendMessage, cancelActiveRequest } = useChatMessaging({
     agent: activeAssistant ? { id: activeAssistant.id, name: activeAssistant.name } : undefined,
@@ -119,10 +136,17 @@ function ControlsContainer() {
     setIsParamsOpen(open);
   }, []);
 
+  const handleClearOverride = useCallback(() => {
+    clearOverrideAssistantId();
+  }, [clearOverrideAssistantId]);
+
   const handleNewChat = useCallback(async () => {
     resetSession();
     setMessages([]);
     clearAttachments();
+    if (!isTauriRuntime) {
+      clearOverrideAssistantId();
+    }
     if (typeof window !== "undefined" && activeAssistantId) {
       localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`);
     }
@@ -162,6 +186,7 @@ function ControlsContainer() {
     resetSession,
     setMessages,
     clearAttachments,
+    clearOverrideAssistantId,
     searchParams,
     pathname,
     activeAssistantId,
@@ -169,29 +194,48 @@ function ControlsContainer() {
     installedAgents,
     setSessionId,
     setGlobalLoading,
+    isTauriRuntime,
   ]);
 
   const handleSelectAssistant = useCallback((assistantId: string) => {
-    setActiveAssistantId(assistantId);
-    router.replace(`/chat/${assistantId}`);
-  }, [setActiveAssistantId, router]);
+    if (isTauriRuntime) {
+      setActiveAssistantId(assistantId);
+      router.replace(`/chat/${assistantId}`);
+      return;
+    }
+    setOverrideAssistantId(assistantId);
+  }, [isTauriRuntime, setActiveAssistantId, setOverrideAssistantId, router]);
 
   const handleSend = useCallback(() => {
     if (!canSend) return;
 
-    if (!activeAssistantId) {
-      const defaultAgent = installedAgents[0] || assistants[0];
-      if (defaultAgent) {
-        setActiveAssistantId(defaultAgent.id);
-        router.replace(`/chat/${defaultAgent.id}`);
-        handleSendMessage();
-      } else {
-        console.warn("No agents available to start chat");
+    if (isTauriRuntime) {
+      if (!activeAssistantId) {
+        const defaultAgent = installedAgents[0] || assistants[0];
+        if (defaultAgent) {
+          setActiveAssistantId(defaultAgent.id);
+          router.replace(`/chat/${defaultAgent.id}`);
+          handleSendMessage();
+        } else {
+          console.warn("No agents available to start chat");
+        }
+        return;
       }
-    } else {
       handleSendMessage();
+      return;
     }
-  }, [canSend, activeAssistantId, installedAgents, assistants, setActiveAssistantId, router, handleSendMessage]);
+
+    handleSendMessage();
+  }, [
+    canSend,
+    activeAssistantId,
+    installedAgents,
+    assistants,
+    setActiveAssistantId,
+    router,
+    handleSendMessage,
+    isTauriRuntime,
+  ]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -500,7 +544,98 @@ function ControlsContainer() {
                 <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
               </Link>
             </Button>
-          ) : null}
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                  aria-label={t("routing.override")}
+                >
+                  <span
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm ${
+                      activeAssistantId
+                        ? `bg-gradient-to-br ${activeAssistant?.color ?? "from-slate-400 to-slate-600"}`
+                        : "bg-slate-700"
+                    }`}
+                  >
+                    {activeAssistantId ? (
+                      (activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")
+                    ) : (
+                      <Sparkles className="w-4 h-4 text-white" />
+                    )}
+                  </span>
+                  <div className="flex flex-col items-start leading-tight">
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/40">
+                      {activeAssistantId ? t("routing.locked") : t("routing.auto")}
+                    </span>
+                    <span className="text-[13px] font-semibold text-slate-700 dark:text-white/80 max-w-[120px] truncate">
+                      {activeAssistantId ? activeAssistant?.name ?? t("routing.locked") : t("routing.autoDesc")}
+                    </span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="center"
+                className="w-72 p-2 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#1a1a1a] shadow-xl backdrop-blur-xl"
+              >
+                <div className="flex flex-col gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="justify-start gap-3 rounded-xl px-3 py-2 hover:bg-slate-100/80 dark:hover:bg-white/10"
+                    onClick={handleClearOverride}
+                    disabled={!activeAssistantId}
+                  >
+                    <span className="w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center">
+                      <Sparkles className="w-4 h-4" />
+                    </span>
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-medium text-slate-800 dark:text-white/90">
+                        {t("routing.auto")}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-white/50">
+                        {t("routing.autoDesc")}
+                      </span>
+                    </div>
+                  </Button>
+
+                  <div className="h-px bg-slate-200/70 dark:bg-white/10 my-1" />
+
+                  {availableAssistants.length ? (
+                    availableAssistants.map((assistant) => (
+                      <Button
+                        key={assistant.id}
+                        type="button"
+                        variant="ghost"
+                        className="justify-start gap-3 rounded-xl px-3 py-2 hover:bg-slate-100/80 dark:hover:bg-white/10"
+                        onClick={() => handleSelectAssistant(assistant.id)}
+                      >
+                        <span
+                          className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
+                            assistant.color ?? "from-slate-400 to-slate-600"
+                          }`}
+                        >
+                          {(assistant.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
+                        </span>
+                        <span className="text-sm font-medium text-slate-800 dark:text-white/90 flex-1 text-left truncate">
+                          {assistant.name}
+                        </span>
+                        {assistant.id === activeAssistantId ? (
+                          <Lock className="w-4 h-4 text-slate-500 dark:text-white/50" />
+                        ) : null}
+                      </Button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-xs text-slate-500 dark:text-white/40">
+                      {t("routing.empty")}
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
 
           <Button
             type="button"

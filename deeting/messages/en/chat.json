@@ -53,7 +53,8 @@
         "upstreamRequestBatch": "Upstream request · batch",
         "upstreamStreaming": "Streaming output",
         "upstreamResponse": "Upstream response {latency}ms",
-        "toolCall": "Tool call {name}"
+        "toolCall": "Tool call {name}",
+        "assistantSelected": "Now handled by {name}"
       }
     },
     "workspace": {
@@ -168,6 +169,14 @@
       "refresh": "Refresh page",
       "requestFailed": "Request failed. Please try again.",
       "modelUnavailable": "No available models. Please configure a provider."
+    },
+    "routing": {
+      "auto": "Auto routing",
+      "autoDesc": "System chooses the best assistant",
+      "locked": "Locked",
+      "override": "Switch assistant",
+      "clear": "Back to auto",
+      "empty": "No assistants available"
     },
     "hud": {
       "activeAgent": "Active Agent",

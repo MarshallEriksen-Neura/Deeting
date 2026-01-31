@@ -53,7 +53,8 @@
         "upstreamRequestBatch": "上游请求 · 整段",
         "upstreamStreaming": "流式输出中",
         "upstreamResponse": "上游响应 {latency}ms",
-        "toolCall": "工具调用 {name}"
+        "toolCall": "工具调用 {name}",
+        "assistantSelected": "当前由 {name} 接管"
       }
     },
     "workspace": {
@@ -168,6 +169,14 @@
       "refresh": "刷新页面",
       "requestFailed": "请求失败，请稍后重试。",
       "modelUnavailable": "暂无可用模型，请先配置提供商。"
+    },
+    "routing": {
+      "auto": "自动路由",
+      "autoDesc": "系统智能选择助手",
+      "locked": "已锁定",
+      "override": "切换助手",
+      "clear": "恢复自动",
+      "empty": "暂无可用助手"
     },
     "hud": {
       "activeAgent": "当前助手",

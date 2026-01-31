@@ -40,6 +40,10 @@ export function resolveStatusDetail(
       const name = String(meta?.name ?? "")
       return t("status.detail.toolCall", { name })
     }
+    case "assistant.selected": {
+      const name = String(meta?.assistant_name ?? "")
+      return t("status.detail.assistantSelected", { name })
+    }
     default:
       return null
   }

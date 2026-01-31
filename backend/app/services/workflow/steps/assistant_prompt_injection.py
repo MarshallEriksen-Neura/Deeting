@@ -99,7 +99,7 @@ class AssistantPromptInjectionStep(BaseStep):
         
         # 加载助手信息
         try:
-            assistant_prompt = await self._load_assistant_prompt(ctx, assistant_id)
+            assistant_prompt, assistant_name = await self._load_assistant_prompt_info(ctx, assistant_id)
             if not assistant_prompt:
                 logger.warning(f"Assistant {assistant_id} not found, skipping injection")
                 return StepResult(status=StepStatus.SUCCESS, message="assistant_not_found")
@@ -109,8 +109,20 @@ class AssistantPromptInjectionStep(BaseStep):
             
             # 存储到上下文
             ctx.set("assistant", "id", str(assistant_id))
+            ctx.set("assistant", "name", assistant_name)
             ctx.set("assistant", "system_prompt", assistant_prompt)
             ctx.set("assistant", "enhanced_prompt", enhanced_prompt)
+
+            ctx.emit_status(
+                stage="remember",
+                step=self.name,
+                state="success",
+                code="assistant.selected",
+                meta={
+                    "assistant_id": str(assistant_id),
+                    "assistant_name": assistant_name,
+                },
+            )
             
             logger.info(
                 f"Assistant prompt injected trace_id={ctx.trace_id} "
@@ -129,25 +141,27 @@ class AssistantPromptInjectionStep(BaseStep):
                 message=f"Prompt injection failed: {str(e)}"
             )
     
-    async def _load_assistant_prompt(self, ctx: "WorkflowContext", assistant_id: UUID) -> str | None:
-        """加载助手的 system_prompt"""
+    async def _load_assistant_prompt_info(
+        self, ctx: "WorkflowContext", assistant_id: UUID
+    ) -> tuple[str | None, str | None]:
+        """加载助手的 system_prompt 与名称"""
         from app.models.assistant import Assistant, AssistantVersion
         from sqlalchemy import select
-        
+
         # 查询助手及其当前版本
         stmt = (
-            select(AssistantVersion.system_prompt)
+            select(AssistantVersion.system_prompt, AssistantVersion.name)
             .join(Assistant, Assistant.current_version_id == AssistantVersion.id)
             .where(Assistant.id == assistant_id)
         )
-        
+
         result = await ctx.db_session.execute(stmt)
-        system_prompt = result.scalar_one_or_none()
-        
-        return system_prompt
+        row = result.first()
+        if not row:
+            return None, None
+        return row[0], row[1]
     
     def _inject_spec_agent_capability(self, original_prompt: str) -> str:
         """注入 Spec Agent 模式切换能力"""
         # 在原始 prompt 后追加能力说明
         return original_prompt.strip() + "\n" + SPEC_AGENT_CAPABILITY_INJECTION
-
