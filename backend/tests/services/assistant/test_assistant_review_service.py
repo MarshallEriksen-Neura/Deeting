@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -47,7 +47,7 @@ async def async_session():
 
 
 @pytest.mark.asyncio
-async def test_review_approved_enqueues_sync(mocker, async_session):
+async def test_review_approved_enqueues_sync(monkeypatch, async_session):
     user = User(
         id=uuid.uuid4(),
         email="reviewer@example.com",
@@ -61,20 +61,22 @@ async def test_review_approved_enqueues_sync(mocker, async_session):
     review_service = ReviewService(ReviewTaskRepository(async_session))
     service = AssistantReviewService(
         review_service=review_service,
-        auto_review_service=mocker.Mock(),
+        auto_review_service=Mock(),
     )
 
-    mocker.patch.object(
+    monkeypatch.setattr(
         service,
         "auto_review",
-        new_callable=AsyncMock,
-        return_value=AutoReviewResult(
-            status=ReviewStatus.APPROVED,
-            reviewer_user_id=user.id,
-            reason=None,
+        AsyncMock(
+            return_value=AutoReviewResult(
+                status=ReviewStatus.APPROVED,
+                reviewer_user_id=user.id,
+                reason=None,
+            ),
         ),
     )
-    enqueue = mocker.patch("app.tasks.assistant.sync_assistant_to_qdrant.delay")
+    enqueue = Mock()
+    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
 
     await service.submit_and_review(
         assistant_id=assistant_id,
@@ -85,7 +87,7 @@ async def test_review_approved_enqueues_sync(mocker, async_session):
 
 
 @pytest.mark.asyncio
-async def test_review_rejected_skips_sync(mocker, async_session):
+async def test_review_rejected_skips_sync(monkeypatch, async_session):
     user = User(
         id=uuid.uuid4(),
         email="reject@example.com",
@@ -99,20 +101,22 @@ async def test_review_rejected_skips_sync(mocker, async_session):
     review_service = ReviewService(ReviewTaskRepository(async_session))
     service = AssistantReviewService(
         review_service=review_service,
-        auto_review_service=mocker.Mock(),
+        auto_review_service=Mock(),
     )
 
-    mocker.patch.object(
+    monkeypatch.setattr(
         service,
         "auto_review",
-        new_callable=AsyncMock,
-        return_value=AutoReviewResult(
-            status=ReviewStatus.REJECTED,
-            reviewer_user_id=user.id,
-            reason="bad",
+        AsyncMock(
+            return_value=AutoReviewResult(
+                status=ReviewStatus.REJECTED,
+                reviewer_user_id=user.id,
+                reason="bad",
+            ),
         ),
     )
-    enqueue = mocker.patch("app.tasks.assistant.sync_assistant_to_qdrant.delay")
+    enqueue = Mock()
+    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
 
     await service.submit_and_review(
         assistant_id=assistant_id,
@@ -126,7 +130,7 @@ async def test_review_rejected_skips_sync(mocker, async_session):
 
 
 @pytest.mark.asyncio
-async def test_review_auto_review_error_marks_rejected(mocker, async_session):
+async def test_review_auto_review_error_marks_rejected(monkeypatch, async_session):
     user = User(
         id=uuid.uuid4(),
         email="error@example.com",
@@ -140,14 +144,13 @@ async def test_review_auto_review_error_marks_rejected(mocker, async_session):
     review_service = ReviewService(ReviewTaskRepository(async_session))
     service = AssistantReviewService(
         review_service=review_service,
-        auto_review_service=mocker.Mock(),
+        auto_review_service=Mock(),
     )
 
-    mocker.patch.object(
+    monkeypatch.setattr(
         service,
         "auto_review",
-        new_callable=AsyncMock,
-        side_effect=ValueError("auto review failed"),
+        AsyncMock(side_effect=ValueError("auto review failed")),
     )
 
     await service.submit_and_review(

@@ -4,25 +4,43 @@ import { User, Mail } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { GlassButton } from "@/components/ui/glass-button"
-import { 
-  GlassCard, 
-  GlassCardContent, 
-  GlassCardDescription, 
-  GlassCardHeader, 
-  GlassCardTitle 
+import {
+  GlassCard,
+  GlassCardContent,
+  GlassCardDescription,
+  GlassCardHeader,
+  GlassCardTitle
 } from "@/components/ui/glass-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useUserProfile } from "@/hooks/use-user"
 
-interface UserBasicInfoProps {
-  name: string
-  email: string
-  bio: string
-}
-
-export function UserBasicInfo({ name, email, bio }: UserBasicInfoProps) {
+export function UserBasicInfo() {
   const t = useTranslations("profile")
+  const { profile, isLoading } = useUserProfile()
+
+  if (isLoading) {
+    return (
+      <GlassCard padding="none" hover="none" className="border-none shadow-sm overflow-hidden">
+        <div className="p-6 space-y-4">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      </GlassCard>
+    )
+  }
+
+  if (!profile) {
+    return null
+  }
+
+  const name = profile.username ?? profile.email.split("@")[0]
+  const email = profile.email
+  const bio = "" // TODO: Add bio field to user schema
 
   return (
     <GlassCard padding="none" hover="none" className="border-none shadow-sm overflow-hidden">
@@ -46,7 +64,7 @@ export function UserBasicInfo({ name, email, bio }: UserBasicInfoProps) {
           <div className="space-y-2">
             <Label htmlFor="email">{t("basicInfo.email")}</Label>
             <div className="relative">
-              <Input id="email" defaultValue={email} className="bg-background/50 border-border/50 pl-10 focus:border-primary/50" />
+              <Input id="email" defaultValue={email} readOnly className="bg-muted/50 border-border/50 pl-10 cursor-not-allowed text-muted-foreground" />
               <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             </div>
           </div>

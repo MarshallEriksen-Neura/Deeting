@@ -8,23 +8,50 @@ import { Badge } from "@/components/ui/badge"
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useUserProfile } from "@/hooks/use-user"
 
-export interface UserProfileData {
-  name: string
-  uid: string
-  role: string
-  status: string
-  registeredAt: string
-  region: string
-  avatar: string
+function formatDate(dateString: string): string {
+  const date = new Date(dateString)
+  return date.toLocaleDateString("en-CA") // YYYY-MM-DD format
 }
 
-interface UserProfileSidebarProps {
-  user: UserProfileData
+function formatUid(id: string): string {
+  const short = id.replace(/-/g, "").slice(0, 8).toUpperCase()
+  return `${short.slice(0, 4)}-${short.slice(4, 6)}-${short.slice(6, 8)}`
 }
 
-export function UserProfileSidebar({ user }: UserProfileSidebarProps) {
+function getUserRole(isSuperuser: boolean, permissionFlags: Record<string, number>): string {
+  if (isSuperuser) return "ADMIN"
+  const hasProFeatures = Object.values(permissionFlags).some(v => v > 0)
+  return hasProFeatures ? "PRO PILOT" : "PILOT"
+}
+
+export function UserProfileSidebar() {
   const t = useTranslations("profile")
+  const { profile, isLoading } = useUserProfile()
+
+  if (isLoading) {
+    return (
+      <aside className="w-full lg:w-1/3 lg:sticky lg:top-8">
+        <Skeleton className="h-96 w-full rounded-3xl" />
+      </aside>
+    )
+  }
+
+  if (!profile) {
+    return null
+  }
+
+  const user = {
+    name: profile.username ?? profile.email.split("@")[0],
+    uid: formatUid(profile.id),
+    role: getUserRole(profile.is_superuser, profile.permission_flags),
+    status: profile.is_active ? "ONLINE" : "OFFLINE",
+    registeredAt: formatDate(profile.created_at),
+    region: "—",
+    avatar: profile.avatar_url ?? "",
+  }
 
   return (
     <aside className="w-full lg:w-1/3 lg:sticky lg:top-8">
