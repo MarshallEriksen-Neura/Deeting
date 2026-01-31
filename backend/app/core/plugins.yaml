@@ -25,6 +25,15 @@ plugins:
       - "search_knowledge"
       - "add_knowledge_chunk"
 
+  - id: "system.expert_network"
+    name: "专家网络"
+    module: "app.agent_plugins.builtins.expert_network.plugin"
+    class_name: "ExpertNetworkPlugin"
+    enabled_by_default: true
+    description: "提供专家助手检索能力。"
+    tools:
+      - "consult_expert_network"
+
   - id: "system.tavily"
     name: "联网搜索"
     # 注意：Tavily 目前可能是通过 ProviderRegistry 或独立的 Crawler 插件提供的？
