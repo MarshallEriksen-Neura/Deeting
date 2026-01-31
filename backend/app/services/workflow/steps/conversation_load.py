@@ -60,6 +60,28 @@ class ConversationLoadStep(BaseStep):
         ctx.set("validation", "validated", request_data)
         ctx.set("conversation", "session_id", session_id)
 
+        session_assistant_id = None
+        if ctx.db_session is not None:
+            try:
+                from sqlalchemy import select
+                from app.models.conversation import ConversationSession
+
+                session_uuid = uuid.UUID(session_id)
+                result = await ctx.db_session.execute(
+                    select(ConversationSession.assistant_id).where(
+                        ConversationSession.id == session_uuid
+                    )
+                )
+                session_assistant_id = result.scalar_one_or_none()
+            except Exception:
+                session_assistant_id = None
+
+        if session_assistant_id:
+            ctx.set("conversation", "session_assistant_id", session_assistant_id)
+            if not request_data.get("assistant_id"):
+                request_data["assistant_id"] = session_assistant_id
+                ctx.set("validation", "validated", request_data)
+
         # 无 Redis 时降级跳过
         try:
             conv_service = ConversationService()

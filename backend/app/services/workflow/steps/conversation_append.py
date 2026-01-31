@@ -58,7 +58,7 @@ class ConversationAppendStep(BaseStep):
 
         req = ctx.get("validation", "validated") or {}
         user_messages: list[dict[str, Any]] = req.get("messages", []) or []
-        assistant_id = req.get("assistant_id")
+        assistant_id = req.get("assistant_id") or ctx.get("assistant", "id")
         assistant_msg = self._extract_assistant_message(
             ctx.get("response_transform", "response") or {}
         )

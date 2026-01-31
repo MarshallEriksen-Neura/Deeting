@@ -90,7 +90,12 @@ class AssistantPromptInjectionStep(BaseStep):
         if not request:
             return StepResult(status=StepStatus.FAILED, message="No request found")
         
-        assistant_id = getattr(request, "assistant_id", None)
+        validated = ctx.get("validation", "validated") or {}
+        assistant_id = (
+            getattr(request, "assistant_id", None)
+            or validated.get("assistant_id")
+            or ctx.get("conversation", "session_assistant_id")
+        )
         
         # 如果没有指定 assistant_id,跳过
         if not assistant_id:

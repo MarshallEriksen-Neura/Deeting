@@ -45,3 +45,27 @@ async def test_prompt_injection_emits_selected_assistant(monkeypatch):
     assert payload["code"] == "assistant.selected"
     assert payload["meta"]["assistant_id"] == assistant_id
     assert payload["meta"]["assistant_name"] == "Helper Bot"
+
+
+@pytest.mark.asyncio
+async def test_prompt_injection_uses_validated_assistant_id(monkeypatch):
+    assistant_id = "assistant-validated"
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set("validation", "request", SimpleNamespace(assistant_id=None))
+    ctx.set("validation", "validated", {"assistant_id": assistant_id})
+    emitted: list[dict] = []
+    ctx.status_emitter = emitted.append
+
+    step = AssistantPromptInjectionStep()
+    monkeypatch.setattr(
+        step,
+        "_load_assistant_prompt_info",
+        AsyncMock(return_value=("system prompt", "Helper Bot")),
+    )
+
+    result = await step.execute(ctx)
+
+    assert result.status.value == "success"
+    assert emitted
+    payload = emitted[-1]
+    assert payload["meta"]["assistant_id"] == assistant_id
