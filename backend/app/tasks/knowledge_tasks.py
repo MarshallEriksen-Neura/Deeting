@@ -2,7 +2,7 @@ import asyncio
 import uuid
 import re
 import hashlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from loguru import logger
 import httpx
 
@@ -50,14 +50,15 @@ chunker = MarkdownChunker()
 # --- Celery Task ---
 
 @celery_app.task(name="app.tasks.knowledge.index_knowledge_artifact_task")
-def index_knowledge_artifact_task(artifact_id: str):
+def index_knowledge_artifact_task(artifact_id: str, embedding_config: Optional[Dict[str, Any]] = None):
     """
     Background task to process, chunk, embed and index a knowledge artifact.
+    Accepts optional embedding_config to override system defaults (passed from API).
     """
     # Celery tasks are sync by default, but we need async for DB/Qdrant
-    return asyncio.run(_index_knowledge_artifact_async(artifact_id))
+    return asyncio.run(_index_knowledge_artifact_async(artifact_id, embedding_config))
 
-async def _index_knowledge_artifact_async(artifact_id: str):
+async def _index_knowledge_artifact_async(artifact_id: str, embedding_config: Optional[Dict[str, Any]] = None):
     logger.info(f"Starting indexing for artifact: {artifact_id}")
     
     async with AsyncSessionLocal() as session:
@@ -73,22 +74,21 @@ async def _index_knowledge_artifact_async(artifact_id: str):
             chunks_data = chunker.split_text(artifact.raw_content, artifact.source_url)
             logger.info(f"Split artifact into {len(chunks_data)} chunks.")
             
-            # 2. Embedding & Vector Sync
-            embedding_service = EmbeddingService()
+            # 2. Embedding & Vector Sync (Inject Config)
+            embedding_service = EmbeddingService(config=embedding_config)
             
             # We use a system-level Qdrant client
             async with httpx.AsyncClient(base_url=settings.QDRANT_URL) as qdrant_client:
                 # Ensure collection exists (using system collection name from settings)
-                # We'll use QDRANT_KB_SYSTEM_COLLECTION
                 collection_name = settings.QDRANT_KB_SYSTEM_COLLECTION
                 
-                # Get a sample embedding to know the size
                 if not chunks_data:
                     logger.warning(f"No valid chunks for artifact {artifact_id}")
                     await repo.update(artifact, {"status": "indexed"})
+                    await session.commit()
                     return
 
-                # Process chunks in batches to avoid overwhelming LLM/Qdrant
+                # Process chunks in batches
                 points_to_upsert = []
                 
                 # Delete old chunks if any (re-indexing)
@@ -98,7 +98,7 @@ async def _index_knowledge_artifact_async(artifact_id: str):
                     content = c_data["content"]
                     header = c_data["header"]
                     
-                    # Generate Embedding
+                    # Generate Embedding (using dynamic config)
                     vector = await embedding_service.embed_text(content)
                     
                     # Ensure collection matches vector size
@@ -146,6 +146,14 @@ async def _index_knowledge_artifact_async(artifact_id: str):
             
         except Exception as e:
             logger.error(f"Failed to index artifact {artifact_id}: {e}")
-            await repo.update(artifact, {"status": "failed", "meta_info": {**artifact.meta_info, "error": str(e)}}
+            meta_info = dict(artifact.meta_info or {})
+            meta_info["error"] = str(e)
+            await repo.update(
+                artifact,
+                {
+                    "status": "failed",
+                    "meta_info": meta_info,
+                },
+            )
             await session.commit()
-            raise e
+            raise
