@@ -15,25 +15,19 @@ class DeepDiveRequest(BaseModel):
     max_pages: int = 10
     artifact_type: str = "documentation"
     
-    # Optional Dynamic Embedding Config
-    # We DO NOT allow changing the 'model' here to ensure the vectors 
-    # are compatible with the main business logic (Agent Search).
+    # Optional Dynamic Embedding Config (Billing Only)
     embedding_api_key: Optional[str] = None
     embedding_base_url: Optional[str] = None
 
 @router.post("/ingest/deep-dive", response_model=Dict[str, Any])
 async def ingest_deep_dive(
     request: DeepDiveRequest,
-    current_user: Any = Depends(get_current_active_superuser), # Admin only
+    current_user: Any = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Start a Deep Dive ingestion process.
-    
-    NOTE: The Embedding Model is strictly enforced by the backend configuration (env: EMBEDDING_MODEL)
-    to ensure all knowledge is searchable by the existing Agents.
-    You can provide an API Key/Base URL for billing purposes only.
+    This is an atomic capability. Intelligent discovery should be handled by Agents/Plugins.
     """
-    # Construct config dict if any param is provided
     embedding_config = {}
     if request.embedding_api_key:
         embedding_config["api_key"] = request.embedding_api_key

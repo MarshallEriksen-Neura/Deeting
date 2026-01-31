@@ -32,6 +32,12 @@ async def ensure_tables():
         await conn.run_sync(Base.metadata.create_all)
 
 
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def dispose_engine():
+    yield
+    await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_publish_assistant_enqueues_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     enqueue = Mock()
@@ -120,5 +126,35 @@ async def test_update_assistant_version_enqueues_sync(monkeypatch: pytest.Monkey
                 )
             ),
         )
+
+    enqueue.assert_called_once_with(str(assistant.id))
+
+
+@pytest.mark.asyncio
+async def test_delete_assistant_enqueues_remove(monkeypatch: pytest.MonkeyPatch) -> None:
+    enqueue = Mock()
+    monkeypatch.setattr("app.tasks.assistant.remove_assistant_from_qdrant.delay", enqueue)
+
+    async with AsyncSessionLocal() as session:
+        service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session),
+        )
+        assistant = await service.create_assistant(
+            payload=AssistantCreate(
+                visibility=AssistantVisibility.PUBLIC,
+                status=AssistantStatus.PUBLISHED,
+                version=AssistantVersionCreate(
+                    name="Indexed Assistant",
+                    system_prompt="You are a helpful assistant.",
+                ),
+            ),
+            owner_user_id=uuid.uuid4(),
+        )
+
+        await service.delete_assistant(assistant.id)
+
+        deleted = await service.assistant_repo.get(assistant.id)
+        assert deleted is None
 
     enqueue.assert_called_once_with(str(assistant.id))

@@ -1,5 +1,6 @@
 import asyncio
 import random
+import traceback
 from crawl4ai import AsyncWebCrawler
 from loguru import logger
 from typing import Optional, Dict, Any
@@ -31,17 +32,14 @@ class CrawlerService:
         await asyncio.sleep(delay)
 
         # 3. Execution (Stealth Mode)
-        async with AsyncWebCrawler(verbose=True) as crawler:
-            try:
+        # Use a fresh context for each request to avoid state pollution
+        try:
+            async with AsyncWebCrawler(verbose=True) as crawler:
+                logger.info(f"Starting browser session for {url}...")
                 result = await crawler.arun(
                     url=url,
                     bypass_cache=True,
-                    # Magic=True enables Playwright Stealth, changing Navigator props, 
-                    # masking Automation features, and randomizing Canvas fingerprints.
                     magic=True,
-                    
-                    # Optional: Add simple user simulation steps if Crawl4AI allows hooks in future versions
-                    # For now, 'magic' handles the browser fingerprinting.
                 )
                 
                 if not result.success:
@@ -62,12 +60,13 @@ class CrawlerService:
                     "metadata": result.metadata,
                     "links": result.links 
                 }
-            except Exception as e:
-                logger.error(f"Critical crawler error: {e}")
-                return {
-                    "status": "failed",
-                    "error": str(e),
-                    "url": url
-                }
+        except Exception as e:
+            logger.error(f"Critical crawler error: {e}")
+            traceback.print_exc() # Print full stack trace to console
+            return {
+                "status": "failed",
+                "error": f"Internal Error: {str(e)}",
+                "url": url
+            }
 
 crawler_service = CrawlerService()

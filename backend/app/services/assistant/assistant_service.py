@@ -18,6 +18,7 @@ from app.schemas.assistant import (
 )
 from app.services.assistant.assistant_state import AssistantStateMachine
 from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.tasks.assistant import remove_assistant_from_qdrant, sync_assistant_to_qdrant
 from app.utils.time_utils import Datetime
 from app.repositories.assistant_tag_repository import AssistantTagRepository, AssistantTagLinkRepository
 
@@ -128,6 +129,7 @@ class AssistantService:
         if not assistant:
             raise ValueError("助手不存在")
 
+        was_indexable = self._is_indexable(assistant.visibility, assistant.status)
         update_data: dict = {}
         if payload.visibility is not None:
             update_data["visibility"] = (
@@ -156,6 +158,11 @@ class AssistantService:
             update_data["current_version_id"] = version.id
 
         assistant = await self.assistant_repo.update(assistant, update_data)
+        self._sync_index_if_needed(
+            assistant=assistant,
+            was_indexable=was_indexable,
+            payload=payload,
+        )
         return assistant
 
     async def publish_assistant(
@@ -183,6 +190,8 @@ class AssistantService:
                 "published_at": assistant.published_at,
             },
         )
+        if self._is_indexable(assistant.visibility, assistant.status):
+            sync_assistant_to_qdrant.delay(str(assistant.id))
         return assistant
 
     # ===== 版本 =====
@@ -222,6 +231,14 @@ class AssistantService:
         if payload.tags is not None:
             await self.tag_service.sync_assistant_tags(assistant_id, payload.tags)
         return version
+
+    async def delete_assistant(self, assistant_id: UUID) -> None:
+        assistant = await self.assistant_repo.get(assistant_id)
+        if not assistant:
+            return
+        if self._is_indexable(assistant.visibility, assistant.status):
+            remove_assistant_from_qdrant.delay(str(assistant.id))
+        await self.assistant_repo.delete(assistant_id)
 
     # ===== 内部工具 =====
     @staticmethod
@@ -267,3 +284,33 @@ class AssistantService:
         if "published_at" not in version_data:
             version_data["published_at"] = None
         return await self.version_repo.create(version_data)
+
+    @staticmethod
+    def _is_indexable(visibility: AssistantVisibility | str, status: AssistantStatus | str) -> bool:
+        visibility_value = visibility.value if isinstance(visibility, AssistantVisibility) else visibility
+        status_value = status.value if isinstance(status, AssistantStatus) else status
+        return (
+            visibility_value == AssistantVisibility.PUBLIC.value
+            and status_value == AssistantStatus.PUBLISHED.value
+        )
+
+    def _sync_index_if_needed(
+        self,
+        *,
+        assistant: Assistant,
+        was_indexable: bool,
+        payload: AssistantUpdate,
+    ) -> None:
+        is_indexable = self._is_indexable(assistant.visibility, assistant.status)
+        if was_indexable and not is_indexable:
+            remove_assistant_from_qdrant.delay(str(assistant.id))
+            return
+        if not is_indexable:
+            return
+        if (
+            not was_indexable
+            or payload.version is not None
+            or payload.summary is not None
+            or payload.current_version_id is not None
+        ):
+            sync_assistant_to_qdrant.delay(str(assistant.id))

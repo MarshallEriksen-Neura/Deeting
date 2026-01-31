@@ -3,6 +3,7 @@ import openai
 from app.core.config import settings
 from app.services.system import get_cached_embedding_model
 
+#TODO: 重复实现了，当前系统里已经有类似的 EmbeddingService 了，考虑合并
 class EmbeddingService:
     """
     Service to generate embeddings using OpenAI (or configured provider).

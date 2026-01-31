@@ -98,6 +98,16 @@ def init_worker_logging(**kwargs):
     setup_logging()
 
 
+@worker_process_init.connect
+def init_worker_cache(**kwargs):
+    """
+    在 Celery worker 进程初始化时初始化 Redis 缓存。
+    确保 quota_sync 等任务可以正常访问 Redis。
+    """
+    from app.core.cache import cache
+    cache.init()
+
+
 @beat_init.connect
 def init_beat_logging(**kwargs):
     """

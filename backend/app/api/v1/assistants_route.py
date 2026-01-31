@@ -397,7 +397,7 @@ async def delete_custom_assistant(
         )
         return MessageResponse(message="assistant archived")
 
-    await service.assistant_repo.delete(assistant_id)
+    await service.delete_assistant(assistant_id)
     return MessageResponse(message="assistant deleted")
 
 

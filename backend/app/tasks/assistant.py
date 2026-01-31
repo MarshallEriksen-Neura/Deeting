@@ -9,7 +9,7 @@ from app.core.database import AsyncSessionLocal
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 from app.services.providers.embedding import EmbeddingService
-from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
+from app.storage.qdrant_kb_store import delete_points, ensure_collection_vector_size, upsert_points
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +103,33 @@ async def _run_sync_assistant(assistant_id: uuid.UUID) -> str:
         return "upserted"
 
 
+async def _run_remove_assistant(assistant_id: uuid.UUID) -> str:
+    if not qdrant_is_configured():
+        return "skipped"
+
+    client = get_qdrant_client()
+    await delete_points(
+        client,
+        collection_name=ASSISTANT_COLLECTION_NAME,
+        points_ids=[str(assistant_id)],
+        wait=True,
+    )
+    return "removed"
+
+
 @celery_app.task(name="assistant.sync_to_qdrant")
 def sync_assistant_to_qdrant(assistant_id: str) -> str:
     try:
         return asyncio.run(_run_sync_assistant(uuid.UUID(assistant_id)))
     except Exception as exc:
         logger.exception("assistant_sync_to_qdrant_failed: %s", exc)
+        return "failed"
+
+
+@celery_app.task(name="assistant.remove_from_qdrant")
+def remove_assistant_from_qdrant(assistant_id: str) -> str:
+    try:
+        return asyncio.run(_run_remove_assistant(uuid.UUID(assistant_id)))
+    except Exception as exc:
+        logger.exception("assistant_remove_from_qdrant_failed: %s", exc)
         return "failed"
