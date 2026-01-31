@@ -25,6 +25,9 @@ class AssistantRetrievalService:
         if not qdrant_is_configured():
             return []
 
+        if int(limit or 0) <= 0:
+            return []
+
         query_text = str(query or "").strip()
         if not query_text:
             return []

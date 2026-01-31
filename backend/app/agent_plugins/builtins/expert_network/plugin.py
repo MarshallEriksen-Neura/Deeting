@@ -12,7 +12,7 @@ class ExpertNetworkPlugin(AgentPlugin):
     @property
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
-            name="system/expert_network",
+            name="system.expert_network",
             version="1.0.0",
             description="Retrieve expert assistants for a given intent query.",
             author="System",
