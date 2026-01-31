@@ -151,3 +151,56 @@ async def test_retrieval_normalizes_limit(mocker, async_session):
 
     await service.search_candidates("query", limit="2")
     assert search_mock.call_args.kwargs["limit"] == 2
+
+
+@pytest.mark.asyncio
+async def test_retrieval_includes_approved_owner(mocker, async_session):
+    approved_id = uuid.uuid4()
+    assistant = Assistant(
+        id=approved_id,
+        visibility=AssistantVisibility.PUBLIC,
+        status=AssistantStatus.PUBLISHED,
+        owner_user_id=uuid.uuid4(),
+        current_version_id=None,
+    )
+    version = AssistantVersion(
+        id=uuid.uuid4(),
+        assistant_id=assistant.id,
+        version="0.1.0",
+        name="approved",
+        description=None,
+        system_prompt="prompt",
+        model_config={},
+        skill_refs=[],
+        tags=[],
+    )
+    assistant.current_version_id = version.id
+    review_task = ReviewTask(
+        id=uuid.uuid4(),
+        entity_type=ASSISTANT_MARKET_ENTITY,
+        entity_id=assistant.id,
+        status=ReviewStatus.APPROVED.value,
+    )
+    async_session.add(assistant)
+    async_session.add(version)
+    async_session.add(review_task)
+    await async_session.commit()
+
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=True,
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.search_points",
+        return_value=[{"payload": {"assistant_id": str(approved_id)}, "score": 0.9}],
+    )
+    mocker.patch("app.services.assistant.assistant_retrieval_service.get_qdrant_client")
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
+
+    service = AssistantRetrievalService(async_session)
+    result = await service.search_candidates("query", limit=2)
+    assert len(result) == 1
+    assert result[0]["assistant_id"] == str(approved_id)
