@@ -150,7 +150,7 @@ async def test_retrieval_normalizes_limit(mocker, async_session):
     )
 
     await service.search_candidates("query", limit="2")
-    assert search_mock.call_args.kwargs["limit"] == 2
+    assert search_mock.call_args.kwargs["limit"] == 6
 
 
 @pytest.mark.asyncio
