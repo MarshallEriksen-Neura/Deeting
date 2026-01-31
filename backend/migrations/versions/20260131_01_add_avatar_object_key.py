@@ -52,7 +52,7 @@ def upgrade() -> None:
     bind.execute(
         sa.text("""
             UPDATE user_account 
-            SET avatar_object_key = SUBSTRING_INDEX(avatar_url, '/', -1),
+            SET avatar_object_key = substring(avatar_url from '[^/]+$'),
                 avatar_storage_type = 'public'
             WHERE avatar_url IS NOT NULL 
               AND avatar_url != ''

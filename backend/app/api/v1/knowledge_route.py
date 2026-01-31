@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, HttpUrl
 
-from app.api import deps
+from app.deps.auth import get_current_active_superuser
 from app.core.database import AsyncSessionLocal
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.services.knowledge.crawler_knowledge_service import CrawlerKnowledgeService
@@ -15,7 +15,7 @@ class DeepDiveRequest(BaseModel):
     max_pages: int = 10
     artifact_type: str = "documentation"
     
-    # Optional Dynamic Config (Billing Only)
+    # Optional Dynamic Embedding Config
     # We DO NOT allow changing the 'model' here to ensure the vectors 
     # are compatible with the main business logic (Agent Search).
     embedding_api_key: Optional[str] = None
@@ -24,7 +24,7 @@ class DeepDiveRequest(BaseModel):
 @router.post("/ingest/deep-dive", response_model=Dict[str, Any])
 async def ingest_deep_dive(
     request: DeepDiveRequest,
-    current_user: Any = Depends(deps.get_current_active_superuser), # Admin only
+    current_user: Any = Depends(get_current_active_superuser), # Admin only
 ) -> Any:
     """
     Start a Deep Dive ingestion process.

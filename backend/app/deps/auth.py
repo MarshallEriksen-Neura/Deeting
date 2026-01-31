@@ -337,6 +337,18 @@ async def get_permission_flags(
     return {_flag_name(code): 1 for code in codes}
 
 
+async def get_current_active_superuser(
+    user: User = Depends(get_current_active_user),
+) -> User:
+    """确保用户是激活的超级管理员"""
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user doesn't have enough privileges",
+        )
+    return user
+
+
 async def clear_permission_cache(user_id: uuid.UUID) -> None:
     """清除用户权限缓存（角色变更时调用）"""
     cache_key = CacheKeys.permission_codes(str(user_id))
