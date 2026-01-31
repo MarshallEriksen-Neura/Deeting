@@ -1,3 +1,4 @@
+import uuid
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -22,6 +23,12 @@ class PluginContext(ABC):
     This is the only bridge between the plugin and the host system.
     Plugins should not directly import global objects like app.db.
     """
+
+    @property
+    @abstractmethod
+    def user_id(self) -> uuid.UUID:
+        """Get the ID of the user executing this plugin"""
+        pass
 
     @property
     @abstractmethod

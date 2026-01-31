@@ -5,6 +5,7 @@ from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.schemas.unified_capabilities import CAPABILITY_MAP
 from app.core.database import AsyncSessionLocal
 from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.repositories.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class ProviderRegistryPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.registry.provider",
-            version="2.1.0",
+            version="2.1.1", # Security Patch
             description="Intelligent provider discovery and configuration manager.",
             author="System"
         )
@@ -118,28 +119,34 @@ class ProviderRegistryPlugin(AgentPlugin):
     ) -> Dict[str, Any]:
         """
         Handler for saving provider mapping to ProviderPreset.capability_configs.
+        SECURITY: Restricted to Superusers only.
         """
+        # 1. Security Check
         async with AsyncSessionLocal() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_id(self.context.user_id)
+            
+            if not user or not user.is_superuser:
+                logger.warning(f"Unauthorized provider update attempt by user {self.context.user_id}")
+                return {
+                    "status": "error",
+                    "message": "Permission Denied: Only system administrators can modify Provider Presets."
+                }
+
+            # 2. Logic Execution
             repo = ProviderPresetRepository(session)
             preset = await repo.get_by_slug(provider_slug)
             
             if not preset:
-                # Optionally create a placeholder preset if implied?
-                # For now, require it to exist.
                 return {
                     "status": "error", 
                     "message": f"Provider preset '{provider_slug}' not found. Please create the preset first."
                 }
 
-            # 1. Load current configs (copy to avoid mutation issues)
+            # Load and Update
             current_configs = dict(preset.capability_configs or {})
-            
-            # 2. Prepare new config for this capability
-            # Merge with existing if present to preserve other fields?
-            # Or overwrite? Usually overwrite based on new crawl data is safer for consistency.
             cap_config = current_configs.get(capability, {})
             
-            # Enforce Jinja2 if we are setting a template
             cap_config["template_engine"] = "jinja2"
             cap_config["request_template"] = request_template
             
@@ -152,13 +159,11 @@ class ProviderRegistryPlugin(AgentPlugin):
             if async_config is not None:
                 cap_config["async_config"] = async_config
             
-            # 3. Update top-level config
             current_configs[capability] = cap_config
             
-            # 4. Save
             await repo.update(preset, {"capability_configs": current_configs})
             
-            logger.info(f"Agent updated preset '{provider_slug}' capability '{capability}'.")
+            logger.info(f"Admin {user.username} updated preset '{provider_slug}' capability '{capability}'.")
             
             return {
                 "status": "success",

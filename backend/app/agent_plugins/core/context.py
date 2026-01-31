@@ -28,6 +28,10 @@ class ConcretePluginContext(PluginContext):
         self._memory_client: VectorStoreClient | None = None
 
     @property
+    def user_id(self) -> uuid.UUID:
+        return self._user_id
+
+    @property
     def working_directory(self) -> str:
         # Assume each plugin has a temp working dir
         path = os.path.join("/tmp/agent_plugins", self._plugin_name)
