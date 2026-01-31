@@ -41,6 +41,23 @@ async def deprecated_reset_password():  # pragma: no cover - 兼容提示
     return MessageResponse(message="Password login removed; use email code or OAuth")
 
 
+def _build_avatar_url(user: User) -> str | None:
+    """根据用户头像存储类型构建访问 URL"""
+    from app.services.oss.asset_storage_service import (
+        build_public_asset_url,
+        build_signed_asset_url,
+    )
+    
+    if not user.avatar_object_key:
+        return None
+    
+    if user.avatar_storage_type == "public":
+        return build_public_asset_url(user.avatar_object_key)
+    else:
+        # 私有桶使用签名 URL
+        return build_signed_asset_url(user.avatar_object_key)
+
+
 @router.get("/me", response_model=UserWithPermissions)
 async def get_current_user_info(
     user: User = Depends(get_current_active_user),
@@ -51,12 +68,13 @@ async def get_current_user_info(
 
     - 返回用户基本信息
     - 包含权限标记 {can_xxx: 0/1}
+    - avatar_url 根据 storage_type 动态构建
     """
     return UserWithPermissions(
         id=user.id,
         email=user.email,
         username=user.username,
-        avatar_url=user.avatar_url,
+        avatar_url=_build_avatar_url(user),
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         created_at=user.created_at,
@@ -74,7 +92,8 @@ async def update_current_user(
     """
     更新当前用户信息
 
-    - 允许修改 username、avatar_url 等非敏感字段
+    - 允许修改 username、avatar_object_key 等非敏感字段
+    - 头像上传后，将返回的 object_key 作为 avatar_object_key 提交
     """
     service = UserService(db)
     return await service.update_profile(user, request)

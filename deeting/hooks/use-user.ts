@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from "react"
 import useSWR from "swr"
 
-import { fetchCurrentUser, type UserProfile } from "@/lib/api/user"
+import { fetchCurrentUser, updateUserProfile, type UserProfile, type UserUpdateRequest } from "@/lib/api/user"
 import { ApiError } from "@/lib/http"
 import { useShallow } from "zustand/react/shallow"
 import { useAuthStore } from "@/store/auth-store"
@@ -15,6 +15,7 @@ const USER_PROFILE_KEY = "/api/v1/users/me"
  * 用户 Profile Hook
  * - 登录后自动调用 /users/me 拉取用户信息并写入 store
  * - 未登录时清空本地缓存
+ * - 支持更新用户资料
  */
 export function useUserProfile() {
   const isAuthenticated = useAuthStore(useShallow((state) => state.isAuthenticated))
@@ -52,11 +53,19 @@ export function useUserProfile() {
 
   const refreshProfile = useCallback(() => mutate(), [mutate])
 
+  const updateProfile = useCallback(async (payload: UserUpdateRequest) => {
+    const updated = await updateUserProfile(payload)
+    setProfile(updated)
+    await mutate(updated, false)
+    return updated
+  }, [mutate, setProfile])
+
   return {
     profile: data ?? profile,
     isLoading: Boolean(isAuthenticated && (isLoading || isValidating)),
     error,
     refreshProfile,
+    updateProfile,
     setProfile,
     clearProfile,
     isAuthenticated,

@@ -9,6 +9,7 @@ from app.repositories.media_asset_repository import MediaAssetRepository
 from app.services.oss.asset_storage_service import (
     AssetObjectMeta,
     AssetStorageNotConfigured,
+    build_public_asset_url,
     build_signed_asset_url,
     head_asset_object,
     presign_asset_put_url,
@@ -32,14 +33,26 @@ class AssetUploadService:
         base_url: str,
         expires_seconds: int | None,
         uploader_user_id=None,
+        bucket_type: str = "private",
     ) -> dict:
+        """初始化上传
+        
+        Args:
+            bucket_type: "private" 或 "public"，决定存储桶和返回的 URL 类型
+        """
         existing = await self.asset_repo.get_by_hash(content_hash, size_bytes)
         if existing:
             if await self._validate_existing(existing, content_hash, size_bytes, content_type):
+                # 根据 bucket_type 返回不同格式的 asset_url
+                if bucket_type == "public":
+                    asset_url = build_public_asset_url(existing.object_key)
+                else:
+                    asset_url = build_signed_asset_url(existing.object_key, base_url=base_url)
+                
                 return {
                     "deduped": True,
                     "object_key": existing.object_key,
-                    "asset_url": build_signed_asset_url(existing.object_key, base_url=base_url),
+                    "asset_url": asset_url,
                     "upload_url": None,
                     "upload_headers": None,
                     "expires_in": None,
@@ -59,6 +72,7 @@ class AssetUploadService:
             kind=kind,
             expires_seconds=expires_seconds or 3600,
             content_hash=content_hash,
+            bucket_type=bucket_type,
         )
         return {
             "deduped": False,
@@ -78,15 +92,27 @@ class AssetUploadService:
         content_type: str,
         base_url: str,
         uploader_user_id=None,
+        bucket_type: str = "private",
     ) -> dict:
+        """完成上传
+        
+        Args:
+            bucket_type: "private" 或 "public"，决定返回的 URL 类型
+        """
         meta = await head_asset_object(object_key)
         _ensure_meta_valid(meta, content_hash, size_bytes, content_type)
 
         existing = await self.asset_repo.get_by_hash(content_hash, size_bytes)
         if existing:
+            # 根据 bucket_type 返回不同格式的 asset_url
+            if bucket_type == "public":
+                asset_url = build_public_asset_url(existing.object_key)
+            else:
+                asset_url = build_signed_asset_url(existing.object_key, base_url=base_url)
+            
             return {
                 "object_key": existing.object_key,
-                "asset_url": build_signed_asset_url(existing.object_key, base_url=base_url),
+                "asset_url": asset_url,
             }
 
         asset_data = {
@@ -106,9 +132,15 @@ class AssetUploadService:
             if not asset:
                 raise
 
+        # 根据 bucket_type 返回不同格式的 asset_url
+        if bucket_type == "public":
+            asset_url = build_public_asset_url(asset.object_key)
+        else:
+            asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+
         return {
             "object_key": asset.object_key,
-            "asset_url": build_signed_asset_url(asset.object_key, base_url=base_url),
+            "asset_url": asset_url,
         }
 
     async def _validate_existing(

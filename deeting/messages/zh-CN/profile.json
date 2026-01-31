@@ -7,7 +7,9 @@
       "registered": "注册于",
       "region": "区域",
       "viewPublic": "查看公开个人资料",
-      "regenerateAvatar": "使用 AI 重新生成头像"
+      "regenerateAvatar": "使用 AI 重新生成头像",
+      "uploadAvatar": "上传头像",
+      "cropAvatar": "裁剪头像"
     },
     "basicInfo": {
       "title": "基础信息",

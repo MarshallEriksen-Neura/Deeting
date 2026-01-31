@@ -20,10 +20,25 @@ export const UserProfileSchema = z.object({
 
 export type UserProfile = z.infer<typeof UserProfileSchema>
 
+export type UserUpdateRequest = {
+  username?: string
+  avatar_object_key?: string
+  avatar_storage_type?: string
+}
+
 export async function fetchCurrentUser(): Promise<UserProfile> {
   const data = await request<UserProfile>({
     url: `${USER_BASE}/me`,
     method: "GET",
+  })
+  return UserProfileSchema.parse(data)
+}
+
+export async function updateUserProfile(payload: UserUpdateRequest): Promise<UserProfile> {
+  const data = await request<UserProfile>({
+    url: `${USER_BASE}/me`,
+    method: "PATCH",
+    data: payload,
   })
   return UserProfileSchema.parse(data)
 }

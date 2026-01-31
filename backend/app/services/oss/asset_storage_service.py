@@ -91,9 +91,43 @@ def _resolve_region() -> str:
     return str(settings.OSS_REGION or "").strip()
 
 
-def _resolve_bucket() -> str:
+def _resolve_bucket(bucket_type: str = "private") -> str:
+    """解析存储桶名称
+    
+    Args:
+        bucket_type: "private" 或 "public"
+    """
+    if bucket_type == "public":
+        return str(settings.OSS_PUBLIC_BUCKET or settings.OSS_PRIVATE_BUCKET or "").strip()
     # 业务资产默认走私有桶，兜底公共桶
     return str(settings.OSS_PRIVATE_BUCKET or settings.OSS_PUBLIC_BUCKET or "").strip()
+
+
+def _resolve_public_base_url() -> str:
+    """获取公共桶基础 URL（用于 CDN 或 OSS 公共访问）"""
+    if settings.OSS_PUBLIC_BASE_URL:
+        return settings.OSS_PUBLIC_BASE_URL.rstrip("/")
+    
+    # 根据 OSS 提供商构建默认 URL
+    bucket = _resolve_bucket("public")
+    endpoint = _resolve_endpoint()
+    
+    if _oss_backend_kind() == "aliyun_oss":
+        # 阿里云 OSS: https://bucket.endpoint
+        return f"https://{bucket}.{endpoint}"
+    else:
+        # S3: https://endpoint/bucket
+        return f"https://{endpoint}/{bucket}"
+
+
+def build_public_asset_url(object_key: str) -> str:
+    """构建公共桶资源的永久访问 URL
+    
+    适用于头像等需要长期公开访问的资源
+    """
+    base_url = _resolve_public_base_url()
+    safe_key = quote(_normalize_object_key(object_key), safe="/")
+    return f"{base_url}/{safe_key}"
 
 
 def _resolve_access_key_id() -> str:
@@ -430,7 +464,17 @@ async def presign_asset_put_url(
     kind: str | None = None,
     expires_seconds: int = 3600,
     content_hash: str | None = None,
+    bucket_type: str = "private",
 ) -> tuple[str, str, int, dict[str, str]]:
+    """生成上传预签名 URL
+    
+    Args:
+        content_type: 文件内容类型
+        kind: 文件分类（如 avatar, attachment 等）
+        expires_seconds: URL 过期时间
+        content_hash: 文件内容哈希（用于校验）
+        bucket_type: 存储桶类型，"private" 或 "public"
+    """
     if get_effective_asset_storage_mode() == "local":
         raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持生成上传预签名 URL")
     if not _oss_is_configured():
@@ -443,10 +487,14 @@ async def presign_asset_put_url(
     object_key = _build_object_key(ext=ext, kind=kind)
 
     upload_headers = _build_upload_headers(content_type=content_type, content_hash=content_hash)
+    
+    bucket = _resolve_bucket(bucket_type)
 
     def _sign_oss() -> str:
-        bucket = _create_oss_bucket()
-        return bucket.sign_url(
+        import oss2
+        auth = oss2.Auth(_resolve_access_key_id(), _resolve_access_key_secret())
+        bucket_obj = oss2.Bucket(auth, _resolve_endpoint(), bucket)
+        return bucket_obj.sign_url(
             "PUT",
             object_key,
             ttl,
@@ -458,7 +506,7 @@ async def presign_asset_put_url(
         return client.generate_presigned_url(
             ClientMethod="put_object",
             Params={
-                "Bucket": _resolve_bucket(),
+                "Bucket": bucket,
                 "Key": object_key,
                 "ContentType": content_type,
                 "Metadata": {"sha256": content_hash} if content_hash else {},
@@ -480,6 +528,7 @@ __all__ = [
     "StoredAsset",
     "AssetObjectMeta",
     "build_signed_asset_url",
+    "build_public_asset_url",
     "get_effective_asset_storage_mode",
     "head_asset_object",
     "load_asset_bytes",

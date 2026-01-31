@@ -7,7 +7,9 @@
       "registered": "Registered",
       "region": "Region",
       "viewPublic": "View Public Profile",
-      "regenerateAvatar": "Re-generate with AI"
+      "regenerateAvatar": "Re-generate with AI",
+      "uploadAvatar": "Upload Avatar",
+      "cropAvatar": "Crop Avatar"
     },
     "basicInfo": {
       "title": "Basic Information",

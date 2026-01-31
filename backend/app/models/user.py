@@ -12,7 +12,8 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True, comment="邮箱（登录名）")
     username: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="展示名")
-    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="头像 URL")
+    avatar_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="头像对象存储 key")
+    avatar_storage_type: Mapped[str] = mapped_column(String(20), nullable=False, default="public", server_default="public", comment="头像存储类型: public/private")
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False, comment="哈希密码（无密码登录使用随机占位）")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", comment="是否启用")
     is_superuser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", comment="是否超级管理员")

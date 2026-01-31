@@ -52,10 +52,11 @@ export type AssetUploadCompleteResponse = z.infer<typeof AssetUploadCompleteResp
 export type AssetSignResponse = z.infer<typeof AssetSignResponseSchema>
 
 export async function initAssetUpload(
-  payload: AssetUploadInitRequest
+  payload: AssetUploadInitRequest,
+  bucketType: "public" | "private" = "private"
 ): Promise<AssetUploadInitResponse> {
   const data = await request({
-    url: `${MEDIA_ASSETS_BASE}/upload/init`,
+    url: `${MEDIA_ASSETS_BASE}/upload/init?bucket_type=${bucketType}`,
     method: "POST",
     data: payload,
   })
@@ -63,10 +64,11 @@ export async function initAssetUpload(
 }
 
 export async function completeAssetUpload(
-  payload: AssetUploadCompleteRequest
+  payload: AssetUploadCompleteRequest,
+  bucketType: "public" | "private" = "private"
 ): Promise<AssetUploadCompleteResponse> {
   const data = await request({
-    url: `${MEDIA_ASSETS_BASE}/upload/complete`,
+    url: `${MEDIA_ASSETS_BASE}/upload/complete?bucket_type=${bucketType}`,
     method: "POST",
     data: payload,
   })

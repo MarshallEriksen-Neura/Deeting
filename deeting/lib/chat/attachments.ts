@@ -27,6 +27,9 @@ const hashFile = async (file: File) => {
   return bufferToHex(digest)
 }
 
+// Export for use in other modules
+export { bufferToHex, hashFile }
+
 const buildUploadHeaders = (
   uploadHeaders: Record<string, string> | null | undefined,
   contentType: string

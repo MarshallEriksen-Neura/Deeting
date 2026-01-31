@@ -77,10 +77,15 @@ async def get_asset(
 async def init_asset_upload(
     payload: AssetUploadInitRequest,
     request: Request,
+    bucket_type: str = Query("private", description="存储桶类型: public 或 private"),
     user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> AssetUploadInitResponse:
-    """初始化资产上传（全局去重 + 预签名直传）"""
+    """初始化资产上传（全局去重 + 预签名直传）
+    
+    - bucket_type=public: 使用公共桶，返回永久访问 URL（适合头像等公开资源）
+    - bucket_type=private: 使用私有桶，返回签名 URL（适合敏感文件）
+    """
     service = AssetUploadService(db)
     try:
         result = await service.init_upload(
@@ -91,6 +96,7 @@ async def init_asset_upload(
             base_url=str(request.base_url).rstrip("/"),
             expires_seconds=payload.expires_seconds,
             uploader_user_id=user.id,
+            bucket_type=bucket_type,
         )
     except AssetStorageNotConfigured as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -103,10 +109,15 @@ async def init_asset_upload(
 async def complete_asset_upload(
     payload: AssetUploadCompleteRequest,
     request: Request,
+    bucket_type: str = Query("private", description="存储桶类型: public 或 private"),
     user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> AssetUploadCompleteResponse:
-    """完成上传确认（写入去重索引）"""
+    """完成上传确认（写入去重索引）
+    
+    - bucket_type=public: 返回公共桶永久访问 URL
+    - bucket_type=private: 返回私有桶签名 URL
+    """
     service = AssetUploadService(db)
     try:
         result = await service.complete_upload(
@@ -116,6 +127,7 @@ async def complete_asset_upload(
             content_type=payload.content_type,
             base_url=str(request.base_url).rstrip("/"),
             uploader_user_id=user.id,
+            bucket_type=bucket_type,
         )
     except AssetStorageNotConfigured as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
