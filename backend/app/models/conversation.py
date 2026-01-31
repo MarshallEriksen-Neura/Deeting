@@ -181,6 +181,12 @@ class ConversationMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         comment="结构化元数据：tool_calls/raw_response/attachments",
     )
+    used_persona_id: Mapped[uuid.UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("assistant.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="本次消息使用的 persona/assistant ID",
+    )
     token_estimate: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0", comment="估算 token 数（用于窗口判定）"
     )
