@@ -1,6 +1,7 @@
 from typing import Any, List, Dict, Optional
 import uuid
 import logging
+import asyncio
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.core.config import settings
@@ -13,7 +14,7 @@ class VectorStorePlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="system/vector_store",
-            version="1.0.0",
+            version="1.1.0", # Bumped version for Dual-Path Retrieval
             description="Manage Vector Knowledge Base (Qdrant). Add, search, and manage collections.",
             author="System"
         )
@@ -46,15 +47,15 @@ class VectorStorePlugin(AgentPlugin):
                 "type": "function",
                 "function": {
                     "name": "search_knowledge",
-                    "description": "Semantic search in the knowledge base (Personal Memory or System Knowledge).",
+                    "description": "Semantic search in the knowledge base (Personal Memory, System Knowledge, or Both).",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "scope": {
                                 "type": "string",
-                                "description": "Search scope: 'personal' (your memory) or 'system' (platform documentation/rules).",
-                                "enum": ["personal", "system"],
-                                "default": "personal"
+                                "description": "Search scope: 'personal' (your memory), 'system' (platform documentation/rules), or 'all' (both).",
+                                "enum": ["personal", "system", "all"],
+                                "default": "all" # Default to dual-path for better context
                             },
                             "query": {
                                 "type": "string", 
@@ -87,27 +88,28 @@ class VectorStorePlugin(AgentPlugin):
             logger.exception("VectorStorePlugin add_knowledge_chunk error")
             return f"Error processing request: {str(e)}"
 
-    async def handle_search_knowledge(self, query: str, scope: str = "personal", limit: int = 3) -> str:
+    async def handle_search_knowledge(self, query: str, scope: str = "all", limit: int = 3) -> str:
         """
-        Tool Handler: Search Qdrant (Personal or System).
+        Tool Handler: Search Qdrant with dual-path support.
         """
         if not qdrant_is_configured():
             return "Error: Qdrant is not configured/enabled."
 
         try:
-            results = []
-            
-            if scope == "personal":
-                # Search User Memory
+            formatted_results = []
+
+            # Define sub-tasks
+            async def _search_personal():
                 items = await self.context.memory.search(query, limit=limit)
-                # Convert to uniform format
+                res = []
                 for item in items:
-                    results.append({
-                        "score": item["score"],
-                        "payload": item["payload"]
-                    })
-            else:
-                # Search System Knowledge
+                    content = item["payload"].get("content", "No content")
+                    # Filter metadata for display
+                    meta = {k: v for k, v in item["payload"].items() if k not in ["content", "user_id", "plugin_id", "embedding_model", "vector"]}
+                    res.append(f"- [PERSONAL] [Score: {item['score']:.2f}] {content} (Meta: {meta})")
+                return res
+
+            async def _search_system():
                 embedding_service = EmbeddingService()
                 vector = await embedding_service.embed_text(query)
                 client = get_qdrant_client()
@@ -121,26 +123,36 @@ class VectorStorePlugin(AgentPlugin):
                 resp = await client.post(f"/collections/{settings.QDRANT_KB_SYSTEM_COLLECTION}/points/search", json=body)
                 
                 if resp.status_code == 404:
-                    return "System knowledge base not found."
+                    return ["- [SYSTEM] (Knowledge Base not initialized)"]
                 elif resp.status_code != 200:
-                    return f"Error searching system KB: {resp.text}"
+                    return [f"- [SYSTEM] Error: {resp.text}"]
                 
                 api_results = resp.json().get("result", [])
-                results = api_results # API result format is compatible enough (has score and payload)
+                res = []
+                for item in api_results:
+                    score = item.get("score", 0.0)
+                    payload = item.get("payload", {})
+                    content = payload.get("content", "No content")
+                    meta = {k: v for k, v in payload.items() if k not in ["content", "user_id", "plugin_id", "embedding_model", "vector"]}
+                    res.append(f"- [SYSTEM] [Score: {score:.2f}] {content} (Meta: {meta})")
+                return res
 
-            if not results:
-                return f"No results found in {scope} memory for query: '{query}'"
+            # Execute based on scope
+            tasks = []
+            if scope in ["personal", "all"]:
+                tasks.append(_search_personal())
+            if scope in ["system", "all"]:
+                tasks.append(_search_system())
             
-            # Format results
-            formatted_results = []
-            for item in results:
-                score = item.get("score", 0.0)
-                payload = item.get("payload", {})
-                content = payload.get("content", "No content")
-                
-                # Filter out internal fields for display
-                meta_str = ", ".join([f"{k}={v}" for k, v in payload.items() if k not in ["content", "user_id", "plugin_id", "embedding_model"]])
-                formatted_results.append(f"- [Score: {score:.2f}] {content} ({meta_str})")
+            # Parallel Execution
+            results_list = await asyncio.gather(*tasks)
+            
+            # Flatten results
+            for res_lines in results_list:
+                formatted_results.extend(res_lines)
+
+            if not formatted_results:
+                return f"No results found for query: '{query}' in scope: {scope}"
             
             return "\n".join(formatted_results)
 
