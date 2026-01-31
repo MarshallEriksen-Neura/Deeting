@@ -92,7 +92,8 @@ Deeting OS 正在向全自动化 AI 操作系统演进，废弃传统的“手�
 *   **Cross-Persona Memory**: 切换人格时，保留 `Conversation History` (User/Assistant Messages)，但**丢弃**旧的 `System Instructions`。确保新专家能看到之前的代码/内容，但不受旧规则束缚。
 
 ### 6.2 消息归因
-*   `ChatMessage` 表新增 `used_persona_id` 记录归因。
+*   `conversation_message.used_persona_id` 记录归因（仅 assistant 角色写入）。
+*   当会话已锁定 `assistant_id` 时，不注入 `consult_expert_network` 工具；仅在未指定/未锁定时注入。 
 
 ---
 
