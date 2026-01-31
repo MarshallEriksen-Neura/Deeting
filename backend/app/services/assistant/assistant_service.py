@@ -230,6 +230,13 @@ class AssistantService:
         version = await self.version_repo.update(version, update_data)
         if payload.tags is not None:
             await self.tag_service.sync_assistant_tags(assistant_id, payload.tags)
+        assistant = await self.assistant_repo.get(assistant_id)
+        if (
+            assistant
+            and assistant.current_version_id == version_id
+            and self._is_indexable(assistant.visibility, assistant.status)
+        ):
+            sync_assistant_to_qdrant.delay(str(assistant.id))
         return version
 
     async def delete_assistant(self, assistant_id: UUID) -> None:

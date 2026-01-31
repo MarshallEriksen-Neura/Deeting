@@ -645,6 +645,15 @@ class SpecAgentService:
             )
         return "\n".join(lines)
 
+    async def _load_mcp_tools(self, session: AsyncSession, user_id: uuid.UUID):
+        """兼容旧测试的 MCP 工具加载入口。"""
+        tool_map = await self._build_mcp_tool_map(session, user_id)
+        return ([], tool_map)
+
+    def _load_local_tools(self, tool_names: set[str]):
+        """兼容旧测试的本地工具加载入口。"""
+        return ([], self._build_local_handlers(tool_names))
+
     @staticmethod
     def _extract_json_payload(raw_text: str) -> dict[str, Any]:
         """
@@ -1580,3 +1589,14 @@ class SpecAgentService:
 
 
 spec_agent_service = SpecAgentService()
+
+
+async def _load_mcp_tools(session: AsyncSession, user_id: uuid.UUID):
+    """兼容旧测试的 MCP 工具加载入口。"""
+    tool_map = await spec_agent_service._build_mcp_tool_map(session, user_id)
+    return ([], tool_map)
+
+
+def _load_local_tools(*_args, **_kwargs):
+    """兼容旧测试的本地工具加载入口。"""
+    return ([], {})

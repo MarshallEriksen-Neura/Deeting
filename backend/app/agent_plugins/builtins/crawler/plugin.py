@@ -1,10 +1,14 @@
-from typing import Any
+from typing import Any, Dict
 import httpx
+import uuid
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.repositories.knowledge_repository import KnowledgeRepository
+from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 from app.services.knowledge.crawler_knowledge_service import CrawlerKnowledgeService
+from app.services.assistant.assistant_service import AssistantService
+from app.services.assistant.assistant_ingestion_service import AssistantIngestionService
 
 class CrawlerPlugin(AgentPlugin):
     """
@@ -17,7 +21,7 @@ class CrawlerPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.tools.crawler",
-            version="2.1.0",
+            version="2.2.0", # Added Assistant Conversion
             description="Provides web crawling capabilities via Deeting Scout Service.",
             author="Gemini CLI"
         )
@@ -70,6 +74,23 @@ class CrawlerPlugin(AgentPlugin):
                             }
                         },
                         "required": ["url"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "convert_artifact_to_assistant",
+                    "description": "Convert a crawled Knowledge Artifact into a structured AI Assistant. Use this when the user wants to 'clone' or 'create' a persona from a webpage.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "artifact_id": {
+                                "type": "string",
+                                "description": "The UUID of the ingested Knowledge Artifact."
+                            }
+                        },
+                        "required": ["artifact_id"]
                     }
                 }
             }
@@ -134,13 +155,40 @@ class CrawlerPlugin(AgentPlugin):
                 result = await service.ingest_deep_dive(
                     seed_url=url,
                     max_depth=max_depth,
-                    max_pages=max_pages
+                    max_pages=max_pages,
+                    artifact_type="assistant" # Default to assistant type if intention is cloning
                 )
+                
+                # We return the list of artifact IDs so the Agent can pick one to convert
                 return {
                     "status": "success",
-                    "message": f"Successfully ingested {len(result.get('ingested_ids', []))} pages.",
-                    "details": result
+                    "message": f"Successfully ingested {len(result.get('ingested_ids', []))} pages. You can now use 'convert_artifact_to_assistant' with these IDs.",
+                    "artifact_ids": result.get('ingested_ids', [])
                 }
             except Exception as e:
                 logger.error(f"Deep Dive failed: {e}")
                 return {"status": "error", "error": str(e)}
+
+    async def handle_convert_artifact_to_assistant(self, artifact_id: str) -> Dict[str, Any]:
+        """
+        Tool Handler: Refine Artifact -> Create Assistant -> Sync Qdrant.
+        """
+        async with AsyncSessionLocal() as session:
+            knowledge_repo = KnowledgeRepository(session)
+            assistant_service = AssistantService(
+                AssistantRepository(session),
+                AssistantVersionRepository(session)
+            )
+            ingestion_service = AssistantIngestionService(assistant_service, knowledge_repo)
+            
+            try:
+                # Validate UUID format
+                uuid_obj = uuid.UUID(artifact_id)
+                result = await ingestion_service.refine_and_create_assistant(uuid_obj)
+                await session.commit()
+                return result
+            except ValueError:
+                return {"status": "error", "message": "Invalid Artifact ID format"}
+            except Exception as e:
+                self.context.get_logger().error(f"Assistant conversion failed: {e}")
+                return {"status": "error", "message": str(e)}

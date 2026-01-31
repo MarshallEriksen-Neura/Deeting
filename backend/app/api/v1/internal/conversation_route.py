@@ -33,6 +33,10 @@ from app.schemas.conversation import (
     ConversationFeedbackRequest,
     ConversationFeedbackResponse,
 )
+from app.schemas.assistant_routing import (
+    AssistantRoutingReportResponse,
+    AssistantRoutingReportSummary,
+)
 from app.models.conversation import ConversationStatus
 from app.services.conversation.history_service import ConversationHistoryService
 from app.services.conversation.service import ConversationService
@@ -188,9 +192,10 @@ async def unarchive_conversation(
     service: ConversationSessionService = Depends(get_conversation_session_service),
 ) -> ArchiveResponse:
     session_uuid = UUID(session_id)
-    session_obj = await service.get_user_session(
+    session_obj = await service.update_session_status(
         session_id=session_uuid,
         user_id=user.id,
+        status=ConversationStatus.ACTIVE,
     )
     return ArchiveResponse(session_id=str(session_obj.id), status=session_obj.status)
 
@@ -286,6 +291,55 @@ async def record_conversation_feedback(
         assistant_id=assistant_id,
         event=payload.event,
     )
+
+
+@router.get(
+    "/assistants/routing/report",
+    response_model=AssistantRoutingReportResponse,
+)
+async def assistant_routing_report(
+    min_trials: int | None = Query(default=None, ge=0, description="最小试用次数"),
+    min_rating: float | None = Query(default=None, ge=0.0, le=1.0, description="最小评分"),
+    limit: int | None = Query(default=50, ge=1, le=500, description="返回条数上限"),
+    sort: str | None = Query(
+        default="score_desc",
+        description="排序方式：score_desc/rating_desc/trials_desc/recent_desc",
+    ),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AssistantRoutingReportResponse:
+    allowed_sorts = {"score_desc", "rating_desc", "trials_desc", "recent_desc"}
+    if sort is not None and sort.lower() not in allowed_sorts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid sort option",
+        )
+    routing_service = AssistantRoutingService(db)
+    items = await routing_service.list_routing_report(
+        min_trials=min_trials,
+        min_rating=min_rating,
+        limit=limit,
+        sort=sort,
+    )
+
+    total_assistants = len(items)
+    total_trials = sum(int(item.get("total_trials") or 0) for item in items)
+    total_positive = sum(int(item.get("positive_feedback") or 0) for item in items)
+    total_negative = sum(int(item.get("negative_feedback") or 0) for item in items)
+    overall_rating = (
+        sum(float(item.get("rating_score") or 0.0) for item in items) / total_assistants
+        if total_assistants
+        else 0.0
+    )
+
+    summary = AssistantRoutingReportSummary(
+        total_assistants=total_assistants,
+        total_trials=total_trials,
+        total_positive=total_positive,
+        total_negative=total_negative,
+        overall_rating=overall_rating,
+    )
+    return AssistantRoutingReportResponse(summary=summary, items=items)
 
 
 @router.get(

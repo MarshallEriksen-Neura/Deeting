@@ -1,25 +1,10 @@
-# 使 Celery 自动发现任务模块（按需在 Celery 配置里 include）
-from app.tasks import (  # noqa: F401
-    agent,
-    assistant,
-    apikey_sync,
-    async_inference,
-    audit,
-    billing,
-    callbacks,
-    conversation,
-    example,
-    media,
-    memory_tasks,
-    notification,
-    periodic,
-    quota_sync,
-    reports,
-    upstream,
-    image_generation,
-    spec_knowledge_tasks,
-)
+"""
+任务包入口。
 
-# re-export task entrypoints
-from .spec_knowledge_tasks import *
+避免在包导入时提前加载所有任务模块，以免产生循环依赖；
+Celery 会通过 autodiscover 自动加载任务定义。
+"""
+
 from .knowledge_tasks import index_knowledge_artifact_task
+
+__all__ = ["index_knowledge_artifact_task"]

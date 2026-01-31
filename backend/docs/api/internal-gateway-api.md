@@ -565,6 +565,59 @@ Authorization: Bearer <access_token>
 
 ---
 
+### 9. Assistant Routing Report
+
+获取专家路由表现报表（内部通道）。
+
+**端点**: `GET /assistants/routing/report`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `min_trials` | int | 否 | 最小试用次数 |
+| `min_rating` | float | 否 | 最小评分（0-1） |
+| `limit` | int | 否 | 返回条数上限（默认 50） |
+| `sort` | string | 否 | 排序方式：`score_desc` / `rating_desc` / `trials_desc` / `recent_desc` |
+
+#### 响应体
+
+```json
+{
+  "summary": {
+    "total_assistants": 2,
+    "total_trials": 24,
+    "total_positive": 16,
+    "total_negative": 8,
+    "overall_rating": 0.7
+  },
+  "items": [
+    {
+      "assistant_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+      "name": "Expert A",
+      "summary": "summary",
+      "total_trials": 12,
+      "positive_feedback": 9,
+      "negative_feedback": 3,
+      "rating_score": 0.75,
+      "mab_score": 0.75,
+      "routing_score": 0.69,
+      "exploration_bonus": 0.0,
+      "last_used_at": "2026-01-16T09:42:01+08:00",
+      "last_feedback_at": "2026-01-16T09:45:01+08:00"
+    }
+  ]
+}
+```
+
+---
+
 ### 2. Embeddings
 
 创建文本嵌入向量。

@@ -17,6 +17,9 @@ interface ChatMessageListProps {
   statusStage: string | null
   statusCode: string | null
   statusMeta: Record<string, unknown> | null
+  onRegenerate?: (messageId: string) => void
+  onLike?: (messageId: string) => void
+  onDislike?: (messageId: string) => void
 }
 
 // ============== Virtuoso 自定义组件（必须在组件外部定义）==============
@@ -64,6 +67,9 @@ export function ChatMessageList({
   statusStage,
   statusCode,
   statusMeta,
+  onRegenerate,
+  onLike,
+  onDislike,
 }: ChatMessageListProps) {
   const t = useI18n("chat")
   const virtuosoRef = React.useRef<VirtuosoHandle>(null)
@@ -239,6 +245,9 @@ export function ChatMessageList({
           statusMeta={msg.id === lastAssistantId ? statusMeta : null}
           lastAssistantId={lastAssistantId}
           isTyping={isTyping}
+          onRegenerate={onRegenerate}
+          onLike={onLike}
+          onDislike={onDislike}
         />
       )
     },
@@ -251,6 +260,9 @@ export function ChatMessageList({
       statusStage,
       statusCode,
       statusMeta,
+      onRegenerate,
+      onLike,
+      onDislike,
     ]
   )
 

@@ -50,6 +50,8 @@ def _build_avatar_url(user: User) -> str | None:
     
     if not user.avatar_object_key:
         return None
+    if str(user.avatar_object_key).startswith(("http://", "https://")):
+        return str(user.avatar_object_key)
     
     if user.avatar_storage_type == "public":
         return build_public_asset_url(user.avatar_object_key)

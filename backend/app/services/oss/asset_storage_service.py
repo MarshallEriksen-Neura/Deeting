@@ -298,7 +298,10 @@ async def load_asset_bytes(object_key: str) -> tuple[bytes, str]:
 def _hmac_signature(object_key: str, expires_at: int) -> str:
     secret = str(settings.SECRET_KEY or "").encode("utf-8")
     if not secret:
-        raise AssetStorageNotConfigured("SECRET_KEY 未配置，无法生成签名")
+        if str(settings.ENVIRONMENT or "").lower() in {"test", "development"}:
+            secret = b"test-secret"
+        else:
+            raise AssetStorageNotConfigured("SECRET_KEY 未配置，无法生成签名")
     msg = f"{object_key}\n{int(expires_at)}".encode("utf-8")
     return hmac.new(secret, msg, sha256).hexdigest()
 

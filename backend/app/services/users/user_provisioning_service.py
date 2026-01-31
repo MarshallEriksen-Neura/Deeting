@@ -53,16 +53,26 @@ class UserProvisioningService:
             # 先按身份查询，避免同一 provider/sub 重复创建
             by_identity = await self.user_repo.get_by_identity(auth_provider, external_id)
             if by_identity:
-                if avatar and not (by_identity.avatar_url or "").strip():
-                    by_identity = await self.user_repo.update_user(by_identity.id, avatar_url=avatar)
+                avatar_object_key = self._normalize_avatar_object_key(avatar)
+                if avatar_object_key and not (by_identity.avatar_object_key or "").strip():
+                    by_identity = await self.user_repo.update_user(
+                        by_identity.id,
+                        avatar_object_key=avatar_object_key,
+                        avatar_storage_type="public",
+                    )
                     await self.db.commit()
                     await self.db.refresh(by_identity)
                 return by_identity
 
         existing = await self.user_repo.get_by_email(email)
         if existing:
-            if avatar and not (existing.avatar_url or "").strip():
-                existing = await self.user_repo.update_user(existing.id, avatar_url=avatar)
+            avatar_object_key = self._normalize_avatar_object_key(avatar)
+            if avatar_object_key and not (existing.avatar_object_key or "").strip():
+                existing = await self.user_repo.update_user(
+                    existing.id,
+                    avatar_object_key=avatar_object_key,
+                    avatar_storage_type="public",
+                )
                 await self.db.commit()
                 await self.db.refresh(existing)
             if external_id and auth_provider:
@@ -82,12 +92,14 @@ class UserProvisioningService:
         # 无密码登录场景使用随机密码占位，避免空值
         hashed_password = get_password_hash(password or generate_jti())
 
+        avatar_object_key = self._normalize_avatar_object_key(avatar)
         try:
             user = await self.user_repo.create_user(
                 email=email,
                 hashed_password=hashed_password,
                 username=username or email.split("@")[0],
-                avatar_url=avatar,
+                avatar_object_key=avatar_object_key,
+                avatar_storage_type="public" if avatar_object_key else None,
                 is_active=is_active,
             )
             await self.db.commit()
@@ -149,6 +161,15 @@ class UserProvisioningService:
             # 可能并发插入同一 identity，忽略
         else:
             logger.info("identity_linked", extra={"user_id": str(user_id), "provider": provider})
+
+    @staticmethod
+    def _normalize_avatar_object_key(avatar: str | None) -> str | None:
+        if not avatar:
+            return None
+        normalized = str(avatar).strip()
+        if not normalized:
+            return None
+        return normalized
 
 
     async def _assign_default_role(self, user_id: UUID) -> None:

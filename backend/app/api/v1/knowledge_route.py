@@ -7,7 +7,10 @@ from sqlalchemy import select
 from app.deps.auth import get_current_active_superuser
 from app.core.database import AsyncSessionLocal
 from app.repositories.knowledge_repository import KnowledgeRepository
+from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 from app.services.knowledge.crawler_knowledge_service import CrawlerKnowledgeService
+from app.services.assistant.assistant_service import AssistantService
+from app.services.assistant.assistant_ingestion_service import AssistantIngestionService
 from app.models.knowledge import KnowledgeArtifact
 
 router = APIRouter()
@@ -36,7 +39,6 @@ async def ingest_deep_dive(
 ) -> Any:
     """
     Start a Deep Dive ingestion process.
-    Content will be placed in 'pending_review' state.
     """
     embedding_config = {}
     if request.embedding_api_key:
@@ -66,7 +68,6 @@ async def list_pending_reviews(
 ):
     """List all artifacts waiting for review."""
     async with AsyncSessionLocal() as session:
-        # Direct query for MVP, ideally moving to Repository
         stmt = select(KnowledgeArtifact).where(KnowledgeArtifact.status == "pending_review").order_by(KnowledgeArtifact.created_at.desc())
         result = await session.execute(stmt)
         items = result.scalars().all()
@@ -86,7 +87,7 @@ async def approve_artifact(
     artifact_id: uuid.UUID,
     current_user: Any = Depends(get_current_active_superuser),
 ):
-    """Approve artifact -> Trigger Indexing."""
+    """Approve artifact -> Trigger Indexing (RAG)."""
     async with AsyncSessionLocal() as session:
         repo = KnowledgeRepository(session)
         service = CrawlerKnowledgeService(repo)
@@ -94,6 +95,30 @@ async def approve_artifact(
             await service.approve_artifact(artifact_id)
             await session.commit()
             return {"status": "approved"}
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/ingest/reviews/{artifact_id}/convert-to-assistant")
+async def convert_to_assistant(
+    artifact_id: uuid.UUID,
+    current_user: Any = Depends(get_current_active_superuser),
+):
+    """
+    Refine a raw artifact and create a formal Assistant in the market.
+    Directly syncs to Qdrant (expert_network).
+    """
+    async with AsyncSessionLocal() as session:
+        knowledge_repo = KnowledgeRepository(session)
+        assistant_service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session)
+        )
+        ingestion_service = AssistantIngestionService(assistant_service, knowledge_repo)
+        
+        try:
+            result = await ingestion_service.refine_and_create_assistant(artifact_id)
+            await session.commit()
+            return result
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 

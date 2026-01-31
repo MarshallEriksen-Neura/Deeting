@@ -10,7 +10,12 @@ from sqlalchemy.pool import StaticPool
 from app.models import Base
 from app.models.assistant import AssistantStatus, AssistantVisibility
 from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
-from app.schemas.assistant import AssistantCreate, AssistantUpdate, AssistantVersionCreate
+from app.schemas.assistant import (
+    AssistantCreate,
+    AssistantUpdate,
+    AssistantVersionCreate,
+    AssistantVersionUpdate,
+)
 from app.services.assistant.assistant_service import AssistantService
 engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",
@@ -156,5 +161,36 @@ async def test_delete_assistant_enqueues_remove(monkeypatch: pytest.MonkeyPatch)
 
         deleted = await service.assistant_repo.get(assistant.id)
         assert deleted is None
+
+    enqueue.assert_called_once_with(str(assistant.id))
+
+
+@pytest.mark.asyncio
+async def test_update_version_enqueues_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    enqueue = Mock()
+    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
+
+    async with AsyncSessionLocal() as session:
+        service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session),
+        )
+        assistant = await service.create_assistant(
+            payload=AssistantCreate(
+                visibility=AssistantVisibility.PUBLIC,
+                status=AssistantStatus.PUBLISHED,
+                version=AssistantVersionCreate(
+                    name="Indexed Assistant",
+                    system_prompt="You are a helpful assistant.",
+                ),
+            ),
+            owner_user_id=uuid.uuid4(),
+        )
+
+        await service.update_version(
+            assistant.id,
+            assistant.current_version_id,
+            AssistantVersionUpdate(name="Updated Assistant"),
+        )
 
     enqueue.assert_called_once_with(str(assistant.id))

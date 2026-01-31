@@ -303,6 +303,11 @@
     "canvas": {
       "title": "Deeting OS",
       "subtitle": "System online. Awaiting input."
+    },
+    "actions": {
+      "regenerate": "Regenerate",
+      "like": "Like",
+      "dislike": "Dislike"
     }
   }
 }

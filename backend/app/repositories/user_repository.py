@@ -62,7 +62,8 @@ class UserRepository:
         email: str,
         hashed_password: str,
         username: str | None = None,
-        avatar_url: str | None = None,
+        avatar_object_key: str | None = None,
+        avatar_storage_type: str | None = None,
         is_active: bool = False,
     ) -> User:
         """创建新用户。密码为空时由上层保证已提供占位哈希。"""
@@ -70,7 +71,8 @@ class UserRepository:
             email=email,
             hashed_password=hashed_password,
             username=username,
-            avatar_url=avatar_url,
+            avatar_object_key=avatar_object_key,
+            avatar_storage_type=avatar_storage_type or "public",
             is_active=is_active,
         )
         self.session.add(user)

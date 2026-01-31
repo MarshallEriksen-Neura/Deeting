@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import ANY
 
 import pytest
 import pytest_asyncio
@@ -39,6 +40,10 @@ async def test_retrieval_skips_when_qdrant_disabled(mocker, async_session):
         "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
         return_value=False,
     )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.DefaultAssistantService.get_default_candidate",
+        new=mocker.AsyncMock(return_value=None),
+    )
     result = await service.search_candidates("query", limit=3)
     assert result == []
 
@@ -52,6 +57,168 @@ async def test_retrieval_returns_empty_when_limit_zero(mocker, async_session):
     )
     result = await service.search_candidates("query", limit=0)
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_retrieval_falls_back_to_default_assistant(mocker, async_session):
+    default_id = uuid.uuid4()
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=False,
+    )
+    logger_mock = mocker.patch("app.services.assistant.assistant_retrieval_service.logger")
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.DefaultAssistantService.get_default_candidate",
+        new=mocker.AsyncMock(
+            return_value={
+                "assistant_id": str(default_id),
+                "name": "Default",
+                "summary": "default summary",
+                "score": 0.0,
+            }
+        ),
+    )
+
+    service = AssistantRetrievalService(async_session)
+    result = await service.search_candidates("query", limit=3)
+    assert result == [
+        {
+            "assistant_id": str(default_id),
+            "name": "Default",
+            "summary": "default summary",
+            "score": 0.0,
+        }
+    ]
+    logger_mock.info.assert_any_call(
+        "assistant_retrieval_fallback_default",
+        extra={"reason": "qdrant_disabled"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_retrieval_does_not_break_on_filtered_top_hits(mocker, async_session):
+    approved_id = uuid.uuid4()
+    filtered_id = uuid.uuid4()
+
+    approved = Assistant(
+        id=approved_id,
+        visibility=AssistantVisibility.PUBLIC,
+        status=AssistantStatus.PUBLISHED,
+        owner_user_id=None,
+        current_version_id=None,
+    )
+    filtered = Assistant(
+        id=filtered_id,
+        visibility=AssistantVisibility.PRIVATE,
+        status=AssistantStatus.PUBLISHED,
+        owner_user_id=None,
+        current_version_id=None,
+    )
+    for assistant in (approved, filtered):
+        async_session.add(assistant)
+
+    approved_version = AssistantVersion(
+        id=uuid.uuid4(),
+        assistant_id=approved_id,
+        version="0.1.0",
+        name="approved",
+        description=None,
+        system_prompt="prompt",
+        model_config={},
+        skill_refs=[],
+        tags=[],
+    )
+    approved.current_version_id = approved_version.id
+    async_session.add(approved_version)
+    await async_session.commit()
+
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=True,
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.search_points",
+        return_value=[
+            {"payload": {"assistant_id": str(filtered_id)}, "score": 0.99},
+            {"payload": {"assistant_id": str(filtered_id)}, "score": 0.95},
+            {"payload": {"assistant_id": str(approved_id)}, "score": 0.90},
+        ],
+    )
+    mocker.patch("app.services.assistant.assistant_retrieval_service.get_qdrant_client")
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.AssistantRoutingRepository.get_states_map",
+        new=mocker.AsyncMock(return_value={}),
+    )
+
+    service = AssistantRetrievalService(async_session)
+    result = await service.search_candidates("query", limit=2)
+    assert len(result) == 1
+    assert result[0]["assistant_id"] == str(approved_id)
+
+
+@pytest.mark.asyncio
+async def test_retrieval_uses_batch_hydrate_query(mocker, async_session):
+    assistant_id = uuid.uuid4()
+    assistant = Assistant(
+        id=assistant_id,
+        visibility=AssistantVisibility.PUBLIC,
+        status=AssistantStatus.PUBLISHED,
+        owner_user_id=None,
+        current_version_id=None,
+    )
+    version = AssistantVersion(
+        id=uuid.uuid4(),
+        assistant_id=assistant.id,
+        version="0.1.0",
+        name="batch",
+        description=None,
+        system_prompt="prompt",
+        model_config={},
+        skill_refs=[],
+        tags=[],
+    )
+    assistant.current_version_id = version.id
+    async_session.add(assistant)
+    async_session.add(version)
+    await async_session.commit()
+
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=True,
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.search_points",
+        return_value=[{"payload": {"assistant_id": str(assistant_id)}, "score": 0.9}],
+    )
+    mocker.patch("app.services.assistant.assistant_retrieval_service.get_qdrant_client")
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
+    logger_mock = mocker.patch("app.services.assistant.assistant_retrieval_service.logger")
+
+    service = AssistantRetrievalService(async_session)
+    mocker.patch.object(service, "_fetch_assistants_with_version", side_effect=AssertionError)
+    mocker.patch.object(service, "_fetch_review_status_map", side_effect=AssertionError)
+    mocker.patch.object(service.routing_repo, "get_states_map", side_effect=AssertionError)
+
+    result = await service.search_candidates("query", limit=1)
+    assert len(result) == 1
+    assert result[0]["assistant_id"] == str(assistant_id)
+    logger_mock.info.assert_any_call(
+        "assistant_retrieval_scored",
+        extra={
+            "hits": 1,
+            "unique_candidates": 1,
+            "candidates": 1,
+            "returned": 1,
+            "elapsed_ms": ANY,
+        },
+    )
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ import * as React from "react"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
+import { MessageActions } from "./message-actions"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { normalizeMessage } from "@/lib/chat/message-normalizer"
 import type { Message, ChatAssistant } from "@/store/chat-state-store"
@@ -21,6 +22,9 @@ interface MessageItemProps {
   statusMeta?: Record<string, unknown> | null
   lastAssistantId?: string
   isTyping?: boolean
+  onRegenerate?: (messageId: string) => void
+  onLike?: (messageId: string) => void
+  onDislike?: (messageId: string) => void
 }
 
 /**
@@ -42,6 +46,9 @@ export const MessageItem = React.memo<MessageItemProps>(
     statusMeta = null,
     lastAssistantId,
     isTyping = false,
+    onRegenerate,
+    onLike,
+    onDislike,
   }) => {
     const t = useI18n("chat")
     const imageAlt = t("input.image.alt")
@@ -76,6 +83,15 @@ export const MessageItem = React.memo<MessageItemProps>(
                 alt={imageAlt}
               />
             ) : null}
+            {!isActive && (
+              <MessageActions
+                messageId={message.id}
+                onRegenerate={onRegenerate}
+                onLike={onLike}
+                onDislike={onDislike}
+                disabled={isActive}
+              />
+            )}
             <div className="text-[10px] mt-1 opacity-70 text-muted-foreground text-left ml-1">
               {new Date(message.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
@@ -149,6 +165,12 @@ export const MessageItem = React.memo<MessageItemProps>(
     // isTyping 未变化
     const isTypingUnchanged = prevProps.isTyping === nextProps.isTyping
 
+    // 回调未变化
+    const callbacksUnchanged =
+      prevProps.onRegenerate === nextProps.onRegenerate &&
+      prevProps.onLike === nextProps.onLike &&
+      prevProps.onDislike === nextProps.onDislike
+
     return (
       messageUnchanged &&
       attachmentsUnchanged &&
@@ -157,7 +179,8 @@ export const MessageItem = React.memo<MessageItemProps>(
       streamUnchanged &&
       agentUnchanged &&
       lastAssistantIdUnchanged &&
-      isTypingUnchanged
+      isTypingUnchanged &&
+      callbacksUnchanged
     )
   }
 )

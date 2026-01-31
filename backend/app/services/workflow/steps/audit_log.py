@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
+from app.core.transaction_celery import celery_is_available
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -103,7 +104,10 @@ class AuditLogStep(BaseStep):
             if ctx.user_id:
                 log_payload["user_id"] = str(ctx.user_id)
 
-            record_audit_log_task.delay(log_payload)
+            if celery_is_available():
+                record_audit_log_task.delay(log_payload)
+            else:
+                logger.info("audit_log_skip_task_dispatch reason=broker_unconfigured")
 
         except Exception as exc:
             logger.warning(f"Audit task dispatch failed: {exc}")

@@ -21,6 +21,21 @@ from app.core.config import settings
 
 _HANG_DEBUG_ENV = "PYTEST_HANG_DEBUG"
 _HANG_DEBUG_TIMEOUT = 30
+_AIOSQLITE_CONNECTIONS: list[Any] = []
+
+try:
+    import aiosqlite  # type: ignore
+
+    _aiosqlite_connect = aiosqlite.connect
+
+    def _tracked_aiosqlite_connect(*args, **kwargs):  # type: ignore[no-untyped-def]
+        conn = _aiosqlite_connect(*args, **kwargs)
+        _AIOSQLITE_CONNECTIONS.append(conn)
+        return conn
+
+    aiosqlite.connect = _tracked_aiosqlite_connect  # type: ignore[assignment]
+except Exception:
+    pass
 
 
 @pytest.fixture(scope="session")
@@ -35,6 +50,14 @@ def event_loop():
                 loop.run_until_complete(asyncio.wait_for(engine.dispose(), timeout=5))
             except Exception:
                 pass
+        try:
+            from app.core import database as core_database
+
+            core_engine = getattr(core_database, "engine", None)
+            if core_engine is not None and core_engine is not engine:
+                loop.run_until_complete(asyncio.wait_for(core_engine.dispose(), timeout=5))
+        except Exception:
+            pass
         cache_obj = getattr(api_conftest, "cache", None) if api_conftest else None
         if cache_obj is not None:
             try:
@@ -56,9 +79,35 @@ def pytest_sessionstart(session):  # type: ignore[unused-argument]
 
 
 def pytest_sessionfinish(session, exitstatus):  # type: ignore[unused-argument]
+    try:
+        from app.core import database as core_database
+
+        core_engine = getattr(core_database, "engine", None)
+        if core_engine is not None:
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(asyncio.wait_for(core_engine.dispose(), timeout=5))
+            finally:
+                loop.close()
+    except Exception:
+        pass
+    if _AIOSQLITE_CONNECTIONS:
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                for conn in list(_AIOSQLITE_CONNECTIONS):
+                    loop.run_until_complete(asyncio.wait_for(conn.close(), timeout=5))
+            finally:
+                loop.close()
+        except Exception:
+            pass
     if os.getenv(_HANG_DEBUG_ENV, "") == "1":
         try:
             faulthandler.cancel_dump_traceback_later()
+        except Exception:
+            pass
+        try:
+            faulthandler.dump_traceback()
         except Exception:
             pass
         # 仅打印线程名，避免日志过重
@@ -70,6 +119,8 @@ os.environ.setdefault("REDIS_URL", "")
 os.environ.setdefault("CELERY_BROKER_URL", "")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "")
 settings.REDIS_URL = ""
+settings.CELERY_BROKER_URL = ""
+settings.CELERY_RESULT_BACKEND = ""
 
 
 class DummyRedis:

@@ -13,11 +13,18 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import event
 
+from app.core.config import settings
+
 if TYPE_CHECKING:
     from celery import Task
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+def celery_is_available() -> bool:
+    broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
+    return bool(broker)
 
 
 class TransactionAwareCelery:
@@ -50,6 +57,13 @@ class TransactionAwareCelery:
             scheduler.delay_after_commit(record_usage_task, tenant_id, amount)
             await session.commit()  # 任务会在这里提交后执行
         """
+        if not celery_is_available():
+            logger.info(
+                "transaction_celery_skipped task=%s reason=broker_unconfigured",
+                getattr(task, "name", str(task)),
+            )
+            return
+
         self._pending_tasks.append((task, args, kwargs))
 
         # 注册 after_commit 钩子（只注册一次）
@@ -81,6 +95,13 @@ class TransactionAwareCelery:
             )
             await session.commit()
         """
+        if not celery_is_available():
+            logger.info(
+                "transaction_celery_skipped task=%s reason=broker_unconfigured",
+                getattr(task, "name", str(task)),
+            )
+            return
+
         merged_kwargs = kwargs or {}
         merged_kwargs["__celery_options__"] = options
         self._pending_tasks.append((task, args or (), merged_kwargs))
@@ -94,6 +115,10 @@ class TransactionAwareCelery:
         @event.listens_for(self.session.sync_session, "after_commit", once=True)
         def _on_commit(_session):  # noqa: ANN001
             """事务提交后执行所有待处理任务"""
+            if not celery_is_available():
+                self._pending_tasks.clear()
+                logger.info("transaction_celery_skipped reason=broker_unconfigured")
+                return
             for task, args, kwargs in self._pending_tasks:
                 try:
                     # 提取 Celery 选项

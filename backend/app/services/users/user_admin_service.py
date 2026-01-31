@@ -24,6 +24,10 @@ from app.schemas.user import (
     UserWithRoles,
 )
 from app.services.users.auth_service import AuthService
+from app.services.oss.asset_storage_service import (
+    build_public_asset_url,
+    build_signed_asset_url,
+)
 from app.services.assistant.default_assistant_service import DefaultAssistantService
 
 
@@ -58,7 +62,7 @@ class UserAdminService:
                     id=u.id,
                     email=u.email,
                     username=u.username,
-                    avatar_url=u.avatar_url,
+                    avatar_url=self._build_avatar_url(u),
                     is_active=u.is_active,
                     is_superuser=u.is_superuser,
                     created_at=u.created_at,
@@ -98,7 +102,7 @@ class UserAdminService:
             id=user.id,
             email=user.email,
             username=user.username,
-            avatar_url=user.avatar_url,
+            avatar_url=self._build_avatar_url(user),
             is_active=user.is_active,
             is_superuser=user.is_superuser,
             created_at=user.created_at,
@@ -119,7 +123,7 @@ class UserAdminService:
             id=user.id,
             email=user.email,
             username=user.username,
-            avatar_url=user.avatar_url,
+            avatar_url=self._build_avatar_url(user),
             is_active=user.is_active,
             is_superuser=user.is_superuser,
             created_at=user.created_at,
@@ -143,7 +147,7 @@ class UserAdminService:
         """
         更新用户状态
 
-        - 可修改 is_active, is_superuser, username, avatar_url
+        - 可修改 is_active, is_superuser, username, avatar_object_key
         - 只有超管可以修改 is_superuser 字段
         """
         # 检查用户是否存在
@@ -152,6 +156,9 @@ class UserAdminService:
 
         # 更新字段
         update_data = request.model_dump(exclude_unset=True)
+        if "avatar_url" in update_data and update_data["avatar_url"]:
+            update_data["avatar_object_key"] = update_data.pop("avatar_url")
+            update_data["avatar_storage_type"] = update_data.get("avatar_storage_type", "public")
 
         # 权限检查：只有超管可以修改 is_superuser
         if "is_superuser" in update_data and not current_admin.is_superuser:
@@ -175,12 +182,22 @@ class UserAdminService:
             id=user.id,
             email=user.email,
             username=user.username,
-            avatar_url=user.avatar_url,
+            avatar_url=self._build_avatar_url(user),
             is_active=user.is_active,
             is_superuser=user.is_superuser,
             created_at=user.created_at,
             updated_at=user.updated_at,
         )
+
+    @staticmethod
+    def _build_avatar_url(user: User) -> str | None:
+        if not user.avatar_object_key:
+            return None
+        if str(user.avatar_object_key).startswith(("http://", "https://")):
+            return str(user.avatar_object_key)
+        if user.avatar_storage_type == "public":
+            return build_public_asset_url(user.avatar_object_key)
+        return build_signed_asset_url(user.avatar_object_key)
 
     async def _ensure_default_assistant(self, user: User) -> None:
         if not user.is_active:

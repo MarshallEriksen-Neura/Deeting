@@ -303,6 +303,11 @@
     "canvas": {
       "title": "Deeting OS",
       "subtitle": "系统在线，等待输入。"
+    },
+    "actions": {
+      "regenerate": "重新生成",
+      "like": "点赞",
+      "dislike": "踩"
     }
   }
 }

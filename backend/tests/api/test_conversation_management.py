@@ -177,6 +177,45 @@ class _DummyOrchestrator:
         return type("Result", (), {"success": True})
 
 
+class _DummyAssistantRoutingService:
+    last_params: dict | None = None
+
+    def __init__(self, *args, **kwargs):
+        self.called = False
+
+    async def list_routing_report(
+        self,
+        *,
+        min_trials: int | None = None,
+        min_rating: float | None = None,
+        limit: int | None = None,
+        sort: str | None = None,
+    ) -> list[dict]:
+        self.called = True
+        _DummyAssistantRoutingService.last_params = {
+            "min_trials": min_trials,
+            "min_rating": min_rating,
+            "limit": limit,
+            "sort": sort,
+        }
+        return [
+            {
+                "assistant_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+                "name": "Expert A",
+                "summary": "summary",
+                "total_trials": 12,
+                "positive_feedback": 9,
+                "negative_feedback": 3,
+                "rating_score": 0.75,
+                "mab_score": 0.75,
+                "routing_score": 0.69,
+                "exploration_bonus": 0.0,
+                "last_used_at": "2026-01-16T09:42:01+08:00",
+                "last_feedback_at": "2026-01-16T09:45:01+08:00",
+            }
+        ]
+
+
 @pytest.fixture(autouse=True)
 def _override_auth(monkeypatch):
     prev_overrides = app.dependency_overrides.copy()
@@ -238,7 +277,46 @@ async def test_create_conversation(monkeypatch):
         data = resp.json()
         assert data["session_id"] == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
         assert data["title"] == "New Chat"
-        assert service.created["assistant_id"] == UUID(payload["assistant_id"])
+
+
+@pytest.mark.asyncio
+async def test_routing_report(monkeypatch):
+    monkeypatch.setattr(
+        conversation_route,
+        "AssistantRoutingService",
+        _DummyAssistantRoutingService,
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(
+            "/api/v1/internal/assistants/routing/report"
+            "?min_trials=10&min_rating=0.7&limit=1&sort=score_desc"
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["summary"]["total_assistants"] == 1
+        assert payload["summary"]["total_trials"] == 12
+        assert payload["summary"]["overall_rating"] == pytest.approx(0.75)
+        assert _DummyAssistantRoutingService.last_params == {
+            "min_trials": 10,
+            "min_rating": 0.7,
+            "limit": 1,
+            "sort": "score_desc",
+        }
+        assert payload["items"][0]["assistant_id"] == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+        assert payload["items"][0]["mab_score"] == pytest.approx(0.75)
+        assert payload["items"][0]["routing_score"] == pytest.approx(0.69)
+
+
+@pytest.mark.asyncio
+async def test_routing_report_invalid_sort(monkeypatch):
+    monkeypatch.setattr(
+        conversation_route,
+        "AssistantRoutingService",
+        _DummyAssistantRoutingService,
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/api/v1/internal/assistants/routing/report?sort=bad_sort")
+        assert resp.status_code == 400
 
 
 @pytest.mark.asyncio

@@ -30,6 +30,8 @@ class UserService:
         """根据用户头像存储类型构建访问 URL"""
         if not user.avatar_object_key:
             return None
+        if str(user.avatar_object_key).startswith(("http://", "https://")):
+            return str(user.avatar_object_key)
         
         if user.avatar_storage_type == "public":
             return build_public_asset_url(user.avatar_object_key)
@@ -48,6 +50,9 @@ class UserService:
         update_data = request.model_dump(exclude_unset=True)
 
         # 如果更新头像 object_key，自动设置 storage_type
+        if "avatar_url" in update_data and update_data["avatar_url"]:
+            update_data["avatar_object_key"] = update_data.pop("avatar_url")
+            update_data["avatar_storage_type"] = update_data.get("avatar_storage_type", "public")
         if "avatar_object_key" in update_data and update_data["avatar_object_key"]:
             update_data["avatar_storage_type"] = update_data.get("avatar_storage_type", "public")
 

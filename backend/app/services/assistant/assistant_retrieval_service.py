@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+import time
 import random
 import uuid
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.models.assistant import AssistantStatus, AssistantVisibility
@@ -17,6 +18,7 @@ from app.repositories.assistant_repository import AssistantRepository, Assistant
 from app.repositories.review_repository import ReviewTaskRepository
 from app.repositories.assistant_routing_repository import AssistantRoutingRepository
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
+from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import search_points
 from app.tasks.assistant import ASSISTANT_COLLECTION_NAME
@@ -38,7 +40,7 @@ class AssistantRetrievalService:
 
     async def search_candidates(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
         if not qdrant_is_configured():
-            return []
+            return await self._fallback_default_assistant(reason="qdrant_disabled")
 
         try:
             normalized_limit = int(limit or 0)
@@ -73,7 +75,7 @@ class AssistantRetrievalService:
             )
         except Exception as exc:  # pragma: no cover - fail-open
             logger.warning("assistant retrieval failed", exc_info=exc)
-            return []
+            return await self._fallback_default_assistant(reason="qdrant_error")
 
         if not hits:
             return []
@@ -85,6 +87,7 @@ class AssistantRetrievalService:
         hits: list[dict[str, Any]],
         limit: int,
     ) -> list[dict[str, Any]]:
+        start_time = time.perf_counter()
         ordered_ids: list[uuid.UUID] = []
         score_map: dict[uuid.UUID, float] = {}
         for hit in hits:
@@ -96,34 +99,69 @@ class AssistantRetrievalService:
             score = hit.get("score")
             if score is not None and score > score_map.get(assistant_uuid, float("-inf")):
                 score_map[assistant_uuid] = float(score)
-            if len(ordered_ids) >= limit:
-                break
 
         if not ordered_ids:
             return []
 
-        assistants = await self._fetch_assistants_with_version(ordered_ids)
-        if not assistants:
+        candidates = await self._hydrate_candidates(ordered_ids, score_map)
+        if not candidates:
             return []
 
-        review_status_map = await self._fetch_review_status_map(ordered_ids)
-        routing_state_map = await self.routing_repo.get_states_map(ordered_ids)
+        candidates.sort(key=lambda c: c.get("score", 0.0), reverse=True)
+        returned = candidates[:limit]
+        elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+        logger.info(
+            "assistant_retrieval_scored",
+            extra={
+                "hits": len(hits),
+                "unique_candidates": len(ordered_ids),
+                "candidates": len(candidates),
+                "returned": len(returned),
+                "elapsed_ms": elapsed_ms,
+            },
+        )
+        return returned
+
+    async def _fallback_default_assistant(self, *, reason: str) -> list[dict[str, Any]]:
+        try:
+            service = DefaultAssistantService(self.session)
+            candidate = await service.get_default_candidate()
+        except Exception as exc:  # pragma: no cover - fail-open
+            logger.warning("default assistant fallback failed", exc_info=exc)
+            return []
+        if not candidate:
+            return []
+        logger.info(
+            "assistant_retrieval_fallback_default",
+            extra={"reason": reason},
+        )
+        return [candidate]
+
+    async def _hydrate_candidates(
+        self,
+        ordered_ids: list[uuid.UUID],
+        score_map: dict[uuid.UUID, float],
+    ) -> list[dict[str, Any]]:
+        hydrated = await self._fetch_hydrated_rows(ordered_ids)
+        if not hydrated:
+            return []
 
         candidates: list[dict[str, Any]] = []
         for assistant_id in ordered_ids:
-            row = assistants.get(assistant_id)
+            row = hydrated.get(assistant_id)
             if not row:
                 continue
-            assistant, version = row
+            assistant, version, review_status, routing_state = row
             if not version:
                 continue
             if not self._is_public_published(assistant):
                 continue
             if assistant.owner_user_id is not None:
-                review_status = review_status_map.get(assistant.id)
-                if review_status != ReviewStatus.APPROVED.value:
+                normalized_review = (
+                    review_status.value if hasattr(review_status, "value") else review_status
+                )
+                if normalized_review != ReviewStatus.APPROVED.value:
                     continue
-            routing_state = routing_state_map.get(assistant.id)
             final_score = self._compute_final_score(
                 vector_score=score_map.get(assistant.id, 0.0),
                 routing_state=routing_state,
@@ -137,11 +175,41 @@ class AssistantRetrievalService:
                 }
             )
 
-        if not candidates:
-            return []
+        return candidates
 
-        candidates.sort(key=lambda c: c.get("score", 0.0), reverse=True)
-        return candidates[:limit]
+    async def _fetch_hydrated_rows(
+        self,
+        assistant_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, tuple[Assistant, AssistantVersion | None, str | None, AssistantRoutingState | None]]:
+        if not assistant_ids:
+            return {}
+        stmt = (
+            select(Assistant, AssistantVersion, ReviewTask.status, AssistantRoutingState)
+            .join(AssistantVersion, Assistant.current_version_id == AssistantVersion.id, isouter=True)
+            .join(
+                ReviewTask,
+                and_(
+                    ReviewTask.entity_type == ASSISTANT_MARKET_ENTITY,
+                    ReviewTask.entity_id == Assistant.id,
+                ),
+                isouter=True,
+            )
+            .join(
+                AssistantRoutingState,
+                AssistantRoutingState.assistant_id == Assistant.id,
+                isouter=True,
+            )
+            .where(Assistant.id.in_(assistant_ids))
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        hydrated: dict[
+            uuid.UUID,
+            tuple[Assistant, AssistantVersion | None, str | None, AssistantRoutingState | None],
+        ] = {}
+        for assistant, version, review_status, routing_state in rows:
+            hydrated[assistant.id] = (assistant, version, review_status, routing_state)
+        return hydrated
 
     def _extract_assistant_uuid(self, hit: dict[str, Any]) -> uuid.UUID | None:
         payload = hit.get("payload") or {}

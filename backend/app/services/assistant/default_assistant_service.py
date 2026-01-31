@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.assistants import DEFAULT_ASSISTANT_SLUG
 from app.core.logging import logger
 from app.repositories.assistant_install_repository import AssistantInstallRepository
-from app.repositories.assistant_repository import AssistantRepository
+from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 
 
 class DefaultAssistantService:
@@ -17,6 +17,7 @@ class DefaultAssistantService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.assistant_repo = AssistantRepository(session)
+        self.version_repo = AssistantVersionRepository(session)
         self.install_repo = AssistantInstallRepository(session)
 
     async def ensure_installed(self, user_id: UUID) -> bool:
@@ -49,6 +50,31 @@ class DefaultAssistantService:
             extra={"assistant_id": str(assistant.id), "user_id": str(user_id)},
         )
         return True
+
+    async def get_default_candidate(self) -> dict | None:
+        assistant = await self.assistant_repo.get_by_share_slug(DEFAULT_ASSISTANT_SLUG)
+        if not assistant:
+            logger.warning(
+                "default_assistant_missing",
+                extra={"assistant_slug": DEFAULT_ASSISTANT_SLUG},
+            )
+            return None
+        if not assistant.current_version_id:
+            return None
+
+        version = await self.version_repo.get_for_assistant(
+            assistant.id,
+            assistant.current_version_id,
+        )
+        if not version:
+            return None
+
+        return {
+            "assistant_id": str(assistant.id),
+            "name": version.name,
+            "summary": assistant.summary,
+            "score": 0.0,
+        }
 
     async def _refresh_install_count(self, assistant_id: UUID) -> None:
         try:

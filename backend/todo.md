@@ -16,3 +16,12 @@
 
    4. UI 渲染协议 (Universal Rendering):
       让爬虫爬回来的数据（比如表格、图表）不仅仅以文本显示，而是能以漂亮的 React 组件在前端渲染。
+
+
+运行时检索/回查：实现 consult_expert_network(intent_query) 的检索 + Postgres 回查流程（Qdrant  │
+│   Top‑K → hydrate 最新版本）。                                                                   │
+│   会话绑定与归因：assistant_id 可为空、used_persona_id 记录；会话锁定/解锁逻辑（只锁当前会话）。 │
+│   仲裁与路由策略：置信度阈值、冲突指令仲裁、Router Base Prompt 注入策略。                        │
+│   反馈与排序（MAB）：点赞/点踩/重试信号 → Thompson Sampling + Exploration Bonus 排序。           │
+│   同步机制补齐：版本更新触发重算 embedding；删除/隐藏触发从 Qdrant                               │
+│   移除；审核通过的异步同步已完成。

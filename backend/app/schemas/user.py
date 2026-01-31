@@ -25,6 +25,7 @@ class UserCreate(BaseSchema):
 class UserUpdate(BaseSchema):
     """用户更新请求（自助修改）"""
     username: str | None = Field(None, max_length=100, description="展示名")
+    avatar_url: str | None = Field(None, description="头像 URL（兼容字段）")
     avatar_object_key: str | None = Field(None, max_length=512, description="头像对象存储 key")
     avatar_storage_type: str | None = Field(None, max_length=20, description="头像存储类型: public/private")
 
@@ -65,6 +66,7 @@ class UserAdminUpdate(BaseSchema):
     is_active: bool | None = Field(None, description="是否启用")
     is_superuser: bool | None = Field(None, description="是否超级管理员")
     username: str | None = Field(None, max_length=100, description="展示名")
+    avatar_url: str | None = Field(None, description="头像 URL（兼容字段）")
     avatar_object_key: str | None = Field(None, max_length=512, description="头像对象存储 key")
     avatar_storage_type: str | None = Field(None, max_length=20, description="头像存储类型: public/private")
 
