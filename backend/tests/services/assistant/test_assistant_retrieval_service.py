@@ -121,6 +121,10 @@ async def test_retrieval_filters_visibility_and_review(mocker, async_session):
         ],
     )
     mocker.patch("app.services.assistant.assistant_retrieval_service.get_qdrant_client")
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
 
     service = AssistantRetrievalService(async_session)
     result = await service.search_candidates("query", limit=5)
@@ -140,6 +144,10 @@ async def test_retrieval_normalizes_limit(mocker, async_session):
         return_value=[],
     )
     mocker.patch("app.services.assistant.assistant_retrieval_service.get_qdrant_client")
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
 
     await service.search_candidates("query", limit="2")
     assert search_mock.call_args.kwargs["limit"] == 2

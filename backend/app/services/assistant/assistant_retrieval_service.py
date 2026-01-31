@@ -100,7 +100,10 @@ class AssistantRetrievalService:
         if assistant.owner_user_id is not None:
             # Align with assistant market visibility rule: require approved review for user-owned assistants.
             review = await self.review_repo.get_by_entity(ASSISTANT_MARKET_ENTITY, assistant.id)
-            if not review or review.status != ReviewStatus.APPROVED.value:
+            if not review:
+                return None
+            review_status = review.status.value if isinstance(review.status, ReviewStatus) else review.status
+            if review_status != ReviewStatus.APPROVED.value:
                 return None
 
         version = await self.version_repo.get_for_assistant(assistant_uuid, assistant.current_version_id)
