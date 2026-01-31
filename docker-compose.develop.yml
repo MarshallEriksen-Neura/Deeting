@@ -57,6 +57,28 @@ services:
       apiproxy-net:
         ipv4_address: 172.20.0.12
 
+  scout:
+    build:
+      context: ./scout
+      dockerfile: Dockerfile
+    image: deeting-scout:dev
+    container_name: deeting-scout
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=development
+      - REDIS_URL=redis://:p4ssw0rd@apiproxy-redis:6379/1
+      - QDRANT_URL=http://apiproxy-qdrant:6333
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "8001:8001"
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.20
+
   api:
     build:
       context: ./backend

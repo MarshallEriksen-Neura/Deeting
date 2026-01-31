@@ -249,6 +249,9 @@ class Settings(BaseSettings):
     AFFINITY_ROUTING_MAX_PREFIX_CHARS: int = 4000  # 指纹截断，防止超大请求
     AFFINITY_ROUTING_DISCOUNT_RATE: float = 0.5  # 用于估算节省（假定前缀缓存约 50% 复用）
 
+    # Scout Service (Cognitive Engine)
+    SCOUT_SERVICE_URL: str = "http://scout:8001"
+    
     # Bridge / MCP (internal only)
     BRIDGE_GATEWAY_URL: str = "http://127.0.0.1:8088"
     BRIDGE_GATEWAY_INTERNAL_TOKEN: str = ""

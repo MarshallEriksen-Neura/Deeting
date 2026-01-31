@@ -18,4 +18,5 @@ from app.tasks import (  # noqa: F401
     upstream,
     image_generation,
     spec_knowledge_tasks,
-)
+from .spec_knowledge_tasks import *
+from .knowledge_tasks import index_knowledge_artifact_task

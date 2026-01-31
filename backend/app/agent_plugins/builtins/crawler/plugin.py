@@ -1,45 +1,22 @@
 from typing import Any
-
+import httpx
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
-
-from .browser import get_manager
-from .runner import CrawlConfig, CrawlRunner
-
+from app.core.config import settings
 
 class CrawlerPlugin(AgentPlugin):
     """
-    Web Crawler Plugin.
-    Provides capabilities to fetch web content, convert to Markdown, and extract structured data using Playwright.
+    Web Crawler Plugin (Remote Scout Adapter).
+    Delegates crawl tasks to the 'Deeting Scout' microservice.
     """
 
     @property
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.tools.crawler",
-            version="1.1.0",
-            description="Provides web crawling capabilities using Playwright.",
+            version="2.0.0", # Bumped version for Scout Architecture
+            description="Provides web crawling capabilities via Deeting Scout Service.",
             author="Gemini CLI"
         )
-
-    async def on_activate(self) -> None:
-        """
-        Initialize Playwright when plugin is activated.
-        """
-        logger = self.context.get_logger()
-        logger.info("CrawlerPlugin activating. Launching Playwright browser...")
-        manager = get_manager()
-        await manager.start()
-        logger.info("CrawlerPlugin activated and browser launched.")
-
-    async def on_deactivate(self) -> None:
-        """
-        Stop Playwright when plugin is deactivated.
-        """
-        logger = self.context.get_logger()
-        logger.info("CrawlerPlugin deactivating. Stopping Playwright browser...")
-        manager = get_manager()
-        await manager.stop()
-        logger.info("CrawlerPlugin deactivated.")
 
     def get_tools(self) -> list[dict]:
         return [
@@ -47,7 +24,7 @@ class CrawlerPlugin(AgentPlugin):
                 "type": "function",
                 "function": {
                     "name": "fetch_web_content",
-                    "description": "Fetch and extract content from a URL. Returns text, markdown, and structured data.",
+                    "description": "Fetch and extract content from a URL using the Scout service. Returns clean Markdown.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -55,40 +32,10 @@ class CrawlerPlugin(AgentPlugin):
                                 "type": "string",
                                 "description": "The target URL to crawl."
                             },
-                            "wait_for": {
-                                "type": "string",
-                                "enum": ["load", "domcontentloaded", "networkidle"],
-                                "default": "networkidle",
-                                "description": "Wait strategy for page loading."
-                            },
-                            "timeout": {
-                                "type": "integer",
-                                "default": 30000,
-                                "description": "Timeout in milliseconds."
-                            },
-                            "max_scrolls": {
-                                "type": "integer",
-                                "default": 0,
-                                "description": "Number of times to scroll to the bottom. Use >0 for infinite scroll pages."
-                            },
-                            "extract_markdown": {
+                            "js_mode": {
                                 "type": "boolean",
                                 "default": True,
-                                "description": "Whether to convert HTML to Markdown."
-                            },
-                            "extract_tables": {
-                                "type": "boolean",
-                                "default": True,
-                                "description": "Whether to extract tables."
-                            },
-                            "extract_code": {
-                                "type": "boolean",
-                                "default": True,
-                                "description": "Whether to extract code blocks."
-                            },
-                            "user_agent": {
-                                "type": "string",
-                                "description": "Custom User-Agent string."
+                                "description": "Whether to render JavaScript (slower but more accurate)."
                             }
                         },
                         "required": ["url"]
@@ -100,35 +47,52 @@ class CrawlerPlugin(AgentPlugin):
     async def handle_fetch_web_content(
         self,
         url: str,
-        wait_for: str = "networkidle",
-        timeout: int = 30000,
-        max_scrolls: int = 0,
-        extract_markdown: bool = True,
-        extract_tables: bool = True,
-        extract_code: bool = True,
-        user_agent: str | None = None
+        js_mode: bool = True,
+        **kwargs # Ignore legacy args
     ) -> dict[str, Any]:
         """
-        Tool Handler: Execute crawl task.
+        Tool Handler: Delegate to Scout Service.
         """
         logger = self.context.get_logger()
-        logger.info(f"Crawling URL: {url} (Scrolls: {max_scrolls})")
+        scout_url = f"{settings.SCOUT_SERVICE_URL}/v1/scout/inspect"
+        
+        logger.info(f"Dispatching Scout to: {url} (via {scout_url})")
 
-        cfg = CrawlConfig(
-            wait_for=wait_for,
-            timeout=timeout,
-            max_scrolls=max_scrolls,
-            extract_markdown=extract_markdown,
-            extract_tables=extract_tables,
-            extract_code=extract_code,
-            user_agent=user_agent
-        )
+        payload = {
+            "url": url,
+            "js_mode": js_mode
+        }
 
-        result = await CrawlRunner.run(url, cfg)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    scout_url,
+                    json=payload,
+                    timeout=120.0 # Crawling can be slow
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                if data.get("status") == "failed":
+                    logger.warning(f"Scout reported failure: {data.get('error')}")
+                    return {
+                        "status": "error",
+                        "error": data.get("error"),
+                        "markdown": ""
+                    }
+                
+                logger.info(f"Scout returned success. {data.get('metadata', {})}")
+                return {
+                    "status": "success",
+                    "title": "Scout Report",
+                    "text": data.get("markdown", "")[:200] + "...", # Legacy compat
+                    "markdown": data.get("markdown"),
+                    "metadata": data.get("metadata")
+                }
 
-        if result.get("error"):
-            logger.warning(f"Crawl finished with error: {result['error']}")
-        else:
-            logger.info(f"Crawl successful. Title: {result.get('title')}")
-
-        return result
+        except Exception as e:
+            logger.error(f"Failed to contact Scout service: {e}")
+            return {
+                "status": "error", 
+                "error": f"Scout Service Unavailable: {str(e)}"
+            }

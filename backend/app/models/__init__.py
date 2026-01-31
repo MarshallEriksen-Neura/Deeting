@@ -72,6 +72,7 @@ from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
 from .spec_agent import SpecPlan, SpecExecutionLog, SpecWorkerSession
 from .spec_knowledge import SpecKnowledgeCandidate
+from .knowledge import KnowledgeArtifact, KnowledgeChunk
 
 __all__ = [
     "Base",
@@ -153,4 +154,7 @@ __all__ = [
     "SpecExecutionLog",
     "SpecWorkerSession",
     "SpecKnowledgeCandidate",
+    # Knowledge (Unified Crawler)
+    "KnowledgeArtifact",
+    "KnowledgeChunk",
 ]

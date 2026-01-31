@@ -1,0 +1,32 @@
+[project]
+name = "deeting-scout"
+version = "0.1.0"
+description = "Deeting Cognitive Engine & Scout Service"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "httpx>=0.27.0",
+    "playwright>=1.48.0",
+    "crawl4ai>=0.2.7",  # 现代 LLM 友好型爬虫库
+    "beautifulsoup4>=4.12.0",
+    "html2text>=2024.2.26",
+    "qdrant-client>=1.12.0",
+    "redis>=5.0.0",
+    "loguru>=0.7.2",
+    "tenacity>=8.2.3",
+    "sentry-sdk>=2.1.0",
+    "python-slugify>=8.0.4",
+    "networkx>=3.3" # 用于知识图谱构建
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
