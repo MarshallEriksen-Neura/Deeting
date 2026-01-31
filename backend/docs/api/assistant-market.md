@@ -84,6 +84,17 @@
     ```
 - 响应：`AssistantDTO`
 
+## 前端入口与闭环（创建/编辑/发布）
+
+- 入口页面：`/assistants`（助手广场页）
+  - “我的助手”列表支持创建与编辑（复用创建弹窗）。
+  - 我创建的助手卡片会展示状态（`draft/published`、`pending/approved/rejected`）。
+- 快捷入口：`/chat/create/assistant`（跳转到创建流程）。
+- 发布/上架：
+  - 创建时 `share_to_market=true` 即提交审核（异步执行，创建接口仍返回成功）。
+  - 或者创建后调用 `POST /assistants/{assistant_id}/submit` 提交审核。
+- 审核通过后会异步同步到 Qdrant 专家索引；未通过审核不会同步。
+
 ## 删除自定义助手
 
 - `DELETE /assistants/{assistant_id}`
