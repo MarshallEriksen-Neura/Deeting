@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "consult_expert_network"
+CONFIDENCE_THRESHOLD = 0.8
 
 JIT_PERSONA_TOOL = ToolDefinition(
     name=TOOL_NAME,
@@ -27,8 +28,18 @@ JIT_PERSONA_TOOL = ToolDefinition(
                 "description": "Number of candidates to return.",
                 "default": 3,
             },
+            "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": (
+                    "Model confidence in the routing decision (0-1). "
+                    f"Only call when confidence >= {CONFIDENCE_THRESHOLD}."
+                ),
+                "default": 0,
+            },
         },
-        "required": ["intent_query"],
+        "required": ["intent_query", "confidence"],
     },
 )
 

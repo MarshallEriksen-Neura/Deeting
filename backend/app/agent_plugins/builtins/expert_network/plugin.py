@@ -6,6 +6,7 @@ from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.services.assistant.assistant_retrieval_service import AssistantRetrievalService
 
 logger = logging.getLogger(__name__)
+MIN_CONFIDENCE = 0.8
 
 
 class ExpertNetworkPlugin(AgentPlugin):
@@ -37,8 +38,18 @@ class ExpertNetworkPlugin(AgentPlugin):
                                 "description": "Number of candidates to return.",
                                 "default": 3,
                             },
+                            "confidence": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": (
+                                    f"Model confidence in the routing decision (0-1). "
+                                    f"Only call when confidence >= {MIN_CONFIDENCE}."
+                                ),
+                                "default": 0,
+                            },
                         },
-                        "required": ["intent_query"],
+                        "required": ["intent_query", "confidence"],
                     },
                 },
             }
@@ -48,9 +59,24 @@ class ExpertNetworkPlugin(AgentPlugin):
         self,
         intent_query: str,
         k: int = 3,
+        confidence: float | None = None,
         __context__=None,
     ) -> list[dict[str, Any]]:
         ctx = __context__
+        if confidence is not None:
+            try:
+                normalized_confidence = float(confidence)
+            except (TypeError, ValueError):
+                normalized_confidence = 0.0
+            if normalized_confidence < MIN_CONFIDENCE:
+                logger.info(
+                    "expert network skipped due to low confidence",
+                    extra={"confidence": normalized_confidence},
+                )
+                if ctx is not None:
+                    ctx.set("assistant", "candidates", [])
+                    ctx.set("assistant", "confidence", normalized_confidence)
+                return []
         session = None
         owns_session = False
 
