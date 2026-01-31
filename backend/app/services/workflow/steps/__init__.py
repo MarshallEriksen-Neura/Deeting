@@ -56,6 +56,7 @@ __all__ = [
     "RateLimitStep",
     "ConversationLoadStep",
     "AssistantPromptInjectionStep",
+    "JitPersonaToolInjectionStep",
     "ResolveAssetsStep",
     "ConversationAppendStep",
     "MemoryWriteStep",
