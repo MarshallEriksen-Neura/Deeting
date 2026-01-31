@@ -32,6 +32,9 @@ from app.services.workflow.steps.template_render import TemplateRenderStep
 from app.services.workflow.steps.upstream_call import UpstreamCallStep
 from app.services.workflow.steps.validation import ValidationStep
 from app.services.workflow.steps.mcp_discovery import McpDiscoveryStep
+from app.services.workflow.steps.jit_persona_tool_injection import (
+    JitPersonaToolInjectionStep,
+)
 from app.services.workflow.steps.agent_executor import AgentExecutorStep
 from app.services.workflow.steps.provider_execution import ProviderExecutionStep
 from app.services.workflow.steps.assistant_prompt_injection import AssistantPromptInjectionStep
@@ -53,6 +56,7 @@ __all__ = [
     "RateLimitStep",
     "ConversationLoadStep",
     "AssistantPromptInjectionStep",
+    "JitPersonaToolInjectionStep",
     "ResolveAssetsStep",
     "ConversationAppendStep",
     "MemoryWriteStep",

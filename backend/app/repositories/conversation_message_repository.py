@@ -46,6 +46,7 @@ class ConversationMessageRepository(BaseRepository[ConversationMessage]):
                     "is_deleted",
                     "parent_message_id",
                     "meta_info",
+                    "used_persona_id",
                 }
                 and v is not None
             }
@@ -69,6 +70,7 @@ class ConversationMessageRepository(BaseRepository[ConversationMessage]):
                     "token_estimate": int(msg.get("token_estimate", 0)),
                     "is_truncated": bool(msg.get("is_truncated", False)),
                     "meta_info": meta_info,
+                    "used_persona_id": msg.get("used_persona_id"),
                 }
             )
 

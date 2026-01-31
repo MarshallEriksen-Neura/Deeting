@@ -70,6 +70,8 @@ class ConversationAppendStep(BaseStep):
             meta_info["spec_agent_suggestion"] = spec_suggestion
             assistant_msg["meta_info"] = meta_info
 
+        used_persona_id = self._resolve_used_persona_id(ctx)
+
         channel = (
             ConversationChannel.EXTERNAL
             if ctx.is_external
@@ -79,6 +81,7 @@ class ConversationAppendStep(BaseStep):
         db_messages, redis_messages = self._prepare_messages(
             user_messages=user_messages,
             assistant_message=assistant_msg,
+            used_persona_id=used_persona_id,
         )
 
         conv_service: ConversationService | None = None
@@ -264,6 +267,7 @@ class ConversationAppendStep(BaseStep):
         *,
         user_messages: list[dict[str, Any]],
         assistant_message: dict[str, Any] | None,
+        used_persona_id: str | None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         raw_messages = list(user_messages)
         if assistant_message:
@@ -293,10 +297,25 @@ class ConversationAppendStep(BaseStep):
                 else self._estimate_tokens(content_for_tokens),
                 "meta_info": meta_info,
             }
+            if used_persona_id and msg.get("role") == "assistant":
+                normalized["used_persona_id"] = used_persona_id
             db_messages.append(normalized)
             redis_messages.append({**normalized, "content": content_for_tokens})
 
         return db_messages, redis_messages
+
+    @staticmethod
+    def _resolve_used_persona_id(ctx: "WorkflowContext") -> str | None:
+        assistant_id = ctx.get("assistant", "id")
+        if assistant_id:
+            return str(assistant_id)
+        candidates = ctx.get("assistant", "candidates") or []
+        if isinstance(candidates, list) and candidates:
+            first = candidates[0] if isinstance(candidates[0], dict) else None
+            candidate_id = first.get("assistant_id") if first else None
+            if candidate_id:
+                return str(candidate_id)
+        return None
 
     @staticmethod
     def _build_meta_info(message: dict[str, Any], content: Any) -> dict[str, Any] | None:
