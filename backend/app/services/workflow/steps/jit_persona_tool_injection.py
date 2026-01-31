@@ -56,7 +56,7 @@ class JitPersonaToolInjectionStep(BaseStep):
     """
 
     name = "jit_persona_tool_injection"
-    depends_on = ["validation", "conversation_load", "mcp_discovery"]
+    depends_on = ["validation", "mcp_discovery"]
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         if ctx.is_external:
