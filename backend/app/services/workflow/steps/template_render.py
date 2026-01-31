@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from app.services.orchestrator.registry import step_registry
+from app.prompts.router_base import ROUTER_BASE_PROMPT
 from app.services.providers.request_renderer import request_renderer
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
@@ -279,7 +280,7 @@ class TemplateRenderStep(BaseStep):
         )
 
         # --- System Prompt & Capability Injection ---
-        enhanced_prompt = context.get("enhanced_prompt")
+        enhanced_prompt = context.get("enhanced_prompt") or ROUTER_BASE_PROMPT
 
         # 1. 注入当前时间 (Time Injection) - 避免时间幻觉
         # 使用 UTC 时间 + 星期几，通用且无歧义

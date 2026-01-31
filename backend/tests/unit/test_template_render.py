@@ -64,3 +64,20 @@ async def test_template_render_requires_request_template():
     result = await step.execute(ctx)
 
     assert result.status == StepStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_template_render_injects_router_base_prompt():
+    step = TemplateRenderStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set("routing", "upstream_url", "https://example.com/v1/chat/completions")
+    ctx.set("routing", "template_engine", "simple_replace")
+    ctx.set("routing", "request_template", {"messages": []})
+    ctx.set("validation", "validated", {"messages": [{"role": "user", "content": "hi"}]})
+
+    result = await step.execute(ctx)
+
+    assert result.status == StepStatus.SUCCESS
+    rendered = ctx.get("template_render", "request_body")
+    assert rendered["messages"][0]["role"] == "system"
+    assert "Meta Rules" in rendered["messages"][0]["content"]
