@@ -8,7 +8,11 @@ from sqlalchemy.pool import StaticPool
 from app.models import Base
 from app.models.assistant import Assistant, AssistantStatus, AssistantVersion, AssistantVisibility
 from app.models.review import ReviewStatus, ReviewTask
-from app.services.assistant.assistant_retrieval_service import AssistantRetrievalService
+from app.services.assistant.assistant_retrieval_service import (
+    MAX_LIMIT,
+    OVERSAMPLE_MULTIPLIER,
+    AssistantRetrievalService,
+)
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 
 
@@ -150,7 +154,36 @@ async def test_retrieval_normalizes_limit(mocker, async_session):
     )
 
     await service.search_candidates("query", limit="2")
-    assert search_mock.call_args.kwargs["limit"] == 6
+    assert search_mock.call_args.kwargs["limit"] == 2 * OVERSAMPLE_MULTIPLIER
+
+
+@pytest.mark.asyncio
+async def test_retrieval_caps_limit(mocker, async_session):
+    service = AssistantRetrievalService(async_session)
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=True,
+    )
+    search_mock = mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.search_points",
+        return_value=[{"payload": {"assistant_id": str(uuid.uuid4())}, "score": 0.9}]
+        * (MAX_LIMIT + 5),
+    )
+    mocker.patch("app.services.assistant.assistant_retrieval_service.get_qdrant_client")
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
+    mocker.patch.object(
+        service,
+        "_hit_to_candidate",
+        new=mocker.AsyncMock(return_value={"assistant_id": str(uuid.uuid4())}),
+    )
+
+    result = await service.search_candidates("query", limit=MAX_LIMIT + 10)
+
+    assert search_mock.call_args.kwargs["limit"] == MAX_LIMIT
+    assert len(result) == MAX_LIMIT
 
 
 @pytest.mark.asyncio

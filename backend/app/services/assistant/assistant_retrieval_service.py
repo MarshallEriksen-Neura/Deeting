@@ -18,6 +18,9 @@ from app.tasks.assistant import ASSISTANT_COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
 
+OVERSAMPLE_MULTIPLIER = 3
+MAX_LIMIT = 50
+
 
 class AssistantRetrievalService:
     def __init__(self, session: AsyncSession) -> None:
@@ -35,6 +38,7 @@ class AssistantRetrievalService:
         except (TypeError, ValueError):
             normalized_limit = 0
 
+        normalized_limit = min(normalized_limit, MAX_LIMIT)
         if normalized_limit <= 0:
             return []
 
@@ -49,7 +53,10 @@ class AssistantRetrievalService:
                 return []
 
             client = get_qdrant_client()
-            query_limit = min(max(normalized_limit * 3, normalized_limit), 50)
+            query_limit = min(
+                max(normalized_limit * OVERSAMPLE_MULTIPLIER, normalized_limit),
+                MAX_LIMIT,
+            )
             hits = await search_points(
                 client,
                 collection_name=ASSISTANT_COLLECTION_NAME,
