@@ -1,3 +1,6 @@
+export type AssistantVisibility = "private" | "public" | "unlisted"
+export type AssistantStatus = "draft" | "published" | "archived"
+
 export type AssistantCardData = {
   id: string
   name: string
