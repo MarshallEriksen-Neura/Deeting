@@ -300,9 +300,7 @@ class ConversationAppendStep(BaseStep):
             if used_persona_id and msg.get("role") == "assistant":
                 normalized["used_persona_id"] = used_persona_id
             db_messages.append(normalized)
-            redis_message = {**normalized, "content": content_for_tokens}
-            redis_message.pop("used_persona_id", None)
-            redis_messages.append(redis_message)
+            redis_messages.append({**normalized, "content": content_for_tokens})
 
         return db_messages, redis_messages
 
