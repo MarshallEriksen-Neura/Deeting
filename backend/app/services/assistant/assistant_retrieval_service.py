@@ -7,7 +7,11 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
+from app.models.assistant import AssistantStatus, AssistantVisibility
+from app.models.review import ReviewStatus
 from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
+from app.repositories.review_repository import ReviewTaskRepository
+from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import search_points
 from app.tasks.assistant import ASSISTANT_COLLECTION_NAME
@@ -20,12 +24,18 @@ class AssistantRetrievalService:
         self.session = session
         self.assistant_repo = AssistantRepository(session)
         self.version_repo = AssistantVersionRepository(session)
+        self.review_repo = ReviewTaskRepository(session)
 
     async def search_candidates(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
         if not qdrant_is_configured():
             return []
 
-        if int(limit or 0) <= 0:
+        try:
+            normalized_limit = int(limit or 0)
+        except (TypeError, ValueError):
+            normalized_limit = 0
+
+        if normalized_limit <= 0:
             return []
 
         query_text = str(query or "").strip()
@@ -43,7 +53,7 @@ class AssistantRetrievalService:
                 client,
                 collection_name=ASSISTANT_COLLECTION_NAME,
                 vector=vector,
-                limit=limit,
+                limit=normalized_limit,
                 with_payload=True,
             )
         except Exception as exc:  # pragma: no cover - fail-open
@@ -59,7 +69,7 @@ class AssistantRetrievalService:
             if not candidate:
                 continue
             candidates.append(candidate)
-            if len(candidates) >= max(1, int(limit or 0)):
+            if len(candidates) >= normalized_limit:
                 break
 
         return candidates
@@ -75,6 +85,23 @@ class AssistantRetrievalService:
         assistant = await self.assistant_repo.get(assistant_uuid)
         if not assistant or not assistant.current_version_id:
             return None
+
+        visibility = (
+            assistant.visibility.value
+            if isinstance(assistant.visibility, AssistantVisibility)
+            else assistant.visibility
+        )
+        status = (
+            assistant.status.value if isinstance(assistant.status, AssistantStatus) else assistant.status
+        )
+        if visibility != AssistantVisibility.PUBLIC.value or status != AssistantStatus.PUBLISHED.value:
+            return None
+
+        if assistant.owner_user_id is not None:
+            # Align with assistant market visibility rule: require approved review for user-owned assistants.
+            review = await self.review_repo.get_by_entity(ASSISTANT_MARKET_ENTITY, assistant.id)
+            if not review or review.status != ReviewStatus.APPROVED.value:
+                return None
 
         version = await self.version_repo.get_for_assistant(assistant_uuid, assistant.current_version_id)
         if not version:
