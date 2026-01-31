@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.utils.time_utils import Datetime
 from app.models.conversation import ConversationChannel, ConversationSession, ConversationStatus
 from app.repositories.conversation_session_repository import ConversationSessionRepository
+from app.repositories.assistant_repository import AssistantRepository
 from app.schemas.conversation import ConversationSessionItem
 
 
@@ -140,6 +141,37 @@ class ConversationSessionService:
         if session_obj.title == new_title:
             return session_obj
         return await self.session_repo.update(session_obj, {"title": new_title})
+
+    async def update_session_assistant(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID,
+        assistant_id: UUID | None,
+    ) -> ConversationSession:
+        session_obj = await self.session_repo.get_by_user(
+            session_id=session_id,
+            user_id=user_id,
+            channel=ConversationChannel.INTERNAL,
+        )
+        if not session_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="conversation not found",
+            )
+        if assistant_id:
+            assistant_repo = AssistantRepository(self.session_repo.session)
+            assistant = await assistant_repo.get(assistant_id)
+            if not assistant:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="assistant not found",
+                )
+        if session_obj.assistant_id == assistant_id:
+            return session_obj
+        return await self.session_repo.update(
+            session_obj, {"assistant_id": assistant_id}
+        )
 
     async def reserve_turn_indexes(
         self,

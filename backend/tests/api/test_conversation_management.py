@@ -71,10 +71,17 @@ class _DummyConversationHistoryService:
 
 
 class _DummyConversationSession:
-    def __init__(self, session_id: str, status: str, title: str | None = None):
+    def __init__(
+        self,
+        session_id: str,
+        status: str,
+        title: str | None = None,
+        assistant_id: str | None = None,
+    ):
         self.id = session_id
         self.status = status
         self.title = title
+        self.assistant_id = assistant_id
 
 
 class _DummyConversationSessionService:
@@ -83,6 +90,7 @@ class _DummyConversationSessionService:
         self.updated = None
         self.title_updated = None
         self.created = None
+        self.assistant_updated = None
 
     async def list_user_sessions(self, *args, **kwargs):
         self.called_with = kwargs
@@ -122,6 +130,19 @@ class _DummyConversationSessionService:
             session_id=session_id,
             status="active",
             title=normalized,
+        )
+
+    async def update_session_assistant(self, *, session_id, user_id, assistant_id):
+        self.assistant_updated = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "assistant_id": assistant_id,
+        }
+        return _DummyConversationSession(
+            session_id=session_id,
+            status="active",
+            title=None,
+            assistant_id=str(assistant_id) if assistant_id else None,
         )
 
     async def create_session(self, *, user_id, tenant_id, assistant_id, title):
@@ -292,6 +313,29 @@ async def test_rename_conversation(monkeypatch):
             data = resp.json()
             assert data["title"] == "新标题"
             assert service.title_updated["title"] == "新标题"
+    finally:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_update_conversation_assistant(monkeypatch):
+    service = _DummyConversationSessionService()
+    app.dependency_overrides[
+        conversation_route.get_conversation_session_service
+    ] = lambda: service
+    session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+    assistant_id = "e3189116-959f-48f4-8d49-f7300eb527dd"
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.patch(
+                f"/api/v1/internal/conversations/{session_id}/assistant",
+                json={"assistant_id": assistant_id},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["session_id"] == session_id
+            assert data["assistant_id"] == assistant_id
+            assert service.assistant_updated["assistant_id"] == UUID(assistant_id)
     finally:
         pass
 

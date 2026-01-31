@@ -28,6 +28,8 @@ from app.schemas.conversation import (
     ConversationSessionItem,
     ConversationSessionRenameRequest,
     ConversationSessionRenameResponse,
+    ConversationSessionAssistantUpdateRequest,
+    ConversationSessionAssistantUpdateResponse,
 )
 from app.models.conversation import ConversationStatus
 from app.services.conversation.session_service import ConversationSessionService
@@ -209,6 +211,28 @@ async def rename_conversation(
     return ConversationSessionRenameResponse(
         session_id=session_obj.id,
         title=session_obj.title,
+    )
+
+
+@router.patch(
+    "/conversations/{session_id}/assistant",
+    response_model=ConversationSessionAssistantUpdateResponse,
+)
+async def update_conversation_assistant(
+    session_id: str,
+    payload: ConversationSessionAssistantUpdateRequest,
+    user: User = Depends(get_current_user),
+    service: ConversationSessionService = Depends(get_conversation_session_service),
+) -> ConversationSessionAssistantUpdateResponse:
+    session_uuid = UUID(session_id)
+    session_obj = await service.update_session_assistant(
+        session_id=session_uuid,
+        user_id=user.id,
+        assistant_id=payload.assistant_id,
+    )
+    return ConversationSessionAssistantUpdateResponse(
+        session_id=session_obj.id,
+        assistant_id=session_obj.assistant_id,
     )
 
 

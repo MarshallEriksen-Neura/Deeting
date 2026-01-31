@@ -36,3 +36,15 @@ class ConversationSessionCreateRequest(BaseSchema):
 class ConversationSessionCreateResponse(BaseSchema):
     session_id: UUID
     title: str | None = None
+
+
+class ConversationSessionAssistantUpdateRequest(BaseSchema):
+    assistant_id: UUID | None = Field(
+        default=None,
+        description="助手 ID（可为空，清除会话锁定）",
+    )
+
+
+class ConversationSessionAssistantUpdateResponse(BaseSchema):
+    session_id: UUID
+    assistant_id: UUID | None = None

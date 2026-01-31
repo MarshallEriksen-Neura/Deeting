@@ -495,6 +495,39 @@ Authorization: Bearer <access_token>
 
 ---
 
+### 7. Conversation Assistant Lock
+
+显式切换/解除会话的助手锁定（内部通道）。
+
+**端点**: `PATCH /conversations/{session_id}/assistant`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 请求体
+
+```json
+{
+  "assistant_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+}
+```
+
+> 传 `null` 可解除锁定，恢复 JIT 自动路由。
+
+#### 响应体
+
+```json
+{
+  "session_id": "session-xyz",
+  "assistant_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+}
+```
+
+---
+
 ### 2. Embeddings
 
 创建文本嵌入向量。
