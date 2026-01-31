@@ -14,7 +14,7 @@ class CrawlerService:
     """
     
     async def inspect_url(self, url: str, js_mode: bool = True) -> Dict[str, Any]:
-        # 1. Compliance Firewall Check
+        # 1. [Pre-Flight] Compliance Firewall Check
         if not await compliance_manager.is_safe_to_crawl(url):
             logger.error(f"⚠️  Mission Aborted: Target {url} violated safety/compliance rules.")
             return {
@@ -32,7 +32,6 @@ class CrawlerService:
         await asyncio.sleep(delay)
 
         # 3. Execution (Stealth Mode)
-        # Use a fresh context for each request to avoid state pollution
         try:
             async with AsyncWebCrawler(verbose=True) as crawler:
                 logger.info(f"Starting browser session for {url}...")
@@ -50,6 +49,16 @@ class CrawlerService:
                         "url": url
                     }
                 
+                # 4. [Post-Flight] Content Safety Check
+                # Before we return the loot, we check if it's "radioactive"
+                if not compliance_manager.is_content_safe(result.markdown):
+                    logger.error(f"☢️  Content Rejected: Sensitive content detected in {url}")
+                    return {
+                        "status": "failed",
+                        "error": "Security/Compliance Violation: Sensitive content detected.",
+                        "url": url
+                    }
+
                 logger.info(f"Mission success. Extracted {len(result.markdown)} chars.")
                 
                 return {
@@ -62,7 +71,7 @@ class CrawlerService:
                 }
         except Exception as e:
             logger.error(f"Critical crawler error: {e}")
-            traceback.print_exc() # Print full stack trace to console
+            traceback.print_exc()
             return {
                 "status": "failed",
                 "error": f"Internal Error: {str(e)}",
