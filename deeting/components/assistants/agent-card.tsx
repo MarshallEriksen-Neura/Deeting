@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { getIconComponent } from "@/lib/constants/provider-icons"
 import { AgentModalContent } from "./agent-modal-content"
+import { getAssistantStatusLabel } from "./assistant-status"
 import type { AssistantCardData } from "./types"
 
 interface AgentCardProps {
@@ -37,6 +38,10 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProp
   const [isInstalling, setIsInstalling] = React.useState(false)
   const [followLatest, setFollowLatest] = React.useState(true)
   const [openPopover, setOpenPopover] = React.useState(false)
+  const statusKey =
+    agent.isOwned && agent.visibility && agent.status
+      ? getAssistantStatusLabel(agent.visibility, agent.status)
+      : null
   
   const Icon = getIconComponent(agent.iconId || "lucide:bot")
   const isImageIcon = Boolean(
@@ -87,6 +92,11 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProp
                 <p className="text-xs text-muted-foreground">
                   {t("card.by", { author: agent.author || t("author.community") })}
                 </p>
+                {statusKey ? (
+                  <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                    {t(`status.${statusKey}`)}
+                  </Badge>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 {agent.isOwned && onEdit ? (

@@ -713,6 +713,11 @@ function AssistantShareField({ form, t }: AssistantFieldProps) {
             <div className="space-y-1">
               <FormLabel>{t("create.shareLabel")}</FormLabel>
               <FormDescription>{t("create.shareHelp")}</FormDescription>
+              {field.value ? (
+                <FormDescription className="text-xs text-muted-foreground">
+                  {t("create.shareHint")}
+                </FormDescription>
+              ) : null}
             </div>
             <FormControl>
               <Switch checked={field.value} onCheckedChange={field.onChange} />
