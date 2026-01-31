@@ -46,6 +46,8 @@ Deeting OS 正在向全自动化 AI 操作系统演进，废弃传统的“手�
 
 **Tool Definition**: `consult_expert_network(intent_query)`
 
+> 注：运行时检索为性能与成本设置了 Top-K 上限（当前为 50），后续可按策略调整。
+
 **Execution Flow**:
 1.  **Search**: `intent_query` -> Vector -> Qdrant Top-K IDs。
 2.  **Hydrate**: 后端拿着 IDs 去 Postgres 获取最新版本的 `system_prompt` 和 **关联工具集 (Tool Definitions)**。
