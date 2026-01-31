@@ -19,6 +19,7 @@ from app.tasks.assistant import ASSISTANT_COLLECTION_NAME
 logger = logging.getLogger(__name__)
 
 OVERSAMPLE_MULTIPLIER = 3
+# NOTE: Hard cap to control Qdrant query cost; adjust when retrieval strategy changes.
 MAX_LIMIT = 50
 
 
