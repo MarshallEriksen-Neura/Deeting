@@ -26,6 +26,15 @@
       "adding": "Installing...",
       "preview": "Preview"
     },
+    "status": {
+      "draft": "Draft",
+      "published": "Published",
+      "archived": "Archived"
+    },
+    "actions": {
+      "create": "Create",
+      "edit": "Edit"
+    },
     "toast": {
       "installedTitle": "{name} is ready",
       "installedDesc": "This assistant has been added to your sidebar",
@@ -90,6 +99,7 @@
       "systemPromptHelp": "This defines how your assistant behaves and answers.",
       "shareLabel": "Share to market",
       "shareHelp": "Submit for review. If approved, it will appear in the marketplace.",
+      "shareHint": "Changes will be reviewed before appearing in the marketplace.",
       "submit": "Create & Install",
       "submitting": "Creating...",
       "submitCloud": "Create Assistant",

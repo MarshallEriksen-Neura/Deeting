@@ -26,6 +26,15 @@
       "adding": "安装中...",
       "preview": "试用"
     },
+    "status": {
+      "draft": "草稿",
+      "published": "已发布",
+      "archived": "已归档"
+    },
+    "actions": {
+      "create": "创建",
+      "edit": "编辑"
+    },
     "toast": {
       "installedTitle": "{name} 已就绪",
       "installedDesc": "该助手已添加到您的侧边栏",
@@ -90,6 +99,7 @@
       "systemPromptHelp": "定义助手的行为和回答方式。",
       "shareLabel": "是否分享到市场",
       "shareHelp": "开启后将提交审核，通过后可在市场展示。",
+      "shareHint": "更新后需要重新审核，通过后才能在市场展示。",
       "submit": "创建并安装",
       "submitting": "创建中...",
       "submitCloud": "创建助手",
