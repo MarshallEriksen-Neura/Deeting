@@ -49,11 +49,12 @@ class AssistantRetrievalService:
                 return []
 
             client = get_qdrant_client()
+            query_limit = min(max(normalized_limit * 3, normalized_limit), 50)
             hits = await search_points(
                 client,
                 collection_name=ASSISTANT_COLLECTION_NAME,
                 vector=vector,
-                limit=normalized_limit,
+                limit=query_limit,
                 with_payload=True,
             )
         except Exception as exc:  # pragma: no cover - fail-open
