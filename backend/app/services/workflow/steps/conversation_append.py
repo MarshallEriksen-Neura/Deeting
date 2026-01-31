@@ -72,6 +72,21 @@ class ConversationAppendStep(BaseStep):
 
         used_persona_id = self._resolve_used_persona_id(ctx)
 
+        if used_persona_id and ctx.db_session is not None:
+            try:
+                from app.services.assistant.assistant_routing_service import (
+                    AssistantRoutingService,
+                )
+
+                routing_service = AssistantRoutingService(ctx.db_session)
+                await routing_service.record_trial(uuid.UUID(str(used_persona_id)))
+            except Exception as exc:
+                logger.warning(
+                    "assistant_routing_trial_failed session=%s exc=%s",
+                    session_id,
+                    exc,
+                )
+
         channel = (
             ConversationChannel.EXTERNAL
             if ctx.is_external

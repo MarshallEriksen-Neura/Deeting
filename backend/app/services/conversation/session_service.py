@@ -115,6 +115,24 @@ class ConversationSessionService:
             return session_obj
         return await self.session_repo.update(session_obj, {"status": status})
 
+    async def get_user_session(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID,
+    ) -> ConversationSession:
+        session_obj = await self.session_repo.get_by_user(
+            session_id=session_id,
+            user_id=user_id,
+            channel=ConversationChannel.INTERNAL,
+        )
+        if not session_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="conversation not found",
+            )
+        return session_obj
+
     async def update_session_title(
         self,
         *,

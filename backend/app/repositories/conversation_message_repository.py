@@ -119,3 +119,17 @@ class ConversationMessageRepository(BaseRepository[ConversationMessage]):
         stmt = stmt.limit(int(limit))
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_by_turn_index(
+        self,
+        *,
+        session_id: uuid.UUID,
+        turn_index: int,
+    ) -> ConversationMessage | None:
+        result = await self.session.execute(
+            select(ConversationMessage).where(
+                ConversationMessage.session_id == session_id,
+                ConversationMessage.turn_index == int(turn_index),
+            )
+        )
+        return result.scalars().first()

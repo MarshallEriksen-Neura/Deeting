@@ -15,6 +15,7 @@ from .assistant_install_repository import AssistantInstallRepository
 from .assistant_market_repository import AssistantMarketRepository
 from .assistant_tag_repository import AssistantTagLinkRepository, AssistantTagRepository
 from .assistant_rating_repository import AssistantRatingRepository
+from .assistant_routing_repository import AssistantRoutingRepository
 from .secretary_repository import UserSecretaryRepository
 from .system_setting_repository import SystemSettingRepository
 from .notification_repository import NotificationReceiptRepository, NotificationRepository
@@ -36,6 +37,7 @@ __all__ = [
     "AssistantTagRepository",
     "AssistantTagLinkRepository",
     "AssistantRatingRepository",
+    "AssistantRoutingRepository",
     "UserSecretaryRepository",
     "SystemSettingRepository",
     "AuditRepository",

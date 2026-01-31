@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import uuid
 from typing import Any
 
@@ -10,9 +11,11 @@ from sqlalchemy import select
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.models.assistant import AssistantStatus, AssistantVisibility
 from app.models.assistant import Assistant, AssistantVersion
+from app.models.assistant_routing import AssistantRoutingState
 from app.models.review import ReviewStatus, ReviewTask
 from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 from app.repositories.review_repository import ReviewTaskRepository
+from app.repositories.assistant_routing_repository import AssistantRoutingRepository
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import search_points
@@ -31,6 +34,7 @@ class AssistantRetrievalService:
         self.assistant_repo = AssistantRepository(session)
         self.version_repo = AssistantVersionRepository(session)
         self.review_repo = ReviewTaskRepository(session)
+        self.routing_repo = AssistantRoutingRepository(session)
 
     async def search_candidates(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
         if not qdrant_is_configured():
@@ -103,6 +107,7 @@ class AssistantRetrievalService:
             return []
 
         review_status_map = await self._fetch_review_status_map(ordered_ids)
+        routing_state_map = await self.routing_repo.get_states_map(ordered_ids)
 
         candidates: list[dict[str, Any]] = []
         for assistant_id in ordered_ids:
@@ -118,18 +123,25 @@ class AssistantRetrievalService:
                 review_status = review_status_map.get(assistant.id)
                 if review_status != ReviewStatus.APPROVED.value:
                     continue
+            routing_state = routing_state_map.get(assistant.id)
+            final_score = self._compute_final_score(
+                vector_score=score_map.get(assistant.id, 0.0),
+                routing_state=routing_state,
+            )
             candidates.append(
                 {
                     "assistant_id": str(assistant.id),
                     "name": version.name,
                     "summary": assistant.summary,
-                    "score": score_map.get(assistant.id, 0.0),
+                    "score": final_score,
                 }
             )
-            if len(candidates) >= limit:
-                break
 
-        return candidates
+        if not candidates:
+            return []
+
+        candidates.sort(key=lambda c: c.get("score", 0.0), reverse=True)
+        return candidates[:limit]
 
     def _extract_assistant_uuid(self, hit: dict[str, Any]) -> uuid.UUID | None:
         payload = hit.get("payload") or {}
@@ -154,6 +166,35 @@ class AssistantRetrievalService:
             visibility == AssistantVisibility.PUBLIC.value
             and status == AssistantStatus.PUBLISHED.value
         )
+
+    def _compute_final_score(
+        self,
+        *,
+        vector_score: float,
+        routing_state: AssistantRoutingState | None,
+    ) -> float:
+        mab_score = self._compute_mab_score(routing_state)
+        exploration_bonus = self._compute_exploration_bonus(routing_state)
+        return (
+            (vector_score * 0.6)
+            + (mab_score * 0.3)
+            + (exploration_bonus * 0.1)
+        )
+
+    @staticmethod
+    def _compute_mab_score(state: AssistantRoutingState | None) -> float:
+        if not state:
+            return 0.5
+        alpha = 1 + int(state.positive_feedback or 0)
+        beta = 1 + int(state.negative_feedback or 0)
+        return float(random.betavariate(alpha, beta))
+
+    @staticmethod
+    def _compute_exploration_bonus(state: AssistantRoutingState | None) -> float:
+        if not state:
+            return 0.2
+        total_trials = int(state.total_trials or 0)
+        return 0.2 if total_trials < 10 else 0.0
 
     async def _fetch_assistants_with_version(
         self,

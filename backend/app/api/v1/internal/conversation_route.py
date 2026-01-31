@@ -30,11 +30,15 @@ from app.schemas.conversation import (
     ConversationSessionRenameResponse,
     ConversationSessionAssistantUpdateRequest,
     ConversationSessionAssistantUpdateResponse,
+    ConversationFeedbackRequest,
+    ConversationFeedbackResponse,
 )
 from app.models.conversation import ConversationStatus
-from app.services.conversation.session_service import ConversationSessionService
 from app.services.conversation.history_service import ConversationHistoryService
 from app.services.conversation.service import ConversationService
+from app.services.conversation.session_service import ConversationSessionService
+from app.repositories.conversation_message_repository import ConversationMessageRepository
+from app.services.assistant.assistant_routing_service import AssistantRoutingService
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import (
     GatewayOrchestrator,
@@ -184,10 +188,9 @@ async def unarchive_conversation(
     service: ConversationSessionService = Depends(get_conversation_session_service),
 ) -> ArchiveResponse:
     session_uuid = UUID(session_id)
-    session_obj = await service.update_session_status(
+    session_obj = await service.get_user_session(
         session_id=session_uuid,
         user_id=user.id,
-        status=ConversationStatus.ACTIVE,
     )
     return ArchiveResponse(session_id=str(session_obj.id), status=session_obj.status)
 
@@ -233,6 +236,55 @@ async def update_conversation_assistant(
     return ConversationSessionAssistantUpdateResponse(
         session_id=session_obj.id,
         assistant_id=session_obj.assistant_id,
+    )
+
+
+@router.post(
+    "/conversations/{session_id}/feedback",
+    response_model=ConversationFeedbackResponse,
+)
+async def record_conversation_feedback(
+    session_id: str,
+    payload: ConversationFeedbackRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    service: ConversationSessionService = Depends(get_conversation_session_service),
+) -> ConversationFeedbackResponse:
+    session_uuid = UUID(session_id)
+    session_obj = await service.get_user_session(
+        session_id=session_uuid,
+        user_id=user.id,
+    )
+
+    assistant_id = payload.assistant_id
+    if not assistant_id and payload.turn_index:
+        message_repo = ConversationMessageRepository(db)
+        msg = await message_repo.get_by_turn_index(
+            session_id=session_uuid,
+            turn_index=payload.turn_index,
+        )
+        if msg:
+            assistant_id = msg.used_persona_id
+
+    if not assistant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="assistant_id or turn_index is required",
+        )
+
+    routing_service = AssistantRoutingService(db)
+    try:
+        await routing_service.record_feedback(assistant_id, payload.event)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid feedback event",
+        )
+
+    return ConversationFeedbackResponse(
+        session_id=session_obj.id,
+        assistant_id=assistant_id,
+        event=payload.event,
     )
 
 
@@ -357,6 +409,23 @@ async def regenerate_last_reply(
         key=lambda m: m.get("turn_index", 0),
     )
     if assistant_after:
+        if db is not None:
+            try:
+                message_repo = ConversationMessageRepository(db)
+                latest_assistant = await message_repo.list_messages(
+                    session_id=session_uuid,
+                    limit=1,
+                    include_deleted=True,
+                    order_desc=True,
+                )
+                if latest_assistant and latest_assistant[0].used_persona_id:
+                    routing_service = AssistantRoutingService(db)
+                    await routing_service.record_feedback(
+                        latest_assistant[0].used_persona_id,
+                        "regenerate",
+                    )
+            except Exception:
+                pass
         await svc.delete_message(session_id, assistant_after[0].get("turn_index"))
 
     # 构建请求：复用已有窗口，避免重复写入用户消息，messages 留空，由 conversation_load 注入

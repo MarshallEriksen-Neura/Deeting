@@ -528,6 +528,43 @@ Authorization: Bearer <access_token>
 
 ---
 
+### 8. Conversation Feedback
+
+记录会话反馈（内部通道），用于专家排序与探索。
+
+**端点**: `POST /conversations/{session_id}/feedback`
+
+#### 请求头
+
+```http
+Authorization: Bearer <access_token>
+```
+
+#### 请求体
+
+```json
+{
+  "event": "thumbs_up",
+  "assistant_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+  "turn_index": 12
+}
+```
+
+> `assistant_id` 与 `turn_index` 至少传一个；若同时提供，优先使用 `assistant_id`。  
+> `event` 支持：`thumbs_up` / `thumbs_down` / `regenerate`。
+
+#### 响应体
+
+```json
+{
+  "session_id": "session-xyz",
+  "assistant_id": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+  "event": "thumbs_up"
+}
+```
+
+---
+
 ### 2. Embeddings
 
 创建文本嵌入向量。

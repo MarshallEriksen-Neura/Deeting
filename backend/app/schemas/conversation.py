@@ -48,3 +48,22 @@ class ConversationSessionAssistantUpdateRequest(BaseSchema):
 class ConversationSessionAssistantUpdateResponse(BaseSchema):
     session_id: UUID
     assistant_id: UUID | None = None
+
+
+class ConversationFeedbackRequest(BaseSchema):
+    event: str = Field(..., description="反馈事件：thumbs_up/thumbs_down/regenerate")
+    assistant_id: UUID | None = Field(
+        default=None,
+        description="可选：直接指定 assistant_id",
+    )
+    turn_index: int | None = Field(
+        default=None,
+        ge=1,
+        description="可选：通过 turn_index 解析 used_persona_id",
+    )
+
+
+class ConversationFeedbackResponse(BaseSchema):
+    session_id: UUID
+    assistant_id: UUID | None = None
+    event: str

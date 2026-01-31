@@ -91,6 +91,7 @@ class _DummyConversationSessionService:
         self.title_updated = None
         self.created = None
         self.assistant_updated = None
+        self.fetched = None
 
     async def list_user_sessions(self, *args, **kwargs):
         self.called_with = kwargs
@@ -113,6 +114,10 @@ class _DummyConversationSessionService:
     async def update_session_status(self, *, session_id, user_id, status):
         self.updated = {"session_id": session_id, "user_id": user_id, "status": status}
         return _DummyConversationSession(session_id=session_id, status=status)
+
+    async def get_user_session(self, *, session_id, user_id):
+        self.fetched = {"session_id": session_id, "user_id": user_id}
+        return _DummyConversationSession(session_id=session_id, status="active")
 
     async def update_session_title(self, *, session_id, user_id, title):
         normalized = title.strip()
@@ -336,6 +341,44 @@ async def test_update_conversation_assistant(monkeypatch):
             assert data["session_id"] == session_id
             assert data["assistant_id"] == assistant_id
             assert service.assistant_updated["assistant_id"] == UUID(assistant_id)
+    finally:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_record_conversation_feedback(monkeypatch):
+    service = _DummyConversationSessionService()
+    app.dependency_overrides[
+        conversation_route.get_conversation_session_service
+    ] = lambda: service
+
+    class _DummyRoutingService:
+        def __init__(self, *_args, **_kwargs):
+            self.called = None
+
+        async def record_feedback(self, assistant_id, event):
+            self.called = {"assistant_id": assistant_id, "event": event}
+
+    dummy_routing = _DummyRoutingService()
+    monkeypatch.setattr(
+        conversation_route,
+        "AssistantRoutingService",
+        lambda *_args, **_kwargs: dummy_routing,
+    )
+
+    session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+    assistant_id = "e3189116-959f-48f4-8d49-f7300eb527dd"
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/internal/conversations/{session_id}/feedback",
+                json={"assistant_id": assistant_id, "event": "thumbs_up"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["assistant_id"] == assistant_id
+            assert dummy_routing.called["assistant_id"] == UUID(assistant_id)
+            assert dummy_routing.called["event"] == "thumbs_up"
     finally:
         pass
 
