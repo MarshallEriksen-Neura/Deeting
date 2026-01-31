@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, Star, Plus, Play, Sparkles } from "lucide-react"
+import { Download, Star, Plus, Play, Sparkles, Pencil } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ interface AgentCardProps {
   agent: AssistantCardData
   onInstall?: (assistantId: string, options?: { followLatest?: boolean }) => Promise<void>
   onPreview?: (assistantId: string, message: string) => Promise<string>
+  onEdit?: (assistantId: string) => void
 }
 
 const formatCount = (count: number) => {
@@ -30,7 +31,7 @@ const formatCount = (count: number) => {
   return `${count}`
 }
 
-export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
+export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProps) {
   const t = useTranslations("assistants")
   const isInstalled = agent.installed
   const [isInstalling, setIsInstalling] = React.useState(false)
@@ -87,12 +88,27 @@ export function AgentCard({ agent, onInstall, onPreview }: AgentCardProps) {
                   {t("card.by", { author: agent.author || t("author.community") })}
                 </p>
               </div>
-              {/* 这里的 DialogTrigger 触发详情预览 */}
-              <DialogTrigger asChild>
-                 <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary transition-colors">
-                    <Play size={16} /> {/* 试用图标 */}
-                 </Button>
-              </DialogTrigger>
+              <div className="flex items-center gap-2">
+                {agent.isOwned && onEdit ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-primary transition-colors"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onEdit(agent.id)
+                    }}
+                  >
+                    <Pencil size={16} />
+                  </Button>
+                ) : null}
+                {/* 这里的 DialogTrigger 触发详情预览 */}
+                <DialogTrigger asChild>
+                   <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary transition-colors">
+                      <Play size={16} /> {/* 试用图标 */}
+                   </Button>
+                </DialogTrigger>
+              </div>
            </div>
         </CardHeader>
 

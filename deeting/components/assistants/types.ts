@@ -9,9 +9,12 @@ export type AssistantCardData = {
   installCount: number
   ratingAvg: number
   installed: boolean
+  isOwned?: boolean
   iconId?: string | null
   ownerUserId?: string | null
   summary?: string | null
   author?: string
   color: string
+  visibility?: AssistantVisibility
+  status?: AssistantStatus
 }

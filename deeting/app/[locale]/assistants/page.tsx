@@ -6,7 +6,9 @@ import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
 import { AgentCard } from "@/components/assistants/agent-card"
+import { CreateAgentModal } from "@/components/assistants/create-agent-modal"
 import { InfiniteList } from "@/components/ui/infinite-list"
 import { installAssistant } from "@/lib/api"
 import { useAssistantMarket } from "@/lib/swr/use-assistant-market"
@@ -38,6 +40,17 @@ const normalizeTags = (tags: string[] = []) =>
     .map((tag) => tag.replace(/^#/, "").trim())
     .filter(Boolean)
 
+type EditableAssistant = {
+  id: string
+  name: string
+  desc: string
+  systemPrompt: string
+  tags: string[]
+  iconId: string
+  color: string
+  visibility?: string
+}
+
 const matchesQuery = (agent: AssistantCardData, query: string) => {
   if (!query) return true
   const q = query.toLowerCase()
@@ -67,12 +80,55 @@ export default function AssistantsPage() {
     size: PAGE_SIZE,
   })
 
-  const { items: ownedItems, isLoading: ownedLoading } = useAssistantOwned(20)
+  const {
+    items: ownedItems,
+    isLoading: ownedLoading,
+    mutate: mutateOwned,
+  } = useAssistantOwned(20)
   const { tags: marketTags } = useAssistantTags()
 
   React.useEffect(() => {
     reset()
   }, [searchQuery, selectedTags, reset])
+
+  const [modalOpen, setModalOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<EditableAssistant | undefined>(undefined)
+
+  const ownedEditableMap = React.useMemo(() => {
+    const map: Record<string, EditableAssistant> = {}
+    ownedItems.forEach((assistant) => {
+      const current =
+        assistant.versions.find((v) => v.id === assistant.current_version_id) ||
+        assistant.versions[0]
+      if (!current) return
+      map[assistant.id] = {
+        id: assistant.id,
+        name: current.name,
+        desc: assistant.summary || current.description || "",
+        systemPrompt: current.system_prompt || "",
+        tags: normalizeTags(current.tags || []),
+        iconId: assistant.icon_id || "lucide:bot",
+        color: pickColor(assistant.id),
+        visibility: assistant.visibility,
+      }
+    })
+    return map
+  }, [ownedItems])
+
+  const handleCreate = React.useCallback(() => {
+    setEditing(undefined)
+    setModalOpen(true)
+  }, [])
+
+  const handleEdit = React.useCallback(
+    (assistantId: string) => {
+      const target = ownedEditableMap[assistantId]
+      if (!target) return
+      setEditing(target)
+      setModalOpen(true)
+    },
+    [ownedEditableMap]
+  )
 
   const ownedCards = React.useMemo<AssistantCardData[]>(() => {
     return ownedItems
@@ -89,11 +145,14 @@ export default function AssistantsPage() {
           installCount: assistant.install_count || 0,
           ratingAvg: assistant.rating_avg || 0,
           installed: true,
+          isOwned: true,
           iconId: assistant.icon_id,
           ownerUserId: assistant.owner_user_id,
           summary: assistant.summary,
           author: assistant.owner_user_id ? t("author.me") : t("author.system"),
           color: pickColor(assistant.id),
+          visibility: assistant.visibility,
+          status: assistant.status,
         }
       })
       .filter(Boolean) as AssistantCardData[]
@@ -152,6 +211,20 @@ export default function AssistantsPage() {
 
   return (
     <div className="min-h-screen bg-muted/20 p-8 space-y-8 animate-in fade-in duration-700">
+      <CreateAgentModal
+        mode="cloud"
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        assistant={editing}
+        onCreated={() => {
+          mutateOwned()
+          mutateMarket()
+        }}
+        onUpdated={() => {
+          mutateOwned()
+          mutateMarket()
+        }}
+      />
       
       {/* 1. 顶部搜索区 */}
       <div className="text-center space-y-4 max-w-2xl mx-auto py-10 relative">
@@ -167,7 +240,14 @@ export default function AssistantsPage() {
           {t("page.hero.subtitle")}
         </p>
 
-        {/* Create Button moved to Chat */}
+        <div className="flex justify-center pt-2">
+          <Button
+            onClick={handleCreate}
+            className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg border-0"
+          >
+            {t("create.trigger")}
+          </Button>
+        </div>
 
         <div className="relative group max-w-lg mx-auto mt-8">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
@@ -233,7 +313,12 @@ export default function AssistantsPage() {
             ))
           ) : (
             mergedAgents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} onInstall={handleInstall} />
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                onInstall={handleInstall}
+                onEdit={handleEdit}
+              />
             ))
           )}
         </div>
