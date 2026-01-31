@@ -77,8 +77,6 @@ class ExpertNetworkPlugin(AgentPlugin):
                 ctx.set("assistant", "id", str(top.get("assistant_id") or ""))
                 ctx.set("assistant", "name", top.get("name"))
                 ctx.set("assistant", "summary", top.get("summary"))
-                if "system_prompt" in top:
-                    ctx.set("assistant", "system_prompt", top.get("system_prompt"))
 
         return [
             {

@@ -26,6 +26,9 @@ async def async_session() -> AsyncSession:
 @pytest.mark.asyncio
 async def test_retrieval_skips_when_qdrant_disabled(mocker, async_session):
     service = AssistantRetrievalService(async_session)
-    mocker.patch("app.qdrant_client.qdrant_is_configured", return_value=False)
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=False,
+    )
     result = await service.search_candidates("query", limit=3)
     assert result == []

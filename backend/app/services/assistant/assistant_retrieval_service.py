@@ -83,5 +83,4 @@ class AssistantRetrievalService:
             "name": version.name,
             "summary": assistant.summary,
             "score": float(score) if score is not None else 0.0,
-            "system_prompt": version.system_prompt,
         }
