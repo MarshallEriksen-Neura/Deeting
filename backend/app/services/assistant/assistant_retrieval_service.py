@@ -5,10 +5,12 @@ import uuid
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.models.assistant import AssistantStatus, AssistantVisibility
-from app.models.review import ReviewStatus
+from app.models.assistant import Assistant, AssistantVersion
+from app.models.review import ReviewStatus, ReviewTask
 from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 from app.repositories.review_repository import ReviewTaskRepository
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
@@ -72,16 +74,115 @@ class AssistantRetrievalService:
         if not hits:
             return []
 
-        candidates: list[dict[str, Any]] = []
+        return await self._build_candidates_from_hits(hits, normalized_limit)
+
+    async def _build_candidates_from_hits(
+        self,
+        hits: list[dict[str, Any]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        ordered_ids: list[uuid.UUID] = []
+        score_map: dict[uuid.UUID, float] = {}
         for hit in hits:
-            candidate = await self._hit_to_candidate(hit)
-            if not candidate:
+            assistant_uuid = self._extract_assistant_uuid(hit)
+            if not assistant_uuid:
                 continue
-            candidates.append(candidate)
-            if len(candidates) >= normalized_limit:
+            if assistant_uuid not in score_map:
+                ordered_ids.append(assistant_uuid)
+            score = hit.get("score")
+            if score is not None and score > score_map.get(assistant_uuid, float("-inf")):
+                score_map[assistant_uuid] = float(score)
+            if len(ordered_ids) >= limit:
+                break
+
+        if not ordered_ids:
+            return []
+
+        assistants = await self._fetch_assistants_with_version(ordered_ids)
+        if not assistants:
+            return []
+
+        review_status_map = await self._fetch_review_status_map(ordered_ids)
+
+        candidates: list[dict[str, Any]] = []
+        for assistant_id in ordered_ids:
+            row = assistants.get(assistant_id)
+            if not row:
+                continue
+            assistant, version = row
+            if not version:
+                continue
+            if not self._is_public_published(assistant):
+                continue
+            if assistant.owner_user_id is not None:
+                review_status = review_status_map.get(assistant.id)
+                if review_status != ReviewStatus.APPROVED.value:
+                    continue
+            candidates.append(
+                {
+                    "assistant_id": str(assistant.id),
+                    "name": version.name,
+                    "summary": assistant.summary,
+                    "score": score_map.get(assistant.id, 0.0),
+                }
+            )
+            if len(candidates) >= limit:
                 break
 
         return candidates
+
+    def _extract_assistant_uuid(self, hit: dict[str, Any]) -> uuid.UUID | None:
+        payload = hit.get("payload") or {}
+        assistant_id = payload.get("assistant_id") or payload.get("uuid") or hit.get("id")
+        try:
+            return uuid.UUID(str(assistant_id))
+        except Exception:
+            return None
+
+    def _is_public_published(self, assistant: Assistant) -> bool:
+        visibility = (
+            assistant.visibility.value
+            if isinstance(assistant.visibility, AssistantVisibility)
+            else assistant.visibility
+        )
+        status = (
+            assistant.status.value
+            if isinstance(assistant.status, AssistantStatus)
+            else assistant.status
+        )
+        return (
+            visibility == AssistantVisibility.PUBLIC.value
+            and status == AssistantStatus.PUBLISHED.value
+        )
+
+    async def _fetch_assistants_with_version(
+        self,
+        assistant_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, tuple[Assistant, AssistantVersion | None]]:
+        if not assistant_ids:
+            return {}
+        stmt = (
+            select(Assistant, AssistantVersion)
+            .join(AssistantVersion, Assistant.current_version_id == AssistantVersion.id, isouter=True)
+            .where(Assistant.id.in_(assistant_ids))
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        return {row[0].id: (row[0], row[1]) for row in rows}
+
+    async def _fetch_review_status_map(
+        self,
+        assistant_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, str]:
+        if not assistant_ids:
+            return {}
+        stmt = select(ReviewTask.entity_id, ReviewTask.status).where(
+            ReviewTask.entity_type == ASSISTANT_MARKET_ENTITY,
+            ReviewTask.entity_id.in_(assistant_ids),
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        return {row[0]: row[1] for row in rows}
 
     async def _hit_to_candidate(self, hit: dict[str, Any]) -> dict[str, Any] | None:
         payload = hit.get("payload") or {}

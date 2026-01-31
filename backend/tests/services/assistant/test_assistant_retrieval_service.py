@@ -176,8 +176,10 @@ async def test_retrieval_caps_limit(mocker, async_session):
     )
     mocker.patch.object(
         service,
-        "_hit_to_candidate",
-        new=mocker.AsyncMock(return_value={"assistant_id": str(uuid.uuid4())}),
+        "_build_candidates_from_hits",
+        new=mocker.AsyncMock(
+            return_value=[{"assistant_id": str(uuid.uuid4())}] * MAX_LIMIT
+        ),
     )
 
     result = await service.search_candidates("query", limit=MAX_LIMIT + 10)
