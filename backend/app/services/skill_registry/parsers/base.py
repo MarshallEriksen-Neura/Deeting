@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.services.skill_registry.evidence_pack import EvidencePack
 
 @dataclass
 class RepoContext:
@@ -11,15 +12,6 @@ class RepoContext:
     revision: str
     root_path: Path
     file_index: list[str] = field(default_factory=list)
-
-
-@dataclass
-class EvidencePack:
-    readme: str | None = None
-    dependencies: list[str] = field(default_factory=list)
-    entrypoints: list[str] = field(default_factory=list)
-    snippets: list[str] = field(default_factory=list)
-    metadata: dict[str, str] = field(default_factory=dict)
 
 
 class RepoParserPlugin(ABC):

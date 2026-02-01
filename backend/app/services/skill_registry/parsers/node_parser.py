@@ -13,7 +13,11 @@ class NodeRepoParser(RepoParserPlugin):
     def collect_evidence(self, repo_context: RepoContext) -> EvidencePack:
         readme = _read_readme(repo_context.root_path)
         dependencies = _read_dependencies(repo_context.root_path)
-        return EvidencePack(readme=readme, dependencies=dependencies)
+        return EvidencePack(
+            files=repo_context.file_index,
+            readme=readme,
+            dependencies=dependencies,
+        )
 
     def extract_manifest(self, evidence: EvidencePack) -> dict:
         return {
