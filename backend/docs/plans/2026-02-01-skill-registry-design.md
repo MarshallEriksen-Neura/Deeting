@@ -287,3 +287,46 @@ EvidencePack(readme, deps, entrypoints, snippets, metadata)
 - `GET /api/v1/admin/skills/{skill_id}`：详情  
 - `PATCH /api/v1/admin/skills/{skill_id}`：更新状态/名称  
 > 权限：复用 `assistant.manage`
+
+## 15. RepoIngestionService 真解析（Phase B）
+本阶段目标：在 **不接入 OpenSandbox** 的前提下，实现“Repo 克隆 → 索引 → 解析 → LLM 生成 Manifest → 落库”的完整闭环。
+
+### 15.1 触发入口（仅 Agent/插件）
+- 复用 `crawler` 插件新增 action（例如 `submit_repo_ingestion`）。  
+- 插件只负责提交 Celery 任务并返回 `task_id`，不做解析逻辑。  
+- 入口参数：`repo_url`、`revision`（默认 `main`）、`runtime_hint`（python/node）、`skill_id`（可选）、`capability_hint`（可选）。
+
+### 15.2 Celery 异步任务
+- 新增 Celery 任务 `skill_registry.repo_ingestion`（默认队列）。  
+- 任务流程：  
+  1) `clone_repo`（`git clone --depth 1`，禁 submodule）  
+  2) `build_file_index`（目录索引）  
+  3) `collect_evidence`（Python/Node Parser）  
+  4) `llm_generate_manifest`（复用 `llm_service`）  
+  5) `persist_manifest`（写 `skill_registry` + 关系表）  
+- 成功/失败均返回结构化结果：`status/skill_id/error_reason`。
+
+### 15.3 临时工作区与安全
+- 解析只在 **临时目录隔离** 内执行。  
+- 目录根路径由配置项 `SKILL_INGESTION_WORKDIR` 控制，默认 `/tmp/deeting/ingestion/`。  
+- 强制只读解析：**不 import、不执行 setup.py**，仅 `read_text`/`ast.parse`。  
+- 任务结束清理目录（成功或失败均清理）。
+
+### 15.4 Python/Node 解析增强
+- **PythonRepoParser**：读取 `pyproject.toml`/`requirements.txt`/`setup.py`，AST 提取类/函数签名与 Docstring 摘要。  
+- **NodeRepoParser**：读取 `package.json`，提取 `bin/exports/scripts` 入口与 README 摘要。  
+- 解析输出统一为 `EvidencePack`（含 `readme/dependencies/entrypoints/snippets/metadata`）。
+
+### 15.5 LLM 生成 Manifest（复用 llm_service）
+- 将 `EvidencePack` 按固定 Prompt 传给 `llm_service`，输出结构化 JSON Manifest。  
+- 输出需满足 Manifest v1 最小字段：  
+  - `description`、`capabilities`  
+  - `io_schema.inputs/outputs`  
+  - `usage_spec.entrypoint/entry_class`  
+  - `usage_spec.example_code`（20-40 行）
+
+### 15.6 落库与状态
+- `manifest_json` 作为单一事实源写入 `skill_registry`。  
+- `capabilities/dependencies/artifacts` 同步拆分到三张关系表。  
+- 失败时标记 `status=needs_review`（或在 `manifest_json["_error"]` 记录原因）。  
+- **不做 OpenSandbox 执行**，仅静态解析与入库。
