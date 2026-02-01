@@ -17,6 +17,25 @@ async def test_create_skill_success(client: AsyncClient, admin_tokens: dict):
 
 
 @pytest.mark.asyncio
+async def test_create_skill_with_manifest_fields(client: AsyncClient, admin_tokens: dict):
+    payload = {
+        "id": "docx",
+        "name": "Docx Skill",
+        "type": "SKILL",
+        "runtime": "python_library",
+        "description": "docx editor",
+        "manifest_json": {"description": "docx editor"},
+    }
+    response = await client.post(
+        "/api/v1/admin/skills",
+        headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},
+        json=payload,
+    )
+    assert response.status_code == 201
+    assert response.json()["manifest_json"]["description"] == "docx editor"
+
+
+@pytest.mark.asyncio
 async def test_get_skill_success(client: AsyncClient, admin_tokens: dict):
     await client.post(
         "/api/v1/admin/skills",
