@@ -16,44 +16,42 @@ SKILL_COLLECTION_NAME = "skill_registry"
 
 
 def _build_embedding_text(skill) -> str:
+    max_manifest_length = 800
     manifest_summary = ""
     manifest = getattr(skill, "manifest_json", None)
     if isinstance(manifest, dict) and manifest:
-        summary_parts: list[str] = []
         capabilities = manifest.get("capabilities")
         if isinstance(capabilities, (list, tuple, set)):
-            capability_items = [str(item).strip() for item in capabilities if item]
+            capability_items = []
+            for item in capabilities:
+                if item is None:
+                    continue
+                text = str(item).strip()
+                if text:
+                    capability_items.append(text)
             if capability_items:
-                summary_parts.append(" ".join(capability_items))
-        elif capabilities:
-            summary_parts.append(str(capabilities).strip())
-        for key, value in manifest.items():
-            if key == "capabilities":
-                continue
-            if value is None:
-                continue
-            if isinstance(value, dict):
-                if value:
-                    keys = ", ".join(sorted([str(item) for item in value.keys()]))
-                    if keys:
-                        summary_parts.append(f"{key}: {keys}")
-                continue
-            if isinstance(value, (list, tuple, set)):
-                items = ", ".join([str(item) for item in value if item])
-                if items:
-                    summary_parts.append(f"{key}: {items}")
-                continue
-            summary_parts.append(f"{key}: {value}")
-        if summary_parts:
-            manifest_summary = "; ".join(summary_parts).strip()
+                manifest_summary = " ".join(capability_items)
+        elif capabilities is not None:
+            text = str(capabilities).strip()
+            if text:
+                manifest_summary = text
     elif isinstance(manifest, str) and manifest.strip():
         manifest_summary = manifest.strip()
+
+    if manifest_summary and len(manifest_summary) > max_manifest_length:
+        manifest_summary = manifest_summary[:max_manifest_length].rstrip()
+
+    description = getattr(skill, "description", None)
+    if description is not None:
+        description = str(description).strip()
+        if len(description) > max_manifest_length:
+            description = description[:max_manifest_length].rstrip()
 
     parts = [
         skill.id,
         skill.name,
         skill.status,
-        getattr(skill, "description", None),
+        description,
         manifest_summary,
     ]
     cleaned = [str(part).strip() for part in parts if part]
@@ -91,7 +89,7 @@ async def _run_sync_skill(skill_id: str) -> str:
             "risk_level": getattr(skill, "risk_level", None),
             "source_repo": getattr(skill, "source_repo", None),
         }
-        payload.update({key: value for key, value in optional_payload.items() if value})
+        payload.update({key: value for key, value in optional_payload.items() if value is not None})
 
         client = get_qdrant_client()
         await ensure_collection_vector_size(
