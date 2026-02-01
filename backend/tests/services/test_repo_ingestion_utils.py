@@ -20,6 +20,17 @@ def test_build_file_index_excludes_git(tmp_path: Path):
     assert not any(path.startswith(".git") for path in files)
 
 
+def test_build_file_index_excludes_git_file(tmp_path: Path):
+    (tmp_path / ".git").write_text("gitdir: /tmp/worktree")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.py").write_text("print('ok')")
+
+    files = build_file_index(tmp_path)
+
+    assert "src/main.py" in files
+    assert ".git" not in files
+
+
 def test_build_file_index_prunes_git_directory(monkeypatch, tmp_path: Path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "main.py").write_text("print('ok')")

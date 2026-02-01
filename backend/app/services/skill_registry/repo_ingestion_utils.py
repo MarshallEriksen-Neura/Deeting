@@ -15,6 +15,10 @@ def build_file_index(root: Path) -> list[str]:
         dirnames[:] = [dirname for dirname in dirnames if dirname != ".git"]
         for filename in filenames:
             path = Path(dirpath) / filename
-            if path.is_file():
-                files.append(path.relative_to(root).as_posix())
+            if not path.is_file():
+                continue
+            relative_path = path.relative_to(root)
+            if ".git" in relative_path.parts:
+                continue
+            files.append(relative_path.as_posix())
     return sorted(files)
