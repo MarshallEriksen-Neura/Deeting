@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -34,3 +35,47 @@ async def test_build_mcp_tool_doc_includes_required_fields() -> None:
     assert doc["tags"] == tool.tags
     assert doc["is_official"] == tool.is_official
     assert doc["download_count"] == tool.download_count
+
+
+@pytest.mark.asyncio
+async def test_upsert_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> None:
+    svc = MeilisearchIndexService()
+    mock = AsyncMock(return_value={"taskUid": 1})
+    monkeypatch.setattr(svc, "_request", mock)
+
+    await svc.upsert_documents(index="ai_gateway_mcp_market_tools", docs=[{"id": "x"}])
+
+    assert mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_documents_skips_empty_docs(monkeypatch: pytest.MonkeyPatch) -> None:
+    svc = MeilisearchIndexService()
+    mock = AsyncMock(return_value={"taskUid": 1})
+    monkeypatch.setattr(svc, "_request", mock)
+
+    await svc.upsert_documents(index="ai_gateway_mcp_market_tools", docs=[])
+
+    assert mock.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> None:
+    svc = MeilisearchIndexService()
+    mock = AsyncMock(return_value={"taskUid": 1})
+    monkeypatch.setattr(svc, "_request", mock)
+
+    await svc.delete_documents(index="ai_gateway_mcp_market_tools", ids=["x"])
+
+    assert mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_documents_skips_empty_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    svc = MeilisearchIndexService()
+    mock = AsyncMock(return_value={"taskUid": 1})
+    monkeypatch.setattr(svc, "_request", mock)
+
+    await svc.delete_documents(index="ai_gateway_mcp_market_tools", ids=[])
+
+    assert mock.await_count == 0
