@@ -16,10 +16,45 @@ SKILL_COLLECTION_NAME = "skill_registry"
 
 
 def _build_embedding_text(skill) -> str:
+    manifest_summary = ""
+    manifest = getattr(skill, "manifest_json", None)
+    if isinstance(manifest, dict) and manifest:
+        summary_parts: list[str] = []
+        capabilities = manifest.get("capabilities")
+        if isinstance(capabilities, (list, tuple, set)):
+            capability_items = [str(item).strip() for item in capabilities if item]
+            if capability_items:
+                summary_parts.append(" ".join(capability_items))
+        elif capabilities:
+            summary_parts.append(str(capabilities).strip())
+        for key, value in manifest.items():
+            if key == "capabilities":
+                continue
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                if value:
+                    keys = ", ".join(sorted([str(item) for item in value.keys()]))
+                    if keys:
+                        summary_parts.append(f"{key}: {keys}")
+                continue
+            if isinstance(value, (list, tuple, set)):
+                items = ", ".join([str(item) for item in value if item])
+                if items:
+                    summary_parts.append(f"{key}: {items}")
+                continue
+            summary_parts.append(f"{key}: {value}")
+        if summary_parts:
+            manifest_summary = "; ".join(summary_parts).strip()
+    elif isinstance(manifest, str) and manifest.strip():
+        manifest_summary = manifest.strip()
+
     parts = [
         skill.id,
         skill.name,
         skill.status,
+        getattr(skill, "description", None),
+        manifest_summary,
     ]
     cleaned = [str(part).strip() for part in parts if part]
     return "\n".join([part for part in cleaned if part])
@@ -51,6 +86,12 @@ async def _run_sync_skill(skill_id: str) -> str:
             "status": skill.status,
             "embedding_model": embedding_service.model,
         }
+        optional_payload = {
+            "runtime": getattr(skill, "runtime", None),
+            "risk_level": getattr(skill, "risk_level", None),
+            "source_repo": getattr(skill, "source_repo", None),
+        }
+        payload.update({key: value for key, value in optional_payload.items() if value})
 
         client = get_qdrant_client()
         await ensure_collection_vector_size(
