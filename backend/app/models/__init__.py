@@ -71,6 +71,9 @@ from .user import Permission, Role, RolePermission, User, UserRole
 from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
+from .skill_artifact import SkillArtifact
+from .skill_capability import SkillCapability
+from .skill_dependency import SkillDependency
 from .skill_registry import SkillRegistry
 from .spec_agent import SpecPlan, SpecExecutionLog, SpecWorkerSession
 from .spec_knowledge import SpecKnowledgeCandidate
@@ -153,6 +156,9 @@ __all__ = [
     "UserMcpServer",
     "UserMcpSource",
     "SkillRegistry",
+    "SkillCapability",
+    "SkillDependency",
+    "SkillArtifact",
     # Spec Agent
     "SpecPlan",
     "SpecExecutionLog",
