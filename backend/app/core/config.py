@@ -251,7 +251,10 @@ class Settings(BaseSettings):
 
     # Scout Service (Cognitive Engine)
     SCOUT_SERVICE_URL: str = "http://scout:8001"
-    
+
+    # Repo ingestion (skill registry)
+    REPO_INGESTION_WORKDIR: str = "backend/.data/repo_ingestion"
+
     # Bridge / MCP (internal only)
     BRIDGE_GATEWAY_URL: str = "http://127.0.0.1:8088"
     BRIDGE_GATEWAY_INTERNAL_TOKEN: str = ""
