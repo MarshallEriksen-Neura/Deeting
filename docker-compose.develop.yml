@@ -193,10 +193,45 @@ services:
     depends_on:
       - api
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: apiproxy-meilisearch
+    restart: unless-stopped
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-masterKey}
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_ENV=development
+    ports:
+      - "127.0.0.1:17700:7700"
+    volumes:
+      - meilisearch-data:/meili_data
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.16
+    profiles:
+      - optional
+
+  opensandbox:
+    image: ghcr.io/open-sandbox/opensandbox:latest
+    container_name: apiproxy-opensandbox
+    restart: unless-stopped
+    environment:
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:-sandboxToken}
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.17
+    profiles:
+      - optional
+
 volumes:
   postgres-data:
   redis-data:
   qdrant-data:
+  meilisearch-data:
 
 networks:
   apiproxy-net:

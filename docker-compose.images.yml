@@ -46,6 +46,50 @@ services:
     volumes:
       - qdrant-data:/qdrant/storage
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: apiproxy-meilisearch
+    restart: unless-stopped
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY not set}
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_ENV=production
+    ports:
+      - "127.0.0.1:17700:7700"
+    volumes:
+      - meilisearch-data:/meili_data
+    profiles:
+      - optional
+
+  opensandbox:
+    image: ghcr.io/open-sandbox/opensandbox:latest
+    container_name: apiproxy-opensandbox
+    restart: unless-stopped
+    environment:
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN not set}
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    profiles:
+      - optional
+
+  scout:
+    image: marshalleriksen/deeting-scout:${IMAGE_TAG:-latest}
+    container_name: deeting-scout
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@apiproxy-redis:6379/1
+      - QDRANT_URL=http://apiproxy-qdrant:6333
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "8001:8001"
+
   api:
     image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
     container_name: apiproxy-api
@@ -107,3 +151,4 @@ volumes:
   postgres-data:
   redis-data:
   qdrant-data:
+  meilisearch-data:
