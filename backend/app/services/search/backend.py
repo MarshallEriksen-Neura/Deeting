@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.core.config import settings
+from app.meilisearch_client import meilisearch_is_configured
+
 
 class SearchBackend(Protocol):
     async def search_public_assistants(
@@ -41,5 +44,17 @@ class SearchBackend(Protocol):
         ...
 
 
+_backend: SearchBackend | None = None
+
+
 def get_search_backend() -> SearchBackend:
-    raise NotImplementedError("search backend is not configured")
+    if settings.SEARCH_BACKEND != "meilisearch":
+        raise RuntimeError("search_backend_not_supported")
+    if not meilisearch_is_configured():
+        raise RuntimeError("meilisearch_not_configured")
+    global _backend
+    if _backend is None:
+        from app.services.search.meilisearch_backend import MeilisearchBackend
+
+        _backend = MeilisearchBackend()
+    return _backend

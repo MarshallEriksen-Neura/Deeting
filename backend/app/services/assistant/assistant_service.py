@@ -18,6 +18,7 @@ from app.schemas.assistant import (
 )
 from app.services.assistant.assistant_state import AssistantStateMachine
 from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.services.search import get_search_backend
 from app.tasks.assistant import remove_assistant_from_qdrant, sync_assistant_to_qdrant
 from app.utils.time_utils import Datetime
 from app.repositories.assistant_tag_repository import AssistantTagRepository, AssistantTagLinkRepository
@@ -72,12 +73,14 @@ class AssistantService:
         cursor: str | None = None,
         tags: list[str] | None = None,
     ) -> AssistantListResponse:
-        items, next_cursor = await self.assistant_repo.search_public(
+        backend = get_search_backend()
+        assistant_ids, next_cursor = await backend.search_public_assistants(
             query=query,
             size=size,
             cursor=cursor,
             tags=tags,
         )
+        items = await self.assistant_repo.list_public_by_ids(assistant_ids)
         return AssistantListResponse(
             items=items,
             next_cursor=next_cursor,
