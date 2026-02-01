@@ -81,7 +81,8 @@
       "images": "图片",
       "mcp": "MCP 枢纽",
       "videos": "视频",
-      "dashboard": "仪表盘"
+      "dashboard": "仪表盘",
+      "admin": "管理后台"
     },
     "nav": {
       "main": "主要",
@@ -106,7 +107,26 @@
       "roles": "角色",
       "security": "安全",
       "database": "数据库",
-      "settings": "设置"
+      "settings": "设置",
+      "overview": "概览",
+      "adminDashboard": "管理概览",
+      "adminMonitoring": "系统监控",
+      "contentKnowledge": "内容与知识",
+      "assistantManagement": "助手管理",
+      "assistantReviews": "助手审核&标签",
+      "specKnowledge": "Spec 知识审核",
+      "knowledgeReviews": "知识审核工作台",
+      "accessSecurity": "访问与安全",
+      "userManagement": "用户管理",
+      "adminApiKeys": "API Key 管理",
+      "apiRateLimit": "API Key 限流",
+      "registration": "注册窗口/邀请码",
+      "systemOperations": "系统与运营",
+      "providerInstances": "Provider 实例",
+      "providerPresets": "Provider 预设",
+      "providerCredentials": "Provider 凭证",
+      "embeddingSettings": "Embedding 设置",
+      "adminNotifications": "通知管理"
     }
   }
 }

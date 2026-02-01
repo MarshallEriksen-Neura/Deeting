@@ -19,6 +19,7 @@ const namespaces = [
   "mcp",
   "spec-agent",
   "chat",
+  "admin",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

@@ -11,6 +11,7 @@ __pycache__/
 .workflow/
 .specify/
 .mcp.json
+.agents/
 backend/__pycache__
 backend/*.py[oc]
 backend/build/

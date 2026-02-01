@@ -81,7 +81,8 @@
       "images": "Images",
       "mcp": "MCP Hub",
       "videos": "Videos",
-      "dashboard": "Dashboard"
+      "dashboard": "Dashboard",
+      "admin": "Admin"
     },
     "nav": {
       "main": "Main",
@@ -106,7 +107,26 @@
       "roles": "Roles",
       "security": "Security",
       "database": "Database",
-      "settings": "Settings"
+      "settings": "Settings",
+      "overview": "Overview",
+      "adminDashboard": "Admin Dashboard",
+      "adminMonitoring": "System Monitoring",
+      "contentKnowledge": "Content & Knowledge",
+      "assistantManagement": "Assistant Management",
+      "assistantReviews": "Assistant Reviews & Tags",
+      "specKnowledge": "Spec Knowledge Review",
+      "knowledgeReviews": "Knowledge Review Workbench",
+      "accessSecurity": "Access & Security",
+      "userManagement": "User Management",
+      "adminApiKeys": "API Key Management",
+      "apiRateLimit": "API Key Rate Limit",
+      "registration": "Registration & Invite Codes",
+      "systemOperations": "System & Operations",
+      "providerInstances": "Provider Instances",
+      "providerPresets": "Provider Presets",
+      "providerCredentials": "Provider Credentials",
+      "embeddingSettings": "Embedding Settings",
+      "adminNotifications": "Notification Management"
     }
   }
 }

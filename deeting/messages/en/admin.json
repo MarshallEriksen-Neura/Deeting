@@ -1,0 +1,89 @@
+{
+  "admin": {
+    "dashboard": {
+      "title": "Admin Dashboard",
+      "description": "System operation status overview",
+      "quickActions": "Quick Actions",
+      "reviewAssistants": "Review Assistants",
+      "manageUsers": "Manage Users",
+      "viewMonitoring": "View Monitoring"
+    },
+    "stats": {
+      "totalUsers": "Total Users",
+      "totalAssistants": "Total Assistants",
+      "activeApiKeys": "Active API Keys",
+      "requestsToday": "Requests Today"
+    },
+    "monitoring": {
+      "title": "System Monitoring",
+      "description": "Real-time system status and metrics"
+    },
+    "assistants": {
+      "title": "Assistant Management",
+      "description": "Manage all assistant configurations"
+    },
+    "assistantReviews": {
+      "title": "Assistant Reviews",
+      "description": "Review pending assistants and tags"
+    },
+    "specKnowledge": {
+      "title": "Spec Knowledge Review",
+      "description": "Review knowledge candidate entries"
+    },
+    "knowledgeReviews": {
+      "title": "Knowledge Review Workbench",
+      "description": "Comprehensive knowledge review management"
+    },
+    "users": {
+      "title": "User Management",
+      "description": "Manage system users and permissions"
+    },
+    "apiKeys": {
+      "title": "API Key Management",
+      "description": "Manage all API keys"
+    },
+    "rateLimit": {
+      "title": "API Key Rate Limit",
+      "description": "Configure API access rate limits"
+    },
+    "registration": {
+      "title": "Registration & Invite Codes",
+      "description": "Manage user registration and invites"
+    },
+    "providerInstances": {
+      "title": "Provider Instances",
+      "description": "Manage BYOP instance configurations"
+    },
+    "providerPresets": {
+      "title": "Provider Presets",
+      "description": "Manage preset Provider configurations"
+    },
+    "providerCredentials": {
+      "title": "Provider Credentials",
+      "description": "Manage Provider authentication credentials"
+    },
+    "embeddingSettings": {
+      "title": "Embedding Settings",
+      "description": "Configure vector embedding services"
+    },
+    "notifications": {
+      "title": "Notification Management",
+      "description": "Manage system notifications and messages"
+    },
+    "common": {
+      "noData": "No data available",
+      "loading": "Loading...",
+      "search": "Search",
+      "filter": "Filter",
+      "actions": "Actions",
+      "edit": "Edit",
+      "delete": "Delete",
+      "view": "View",
+      "create": "Create",
+      "save": "Save",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "back": "Back"
+    }
+  }
+}

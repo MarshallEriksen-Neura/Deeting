@@ -10,4 +10,5 @@ export const defaultNavItems: NavItem[] = [
   { label: "mcp", href: "/mcp" },
   { label: "videos", href: "/videos" },
   { label: "dashboard", href: "/dashboard" },
+  { label: "admin", href: "/admin" },
 ]

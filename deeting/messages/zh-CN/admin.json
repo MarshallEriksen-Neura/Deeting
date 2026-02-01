@@ -1,0 +1,89 @@
+{
+  "admin": {
+    "dashboard": {
+      "title": "管理概览",
+      "description": "系统运营状态总览",
+      "quickActions": "快速操作",
+      "reviewAssistants": "审核助手",
+      "manageUsers": "用户管理",
+      "viewMonitoring": "查看监控"
+    },
+    "stats": {
+      "totalUsers": "总用户数",
+      "totalAssistants": "总助手数",
+      "activeApiKeys": "活跃 API Key",
+      "requestsToday": "今日请求"
+    },
+    "monitoring": {
+      "title": "系统监控",
+      "description": "实时系统状态与指标"
+    },
+    "assistants": {
+      "title": "助手管理",
+      "description": "管理所有助手配置"
+    },
+    "assistantReviews": {
+      "title": "助手审核",
+      "description": "审核待发布的助手与标签"
+    },
+    "specKnowledge": {
+      "title": "Spec 知识审核",
+      "description": "审核知识候选条目"
+    },
+    "knowledgeReviews": {
+      "title": "知识审核工作台",
+      "description": "综合知识审核管理"
+    },
+    "users": {
+      "title": "用户管理",
+      "description": "管理系统用户与权限"
+    },
+    "apiKeys": {
+      "title": "API Key 管理",
+      "description": "管理所有 API 密钥"
+    },
+    "rateLimit": {
+      "title": "API Key 限流",
+      "description": "配置 API 访问频率限制"
+    },
+    "registration": {
+      "title": "注册窗口与邀请码",
+      "description": "管理用户注册与邀请"
+    },
+    "providerInstances": {
+      "title": "Provider 实例",
+      "description": "管理 BYOP 实例配置"
+    },
+    "providerPresets": {
+      "title": "Provider 预设",
+      "description": "管理预设的 Provider 配置"
+    },
+    "providerCredentials": {
+      "title": "Provider 凭证",
+      "description": "管理 Provider 认证凭证"
+    },
+    "embeddingSettings": {
+      "title": "Embedding 设置",
+      "description": "配置向量嵌入服务"
+    },
+    "notifications": {
+      "title": "通知管理",
+      "description": "管理系统通知与消息"
+    },
+    "common": {
+      "noData": "暂无数据",
+      "loading": "加载中...",
+      "search": "搜索",
+      "filter": "筛选",
+      "actions": "操作",
+      "edit": "编辑",
+      "delete": "删除",
+      "view": "查看",
+      "create": "创建",
+      "save": "保存",
+      "cancel": "取消",
+      "confirm": "确认",
+      "back": "返回"
+    }
+  }
+}

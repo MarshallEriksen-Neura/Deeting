@@ -279,7 +279,7 @@ function DesktopSidebar({ navigation }: DesktopSidebarProps) {
         id: `agent-${agent.id}`,
         label: agent.name,
         href: `/chat/${encodeURIComponent(agent.id)}`, // 假设安装后的助手跳转到 chat 页面
-        icon: "Bot" as const, // 使用 Bot 图标，需要在 icon-map 中确保有映射或直接在这里处理图标
+        icon: "bot" as const,
       }))
     }
   }, [isTauriRuntime, mounted, installedAgents])
@@ -400,7 +400,7 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
         id: `agent-${agent.id}`,
         label: agent.name,
         href: `/chat/${encodeURIComponent(agent.id)}`,
-        icon: "Bot" as const,
+        icon: "bot" as const,
         badge: 0
       }))]
     : allItems
