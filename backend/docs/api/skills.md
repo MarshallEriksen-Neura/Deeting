@@ -4,14 +4,14 @@
 - 字段清单（SkillRegistryDTO）：
   - `id`: 技能唯一标识（如 `core.tools.crawler`）
   - `name`: 技能名称
-  - `type`: 资源类型（固定为 `SKILL`）
-  - `runtime`: 运行时类型（如 `opensandbox` / `python_library`）
+  - `type`: 资源类型（固定为 `SKILL`，建议只读）
+  - `runtime`: 运行时类型（`python_library` / `node_library` / `cli` / `mcp`）
   - `version`: 语义化版本号
   - `description`: 技能描述
   - `source_repo`: 源码仓库地址
   - `source_subdir`: 源码子目录
   - `source_revision`: 源码版本/提交
-  - `risk_level`: 风险等级
+  - `risk_level`: 风险等级（`low` / `medium` / `high`）
   - `complexity_score`: 复杂度评分
   - `manifest_json`: 技能清单/Manifest（JSON 对象）
   - `env_requirements`: 运行环境依赖（JSON 对象）
@@ -42,8 +42,8 @@
     "entrypoint": "docx_editor:run"
   },
   "env_requirements": {
-    "python": ">=3.11",
-    "dependencies": ["python-docx>=1.1.0"]
+    "python_version": ">=3.11",
+    "system_packages": ["libxml2", "libxslt1-dev"]
   },
   "vector_id": "vec_docx_editor_v1",
   "status": "draft"
@@ -53,7 +53,7 @@
 - `id`（必填）：技能唯一标识
 - `name`（必填）：技能名称
 - `status`（可选）：技能状态，默认 `draft`
-- `type`（可选）：资源类型，默认 `SKILL`
+- `type`（可选）：资源类型，固定 `SKILL`（可省略）
 - `runtime`、`version`、`description`（可选）
 - `source_repo`、`source_subdir`、`source_revision`（可选）
 - `risk_level`、`complexity_score`（可选）
@@ -79,8 +79,8 @@
     "entrypoint": "docx_editor:run"
   },
   "env_requirements": {
-    "python": ">=3.11",
-    "dependencies": ["python-docx>=1.1.0"]
+    "python_version": ">=3.11",
+    "system_packages": ["libxml2", "libxslt1-dev"]
   },
   "vector_id": "vec_docx_editor_v1",
   "status": "draft",
@@ -113,8 +113,8 @@
       "entrypoint": "docx_editor:run"
     },
     "env_requirements": {
-      "python": ">=3.11",
-      "dependencies": ["python-docx>=1.1.0"]
+      "python_version": ">=3.11",
+      "system_packages": ["libxml2", "libxslt1-dev"]
     },
     "vector_id": "vec_docx_editor_v1",
     "status": "draft",
@@ -147,8 +147,8 @@
     "entrypoint": "docx_editor:run"
   },
   "env_requirements": {
-    "python": ">=3.11",
-    "dependencies": ["python-docx>=1.1.0"]
+    "python_version": ">=3.11",
+    "system_packages": ["libxml2", "libxslt1-dev"]
   },
   "vector_id": "vec_docx_editor_v1",
   "status": "draft",
@@ -173,12 +173,12 @@
     "entrypoint": "docx_editor:run"
   },
   "env_requirements": {
-    "python": ">=3.11",
-    "dependencies": ["python-docx>=1.2.0"]
+    "python_version": ">=3.11",
+    "system_packages": ["libxml2", "libxslt1-dev"]
   }
 }
 ```
-请求字段（均为可选）：`name`、`status`、`type`、`runtime`、`version`、`description`、`source_repo`、`source_subdir`、`source_revision`、`risk_level`、`complexity_score`、`manifest_json`、`env_requirements`、`vector_id`。
+请求字段（均为可选）：`name`、`status`、`type`（固定 `SKILL`）、`runtime`、`version`、`description`、`source_repo`、`source_subdir`、`source_revision`、`risk_level`、`complexity_score`、`manifest_json`、`env_requirements`、`vector_id`。
 
 **Response**
 ```json
@@ -199,8 +199,8 @@
     "entrypoint": "docx_editor:run"
   },
   "env_requirements": {
-    "python": ">=3.11",
-    "dependencies": ["python-docx>=1.2.0"]
+    "python_version": ">=3.11",
+    "system_packages": ["libxml2", "libxslt1-dev"]
   },
   "vector_id": "vec_docx_editor_v1",
   "status": "active",
