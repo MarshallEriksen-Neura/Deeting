@@ -71,6 +71,7 @@ from .user import Permission, Role, RolePermission, User, UserRole
 from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
+from .skill_registry import SkillRegistry
 from .spec_agent import SpecPlan, SpecExecutionLog, SpecWorkerSession
 from .spec_knowledge import SpecKnowledgeCandidate
 from .knowledge import KnowledgeArtifact, KnowledgeChunk
@@ -151,6 +152,7 @@ __all__ = [
     "UserMcpSubscription",
     "UserMcpServer",
     "UserMcpSource",
+    "SkillRegistry",
     # Spec Agent
     "SpecPlan",
     "SpecExecutionLog",
