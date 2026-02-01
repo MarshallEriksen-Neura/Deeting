@@ -66,6 +66,9 @@ class MeilisearchBackend(SearchBackend):
     def _assistants_public_index(self) -> str:
         return f"{self._index_prefix}_assistants_public"
 
+    def _assistants_market_index(self) -> str:
+        return f"{self._index_prefix}_assistants_market"
+
     @staticmethod
     def _extract_assistant_id(hit: dict[str, Any]) -> str | None:
         return str(hit.get("id") or hit.get("assistant_id") or "").strip() or None
@@ -130,7 +133,43 @@ class MeilisearchBackend(SearchBackend):
         cursor: str | None,
         tags: list[str] | None,
     ) -> tuple[list[str], str | None]:
-        raise NotImplementedError
+        offset = await self._resolve_offset(cursor)
+        filters = ["visibility = \"public\"", "status = \"published\""]
+        if tags:
+            filters.extend([f"tags = \"{tag}\"" for tag in tags])
+
+        data = await self._search(
+            index_name=self._assistants_market_index(),
+            query=query or "",
+            limit=size + 1,
+            offset=offset,
+            filters=filters,
+            show_ranking_score=True,
+        )
+        hits = list(data.get("hits") or [])
+        has_more = len(hits) > size
+        if has_more:
+            hits = hits[:size]
+
+        ids: list[str] = []
+        seen: set[str] = set()
+        for hit in hits:
+            assistant_id = self._extract_assistant_id(hit)
+            if assistant_id and assistant_id not in seen:
+                seen.add(assistant_id)
+                ids.append(assistant_id)
+
+        next_cursor = None
+        if has_more and hits:
+            last_hit = hits[-1]
+            rank = float(last_hit.get("_rankingScore") or 0)
+            created_at = str(last_hit.get("created_at") or "")
+            assistant_id = self._extract_assistant_id(last_hit)
+            if assistant_id and created_at:
+                next_cursor = f"{rank:.6f}|{created_at}|{assistant_id}"
+                await self._cursor_store.save(next_cursor, offset=offset + size)
+
+        return ids, next_cursor
 
     async def search_mcp_tools(
         self,
