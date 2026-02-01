@@ -20,6 +20,15 @@ def _build_embedding_text(skill) -> str:
     manifest_summary = ""
     manifest = getattr(skill, "manifest_json", None)
     if isinstance(manifest, dict) and manifest:
+        allowed_keys = (
+            "capabilities",
+            "keywords",
+            "tags",
+            "summary",
+            "title",
+            "description",
+        )
+        summary_parts: list[str] = []
         capabilities = manifest.get("capabilities")
         if isinstance(capabilities, (list, tuple, set)):
             capability_items = []
@@ -30,11 +39,27 @@ def _build_embedding_text(skill) -> str:
                 if text:
                     capability_items.append(text)
             if capability_items:
-                manifest_summary = " ".join(capability_items)
+                summary_parts.append(" ".join(capability_items))
         elif capabilities is not None:
             text = str(capabilities).strip()
             if text:
-                manifest_summary = text
+                summary_parts.append(text)
+
+        for key in allowed_keys:
+            if key == "capabilities":
+                continue
+            value = manifest.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if not text:
+                continue
+            if len(text) > max_manifest_length:
+                text = text[:max_manifest_length].rstrip()
+            summary_parts.append(f"{key}: {text}")
+
+        if summary_parts:
+            manifest_summary = "; ".join(summary_parts).strip()
     elif isinstance(manifest, str) and manifest.strip():
         manifest_summary = manifest.strip()
 
