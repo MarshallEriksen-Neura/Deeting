@@ -8,6 +8,10 @@ from app.core.database import AsyncSessionLocal
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.services.providers.embedding import EmbeddingService
+from app.services.skill_registry.manifest_generator import SkillManifestGenerator
+from app.services.skill_registry.parsers.node_parser import NodeRepoParser
+from app.services.skill_registry.parsers.python_parser import PythonRepoParser
+from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
 
 logger = logging.getLogger(__name__)
@@ -143,4 +147,46 @@ def sync_skill_to_qdrant(skill_id: str) -> str:
         return asyncio.run(_run_sync_skill(skill_id))
     except Exception as exc:
         logger.exception("skill_registry_sync_to_qdrant_failed: %s", exc)
+        return "failed"
+
+
+async def _run_repo_ingestion(
+    repo_url: str,
+    revision: str = "main",
+    skill_id: str | None = None,
+    runtime_hint: str | None = None,
+) -> dict:
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        service = RepoIngestionService(
+            repo=repo,
+            manifest_generator=SkillManifestGenerator(),
+            parsers=[PythonRepoParser(), NodeRepoParser()],
+        )
+        return await service.ingest_repo(
+            repo_url=repo_url,
+            revision=revision,
+            skill_id=skill_id,
+            runtime_hint=runtime_hint,
+        )
+
+
+@celery_app.task(name="skill_registry.ingest_repo")
+def ingest_skill_repo(
+    repo_url: str,
+    revision: str = "main",
+    skill_id: str | None = None,
+    runtime_hint: str | None = None,
+) -> dict | str:
+    try:
+        return asyncio.run(
+            _run_repo_ingestion(
+                repo_url=repo_url,
+                revision=revision,
+                skill_id=skill_id,
+                runtime_hint=runtime_hint,
+            )
+        )
+    except Exception as exc:
+        logger.exception("skill_registry_ingest_repo_failed: %s", exc)
         return "failed"
