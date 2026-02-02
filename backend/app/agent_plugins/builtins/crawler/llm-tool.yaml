@@ -36,3 +36,22 @@ tools:
           type: string
           description: "Custom User-Agent string."
       required: ["url"]
+  - name: submit_repo_ingestion
+    description: "Ingest a skill repository and build a skill manifest asynchronously."
+    parameters:
+      type: object
+      properties:
+        repo_url:
+          type: string
+          description: "Git repository URL to ingest."
+        revision:
+          type: string
+          default: "main"
+          description: "Git branch/tag/commit to ingest."
+        skill_id:
+          type: string
+          description: "Optional skill ID to use when persisting."
+        runtime_hint:
+          type: string
+          description: "Optional runtime hint (e.g. python_library, node_library)."
+      required: ["repo_url"]

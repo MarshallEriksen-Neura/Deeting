@@ -2,6 +2,7 @@ from typing import Any, Dict
 import httpx
 import uuid
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
+from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.repositories.knowledge_repository import KnowledgeRepository
@@ -74,6 +75,36 @@ class CrawlerPlugin(AgentPlugin):
                             }
                         },
                         "required": ["url"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "submit_repo_ingestion",
+                    "description": "Ingest a skill repository and build a skill manifest asynchronously.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "repo_url": {
+                                "type": "string",
+                                "description": "Git repository URL to ingest."
+                            },
+                            "revision": {
+                                "type": "string",
+                                "default": "main",
+                                "description": "Git branch/tag/commit to ingest."
+                            },
+                            "skill_id": {
+                                "type": "string",
+                                "description": "Optional skill ID to use when persisting."
+                            },
+                            "runtime_hint": {
+                                "type": "string",
+                                "description": "Optional runtime hint (e.g. python_library, node_library)."
+                            }
+                        },
+                        "required": ["repo_url"]
                     }
                 }
             },
@@ -192,3 +223,17 @@ class CrawlerPlugin(AgentPlugin):
             except Exception as e:
                 self.context.get_logger().error(f"Assistant conversion failed: {e}")
                 return {"status": "error", "message": str(e)}
+
+    async def handle_submit_repo_ingestion(
+        self,
+        repo_url: str,
+        revision: str = "main",
+        skill_id: str | None = None,
+        runtime_hint: str | None = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        task = celery_app.send_task(
+            "skill_registry.ingest_repo",
+            args=[repo_url, revision, skill_id, runtime_hint],
+        )
+        return {"status": "queued", "task_id": task.id}
