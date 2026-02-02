@@ -30,7 +30,8 @@ class MeilisearchIndexService:
 
     async def _request(self, method: str, path: str, *, json: Any | None = None) -> dict[str, Any] | None:
         if not meilisearch_is_configured():
-            return None
+            logger.warning("meilisearch_not_configured")
+            raise RuntimeError("meilisearch_not_configured")
 
         url = f"{self._base_url}{path}"
         try:

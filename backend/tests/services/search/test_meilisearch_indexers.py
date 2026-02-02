@@ -46,6 +46,11 @@ async def test_upsert_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> 
     await svc.upsert_documents(index="ai_gateway_mcp_market_tools", docs=[{"id": "x"}])
 
     assert mock.await_count == 1
+    args = mock.call_args.args
+    kwargs = mock.call_args.kwargs
+    assert args[0] == "post"
+    assert args[1] == "/indexes/ai_gateway_mcp_market_tools/documents"
+    assert kwargs["json"] == [{"id": "x"}]
 
 
 @pytest.mark.asyncio
@@ -68,6 +73,11 @@ async def test_delete_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> 
     await svc.delete_documents(index="ai_gateway_mcp_market_tools", ids=["x"])
 
     assert mock.await_count == 1
+    args = mock.call_args.args
+    kwargs = mock.call_args.kwargs
+    assert args[0] == "post"
+    assert args[1] == "/indexes/ai_gateway_mcp_market_tools/documents/delete-batch"
+    assert kwargs["json"] == ["x"]
 
 
 @pytest.mark.asyncio
