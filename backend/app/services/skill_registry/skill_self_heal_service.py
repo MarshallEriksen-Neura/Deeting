@@ -40,7 +40,7 @@ class SkillSelfHealService:
             )
             await self.repo.update(skill, {"manifest_json": updated_manifest})
         if self.dry_run_service is not None:
-            await self.dry_run_service.run(skill_id)
+            await self.dry_run_service.run(skill_id, allow_self_heal=False)
         return result
 
     async def _request_patch(self, skill_id: str, manifest: dict[str, Any]) -> dict[str, Any]:

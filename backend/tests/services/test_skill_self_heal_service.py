@@ -79,7 +79,7 @@ class _FakeDryRun:
     def __init__(self, status: str = "active"):
         self.status = status
 
-    async def run(self, _skill_id: str):
+    async def run(self, _skill_id: str, **_kwargs):
         return {"status": self.status}
 
 

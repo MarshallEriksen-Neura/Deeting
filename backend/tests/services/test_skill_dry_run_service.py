@@ -42,6 +42,29 @@ class _FakeExecutor:
         return self.result
 
 
+class _FakeSelfHeal:
+    def __init__(self, repo: SkillRegistryRepository, status: str = "success"):
+        self.repo = repo
+        self.status = status
+        self.calls: list[str] = []
+
+    async def self_heal(self, skill_id: str):
+        self.calls.append(skill_id)
+        skill = await self.repo.get_by_id(skill_id)
+        if skill:
+            manifest = dict(skill.manifest_json or {})
+            metrics = dict(manifest.get("metrics") or {})
+            history = list(metrics.get("self_heal_history") or [])
+            history.append({"status": self.status, "changes": ["usage_spec.example_code"]})
+            metrics["self_heal_history"] = history
+            manifest["metrics"] = metrics
+            await self.repo.update(skill, {"status": "active", "manifest_json": manifest})
+        return {
+            "request": {"skill_id": skill_id, "manifest_json": {}},
+            "response": {"status": self.status, "patches": [], "updated_manifest": {}},
+        }
+
+
 @pytest.mark.asyncio
 async def test_dry_run_success_sets_active():
     async with AsyncSessionLocal() as session:
@@ -132,3 +155,74 @@ async def test_dry_run_threshold_triggers_needs_review():
         assert result["status"] == "needs_review"
         assert updated is not None
         assert updated.status == "needs_review"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_triggers_self_heal_on_failure():
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        created = await repo.create(
+            {
+                "id": "core.tools.docx.selfheal",
+                "name": "Docx",
+                "manifest_json": {
+                    "artifacts": [{"name": "output_docx", "type": "file", "path": "out.docx"}],
+                },
+            }
+        )
+        executor = _FakeExecutor({"stdout": [], "stderr": [], "artifacts": []})
+        metrics = SkillMetricsService(repo, failure_threshold=2)
+        self_heal = _FakeSelfHeal(repo)
+        service = SkillDryRunService(
+            repo,
+            executor,
+            metrics,
+            failure_threshold=2,
+            self_heal_service=self_heal,
+            self_heal_max_attempts=2,
+        )
+
+        result = await service.run(created.id)
+        updated = await repo.get_by_id(created.id)
+
+        assert self_heal.calls == [created.id]
+        assert result["status"] == "active"
+        assert updated is not None
+        assert updated.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_skips_self_heal_after_max_attempts():
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        created = await repo.create(
+            {
+                "id": "core.tools.docx.selfheal.skip",
+                "name": "Docx",
+                "manifest_json": {
+                    "artifacts": [{"name": "output_docx", "type": "file", "path": "out.docx"}],
+                    "metrics": {
+                        "self_heal_history": [
+                            {"status": "failed"},
+                            {"status": "failed"},
+                        ]
+                    },
+                },
+            }
+        )
+        executor = _FakeExecutor({"stdout": [], "stderr": [], "artifacts": []})
+        metrics = SkillMetricsService(repo, failure_threshold=2)
+        self_heal = _FakeSelfHeal(repo)
+        service = SkillDryRunService(
+            repo,
+            executor,
+            metrics,
+            failure_threshold=2,
+            self_heal_service=self_heal,
+            self_heal_max_attempts=2,
+        )
+
+        result = await service.run(created.id)
+
+        assert self_heal.calls == []
+        assert result["status"] == "dry_run_fail"
