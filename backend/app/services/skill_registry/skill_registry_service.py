@@ -9,6 +9,7 @@ from app.repositories.skill_registry_repository import SkillRegistryRepository
 
 
 STATUS_DRY_RUN_FAIL = "dry_run_fail"
+STATUS_NEEDS_REVIEW = "needs_review"
 
 
 class SkillRegistryService:
@@ -45,3 +46,9 @@ class SkillRegistryService:
         if not skill:
             raise ValueError("Skill not found")
         return await self.repo.update(skill, {"status": STATUS_DRY_RUN_FAIL})
+
+    async def mark_needs_review(self, skill_id: str, error: str | None = None):
+        skill = await self.repo.get_by_id(skill_id)
+        if not skill:
+            raise ValueError("Skill not found")
+        return await self.repo.update(skill, {"status": STATUS_NEEDS_REVIEW})

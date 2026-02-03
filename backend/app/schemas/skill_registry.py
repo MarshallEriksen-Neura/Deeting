@@ -7,7 +7,11 @@ from app.schemas.base import BaseSchema, TimestampSchema
 
 class SkillRegistryBase(BaseSchema):
     name: str = Field(..., max_length=200, description="技能名称")
-    status: str = Field("draft", max_length=20, description="技能状态: draft/active/disabled")
+    status: str = Field(
+        "draft",
+        max_length=20,
+        description="技能状态: draft/active/disabled/needs_review/dry_run_fail",
+    )
     type: str = Field("SKILL", max_length=20, description="资源类型: SKILL")
     runtime: str | None = Field(None, max_length=40, description="运行时类型（如 opensandbox）")
     version: str | None = Field(None, max_length=32, description="语义化版本号")
@@ -28,7 +32,11 @@ class SkillRegistryCreate(SkillRegistryBase):
 
 class SkillRegistryUpdate(BaseSchema):
     name: str | None = Field(None, max_length=200, description="技能名称")
-    status: str | None = Field(None, max_length=20, description="技能状态: draft/active/disabled")
+    status: str | None = Field(
+        None,
+        max_length=20,
+        description="技能状态: draft/active/disabled/needs_review/dry_run_fail",
+    )
     type: str | None = Field(None, max_length=20, description="资源类型: SKILL")
     runtime: str | None = Field(None, max_length=40, description="运行时类型（如 opensandbox）")
     version: str | None = Field(None, max_length=32, description="语义化版本号")

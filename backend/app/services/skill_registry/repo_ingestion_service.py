@@ -8,10 +8,12 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import settings
+from app.repositories.skill_artifact_repository import SkillArtifactRepository
+from app.repositories.skill_capability_repository import SkillCapabilityRepository
+from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.services.skill_registry.manifest_generator import SkillManifestGenerator
 from app.services.skill_registry.repo_ingestion_utils import build_file_index
-
 from app.services.skill_registry.parsers.base import RepoContext, RepoParserPlugin
 
 
@@ -21,10 +23,16 @@ class RepoIngestionService:
         repo: SkillRegistryRepository,
         manifest_generator: SkillManifestGenerator,
         parsers: Iterable[RepoParserPlugin],
+        capability_repo: SkillCapabilityRepository | None = None,
+        dependency_repo: SkillDependencyRepository | None = None,
+        artifact_repo: SkillArtifactRepository | None = None,
     ):
         self.repo = repo
         self.manifest_generator = manifest_generator
         self.parsers = list(parsers)
+        self.capability_repo = capability_repo
+        self.dependency_repo = dependency_repo
+        self.artifact_repo = artifact_repo
 
     def select_parser(self, repo_context: RepoContext) -> RepoParserPlugin:
         for parser in self.parsers:
@@ -86,6 +94,14 @@ class RepoIngestionService:
             else:
                 await self.repo.create(payload)
                 status = "created"
+            await _persist_relations(
+                resolved_skill_id,
+                manifest,
+                self.capability_repo,
+                self.dependency_repo,
+                self.artifact_repo,
+            )
+            _trigger_qdrant_sync(resolved_skill_id)
             return {"skill_id": resolved_skill_id, "status": status}
         finally:
             if temp_root:
@@ -117,6 +133,7 @@ def _build_skill_payload(
     env_requirements = manifest.get("env_requirements")
     if not isinstance(env_requirements, dict):
         env_requirements = {}
+    complexity_score = _extract_complexity_score(manifest)
     return {
         "id": skill_id,
         "name": manifest.get("name") or skill_id,
@@ -127,6 +144,52 @@ def _build_skill_payload(
         "source_subdir": source_subdir,
         "source_revision": revision,
         "risk_level": manifest.get("risk_level"),
+        "complexity_score": complexity_score,
         "manifest_json": manifest,
         "env_requirements": env_requirements,
     }
+
+
+def _extract_complexity_score(manifest: dict) -> float | None:
+    usage_spec = manifest.get("usage_spec")
+    if not isinstance(usage_spec, dict):
+        return None
+    example_code = usage_spec.get("example_code")
+    if not isinstance(example_code, str):
+        return None
+    return float(len(example_code))
+
+
+async def _persist_relations(
+    skill_id: str,
+    manifest: dict,
+    capability_repo: SkillCapabilityRepository | None,
+    dependency_repo: SkillDependencyRepository | None,
+    artifact_repo: SkillArtifactRepository | None,
+) -> None:
+    if capability_repo is not None:
+        capabilities = _normalize_string_list(manifest.get("capabilities"))
+        await capability_repo.replace_all(skill_id, capabilities)
+    if dependency_repo is not None:
+        dependencies = _normalize_string_list(manifest.get("dependencies"))
+        await dependency_repo.replace_all(skill_id, dependencies)
+    if artifact_repo is not None:
+        artifacts = _normalize_string_list(manifest.get("artifacts"))
+        await artifact_repo.replace_all(skill_id, artifacts)
+
+
+def _normalize_string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if item is not None]
+    return [str(value)]
+
+
+def _trigger_qdrant_sync(skill_id: str) -> None:
+    from app.tasks.skill_registry import sync_skill_to_qdrant
+
+    if hasattr(sync_skill_to_qdrant, "delay"):
+        sync_skill_to_qdrant.delay(skill_id)
+    else:
+        sync_skill_to_qdrant(skill_id)

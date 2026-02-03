@@ -4,10 +4,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
+from app.repositories.skill_artifact_repository import SkillArtifactRepository
+from app.repositories.skill_capability_repository import SkillCapabilityRepository
+from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.services.skill_registry.skill_registry_service import (
     SkillRegistryService,
     STATUS_DRY_RUN_FAIL,
+    STATUS_NEEDS_REVIEW,
 )
 
 
@@ -41,7 +45,12 @@ async def dispose_engine():
 async def test_dry_run_failure_sets_status():
     async with AsyncSessionLocal() as session:
         repo = SkillRegistryRepository(session)
-        service = SkillRegistryService(repo)
+        service = SkillRegistryService(
+            repo,
+            SkillCapabilityRepository(session),
+            SkillDependencyRepository(session),
+            SkillArtifactRepository(session),
+        )
         created = await service.create(
             {
                 "id": "core.tools.crawler",
@@ -54,3 +63,27 @@ async def test_dry_run_failure_sets_status():
 
         assert updated is not None
         assert updated.status == STATUS_DRY_RUN_FAIL
+
+
+@pytest.mark.asyncio
+async def test_mark_needs_review_sets_status():
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        service = SkillRegistryService(
+            repo,
+            SkillCapabilityRepository(session),
+            SkillDependencyRepository(session),
+            SkillArtifactRepository(session),
+        )
+        created = await service.create(
+            {
+                "id": "core.tools.docx",
+                "name": "Docx",
+            }
+        )
+
+        await service.mark_needs_review(created.id, error="invalid manifest")
+        updated = await service.get(created.id)
+
+        assert updated is not None
+        assert updated.status == STATUS_NEEDS_REVIEW
