@@ -159,7 +159,9 @@ def register_routes(app: FastAPI) -> None:
         internal_gateway_router,
         internal_conversation_router,
         internal_image_generation_router,
+        internal_skill_execution_router,
         internal_video_generation_router,
+        internal_sandbox_router,
         public_image_share_router,
         media_router,
         users_router,
@@ -226,6 +228,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         internal_image_generation_router, prefix=f"{api_prefix}/internal", tags=["Image Generation"]
+    )
+    app.include_router(
+        internal_skill_execution_router, prefix=f"{api_prefix}/internal", tags=["Skills"]
     )
     app.include_router(
         internal_video_generation_router, prefix=f"{api_prefix}/internal", tags=["Video Generation"]

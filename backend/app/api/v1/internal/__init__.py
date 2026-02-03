@@ -2,6 +2,7 @@ from .bridge import router as bridge_router
 from .gateway import router as gateway_router
 from .conversation_route import router as conversation_router
 from .image_generation_route import router as image_generation_router
+from .skill_execution_route import router as skill_execution_router
 from .video_generation_route import router as video_generation_router
 
 __all__ = [
@@ -9,5 +10,6 @@ __all__ = [
     "gateway_router",
     "conversation_router",
     "image_generation_router",
+    "skill_execution_router",
     "video_generation_router",
 ]
