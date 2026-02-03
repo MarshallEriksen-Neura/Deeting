@@ -253,6 +253,41 @@ data: [DONE]
 
 ---
 
+### 4. Skill Dry Run & Self‑Heal（内部流程）
+
+当技能入库成功后，会自动触发一次 Dry Run，用于验证 Manifest 与产物契约是否一致。  
+流程为**内部异步任务**，不提供外部 API 直接调用。
+
+**触发时机**
+- `skill_registry.ingest_repo` 任务完成后自动触发
+- 通过 Celery 任务 `skill_registry.dry_run_skill` 执行（队列：`skill_registry`）
+
+**状态流转**
+- Dry Run 成功 → `active`
+- Dry Run 失败 → `dry_run_fail`
+- 连续失败达到阈值 → `needs_review`
+
+**失败自愈（Self‑Heal）**
+- 每次失败都会触发自愈，**最多 N=2 次/技能**
+- 自愈仅允许修改 Manifest 以下字段：
+  - `usage_spec.example_code`
+  - `installation.dependencies`
+  - `env_requirements.system_packages`
+  - `env_requirements.python_version`
+- 自愈成功会重新 Dry Run（不会递归触发自愈）
+
+**常见错误码**
+- `exec_failed`：执行异常（运行时错误）
+- `artifact_missing`：声明产物未生成
+- `artifact_empty`：产物为空
+- `unsafe_patch`：自愈补丁触及非白名单字段
+- `error_code_mismatch`：补丁类型与错误码不匹配
+
+**审计字段**
+- `manifest_json.metrics.self_heal_history`：记录自愈次数与变更摘要
+
+---
+
 #### 取消对话流
 
 **端点**: `POST /chat/completions/{request_id}/cancel`

@@ -209,3 +209,36 @@
 }
 ```
 响应字段：见上方字段清单（SkillRegistryDTO）。
+
+## 5. 触发自愈
+`POST /admin/skills/{skill_id}/self-heal`
+
+说明：触发一次自愈流程（会自动进行 Dry Run，最多 N=2 次/技能）。
+
+**Request Body**
+无需请求体。
+
+**Response**
+```json
+{
+  "request": {
+    "skill_id": "docx_editor",
+    "manifest_json": {},
+    "logs": []
+  },
+  "response": {
+    "status": "success",
+    "summary": "update example_code",
+    "patches": [
+      {
+        "path": "usage_spec.example_code",
+        "action": "set",
+        "value": "print('ok')"
+      }
+    ],
+    "updated_manifest": {},
+    "warnings": []
+  }
+}
+```
+字段说明：返回结构遵循 `SkillSelfHealResult`。

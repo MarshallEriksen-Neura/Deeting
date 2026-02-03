@@ -85,3 +85,40 @@ async def test_create_skill_no_permission(client: AsyncClient, auth_tokens: dict
         json={"id": "blocked_skill", "name": "Blocked"},
     )
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_self_heal_skill_success(client: AsyncClient, admin_tokens: dict, monkeypatch):
+    await client.post(
+        "/api/v1/admin/skills",
+        headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},
+        json={"id": "heal_skill", "name": "Heal Skill"},
+    )
+
+    class _FakeSelfHealService:
+        async def self_heal(self, skill_id: str):
+            return {
+                "request": {"skill_id": skill_id, "manifest_json": {}, "logs": []},
+                "response": {
+                    "status": "success",
+                    "patches": [],
+                    "updated_manifest": {},
+                    "warnings": [],
+                },
+            }
+
+    from app.api.v1.admin.skill_registry_route import get_self_heal_service
+    from main import app
+
+    app.dependency_overrides[get_self_heal_service] = lambda: _FakeSelfHealService()
+
+    response = await client.post(
+        "/api/v1/admin/skills/heal_skill/self-heal",
+        headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["request"]["skill_id"] == "heal_skill"
+    assert payload["response"]["status"] == "success"
+    app.dependency_overrides.pop(get_self_heal_service, None)

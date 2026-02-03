@@ -17,7 +17,12 @@ from app.repositories.skill_capability_repository import SkillCapabilityReposito
 from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.schemas.skill_registry import SkillRegistryCreate, SkillRegistryDTO, SkillRegistryUpdate
+from app.schemas.skill_self_heal import SkillSelfHealResult
+from app.services.skill_registry.dry_run_service import SkillDryRunService
+from app.services.skill_registry.skill_metrics_service import SkillMetricsService
 from app.services.skill_registry.skill_registry_service import SkillRegistryService
+from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
+from app.services.skill_registry.skill_self_heal_service import SkillSelfHealService
 
 router = APIRouter(prefix="/admin/skills", tags=["Admin - Skills"])
 
@@ -33,6 +38,23 @@ def get_skill_service(db: AsyncSession = Depends(get_db)) -> SkillRegistryServic
         dependency_repo=dependency_repo,
         artifact_repo=artifact_repo,
     )
+
+
+def get_self_heal_service(db: AsyncSession = Depends(get_db)) -> SkillSelfHealService:
+    repo = SkillRegistryRepository(db)
+    executor = SkillRuntimeExecutor(repo)
+    metrics = SkillMetricsService(repo, failure_threshold=2)
+    dry_run_service = SkillDryRunService(
+        repo,
+        executor,
+        metrics,
+        failure_threshold=2,
+        self_heal_service=None,
+        self_heal_max_attempts=2,
+    )
+    self_heal_service = SkillSelfHealService(repo, dry_run_service=dry_run_service)
+    dry_run_service.self_heal_service = self_heal_service
+    return self_heal_service
 
 
 @router.post(
@@ -102,3 +124,19 @@ async def update_skill(
 
     updated = await service.repo.update(skill, update_data)
     return SkillRegistryDTO.model_validate(updated)
+
+
+@router.post(
+    "/{skill_id}/self-heal",
+    response_model=SkillSelfHealResult,
+    dependencies=[Depends(require_permissions(["assistant.manage"]))],
+)
+async def self_heal_skill(
+    skill_id: str,
+    service: SkillSelfHealService = Depends(get_self_heal_service),
+) -> SkillSelfHealResult:
+    try:
+        result = await service.self_heal(skill_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return result
