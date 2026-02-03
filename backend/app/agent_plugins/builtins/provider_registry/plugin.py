@@ -11,6 +11,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.providers.request_renderer import request_renderer
 from app.utils.security import is_safe_upstream_url
 from app.core.http_client import create_async_http_client
+from app.tasks.search_index import upsert_provider_preset_task
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +264,7 @@ class ProviderRegistryPlugin(AgentPlugin):
             current_configs[capability] = cap_config
             
             await repo.update(preset, {"capability_configs": current_configs})
+            upsert_provider_preset_task.delay(provider_slug)
             
             logger.info(f"Admin {user.username} updated preset '{provider_slug}' capability '{capability}'.")
             

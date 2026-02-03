@@ -18,19 +18,35 @@ class McpMarketRepository:
         category: McpToolCategory | None = None,
         search: str | None = None,
     ) -> list[McpMarketTool]:
+        if search:
+            raise RuntimeError("search_backend_not_supported")
         stmt = select(McpMarketTool)
         if category:
             stmt = stmt.where(McpMarketTool.category == category)
-        if search:
-            pattern = f"%{search}%"
-            stmt = stmt.where(
-                McpMarketTool.name.ilike(pattern)
-                | McpMarketTool.description.ilike(pattern)
-                | McpMarketTool.identifier.ilike(pattern)
-            )
         stmt = stmt.order_by(McpMarketTool.created_at.desc(), McpMarketTool.id.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_by_ids(self, tool_ids: list[str | UUID]) -> list[McpMarketTool]:
+        if not tool_ids:
+            return []
+        normalized_ids = [str(raw_id) for raw_id in tool_ids if raw_id]
+        if not normalized_ids:
+            return []
+        uuid_ids: list[UUID] = []
+        for raw_id in normalized_ids:
+            try:
+                uuid_ids.append(UUID(str(raw_id)))
+            except Exception:
+                continue
+        if not uuid_ids:
+            return []
+
+        stmt = select(McpMarketTool).where(McpMarketTool.id.in_(uuid_ids))
+        result = await self.session.execute(stmt)
+        tools = list(result.scalars().all())
+        tool_map = {str(item.id): item for item in tools}
+        return [tool_map[item_id] for item_id in normalized_ids if item_id in tool_map]
 
     async def get_market_tool(self, tool_id: UUID) -> McpMarketTool | None:
         return await self.session.get(McpMarketTool, tool_id)

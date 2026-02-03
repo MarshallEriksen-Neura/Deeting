@@ -65,3 +65,6 @@ class MeilisearchIndexService:
         if not ids:
             return
         await self._request("post", f"/indexes/{index}/documents/delete-batch", json=ids)
+
+    async def delete_all_documents(self, *, index: str) -> None:
+        await self._request("delete", f"/indexes/{index}/documents")

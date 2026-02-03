@@ -25,6 +25,8 @@ class AssistantMarketRepository:
         """
         市场助手列表查询（public + published + 审核通过或系统助手）。
         """
+        if query:
+            raise RuntimeError("search_backend_not_supported")
         av = AssistantVersion
         ai = AssistantInstall
         rt = ReviewTask
@@ -67,23 +69,6 @@ class AssistantMarketRepository:
                 .where(AssistantTag.name.in_(tags))
             )
             stmt = stmt.where(Assistant.id.in_(subq))
-
-        if query:
-            bind = self.session.get_bind()
-            is_postgres = bind and bind.dialect.name == "postgresql"
-            tsv_col = getattr(av, "tsv", None)
-            if is_postgres and tsv_col is not None:
-                ts_query = func.websearch_to_tsquery("simple", query)
-                stmt = stmt.where(tsv_col.op("@@")(ts_query))
-            else:
-                ilike_pattern = f"%{query}%"
-                stmt = stmt.where(
-                    or_(
-                        av.name.ilike(ilike_pattern),
-                        av.description.ilike(ilike_pattern),
-                        av.system_prompt.ilike(ilike_pattern),
-                    )
-                )
 
         return stmt.order_by(Assistant.created_at.desc(), Assistant.id.desc())
 

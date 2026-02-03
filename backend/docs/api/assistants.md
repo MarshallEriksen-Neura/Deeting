@@ -37,8 +37,22 @@
 ## 搜索公开助手（游标分页）
 
 - `GET /admin/assistants/search?q=...&cursor=&size=20&tags=a&tags=b`
-- 仅返回 `public + published` 的助手，后端优先使用 Postgres 全文索引。
+- 仅返回 `public + published` 的助手，使用 Meilisearch。
 - 响应：`AssistantListResponse`
+
+### 搜索索引（Meilisearch）
+
+- 索引名：`${MEILISEARCH_INDEX_PREFIX}_assistants_public`（默认 `ai_gateway_assistants_public`）
+- 索引字段：
+  - `id` / `assistant_id` / `name` / `description` / `summary` / `system_prompt`
+  - `tags` / `visibility` / `status` / `created_at` / `published_at`
+- 过滤与游标：
+  - 固定过滤：`visibility = "public"` 且 `status = "published"`
+  - `tags` 使用 Meili `filter`（`tags = "#Python"`）
+  - 游标形态：`<rankingScore>|<created_at>|<assistant_id>`
+- 同步方式：
+  - 增量：`search_index.upsert_assistant` / `search_index.delete_assistant`
+  - 全量重建：`search_index.rebuild_all`
 
 ## 更新助手
 
@@ -72,3 +86,4 @@
 
 变更记录
 - 2026-01-15：新增 `icon_id` 字段（助手级别固定图标）。
+- 2026-02-02：补充 Meilisearch 搜索索引说明。

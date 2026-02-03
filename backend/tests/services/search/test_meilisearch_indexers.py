@@ -89,3 +89,17 @@ async def test_delete_documents_skips_empty_ids(monkeypatch: pytest.MonkeyPatch)
     await svc.delete_documents(index="ai_gateway_mcp_market_tools", ids=[])
 
     assert mock.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_all_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> None:
+    svc = MeilisearchIndexService()
+    mock = AsyncMock(return_value={"taskUid": 1})
+    monkeypatch.setattr(svc, "_request", mock)
+
+    await svc.delete_all_documents(index="ai_gateway_mcp_market_tools")
+
+    assert mock.await_count == 1
+    args = mock.call_args.args
+    assert args[0] == "delete"
+    assert args[1] == "/indexes/ai_gateway_mcp_market_tools/documents"

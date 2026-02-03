@@ -13,6 +13,8 @@ from app.services.search.cursor_store import SearchCursorStore
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SIMPLE_SEARCH_LIMIT = 1000
+
 
 class MeilisearchBackend(SearchBackend):
     def __init__(self, *, cursor_store: SearchCursorStore | None = None) -> None:
@@ -69,9 +71,23 @@ class MeilisearchBackend(SearchBackend):
     def _assistants_market_index(self) -> str:
         return f"{self._index_prefix}_assistants_market"
 
+    def _mcp_market_index(self) -> str:
+        return f"{self._index_prefix}_mcp_market_tools"
+
+    def _provider_presets_index(self) -> str:
+        return f"{self._index_prefix}_provider_presets"
+
     @staticmethod
     def _extract_assistant_id(hit: dict[str, Any]) -> str | None:
         return str(hit.get("id") or hit.get("assistant_id") or "").strip() or None
+
+    @staticmethod
+    def _extract_mcp_tool_id(hit: dict[str, Any]) -> str | None:
+        return str(hit.get("id") or hit.get("tool_id") or "").strip() or None
+
+    @staticmethod
+    def _extract_provider_slug(hit: dict[str, Any]) -> str | None:
+        return str(hit.get("slug") or hit.get("id") or "").strip() or None
 
     async def _resolve_offset(self, cursor: str | None) -> int:
         if not cursor:
@@ -177,7 +193,29 @@ class MeilisearchBackend(SearchBackend):
         search: str | None,
         category: object | None,
     ) -> list[str]:
-        raise NotImplementedError
+        filters: list[str] = []
+        if category is not None:
+            raw_value = getattr(category, "value", category)
+            category_value = str(raw_value).strip()
+            if category_value:
+                filters.append(f'category = "{category_value}"')
+
+        data = await self._search(
+            index_name=self._mcp_market_index(),
+            query=(search or "").strip(),
+            limit=DEFAULT_SIMPLE_SEARCH_LIMIT,
+            offset=0,
+            filters=filters or None,
+        )
+        hits = list(data.get("hits") or [])
+        ids: list[str] = []
+        seen: set[str] = set()
+        for hit in hits:
+            tool_id = self._extract_mcp_tool_id(hit)
+            if tool_id and tool_id not in seen:
+                seen.add(tool_id)
+                ids.append(tool_id)
+        return ids
 
     async def search_provider_presets(
         self,
@@ -185,4 +223,25 @@ class MeilisearchBackend(SearchBackend):
         query: str | None,
         category: str | None,
     ) -> list[str]:
-        raise NotImplementedError
+        filters: list[str] = []
+        if category:
+            category_value = str(category).strip()
+            if category_value:
+                filters.append(f'category = "{category_value}"')
+
+        data = await self._search(
+            index_name=self._provider_presets_index(),
+            query=(query or "").strip(),
+            limit=DEFAULT_SIMPLE_SEARCH_LIMIT,
+            offset=0,
+            filters=filters or None,
+        )
+        hits = list(data.get("hits") or [])
+        slugs: list[str] = []
+        seen: set[str] = set()
+        for hit in hits:
+            slug = self._extract_provider_slug(hit)
+            if slug and slug not in seen:
+                seen.add(slug)
+                slugs.append(slug)
+        return slugs

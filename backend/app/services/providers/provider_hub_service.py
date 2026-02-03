@@ -12,6 +12,7 @@ from app.schemas.provider_hub import (
     ProviderInstanceSummary,
 )
 from app.services.providers.health_monitor import HealthMonitorService
+from app.services.search import get_search_backend
 
 
 class ProviderHubService:
@@ -70,19 +71,26 @@ class ProviderHubService:
         health_cache: Dict[str, dict] = {}
         cards: List[ProviderCard] = []
         category_lower = category.lower() if category else None
-        q_lower = q.lower().strip() if q else None
+        query = q.strip() if q else None
+        allowed_slugs: set[str] | None = None
+        if query:
+            backend = get_search_backend()
+            search_slugs = await backend.search_provider_presets(
+                query=query,
+                category=category_lower if category_lower and category_lower != "all" else None,
+            )
+            allowed_slugs = {slug for slug in search_slugs if slug}
+            if not allowed_slugs:
+                empty_stats = ProviderHubStats(total=0, connected=0, by_category={})
+                return ProviderHubResponse(providers=[], stats=empty_stats)
 
         for preset in sorted(presets, key=lambda x: x.get("sort_order", 0)):
             if category_lower and category_lower != "all":
                 if (preset.get("category") or "").lower() != category_lower:
                     continue
 
-            if q_lower:
-                haystack = " ".join(
-                    [preset.get("name", ""), preset.get("slug", ""), preset.get("description", "")]
-                ).lower()
-                if q_lower not in haystack:
-                    continue
+            if allowed_slugs is not None and preset.get("slug") not in allowed_slugs:
+                continue
 
             # 关联实例
             related_instances = [inst for inst in instances if inst.preset_slug == preset.get("slug")]
