@@ -12,6 +12,10 @@ from app.services.skill_registry.manifest_generator import SkillManifestGenerato
 from app.services.skill_registry.parsers.node_parser import NodeRepoParser
 from app.services.skill_registry.parsers.python_parser import PythonRepoParser
 from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
+from app.services.skill_registry.skill_metrics_service import SkillMetricsService
+from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
+from app.services.skill_registry.dry_run_service import SkillDryRunService
+from app.services.skill_registry.skill_self_heal_service import SkillSelfHealService
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
 
 logger = logging.getLogger(__name__)
@@ -179,7 +183,7 @@ def ingest_skill_repo(
     runtime_hint: str | None = None,
 ) -> dict | str:
     try:
-        return asyncio.run(
+        result = asyncio.run(
             _run_repo_ingestion(
                 repo_url=repo_url,
                 revision=revision,
@@ -187,6 +191,45 @@ def ingest_skill_repo(
                 runtime_hint=runtime_hint,
             )
         )
+        if isinstance(result, dict):
+            resolved_skill_id = result.get("skill_id")
+            if resolved_skill_id:
+                _trigger_dry_run(str(resolved_skill_id))
+        return result
     except Exception as exc:
         logger.exception("skill_registry_ingest_repo_failed: %s", exc)
         return "failed"
+
+
+async def _run_skill_dry_run(skill_id: str) -> dict:
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        executor = SkillRuntimeExecutor(repo)
+        metrics = SkillMetricsService(repo, failure_threshold=2)
+        dry_run_service = SkillDryRunService(
+            repo,
+            executor,
+            metrics,
+            failure_threshold=2,
+            self_heal_service=None,
+            self_heal_max_attempts=2,
+        )
+        self_heal_service = SkillSelfHealService(repo, dry_run_service=dry_run_service)
+        dry_run_service.self_heal_service = self_heal_service
+        return await dry_run_service.run(skill_id)
+
+
+@celery_app.task(name="skill_registry.dry_run_skill")
+def dry_run_skill(skill_id: str) -> dict | str:
+    try:
+        return asyncio.run(_run_skill_dry_run(skill_id))
+    except Exception as exc:
+        logger.exception("skill_registry_dry_run_failed: %s", exc)
+        return "failed"
+
+
+def _trigger_dry_run(skill_id: str) -> None:
+    if hasattr(dry_run_skill, "delay"):
+        dry_run_skill.delay(skill_id)
+    else:
+        dry_run_skill(skill_id)

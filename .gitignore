@@ -90,6 +90,8 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/.pnpm-debug.log*
 
+scout/
+
 # bridge
 bin/
 nginx/
