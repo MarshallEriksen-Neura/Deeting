@@ -51,6 +51,14 @@ class Settings(BaseSettings):
         "nvidia/llama-3.2-nemoretriever"
     )
 
+    # Meilisearch（搜索，可选）
+    MEILISEARCH_URL: str = ""
+    MEILISEARCH_API_KEY: str = ""
+    MEILISEARCH_TIMEOUT_SECONDS: float = 5.0
+    MEILISEARCH_INDEX_PREFIX: str = "ai_gateway"
+    SEARCH_CURSOR_TTL_SECONDS: int = 3600
+    SEARCH_BACKEND: str = "meilisearch"
+
     # MCP 工具检索配置
     MCP_TOOL_JIT_THRESHOLD: int = 15
     MCP_TOOL_USER_TOPK: int = 5

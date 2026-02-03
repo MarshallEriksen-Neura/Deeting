@@ -11,7 +11,7 @@ from app.schemas.gateway_log import GatewayLogDTO
 
 
 class GatewayLogService:
-    def __init__(self, repo: GatewayLogRepository):
+    def __init__(self, repo: GatewayLogRepository) -> None:
         self.repo = repo
 
     async def list_user_logs(

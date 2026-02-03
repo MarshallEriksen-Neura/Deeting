@@ -105,7 +105,7 @@ async def search_assistants(
 ) -> AssistantListResponse:
     """
     全文检索助手（仅公开且已发布），游标分页。
-    使用 Postgres tsvector 优先，其他方言回退 ILIKE。
+    使用 Meilisearch 索引。
     """
     size = max(1, min(size, 50))
     try:

@@ -18,7 +18,9 @@ from app.schemas.assistant import (
 )
 from app.services.assistant.assistant_state import AssistantStateMachine
 from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.services.search import get_search_backend
 from app.tasks.assistant import remove_assistant_from_qdrant, sync_assistant_to_qdrant
+from app.tasks.search_index import delete_assistant_task, upsert_assistant_task
 from app.utils.time_utils import Datetime
 from app.repositories.assistant_tag_repository import AssistantTagRepository, AssistantTagLinkRepository
 
@@ -72,12 +74,14 @@ class AssistantService:
         cursor: str | None = None,
         tags: list[str] | None = None,
     ) -> AssistantListResponse:
-        items, next_cursor = await self.assistant_repo.search_public(
+        backend = get_search_backend()
+        assistant_ids, next_cursor = await backend.search_public_assistants(
             query=query,
             size=size,
             cursor=cursor,
             tags=tags,
         )
+        items = await self.assistant_repo.list_public_by_ids(assistant_ids)
         return AssistantListResponse(
             items=items,
             next_cursor=next_cursor,
@@ -118,6 +122,9 @@ class AssistantService:
                 "published_at": assistant.published_at,
             },
         )
+        if self._is_indexable(assistant.visibility, assistant.status):
+            sync_assistant_to_qdrant.delay(str(assistant.id))
+            upsert_assistant_task.delay(str(assistant.id))
         return assistant
 
     async def update_assistant(
@@ -192,6 +199,7 @@ class AssistantService:
         )
         if self._is_indexable(assistant.visibility, assistant.status):
             sync_assistant_to_qdrant.delay(str(assistant.id))
+            upsert_assistant_task.delay(str(assistant.id))
         return assistant
 
     # ===== 版本 =====
@@ -237,6 +245,7 @@ class AssistantService:
             and self._is_indexable(assistant.visibility, assistant.status)
         ):
             sync_assistant_to_qdrant.delay(str(assistant.id))
+            upsert_assistant_task.delay(str(assistant.id))
         return version
 
     async def delete_assistant(self, assistant_id: UUID) -> None:
@@ -245,6 +254,9 @@ class AssistantService:
             return
         if self._is_indexable(assistant.visibility, assistant.status):
             remove_assistant_from_qdrant.delay(str(assistant.id))
+            delete_assistant_task.delay(str(assistant.id))
+        else:
+            delete_assistant_task.delay(str(assistant.id))
         await self.assistant_repo.delete(assistant_id)
 
     # ===== 内部工具 =====
@@ -311,6 +323,7 @@ class AssistantService:
         is_indexable = self._is_indexable(assistant.visibility, assistant.status)
         if was_indexable and not is_indexable:
             remove_assistant_from_qdrant.delay(str(assistant.id))
+            delete_assistant_task.delay(str(assistant.id))
             return
         if not is_indexable:
             return
@@ -321,3 +334,4 @@ class AssistantService:
             or payload.current_version_id is not None
         ):
             sync_assistant_to_qdrant.delay(str(assistant.id))
+            upsert_assistant_task.delay(str(assistant.id))

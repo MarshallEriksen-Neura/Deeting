@@ -25,6 +25,8 @@ class AssistantMarketRepository:
         """
         市场助手列表查询（public + published + 审核通过或系统助手）。
         """
+        if query:
+            raise RuntimeError("search_backend_not_supported")
         av = AssistantVersion
         ai = AssistantInstall
         rt = ReviewTask
@@ -68,24 +70,41 @@ class AssistantMarketRepository:
             )
             stmt = stmt.where(Assistant.id.in_(subq))
 
-        if query:
-            bind = self.session.get_bind()
-            is_postgres = bind and bind.dialect.name == "postgresql"
-            tsv_col = getattr(av, "tsv", None)
-            if is_postgres and tsv_col is not None:
-                ts_query = func.websearch_to_tsquery("simple", query)
-                stmt = stmt.where(tsv_col.op("@@")(ts_query))
-            else:
-                ilike_pattern = f"%{query}%"
-                stmt = stmt.where(
-                    or_(
-                        av.name.ilike(ilike_pattern),
-                        av.description.ilike(ilike_pattern),
-                        av.system_prompt.ilike(ilike_pattern),
-                    )
-                )
-
         return stmt.order_by(Assistant.created_at.desc(), Assistant.id.desc())
+
+    async def fetch_market_rows_by_ids(
+        self,
+        *,
+        assistant_ids: list[str | UUID],
+        user_id: UUID | None,
+        entity_type: str,
+        tags: list[str] | None = None,
+    ) -> list[tuple[Assistant, AssistantVersion, UUID | None]]:
+        if not assistant_ids:
+            return []
+        normalized_ids = [str(raw_id) for raw_id in assistant_ids if raw_id]
+        if not normalized_ids:
+            return []
+        uuid_ids: list[UUID] = []
+        for raw_id in normalized_ids:
+            try:
+                uuid_ids.append(UUID(str(raw_id)))
+            except Exception:
+                continue
+        if not uuid_ids:
+            return []
+
+        stmt = self.build_market_query(
+            user_id=user_id,
+            entity_type=entity_type,
+            query=None,
+            tags=tags,
+        )
+        stmt = stmt.where(Assistant.id.in_(uuid_ids))
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        row_map = {str(row[0].id): row for row in rows}
+        return [row_map[item_id] for item_id in normalized_ids if item_id in row_map]
 
     def build_install_query(self, *, user_id: UUID, install_id: UUID | None = None):
         av = AssistantVersion

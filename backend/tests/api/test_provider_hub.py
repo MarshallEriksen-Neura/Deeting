@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from sqlalchemy import select
 
@@ -85,6 +87,27 @@ async def test_provider_hub_returns_presets_from_db(client, auth_tokens, AsyncSe
     assert "openai" in slugs and "azure" in slugs
     stats = data.get("stats", {})
     assert stats.get("total") == len(providers)
+
+
+@pytest.mark.asyncio
+async def test_provider_hub_uses_meili_search(client, auth_tokens, AsyncSessionLocal, monkeypatch):
+    async with AsyncSessionLocal() as session:
+        await _seed_presets(session)
+
+    backend = AsyncMock()
+    backend.search_provider_presets.return_value = ["openai"]
+    monkeypatch.setattr(
+        "app.services.providers.provider_hub_service.get_search_backend",
+        lambda: backend,
+    )
+
+    headers = {"Authorization": f"Bearer {auth_tokens['access_token']}"}
+    resp = await client.get("/api/v1/providers/hub?q=Open", headers=headers)
+    assert resp.status_code == 200
+    providers = resp.json().get("providers", [])
+    slugs = {p["slug"] for p in providers}
+    assert slugs == {"openai"}
+    backend.search_provider_presets.assert_awaited_once()
 
 
 @pytest.mark.asyncio

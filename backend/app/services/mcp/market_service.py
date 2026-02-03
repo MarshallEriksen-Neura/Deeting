@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mcp_market import McpMarketTool, UserMcpSubscription, McpToolCategory
 from app.repositories.mcp_market_repository import McpMarketRepository
+from app.services.search import get_search_backend
 
 
 class McpMarketService:
@@ -22,7 +23,9 @@ class McpMarketService:
         category: McpToolCategory | None = None,
         search: str | None = None,
     ) -> list[McpMarketTool]:
-        return await self.repo.list_market_tools(category=category, search=search)
+        backend = get_search_backend()
+        tool_ids = await backend.search_mcp_tools(search=search, category=category)
+        return await self.repo.list_by_ids(tool_ids)
 
     async def get_market_tool(self, tool_id: UUID) -> McpMarketTool | None:
         return await self.repo.get_market_tool(tool_id)

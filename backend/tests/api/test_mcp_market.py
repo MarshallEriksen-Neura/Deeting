@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from unittest.mock import AsyncMock
+
 import pytest
 from httpx import AsyncClient
 
@@ -43,9 +45,16 @@ async def _seed_market_tool(session) -> McpMarketTool:
 
 
 @pytest.mark.asyncio
-async def test_list_market_tools(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
+async def test_list_market_tools(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal, monkeypatch) -> None:
     async with AsyncSessionLocal() as session:
         tool = await _seed_market_tool(session)
+
+    backend = AsyncMock()
+    backend.search_mcp_tools.return_value = [str(tool.id)]
+    monkeypatch.setattr(
+        "app.services.mcp.market_service.get_search_backend",
+        lambda: backend,
+    )
 
     resp = await client.get(
         "/api/v1/mcp/market-tools",
@@ -56,6 +65,7 @@ async def test_list_market_tools(client: AsyncClient, auth_tokens: dict, AsyncSe
     assert isinstance(data, list)
     assert len(data) == 1
     assert data[0]["identifier"] == tool.identifier
+    backend.search_mcp_tools.assert_awaited_once()
 
 
 @pytest.mark.asyncio

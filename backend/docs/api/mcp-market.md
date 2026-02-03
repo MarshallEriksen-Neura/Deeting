@@ -11,6 +11,19 @@
   - `q`：搜索关键字（匹配 name/description/identifier）
 - 响应：`McpMarketToolSummary[]`
 
+### 搜索索引（Meilisearch）
+
+- 索引名：`${MEILISEARCH_INDEX_PREFIX}_mcp_market_tools`（默认 `ai_gateway_mcp_market_tools`）
+- 索引字段：
+  - `id` / `identifier` / `name` / `description`
+  - `category` / `tags` / `is_official` / `download_count`
+- 过滤与排序：
+  - `category` 过滤使用 Meili `filter`（`category = "developer"`）
+  - 排序保持原 API 行为（由后端按传入 ID 顺序返回）
+- 同步方式：
+  - 增量：`search_index.upsert_mcp_tool` / `search_index.delete_mcp_tool`
+  - 全量重建：`search_index.rebuild_all`
+
 ## 市场工具详情
 
 - `GET /mcp/market-tools/{tool_id}`
@@ -71,3 +84,4 @@
 
 变更记录
 - 2026-01-16：新增 MCP 市场与订阅 API（云端 Inventory）。
+- 2026-02-02：补充 Meilisearch 索引字段与同步任务说明。

@@ -15,6 +15,19 @@
 - 响应：`CursorPage[AssistantMarketItem]`
 - 说明：仅返回 `public + published` 且通过审核（或系统助手）的条目；包含 `installed`、`summary`、`tags`、`install_count`、`rating_avg` 等字段。`tags` 采用 `#Python` 形式。
 
+### 搜索索引（Meilisearch）
+
+- 索引名：`${MEILISEARCH_INDEX_PREFIX}_assistants_market`（默认 `ai_gateway_assistants_market`）
+- 索引字段：同 `assistants_public`（见 Assistants 管理 API）
+- 过滤与游标：
+  - 固定过滤：`visibility = "public"` 且 `status = "published"`
+  - 市场可见性：系统助手（`owner_user_id = null`）或审核通过（`review_task.status = approved`）
+  - `tags` 使用 Meili `filter`
+  - 游标形态：`<rankingScore>|<created_at>|<assistant_id>`
+- 同步方式：
+  - 增量：`search_index.upsert_assistant` / `search_index.delete_assistant`
+  - 全量重建：`search_index.rebuild_all`
+
 ## 我的安装列表
 
 - `GET /assistants/installs`
@@ -157,3 +170,4 @@
 - 2026-01-17：创建助手支持 `share_to_market`，可在创建时自动提交审核。
 - 2026-01-19：安装支持 `follow_latest`；更新助手支持创建新版本；删除已安装助手改为归档。
 - 2026-01-27：安装列表过滤已归档助手。
+- 2026-02-02：补充 Meilisearch 搜索索引说明。

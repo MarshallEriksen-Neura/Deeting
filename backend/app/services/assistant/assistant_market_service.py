@@ -3,8 +3,6 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi_pagination.cursor import CursorPage, CursorParams
-from fastapi_pagination.ext.sqlalchemy import paginate
-
 from app.models.assistant import Assistant, AssistantStatus, AssistantVisibility
 from app.models.notification import NotificationLevel, NotificationType
 from app.models.review import ReviewStatus
@@ -25,6 +23,7 @@ from app.services.review.review_service import ReviewService
 from app.services.notifications.notification_service import NotificationService
 from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService, AutoReviewResult
 from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.services.search import get_search_backend
 
 ASSISTANT_MARKET_ENTITY = "assistant_market"
 
@@ -84,10 +83,17 @@ class AssistantMarketService:
         tags: list[str] | None = None,
     ) -> CursorPage[AssistantMarketItem]:
         normalized_tags = self.tag_service.normalize_tags(tags)
-        stmt = self.market_repo.build_market_query(
+        backend = get_search_backend()
+        assistant_ids, next_cursor = await backend.search_market_assistants(
+            query=query,
+            size=params.size,
+            cursor=params.cursor,
+            tags=normalized_tags,
+        )
+        rows = await self.market_repo.fetch_market_rows_by_ids(
+            assistant_ids=assistant_ids,
             user_id=user_id,
             entity_type=ASSISTANT_MARKET_ENTITY,
-            query=query,
             tags=normalized_tags,
         )
 
@@ -123,7 +129,13 @@ class AssistantMarketService:
                 )
             return items
 
-        return await paginate(self.market_repo.session, stmt, params=params, transformer=_transform)
+        items = await _transform(rows)
+        return CursorPage(
+            items=items,
+            next_page=next_cursor,
+            previous_page=None,
+            total=None,
+        )
 
     async def list_installs(
         self,
