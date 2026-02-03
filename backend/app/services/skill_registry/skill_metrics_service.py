@@ -73,8 +73,6 @@ class SkillMetricsService:
         metrics["consecutive_failures"] += 1
         metrics["last_error"] = {"code": error_code, "message": error_message}
         payload: dict[str, Any] = {"manifest_json": _merge_metrics(skill.manifest_json, metrics)}
-        if metrics["consecutive_failures"] >= self.failure_threshold:
-            payload["status"] = "disabled"
         await self.repo.update(skill, payload)
         return metrics
 
