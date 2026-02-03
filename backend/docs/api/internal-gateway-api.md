@@ -212,6 +212,47 @@ data: [DONE]
 
 ---
 
+### 3. Skill Execution
+
+执行单个技能的端到端运行（克隆仓库、安装依赖、脚本拼接、执行并回传产物）。  
+路径：`/api/v1/internal/skills/{skill_id}/execute`
+
+请求：
+```json
+{
+  "inputs": {
+    "docx_path": "input.docx"
+  },
+  "intent": "edit",
+  "session_id": "session-001"
+}
+```
+
+响应：
+```json
+{
+  "status": "ok",
+  "stdout": ["ok\n"],
+  "stderr": [],
+  "exit_code": 0,
+  "artifacts": [
+    {
+      "name": "output_docx",
+      "type": "file",
+      "path": "/workspace/skills/docx/output.docx",
+      "size": 1024,
+      "content_base64": "BASE64..."
+    }
+  ]
+}
+```
+
+说明：
+- `session_id` 为空时自动使用 `user.id` 作为会话隔离。
+- `artifacts` 会包含 Base64 内容（后续可切换为对象存储引用）。
+
+---
+
 #### 取消对话流
 
 **端点**: `POST /chat/completions/{request_id}/cancel`
