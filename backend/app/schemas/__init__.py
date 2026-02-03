@@ -55,6 +55,11 @@ from .conversation import ConversationSessionItem
 from .assistant_rating import AssistantRatingRequest, AssistantRatingResponse
 from .review import ReviewTaskDTO
 from .secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
+from .skill_execution import (
+    SkillExecutionArtifact,
+    SkillExecutionRequest,
+    SkillExecutionResult,
+)
 from .system_settings import (
     SystemEmbeddingSettingDTO,
     SystemEmbeddingSettingUpdateRequest,
@@ -175,6 +180,9 @@ __all__ = [
     "NotificationSnapshot",
     "NotificationWSInbound",
     "NotificationWSOutbound",
+    "SkillExecutionArtifact",
+    "SkillExecutionRequest",
+    "SkillExecutionResult",
     "AssetUploadCompleteRequest",
     "AssetUploadCompleteResponse",
     "AssetUploadInitRequest",
