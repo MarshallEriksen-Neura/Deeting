@@ -41,6 +41,14 @@ plugins:
       - "save_provider_field_mapping"
 
   # === Other Utilities ===
+  - id: "system.code_interpreter"
+    name: "Code Interpreter"
+    module: "app.agent_plugins.builtins.code_interpreter.plugin"
+    class_name: "CodeInterpreterPlugin"
+    enabled_by_default: true
+    tools:
+      - "run_python"
+
   - id: "system.image_generation"
     name: "Image Generation"
     module: "app.agent_plugins.builtins.image_generation.plugin"

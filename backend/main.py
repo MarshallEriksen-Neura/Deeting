@@ -52,7 +52,14 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning(f"qdrant_init_failed: {exc}")
 
+    # Start Sandbox Manager Cleanup Worker
+    from app.core.sandbox.manager import sandbox_manager
+    await sandbox_manager.start_background_worker()
+
     yield
+
+    # Stop Sandbox Manager Cleanup Worker
+    await sandbox_manager.stop_background_worker()
 
     try:
         await cache.close()
@@ -222,6 +229,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         internal_video_generation_router, prefix=f"{api_prefix}/internal", tags=["Video Generation"]
+    )
+    app.include_router(
+        internal_sandbox_router, prefix=f"{api_prefix}/internal", tags=["Sandbox"]
     )
     app.include_router(
         public_image_share_router, prefix=api_prefix, tags=["Public Image Share"]

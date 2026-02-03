@@ -1,0 +1,109 @@
+# OpenSandbox Integration Design (Powered by Alibaba OpenSandbox)
+
+## 1. Introduction
+This document outlines the integration of **Alibaba OpenSandbox** into Deeting OS.
+We will leverage the official `opensandbox` Python SDK to manage secure, isolated execution environments for AI Agents.
+
+**Reference**: [Alibaba OpenSandbox GitHub](https://github.com/alibaba/OpenSandbox)
+
+## 2. Architecture
+
+### 2.1 System Topology
+```mermaid
+graph TD
+    subgraph "Deeting Backend"
+        Skill[Code Interpreter Skill]
+        Manager[Sandbox Service Wrapper]
+        SDK[Alibaba OpenSandbox SDK]
+    end
+
+    subgraph "Infrastructure (Docker/K8s)"
+        Daemon[Docker Daemon / K8s API]
+        Container[OpenSandbox Container]
+    end
+
+    Skill -- "1. Request Execution" --> Manager
+    Manager -- "2. Async Context" --> SDK
+    SDK -- "3. Spawn/Manage" --> Daemon
+    Daemon -- "4. Start" --> Container
+    SDK -- "5. Execute Command" --> Container
+```
+
+### 2.2 Key Components
+1.  **Sandbox Manager Service**: Wraps the `opensandbox` SDK to provide a high-level API for Skills (e.g., `execute_code(session_id, code)`).
+2.  **OpenSandbox SDK**: The official Python library (`pip install opensandbox`) handling the low-level protocol.
+3.  **Runtime Images**: Official images (e.g., `opensandbox/code-interpreter:v1.0.1`) or custom extensions.
+
+## 3. Implementation Details
+
+### 3.1 Dependencies
+*   **Package**: `opensandbox`
+*   **System**: Docker Engine (local development) or Kubernetes (production).
+
+### 3.2 Service Design (`backend/app/core/sandbox/service.py`)
+
+The service will implement a Singleton pattern to manage active sandboxes mapped to user sessions.
+
+```python
+from opensandbox import Sandbox
+from datetime import timedelta
+
+class SandboxService:
+    async def run_code(self, session_id: str, code: str, language: str = "python"):
+        # Configuration
+        image = "opensandbox/code-interpreter:v1.0.1"
+        
+        # Initialize Sandbox (connects to Docker/K8s)
+        # Note: In a real app, we might keep the sandbox alive across requests
+        # using a persistent manager. For MVP, we might use ephemeral.
+        async with Sandbox.create(image, timeout=timedelta(minutes=5)) as sandbox:
+            
+            # 1. Write Code to File
+            await sandbox.fs.write("/tmp/script.py", code)
+            
+            # 2. Execute
+            # The official image likely has a specific entrypoint or we call python directly
+            result = await sandbox.exec(["python3", "/tmp/script.py"])
+            
+            return {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.exit_code
+            }
+```
+
+### 3.3 Skill Implementation (`backend/app/agent_plugins/builtins/code_interpreter/plugin.py`)
+
+The Skill serves as the interface between the LLM and the Sandbox Service.
+
+**Tool Definition**:
+```yaml
+name: code_interpreter
+description: Execute Python code in a secure sandbox.
+parameters:
+  code: string
+```
+
+**Workflow**:
+1.  LLM generates Python code.
+2.  Skill calls `SandboxService.run_code(session_id, code)`.
+3.  Service spawns/reuses sandbox, executes code, returns output.
+4.  Skill formats output (truncating long logs) and returns to LLM.
+
+## 4. Phase 1 Implementation Plan
+
+1.  **Install SDK**: Add `opensandbox` to `pyproject.toml`.
+2.  **Pull Image**: `docker pull opensandbox/code-interpreter:v1.0.1` (or latest).
+3.  **Core Module**: Create `backend/app/core/sandbox/` with the service wrapper.
+4.  **Test**: Create a script `backend/scripts/test_opensandbox.py` to verify Docker connectivity and basic execution.
+
+## 5. Security & Constraints
+*   **Network**: The official `opensandbox` allows configuring network policies. We should default to **offline** or **whitelist-only**.
+*   **Resource Limits**: Set CPU/Mem limits via the SDK's creation parameters.
+*   **Timeouts**: Enforce strict timeouts (e.g., 30s execution, 10m session).
+
+## 6. Comparison with previous design
+*   **Pros**: Uses a battle-tested library, standardizes the protocol, supports K8s out-of-the-box.
+*   **Cons**: Dependency on external library updates.
+
+This design aligns with the "Open Source First" philosophy of Deeting OS.

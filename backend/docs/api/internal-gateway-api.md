@@ -181,6 +181,37 @@ data: [DONE]
 
 ---
 
+### 2. Sandbox Run
+
+执行内部沙箱代码（OpenSandbox）。  
+路径：`/api/v1/internal/sandbox/run`
+
+请求：
+```json
+{
+  "session_id": "session-001",
+  "code": "print(1)",
+  "language": "python"
+}
+```
+
+响应：
+```json
+{
+  "stdout": ["1\n"],
+  "stderr": [],
+  "result": [],
+  "exit_code": 0,
+  "error": null
+}
+```
+
+说明：
+- 实际会话隔离会自动加上 `user.id` 前缀。
+- 仅支持 `python`。
+
+---
+
 #### 取消对话流
 
 **端点**: `POST /chat/completions/{request_id}/cancel`

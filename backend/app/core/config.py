@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     应用配置
     """
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=["backend/.env", ".env"],
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"
@@ -259,6 +259,9 @@ class Settings(BaseSettings):
 
     # Scout Service (Cognitive Engine)
     SCOUT_SERVICE_URL: str = "http://scout:8001"
+
+    # OpenSandbox Configuration
+    OPENSANDBOX_URL: str = "http://localhost:8080"
 
     # Repo ingestion (skill registry)
     REPO_INGESTION_WORKDIR: str = "backend/.data/repo_ingestion"
