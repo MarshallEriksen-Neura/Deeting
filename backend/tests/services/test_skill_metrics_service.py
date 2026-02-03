@@ -53,3 +53,28 @@ async def test_auto_disable_on_failures():
         assert updated is not None
         assert updated.status == "disabled"
         assert updated.manifest_json["metrics"]["consecutive_failures"] == 2
+
+
+@pytest.mark.asyncio
+async def test_dry_run_metrics_updates():
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        created = await repo.create(
+            {
+                "id": "core.tools.docx",
+                "name": "Docx",
+            }
+        )
+        service = SkillMetricsService(repo, failure_threshold=2)
+
+        await service.record_dry_run_success(created.id)
+        await service.record_dry_run_failure(created.id, error_code="artifact_missing")
+
+        updated = await repo.get_by_id(created.id)
+
+        assert updated is not None
+        metrics = updated.manifest_json["metrics"]
+        assert metrics["dry_run_total"] == 2
+        assert metrics["dry_run_success"] == 1
+        assert metrics["dry_run_fail"] == 1
+        assert metrics["last_error"]["code"] == "artifact_missing"
