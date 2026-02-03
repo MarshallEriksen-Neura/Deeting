@@ -55,6 +55,7 @@ from .conversation import ConversationSessionItem
 from .assistant_rating import AssistantRatingRequest, AssistantRatingResponse
 from .review import ReviewTaskDTO
 from .secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
+from .skill_self_heal import SkillSelfHealResult
 from .skill_execution import (
     SkillExecutionArtifact,
     SkillExecutionRequest,
@@ -180,6 +181,7 @@ __all__ = [
     "NotificationSnapshot",
     "NotificationWSInbound",
     "NotificationWSOutbound",
+    "SkillSelfHealResult",
     "SkillExecutionArtifact",
     "SkillExecutionRequest",
     "SkillExecutionResult",
