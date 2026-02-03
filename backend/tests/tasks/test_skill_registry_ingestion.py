@@ -34,3 +34,25 @@ def test_ingest_skill_repo_triggers_dry_run(monkeypatch):
 
     assert result == {"skill_id": "core.tools.docx", "status": "created"}
     assert called["skill_id"] == "core.tools.docx"
+
+
+def test_trigger_dry_run_uses_skill_queue(monkeypatch):
+    captured = {}
+
+    class _FakeTask:
+        def apply_async(self, args=None, kwargs=None, **options):
+            captured["args"] = args or []
+            captured["kwargs"] = kwargs or {}
+            captured["options"] = options
+
+    monkeypatch.setattr(
+        "app.tasks.skill_registry.dry_run_skill",
+        _FakeTask(),
+    )
+
+    from app.tasks.skill_registry import _trigger_dry_run
+
+    _trigger_dry_run("core.tools.docx")
+
+    assert captured["args"] == ["core.tools.docx"]
+    assert captured["options"]["queue"] == "skill_registry"

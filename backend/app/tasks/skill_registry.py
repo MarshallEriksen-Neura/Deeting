@@ -219,7 +219,7 @@ async def _run_skill_dry_run(skill_id: str) -> dict:
         return await dry_run_service.run(skill_id)
 
 
-@celery_app.task(name="skill_registry.dry_run_skill")
+@celery_app.task(queue="skill_registry", name="skill_registry.dry_run_skill")
 def dry_run_skill(skill_id: str) -> dict | str:
     try:
         return asyncio.run(_run_skill_dry_run(skill_id))
@@ -229,7 +229,7 @@ def dry_run_skill(skill_id: str) -> dict | str:
 
 
 def _trigger_dry_run(skill_id: str) -> None:
-    if hasattr(dry_run_skill, "delay"):
-        dry_run_skill.delay(skill_id)
+    if hasattr(dry_run_skill, "apply_async"):
+        dry_run_skill.apply_async(args=[skill_id], queue="skill_registry")
     else:
         dry_run_skill(skill_id)
