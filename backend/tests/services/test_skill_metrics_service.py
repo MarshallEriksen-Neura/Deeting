@@ -39,7 +39,7 @@ async def test_auto_disable_on_failures():
         repo = SkillRegistryRepository(session)
         created = await repo.create(
             {
-                "id": "core.tools.docx",
+                "id": "core.tools.docx.dryrun",
                 "name": "Docx",
             }
         )
