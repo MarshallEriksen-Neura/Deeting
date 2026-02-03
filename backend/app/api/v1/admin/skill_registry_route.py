@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps.auth import require_permissions
+from app.repositories.skill_artifact_repository import SkillArtifactRepository
+from app.repositories.skill_capability_repository import SkillCapabilityRepository
+from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.schemas.skill_registry import SkillRegistryCreate, SkillRegistryDTO, SkillRegistryUpdate
 from app.services.skill_registry.skill_registry_service import SkillRegistryService
@@ -21,7 +24,15 @@ router = APIRouter(prefix="/admin/skills", tags=["Admin - Skills"])
 
 def get_skill_service(db: AsyncSession = Depends(get_db)) -> SkillRegistryService:
     repo = SkillRegistryRepository(db)
-    return SkillRegistryService(repo)
+    capability_repo = SkillCapabilityRepository(db)
+    dependency_repo = SkillDependencyRepository(db)
+    artifact_repo = SkillArtifactRepository(db)
+    return SkillRegistryService(
+        repo,
+        capability_repo=capability_repo,
+        dependency_repo=dependency_repo,
+        artifact_repo=artifact_repo,
+    )
 
 
 @router.post(
