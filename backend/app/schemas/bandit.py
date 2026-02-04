@@ -15,6 +15,9 @@ class BanditArmReport(BaseModel):
     provider: str
     capability: str
     model: str
+    scene: str | None = None
+    arm_id: str | None = None
+    reward_metric_type: str | None = None
     strategy: str
     epsilon: float
     alpha: float

@@ -149,6 +149,9 @@ select arm with max(sample)
 @dataclass
 class BanditArmState:
     preset_item_id: str      # 臂标识
+    scene: str               # 场景标识（router:llm / retrieval:skill）
+    arm_id: str              # 统一臂 ID（如 provider_model_id 或 skill__id）
+    reward_metric_type: str  # 奖励指标类型（如 latency_success / task_success）
     total_trials: int        # 总试验次数
     successes: int           # 成功次数
     failures: int            # 失败次数
