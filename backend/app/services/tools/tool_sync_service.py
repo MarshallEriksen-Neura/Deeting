@@ -10,6 +10,9 @@ from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.plugin_config import plugin_config_loader
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
+from app.core.database import AsyncSessionLocal
+from app.repositories.bandit_repository import BanditRepository
+from app.services.decision import DecisionCandidate, DecisionService
 from app.schemas.tool import ToolDefinition
 from app.services.indexing.index_sync_service import QdrantIndexSyncService, stable_fingerprint
 from app.services.providers.embedding import EmbeddingService
@@ -69,9 +72,14 @@ class ToolSyncService:
     负责工具索引的同步与检索 (JIT Tool Retrieval).
     """
 
-    def __init__(self, embedding_service: EmbeddingService | None = None):
+    def __init__(
+        self,
+        embedding_service: EmbeddingService | None = None,
+        decision_service: DecisionService | None = None,
+    ):
         self._embedding_service = embedding_service or EmbeddingService()
         self._index_syncer = QdrantIndexSyncService(self._embedding_service)
+        self._decision_service = decision_service
 
     # =========================================================================
     # 1. Sync Logic (Write Path)
@@ -323,6 +331,8 @@ class ToolSyncService:
             (time.perf_counter() - embed_start) * 1000,
         )
 
+        sys_limit = int(getattr(settings, "MCP_TOOL_SYSTEM_TOPK", 3) or 3)
+        user_limit = int(getattr(settings, "MCP_TOOL_USER_TOPK", 5) or 5)
         skill_limit = int(getattr(settings, "MCP_TOOL_SKILL_TOPK", 3) or 3)
         total_limit = max(1, sys_limit + user_limit + skill_limit)
         threshold = float(getattr(settings, "MCP_TOOL_SCORE_THRESHOLD", 0.75) or 0.75)
@@ -342,6 +352,7 @@ class ToolSyncService:
             (time.perf_counter() - skill_start) * 1000,
             len(skill_hits),
         )
+        skill_hits = await self._rerank_skill_hits(skill_hits)
 
         user_hits: list[dict[str, Any]] = []
         if user_id:
@@ -429,6 +440,55 @@ class ToolSyncService:
         except Exception as exc:  # pragma: no cover - fail-open
             logger.warning("user tool search failed", exc_info=exc)
             return []
+
+    async def _rerank_skill_hits(self, skill_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not skill_hits:
+            return skill_hits
+
+        candidates: list[DecisionCandidate] = []
+        hit_map: dict[str, dict[str, Any]] = {}
+        for hit in skill_hits:
+            payload = hit.get("payload") or {}
+            skill_id = str(payload.get("skill_id") or "").strip()
+            if not skill_id:
+                continue
+            arm_id = f"skill__{skill_id}"
+            base_score = float(hit.get("score") or 0.0)
+            candidates.append(DecisionCandidate(arm_id=arm_id, base_score=base_score))
+            hit_map[arm_id] = hit
+
+        if not candidates:
+            return skill_hits
+
+        try:
+            decision_service = self._decision_service
+            if decision_service is None:
+                async with AsyncSessionLocal() as session:
+                    repo = BanditRepository(session)
+                    decision_service = DecisionService(repo)
+                    ranked = await decision_service.rank_candidates(
+                        "retrieval:skill",
+                        candidates,
+                    )
+            else:
+                ranked = await decision_service.rank_candidates(
+                    "retrieval:skill",
+                    candidates,
+                )
+        except Exception as exc:  # pragma: no cover - fail-open
+            logger.warning("ToolSyncService: skill rerank failed", exc_info=exc)
+            return skill_hits
+
+        reranked: list[dict[str, Any]] = []
+        for item in ranked:
+            hit = hit_map.get(item.arm_id)
+            if hit:
+                reranked.append(hit)
+
+        if len(reranked) < len(skill_hits):
+            reranked.extend([hit for hit in skill_hits if hit not in reranked])
+
+        return reranked
 
     def _merge_hits(
         self,

@@ -7,6 +7,7 @@ from app.core.config import settings
 
 # 兼容历史常量
 QDRANT_SYS_TOOL_INDEX_COLLECTION = "sys_tool_index"
+SKILL_COLLECTION_NAME = "skill_registry"
 
 
 def _normalize_user_id_hex(user_id: UUID | str) -> str:
@@ -84,11 +85,17 @@ def get_kb_user_tool_collection_name(user_id: UUID | str) -> str:
     return f"{prefix}_{_normalize_user_id_hex(user_id)}_tools"
 
 
+def get_skill_collection_name() -> str:
+    return SKILL_COLLECTION_NAME
+
+
 __all__ = [
     "QDRANT_SYS_TOOL_INDEX_COLLECTION",
+    "SKILL_COLLECTION_NAME",
     "get_kb_candidates_collection_name",
     "get_kb_system_collection_name",
     "get_kb_user_collection_name",
     "get_kb_user_tool_collection_name",
+    "get_skill_collection_name",
     "get_tool_system_collection_name",
 ]
