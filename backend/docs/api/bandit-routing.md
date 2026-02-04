@@ -58,6 +58,42 @@ Gateway 使用 **多臂老虎机 (Multi-Armed Bandit)** 算法实现智能路由
 
 ---
 
+## 报表接口（内部）
+
+### 1) Bandit 臂报表
+
+`GET /api/v1/internal/bandit/report`
+
+**Query 参数**:
+| 参数 | 说明 |
+|------|------|
+| `capability` | 可选，按能力过滤 |
+| `model` | 可选，按模型过滤 |
+
+**Response**: `BanditReportResponse`  
+包含 `summary`（总臂数/总试验数/总体成功率）与 `items`（臂明细）。
+
+### 2) Skill 维度报表
+
+`GET /api/v1/internal/bandit/report/skills`
+
+**Query 参数**:
+| 参数 | 说明 |
+|------|------|
+| `skill_id` | 可选，按 skill_id 精确过滤 |
+| `status` | 可选，按 skill 状态过滤（如 active/disabled） |
+
+**Response**: `BanditSkillReportResponse`  
+包含 `summary`（总臂数/总试验数/总体成功率）与 `items`（skill 维度明细）。
+
+**items 关键字段**:
+`skill_id`, `skill_name`, `status`, `scene`, `arm_id`, `reward_metric_type`,
+`strategy`, `epsilon`, `alpha`, `beta`, `total_trials`, `successes`,
+`failures`, `success_rate`, `selection_ratio`, `avg_latency_ms`,
+`latency_p95_ms`, `total_cost`, `last_reward`, `cooldown_until`, `version`.
+
+---
+
 ## 策略详解
 
 ### 1. 权重随机 (weight)
