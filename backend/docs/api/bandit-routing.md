@@ -40,6 +40,24 @@ Gateway 使用 **多臂老虎机 (Multi-Armed Bandit)** 算法实现智能路由
 
 ---
 
+## 决策服务默认配置（环境变量）
+
+以下为全局默认配置项，可在环境变量中设置：
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `DECISION_STRATEGY` | `thompson` | `thompson` / `ucb` / `epsilon_greedy` |
+| `DECISION_FINAL_SCORE` | `weighted_sum` | `weighted_sum` / `bandit_only` / `vector_only` |
+| `DECISION_VECTOR_WEIGHT` | `0.75` | 向量评分权重 |
+| `DECISION_BANDIT_WEIGHT` | `0.25` | Bandit 评分权重 |
+| `DECISION_EXPLORATION_BONUS` | `0.3` | 探索加成 |
+| `DECISION_UCB_C` | `1.5` | UCB 常数项 |
+| `DECISION_UCB_MIN_TRIALS` | `5` | UCB 最小试验次数 |
+| `DECISION_THOMPSON_PRIOR_ALPHA` | `1.0` | Thompson 先验 alpha |
+| `DECISION_THOMPSON_PRIOR_BETA` | `1.0` | Thompson 先验 beta |
+
+---
+
 ## 策略详解
 
 ### 1. 权重随机 (weight)

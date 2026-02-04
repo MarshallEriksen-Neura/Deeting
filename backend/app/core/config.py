@@ -257,6 +257,17 @@ class Settings(BaseSettings):
     AFFINITY_ROUTING_MAX_PREFIX_CHARS: int = 4000  # 指纹截断，防止超大请求
     AFFINITY_ROUTING_DISCOUNT_RATE: float = 0.5  # 用于估算节省（假定前缀缓存约 50% 复用）
 
+    # 决策服务配置
+    DECISION_STRATEGY: str = "thompson"
+    DECISION_FINAL_SCORE: str = "weighted_sum"
+    DECISION_VECTOR_WEIGHT: float = 0.75
+    DECISION_BANDIT_WEIGHT: float = 0.25
+    DECISION_EXPLORATION_BONUS: float = 0.3
+    DECISION_UCB_C: float = 1.5
+    DECISION_UCB_MIN_TRIALS: int = 5
+    DECISION_THOMPSON_PRIOR_ALPHA: float = 1.0
+    DECISION_THOMPSON_PRIOR_BETA: float = 1.0
+
     # Scout Service (Cognitive Engine)
     SCOUT_SERVICE_URL: str = "http://scout:8001"
 
