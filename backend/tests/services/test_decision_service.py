@@ -52,7 +52,7 @@ async def test_rank_candidates_epsilon_greedy_prefers_random_score():
 
     ranked = await service.rank_candidates("retrieval:skill", candidates)
 
-    assert ranked[0].arm_id == "skill__a"
+    assert ranked[0].arm_id == "skill__b"
 
 
 @pytest.mark.asyncio

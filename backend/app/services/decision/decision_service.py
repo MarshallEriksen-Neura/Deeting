@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import logging
 import math
 import random
 from typing import Any
@@ -35,6 +37,14 @@ class DecisionService:
         self.vector_weight = vector_weight
         self.bandit_weight = bandit_weight
         self.exploration_bonus = exploration_bonus
+        if strategy not in _ALLOWED_STRATEGIES:
+            logger.warning("DecisionService: unknown strategy %s, fallback to thompson", strategy)
+            strategy = "thompson"
+        if final_score not in _ALLOWED_FINAL_SCORES:
+            logger.warning(
+                "DecisionService: unknown final_score %s, fallback to weighted_sum", final_score
+            )
+            final_score = "weighted_sum"
         self.strategy = strategy
         self.final_score = final_score
         self.epsilon = epsilon
@@ -53,6 +63,7 @@ class DecisionService:
             return []
 
         states = await self.repo.get_states_map(scene, [c.arm_id for c in candidates])
+        base_seed = self._rng.randrange(0, 2**32)
         for candidate in candidates:
             state = states.get(candidate.arm_id)
             candidate.bandit_score = _compute_bandit_score(
@@ -63,7 +74,7 @@ class DecisionService:
                 ucb_min_trials=self.ucb_min_trials,
                 thompson_prior_alpha=self.thompson_prior_alpha,
                 thompson_prior_beta=self.thompson_prior_beta,
-                rng=self._rng,
+                rng=_rng_for_candidate(base_seed, candidate.arm_id),
             )
             exploration = self.exploration_bonus if _is_cold_start(state) else 0.0
             candidate.final_score = _compute_final_score(
@@ -168,6 +179,12 @@ def _score_epsilon_greedy(
     return _score_success_rate(state)
 
 
+def _rng_for_candidate(base_seed: int, arm_id: str) -> random.Random:
+    digest = hashlib.sha256(f"{base_seed}:{arm_id}".encode("utf-8")).digest()
+    seed = int.from_bytes(digest[:8], "big", signed=False)
+    return random.Random(seed)
+
+
 def _score_success_rate(state: Any) -> float:
     if state is None:
         return 0.0
@@ -193,3 +210,7 @@ def _compute_final_score(
     if mode == "vector_only":
         return base_score
     return base_score * vector_weight + bandit_value * bandit_weight + exploration_bonus
+logger = logging.getLogger(__name__)
+
+_ALLOWED_STRATEGIES = {"thompson", "ucb", "epsilon_greedy"}
+_ALLOWED_FINAL_SCORES = {"weighted_sum", "bandit_only", "vector_only"}
