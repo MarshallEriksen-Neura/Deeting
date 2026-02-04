@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable
+import math
+import random
+from typing import Any
 
 
 @dataclass
@@ -20,11 +22,25 @@ class DecisionService:
         vector_weight: float = 0.75,
         bandit_weight: float = 0.25,
         exploration_bonus: float = 0.3,
+        strategy: str = "thompson",
+        final_score: str = "weighted_sum",
+        ucb_c: float = 1.5,
+        ucb_min_trials: int = 5,
+        thompson_prior_alpha: float = 1.0,
+        thompson_prior_beta: float = 1.0,
+        rng: random.Random | None = None,
     ) -> None:
         self.repo = repo
         self.vector_weight = vector_weight
         self.bandit_weight = bandit_weight
         self.exploration_bonus = exploration_bonus
+        self.strategy = strategy
+        self.final_score = final_score
+        self.ucb_c = ucb_c
+        self.ucb_min_trials = ucb_min_trials
+        self.thompson_prior_alpha = thompson_prior_alpha
+        self.thompson_prior_beta = thompson_prior_beta
+        self._rng = rng or random.Random()
 
     async def rank_candidates(
         self,
@@ -37,12 +53,23 @@ class DecisionService:
         states = await self.repo.get_states_map(scene, [c.arm_id for c in candidates])
         for candidate in candidates:
             state = states.get(candidate.arm_id)
-            candidate.bandit_score = _compute_bandit_score(state)
+            candidate.bandit_score = _compute_bandit_score(
+                state,
+                strategy=self.strategy,
+                ucb_c=self.ucb_c,
+                ucb_min_trials=self.ucb_min_trials,
+                thompson_prior_alpha=self.thompson_prior_alpha,
+                thompson_prior_beta=self.thompson_prior_beta,
+                rng=self._rng,
+            )
             exploration = self.exploration_bonus if _is_cold_start(state) else 0.0
-            candidate.final_score = (
-                candidate.base_score * self.vector_weight
-                + (candidate.bandit_score or 0.0) * self.bandit_weight
-                + exploration
+            candidate.final_score = _compute_final_score(
+                self.final_score,
+                base_score=candidate.base_score,
+                bandit_score=candidate.bandit_score,
+                vector_weight=self.vector_weight,
+                bandit_weight=self.bandit_weight,
+                exploration_bonus=exploration,
             )
 
         return sorted(
@@ -73,7 +100,56 @@ def _is_cold_start(state: Any) -> bool:
     return state is None or getattr(state, "total_trials", 0) <= 0
 
 
-def _compute_bandit_score(state: Any) -> float:
+def _compute_bandit_score(
+    state: Any,
+    *,
+    strategy: str,
+    ucb_c: float,
+    ucb_min_trials: int,
+    thompson_prior_alpha: float,
+    thompson_prior_beta: float,
+    rng: random.Random,
+) -> float:
+    if strategy == "thompson":
+        return _score_thompson(
+            state,
+            prior_alpha=thompson_prior_alpha,
+            prior_beta=thompson_prior_beta,
+            rng=rng,
+        )
+    if strategy == "ucb":
+        return _score_ucb(state, c=ucb_c, min_trials=ucb_min_trials)
+    return _score_success_rate(state)
+
+
+def _score_thompson(
+    state: Any,
+    *,
+    prior_alpha: float,
+    prior_beta: float,
+    rng: random.Random,
+) -> float:
+    if state is None:
+        return rng.betavariate(prior_alpha, prior_beta)
+    alpha = getattr(state, "alpha", None) or prior_alpha
+    beta = getattr(state, "beta", None) or prior_beta
+    return rng.betavariate(float(alpha), float(beta))
+
+
+def _score_ucb(state: Any, *, c: float, min_trials: int) -> float:
+    if state is None:
+        return 1.0
+    total = getattr(state, "total_trials", 0) or 0
+    if total <= 0:
+        return 1.0
+    if total < min_trials:
+        return 1.0
+    successes = getattr(state, "successes", 0) or 0
+    success_rate = float(successes) / float(total)
+    return success_rate + c * math.sqrt(math.log(total + 1) / float(total))
+
+
+def _score_success_rate(state: Any) -> float:
     if state is None:
         return 0.0
     total = getattr(state, "total_trials", 0) or 0
@@ -81,3 +157,20 @@ def _compute_bandit_score(state: Any) -> float:
         return 0.0
     successes = getattr(state, "successes", 0) or 0
     return float(successes) / float(total)
+
+
+def _compute_final_score(
+    mode: str,
+    *,
+    base_score: float,
+    bandit_score: float | None,
+    vector_weight: float,
+    bandit_weight: float,
+    exploration_bonus: float,
+) -> float:
+    bandit_value = bandit_score or 0.0
+    if mode == "bandit_only":
+        return bandit_value + exploration_bonus
+    if mode == "vector_only":
+        return base_score
+    return base_score * vector_weight + bandit_value * bandit_weight + exploration_bonus
