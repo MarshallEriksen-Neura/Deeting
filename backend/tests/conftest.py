@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from app.core.cache import cache
-from app.core.config import settings
+from app.core.config import settings as app_settings
 
 _HANG_DEBUG_ENV = "PYTEST_HANG_DEBUG"
 _HANG_DEBUG_TIMEOUT = 30
@@ -116,11 +116,19 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[unused-argument]
 
 # 确保测试环境不读取外部 Redis/Celery
 os.environ.setdefault("REDIS_URL", "")
-os.environ.setdefault("CELERY_BROKER_URL", "")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "")
-settings.REDIS_URL = ""
-settings.CELERY_BROKER_URL = ""
-settings.CELERY_RESULT_BACKEND = ""
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+app_settings.REDIS_URL = ""
+app_settings.CELERY_BROKER_URL = "memory://"
+app_settings.CELERY_RESULT_BACKEND = "cache+memory://"
+
+
+@pytest.fixture
+def settings():
+    snapshot = app_settings.model_copy(deep=True)
+    yield app_settings
+    for field_name in snapshot.__class__.model_fields:
+        setattr(app_settings, field_name, getattr(snapshot, field_name))
 
 
 class DummyRedis:

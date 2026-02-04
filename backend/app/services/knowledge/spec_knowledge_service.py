@@ -57,7 +57,7 @@ class GuardRule:
 
 
 STATIC_GUARD_RULES: Tuple[GuardRule, ...] = (
-    GuardRule("danger.rm_rf_root", re.compile(r"\brm\s+-rf\s+/\b", re.I), "危险删除指令"),
+    GuardRule("danger.rm_rf_root", re.compile(r"\brm\s+-rf\s+/(?:\s|$|\")", re.I), "危险删除指令"),
     GuardRule("danger.mkfs", re.compile(r"\bmkfs\.", re.I), "磁盘格式化指令"),
     GuardRule("danger.dd", re.compile(r"\bdd\s+if=", re.I), "磁盘覆写指令"),
     GuardRule("danger.drop_db", re.compile(r"\bdrop\s+database\b", re.I), "数据库删除指令"),

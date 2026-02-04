@@ -28,8 +28,8 @@ if str(BASE_DIR) not in sys.path:
 
 # 测试环境禁用真实 Redis/Celery 连接，避免进程退出卡住
 os.environ.setdefault("REDIS_URL", "")
-os.environ.setdefault("CELERY_BROKER_URL", "")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "")
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 
 from app.core.config import settings
 from app.core.cache import cache
@@ -41,6 +41,8 @@ from main import app
 
 # 测试环境禁止连接真实 Redis，确保使用 DummyRedis
 settings.REDIS_URL = ""
+settings.CELERY_BROKER_URL = "memory://"
+settings.CELERY_RESULT_BACKEND = "cache+memory://"
 
 # ---- 内存 Redis 替身 ----
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi_pagination.cursor import CursorPage, CursorParams
+from fastapi_pagination.ext.sqlalchemy import paginate
 from app.models.assistant import Assistant, AssistantStatus, AssistantVisibility
 from app.models.notification import NotificationLevel, NotificationType
 from app.models.review import ReviewStatus
@@ -83,19 +84,6 @@ class AssistantMarketService:
         tags: list[str] | None = None,
     ) -> CursorPage[AssistantMarketItem]:
         normalized_tags = self.tag_service.normalize_tags(tags)
-        backend = get_search_backend()
-        assistant_ids, next_cursor = await backend.search_market_assistants(
-            query=query,
-            size=params.size,
-            cursor=params.cursor,
-            tags=normalized_tags,
-        )
-        rows = await self.market_repo.fetch_market_rows_by_ids(
-            assistant_ids=assistant_ids,
-            user_id=user_id,
-            entity_type=ASSISTANT_MARKET_ENTITY,
-            tags=normalized_tags,
-        )
 
         async def _transform(rows):
             items: list[AssistantMarketItem] = []
@@ -129,12 +117,38 @@ class AssistantMarketService:
                 )
             return items
 
+        try:
+            backend = get_search_backend()
+        except RuntimeError as exc:
+            if str(exc) not in {"meilisearch_not_configured", "search_backend_not_supported"}:
+                raise
+            stmt = self.market_repo.build_market_query(
+                user_id=user_id,
+                entity_type=ASSISTANT_MARKET_ENTITY,
+                query=query,
+                tags=normalized_tags,
+            )
+            return await paginate(self.market_repo.session, stmt, params=params, transformer=_transform)
+
+        assistant_ids, next_cursor = await backend.search_market_assistants(
+            query=query,
+            size=params.size,
+            cursor=params.cursor,
+            tags=normalized_tags,
+        )
+        rows = await self.market_repo.fetch_market_rows_by_ids(
+            assistant_ids=assistant_ids,
+            user_id=user_id,
+            entity_type=ASSISTANT_MARKET_ENTITY,
+            tags=normalized_tags,
+        )
+
         items = await _transform(rows)
         return CursorPage(
             items=items,
             next_page=next_cursor,
             previous_page=None,
-            total=None,
+            total=len(items),
         )
 
     async def list_installs(

@@ -20,9 +20,9 @@ from app.services.skill_registry.parsers.base import RepoContext, RepoParserPlug
 class RepoIngestionService:
     def __init__(
         self,
-        repo: SkillRegistryRepository,
-        manifest_generator: SkillManifestGenerator,
         parsers: Iterable[RepoParserPlugin],
+        repo: SkillRegistryRepository | None = None,
+        manifest_generator: SkillManifestGenerator | None = None,
         capability_repo: SkillCapabilityRepository | None = None,
         dependency_repo: SkillDependencyRepository | None = None,
         artifact_repo: SkillArtifactRepository | None = None,
@@ -57,6 +57,8 @@ class RepoIngestionService:
         runtime_hint: str | None = None,
         source_subdir: str | None = None,
     ) -> dict:
+        if self.repo is None or self.manifest_generator is None:
+            raise ValueError("repo and manifest_generator are required for ingestion")
         workdir = _ensure_workdir()
         temp_root = None
         try:

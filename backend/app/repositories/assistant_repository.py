@@ -105,6 +105,7 @@ class AssistantRepository(BaseRepository[Assistant]):
 
         stmt = (
             select(Assistant)
+            .options(selectinload(Assistant.versions))
             .where(Assistant.id.in_(uuid_ids))
             .where(Assistant.visibility == "public", Assistant.status == "published")
         )
