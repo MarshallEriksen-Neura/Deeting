@@ -26,6 +26,8 @@ async def test_search_tools_prefers_user_hits(monkeypatch):
             {"payload": {"tool_name": "tool_b", "description": "user", "schema_json": {}}},
             {"payload": {"tool_name": "tool_c", "description": "user", "schema_json": {}}},
         ]
+    async def fake_search_skills(*_args, **_kwargs):
+        return []
 
     monkeypatch.setattr(
         "app.services.tools.tool_sync_service.qdrant_is_configured",
@@ -33,6 +35,7 @@ async def test_search_tools_prefers_user_hits(monkeypatch):
     )
     monkeypatch.setattr(service, "_search_system", fake_search_system)
     monkeypatch.setattr(service, "_search_user", fake_search_user)
+    monkeypatch.setattr(service, "_search_skills", fake_search_skills)
 
     result = await service.search_tools("find tools", user_id=uuid.uuid4())
     names = [tool.name for tool in result]
