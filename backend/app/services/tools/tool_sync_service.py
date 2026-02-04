@@ -465,7 +465,32 @@ class ToolSyncService:
             if decision_service is None:
                 async with AsyncSessionLocal() as session:
                     repo = BanditRepository(session)
-                    decision_service = DecisionService(repo)
+                    decision_service = DecisionService(
+                        repo,
+                        vector_weight=float(
+                            getattr(settings, "DECISION_VECTOR_WEIGHT", 0.75) or 0.75
+                        ),
+                        bandit_weight=float(
+                            getattr(settings, "DECISION_BANDIT_WEIGHT", 0.25) or 0.25
+                        ),
+                        exploration_bonus=float(
+                            getattr(settings, "DECISION_EXPLORATION_BONUS", 0.3) or 0.3
+                        ),
+                        strategy=str(getattr(settings, "DECISION_STRATEGY", "thompson")),
+                        final_score=str(
+                            getattr(settings, "DECISION_FINAL_SCORE", "weighted_sum")
+                        ),
+                        ucb_c=float(getattr(settings, "DECISION_UCB_C", 1.5) or 1.5),
+                        ucb_min_trials=int(
+                            getattr(settings, "DECISION_UCB_MIN_TRIALS", 5) or 5
+                        ),
+                        thompson_prior_alpha=float(
+                            getattr(settings, "DECISION_THOMPSON_PRIOR_ALPHA", 1.0) or 1.0
+                        ),
+                        thompson_prior_beta=float(
+                            getattr(settings, "DECISION_THOMPSON_PRIOR_BETA", 1.0) or 1.0
+                        ),
+                    )
                     ranked = await decision_service.rank_candidates(
                         "retrieval:skill",
                         candidates,
