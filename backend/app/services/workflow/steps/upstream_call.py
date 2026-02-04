@@ -1209,12 +1209,14 @@ class UpstreamCallStep(BaseStep):
         cost = ctx.billing.total_cost if hasattr(ctx, "billing") else None
         try:
             await repo.record_feedback(
-                preset_item_id=str(preset_item_id),
+                scene="router:llm",
+                arm_id=str(preset_item_id),
                 success=success,
                 latency_ms=latency_ms,
                 cost=cost,
                 reward=reward if reward is not None else (1.0 if success else 0.0),
                 routing_config=routing_config,
+                reward_metric_type="latency_success",
             )
         except Exception as exc:
             logger.warning(f"Bandit feedback write failed: {exc}")

@@ -45,13 +45,30 @@ class BanditArmState(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "bandit_arm_state"
 
-    provider_model_id: Mapped[uuid.UUID] = mapped_column(
+    provider_model_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),
         ForeignKey("provider_model.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-        index=True,
+        nullable=True,
         comment="关联的 provider_model（BYOP 实例下的模型）",
+    )
+
+    scene: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="router:llm",
+        server_default="router:llm",
+        comment="场景标识，例如 router:llm / retrieval:skill",
+    )
+    arm_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+        comment="候选臂 ID",
+    )
+    reward_metric_type: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="奖励指标类型（如 latency_success / task_success）",
     )
 
     # 策略参数
@@ -148,7 +165,7 @@ class BanditArmState(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("provider_model_id", name="uq_bandit_arm_state_model"),
+        UniqueConstraint("scene", "arm_id", name="uq_bandit_arm_scene"),
     )
 
     def avg_latency_ms(self) -> float:

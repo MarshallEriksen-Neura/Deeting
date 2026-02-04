@@ -28,6 +28,15 @@ from app.repositories.base import BaseRepository
 from app.utils.time_utils import Datetime
 
 
+def _try_parse_uuid(value: str | None) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+
 class BanditRepository(BaseRepository[BanditArmState]):
     model = BanditArmState
 
@@ -37,67 +46,68 @@ class BanditRepository(BaseRepository[BanditArmState]):
         self._invalidator = CacheInvalidator()
 
     async def get_states_map(
-        self, provider_model_ids: Iterable[str]
+        self, scene: str, arm_ids: Iterable[str]
     ) -> dict[str, BanditArmState]:
-        ids = list(provider_model_ids)
+        ids = [str(item) for item in arm_ids]
         if not ids:
             return {}
         cached: dict[str, BanditArmState] = {}
         missing: list[str] = []
         version = await self._invalidator.get_version()
 
-        for pid in ids:
+        for arm_id in ids:
             payload = await cache.get_with_version(
-                CacheKeys.bandit_state(pid), version
+                CacheKeys.bandit_state(scene, arm_id), version
             )
             if payload:
-                cached[pid] = self._deserialize_state(payload)
+                cached[arm_id] = self._deserialize_state(payload)
             else:
-                missing.append(pid)
+                missing.append(arm_id)
 
         rows: list[BanditArmState] = []
         if missing:
-            missing_uuids = []
-            for m in missing:
-                try:
-                    missing_uuids.append(uuid.UUID(m))
-                except ValueError:
-                    continue
-            
-            if missing_uuids:
-                stmt = select(BanditArmState).where(BanditArmState.provider_model_id.in_(missing_uuids))
-                result = await self.session.execute(stmt)
-                rows = result.scalars().all()
-            
+            stmt = select(BanditArmState).where(
+                BanditArmState.scene == scene,
+                BanditArmState.arm_id.in_(missing),
+            )
+            result = await self.session.execute(stmt)
+            rows = result.scalars().all()
+
             for r in rows:
                 try:
                     await cache.set_with_version(
-                        CacheKeys.bandit_state(str(r.provider_model_id)),
+                        CacheKeys.bandit_state(scene, str(r.arm_id)),
                         self._serialize_state(r),
                         version if version is not None else 0,
                         ttl=self._cache_ttl,
                     )
                 except Exception as exc:
-                    logger.warning(f"bandit_cache_set_failed item={r.provider_model_id} exc={exc}")
-                cached[str(r.provider_model_id)] = r
+                    logger.warning(f"bandit_cache_set_failed item={r.arm_id} exc={exc}")
+                cached[str(r.arm_id)] = r
 
         return cached
 
     async def ensure_state(
         self,
-        provider_model_id: str,
+        scene: str,
+        arm_id: str,
         strategy: str | None = None,
         epsilon: float | None = None,
         alpha: float | None = None,
         beta: float | None = None,
+        reward_metric_type: str | None = None,
     ) -> BanditArmState:
         """不存在则创建一个初始状态"""
-        existing = await self.get_by_item(provider_model_id)
+        existing = await self.get_by_item(scene, arm_id)
         if existing:
             return existing
 
+        provider_model_id = _try_parse_uuid(arm_id) if scene == "router:llm" else None
         obj = BanditArmState(
             provider_model_id=provider_model_id,
+            scene=scene,
+            arm_id=arm_id,
+            reward_metric_type=reward_metric_type,
             strategy=strategy or BanditStrategy.EPSILON_GREEDY.value,
             epsilon=epsilon or 0.1,
             alpha=alpha or 1.0,
@@ -110,39 +120,46 @@ class BanditRepository(BaseRepository[BanditArmState]):
         version = await self._invalidator.bump_version()
         try:
             await cache.set_with_version(
-                CacheKeys.bandit_state(provider_model_id),
+                CacheKeys.bandit_state(scene, arm_id),
                 self._serialize_state(obj),
                 version if version is not None else 0,
                 ttl=self._cache_ttl,
             )
         except Exception as exc:
-            logger.warning(f"bandit_cache_set_failed item={provider_model_id} exc={exc}")
+            logger.warning(f"bandit_cache_set_failed item={arm_id} exc={exc}")
         return obj
 
-    async def get_by_item(self, provider_model_id: str) -> BanditArmState | None:
-        stmt = select(BanditArmState).where(BanditArmState.provider_model_id == provider_model_id)
+    async def get_by_item(self, scene: str, arm_id: str) -> BanditArmState | None:
+        stmt = select(BanditArmState).where(
+            BanditArmState.scene == scene,
+            BanditArmState.arm_id == arm_id,
+        )
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
     async def record_feedback(
         self,
-        provider_model_id: str,
+        scene: str,
+        arm_id: str,
         success: bool,
         latency_ms: float | None,
         cost: float | None,
         reward: float | None,
         routing_config: dict | None = None,
+        reward_metric_type: str | None = None,
     ) -> BanditArmState:
         """
         记录反馈并返回最新状态
         """
         rc = routing_config or {}
         state = await self.ensure_state(
-            provider_model_id=provider_model_id,
+            scene=scene,
+            arm_id=arm_id,
             strategy=rc.get("strategy"),
             epsilon=float(rc.get("epsilon", 0.1)) if rc.get("epsilon") is not None else None,
             alpha=float(rc.get("alpha", 1.0)) if rc.get("alpha") is not None else None,
             beta=float(rc.get("beta", 1.0)) if rc.get("beta") is not None else None,
+            reward_metric_type=reward_metric_type,
         )
 
         state.total_trials += 1
@@ -175,13 +192,13 @@ class BanditRepository(BaseRepository[BanditArmState]):
         version = await self._invalidator.bump_version()
         try:
             await cache.set_with_version(
-                CacheKeys.bandit_state(provider_model_id),
+                CacheKeys.bandit_state(scene, arm_id),
                 self._serialize_state(state),
                 version if version is not None else 0,
                 ttl=self._cache_ttl,
             )
         except Exception as exc:
-            logger.warning(f"bandit_cache_set_failed item={provider_model_id} exc={exc}")
+            logger.warning(f"bandit_cache_set_failed item={arm_id} exc={exc}")
         return state
 
     async def get_report(
@@ -269,7 +286,10 @@ class BanditRepository(BaseRepository[BanditArmState]):
     @staticmethod
     def _serialize_state(state: BanditArmState) -> dict:
         return {
-            "preset_item_id": str(state.preset_item_id),
+            "provider_model_id": str(state.provider_model_id) if state.provider_model_id else None,
+            "scene": state.scene,
+            "arm_id": state.arm_id,
+            "reward_metric_type": state.reward_metric_type,
             "strategy": state.strategy,
             "epsilon": state.epsilon,
             "alpha": state.alpha,
@@ -287,8 +307,12 @@ class BanditRepository(BaseRepository[BanditArmState]):
 
     @staticmethod
     def _deserialize_state(payload: dict) -> BanditArmState:
+        provider_model_id = _try_parse_uuid(payload.get("provider_model_id"))
         obj = BanditArmState(
-            preset_item_id=uuid.UUID(str(payload["preset_item_id"])),
+            provider_model_id=provider_model_id,
+            scene=str(payload.get("scene") or "router:llm"),
+            arm_id=str(payload.get("arm_id") or ""),
+            reward_metric_type=payload.get("reward_metric_type"),
             strategy=payload.get("strategy"),
             epsilon=payload.get("epsilon", 0.1),
             alpha=payload.get("alpha", 1.0),
@@ -305,10 +329,13 @@ class BanditRepository(BaseRepository[BanditArmState]):
         obj.cooldown_until = payload.get("cooldown_until")
         return obj
 
-    async def lift_cooldown(self, preset_item_id: str) -> None:
+    async def lift_cooldown(self, scene: str, arm_id: str) -> None:
         stmt = (
             update(BanditArmState)
-            .where(BanditArmState.preset_item_id == preset_item_id)
+            .where(
+                BanditArmState.scene == scene,
+                BanditArmState.arm_id == arm_id,
+            )
             .values(cooldown_until=None)
         )
         await self.session.execute(stmt)

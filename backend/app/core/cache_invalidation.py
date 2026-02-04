@@ -162,7 +162,7 @@ class CacheInvalidator:
     async def on_bandit_updated(self, preset_item_id: str | None = None) -> None:
         """Bandit 臂状态变更或策略参数更新时失效缓存"""
         if preset_item_id:
-            await self._delete_keys([CacheKeys.bandit_state(preset_item_id)])
+            await self._delete_keys([CacheKeys.bandit_state("router:llm", preset_item_id)])
         else:
             await self._clear_prefix("bandit:")
         await self.bump_version()

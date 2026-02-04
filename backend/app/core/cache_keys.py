@@ -182,8 +182,8 @@ class CacheKeys:
 
     # ===== Bandit =====
     @classmethod
-    def bandit_state(cls, preset_item_id: str) -> str:
-        return f"{cls.prefix}:bandit:{preset_item_id}"
+    def bandit_state(cls, scene: str, arm_id: str) -> str:
+        return f"{cls.prefix}:bandit:{scene}:{arm_id}"
 
     # ===== Routing Affinity (prefix-aware) =====
     @classmethod

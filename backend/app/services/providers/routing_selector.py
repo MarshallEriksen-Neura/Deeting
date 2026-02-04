@@ -282,7 +282,10 @@ class RoutingSelector:
 
         # 填充 bandit 状态
         if results:
-            states = await self.bandit_repo.get_states_map([c.model_id for c in results])
+            states = await self.bandit_repo.get_states_map(
+                "router:llm",
+                [c.model_id for c in results],
+            )
             for c in results:
                 c.bandit_state = states.get(c.model_id)
 
@@ -480,7 +483,10 @@ class RoutingSelector:
             )
 
         if results:
-            states = await self.bandit_repo.get_states_map([c.model_id for c in results])
+            states = await self.bandit_repo.get_states_map(
+                "router:llm",
+                [c.model_id for c in results],
+            )
             for c in results:
                 c.bandit_state = states.get(c.model_id)
 
