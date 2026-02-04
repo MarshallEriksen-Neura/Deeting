@@ -217,18 +217,28 @@ class AgentExecutorStep(BaseStep):
         from app.agent_plugins.core.manager import global_plugin_manager
         plugin = global_plugin_manager.get_plugin_for_tool(tool_call.name)
         if plugin:
+            # 1. Try specific handler (handle_toolname)
             handler = getattr(plugin, f"handle_{tool_call.name}", None)
             if not handler:
                 handler = getattr(plugin, tool_call.name, None)
+            
+            # 2. Try generic handler (handle_tool_call)
+            is_generic = False
+            if not handler and hasattr(plugin, "handle_tool_call"):
+                handler = plugin.handle_tool_call
+                is_generic = True
             
             if handler:
                 # Introspect handler to see if it accepts context
                 import inspect
                 sig = inspect.signature(handler)
                 kwargs = tool_call.arguments.copy()
-                if "__context__" in sig.parameters:
+                if "__context__" in sig.parameters or "kwargs" in sig.parameters:
                     kwargs["__context__"] = ctx
                 
-                return await handler(**kwargs)
+                if is_generic:
+                    return await handler(tool_call.name, **kwargs)
+                else:
+                    return await handler(**kwargs)
         
         return {"error": f"Tool '{tool_call.name}' not found."}

@@ -35,7 +35,7 @@ class SkillDryRunService:
         try:
             result = await self.executor.execute(
                 skill_id,
-                session_id=f"dryrun:{skill_id}",
+                session_id=f"dryrun_{skill_id}",
                 inputs={},
                 intent="dry_run",
             )

@@ -16,6 +16,7 @@ from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_collections import (
     get_kb_user_tool_collection_name,
     get_tool_system_collection_name,
+    get_skill_collection_name,
 )
 from app.storage.qdrant_kb_store import (
     delete_points,
@@ -322,9 +323,8 @@ class ToolSyncService:
             (time.perf_counter() - embed_start) * 1000,
         )
 
-        sys_limit = int(getattr(settings, "MCP_TOOL_SYSTEM_TOPK", 3) or 3)
-        user_limit = int(getattr(settings, "MCP_TOOL_USER_TOPK", 5) or 5)
-        total_limit = max(1, sys_limit + user_limit)
+        skill_limit = int(getattr(settings, "MCP_TOOL_SKILL_TOPK", 3) or 3)
+        total_limit = max(1, sys_limit + user_limit + skill_limit)
         threshold = float(getattr(settings, "MCP_TOOL_SCORE_THRESHOLD", 0.75) or 0.75)
 
         sys_start = time.perf_counter()
@@ -334,6 +334,15 @@ class ToolSyncService:
             (time.perf_counter() - sys_start) * 1000,
             len(sys_hits),
         )
+        
+        skill_start = time.perf_counter()
+        skill_hits = await self._search_skills(vector, limit=skill_limit, threshold=threshold)
+        logger.info(
+            "ToolSyncService: skill search duration_ms=%.2f hits=%s",
+            (time.perf_counter() - skill_start) * 1000,
+            len(skill_hits),
+        )
+
         user_hits: list[dict[str, Any]] = []
         if user_id:
             user_start = time.perf_counter()
@@ -344,7 +353,7 @@ class ToolSyncService:
                 len(user_hits),
             )
 
-        final_hits = self._merge_hits(user_hits, sys_hits, total_limit)
+        final_hits = self._merge_hits(user_hits, sys_hits, skill_hits, total_limit)
         result = [self._hit_to_def(hit) for hit in final_hits]
         logger.info(
             "ToolSyncService: search_tools done duration_ms=%.2f final_hits=%s",
@@ -375,6 +384,29 @@ class ToolSyncService:
             logger.warning("system tool search failed", exc_info=exc)
             return []
 
+    async def _search_skills(
+        self,
+        vector: list[float],
+        *,
+        limit: int,
+        threshold: float,
+    ) -> list[dict[str, Any]]:
+        collection = get_skill_collection_name()
+        client = get_qdrant_client()
+        try:
+            return await search_points(
+                client,
+                collection_name=collection,
+                vector=vector,
+                limit=limit,
+                with_payload=True,
+                score_threshold=threshold,
+                query_filter={"must": [{"key": "status", "match": {"value": "active"}}]},
+            )
+        except Exception as exc:  # pragma: no cover - fail-open
+            logger.warning("skill search failed", exc_info=exc)
+            return []
+
     async def _search_user(
         self,
         user_id: uuid.UUID,
@@ -402,6 +434,7 @@ class ToolSyncService:
         self,
         user_hits: Iterable[dict[str, Any]],
         system_hits: Iterable[dict[str, Any]],
+        skill_hits: Iterable[dict[str, Any]],
         total_limit: int,
     ) -> list[dict[str, Any]]:
         merged: list[dict[str, Any]] = []
@@ -423,6 +456,18 @@ class ToolSyncService:
             merged.append(hit)
             seen.add(name)
             if len(merged) >= total_limit:
+                return merged
+        
+        for hit in skill_hits:
+            name = self._get_skill_name(hit)
+            if not name or name in seen:
+                continue
+            # Mark this as a skill for _hit_to_def
+            if "payload" in hit:
+                hit["payload"]["is_skill"] = True
+            merged.append(hit)
+            seen.add(name)
+            if len(merged) >= total_limit:
                 break
 
         return merged
@@ -431,8 +476,33 @@ class ToolSyncService:
         payload = hit.get("payload") or {}
         return str(payload.get("tool_name") or payload.get("name") or "").strip()
 
+    def _get_skill_name(self, hit: dict[str, Any]) -> str:
+        payload = hit.get("payload") or {}
+        skill_id = str(payload.get("skill_id") or "").strip()
+        return f"skill__{skill_id}" if skill_id else ""
+
     def _hit_to_def(self, hit: Dict[str, Any]) -> ToolDefinition:
         payload = hit.get("payload") or {}
+        
+        if payload.get("is_skill"):
+            # Special handling for Skills
+            skill_id = str(payload.get("skill_id") or "")
+            name = f"skill__{skill_id}"
+            # For skills, schema might need to be fetched or is simplified in payload
+            # Assuming payload contains minimal info, we might need a richer payload in _search_skills
+            # Ideally, Qdrant payload for skills should have 'manifest_json' or 'schema_json'
+            # If not, we might need to fetch from DB, but that's slow.
+            # Let's assume the ingestion task puts 'schema_json' or similar in payload.
+            # Checking app/tasks/skill_registry.py: payload has 'name', 'status', 'description' but NOT schema.
+            # WE NEED TO FIX INGESTION TO INCLUDE SCHEMA IN PAYLOAD for this to work effectively without DB lookup.
+            # For now, we return a stub schema or rely on what's available.
+            description = payload.get("description")
+            return ToolDefinition(
+                name=name,
+                description=description,
+                input_schema=_safe_schema(payload.get("schema_json")),
+            )
+
         return ToolDefinition(
             name=str(payload.get("tool_name") or ""),
             description=payload.get("description"),

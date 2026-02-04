@@ -12,7 +12,7 @@ from app.services.skill_registry.parsers.base import EvidencePack, RepoContext, 
 
 class PythonRepoParser(RepoParserPlugin):
     def can_handle(self, repo_context: RepoContext) -> bool:
-        markers = {"pyproject.toml", "requirements.txt", "setup.py"}
+        markers = {"pyproject.toml", "requirements.txt", "setup.py", "SKILL.md"}
         return any(path in markers for path in repo_context.file_index)
 
     def collect_evidence(self, repo_context: RepoContext) -> EvidencePack:
@@ -34,7 +34,7 @@ class PythonRepoParser(RepoParserPlugin):
 
 
 def _read_readme(root_path: Path) -> str | None:
-    for candidate in ("README.md", "README.MD", "readme.md"):
+    for candidate in ("SKILL.md", "README.md", "README.MD", "readme.md"):
         path = root_path / candidate
         if path.exists():
             return path.read_text(encoding="utf-8")

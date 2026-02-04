@@ -64,3 +64,13 @@ plugins:
     enabled_by_default: true
     tools:
       - "create_plan"
+
+  # === Core Execution (Skill Runner) ===
+  - id: "core.execution.skill_runner"
+    name: "Skill Runner"
+    module: "app.agent_plugins.builtins.skill_runner.plugin"
+    class_name: "SkillRunnerPlugin"
+    enabled_by_default: true
+    is_always_on: true
+    description: "Executes JIT-retrieved skills via OpenSandbox."
+    tools: [] # Dynamic skills

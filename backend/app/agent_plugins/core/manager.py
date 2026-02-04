@@ -151,6 +151,12 @@ class PluginManager:
 
     def get_plugin_for_tool(self, tool_name: str) -> AgentPlugin | None:
         """Find the plugin instance that owns the given tool."""
+        # 1. Check dynamic handlers first (Priority)
+        for plugin in self._plugins.values():
+            if hasattr(plugin, "can_handle_tool") and plugin.can_handle_tool(tool_name):
+                return plugin
+
+        # 2. Check static tool definitions
         for plugin in self._plugins.values():
             try:
                 tools = plugin.get_tools() or []

@@ -63,11 +63,18 @@ class RepoIngestionService:
         temp_root = None
         try:
             repo_root, temp_root = clone_repo(repo_url, revision, workdir)
-            file_index = build_file_index(repo_root)
+            
+            effective_root = repo_root
+            if source_subdir:
+                effective_root = repo_root / source_subdir.strip("/")
+                if not effective_root.exists():
+                    raise ValueError(f"Source subdir '{source_subdir}' not found in repo")
+
+            file_index = build_file_index(effective_root)
             repo_context = RepoContext(
                 repo_url=repo_url,
                 revision=revision,
-                root_path=repo_root,
+                root_path=effective_root,
                 file_index=file_index,
             )
             parser = self.select_parser(repo_context)

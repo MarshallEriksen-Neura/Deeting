@@ -111,10 +111,15 @@ async def _run_sync_skill(skill_id: str) -> str:
             return "skipped"
 
         vector = vectors[0]
+        
+        manifest = getattr(skill, "manifest_json", {}) or {}
+        schema_json = manifest.get("io_schema", {})
+
         payload = {
             "skill_id": skill.id,
             "name": skill.name,
             "status": skill.status,
+            "schema_json": schema_json,
             "embedding_model": embedding_service.model,
         }
         optional_payload = {

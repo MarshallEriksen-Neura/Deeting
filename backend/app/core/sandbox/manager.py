@@ -202,8 +202,8 @@ class SandboxManager:
         service=None,
         wait_ready: bool = False,
     ) -> Sandbox:
+        config = ConnectionConfig(domain=self.url, request_timeout=timedelta(minutes=5))
         if not factory:
-            config = ConnectionConfig(domain=self.url, request_timeout=timedelta(minutes=5))
             factory = AdapterFactory(config)
         if not service:
             service = factory.create_sandbox_service()
@@ -218,7 +218,7 @@ class SandboxManager:
             command_service=factory.create_command_service(execd_endpoint),
             health_service=factory.create_health_service(execd_endpoint),
             metrics_service=factory.create_metrics_service(execd_endpoint),
-            connection_config=factory._connection_config,
+            connection_config=config,
         )
 
         if wait_ready:
