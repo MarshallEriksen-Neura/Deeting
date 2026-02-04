@@ -3,8 +3,15 @@ import pytest_asyncio
 
 from app.models import Base
 from app.models.assistant import AssistantStatus, AssistantVisibility
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
-from app.schemas.assistant import AssistantCreate, AssistantUpdate, AssistantVersionCreate
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
+from app.schemas.assistant import (
+    AssistantCreate,
+    AssistantUpdate,
+    AssistantVersionCreate,
+)
 from app.services.assistant.assistant_service import AssistantService
 from tests.api.conftest import AsyncSessionLocal, engine
 
@@ -48,10 +55,21 @@ async def test_update_assistant_creates_new_version():
 
         assert updated.current_version_id != original_version_id
 
-        assistant_with_versions = await service.assistant_repo.get_with_versions(assistant.id)
+        assistant_with_versions = await service.assistant_repo.get_with_versions(
+            assistant.id
+        )
         versions = {version.id: version for version in assistant_with_versions.versions}
 
         assert len(versions) == 2
-        assert versions[original_version_id].system_prompt == "You are a helpful assistant."
-        assert versions[updated.current_version_id].system_prompt == "You are a newer assistant."
-        assert versions[updated.current_version_id].version != versions[original_version_id].version
+        assert (
+            versions[original_version_id].system_prompt
+            == "You are a helpful assistant."
+        )
+        assert (
+            versions[updated.current_version_id].system_prompt
+            == "You are a newer assistant."
+        )
+        assert (
+            versions[updated.current_version_id].version
+            != versions[original_version_id].version
+        )

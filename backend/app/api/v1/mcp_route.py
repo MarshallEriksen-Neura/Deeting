@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -21,7 +20,7 @@ from app.services.mcp.market_service import McpMarketService
 router = APIRouter(prefix="/mcp", tags=["MCP"])
 
 
-@router.get("/market-tools", response_model=List[McpMarketToolSummary])
+@router.get("/market-tools", response_model=list[McpMarketToolSummary])
 async def list_market_tools(
     category: McpToolCategory | None = Query(None, description="分类过滤"),
     q: str | None = Query(None, description="搜索关键字"),
@@ -45,7 +44,7 @@ async def get_market_tool(
     return tool
 
 
-@router.get("/subscriptions", response_model=List[McpSubscriptionItem])
+@router.get("/subscriptions", response_model=list[McpSubscriptionItem])
 async def list_subscriptions(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
@@ -67,7 +66,11 @@ async def list_subscriptions(
     ]
 
 
-@router.post("/subscriptions", response_model=McpSubscriptionItem, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/subscriptions",
+    response_model=McpSubscriptionItem,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_subscription(
     payload: McpSubscriptionCreateRequest,
     response: Response,

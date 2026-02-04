@@ -110,7 +110,9 @@ async def _seed_user_internal_provider(session, user_id: uuid.UUID) -> ProviderM
 
 
 @pytest.mark.asyncio
-async def test_internal_models_includes_user_instances(client, auth_tokens, AsyncSessionLocal, test_user):
+async def test_internal_models_includes_user_instances(
+    client, auth_tokens, AsyncSessionLocal, test_user
+):
     user_id = uuid.UUID(test_user["id"])
     async with AsyncSessionLocal() as session:
         await _seed_user_internal_provider(session, user_id)
@@ -133,7 +135,9 @@ async def test_internal_models_requires_auth(client):
 
 
 @pytest.mark.asyncio
-async def test_internal_models_filter_by_capability(client, auth_tokens, AsyncSessionLocal, test_user):
+async def test_internal_models_filter_by_capability(
+    client, auth_tokens, AsyncSessionLocal, test_user
+):
     user_id = uuid.UUID(test_user["id"])
     async with AsyncSessionLocal() as session:
         base_model = await _seed_user_internal_provider(session, user_id)

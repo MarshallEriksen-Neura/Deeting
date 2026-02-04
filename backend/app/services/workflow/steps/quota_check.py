@@ -20,7 +20,12 @@ from app.repositories.api_key import ApiKeyRepository
 from app.repositories.quota_repository import InsufficientQuotaError, QuotaRepository
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
-from app.services.workflow.steps.base import BaseStep, StepConfig, StepResult, StepStatus
+from app.services.workflow.steps.base import (
+    BaseStep,
+    StepConfig,
+    StepResult,
+    StepStatus,
+)
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -35,7 +40,9 @@ class QuotaExceededError(Exception):
         self.quota_type = quota_type
         self.required = required
         self.available = available
-        super().__init__(f"{quota_type} quota insufficient: required={required}, available={available}")
+        super().__init__(
+            f"{quota_type} quota insufficient: required={required}, available={available}"
+        )
 
 
 @step_registry.register
@@ -57,12 +64,16 @@ class QuotaCheckStep(BaseStep):
     name = "quota_check"
     depends_on = ["validation"]
 
-    def __init__(self, config: StepConfig | None = None, quota_repo: QuotaRepository | None = None):
+    def __init__(
+        self,
+        config: StepConfig | None = None,
+        quota_repo: QuotaRepository | None = None,
+    ):
         super().__init__(config)
         self.quota_repo = quota_repo
         self.apikey_repo: ApiKeyRepository | None = None
 
-    async def execute(self, ctx: "WorkflowContext") -> StepResult:
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
         tenant_id = ctx.tenant_id
         api_key_id = ctx.api_key_id
 
@@ -72,7 +83,9 @@ class QuotaCheckStep(BaseStep):
 
         if not tenant_id and not api_key_id:
             if ctx.is_external:
-                return StepResult(status=StepStatus.SUCCESS, message="skip_external_no_identity")
+                return StepResult(
+                    status=StepStatus.SUCCESS, message="skip_external_no_identity"
+                )
             return StepResult(status=StepStatus.SUCCESS)
 
         try:
@@ -82,12 +95,20 @@ class QuotaCheckStep(BaseStep):
             quota_info = {}
             if tenant_id:
                 estimated_cost = await self._estimate_cost(ctx)
-                quota_info = await self._check_quota_redis(ctx, str(tenant_id), estimated_cost)
+                quota_info = await self._check_quota_redis(
+                    ctx, str(tenant_id), estimated_cost
+                )
 
             if quota_info:
                 ctx.set("quota_check", "remaining_balance", quota_info.get("balance"))
-                ctx.set("quota_check", "daily_remaining", quota_info.get("daily_remaining"))
-                ctx.set("quota_check", "monthly_remaining", quota_info.get("monthly_remaining"))
+                ctx.set(
+                    "quota_check", "daily_remaining", quota_info.get("daily_remaining")
+                )
+                ctx.set(
+                    "quota_check",
+                    "monthly_remaining",
+                    quota_info.get("monthly_remaining"),
+                )
 
             logger.debug(
                 "quota_check_pass trace_id=%s tenant=%s daily=%s monthly=%s",
@@ -99,7 +120,13 @@ class QuotaCheckStep(BaseStep):
             return StepResult(status=StepStatus.SUCCESS, data=quota_info)
 
         except QuotaExceededError as e:
-            logger.warning("quota_exceeded trace_id=%s type=%s required=%s available=%s", ctx.trace_id, e.quota_type, e.required, e.available)
+            logger.warning(
+                "quota_exceeded trace_id=%s type=%s required=%s available=%s",
+                ctx.trace_id,
+                e.quota_type,
+                e.required,
+                e.available,
+            )
             ctx.mark_error(
                 ErrorSource.GATEWAY,
                 f"QUOTA_{e.quota_type.upper()}_EXCEEDED",
@@ -110,10 +137,10 @@ class QuotaCheckStep(BaseStep):
             logger.warning(f"quota_check_degraded trace_id={ctx.trace_id} err={exc}")
             return StepResult(status=StepStatus.SUCCESS, message="quota check degraded")
 
-    async def _check_api_key_quota(self, ctx: "WorkflowContext", api_key_id) -> None:
+    async def _check_api_key_quota(self, ctx: WorkflowContext, api_key_id) -> None:
         """
         API Key 配额与预算检查（P0-2 增强）
-        
+
         检查顺序：
         1. 预算上限（budget_limit vs budget_used）- 优先从 Redis Hash 读取
         2. 请求配额（request quota）
@@ -127,26 +154,42 @@ class QuotaCheckStep(BaseStep):
         if budget_limit is not None:
             budget_used = await self._get_apikey_budget_used(ctx, str(api_key_id))
             if budget_used >= float(budget_limit):
-                raise QuotaExceededError("budget", float(budget_limit), float(budget_used))
+                raise QuotaExceededError(
+                    "budget", float(budget_limit), float(budget_used)
+                )
             # 更新上下文中的 budget_used
             ctx.set("external_auth", "budget_used", budget_used)
 
         # 2. 继续使用原 API Key quota 检查（Redis -> DB 回退）
         repo = self.apikey_repo or ApiKeyRepository(ctx.db_session)
         from app.models.api_key import QuotaType
+
         api_key = await repo.get_by_id(api_key_id)
         if not api_key:
             return
         for quota in api_key.quotas or []:
-            if quota.quota_type == QuotaType.REQUEST and quota.used_quota >= quota.total_quota:
-                raise QuotaExceededError("apikey_request", quota.total_quota, quota.used_quota)
-            if quota.quota_type == QuotaType.TOKEN and quota.total_quota > 0 and quota.used_quota >= quota.total_quota:
-                raise QuotaExceededError("apikey_token", quota.total_quota, quota.used_quota)
+            if (
+                quota.quota_type == QuotaType.REQUEST
+                and quota.used_quota >= quota.total_quota
+            ):
+                raise QuotaExceededError(
+                    "apikey_request", quota.total_quota, quota.used_quota
+                )
+            if (
+                quota.quota_type == QuotaType.TOKEN
+                and quota.total_quota > 0
+                and quota.used_quota >= quota.total_quota
+            ):
+                raise QuotaExceededError(
+                    "apikey_token", quota.total_quota, quota.used_quota
+                )
 
-    async def _get_apikey_budget_used(self, ctx: "WorkflowContext", api_key_id: str) -> float:
+    async def _get_apikey_budget_used(
+        self, ctx: WorkflowContext, api_key_id: str
+    ) -> float:
         """
         获取 API Key 的 budget_used（P0-2）
-        
+
         优先从 Redis Hash 读取，未命中时从 DB 预热。
         """
         redis_client = getattr(cache, "_redis", None)
@@ -158,40 +201,42 @@ class QuotaCheckStep(BaseStep):
         try:
             key = CacheKeys.apikey_budget_hash(api_key_id)
             full_key = cache._make_key(key)
-            
+
             # 检查 Redis Hash 是否存在
             exists = await redis_client.exists(full_key)
             if not exists:
                 # 预热 API Key 预算到 Redis
                 await self._warm_apikey_budget_cache(ctx, redis_client, key, api_key_id)
-            
+
             # 从 Redis 读取 budget_used（存储为微分单位，需要除以 1000000）
             budget_used_micro = await redis_client.hget(full_key, "budget_used")
             if budget_used_micro is None:
                 return 0.0
-            
+
             return float(budget_used_micro) / 1000000.0
         except Exception as exc:
-            logger.warning("get_apikey_budget_used_failed api_key=%s err=%s", api_key_id, exc)
+            logger.warning(
+                "get_apikey_budget_used_failed api_key=%s err=%s", api_key_id, exc
+            )
             # 降级到上下文或 DB
             budget_used = ctx.get("external_auth", "budget_used")
             return float(budget_used) if budget_used is not None else 0.0
 
     async def _warm_apikey_budget_cache(
         self,
-        ctx: "WorkflowContext",
+        ctx: WorkflowContext,
         redis_client,
         cache_key: str,
         api_key_id: str,
     ) -> None:
         """
         预热 API Key 预算到 Redis Hash（P0-2）
-        
+
         使用 SETNX 防止竞态。
         """
         full_key = cache._make_key(cache_key)
         lock_key = f"{full_key}:warming"
-        
+
         # 尝试获取预热锁
         acquired = await redis_client.set(lock_key, "1", ex=5, nx=True)
         if not acquired:
@@ -203,20 +248,27 @@ class QuotaCheckStep(BaseStep):
             # 从 DB 读取 API Key
             repo = self.apikey_repo or ApiKeyRepository(ctx.db_session)
             from sqlalchemy import select
+
             from app.models.api_key import ApiKey
-            
+
             stmt = select(ApiKey).where(ApiKey.id == api_key_id)
             result = await ctx.db_session.execute(stmt)
             api_key = result.scalars().first()
-            
+
             if not api_key:
-                logger.warning("warm_apikey_budget_api_key_not_found api_key=%s", api_key_id)
+                logger.warning(
+                    "warm_apikey_budget_api_key_not_found api_key=%s", api_key_id
+                )
                 return
-            
+
             # 写入 Redis Hash（budget_used 使用微分单位存储，避免浮点精度问题）
             budget_used_micro = int((api_key.budget_used or 0) * 1000000)
-            budget_limit_micro = int((api_key.budget_limit or 0) * 1000000) if api_key.budget_limit else 0
-            
+            budget_limit_micro = (
+                int((api_key.budget_limit or 0) * 1000000)
+                if api_key.budget_limit
+                else 0
+            )
+
             payload = {
                 "budget_used": str(budget_used_micro),
                 "budget_limit": str(budget_limit_micro),
@@ -229,7 +281,7 @@ class QuotaCheckStep(BaseStep):
             # 释放预热锁
             await redis_client.delete(lock_key)
 
-    async def _estimate_cost(self, ctx: "WorkflowContext") -> float:
+    async def _estimate_cost(self, ctx: WorkflowContext) -> float:
         """估算费用用于余额预检查（流式/非流式都可用）"""
         pricing = ctx.get("routing", "pricing_config") or {}
         if not pricing:
@@ -240,15 +292,17 @@ class QuotaCheckStep(BaseStep):
         estimated_tokens = max_tokens * 2  # 输入+输出粗估
 
         avg_price = (
-            float(pricing.get("input_per_1k", 0)) +
-            float(pricing.get("output_per_1k", 0))
+            float(pricing.get("input_per_1k", 0))
+            + float(pricing.get("output_per_1k", 0))
         ) / 2
         return (estimated_tokens / 1000) * avg_price
 
-    async def _check_quota_redis(self, ctx: "WorkflowContext", tenant_id: str, estimated_cost: float) -> dict:
+    async def _check_quota_redis(
+        self, ctx: WorkflowContext, tenant_id: str, estimated_cost: float
+    ) -> dict:
         """
         Redis Lua 原子扣减配额（P0-1 核心改动）
-        
+
         使用 quota_deduct.lua 进行原子扣减：
         - 扣减余额
         - 增加日/月请求计数
@@ -311,15 +365,17 @@ class QuotaCheckStep(BaseStep):
             "monthly_remaining": None,
         }
 
-    async def _warm_quota_cache_safe(self, ctx: "WorkflowContext", redis_client, cache_key: str, tenant_id: str) -> None:
+    async def _warm_quota_cache_safe(
+        self, ctx: WorkflowContext, redis_client, cache_key: str, tenant_id: str
+    ) -> None:
         """
         从 DB 预热配额 Hash，使用 SETNX 防止竞态（P2-7）
-        
+
         多个并发请求可能同时发现缓存未命中，使用 SETNX 确保只有一个请求执行预热。
         """
         full_key = cache._make_key(cache_key)
         lock_key = f"{full_key}:warming"
-        
+
         # 尝试获取预热锁（5 秒过期）
         acquired = await redis_client.set(lock_key, "1", ex=5, nx=True)
         if not acquired:
@@ -342,10 +398,18 @@ class QuotaCheckStep(BaseStep):
                 "credit_limit": str(quota.credit_limit),
                 "daily_quota": str(quota.daily_quota),
                 "daily_used": str(quota.daily_used),
-                "daily_date": quota.daily_reset_at.isoformat() if quota.daily_reset_at else self._today_str(),
+                "daily_date": (
+                    quota.daily_reset_at.isoformat()
+                    if quota.daily_reset_at
+                    else self._today_str()
+                ),
                 "monthly_quota": str(quota.monthly_quota),
                 "monthly_used": str(quota.monthly_used),
-                "monthly_month": quota.monthly_reset_at.strftime("%Y-%m") if quota.monthly_reset_at else self._month_str(),
+                "monthly_month": (
+                    quota.monthly_reset_at.strftime("%Y-%m")
+                    if quota.monthly_reset_at
+                    else self._month_str()
+                ),
                 "rpm_limit": str(quota.rpm_limit) if quota.rpm_limit else "0",
                 "tpm_limit": str(quota.tpm_limit) if quota.tpm_limit else "0",
                 "version": str(quota.version),
@@ -357,16 +421,18 @@ class QuotaCheckStep(BaseStep):
             # 释放预热锁
             await redis_client.delete(lock_key)
 
-    async def _deduct_quota_db(self, ctx: "WorkflowContext", tenant_id: str, estimated_cost: float) -> dict:
+    async def _deduct_quota_db(
+        self, ctx: WorkflowContext, tenant_id: str, estimated_cost: float
+    ) -> dict:
         """
         DB 回退路径：直接扣减配额（P0-1）
-        
+
         Redis 不可用时，使用 QuotaRepository 的 check_and_deduct 方法进行扣减。
         """
         from decimal import Decimal
 
         repo = self.quota_repo or QuotaRepository(ctx.db_session)
-        
+
         try:
             quota = await repo.check_and_deduct(
                 tenant_id=tenant_id,
@@ -378,10 +444,10 @@ class QuotaCheckStep(BaseStep):
                 sync_cache=False,  # 不同步缓存（Redis 不可用）
                 invalidate_cache=False,
             )
-            
+
             daily_remaining = quota.daily_quota - quota.daily_used
             monthly_remaining = quota.monthly_quota - quota.monthly_used
-            
+
             return {
                 "balance": float(quota.balance),
                 "credit_limit": float(quota.credit_limit),
@@ -398,10 +464,12 @@ class QuotaCheckStep(BaseStep):
     @staticmethod
     def _today_str() -> str:
         from datetime import date
+
         return date.today().isoformat()
 
     @staticmethod
     def _month_str() -> str:
         from datetime import date
+
         d = date.today()
         return f"{d.year:04d}-{d.month:02d}"

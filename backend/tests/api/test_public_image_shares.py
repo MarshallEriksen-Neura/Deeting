@@ -4,7 +4,11 @@ from datetime import timedelta
 import pytest
 from httpx import AsyncClient
 
-from app.models.image_generation import GenerationTask, ImageGenerationOutput, ImageGenerationStatus
+from app.models.image_generation import (
+    GenerationTask,
+    ImageGenerationOutput,
+    ImageGenerationStatus,
+)
 from app.models.media_asset import MediaAsset
 from app.utils.time_utils import Datetime
 
@@ -96,7 +100,9 @@ async def test_public_image_share_flow(
     matched = next(item for item in items if item["share_id"] == share_id)
     assert matched["prompt"] == "share this image"
     assert set(matched["tags"]) == {"#城市", "#插画"}
-    assert matched["preview"]["asset_url"].startswith("http://test/api/v1/media/assets/")
+    assert matched["preview"]["asset_url"].startswith(
+        "http://test/api/v1/media/assets/"
+    )
 
     detail_resp = await client.get(f"/api/v1/public/images/shares/{share_id}")
     assert detail_resp.status_code == 200
@@ -104,7 +110,9 @@ async def test_public_image_share_flow(
     assert detail["share_id"] == share_id
     assert set(detail["tags"]) == {"#城市", "#插画"}
     assert detail["outputs"]
-    assert detail["outputs"][0]["asset_url"].startswith("http://test/api/v1/media/assets/")
+    assert detail["outputs"][0]["asset_url"].startswith(
+        "http://test/api/v1/media/assets/"
+    )
 
 
 @pytest.mark.asyncio

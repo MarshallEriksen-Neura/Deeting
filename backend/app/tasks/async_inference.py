@@ -19,11 +19,13 @@ def batch_inference_task(self, requests: list[dict[str, Any]]) -> list[dict[str,
         for req in requests:
             # 模拟耗时
             time.sleep(0.1)
-            results.append({
-                "id": req.get("id"),
-                "status": "completed",
-                "result": f"Processed: {req.get('prompt', '')[:20]}..."
-            })
+            results.append(
+                {
+                    "id": req.get("id"),
+                    "status": "completed",
+                    "result": f"Processed: {req.get('prompt', '')[:20]}...",
+                }
+            )
 
         logger.info("Batch inference completed")
         return results

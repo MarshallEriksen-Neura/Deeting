@@ -12,7 +12,9 @@ async def test_template_render_drops_null_response_format():
     ctx.set("routing", "upstream_url", "https://example.com/v1/images/generations")
     ctx.set("routing", "template_engine", "simple_replace")
     ctx.set("routing", "request_template", {"model": None, "response_format": None})
-    ctx.set("validation", "validated", {"model": "gpt-image-1", "response_format": None})
+    ctx.set(
+        "validation", "validated", {"model": "gpt-image-1", "response_format": None}
+    )
 
     result = await step.execute(ctx)
 
@@ -28,7 +30,9 @@ async def test_template_render_keeps_response_format_value():
     ctx.set("routing", "upstream_url", "https://example.com/v1/images/generations")
     ctx.set("routing", "template_engine", "simple_replace")
     ctx.set("routing", "request_template", {"model": None, "response_format": None})
-    ctx.set("validation", "validated", {"model": "gpt-image-1", "response_format": "url"})
+    ctx.set(
+        "validation", "validated", {"model": "gpt-image-1", "response_format": "url"}
+    )
 
     result = await step.execute(ctx)
 
@@ -43,7 +47,11 @@ async def test_template_render_uses_jinja2_template():
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.set("routing", "upstream_url", "https://example.com/v1/images/generations")
     ctx.set("routing", "template_engine", "jinja2")
-    ctx.set("routing", "request_template", {"input": "{{ prompt }}", "count": "{{ num_outputs }}"})
+    ctx.set(
+        "routing",
+        "request_template",
+        {"input": "{{ prompt }}", "count": "{{ num_outputs }}"},
+    )
     ctx.set("validation", "validated", {"prompt": "hello", "num_outputs": 2})
 
     result = await step.execute(ctx)
@@ -73,7 +81,9 @@ async def test_template_render_injects_router_base_prompt():
     ctx.set("routing", "upstream_url", "https://example.com/v1/chat/completions")
     ctx.set("routing", "template_engine", "simple_replace")
     ctx.set("routing", "request_template", {"messages": []})
-    ctx.set("validation", "validated", {"messages": [{"role": "user", "content": "hi"}]})
+    ctx.set(
+        "validation", "validated", {"messages": [{"role": "user", "content": "hi"}]}
+    )
 
     result = await step.execute(ctx)
 

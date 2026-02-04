@@ -6,6 +6,7 @@
 - 查询当前有效窗口
 - 手动关闭窗口
 """
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps.auth import require_permissions
-from app.schemas.registration import RegistrationWindowCreate, RegistrationWindowRead
-from app.schemas.invite import InviteIssueRequest, InviteListResponse
 from app.repositories import InviteCodeRepository
+from app.schemas.invite import InviteIssueRequest, InviteListResponse
+from app.schemas.registration import RegistrationWindowCreate, RegistrationWindowRead
 from app.services.users.invite_code_service import InviteCodeService
 from app.services.users.registration_window_service import (
     close_window_by_id,
@@ -71,7 +72,9 @@ async def close_window(
 ):
     window = await close_window_by_id(db, window_id)
     if not window:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="window not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="window not found"
+        )
     return window
 
 
@@ -113,7 +116,9 @@ async def list_invites(
     from app.models import InviteCodeStatus
 
     status_enum = InviteCodeStatus(status) if status else None
-    items, total = await service.list_by_window(window_id, status=status_enum, limit=limit, offset=skip)
+    items, total = await service.list_by_window(
+        window_id, status=status_enum, limit=limit, offset=skip
+    )
     return InviteListResponse(
         items=[
             {

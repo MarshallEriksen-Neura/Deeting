@@ -101,7 +101,7 @@ class FeatureRollout:
 
     @staticmethod
     def _hash_ratio(feature: str, subject_id: str) -> float:
-        digest = hashlib.sha256(f"{feature}:{subject_id}".encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(f"{feature}:{subject_id}".encode()).hexdigest()
         bucket = int(digest[:8], 16)
         return bucket / 0xFFFFFFFF
 

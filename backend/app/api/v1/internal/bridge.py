@@ -32,7 +32,10 @@ router = APIRouter(prefix="/bridge", tags=["Bridge"])
 
 
 def _service_unavailable(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=503, detail={"code": "bridge_gateway_unavailable", "message": str(exc)})
+    return HTTPException(
+        status_code=503,
+        detail={"code": "bridge_gateway_unavailable", "message": str(exc)},
+    )
 
 
 @router.get("/agents")
@@ -51,7 +54,9 @@ async def list_agent_tools(agent_id: str) -> dict[str, Any]:
     try:
         return await client.list_tools(agent_id)
     except Exception as exc:
-        logger.warning("bridge.list_tools_failed", extra={"agent_id": agent_id, "error": str(exc)})
+        logger.warning(
+            "bridge.list_tools_failed", extra={"agent_id": agent_id, "error": str(exc)}
+        )
         raise _service_unavailable(exc)
 
 
@@ -68,11 +73,15 @@ async def issue_agent_token(
     try:
         validate_agent_id(agent_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail={"code": "invalid_agent_id", "message": str(exc)})
+        raise HTTPException(
+            status_code=400, detail={"code": "invalid_agent_id", "message": str(exc)}
+        )
 
     reset = bool(payload.get("reset", False))
     service = BridgeAgentTokenService(session=db)
-    result = await service.issue_token(user_id=uuid.UUID(str(user.id)), agent_id=agent_id, reset=reset)
+    result = await service.issue_token(
+        user_id=uuid.UUID(str(user.id)), agent_id=agent_id, reset=reset
+    )
 
     return {
         "agent_id": agent_id,
@@ -108,7 +117,9 @@ async def revoke_agent_token(
     user=Depends(get_current_user),
 ) -> dict[str, Any]:
     service = BridgeAgentTokenService(session=db)
-    success = await service.revoke_token(user_id=uuid.UUID(str(user.id)), agent_id=agent_id)
+    success = await service.revoke_token(
+        user_id=uuid.UUID(str(user.id)), agent_id=agent_id
+    )
     if not success:
         raise HTTPException(status_code=404, detail="Agent token not found")
     return {"message": "Agent token revoked"}
@@ -120,7 +131,9 @@ async def invoke_tool(payload: dict[str, Any]) -> dict[str, Any]:
     req_id = str(payload.get("req_id") or "").strip() or uuid.uuid4().hex
     agent_id = str(payload.get("agent_id") or "").strip()
     tool_name = str(payload.get("tool_name") or "").strip()
-    arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+    arguments = (
+        payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+    )
     timeout_ms = int(payload.get("timeout_ms") or 60000)
     stream = bool(payload.get("stream", True))
 
@@ -139,7 +152,10 @@ async def invoke_tool(payload: dict[str, Any]) -> dict[str, Any]:
             stream=stream,
         )
     except Exception as exc:
-        logger.warning("bridge.invoke_failed", extra={"agent_id": agent_id, "tool": tool_name, "error": str(exc)})
+        logger.warning(
+            "bridge.invoke_failed",
+            extra={"agent_id": agent_id, "tool": tool_name, "error": str(exc)},
+        )
         raise _service_unavailable(exc)
 
 
@@ -154,7 +170,10 @@ async def cancel_tool(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         return await client.cancel(req_id=req_id, agent_id=agent_id, reason=reason)
     except Exception as exc:
-        logger.warning("bridge.cancel_failed", extra={"agent_id": agent_id, "req_id": req_id, "error": str(exc)})
+        logger.warning(
+            "bridge.cancel_failed",
+            extra={"agent_id": agent_id, "req_id": req_id, "error": str(exc)},
+        )
         raise _service_unavailable(exc)
 
 

@@ -2,11 +2,11 @@ import uuid
 from typing import Any
 from unittest.mock import Mock
 
-import redis
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+import redis
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.db_sync import get_sync_db
@@ -51,7 +51,7 @@ def record_usage_task(usage_data: dict[str, Any]) -> str:
             request_count=1,
             token_count=total_tokens,
             cost=cost,
-            error_count=is_error
+            error_count=is_error,
         )
 
         do_update_stmt = stmt.on_conflict_do_update(
@@ -61,7 +61,7 @@ def record_usage_task(usage_data: dict[str, Any]) -> str:
                 "token_count": ApiKeyUsage.token_count + stmt.excluded.token_count,
                 "cost": ApiKeyUsage.cost + stmt.excluded.cost,
                 "error_count": ApiKeyUsage.error_count + stmt.excluded.error_count,
-            }
+            },
         )
         db.execute(do_update_stmt)
 
@@ -71,7 +71,7 @@ def record_usage_task(usage_data: dict[str, Any]) -> str:
             update(ApiKeyQuota)
             .where(ApiKeyQuota.api_key_id == api_key_id)
             .where(ApiKeyQuota.quota_type == QuotaType.REQUEST)
-            .values(used_quota = ApiKeyQuota.used_quota + 1)
+            .values(used_quota=ApiKeyQuota.used_quota + 1)
         )
 
         # Update Token Quota (if tokens > 0)
@@ -80,7 +80,7 @@ def record_usage_task(usage_data: dict[str, Any]) -> str:
                 update(ApiKeyQuota)
                 .where(ApiKeyQuota.api_key_id == api_key_id)
                 .where(ApiKeyQuota.quota_type == QuotaType.TOKEN)
-                .values(used_quota = ApiKeyQuota.used_quota + total_tokens)
+                .values(used_quota=ApiKeyQuota.used_quota + total_tokens)
             )
 
         # Note: Cost quota in DB is skipped because used_quota is BigInt and cost is Decimal.
@@ -90,7 +90,9 @@ def record_usage_task(usage_data: dict[str, Any]) -> str:
 
         # 3. Update Redis Cache (Best Effort)
         try:
-            should_update_redis = bool(settings.REDIS_URL) or isinstance(getattr(redis, "from_url", None), Mock)
+            should_update_redis = bool(settings.REDIS_URL) or isinstance(
+                getattr(redis, "from_url", None), Mock
+            )
             if should_update_redis:
                 # Use a sync redis client since we are in a sync task (or prefork worker)
                 r = redis.from_url(settings.REDIS_URL or "", decode_responses=False)

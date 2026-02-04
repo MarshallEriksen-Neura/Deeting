@@ -45,6 +45,7 @@ STEP_STATUS_STAGE_MAP: dict[str, str] = {
     "audit_log": "render",
 }
 
+
 class CyclicDependencyError(Exception):
     """循环依赖异常"""
 
@@ -120,9 +121,7 @@ class OrchestrationEngine:
         for name, step in self.steps.items():
             for dep in step.depends_on:
                 if dep not in self.steps:
-                    raise ValueError(
-                        f"Step '{name}' depends on unknown step '{dep}'"
-                    )
+                    raise ValueError(f"Step '{name}' depends on unknown step '{dep}'")
 
         # 使用 DFS 检测环
         WHITE, GRAY, BLACK = 0, 1, 2
@@ -205,9 +204,7 @@ class OrchestrationEngine:
 
         try:
             for layer_idx, layer in enumerate(layers):
-                logger.debug(
-                    f"Executing layer {layer_idx + 1}/{len(layers)}: {layer}"
-                )
+                logger.debug(f"Executing layer {layer_idx + 1}/{len(layers)}: {layer}")
 
                 # 过滤需要跳过的步骤
                 executable = []

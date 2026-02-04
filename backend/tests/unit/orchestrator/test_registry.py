@@ -1,7 +1,12 @@
 import pytest
 
 from app.services.orchestrator.registry import StepNotFoundError, StepRegistry
-from app.services.workflow.steps.base import BaseStep, StepConfig, StepResult, StepStatus
+from app.services.workflow.steps.base import (
+    BaseStep,
+    StepConfig,
+    StepResult,
+    StepStatus,
+)
 
 
 class _DummyStep(BaseStep):

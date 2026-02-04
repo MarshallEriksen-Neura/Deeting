@@ -7,6 +7,7 @@
 - Token 刷新和轮换
 - 登出
 """
+
 import pytest
 from httpx import AsyncClient
 
@@ -54,7 +55,11 @@ class TestLogin:
         )
         resp = await client.post(
             "/api/v1/auth/login",
-            json={"email": "fresh@example.com", "code": "123456", "invite_code": "TEST_INVITE_CODE"},
+            json={
+                "email": "fresh@example.com",
+                "code": "123456",
+                "invite_code": "TEST_INVITE_CODE",
+            },
         )
         assert resp.status_code in [200, 403]  # 若未配置邀请码则可能 403
 
@@ -117,7 +122,9 @@ class TestTokenRefresh:
         assert data["refresh_token"] != auth_tokens["refresh_token"]
 
     @pytest.mark.asyncio
-    async def test_refresh_token_reuse_detection(self, client: AsyncClient, auth_tokens: dict):
+    async def test_refresh_token_reuse_detection(
+        self, client: AsyncClient, auth_tokens: dict
+    ):
         """测试 refresh token 重用检测"""
         # 第一次刷新
         response1 = await client.post(
@@ -203,7 +210,9 @@ class TestJWTValidation:
         assert response.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_x_user_id_backward_compat(self, client: AsyncClient, test_user: dict):
+    async def test_x_user_id_backward_compat(
+        self, client: AsyncClient, test_user: dict
+    ):
         """X-User-Id 已废弃，期望被拒绝"""
         response = await client.get(
             "/api/v1/users/me",

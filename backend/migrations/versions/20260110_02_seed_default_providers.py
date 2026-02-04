@@ -11,7 +11,6 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 # revision identifiers, used by Alembic.
 revision = "20260110_02_seed_default_providers"
 down_revision = "20260110_01_add_provider_preset_user_fields"
@@ -158,8 +157,14 @@ def upgrade() -> None:
             "provider": "anthropic",
             "base_url": "https://api.anthropic.com",
             "auth_type": "api_key",
-            "auth_config": {"secret_ref_id": "ANTHROPIC_API_KEY", "header": "x-api-key"},
-            "default_headers": {"anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+            "auth_config": {
+                "secret_ref_id": "ANTHROPIC_API_KEY",
+                "header": "x-api-key",
+            },
+            "default_headers": {
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
             "default_params": {},
             "is_active": True,
             "icon": "simple-icons:anthropic",
@@ -174,7 +179,10 @@ def upgrade() -> None:
             "provider": "google",
             "base_url": "https://generativelanguage.googleapis.com",
             "auth_type": "api_key",
-            "auth_config": {"secret_ref_id": "GEMINI_API_KEY", "header": "x-goog-api-key"},
+            "auth_config": {
+                "secret_ref_id": "GEMINI_API_KEY",
+                "header": "x-goog-api-key",
+            },
             "default_headers": {"Content-Type": "application/json"},
             "default_params": {},
             "is_active": True,
@@ -206,7 +214,10 @@ def upgrade() -> None:
             "provider": "azure",
             "base_url": "https://{resource}.openai.azure.com/",
             "auth_type": "api_key",
-            "auth_config": {"secret_ref_id": "AZURE_OPENAI_API_KEY", "header": "api-key"},
+            "auth_config": {
+                "secret_ref_id": "AZURE_OPENAI_API_KEY",
+                "header": "api-key",
+            },
             "default_headers": {"Content-Type": "application/json"},
             "default_params": {},
             "is_active": True,
@@ -254,7 +265,11 @@ def upgrade() -> None:
             "provider": "qwen",
             "base_url": "https://dashscope.aliyuncs.com/api/v1",
             "auth_type": "api_key",
-            "auth_config": {"secret_ref_id": "DASHSCOPE_API_KEY", "header": "Authorization", "prefix": "Bearer "},
+            "auth_config": {
+                "secret_ref_id": "DASHSCOPE_API_KEY",
+                "header": "Authorization",
+                "prefix": "Bearer ",
+            },
             "default_headers": {"Content-Type": "application/json"},
             "default_params": {},
             "is_active": True,
@@ -514,7 +529,20 @@ def downgrade() -> None:
     conn.execute(
         provider_preset.delete().where(
             provider_preset.c.slug.in_(
-                ["custom", "openai", "anthropic", "gemini", "vertexai", "azure", "kimi", "deepseek", "qwen", "baichuan", "glm", "ollama"]
+                [
+                    "custom",
+                    "openai",
+                    "anthropic",
+                    "gemini",
+                    "vertexai",
+                    "azure",
+                    "kimi",
+                    "deepseek",
+                    "qwen",
+                    "baichuan",
+                    "glm",
+                    "ollama",
+                ]
             )
         )
     )

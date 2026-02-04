@@ -34,7 +34,9 @@ async def async_session() -> AsyncSession:
         yield sess
 
 
-async def _create_user(session: AsyncSession, email: str, is_active: bool = True) -> User:
+async def _create_user(
+    session: AsyncSession, email: str, is_active: bool = True
+) -> User:
     user = User(
         email=email,
         username="tester",
@@ -52,7 +54,9 @@ async def test_publish_to_user_schedules_task(async_session: AsyncSession):
     user = await _create_user(async_session, "notify_user@example.com")
     service = NotificationService(async_session)
 
-    with patch("app.tasks.notification.publish_notification_to_user_task.delay") as mock_delay:
+    with patch(
+        "app.tasks.notification.publish_notification_to_user_task.delay"
+    ) as mock_delay:
         notification = await service.publish_to_user(
             user_id=user.id,
             title="Test",
@@ -71,7 +75,9 @@ async def test_publish_to_all_schedules_task(async_session: AsyncSession):
     await _create_user(async_session, "notify_all@example.com")
     service = NotificationService(async_session)
 
-    with patch("app.tasks.notification.publish_notification_to_all_users_task.delay") as mock_delay:
+    with patch(
+        "app.tasks.notification.publish_notification_to_all_users_task.delay"
+    ) as mock_delay:
         notification = await service.publish_to_all(
             title="Global",
             content="All users",

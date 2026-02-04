@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.services.skill_registry.parsers.base import EvidencePack, RepoContext, RepoParserPlugin
+from app.services.skill_registry.parsers.base import (
+    EvidencePack,
+    RepoContext,
+    RepoParserPlugin,
+)
 
 
 class NodeRepoParser(RepoParserPlugin):

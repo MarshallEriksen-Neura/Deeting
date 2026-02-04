@@ -1,18 +1,18 @@
 """
 用户自助 API Key 路由 (/api/v1/api-keys)
 """
+
 from datetime import datetime, timedelta
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.core.config import settings
+from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models import User
-from app.models.api_key import ApiKeyStatus, ApiKeyType
+from app.models.api_key import ApiKeyType
 from app.repositories.api_key import ApiKeyRepository
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.schemas.user_api_key import (
@@ -28,7 +28,9 @@ router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 models_router = APIRouter(prefix="/models", tags=["Models"])
 
 
-def map_expiration(expiration: str, expires_at: Optional[datetime]) -> Optional[datetime]:
+def map_expiration(
+    expiration: str, expires_at: datetime | None
+) -> datetime | None:
     now = Datetime.utcnow()
     if expiration == "never":
         return None
@@ -47,13 +49,17 @@ def to_response(api_key) -> ApiKeyResponse:
         user_id=api_key.user_id,
         name=api_key.name,
         prefix=api_key.key_prefix,
-        budget_limit=float(api_key.budget_limit) if api_key.budget_limit is not None else None,
+        budget_limit=(
+            float(api_key.budget_limit) if api_key.budget_limit is not None else None
+        ),
         budget_used=float(api_key.budget_used or 0),
         allowed_models=api_key.allowed_models or [],
         rate_limit=api_key.rate_limit_rpm,
         allowed_ips=api_key.allowed_ips or [],
         enable_logging=bool(api_key.enable_logging),
-        status=api_key.status.value if hasattr(api_key.status, "value") else api_key.status,
+        status=(
+            api_key.status.value if hasattr(api_key.status, "value") else api_key.status
+        ),
         last_used_at=api_key.last_used_at,
         expires_at=api_key.expires_at,
         created_at=api_key.created_at,
@@ -63,7 +69,9 @@ def to_response(api_key) -> ApiKeyResponse:
 
 async def get_service(db: AsyncSession = Depends(get_db)) -> ApiKeyService:
     repo = ApiKeyRepository(db)
-    return ApiKeyService(repository=repo, redis_client=None, secret_key=settings.SECRET_KEY)
+    return ApiKeyService(
+        repository=repo, redis_client=None, secret_key=settings.SECRET_KEY
+    )
 
 
 @router.get("", response_model=ApiKeyListResponse)
@@ -81,7 +89,9 @@ async def list_api_keys(
     return ApiKeyListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.post("", response_model=ApiKeyCreateResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=ApiKeyCreateResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_api_key(
     payload: ApiKeyCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -120,11 +130,15 @@ async def roll_api_key(
     """轮换 API Key"""
     key = await service.repository.get_by_id(api_key_id)
     if not key or key.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found"
+        )
 
     new_key, raw_key, _ = await service.rotate_key(api_key_id)
     if not new_key:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rotate failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rotate failed"
+        )
 
     # 路由层统一管理事务
     await db.commit()
@@ -141,7 +155,9 @@ async def revoke_api_key(
     """吊销 API Key"""
     key = await service.repository.get_by_id(api_key_id)
     if not key or key.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found"
+        )
 
     revoked = await service.revoke_key(api_key_id, reason="user revoke")
     # 路由层统一管理事务
@@ -159,8 +175,10 @@ async def delete_api_key(
     """删除 API Key"""
     key = await service.repository.get_by_id(api_key_id)
     if not key or key.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="API Key not found"
+        )
+
     await service.delete_key(api_key_id)
     # 路由层统一管理事务
     await db.commit()

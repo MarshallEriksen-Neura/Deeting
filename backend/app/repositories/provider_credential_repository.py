@@ -1,6 +1,5 @@
 import uuid
 from collections import defaultdict
-from typing import Dict, List
 
 from sqlalchemy import select
 
@@ -15,7 +14,9 @@ from .base import BaseRepository
 class ProviderCredentialRepository(BaseRepository[ProviderCredential]):
     model = ProviderCredential
 
-    async def get_by_instance_ids(self, instance_ids: list[str]) -> Dict[str, List[ProviderCredential]]:
+    async def get_by_instance_ids(
+        self, instance_ids: list[str]
+    ) -> dict[str, list[ProviderCredential]]:
         """
         获取指定实例的全部启用凭证，按 instance_id 归组。
         """
@@ -32,7 +33,7 @@ class ProviderCredentialRepository(BaseRepository[ProviderCredential]):
         if not instance_uuid:
             return {}
 
-        async def load_for_instance(iid: uuid.UUID) -> List[ProviderCredential]:
+        async def load_for_instance(iid: uuid.UUID) -> list[ProviderCredential]:
             stmt = select(ProviderCredential).where(
                 ProviderCredential.instance_id == iid,
                 ProviderCredential.is_active == True,  # noqa: E712
@@ -40,7 +41,7 @@ class ProviderCredentialRepository(BaseRepository[ProviderCredential]):
             result = await self.session.execute(stmt)
             return list(result.scalars().all())
 
-        grouped: Dict[str, List[ProviderCredential]] = defaultdict(list)
+        grouped: dict[str, list[ProviderCredential]] = defaultdict(list)
         for iid in instance_uuid:
             key = CacheKeys.provider_credentials(str(iid))
             rows = await cache.get_or_set_singleflight(
@@ -53,10 +54,12 @@ class ProviderCredentialRepository(BaseRepository[ProviderCredential]):
 
         return grouped
 
-    async def get_by_alias(self, instance_id: uuid.UUID, alias: str) -> ProviderCredential | None:
+    async def get_by_alias(
+        self, instance_id: uuid.UUID, alias: str
+    ) -> ProviderCredential | None:
         stmt = select(ProviderCredential).where(
             ProviderCredential.instance_id == instance_id,
-            ProviderCredential.alias == alias
+            ProviderCredential.alias == alias,
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()

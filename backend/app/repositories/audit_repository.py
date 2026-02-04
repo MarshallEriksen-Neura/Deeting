@@ -35,15 +35,17 @@ class AuditRepository:
                     "output_tokens": audit_data.get("billing", {}).get(
                         "output_tokens", 0
                     ),
-                    "total_tokens": audit_data.get("billing", {}).get(
-                        "input_tokens", 0
-                    )
+                    "total_tokens": audit_data.get("billing", {}).get("input_tokens", 0)
                     + audit_data.get("billing", {}).get("output_tokens", 0),
                     "cost_user": audit_data.get("billing", {}).get("total_cost", 0.0),
                     "preset_id": audit_data.get("selected_preset_id"),
                     "error_code": audit_data.get("error_code"),
-                    "upstream_url": audit_data.get("upstream_result", {}).get("upstream_url"),
-                    "retry_count": audit_data.get("upstream_result", {}).get("retry_count", 0),
+                    "upstream_url": audit_data.get("upstream_result", {}).get(
+                        "upstream_url"
+                    ),
+                    "retry_count": audit_data.get("upstream_result", {}).get(
+                        "retry_count", 0
+                    ),
                     "meta": audit_data.get("meta"),
                 }
             )

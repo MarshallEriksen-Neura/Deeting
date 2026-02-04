@@ -16,7 +16,9 @@ async def _run_evaluation(candidate_id: uuid.UUID) -> str:
         return result
 
 
-@celery_app.task(queue="agent_tasks", name="app.tasks.spec_knowledge.evaluate_candidate")
+@celery_app.task(
+    queue="agent_tasks", name="app.tasks.spec_knowledge.evaluate_candidate"
+)
 def evaluate_candidate(candidate_id: str) -> str:
     try:
         return asyncio.run(_run_evaluation(uuid.UUID(candidate_id)))
@@ -31,7 +33,9 @@ async def _run_auto_promote(candidate_id: uuid.UUID) -> bool:
         return await service.promote_candidate(candidate_id, auto=True)
 
 
-@celery_app.task(queue="agent_tasks", name="app.tasks.spec_knowledge.auto_promote_candidate")
+@celery_app.task(
+    queue="agent_tasks", name="app.tasks.spec_knowledge.auto_promote_candidate"
+)
 def auto_promote_candidate(candidate_id: str) -> str:
     try:
         promoted = asyncio.run(_run_auto_promote(uuid.UUID(candidate_id)))

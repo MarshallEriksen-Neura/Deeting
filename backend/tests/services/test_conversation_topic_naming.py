@@ -4,7 +4,11 @@ import pytest
 import pytest_asyncio
 
 from app.models import Base, User
-from app.models.conversation import ConversationChannel, ConversationSession, ConversationStatus
+from app.models.conversation import (
+    ConversationChannel,
+    ConversationSession,
+    ConversationStatus,
+)
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.secretary import UserSecretary
 from app.services.conversation.topic_namer import generate_conversation_title
@@ -56,11 +60,7 @@ async def test_topic_naming_updates_title(monkeypatch):
     async def fake_test_model(self, model_id, user_id, prompt="ping"):
         return {
             "success": True,
-            "response_body": {
-                "choices": [
-                    {"message": {"content": "旅行计划"}}
-                ]
-            },
+            "response_body": {"choices": [{"message": {"content": "旅行计划"}}]},
         }
 
     monkeypatch.setattr(ProviderInstanceService, "test_model", fake_test_model)

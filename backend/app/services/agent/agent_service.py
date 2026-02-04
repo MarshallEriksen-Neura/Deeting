@@ -1,13 +1,13 @@
-import asyncio
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 from app.agent_plugins.core.manager import PluginManager
 from app.core.plugin_config import plugin_config_loader
 from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
+
 
 class AgentService:
     """
@@ -17,7 +17,7 @@ class AgentService:
 
     def __init__(self):
         self.plugin_manager = PluginManager()
-        
+
         # 1. Register ALL available capabilities from Configuration
         # This replaces the hardcoded register_class calls.
         all_plugins = plugin_config_loader.get_all_plugins()
@@ -29,11 +29,11 @@ class AgentService:
                     logger.debug(f"Registered plugin: {p_config.name} ({p_config.id})")
                 except Exception as e:
                     logger.error(f"Failed to register plugin {p_config.id}: {e}")
-        
-        self.tools: List[ToolDefinition] = []
-        self.tool_map: Dict[str, Any] = {}
+
+        self.tools: list[ToolDefinition] = []
+        self.tool_map: dict[str, Any] = {}
         self._initialized = False
-        self.tool_map: Dict[str, Any] = {}
+        self.tool_map: dict[str, Any] = {}
         self._initialized = False
 
     async def initialize(self):
@@ -43,35 +43,37 @@ class AgentService:
 
         # Activate plugins
         await self.plugin_manager.activate_all()
-        
+
         # Harvest tools
         raw_tools = self.plugin_manager.get_all_tools()
-        
+
         for tool_def in raw_tools:
             func_def = tool_def["function"]
             t_name = func_def["name"]
-            
-            self.tools.append(ToolDefinition(
-                name=t_name,
-                description=func_def["description"],
-                input_schema=func_def["parameters"]
-            ))
-            
+
+            self.tools.append(
+                ToolDefinition(
+                    name=t_name,
+                    description=func_def["description"],
+                    input_schema=func_def["parameters"],
+                )
+            )
+
             # Dynamic handler binding
             handler = self._find_handler(t_name)
             if handler:
                 self.tool_map[t_name] = handler
             else:
                 logger.warning(f"Tool '{t_name}' advertised but no handler found.")
-                
+
         self._initialized = True
 
     def _find_handler(self, tool_name: str):
-        method_name = f"handle_{tool_name}" # Convention: handle_tool_name
-        
+        method_name = f"handle_{tool_name}"  # Convention: handle_tool_name
+
         for plugin in self.plugin_manager.plugins.values():
             # Check for direct method on plugin class first
-            if hasattr(plugin, tool_name): 
+            if hasattr(plugin, tool_name):
                 return getattr(plugin, tool_name)
             # Check for handle_ prefix convention
             if hasattr(plugin, method_name):
@@ -79,11 +81,11 @@ class AgentService:
         return None
 
     async def chat(
-        self, 
-        user_query: str, 
+        self,
+        user_query: str,
         system_instruction: str,
-        model_hint: str = "gpt-4-turbo", 
-        conversation_history: List[Dict] = None,
+        model_hint: str = "gpt-4-turbo",
+        conversation_history: list[dict] = None,
         tenant_id: str | None = None,
         user_id: str | None = None,
         api_key_id: str | None = None,
@@ -100,17 +102,17 @@ class AgentService:
             conversation_history = []
 
         # Use the dynamic system instruction passed by the caller
-        messages = [{"role": "system", "content": system_instruction}] 
+        messages = [{"role": "system", "content": system_instruction}]
         messages.extend(conversation_history)
         messages.append({"role": "user", "content": user_query})
-        
+
         # ReAct Loop (Reasoning + Acting)
-        for turn in range(10): # Max 10 turns to prevent infinite loops
+        for turn in range(10):  # Max 10 turns to prevent infinite loops
             try:
                 response = await llm_service.chat_completion(
-                    messages=messages, 
-                    tools=self.tools, 
-                    model=model_hint, 
+                    messages=messages,
+                    tools=self.tools,
+                    model=model_hint,
                     temperature=0,
                     tenant_id=tenant_id,
                     user_id=user_id,
@@ -119,7 +121,7 @@ class AgentService:
                 )
             except Exception as e:
                 logger.error(f"Agent LLM Error: {e}")
-                return f"Agent Error: {str(e)}"
+                return f"Agent Error: {e!s}"
 
             # Case 1: Final Text Response
             if isinstance(response, str):
@@ -128,20 +130,31 @@ class AgentService:
             # Case 2: Tool Calls
             elif isinstance(response, list):
                 # Add Assistant's thought/tool_call to history
-                messages.append({
-                    "role": "assistant", 
-                    "content": None,
-                    "tool_calls": [
-                        {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
-                        for tc in response
-                    ]
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments),
+                                },
+                            }
+                            for tc in response
+                        ],
+                    }
+                )
 
                 # Execute Tools
                 for tool_call in response:
                     func = self.tool_map.get(tool_call.name)
                     if not func:
-                        res_str = f"Error: Tool '{tool_call.name}' implementation not found."
+                        res_str = (
+                            f"Error: Tool '{tool_call.name}' implementation not found."
+                        )
                     else:
                         try:
                             if isinstance(tool_call.arguments, dict):
@@ -151,16 +164,19 @@ class AgentService:
                             res_str = json.dumps(res, default=str)
                         except Exception as e:
                             logger.exception(f"Tool Execution Error {tool_call.name}")
-                            res_str = f"Error executing {tool_call.name}: {str(e)}"
+                            res_str = f"Error executing {tool_call.name}: {e!s}"
 
                     # Add Tool Result to history
-                    messages.append({
-                        "role": "tool", 
-                        "tool_call_id": tool_call.id, 
-                        "content": res_str
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": res_str,
+                        }
+                    )
 
         return "Agent stopped after max turns."
+
 
 # Singleton instance
 agent_service = AgentService()

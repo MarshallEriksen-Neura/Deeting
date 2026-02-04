@@ -6,9 +6,10 @@
 - 用内存 Redis 替身挂载到 CacheService
 - 通过登录接口获取真实 JWT 作为测试 token
 """
+
+import asyncio
 import json
 import os
-import asyncio
 import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -31,9 +32,9 @@ os.environ.setdefault("REDIS_URL", "")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 
-from app.core.config import settings
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
+from app.core.config import settings
 from app.core.database import get_db
 from app.models import Base, User
 from app.utils.security import get_password_hash
@@ -45,6 +46,7 @@ settings.CELERY_BROKER_URL = "memory://"
 settings.CELERY_RESULT_BACKEND = "cache+memory://"
 
 # ---- 内存 Redis 替身 ----
+
 
 class DummyRedis:
     def __init__(self):
@@ -83,11 +85,25 @@ class DummyRedis:
     async def keys(self, pattern: str):
         if pattern.endswith("*"):
             prefix = pattern[:-1]
-            return [k for k in list(self.store) + list(self.hash_store) + list(self.zset_store) if k.startswith(prefix)]
-        return [k for k in list(self.store) + list(self.hash_store) + list(self.zset_store) if k == pattern]
+            return [
+                k
+                for k in list(self.store)
+                + list(self.hash_store)
+                + list(self.zset_store)
+                if k.startswith(prefix)
+            ]
+        return [
+            k
+            for k in list(self.store) + list(self.hash_store) + list(self.zset_store)
+            if k == pattern
+        ]
 
     async def exists(self, *keys):
-        return sum(1 for k in keys if k in self.store or k in self.hash_store or k in self.zset_store)
+        return sum(
+            1
+            for k in keys
+            if k in self.store or k in self.hash_store or k in self.zset_store
+        )
 
     async def flushall(self):
         self.store.clear()
@@ -210,14 +226,15 @@ class DummyRedis:
             numkeys = keys_and_args[0]
             if not isinstance(numkeys, int):
                 return None
-            keys = list(keys_and_args[1:1 + numkeys])
-            args = list(keys_and_args[1 + numkeys:])
+            keys = list(keys_and_args[1 : 1 + numkeys])
+            args = list(keys_and_args[1 + numkeys :])
         if not keys or not args:
             return None
         key = keys[0]
         bucket = self.hash_store.get(key)
         if not bucket or len(args) < 6:
             return None
+
         # quota_deduct.lua 模拟
         def _get_num(field, default=0.0):
             raw = bucket.get(field if isinstance(field, bytes) else str(field).encode())
@@ -336,7 +353,11 @@ class DummyRedis:
             stored = self.store.get(key)
             if stored is None:
                 return 0
-            stored_val = stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+            stored_val = (
+                stored.decode()
+                if isinstance(stored, (bytes, bytearray))
+                else str(stored)
+            )
             if stored_val != lock_val:
                 return 0
             return 1
@@ -347,7 +368,9 @@ class DummyRedis:
         stored = self.store.get(key)
         if stored is None:
             return 0
-        stored_val = stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+        stored_val = (
+            stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+        )
         if stored_val != lock_val:
             return 0
         await self.delete(key)
@@ -355,7 +378,9 @@ class DummyRedis:
 
     async def zremrangebyscore(self, key: str, min_score, max_score):
         items = self.zset_store.get(key, [])
-        self.zset_store[key] = [(m, s) for (m, s) in items if s < min_score or s > max_score]
+        self.zset_store[key] = [
+            (m, s) for (m, s) in items if s < min_score or s > max_score
+        ]
         return True
 
     async def zcard(self, key: str):
@@ -408,13 +433,13 @@ class DummyRedis:
         bucket = self.hash_store.get(key, {})
         return bucket.get(field if isinstance(field, bytes) else str(field).encode())
 
+
 # 将 CacheService 指向内存 Redis
 cache._redis = DummyRedis()  # type: ignore[attr-defined]
 BANNED_USER_ID: str | None = None
 _SEEDED = False
 
 
-import pytest_asyncio
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -423,6 +448,7 @@ async def _reset_dummy_redis():
     if hasattr(cache, "_redis") and hasattr(cache._redis, "flushall"):
         await cache._redis.flushall()  # type: ignore[attr-defined]
     yield
+
 
 # ---- 内存 SQLite 引擎 ----
 
@@ -457,6 +483,7 @@ async def _seed_users():
     if _SEEDED:
         return
     async with AsyncSessionLocal() as session:
+
         def add_user(email, username, password, is_active=True, is_superuser=False):
             user = User(
                 id=uuid4(),
@@ -470,17 +497,33 @@ async def _seed_users():
             return user
 
         admin = add_user("admin@example.com", "Admin", "testPassword123", True, True)
-        test_user = add_user("testuser@example.com", "Test User", "testPassword123", True, False)
-        inactive = add_user("inactive@example.com", "Inactive", "testPassword123", False, False)
-        banned = add_user("banned@example.com", "Banned", "testPassword123", True, False)
-        pending = add_user("pending@example.com", "Pending", "testPassword123", False, False)
-        reset_user = add_user("resetuser@example.com", "ResetUser", "testPassword123", True, False)
+        test_user = add_user(
+            "testuser@example.com", "Test User", "testPassword123", True, False
+        )
+        inactive = add_user(
+            "inactive@example.com", "Inactive", "testPassword123", False, False
+        )
+        banned = add_user(
+            "banned@example.com", "Banned", "testPassword123", True, False
+        )
+        pending = add_user(
+            "pending@example.com", "Pending", "testPassword123", False, False
+        )
+        reset_user = add_user(
+            "resetuser@example.com", "ResetUser", "testPassword123", True, False
+        )
 
         await session.commit()
 
         # 预置验证码
-        await cache.set(CacheKeys.verify_code("pending@example.com", "activate"), "123456", ex=600)
-        await cache.set(CacheKeys.verify_code("resetuser@example.com", "reset_password"), "654321", ex=600)
+        await cache.set(
+            CacheKeys.verify_code("pending@example.com", "activate"), "123456", ex=600
+        )
+        await cache.set(
+            CacheKeys.verify_code("resetuser@example.com", "reset_password"),
+            "654321",
+            ex=600,
+        )
         # 统一登录验证码，便于测试
         for email in [
             "admin@example.com",
@@ -520,7 +563,9 @@ def event_loop():
             pass
         # 确保异步生成器与后台任务优雅收尾，避免 pytest 卡住退出
         try:
-            loop.run_until_complete(asyncio.wait_for(loop.shutdown_asyncgens(), timeout=5))
+            loop.run_until_complete(
+                asyncio.wait_for(loop.shutdown_asyncgens(), timeout=5)
+            )
         except Exception:
             pass
     finally:
@@ -554,6 +599,7 @@ async def client(setup_db) -> AsyncGenerator[AsyncClient, None]:
 
 # ============ Fixtures ============#
 
+
 @pytest_asyncio.fixture
 async def admin_tokens(client: AsyncClient) -> dict:
     await client.post(
@@ -566,7 +612,10 @@ async def admin_tokens(client: AsyncClient) -> dict:
     )
     assert resp.status_code == 200
     data = resp.json()
-    return {"access_token": data["access_token"], "refresh_token": data["refresh_token"]}
+    return {
+        "access_token": data["access_token"],
+        "refresh_token": data["refresh_token"],
+    }
 
 
 @pytest_asyncio.fixture
@@ -581,31 +630,52 @@ async def auth_tokens(client: AsyncClient) -> dict:
     )
     assert resp.status_code == 200
     data = resp.json()
-    return {"access_token": data["access_token"], "refresh_token": data["refresh_token"]}
+    return {
+        "access_token": data["access_token"],
+        "refresh_token": data["refresh_token"],
+    }
 
 
 @pytest_asyncio.fixture
 async def test_user() -> dict:
     async with AsyncSessionLocal() as session:
-        res = await session.execute(select(User).where(User.email == "testuser@example.com"))
+        res = await session.execute(
+            select(User).where(User.email == "testuser@example.com")
+        )
         user = res.scalar_one_or_none()
-        return {"id": str(user.id) if user else None, "email": "testuser@example.com", "password": "testPassword123"}
+        return {
+            "id": str(user.id) if user else None,
+            "email": "testuser@example.com",
+            "password": "testPassword123",
+        }
 
 
 @pytest_asyncio.fixture
 async def inactive_user() -> dict:
     async with AsyncSessionLocal() as session:
-        res = await session.execute(select(User).where(User.email == "inactive@example.com"))
+        res = await session.execute(
+            select(User).where(User.email == "inactive@example.com")
+        )
         user = res.scalar_one_or_none()
-        return {"id": str(user.id) if user else None, "email": "inactive@example.com", "password": "testPassword123"}
+        return {
+            "id": str(user.id) if user else None,
+            "email": "inactive@example.com",
+            "password": "testPassword123",
+        }
 
 
 @pytest_asyncio.fixture
 async def banned_user() -> dict:
     async with AsyncSessionLocal() as session:
-        res = await session.execute(select(User).where(User.email == "banned@example.com"))
+        res = await session.execute(
+            select(User).where(User.email == "banned@example.com")
+        )
         user = res.scalar_one_or_none()
-        return {"id": str(user.id) if user else None, "email": "banned@example.com", "password": "testPassword123"}
+        return {
+            "id": str(user.id) if user else None,
+            "email": "banned@example.com",
+            "password": "testPassword123",
+        }
 
 
 @pytest_asyncio.fixture
@@ -615,7 +685,10 @@ async def banned_user_tokens(client: AsyncClient, banned_user: dict) -> dict:
         json={"email": banned_user["email"], "code": "123456"},
     )
     data = resp.json() if resp.status_code == 200 else {}
-    return {"access_token": data.get("access_token", ""), "refresh_token": data.get("refresh_token", "")}
+    return {
+        "access_token": data.get("access_token", ""),
+        "refresh_token": data.get("refresh_token", ""),
+    }
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -626,8 +699,14 @@ async def reset_cache_between_tests():
     # 重新放入默认封禁
     if BANNED_USER_ID:
         await cache.set(f"auth:ban:{BANNED_USER_ID}", {"reason": "banned"}, ex=None)
-    await cache.set(CacheKeys.verify_code("pending@example.com", "activate"), "123456", ex=600)
-    await cache.set(CacheKeys.verify_code("resetuser@example.com", "reset_password"), "654321", ex=600)
+    await cache.set(
+        CacheKeys.verify_code("pending@example.com", "activate"), "123456", ex=600
+    )
+    await cache.set(
+        CacheKeys.verify_code("resetuser@example.com", "reset_password"),
+        "654321",
+        ex=600,
+    )
     for email in [
         "admin@example.com",
         "testuser@example.com",
@@ -641,12 +720,20 @@ async def reset_cache_between_tests():
 
 @pytest_asyncio.fixture
 async def pending_activation_user() -> dict:
-    return {"email": "pending@example.com", "activation_code": "123456", "password": "testPassword123"}
+    return {
+        "email": "pending@example.com",
+        "activation_code": "123456",
+        "password": "testPassword123",
+    }
 
 
 @pytest_asyncio.fixture
 async def user_with_reset_code() -> dict:
-    return {"email": "resetuser@example.com", "reset_code": "654321", "password": "testPassword123"}
+    return {
+        "email": "resetuser@example.com",
+        "reset_code": "654321",
+        "password": "testPassword123",
+    }
 
 
 @pytest_asyncio.fixture
@@ -656,10 +743,15 @@ async def user_with_role(test_role: dict) -> dict:
         from uuid import UUID
 
         from app.models import Role, UserRole
-        res_role = await session.execute(select(Role).where(Role.id == UUID(test_role["id"])))
+
+        res_role = await session.execute(
+            select(Role).where(Role.id == UUID(test_role["id"]))
+        )
         role = res_role.scalar_one()
         # 创建/获取用户
-        res_user = await session.execute(select(User).where(User.email == "withrole@example.com"))
+        res_user = await session.execute(
+            select(User).where(User.email == "withrole@example.com")
+        )
         user = res_user.scalar_one_or_none()
         if not user:
             user = User(
@@ -674,18 +766,25 @@ async def user_with_role(test_role: dict) -> dict:
             await session.flush()
         # 绑定角色（若未绑定）
         res_link = await session.execute(
-            select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)
+            select(UserRole).where(
+                UserRole.user_id == user.id, UserRole.role_id == role.id
+            )
         )
         if not res_link.scalar_one_or_none():
             session.add(UserRole(user_id=user.id, role_id=UUID(test_role["id"])))
         await session.commit()
-        return {"id": str(user.id), "email": "withrole@example.com", "password": "testPassword123"}
+        return {
+            "id": str(user.id),
+            "email": "withrole@example.com",
+            "password": "testPassword123",
+        }
 
 
 @pytest_asyncio.fixture
 async def test_role() -> dict:
     async with AsyncSessionLocal() as session:
         from app.models import Role
+
         # 若已存在同名角色，直接返回该记录
         res = await session.execute(select(Role).where(Role.name == "Test Role"))
         role = res.scalar_one_or_none()
@@ -693,4 +792,8 @@ async def test_role() -> dict:
             role = Role(id=uuid4(), name="Test Role", description="A test role")
             session.add(role)
             await session.commit()
-        return {"id": str(role.id), "name": role.name, "description": role.description or "A test role"}
+        return {
+            "id": str(role.id),
+            "name": role.name,
+            "description": role.description or "A test role",
+        }

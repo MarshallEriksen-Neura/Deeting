@@ -9,11 +9,10 @@ from app.repositories.skill_capability_repository import SkillCapabilityReposito
 from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.services.skill_registry.skill_registry_service import (
-    SkillRegistryService,
     STATUS_DRY_RUN_FAIL,
     STATUS_NEEDS_REVIEW,
+    SkillRegistryService,
 )
-
 
 engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",

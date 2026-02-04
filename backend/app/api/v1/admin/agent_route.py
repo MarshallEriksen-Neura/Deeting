@@ -1,22 +1,27 @@
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
 
 from app.services.agent import agent_service
+
 # from app.deps.superuser import get_current_superuser
 
 router = APIRouter()
 
+
 class AgentChatRequest(BaseModel):
     query: str
     model_hint: str = "gpt-4-turbo"
-    history: Optional[List[Dict[str, Any]]] = None
-    
+    history: list[dict[str, Any]] | None = None
+
     # Allow overriding the system persona
-    system_instruction: Optional[str] = None 
+    system_instruction: str | None = None
+
 
 class AgentChatResponse(BaseModel):
     response: str
+
 
 # Default Persona for "Provider Catalog Agent"
 CATALOG_AGENT_PROMPT = (
@@ -32,10 +37,11 @@ CATALOG_AGENT_PROMPT = (
     "Always report back which presets you managed."
 )
 
+
 @router.post("/agent/chat", response_model=AgentChatResponse)
 async def chat_with_admin_agent(
     payload: AgentChatRequest,
-    # current_user = Depends(get_current_superuser) 
+    # current_user = Depends(get_current_superuser)
 ):
     """
     Chat with the Admin Agent.
@@ -45,12 +51,12 @@ async def chat_with_admin_agent(
     try:
         # Use provided instruction or fallback to Catalog default
         instruction = payload.system_instruction or CATALOG_AGENT_PROMPT
-        
+
         response_text = await agent_service.chat(
             user_query=payload.query,
             system_instruction=instruction,
             model_hint=payload.model_hint,
-            conversation_history=payload.history
+            conversation_history=payload.history,
         )
         return AgentChatResponse(response=response_text)
     except Exception as e:

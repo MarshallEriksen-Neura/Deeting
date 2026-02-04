@@ -15,6 +15,7 @@
 - committed: 已确认
 - reversed: 已冲正
 """
+
 import enum
 import uuid
 from datetime import date
@@ -44,31 +45,36 @@ from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 # 枚举定义
 # ============================================================
 
+
 class QuotaResetPeriod(str, enum.Enum):
     """配额重置周期"""
-    DAILY = "daily"      # 每日重置
+
+    DAILY = "daily"  # 每日重置
     MONTHLY = "monthly"  # 每月重置
-    NEVER = "never"      # 永不重置
+    NEVER = "never"  # 永不重置
 
 
 class TransactionType(str, enum.Enum):
     """交易类型"""
-    DEDUCT = "deduct"      # 扣费
+
+    DEDUCT = "deduct"  # 扣费
     RECHARGE = "recharge"  # 充值
-    REFUND = "refund"      # 退款
-    ADJUST = "adjust"      # 调整
+    REFUND = "refund"  # 退款
+    ADJUST = "adjust"  # 调整
 
 
 class TransactionStatus(str, enum.Enum):
     """交易状态"""
-    PENDING = "pending"      # 预扣中
+
+    PENDING = "pending"  # 预扣中
     COMMITTED = "committed"  # 已确认
-    REVERSED = "reversed"    # 已冲正
+    REVERSED = "reversed"  # 已冲正
 
 
 # ============================================================
 # 租户配额表
 # ============================================================
+
 
 class TenantQuota(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
@@ -79,6 +85,7 @@ class TenantQuota(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     - daily_quota/monthly_quota: 请求配额
     - rpm_limit/tpm_limit: 分钟级限流
     """
+
     __tablename__ = "tenant_quota"
 
     # 租户关联
@@ -185,9 +192,7 @@ class TenantQuota(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="乐观锁版本号",
     )
 
-    __table_args__ = (
-        Index("ix_tenant_quota_tenant_active", "tenant_id", "is_active"),
-    )
+    __table_args__ = (Index("ix_tenant_quota_tenant_active", "tenant_id", "is_active"),)
 
     def __repr__(self) -> str:
         return f"<TenantQuota tenant={self.tenant_id} balance={self.balance}>"
@@ -196,6 +201,7 @@ class TenantQuota(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 # ============================================================
 # 扣费流水表
 # ============================================================
+
 
 class BillingTransaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
@@ -206,6 +212,7 @@ class BillingTransaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     - 预扣 -> 确认 两阶段
     - 冲正支持
     """
+
     __tablename__ = "billing_transaction"
 
     # 关联

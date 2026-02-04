@@ -54,14 +54,24 @@ def main() -> int:
 
     if _is_production():
         if missing_env:
-            errors.append(f"Production requires explicit env keys: {_format_list(missing_env)}")
+            errors.append(
+                f"Production requires explicit env keys: {_format_list(missing_env)}"
+            )
         if settings.ALLOW_INTERNAL_NETWORKS:
-            errors.append("Production should not allow internal networks (ALLOW_INTERNAL_NETWORKS=true)")
+            errors.append(
+                "Production should not allow internal networks (ALLOW_INTERNAL_NETWORKS=true)"
+            )
 
     if not settings.OUTBOUND_WHITELIST:
-        warnings.append("OUTBOUND_WHITELIST is empty; only custom upstreams may pass if enabled")
+        warnings.append(
+            "OUTBOUND_WHITELIST is empty; only custom upstreams may pass if enabled"
+        )
 
-    if settings.ALLOW_CUSTOM_UPSTREAM and not settings.ALLOW_INTERNAL_NETWORKS and not settings.BLOCKED_SUBNETS:
+    if (
+        settings.ALLOW_CUSTOM_UPSTREAM
+        and not settings.ALLOW_INTERNAL_NETWORKS
+        and not settings.BLOCKED_SUBNETS
+    ):
         warnings.append("BLOCKED_SUBNETS is empty; SSRF protection is weakened")
 
     private_key_path = settings.JWT_PRIVATE_KEY_PATH

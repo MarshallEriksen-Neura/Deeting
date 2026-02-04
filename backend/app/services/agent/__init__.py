@@ -1,4 +1,10 @@
-from .agent_service import agent_service, AgentService
-from .spec_agent_service import spec_agent_service, SpecAgentService, SpecExecutor
+from .agent_service import AgentService, agent_service
+from .spec_agent_service import SpecAgentService, SpecExecutor, spec_agent_service
 
-__all__ = ["agent_service", "AgentService", "spec_agent_service", "SpecAgentService", "SpecExecutor"]
+__all__ = [
+    "AgentService",
+    "SpecAgentService",
+    "SpecExecutor",
+    "agent_service",
+    "spec_agent_service",
+]

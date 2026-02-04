@@ -5,8 +5,8 @@ import hashlib
 import logging
 from datetime import timedelta
 from typing import Any
-from uuid import UUID
 from urllib.parse import urlparse
+from uuid import UUID
 
 import httpx
 from fastapi_pagination.cursor import CursorPage, CursorParams
@@ -17,19 +17,29 @@ from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.models.image_generation import (
     GenerationTaskType,
-    ImageGenerationStatus as VideoGenerationStatus, # Reuse Status Enum
+)
+from app.models.image_generation import (
+    ImageGenerationStatus as VideoGenerationStatus,  # Reuse Status Enum
 )
 from app.models.video_generation import VideoGenerationOutput
-from app.repositories.video_generation_output_repository import VideoGenerationOutputRepository
 from app.repositories.generation_task_repository import GenerationTaskRepository
 from app.repositories.media_asset_repository import MediaAssetRepository
 from app.repositories.provider_instance_repository import ProviderModelRepository
-from app.schemas.video_generation import VideoGenerationOutputItem, VideoGenerationTaskListItem
-from app.services.system import CancelService
-from app.services.image_generation.prompt_security import PromptCipher, build_prompt_hash
-from app.services.oss.asset_storage_service import store_asset_bytes
+from app.repositories.video_generation_output_repository import (
+    VideoGenerationOutputRepository,
+)
+from app.schemas.video_generation import (
+    VideoGenerationOutputItem,
+    VideoGenerationTaskListItem,
+)
+from app.services.image_generation.prompt_security import (
+    PromptCipher,
+    build_prompt_hash,
+)
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import get_internal_orchestrator
+from app.services.oss.asset_storage_service import store_asset_bytes
+from app.services.system import CancelService
 from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
@@ -63,7 +73,7 @@ class VideoGenerationService:
         negative_prompt = payload.get("negative_prompt")
         payload["prompt_hash"] = build_prompt_hash(prompt, negative_prompt)
         payload.setdefault("task_type", GenerationTaskType.VIDEO_GENERATION)
-        
+
         # Populate input_params from payload for generation
         if not payload.get("input_params"):
             payload["input_params"] = {
@@ -186,8 +196,8 @@ class VideoGenerationService:
 
         # Basic cost estimation fallback if needed, specific to video
         if cost_user == 0.0 and pricing.get("video"):
-             # Simple per-second or per-generation logic could go here
-             pass
+            # Simple per-second or per-generation logic could go here
+            pass
 
         await self.task_repo.update_fields(
             task.id,
@@ -261,42 +271,49 @@ class VideoGenerationService:
         if not task:
             return False
         return await self._maybe_cancel_task(task)
-    
+
     async def list_outputs(self, task_id) -> list[VideoGenerationOutput]:
         return await self.output_repo.list_by_task(task_id)
 
-    async def build_signed_outputs(self, task_id, base_url: str | None) -> list[dict[str, Any]]:
+    async def build_signed_outputs(
+        self, task_id, base_url: str | None
+    ) -> list[dict[str, Any]]:
         outputs = await self.output_repo.list_by_task(task_id)
         result: list[dict[str, Any]] = []
-        
+
         asset_ids = []
         for output in outputs:
             if output.media_asset_id:
                 asset_ids.append(output.media_asset_id)
             if output.cover_media_asset_id:
                 asset_ids.append(output.cover_media_asset_id)
-                
+
         assets = await self.asset_repo.list_by_ids(asset_ids)
         asset_map = {asset.id: asset for asset in assets}
-        
+
         from app.services.oss.asset_storage_service import build_signed_asset_url
+
         now = Datetime.now()
-        
+
         for output in outputs:
             asset_url = None
             cover_url = None
-            
+
             if output.media_asset_id:
                 asset = asset_map.get(output.media_asset_id)
                 if asset:
                     if not asset.expire_at or asset.expire_at > now:
-                        asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                        asset_url = build_signed_asset_url(
+                            asset.object_key, base_url=base_url
+                        )
 
             if output.cover_media_asset_id:
                 asset = asset_map.get(output.cover_media_asset_id)
                 if asset:
                     if not asset.expire_at or asset.expire_at > now:
-                        cover_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                        cover_url = build_signed_asset_url(
+                            asset.object_key, base_url=base_url
+                        )
 
             result.append(
                 {
@@ -358,7 +375,9 @@ class VideoGenerationService:
                 )
             return items
 
-        return await paginate(self.task_repo.session, stmt, params=params, transformer=_transform)
+        return await paginate(
+            self.task_repo.session, stmt, params=params, transformer=_transform
+        )
 
     async def _build_task_previews(
         self,
@@ -385,7 +404,7 @@ class VideoGenerationService:
                 asset_ids.append(output.media_asset_id)
             if output.cover_media_asset_id:
                 asset_ids.append(output.cover_media_asset_id)
-                
+
         assets = await self.asset_repo.list_by_ids(asset_ids)
         asset_map = {asset.id: asset for asset in assets}
 
@@ -396,18 +415,22 @@ class VideoGenerationService:
         for task_id, output in first_outputs.items():
             asset_url = None
             cover_url = None
-            
+
             if output.media_asset_id:
                 asset = asset_map.get(output.media_asset_id)
                 if asset:
-                     if not asset.expire_at or asset.expire_at > now:
-                        asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
-            
+                    if not asset.expire_at or asset.expire_at > now:
+                        asset_url = build_signed_asset_url(
+                            asset.object_key, base_url=base_url
+                        )
+
             if output.cover_media_asset_id:
                 asset = asset_map.get(output.cover_media_asset_id)
                 if asset:
-                     if not asset.expire_at or asset.expire_at > now:
-                        cover_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                    if not asset.expire_at or asset.expire_at > now:
+                        cover_url = build_signed_asset_url(
+                            asset.object_key, base_url=base_url
+                        )
 
             preview_map[task_id] = VideoGenerationOutputItem(
                 output_index=output.output_index,
@@ -423,7 +446,9 @@ class VideoGenerationService:
             )
         return preview_map
 
-    async def _persist_outputs(self, task, response: dict[str, Any]) -> list[VideoGenerationOutput]:
+    async def _persist_outputs(
+        self, task, response: dict[str, Any]
+    ) -> list[VideoGenerationOutput]:
         items = _extract_items(response)
         outputs: list[VideoGenerationOutput] = []
         for index, item in enumerate(items):
@@ -434,16 +459,18 @@ class VideoGenerationService:
                     {
                         "url": item.get("cover_url"),
                         "b64": item.get("cover_b64"),
-                        "content_type": "image/jpeg"
-                    }, 
-                    uploader_user_id=task.user_id
+                        "content_type": "image/jpeg",
+                    },
+                    uploader_user_id=task.user_id,
                 )
 
             output_payload = {
                 "task_id": task.id,
                 "output_index": index,
                 "media_asset_id": asset.get("asset_id") if asset else None,
-                "cover_media_asset_id": cover_asset.get("asset_id") if cover_asset else None,
+                "cover_media_asset_id": (
+                    cover_asset.get("asset_id") if cover_asset else None
+                ),
                 "source_url": asset.get("source_url") if asset else None,
                 "seed": item.get("seed"),
                 "content_type": asset.get("content_type") if asset else None,
@@ -615,7 +642,7 @@ async def _fetch_content(url: str) -> tuple[bytes, str] | None:
     parsed = urlparse(url)
     if not parsed.scheme.startswith("http"):
         return None
-    timeout = httpx.Timeout(60.0) # Longer timeout for video
+    timeout = httpx.Timeout(60.0)  # Longer timeout for video
     async with create_async_http_client(timeout=timeout) as client:
         try:
             resp = await client.get(url)

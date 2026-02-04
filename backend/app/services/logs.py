@@ -39,4 +39,6 @@ class GatewayLogService:
         async def _transform(rows):
             return [GatewayLogDTO.model_validate(row) for row in rows]
 
-        return await paginate(self.repo.session, stmt, params=params, transformer=_transform)
+        return await paginate(
+            self.repo.session, stmt, params=params, transformer=_transform
+        )

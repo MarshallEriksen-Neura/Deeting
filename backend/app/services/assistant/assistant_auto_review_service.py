@@ -39,10 +39,14 @@ class AssistantAutoReviewService:
         version_repo: AssistantVersionRepository | None = None,
     ):
         self.assistant_repo = assistant_repo
-        self.version_repo = version_repo or AssistantVersionRepository(assistant_repo.session)
+        self.version_repo = version_repo or AssistantVersionRepository(
+            assistant_repo.session
+        )
         self.user_repo = user_repo
         self.secretary_repo = secretary_repo
-        self.orchestrator = GatewayOrchestrator(workflow_config=INTERNAL_PREVIEW_WORKFLOW)
+        self.orchestrator = GatewayOrchestrator(
+            workflow_config=INTERNAL_PREVIEW_WORKFLOW
+        )
 
     async def build_review_request(
         self,
@@ -92,7 +96,9 @@ class AssistantAutoReviewService:
         request = ChatCompletionRequest(
             model=secretary.model_name,
             messages=[
-                ChatMessage(role="system", content=ASSISTANT_REVIEW_SYSTEM_PROMPT.strip()),
+                ChatMessage(
+                    role="system", content=ASSISTANT_REVIEW_SYSTEM_PROMPT.strip()
+                ),
                 ChatMessage(role="user", content=f"请审核以下助手信息：\n{prompt}"),
             ],
             stream=False,
@@ -134,7 +140,9 @@ class AssistantAutoReviewService:
         )
 
     @staticmethod
-    def parse_review_decision(content: str | None) -> tuple[ReviewStatus | None, str | None]:
+    def parse_review_decision(
+        content: str | None,
+    ) -> tuple[ReviewStatus | None, str | None]:
         if not content:
             return None, None
 

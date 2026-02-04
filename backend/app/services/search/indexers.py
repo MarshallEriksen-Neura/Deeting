@@ -8,10 +8,10 @@ import httpx
 from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.meilisearch_client import meilisearch_is_configured
-
 from app.models.mcp_market import McpMarketTool
 
 logger = logging.getLogger(__name__)
+
 
 class MeilisearchIndexService:
     def __init__(self) -> None:
@@ -28,14 +28,18 @@ class MeilisearchIndexService:
             "X-Meili-API-Key": api_key,
         }
 
-    async def _request(self, method: str, path: str, *, json: Any | None = None) -> dict[str, Any] | None:
+    async def _request(
+        self, method: str, path: str, *, json: Any | None = None
+    ) -> dict[str, Any] | None:
         if not meilisearch_is_configured():
             logger.warning("meilisearch_not_configured")
             raise RuntimeError("meilisearch_not_configured")
 
         url = f"{self._base_url}{path}"
         try:
-            async with create_async_http_client(timeout=self._timeout, headers=self._headers) as client:
+            async with create_async_http_client(
+                timeout=self._timeout, headers=self._headers
+            ) as client:
                 resp = await client.request(method, url, json=json)
             resp.raise_for_status()
             return resp.json()
@@ -64,7 +68,9 @@ class MeilisearchIndexService:
     async def delete_documents(self, *, index: str, ids: list[str]) -> None:
         if not ids:
             return
-        await self._request("post", f"/indexes/{index}/documents/delete-batch", json=ids)
+        await self._request(
+            "post", f"/indexes/{index}/documents/delete-batch", json=ids
+        )
 
     async def delete_all_documents(self, *, index: str) -> None:
         await self._request("delete", f"/indexes/{index}/documents")

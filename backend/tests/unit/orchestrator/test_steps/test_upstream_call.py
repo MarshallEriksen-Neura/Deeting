@@ -1,11 +1,10 @@
-import asyncio
 import json
 import uuid
 
 import pytest
 
-from app.services.providers.blocks_transformer import extract_stream_blocks
 from app.services.orchestrator.context import Channel, WorkflowContext
+from app.services.providers.blocks_transformer import extract_stream_blocks
 from app.services.workflow.steps import upstream_call as upstream_call_module
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
@@ -33,7 +32,9 @@ def test_stream_token_accumulator_parses_chunks_and_done():
 
 def test_stream_token_accumulator_estimates_tokens_when_missing_usage():
     accumulator = StreamTokenAccumulator()
-    accumulator.parse_sse_chunk(b"data: {\"choices\": [{\"delta\": {\"content\": \"hi\"}}]}\n\n")
+    accumulator.parse_sse_chunk(
+        b'data: {"choices": [{"delta": {"content": "hi"}}]}\n\n'
+    )
     assert accumulator.output_tokens == 0
     # 无 usage 时根据 chunk 数估算
     assert accumulator.estimate_output_tokens() >= 1
@@ -86,7 +87,9 @@ async def test_call_upstream_handles_non_json_response(monkeypatch):
     ctx = WorkflowContext(channel=Channel.INTERNAL)
 
     monkeypatch.setattr(step, "_request_with_redirects", fake_request_with_redirects)
-    monkeypatch.setattr(upstream_call_module, "create_async_http_client", lambda **_: DummyClient())
+    monkeypatch.setattr(
+        upstream_call_module, "create_async_http_client", lambda **_: DummyClient()
+    )
 
     result = await step._call_upstream(
         ctx=ctx,

@@ -55,7 +55,9 @@ class NotificationService:
             dedupe_key=dedupe_key,
             expires_at=expires_at,
         )
-        notification = await self.notification_repo.create_notification(data, commit=False)
+        notification = await self.notification_repo.create_notification(
+            data, commit=False
+        )
 
         if enqueue:
             scheduler = get_transaction_scheduler(self.session)
@@ -116,7 +118,9 @@ class NotificationService:
             dedupe_key=dedupe_key,
             expires_at=expires_at,
         )
-        notification = await self.notification_repo.create_notification(data, commit=False)
+        notification = await self.notification_repo.create_notification(
+            data, commit=False
+        )
 
         if enqueue:
             scheduler = get_transaction_scheduler(self.session)
@@ -150,7 +154,7 @@ def _parse_uuid(value: uuid.UUID | str, field: str) -> uuid.UUID:
         return value
     try:
         return uuid.UUID(str(value))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ValueError(f"invalid {field}: {value}") from exc
 
 

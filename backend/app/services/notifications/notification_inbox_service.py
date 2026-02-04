@@ -81,7 +81,9 @@ class NotificationInboxService:
         return await self.receipt_repo.count_unread(user_id)
 
     @staticmethod
-    def _to_item(receipt: NotificationReceipt, notification: Notification) -> NotificationInboxItem:
+    def _to_item(
+        receipt: NotificationReceipt, notification: Notification
+    ) -> NotificationInboxItem:
         return NotificationInboxItem(
             id=notification.id,
             notification_id=notification.id,
@@ -98,7 +100,9 @@ class NotificationInboxService:
         )
 
     @staticmethod
-    def _max_created_at(rows: list[tuple[NotificationReceipt, Notification]]) -> datetime | None:
+    def _max_created_at(
+        rows: list[tuple[NotificationReceipt, Notification]],
+    ) -> datetime | None:
         if not rows:
             return None
         return max(receipt.created_at for receipt, _ in rows)

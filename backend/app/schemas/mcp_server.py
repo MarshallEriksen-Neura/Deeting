@@ -1,46 +1,62 @@
-from typing import Any, Dict, List, Optional, Literal
 import uuid
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from typing import Any, Literal
 
-from app.models.provider_preset import JSONBCompat
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 McpServerType = Literal["sse", "stdio"]
 
+
 class UserMcpServerBase(BaseModel):
-    name: str = Field(..., max_length=120, description="Display name for the MCP server")
-    description: Optional[str] = Field(None, description="Optional description")
-    sse_url: Optional[HttpUrl] = Field(None, description="Full URL to the MCP SSE endpoint")
+    name: str = Field(
+        ..., max_length=120, description="Display name for the MCP server"
+    )
+    description: str | None = Field(None, description="Optional description")
+    sse_url: HttpUrl | None = Field(
+        None, description="Full URL to the MCP SSE endpoint"
+    )
     is_enabled: bool = Field(True, description="Whether the server is enabled")
-    server_type: McpServerType = Field("sse", description="Server type: sse (remote) or stdio (draft)")
+    server_type: McpServerType = Field(
+        "sse", description="Server type: sse (remote) or stdio (draft)"
+    )
     auth_type: str = Field("bearer", description="bearer, api_key, or none")
+
 
 class UserMcpServerCreate(UserMcpServerBase):
     """Schema for creating a new MCP server configuration."""
-    secret_value: Optional[str] = Field(None, description="The actual API Key/Token value (write-only)")
-    draft_config: Optional[Dict[str, Any]] = Field(
+
+    secret_value: str | None = Field(
+        None, description="The actual API Key/Token value (write-only)"
+    )
+    draft_config: dict[str, Any] | None = Field(
         None, description="Sanitized draft config for stdio imports"
     )
 
+
 class UserMcpServerUpdate(BaseModel):
     """Schema for updating an existing MCP server."""
-    name: Optional[str] = Field(None, max_length=120)
-    description: Optional[str] = None
-    sse_url: Optional[HttpUrl] = None
-    is_enabled: Optional[bool] = None
-    server_type: Optional[McpServerType] = None
-    auth_type: Optional[str] = None
-    secret_value: Optional[str] = None
-    draft_config: Optional[Dict[str, Any]] = None
+
+    name: str | None = Field(None, max_length=120)
+    description: str | None = None
+    sse_url: HttpUrl | None = None
+    is_enabled: bool | None = None
+    server_type: McpServerType | None = None
+    auth_type: str | None = None
+    secret_value: str | None = None
+    draft_config: dict[str, Any] | None = None
+
 
 class UserMcpServerResponse(UserMcpServerBase):
     """Schema for returning MCP server details."""
+
     id: uuid.UUID
     user_id: uuid.UUID
-    source_id: Optional[uuid.UUID] = None
-    source_key: Optional[str] = None
+    source_id: uuid.UUID | None = None
+    source_key: str | None = None
     created_at: Any
     updated_at: Any
-    secret_ref_id: Optional[str] = Field(None, description="Reference ID for the stored secret")
+    secret_ref_id: str | None = Field(
+        None, description="Reference ID for the stored secret"
+    )
     tools_count: int = Field(0, description="Number of cached tools")
     status: str = Field("unknown", description="Sync status: active, error, unknown")
 
@@ -66,14 +82,20 @@ class UserMcpServerResponse(UserMcpServerBase):
             secret_ref_id=model.secret_ref_id,
             tools_count=count,
             # Simple heuristic for status
-            status="draft" if model.server_type == "stdio" else ("active" if model.is_enabled and count > 0 else "inactive")
+            status=(
+                "draft"
+                if model.server_type == "stdio"
+                else ("active" if model.is_enabled and count > 0 else "inactive")
+            ),
         )
 
 
 class McpServerToolItem(BaseModel):
     name: str = Field(..., description="Tool name")
-    description: Optional[str] = Field(None, description="Tool description")
-    input_schema: Dict[str, Any] = Field(default_factory=dict, description="JSON Schema for tool arguments")
+    description: str | None = Field(None, description="Tool description")
+    input_schema: dict[str, Any] = Field(
+        default_factory=dict, description="JSON Schema for tool arguments"
+    )
     enabled: bool = Field(True, description="Whether this tool is enabled")
 
 
@@ -84,12 +106,12 @@ class McpServerToolToggleRequest(BaseModel):
 class McpToolTestRequest(BaseModel):
     server_id: uuid.UUID
     tool_name: str
-    arguments: Dict[str, Any] = Field(default_factory=dict)
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class McpToolTestResponse(BaseModel):
     status: Literal["success", "error"]
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    logs: List[str] = Field(default_factory=list)
+    result: Any | None = None
+    error: str | None = None
+    logs: list[str] = Field(default_factory=list)
     trace_id: str

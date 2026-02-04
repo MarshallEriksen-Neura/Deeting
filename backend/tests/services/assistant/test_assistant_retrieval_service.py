@@ -7,14 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
-from app.models.assistant import Assistant, AssistantStatus, AssistantVersion, AssistantVisibility
+from app.models.assistant import (
+    Assistant,
+    AssistantStatus,
+    AssistantVersion,
+    AssistantVisibility,
+)
 from app.models.review import ReviewStatus, ReviewTask
+from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_retrieval_service import (
     MAX_LIMIT,
     OVERSAMPLE_MULTIPLIER,
     AssistantRetrievalService,
 )
-from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 
 
 @pytest_asyncio.fixture
@@ -66,7 +71,9 @@ async def test_retrieval_falls_back_to_default_assistant(mocker, async_session):
         "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
         return_value=False,
     )
-    logger_mock = mocker.patch("app.services.assistant.assistant_retrieval_service.logger")
+    logger_mock = mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.logger"
+    )
     mocker.patch(
         "app.services.assistant.assistant_retrieval_service.DefaultAssistantService.get_default_candidate",
         new=mocker.AsyncMock(
@@ -199,12 +206,18 @@ async def test_retrieval_uses_batch_hydrate_query(mocker, async_session):
         "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
         return_value=[0.1, 0.2],
     )
-    logger_mock = mocker.patch("app.services.assistant.assistant_retrieval_service.logger")
+    logger_mock = mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.logger"
+    )
 
     service = AssistantRetrievalService(async_session)
-    mocker.patch.object(service, "_fetch_assistants_with_version", side_effect=AssertionError)
+    mocker.patch.object(
+        service, "_fetch_assistants_with_version", side_effect=AssertionError
+    )
     mocker.patch.object(service, "_fetch_review_status_map", side_effect=AssertionError)
-    mocker.patch.object(service.routing_repo, "get_states_map", side_effect=AssertionError)
+    mocker.patch.object(
+        service.routing_repo, "get_states_map", side_effect=AssertionError
+    )
 
     result = await service.search_candidates("query", limit=1)
     assert len(result) == 1

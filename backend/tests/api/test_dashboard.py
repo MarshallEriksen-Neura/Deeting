@@ -1,4 +1,3 @@
-import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
@@ -131,7 +130,9 @@ async def test_provider_health_uses_redis(client, auth_tokens, AsyncSessionLocal
 
 
 @pytest.mark.asyncio
-async def test_smart_router_stats_handles_non_numeric_meta(client, auth_tokens, AsyncSessionLocal):
+async def test_smart_router_stats_handles_non_numeric_meta(
+    client, auth_tokens, AsyncSessionLocal
+):
     async with AsyncSessionLocal() as session:
         now = Datetime.now()
         logs = [

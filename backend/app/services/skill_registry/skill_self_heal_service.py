@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.repositories.skill_registry_repository import SkillRegistryRepository
@@ -11,7 +11,9 @@ from app.services.providers.llm import llm_service
 
 
 class SkillSelfHealService:
-    def __init__(self, repo: SkillRegistryRepository, llm_client=None, dry_run_service=None):
+    def __init__(
+        self, repo: SkillRegistryRepository, llm_client=None, dry_run_service=None
+    ):
         self.repo = repo
         self.llm_client = llm_client or llm_service
         self.dry_run_service = dry_run_service
@@ -43,7 +45,9 @@ class SkillSelfHealService:
             await self.dry_run_service.run(skill_id, allow_self_heal=False)
         return result
 
-    async def _request_patch(self, skill_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+    async def _request_patch(
+        self, skill_id: str, manifest: dict[str, Any]
+    ) -> dict[str, Any]:
         prompt = _build_prompt(skill_id, manifest)
         response = await self.llm_client.chat_completion(
             messages=[{"role": "user", "content": prompt}],
@@ -169,7 +173,7 @@ def _append_self_heal_history(
     if not isinstance(history, list):
         history = []
     entry: dict[str, Any] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "status": status,
         "changes": [patch.path for patch in patches],
     }

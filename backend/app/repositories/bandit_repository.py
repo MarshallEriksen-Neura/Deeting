@@ -22,7 +22,7 @@ from app.core.cache_invalidation import CacheInvalidator
 from app.core.cache_keys import CacheKeys
 from app.core.logging import logger
 from app.models.bandit import BanditArmState, BanditStrategy
-from app.models.provider_instance import ProviderModel, ProviderInstance
+from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
 from app.models.skill_registry import SkillRegistry
 from app.repositories.base import BaseRepository
@@ -157,7 +157,9 @@ class BanditRepository(BaseRepository[BanditArmState]):
             scene=scene,
             arm_id=arm_id,
             strategy=rc.get("strategy"),
-            epsilon=float(rc.get("epsilon", 0.1)) if rc.get("epsilon") is not None else None,
+            epsilon=(
+                float(rc.get("epsilon", 0.1)) if rc.get("epsilon") is not None else None
+            ),
             alpha=float(rc.get("alpha", 1.0)) if rc.get("alpha") is not None else None,
             beta=float(rc.get("beta", 1.0)) if rc.get("beta") is not None else None,
             reward_metric_type=reward_metric_type,
@@ -226,7 +228,11 @@ class BanditRepository(BaseRepository[BanditArmState]):
             )
         )
 
-        dialect = self.session.bind.dialect.name if getattr(self.session, "bind", None) else None
+        dialect = (
+            self.session.bind.dialect.name
+            if getattr(self.session, "bind", None)
+            else None
+        )
         if capability and dialect == "postgresql":
             stmt = stmt.where(ProviderModel.capabilities.contains([capability]))
         if model:
@@ -235,9 +241,13 @@ class BanditRepository(BaseRepository[BanditArmState]):
         result = await self.session.execute(stmt)
         rows = result.all()
         if capability and dialect != "postgresql":
-            rows = [r for r in rows if capability in (r.ProviderModel.capabilities or [])]
+            rows = [
+                r for r in rows if capability in (r.ProviderModel.capabilities or [])
+            ]
 
-        total_trials = sum(r.BanditArmState.total_trials for r in rows if r.BanditArmState)
+        total_trials = sum(
+            r.BanditArmState.total_trials for r in rows if r.BanditArmState
+        )
 
         reports: list[dict] = []
         for row in rows:
@@ -273,9 +283,11 @@ class BanditRepository(BaseRepository[BanditArmState]):
                     "failures": failures,
                     "selection_ratio": selection_ratio,
                     "avg_latency_ms": avg_latency,
-                    "latency_p95_ms": float(state.latency_p95_ms)
-                    if state.latency_p95_ms is not None
-                    else None,
+                    "latency_p95_ms": (
+                        float(state.latency_p95_ms)
+                        if state.latency_p95_ms is not None
+                        else None
+                    ),
                     "total_cost": float(state.total_cost),
                     "last_reward": float(state.last_reward),
                     "cooldown_until": state.cooldown_until,
@@ -308,7 +320,9 @@ class BanditRepository(BaseRepository[BanditArmState]):
 
         result = await self.session.execute(stmt)
         rows = result.all()
-        total_trials = sum(r.BanditArmState.total_trials for r in rows if r.BanditArmState)
+        total_trials = sum(
+            r.BanditArmState.total_trials for r in rows if r.BanditArmState
+        )
 
         reports: list[dict] = []
         for row in rows:
@@ -345,9 +359,11 @@ class BanditRepository(BaseRepository[BanditArmState]):
                     "failures": failures,
                     "selection_ratio": selection_ratio,
                     "avg_latency_ms": avg_latency,
-                    "latency_p95_ms": float(state.latency_p95_ms)
-                    if state.latency_p95_ms is not None
-                    else None,
+                    "latency_p95_ms": (
+                        float(state.latency_p95_ms)
+                        if state.latency_p95_ms is not None
+                        else None
+                    ),
                     "total_cost": float(state.total_cost),
                     "last_reward": float(state.last_reward),
                     "cooldown_until": state.cooldown_until,
@@ -360,7 +376,9 @@ class BanditRepository(BaseRepository[BanditArmState]):
     @staticmethod
     def _serialize_state(state: BanditArmState) -> dict:
         return {
-            "provider_model_id": str(state.provider_model_id) if state.provider_model_id else None,
+            "provider_model_id": (
+                str(state.provider_model_id) if state.provider_model_id else None
+            ),
             "scene": state.scene,
             "arm_id": state.arm_id,
             "reward_metric_type": state.reward_metric_type,
@@ -372,7 +390,11 @@ class BanditRepository(BaseRepository[BanditArmState]):
             "successes": int(state.successes),
             "failures": int(state.failures),
             "total_latency_ms": int(state.total_latency_ms),
-            "latency_p95_ms": float(state.latency_p95_ms) if state.latency_p95_ms is not None else None,
+            "latency_p95_ms": (
+                float(state.latency_p95_ms)
+                if state.latency_p95_ms is not None
+                else None
+            ),
             "total_cost": float(state.total_cost),
             "last_reward": float(state.last_reward),
             "cooldown_until": state.cooldown_until,

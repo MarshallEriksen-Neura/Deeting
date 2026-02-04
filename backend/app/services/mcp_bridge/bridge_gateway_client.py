@@ -30,7 +30,9 @@ class BridgeGatewayClient:
         timeout: float = 30.0,
     ) -> None:
         self._base_url = (base_url or settings.BRIDGE_GATEWAY_URL).rstrip("/")
-        self._internal_token = (internal_token or settings.BRIDGE_GATEWAY_INTERNAL_TOKEN).strip()
+        self._internal_token = (
+            internal_token or settings.BRIDGE_GATEWAY_INTERNAL_TOKEN
+        ).strip()
         self._timeout = float(timeout)
 
     def _headers(self) -> dict[str, str]:
@@ -40,13 +42,17 @@ class BridgeGatewayClient:
         return headers
 
     async def list_agents(self) -> dict[str, Any]:
-        async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, timeout=self._timeout
+        ) as client:
             resp = await client.get("/internal/bridge/agents", headers=self._headers())
             resp.raise_for_status()
             return resp.json()
 
     async def list_tools(self, agent_id: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, timeout=self._timeout
+        ) as client:
             resp = await client.get(
                 f"/internal/bridge/agents/{agent_id}/tools",
                 headers=self._headers(),
@@ -72,7 +78,9 @@ class BridgeGatewayClient:
             "timeout_ms": int(timeout_ms),
             "stream": bool(stream),
         }
-        async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, timeout=self._timeout
+        ) as client:
             resp = await client.post(
                 "/internal/bridge/invoke",
                 headers={**self._headers(), "Content-Type": "application/json"},
@@ -81,9 +89,13 @@ class BridgeGatewayClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def cancel(self, *, req_id: str, agent_id: str, reason: str = "user_cancel") -> dict[str, Any]:
+    async def cancel(
+        self, *, req_id: str, agent_id: str, reason: str = "user_cancel"
+    ) -> dict[str, Any]:
         payload = {"req_id": req_id, "agent_id": agent_id, "reason": reason}
-        async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, timeout=self._timeout
+        ) as client:
             resp = await client.post(
                 "/internal/bridge/cancel",
                 headers={**self._headers(), "Content-Type": "application/json"},

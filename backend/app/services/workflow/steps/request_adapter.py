@@ -16,8 +16,6 @@ from typing import Any
 
 from app.schemas.gateway import (
     ChatCompletionRequest,
-    AnthropicMessagesRequest,
-    ResponsesRequest,
 )
 from app.services.adapters.chat import (
     adapt_anthropic_messages,
@@ -73,8 +71,12 @@ class RequestAdapterStep(BaseStep):
             logger.warning(f"Request adaptation failed vendor={vendor}: {exc}")
             return StepResult(status=StepStatus.FAILED, message=str(exc))
         except Exception as exc:
-            logger.exception(f"Request adaptation unexpected error vendor={vendor}: {exc}")
-            return StepResult(status=StepStatus.FAILED, message="Request adaptation error")
+            logger.exception(
+                f"Request adaptation unexpected error vendor={vendor}: {exc}"
+            )
+            return StepResult(
+                status=StepStatus.FAILED, message="Request adaptation error"
+            )
 
         # 写回供后续校验/路由使用
         ctx.set("validation", "request", adapted)
@@ -106,4 +108,4 @@ class RequestAdapterStep(BaseStep):
         raise RequestAdapterError(f"Unsupported vendor: {vendor}")
 
 
-__all__ = ["RequestAdapterStep", "RequestAdapterError"]
+__all__ = ["RequestAdapterError", "RequestAdapterStep"]

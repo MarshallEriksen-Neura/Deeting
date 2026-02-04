@@ -44,7 +44,11 @@ async def test_fetch_tools_returns_direct_post_tools(monkeypatch):
     _install_fake_sdk(
         monkeypatch,
         [
-            {"name": "search", "description": "desc", "inputSchema": {"type": "object"}},
+            {
+                "name": "search",
+                "description": "desc",
+                "inputSchema": {"type": "object"},
+            },
         ],
     )
 
@@ -60,7 +64,11 @@ async def test_fetch_tools_returns_sse_tools(monkeypatch):
     _install_fake_sdk(
         monkeypatch,
         [
-            {"name": "sse-tool", "description": "desc", "inputSchema": {"type": "object"}},
+            {
+                "name": "sse-tool",
+                "description": "desc",
+                "inputSchema": {"type": "object"},
+            },
         ],
     )
 

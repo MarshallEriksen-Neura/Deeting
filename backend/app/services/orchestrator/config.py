@@ -16,9 +16,9 @@ class WorkflowTemplate(str, Enum):
 
     EXTERNAL_CHAT = "external_chat"  # 外部 Chat 完整流程
     EXTERNAL_EMBEDDINGS = "external_embeddings"  # 外部 Embeddings
-    EXTERNAL_IMAGE = "external_image" # 外部 Image (Config Driven)
+    EXTERNAL_IMAGE = "external_image"  # 外部 Image (Config Driven)
     INTERNAL_CHAT = "internal_chat"  # 内部 Chat 简化流程
-    INTERNAL_IMAGE = "internal_image" # 内部 Image (Config Driven)
+    INTERNAL_IMAGE = "internal_image"  # 内部 Image (Config Driven)
     INTERNAL_DEBUG = "internal_debug"  # 内部调试模式
     INTERNAL_PREVIEW = "internal_preview"  # 内部助手体验（无会话落库）
 
@@ -43,7 +43,7 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "validation",  # 1) 入参校验
         "signature_verify",  # 1.5) 外部签名校验
         "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
-        "mcp_discovery", # 2.5) MCP 工具发现 (User BYOP)
+        "mcp_discovery",  # 2.5) MCP 工具发现 (User BYOP)
         "quota_check",  # 3) 配额/额度检查（外部）
         "rate_limit",  # 4) 限流
         "routing",  # 5) 路由决策
@@ -75,9 +75,9 @@ EXTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
         "quota_check",
         "rate_limit",
         "routing",
-        "provider_execution", # New Step
+        "provider_execution",  # New Step
         "response_transform",
-        "sanitize", # Maybe?
+        "sanitize",  # Maybe?
         "billing",
         "audit_log",
     ],
@@ -85,7 +85,9 @@ EXTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
         "quota_check": StepConfig(timeout=5.0),
         "rate_limit": StepConfig(timeout=2.0),
         "routing": StepConfig(timeout=10.0, max_retries=1),
-        "provider_execution": StepConfig(timeout=300.0, max_retries=1), # Longer timeout for image gen
+        "provider_execution": StepConfig(
+            timeout=300.0, max_retries=1
+        ),  # Longer timeout for image gen
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },
 )
@@ -97,8 +99,8 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "conversation_load",  # 2) 会话上下文加载
         "assistant_prompt_injection",  # 2.5) 助手提示词注入 (Spec Agent 能力)
         "resolve_assets",  # 3) 资源引用解析（asset:// -> signed URL）
-        "mcp_discovery", # 3.5) MCP 工具发现 (User BYOP)
-        "jit_persona_tool_injection", # 3.6) JIT Persona 工具注入（仅 auto）
+        "mcp_discovery",  # 3.5) MCP 工具发现 (User BYOP)
+        "jit_persona_tool_injection",  # 3.6) JIT Persona 工具注入（仅 auto）
         "quota_check",  # 4) 配额/余额检查（与外部一致）
         "rate_limit",  # 5) 限流
         "routing",  # 6) 路由决策
@@ -125,11 +127,11 @@ INTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
     template=WorkflowTemplate.INTERNAL_IMAGE,
     steps=[
         "validation",
-        "resolve_assets", # Maybe internal tasks need assets?
+        "resolve_assets",  # Maybe internal tasks need assets?
         "quota_check",
         "rate_limit",
         "routing",
-        "provider_execution", # New Step
+        "provider_execution",  # New Step
         "response_transform",
         "billing",
         "audit_log",
@@ -138,9 +140,11 @@ INTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
         "quota_check": StepConfig(timeout=5.0),
         "rate_limit": StepConfig(timeout=2.0),
         "routing": StepConfig(timeout=10.0),
-        "provider_execution": StepConfig(timeout=600.0, max_retries=1), # Very long timeout for internal tasks
+        "provider_execution": StepConfig(
+            timeout=600.0, max_retries=1
+        ),  # Very long timeout for internal tasks
         "billing": StepConfig(timeout=10.0, max_retries=3),
-    }
+    },
 )
 
 INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
@@ -148,8 +152,8 @@ INTERNAL_PREVIEW_WORKFLOW = WorkflowConfig(
     steps=[
         "validation",  # 1) 入参校验
         "resolve_assets",  # 2) 资源引用解析（asset:// -> signed URL）
-        "mcp_discovery", # 2.5) MCP 工具发现 (User BYOP)
-        "jit_persona_tool_injection", # 2.6) JIT Persona 工具注入（仅 auto）
+        "mcp_discovery",  # 2.5) MCP 工具发现 (User BYOP)
+        "jit_persona_tool_injection",  # 2.6) JIT Persona 工具注入（仅 auto）
         "quota_check",  # 3) 配额/余额检查（与内部一致）
         "rate_limit",  # 4) 限流
         "routing",  # 5) 路由决策
@@ -206,7 +210,7 @@ def get_workflow_for_channel(
         "speech_to_text",
         "video_generation",
     }
-    
+
     if channel == Channel.EXTERNAL:
         if capability == "embedding":
             return WORKFLOW_TEMPLATES.get(

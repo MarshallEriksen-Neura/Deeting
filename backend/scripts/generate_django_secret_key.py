@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import argparse
 import secrets
-import sys
 
 DEFAULT_ALLOWED_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)"
 DEFAULT_LENGTH = 50
 
 
-def generate_secret_key(length: int = DEFAULT_LENGTH, allowed_chars: str = DEFAULT_ALLOWED_CHARS) -> str:
+def generate_secret_key(
+    length: int = DEFAULT_LENGTH, allowed_chars: str = DEFAULT_ALLOWED_CHARS
+) -> str:
     if length <= 0:
         raise ValueError("length must be a positive integer")
     if not allowed_chars:

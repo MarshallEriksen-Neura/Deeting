@@ -1,4 +1,3 @@
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,11 +5,12 @@ class Settings(BaseSettings):
     """
     应用配置
     """
+
     model_config = SettingsConfigDict(
         env_file=["backend/.env", ".env"],
         env_file_encoding="utf-8",
         case_sensitive=True,
-        extra="ignore"
+        extra="ignore",
     )
 
     # 基础配置
@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     # 数据库配置 (PostgreSQL)
     # 格式: postgresql+asyncpg://user:password@host:port/dbname
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_gateway"
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_gateway"
+    )
 
     # 调试模式
     DEBUG: bool = False
@@ -41,7 +43,9 @@ class Settings(BaseSettings):
     QDRANT_KB_CANDIDATES_COLLECTION: str = "kb_candidates"
     QDRANT_KB_USER_COLLECTION: str = "kb_user"
     QDRANT_KB_USER_SHARED_COLLECTION: str = "kb_shared_v1"
-    QDRANT_KB_USER_COLLECTION_STRATEGY: str = "per_user"  # shared | per_user | sharded_by_model
+    QDRANT_KB_USER_COLLECTION_STRATEGY: str = (
+        "per_user"  # shared | per_user | sharded_by_model
+    )
     QDRANT_KB_USER_COLLECTION_SHARDS: int = 16
     QDRANT_TOOL_SYSTEM_COLLECTION: str = "sys_tool_index"
     QDRANT_TOOL_USER_COLLECTION_PREFIX: str = "kb_user"
@@ -93,24 +97,30 @@ class Settings(BaseSettings):
     MAX_REQUEST_BYTES: int = 512 * 1024  # 单次请求体最大字节数(默认 512KB)
     MAX_RESPONSE_BYTES: int = 2 * 1024 * 1024  # 单次响应体最大字节数(默认 2MB)
     OUTBOUND_WHITELIST: list[str] = [
-        "localhost", "127.0.0.1",
-        "api.openai.com", "api.anthropic.com", "api.cohere.ai",
-        "api.groq.com", "api.mistral.ai", "openrouter.ai",
-        "dashscope.aliyuncs.com", "api.deepseek.com"
+        "localhost",
+        "127.0.0.1",
+        "api.openai.com",
+        "api.anthropic.com",
+        "api.cohere.ai",
+        "api.groq.com",
+        "api.mistral.ai",
+        "openrouter.ai",
+        "dashscope.aliyuncs.com",
+        "api.deepseek.com",
     ]  # 系统级上游域名白名单（命中后直接放行）
     ALLOW_CUSTOM_UPSTREAM: bool = True  # 允许自定义上游（需通过 SSRF 校验）
     ALLOW_INTERNAL_NETWORKS: bool = False  # 是否允许访问内网地址（生产环境应为 False）
     BLOCKED_SUBNETS: list[str] = [
-        "127.0.0.0/8",      # Loopback
-        "10.0.0.0/8",       # Private A
-        "172.16.0.0/12",    # Private B
-        "192.168.0.0/16",   # Private C
-        "169.254.0.0/16",   # Link-local (云元数据风险)
-        "224.0.0.0/4",      # Multicast
-        "0.0.0.0/8",        # Current network
-        "::1/128",          # IPv6 Loopback
-        "fc00::/7",         # IPv6 Private
-        "fe80::/10",        # IPv6 Link-local
+        "127.0.0.0/8",  # Loopback
+        "10.0.0.0/8",  # Private A
+        "172.16.0.0/12",  # Private B
+        "192.168.0.0/16",  # Private C
+        "169.254.0.0/16",  # Link-local (云元数据风险)
+        "224.0.0.0/4",  # Multicast
+        "0.0.0.0/8",  # Current network
+        "::1/128",  # IPv6 Loopback
+        "fc00::/7",  # IPv6 Private
+        "fe80::/10",  # IPv6 Link-local
     ]  # SSRF 防护黑名单网段（CIDR）
     GATEWAY_MAX_CONCURRENCY: int = 200  # 网关并发上限(每进程)
     GATEWAY_QUEUE_TIMEOUT: float = 0.25  # 排队等待获取并发槽的超时(秒)
@@ -122,16 +132,31 @@ class Settings(BaseSettings):
     SECURITY_SQL_INJECTION_DETECT: bool = True
     SECURITY_PROMPT_INJECTION_DETECT: bool = True
     SECURITY_DEBUG_HEADERS: list[str] = [
-        "x-request-id", "cf-ray", "server", "x-envoy-upstream-service-time",
-        "cf-cache-status"
+        "x-request-id",
+        "cf-ray",
+        "server",
+        "x-envoy-upstream-service-time",
+        "cf-cache-status",
     ]
     SECURITY_SENSITIVE_HEADERS: list[str] = [
-        "authorization", "x-api-key", "cookie", "set-cookie",
-        "x-request-id", "cf-ray", "server", "x-envoy-upstream-service-time",
-        "x-openai-organization", "openai-organization", "cf-cache-status"
+        "authorization",
+        "x-api-key",
+        "cookie",
+        "set-cookie",
+        "x-request-id",
+        "cf-ray",
+        "server",
+        "x-envoy-upstream-service-time",
+        "x-openai-organization",
+        "openai-organization",
+        "cf-cache-status",
     ]
     SECURITY_SENSITIVE_BODY_FIELDS: list[str] = [
-        "api_key", "password", "secret", "token", "system_fingerprint"
+        "api_key",
+        "password",
+        "secret",
+        "token",
+        "system_fingerprint",
     ]
 
     # 上游熔断配置
@@ -149,7 +174,7 @@ class Settings(BaseSettings):
     LOG_JSON_FORMAT: bool = False
     LOG_FILE_PATH: str = "logs/app.log"
     LOG_ROTATION: str = "500 MB"  # 日志文件大小轮转
-    LOG_RETENTION: str = "10 days" # 日志保留时间
+    LOG_RETENTION: str = "10 days"  # 日志保留时间
     LOG_ASYNC: bool = False  # 默认关闭队列；需要异步写盘时可在生产环境显式打开
 
     # CORS 原始字符串配置（使用 CORS_ALLOW_* 环境变量）
@@ -255,7 +280,9 @@ class Settings(BaseSettings):
     AFFINITY_ROUTING_BONUS: float = 0.2
     AFFINITY_ROUTING_PREFIX_RATIO: float = 0.7  # 取前缀比例做指纹
     AFFINITY_ROUTING_MAX_PREFIX_CHARS: int = 4000  # 指纹截断，防止超大请求
-    AFFINITY_ROUTING_DISCOUNT_RATE: float = 0.5  # 用于估算节省（假定前缀缓存约 50% 复用）
+    AFFINITY_ROUTING_DISCOUNT_RATE: float = (
+        0.5  # 用于估算节省（假定前缀缓存约 50% 复用）
+    )
 
     # 决策服务配置
     DECISION_STRATEGY: str = "thompson"

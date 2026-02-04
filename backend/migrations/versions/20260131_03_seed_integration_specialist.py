@@ -4,20 +4,19 @@ Revision ID: seed_integration_specialist
 Revises: 6c16a8399765
 Create Date: 2026-01-31
 """
+
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = 'seed_integration_specialist'
-down_revision = '6c16a8399765'
+revision = "seed_integration_specialist"
+down_revision = "6c16a8399765"
 branch_labels = None
 depends_on = None
 
-ASSISTANT_ID = "00000000-0000-0000-0000-000000000001" # Fixed ID for system specialists
+ASSISTANT_ID = "00000000-0000-0000-0000-000000000001"  # Fixed ID for system specialists
 VERSION_ID = "00000000-0000-0000-0000-000000000002"
 
 SYSTEM_PROMPT = """Role: AI Integration Specialist
@@ -44,20 +43,18 @@ Safety:
 - Always follow official documentation precisely.
 """
 
+
 def upgrade() -> None:
     # 1. Insert Assistant Main Record
-    op.execute(
-        sa.text(f"""
+    op.execute(sa.text(f"""
             INSERT INTO assistant (id, visibility, status, summary, icon_id, created_at, updated_at)
             VALUES ('{ASSISTANT_ID}', 'private', 'published', 'AI 厂商自动对接专家', 'lucide:plug-zap', now(), now())
             ON CONFLICT DO NOTHING
-        """)
-    )
+        """))
 
     # 2. Insert Assistant Version (The Prompt and Skills)
     # We mount 'core.tools.crawler' and 'core.registry.provider'
-    op.execute(
-        sa.text(f"""
+    op.execute(sa.text(f"""
             INSERT INTO assistant_version (
                 id, assistant_id, version, name, description, system_prompt, 
                 skill_refs, model_config, created_at, updated_at
@@ -78,15 +75,18 @@ def upgrade() -> None:
                 now()
             )
             ON CONFLICT DO NOTHING
-        """).bindparams(prompt=SYSTEM_PROMPT)
-    )
+        """).bindparams(prompt=SYSTEM_PROMPT))
 
     # 3. Set Current Version
     op.execute(
-        sa.text(f"UPDATE assistant SET current_version_id = '{VERSION_ID}' WHERE id = '{ASSISTANT_ID}'")
+        sa.text(
+            f"UPDATE assistant SET current_version_id = '{VERSION_ID}' WHERE id = '{ASSISTANT_ID}'"
+        )
     )
 
 
 def downgrade() -> None:
-    op.execute(sa.text(f"DELETE FROM assistant_version WHERE assistant_id = '{ASSISTANT_ID}'"))
+    op.execute(
+        sa.text(f"DELETE FROM assistant_version WHERE assistant_id = '{ASSISTANT_ID}'")
+    )
     op.execute(sa.text(f"DELETE FROM assistant WHERE id = '{ASSISTANT_ID}'"))

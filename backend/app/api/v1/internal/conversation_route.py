@@ -13,36 +13,42 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import JSONResponse
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models import User
-from app.schemas.gateway import ChatCompletionRequest, ChatCompletionResponse, GatewayError
-from app.schemas.conversation import (
-    ConversationSessionCreateRequest,
-    ConversationSessionCreateResponse,
-    ConversationSessionItem,
-    ConversationSessionRenameRequest,
-    ConversationSessionRenameResponse,
-    ConversationSessionAssistantUpdateRequest,
-    ConversationSessionAssistantUpdateResponse,
-    ConversationFeedbackRequest,
-    ConversationFeedbackResponse,
+from app.models.conversation import ConversationStatus
+from app.repositories.conversation_message_repository import (
+    ConversationMessageRepository,
 )
 from app.schemas.assistant_routing import (
     AssistantRoutingReportResponse,
     AssistantRoutingReportSummary,
 )
-from app.models.conversation import ConversationStatus
+from app.schemas.conversation import (
+    ConversationFeedbackRequest,
+    ConversationFeedbackResponse,
+    ConversationSessionAssistantUpdateRequest,
+    ConversationSessionAssistantUpdateResponse,
+    ConversationSessionCreateRequest,
+    ConversationSessionCreateResponse,
+    ConversationSessionItem,
+    ConversationSessionRenameRequest,
+    ConversationSessionRenameResponse,
+)
+from app.schemas.gateway import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    GatewayError,
+)
+from app.services.assistant.assistant_routing_service import AssistantRoutingService
 from app.services.conversation.history_service import ConversationHistoryService
 from app.services.conversation.service import ConversationService
 from app.services.conversation.session_service import ConversationSessionService
-from app.repositories.conversation_message_repository import ConversationMessageRepository
-from app.services.assistant.assistant_routing_service import AssistantRoutingService
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import (
     GatewayOrchestrator,
@@ -299,7 +305,9 @@ async def record_conversation_feedback(
 )
 async def assistant_routing_report(
     min_trials: int | None = Query(default=None, ge=0, description="最小试用次数"),
-    min_rating: float | None = Query(default=None, ge=0.0, le=1.0, description="最小评分"),
+    min_rating: float | None = Query(
+        default=None, ge=0.0, le=1.0, description="最小评分"
+    ),
     limit: int | None = Query(default=50, ge=1, le=500, description="返回条数上限"),
     sort: str | None = Query(
         default="score_desc",
@@ -450,7 +458,9 @@ async def regenerate_last_reply(
     # 找到最后一条用户消息
     user_msgs = [m for m in messages if m.get("role") == "user"]
     if not user_msgs:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No user message found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No user message found"
+        )
     last_user = max(user_msgs, key=lambda m: m.get("turn_index", 0))
 
     # 如果最后一条助手回复存在，先软删除以便重新生成
@@ -458,7 +468,8 @@ async def regenerate_last_reply(
         [
             m
             for m in messages
-            if m.get("role") == "assistant" and m.get("turn_index", 0) > last_user.get("turn_index", 0)
+            if m.get("role") == "assistant"
+            and m.get("turn_index", 0) > last_user.get("turn_index", 0)
         ],
         key=lambda m: m.get("turn_index", 0),
     )
@@ -501,7 +512,9 @@ async def regenerate_last_reply(
         user_id=str(user.id) if user else None,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
-    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
+    ctx.set(
+        "request", "base_url", str(request.base_url).rstrip("/") if request else None
+    )
     ctx.set("validation", "request", chat_req)
     ctx.set("conversation", "session_id", session_id)
 

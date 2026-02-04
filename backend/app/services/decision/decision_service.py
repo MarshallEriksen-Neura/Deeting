@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import logging
 import math
 import random
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -43,11 +43,14 @@ class DecisionService:
         self.bandit_weight = bandit_weight
         self.exploration_bonus = exploration_bonus
         if strategy not in _ALLOWED_STRATEGIES:
-            logger.warning("DecisionService: unknown strategy %s, fallback to thompson", strategy)
+            logger.warning(
+                "DecisionService: unknown strategy %s, fallback to thompson", strategy
+            )
             strategy = "thompson"
         if final_score not in _ALLOWED_FINAL_SCORES:
             logger.warning(
-                "DecisionService: unknown final_score %s, fallback to weighted_sum", final_score
+                "DecisionService: unknown final_score %s, fallback to weighted_sum",
+                final_score,
             )
             final_score = "weighted_sum"
         self.strategy = strategy
@@ -91,9 +94,7 @@ class DecisionService:
                 exploration_bonus=exploration,
             )
 
-        return sorted(
-            candidates, key=lambda c: c.final_score or 0.0, reverse=True
-        )
+        return sorted(candidates, key=lambda c: c.final_score or 0.0, reverse=True)
 
     async def record_feedback(
         self,
@@ -185,7 +186,7 @@ def _score_epsilon_greedy(
 
 
 def _rng_for_candidate(base_seed: int, arm_id: str) -> random.Random:
-    digest = hashlib.sha256(f"{base_seed}:{arm_id}".encode("utf-8")).digest()
+    digest = hashlib.sha256(f"{base_seed}:{arm_id}".encode()).digest()
     seed = int.from_bytes(digest[:8], "big", signed=False)
     return random.Random(seed)
 

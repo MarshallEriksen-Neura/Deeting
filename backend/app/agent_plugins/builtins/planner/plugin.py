@@ -1,8 +1,10 @@
-from typing import Any, List
-import uuid
 import json
+import uuid
+from typing import Any
+
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
-from app.schemas.plan import ExecutionPlan, TaskItem
+from app.schemas.plan import ExecutionPlan
+
 
 class PlannerPlugin(AgentPlugin):
     @property
@@ -11,18 +13,18 @@ class PlannerPlugin(AgentPlugin):
             name="system/planner",
             version="1.0.0",
             description="Architect capabilities: Design execution plans and manage workflows.",
-            author="System"
+            author="System",
         )
 
-    def get_tools(self) -> List[Any]:
+    def get_tools(self) -> list[Any]:
         return [
             {
                 "type": "function",
                 "function": {
                     "name": "propose_execution_plan",
                     "description": "Propose a multi-step execution plan for the user to approve. Use this when the request is complex.",
-                    "parameters": ExecutionPlan.model_json_schema()
-                }
+                    "parameters": ExecutionPlan.model_json_schema(),
+                },
             },
             {
                 "type": "function",
@@ -32,12 +34,15 @@ class PlannerPlugin(AgentPlugin):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "The user's current request description"}
+                            "query": {
+                                "type": "string",
+                                "description": "The user's current request description",
+                            }
                         },
-                        "required": ["query"]
-                    }
-                }
-            }
+                        "required": ["query"],
+                    },
+                },
+            },
         ]
 
     async def handle_propose_execution_plan(self, **kwargs) -> str:
@@ -49,7 +54,7 @@ class PlannerPlugin(AgentPlugin):
         # Ensure ID
         if "plan_id" not in kwargs:
             kwargs["plan_id"] = str(uuid.uuid4())
-            
+
         try:
             plan = ExecutionPlan(**kwargs)
             # In a real app: await plan_repo.save(plan)
@@ -65,7 +70,7 @@ class PlannerPlugin(AgentPlugin):
         # TODO: Implement Qdrant Search
         # embedding = await embedding_service.embed(query)
         # results = await qdrant.search("plans", vector=embedding)
-        
+
         # Mock Response for demo
         if "crawl" in query.lower() and "openai" in query.lower():
             mock_plan = {
@@ -73,21 +78,26 @@ class PlannerPlugin(AgentPlugin):
                 "rationale": "Standard crawler pattern for documentation sites.",
                 "tasks": [
                     {
-                        "id": "t1", 
-                        "title": "Crawl Overview", 
-                        "tool_name": "fetch_web_content", 
-                        "tool_args": {"url": "https://platform.openai.com/docs/overview"},
-                        "dependencies": []
+                        "id": "t1",
+                        "title": "Crawl Overview",
+                        "tool_name": "fetch_web_content",
+                        "tool_args": {
+                            "url": "https://platform.openai.com/docs/overview"
+                        },
+                        "dependencies": [],
                     },
                     {
-                        "id": "t2", 
-                        "title": "Ingest Models", 
-                        "tool_name": "submit_background_ingestion_job", 
-                        "tool_args": {"url": "https://platform.openai.com/docs/models", "instruction": "Extract models"},
-                        "dependencies": ["t1"]
-                    }
-                ]
+                        "id": "t2",
+                        "title": "Ingest Models",
+                        "tool_name": "submit_background_ingestion_job",
+                        "tool_args": {
+                            "url": "https://platform.openai.com/docs/models",
+                            "instruction": "Extract models",
+                        },
+                        "dependencies": ["t1"],
+                    },
+                ],
             }
             return f"Found a similar plan template:\n{json.dumps(mock_plan)}"
-            
+
         return "No similar plans found in Knowledge Base."

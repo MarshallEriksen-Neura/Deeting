@@ -1,4 +1,3 @@
-from typing import List, Optional
 import uuid
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -6,31 +5,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps.auth import get_current_user
-from app.schemas.provider_hub import ProviderHubResponse, ProviderCard
+from app.models.provider_instance import ProviderModel
+from app.schemas.provider_hub import ProviderCard, ProviderHubResponse
 from app.schemas.provider_instance import (
     ProviderInstanceCreate,
-    ProviderInstanceUpdate,
     ProviderInstanceResponse,
+    ProviderInstanceUpdate,
     ProviderModelResponse,
-    ProviderModelsUpsertRequest,
     ProviderModelsQuickAddRequest,
-    ProviderModelUpdate,
+    ProviderModelsUpsertRequest,
     ProviderModelTestRequest,
     ProviderModelTestResponse,
+    ProviderModelUpdate,
     ProviderVerifyRequest,
     ProviderVerifyResponse,
 )
 from app.services.providers.provider_hub_service import ProviderHubService
 from app.services.providers.provider_instance_service import ProviderInstanceService
-from app.models.provider_instance import ProviderModel
 
 router = APIRouter(prefix="/providers", tags=["Providers"])
 
 
 @router.get("/hub", response_model=ProviderHubResponse)
 async def list_provider_hub(
-    category: Optional[str] = Query(None, description="cloud/local/custom/all"),
-    q: Optional[str] = Query(None, description="搜索关键字"),
+    category: str | None = Query(None, description="cloud/local/custom/all"),
+    q: str | None = Query(None, description="搜索关键字"),
     include_public: bool = True,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
@@ -85,7 +84,9 @@ async def verify_provider(
     return result
 
 
-@router.post("", response_model=ProviderInstanceResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=ProviderInstanceResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_instance(
     payload: ProviderInstanceCreate,
     db: AsyncSession = Depends(get_db),
@@ -120,19 +121,24 @@ async def create_instance(
         if message == "secret_key_not_configured":
             raise HTTPException(status_code=400, detail="SECRET_KEY not configured")
         if message == "plaintext_secret_ref_forbidden":
-            raise HTTPException(status_code=400, detail="credentials_ref must be a reference, not a raw key")
+            raise HTTPException(
+                status_code=400,
+                detail="credentials_ref must be a reference, not a raw key",
+            )
         raise HTTPException(status_code=400, detail=message)
     return instance
 
 
-@router.get("/instances", response_model=List[ProviderInstanceResponse])
+@router.get("/instances", response_model=list[ProviderInstanceResponse])
 async def list_instances(
     include_public: bool = True,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
     svc = ProviderInstanceService(db)
-    instances = await svc.list_instances(user_id=getattr(user, "id", None), include_public=include_public)
+    instances = await svc.list_instances(
+        user_id=getattr(user, "id", None), include_public=include_public
+    )
     return instances
 
 
@@ -150,12 +156,19 @@ async def update_instance(
 
     svc = ProviderInstanceService(db)
     try:
-        updated = await svc.update_instance(instance_uuid, getattr(user, "id", None), **payload.model_dump(exclude_none=True))
+        updated = await svc.update_instance(
+            instance_uuid,
+            getattr(user, "id", None),
+            **payload.model_dump(exclude_none=True)
+        )
     except ValueError as e:
         if str(e) == "secret_key_not_configured":
             raise HTTPException(status_code=400, detail="SECRET_KEY not configured")
         if str(e) == "plaintext_secret_ref_forbidden":
-            raise HTTPException(status_code=400, detail="credentials_ref must be a reference, not a raw key")
+            raise HTTPException(
+                status_code=400,
+                detail="credentials_ref must be a reference, not a raw key",
+            )
         raise HTTPException(status_code=404, detail="instance not found")
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")
@@ -183,7 +196,9 @@ async def delete_instance(
     return None
 
 
-@router.get("/instances/{instance_id}/models", response_model=List[ProviderModelResponse])
+@router.get(
+    "/instances/{instance_id}/models", response_model=list[ProviderModelResponse]
+)
 async def list_models(
     instance_id: str,
     db: AsyncSession = Depends(get_db),
@@ -218,7 +233,11 @@ async def update_model(
 
     svc = ProviderInstanceService(db)
     try:
-        updated = await svc.update_model(model_uuid, getattr(user, "id", None), **payload.model_dump(exclude_none=True))
+        updated = await svc.update_model(
+            model_uuid,
+            getattr(user, "id", None),
+            **payload.model_dump(exclude_none=True)
+        )
     except ValueError as e:
         if str(e) == "model_not_found":
             raise HTTPException(status_code=404, detail="model not found")
@@ -241,9 +260,11 @@ async def test_model(
         raise HTTPException(status_code=400, detail="invalid model_id")
 
     svc = ProviderInstanceService(db)
-    prompt = (payload.prompt if payload else "ping")
+    prompt = payload.prompt if payload else "ping"
     try:
-        result = await svc.test_model(model_uuid, getattr(user, "id", None), prompt=prompt)
+        result = await svc.test_model(
+            model_uuid, getattr(user, "id", None), prompt=prompt
+        )
     except ValueError as e:
         message = str(e)
         if message == "model_not_found":
@@ -256,7 +277,9 @@ async def test_model(
     return ProviderModelTestResponse(**result)
 
 
-@router.post("/instances/{instance_id}/models:sync", response_model=List[ProviderModelResponse])
+@router.post(
+    "/instances/{instance_id}/models:sync", response_model=list[ProviderModelResponse]
+)
 async def sync_models(
     instance_id: str,
     payload: ProviderModelsUpsertRequest | None = Body(default=None),
@@ -293,10 +316,14 @@ async def sync_models(
                 )
                 for m in payload.models
             ]
-            results = await svc.upsert_models(instance_uuid, getattr(user, "id", None), model_objs)
+            results = await svc.upsert_models(
+                instance_uuid, getattr(user, "id", None), model_objs
+            )
         else:
             results = await svc.sync_models_from_upstream(
-                instance_uuid, getattr(user, "id", None), preserve_user_overrides=preserve_user_overrides
+                instance_uuid,
+                getattr(user, "id", None),
+                preserve_user_overrides=preserve_user_overrides,
             )
     except ValueError as e:
         message = str(e)
@@ -310,7 +337,10 @@ async def sync_models(
     return results
 
 
-@router.post("/instances/{instance_id}/models:quick-add", response_model=List[ProviderModelResponse])
+@router.post(
+    "/instances/{instance_id}/models:quick-add",
+    response_model=list[ProviderModelResponse],
+)
 async def quick_add_models(
     instance_id: str,
     payload: ProviderModelsQuickAddRequest,

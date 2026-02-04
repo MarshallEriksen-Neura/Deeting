@@ -5,24 +5,25 @@ Revises: 20260115_03_add_assistant_icon_id
 Create Date: 2026-01-15
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "20260115_04_create_assistant_market_tables"
-down_revision: Union[str, None] = "20260115_03_add_assistant_icon_id"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260115_03_add_assistant_icon_id"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     op.create_table(
         "assistant_install",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),
@@ -38,7 +39,12 @@ def upgrade() -> None:
             comment="助手 ID",
         ),
         sa.Column("alias", sa.String(length=100), nullable=True, comment="用户侧别名"),
-        sa.Column("icon_override", sa.String(length=255), nullable=True, comment="用户侧图标覆盖"),
+        sa.Column(
+            "icon_override",
+            sa.String(length=255),
+            nullable=True,
+            comment="用户侧图标覆盖",
+        ),
         sa.Column(
             "pinned_version_id",
             postgresql.UUID(as_uuid=True),
@@ -79,16 +85,32 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-        sa.UniqueConstraint("user_id", "assistant_id", name="uq_assistant_install_user"),
+        sa.UniqueConstraint(
+            "user_id", "assistant_id", name="uq_assistant_install_user"
+        ),
     )
     op.create_index("ix_assistant_install_user", "assistant_install", ["user_id"])
-    op.create_index("ix_assistant_install_assistant", "assistant_install", ["assistant_id"])
+    op.create_index(
+        "ix_assistant_install_assistant", "assistant_install", ["assistant_id"]
+    )
 
     op.create_table(
         "review_task",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("entity_type", sa.String(length=64), nullable=False, comment="审核对象类型，如 assistant_market"),
-        sa.Column("entity_id", postgresql.UUID(as_uuid=True), nullable=False, comment="审核对象 ID"),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
+        sa.Column(
+            "entity_type",
+            sa.String(length=64),
+            nullable=False,
+            comment="审核对象类型，如 assistant_market",
+        ),
+        sa.Column(
+            "entity_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=False,
+            comment="审核对象 ID",
+        ),
         sa.Column(
             "status",
             sa.String(length=20),
@@ -110,8 +132,18 @@ def upgrade() -> None:
             nullable=True,
             comment="审核人用户 ID",
         ),
-        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True, comment="提交审核时间"),
-        sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True, comment="审核完成时间"),
+        sa.Column(
+            "submitted_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment="提交审核时间",
+        ),
+        sa.Column(
+            "reviewed_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment="审核完成时间",
+        ),
         sa.Column("reason", sa.Text(), nullable=True, comment="审核备注/拒绝原因"),
         sa.Column(
             "payload",
@@ -136,7 +168,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_review_task_entity_type", "review_task", ["entity_type"])
     op.create_index("ix_review_task_status", "review_task", ["status"])
-    op.create_index("ix_review_task_entity", "review_task", ["entity_type", "entity_id"])
+    op.create_index(
+        "ix_review_task_entity", "review_task", ["entity_type", "entity_id"]
+    )
 
 
 def downgrade() -> None:

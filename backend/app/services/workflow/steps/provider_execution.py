@@ -11,24 +11,22 @@ ProviderExecutionStep: 配置驱动的执行步骤
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import httpx
 
-from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.core.metrics import record_upstream_call
+from app.core.provider.config_driven_provider import ConfigDrivenProvider
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.secrets.manager import SecretManager
 from app.services.workflow.steps.base import (
     BaseStep,
-    FailureAction,
     StepConfig,
     StepResult,
     StepStatus,
 )
-from app.core.provider.config_driven_provider import ConfigDrivenProvider
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -59,7 +57,7 @@ class ProviderExecutionStep(BaseStep):
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """Execute the provider call using ConfigDrivenProvider"""
-        
+
         # 1. Gather Configuration from Routing Context
         routing_info = ctx.get_all("routing")
         if not routing_info or not routing_info.get("upstream_url"):
@@ -77,13 +75,17 @@ class ProviderExecutionStep(BaseStep):
         }
 
         # 2. Prepare Context (Secrets, Input)
-        request_data = ctx.get("resolve_assets", "request_data") or ctx.get("validation", "validated") or {}
-        
+        request_data = (
+            ctx.get("resolve_assets", "request_data")
+            or ctx.get("validation", "validated")
+            or {}
+        )
+
         # Resolve Secret
         auth_config = routing_info.get("auth_config") or {}
         provider = routing_info.get("provider")
         secret_ref = auth_config.get("secret_ref_id") or auth_config.get("secret")
-        
+
         api_key = ""
         if secret_ref:
             secret = await self.secret_manager.get(provider, secret_ref, ctx.db_session)
@@ -104,24 +106,28 @@ class ProviderExecutionStep(BaseStep):
         provider_instance = ConfigDrivenProvider(config=provider_config)
 
         # 4. Execute
-        timeout = float(routing_info.get("limit_config", {}).get("timeout") or self.config.timeout)
+        timeout = float(
+            routing_info.get("limit_config", {}).get("timeout") or self.config.timeout
+        )
         start_time = time.perf_counter()
-        
+
         try:
             async with create_async_http_client(timeout=timeout) as client:
                 response_data = await provider_instance.execute(
                     request_payload=request_data,
                     client=client,
-                    extra_context=extra_context
+                    extra_context=extra_context,
                 )
-            
+
             latency_ms = (time.perf_counter() - start_time) * 1000
-            
+
             # 5. Store Result
             ctx.set("upstream_call", "response", response_data)
-            ctx.set("upstream_call", "status_code", 200) # Assumed success if no exception
+            ctx.set(
+                "upstream_call", "status_code", 200
+            )  # Assumed success if no exception
             ctx.set("upstream_call", "latency_ms", latency_ms)
-            
+
             # Metrics & Status
             record_upstream_call(
                 provider=provider or "unknown",
@@ -129,7 +135,7 @@ class ProviderExecutionStep(BaseStep):
                 success=True,
                 latency_ms=latency_ms,
             )
-            
+
             ctx.emit_status(
                 stage="evolve",
                 step=self.name,
@@ -137,7 +143,7 @@ class ProviderExecutionStep(BaseStep):
                 code="provider.executed",
                 meta={"latency_ms": round(latency_ms)},
             )
-            
+
             return StepResult(
                 status=StepStatus.SUCCESS,
                 data={
@@ -148,12 +154,28 @@ class ProviderExecutionStep(BaseStep):
 
         except httpx.TimeoutException:
             latency_ms = (time.perf_counter() - start_time) * 1000
-            ctx.mark_error(ErrorSource.UPSTREAM, "UPSTREAM_TIMEOUT", f"Request timed out after {timeout}s")
-            record_upstream_call(provider=provider, model=ctx.requested_model, success=False, latency_ms=latency_ms, error_code="timeout")
+            ctx.mark_error(
+                ErrorSource.UPSTREAM,
+                "UPSTREAM_TIMEOUT",
+                f"Request timed out after {timeout}s",
+            )
+            record_upstream_call(
+                provider=provider,
+                model=ctx.requested_model,
+                success=False,
+                latency_ms=latency_ms,
+                error_code="timeout",
+            )
             raise
 
         except Exception as e:
             latency_ms = (time.perf_counter() - start_time) * 1000
             ctx.mark_error(ErrorSource.UPSTREAM, "UPSTREAM_ERROR", str(e))
-            record_upstream_call(provider=provider, model=ctx.requested_model, success=False, latency_ms=latency_ms, error_code="error")
+            record_upstream_call(
+                provider=provider,
+                model=ctx.requested_model,
+                success=False,
+                latency_ms=latency_ms,
+                error_code="error",
+            )
             raise

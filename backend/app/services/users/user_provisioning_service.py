@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.permissions import DEFAULT_USER_ROLE
 from app.core.config import settings
 from app.core.logging import logger
-from app.constants.permissions import DEFAULT_USER_ROLE
 from app.models import Identity, User
 from app.repositories import InviteCodeRepository, UserRepository
 from app.services.assistant.default_assistant_service import DefaultAssistantService
@@ -51,10 +50,15 @@ class UserProvisioningService:
 
         if external_id:
             # 先按身份查询，避免同一 provider/sub 重复创建
-            by_identity = await self.user_repo.get_by_identity(auth_provider, external_id)
+            by_identity = await self.user_repo.get_by_identity(
+                auth_provider, external_id
+            )
             if by_identity:
                 avatar_object_key = self._normalize_avatar_object_key(avatar)
-                if avatar_object_key and not (by_identity.avatar_object_key or "").strip():
+                if (
+                    avatar_object_key
+                    and not (by_identity.avatar_object_key or "").strip()
+                ):
                     by_identity = await self.user_repo.update_user(
                         by_identity.id,
                         avatar_object_key=avatar_object_key,
@@ -76,12 +80,16 @@ class UserProvisioningService:
                 await self.db.commit()
                 await self.db.refresh(existing)
             if external_id and auth_provider:
-                await self._ensure_identity(existing.id, auth_provider, external_id, display_name=username)
+                await self._ensure_identity(
+                    existing.id, auth_provider, external_id, display_name=username
+                )
             return existing
 
         # 新用户准入检查（测试/开发环境默认放宽）
         if not skip_policy:
-            self.policy.ensure_can_register(invite_code=invite_code, provider=auth_provider)
+            self.policy.ensure_can_register(
+                invite_code=invite_code, provider=auth_provider
+            )
 
         window = None
         if settings.REGISTRATION_CONTROL_ENABLED and not skip_policy:
@@ -120,7 +128,13 @@ class UserProvisioningService:
 
         # 绑定 Identity（如有）
         if external_id and auth_provider:
-            await self._ensure_identity(user.id, auth_provider, external_id, display_name=username, avatar=avatar)
+            await self._ensure_identity(
+                user.id,
+                auth_provider,
+                external_id,
+                display_name=username,
+                avatar=avatar,
+            )
 
         logger.info(
             "user_provisioned",
@@ -160,7 +174,9 @@ class UserProvisioningService:
             await self.db.rollback()
             # 可能并发插入同一 identity，忽略
         else:
-            logger.info("identity_linked", extra={"user_id": str(user_id), "provider": provider})
+            logger.info(
+                "identity_linked", extra={"user_id": str(user_id), "provider": provider}
+            )
 
     @staticmethod
     def _normalize_avatar_object_key(avatar: str | None) -> str | None:
@@ -171,12 +187,14 @@ class UserProvisioningService:
             return None
         return normalized
 
-
     async def _assign_default_role(self, user_id: UUID) -> None:
         """为新用户分配默认角色；缺失时记录告警但不中断注册。"""
         role = await self.user_repo.get_role_by_name(DEFAULT_USER_ROLE)
         if not role:
-            logger.warning("default_role_missing", extra={"role": DEFAULT_USER_ROLE, "user_id": str(user_id)})
+            logger.warning(
+                "default_role_missing",
+                extra={"role": DEFAULT_USER_ROLE, "user_id": str(user_id)},
+            )
             return
 
         await self.user_repo.assign_roles(user_id, [role.id])

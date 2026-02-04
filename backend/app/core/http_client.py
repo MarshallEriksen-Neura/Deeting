@@ -21,7 +21,9 @@ _proxies_kwarg_supported: bool | None = None
 _proxy_kwarg_logged = False
 
 
-def _build_curl_transport(http2: bool = True, **transport_kwargs: Any) -> httpx.AsyncBaseTransport | None:
+def _build_curl_transport(
+    http2: bool = True, **transport_kwargs: Any
+) -> httpx.AsyncBaseTransport | None:
     """
     创建 CurlCFFITransport，失败时返回 None（回退到 httpx 默认传输）。
     """
@@ -77,7 +79,9 @@ def _normalize_proxy_kwargs(client_kwargs: dict[str, Any]) -> None:
             client_kwargs.pop("proxies", None)
             global _proxy_kwarg_logged
             if not _proxy_kwarg_logged:
-                logger.warning("当前 httpx.AsyncClient 不支持 proxies/proxy 参数，已忽略代理配置。")
+                logger.warning(
+                    "当前 httpx.AsyncClient 不支持 proxies/proxy 参数，已忽略代理配置。"
+                )
                 _proxy_kwarg_logged = True
 
 

@@ -4,11 +4,11 @@ import pytest
 from fastapi import HTTPException, status
 from httpx import ASGITransport, AsyncClient
 
-from app.deps.auth import get_current_user
-from app.core.database import get_db
-from main import app
 from app.api.v1.internal import conversation_route
+from app.core.database import get_db
+from app.deps.auth import get_current_user
 from app.services.orchestrator.orchestrator import get_internal_orchestrator
+from main import app
 
 
 class _DummyUser:
@@ -232,8 +232,12 @@ def _override_auth(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_delete_message(monkeypatch):
-    monkeypatch.setattr(conversation_route, "ConversationService", _DummyConversationService)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    monkeypatch.setattr(
+        conversation_route, "ConversationService", _DummyConversationService
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.delete("/api/v1/internal/conversations/s1/messages/3")
         assert resp.status_code == 200
         body = resp.json()
@@ -243,18 +247,22 @@ async def test_delete_message(monkeypatch):
 @pytest.mark.asyncio
 async def test_list_conversations(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
     try:
         assistant_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get(
                 f"/api/v1/internal/conversations?assistant_id={assistant_id}"
             )
             assert resp.status_code == 200
             data = resp.json()
-            assert data["items"][0]["session_id"] == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+            assert (
+                data["items"][0]["session_id"] == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+            )
             assert service.called_with["assistant_id"] == UUID(assistant_id)
             assert service.called_with["status"].value == "active"
     finally:
@@ -264,14 +272,16 @@ async def test_list_conversations(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_conversation(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
     payload = {
         "assistant_id": "e3189116-959f-48f4-8d49-f7300eb527dd",
         "title": "New Chat",
     }
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.post("/api/v1/internal/conversations", json=payload)
         assert resp.status_code == 201
         data = resp.json()
@@ -286,7 +296,9 @@ async def test_routing_report(monkeypatch):
         "AssistantRoutingService",
         _DummyAssistantRoutingService,
     )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.get(
             "/api/v1/internal/assistants/routing/report"
             "?min_trials=10&min_rating=0.7&limit=1&sort=score_desc"
@@ -302,7 +314,10 @@ async def test_routing_report(monkeypatch):
             "limit": 1,
             "sort": "score_desc",
         }
-        assert payload["items"][0]["assistant_id"] == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+        assert (
+            payload["items"][0]["assistant_id"]
+            == "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
+        )
         assert payload["items"][0]["mab_score"] == pytest.approx(0.75)
         assert payload["items"][0]["routing_score"] == pytest.approx(0.69)
 
@@ -314,17 +329,21 @@ async def test_routing_report_invalid_sort(monkeypatch):
         "AssistantRoutingService",
         _DummyAssistantRoutingService,
     )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/api/v1/internal/assistants/routing/report?sort=bad_sort")
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get(
+            "/api/v1/internal/assistants/routing/report?sort=bad_sort"
+        )
         assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_get_conversation_history(monkeypatch):
     service = _DummyConversationHistoryService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_history_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_history_service] = (
+        lambda: service
+    )
     session_id = "e3189116-959f-48f4-8d49-f7300eb527dd"
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -346,13 +365,17 @@ async def test_get_conversation_history(monkeypatch):
 @pytest.mark.asyncio
 async def test_archive_conversation(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
     session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.post(f"/api/v1/internal/conversations/{session_id}/archive")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                f"/api/v1/internal/conversations/{session_id}/archive"
+            )
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "archived"
@@ -364,13 +387,17 @@ async def test_archive_conversation(monkeypatch):
 @pytest.mark.asyncio
 async def test_unarchive_conversation(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
     session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.post(f"/api/v1/internal/conversations/{session_id}/unarchive")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                f"/api/v1/internal/conversations/{session_id}/unarchive"
+            )
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "active"
@@ -382,12 +409,14 @@ async def test_unarchive_conversation(monkeypatch):
 @pytest.mark.asyncio
 async def test_rename_conversation(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
     session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.patch(
                 f"/api/v1/internal/conversations/{session_id}/title",
                 json={"title": "新标题"},
@@ -403,13 +432,15 @@ async def test_rename_conversation(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_conversation_assistant(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
     session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
     assistant_id = "e3189116-959f-48f4-8d49-f7300eb527dd"
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.patch(
                 f"/api/v1/internal/conversations/{session_id}/assistant",
                 json={"assistant_id": assistant_id},
@@ -426,9 +457,9 @@ async def test_update_conversation_assistant(monkeypatch):
 @pytest.mark.asyncio
 async def test_record_conversation_feedback(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
 
     class _DummyRoutingService:
         def __init__(self, *_args, **_kwargs):
@@ -447,7 +478,9 @@ async def test_record_conversation_feedback(monkeypatch):
     session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
     assistant_id = "e3189116-959f-48f4-8d49-f7300eb527dd"
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.post(
                 f"/api/v1/internal/conversations/{session_id}/feedback",
                 json={"assistant_id": assistant_id, "event": "thumbs_up"},
@@ -464,12 +497,14 @@ async def test_record_conversation_feedback(monkeypatch):
 @pytest.mark.asyncio
 async def test_rename_conversation_empty_title(monkeypatch):
     service = _DummyConversationSessionService()
-    app.dependency_overrides[
-        conversation_route.get_conversation_session_service
-    ] = lambda: service
+    app.dependency_overrides[conversation_route.get_conversation_session_service] = (
+        lambda: service
+    )
     session_id = "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d"
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.patch(
                 f"/api/v1/internal/conversations/{session_id}/title",
                 json={"title": "   "},
@@ -481,8 +516,12 @@ async def test_rename_conversation_empty_title(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_clear_conversation(monkeypatch):
-    monkeypatch.setattr(conversation_route, "ConversationService", _DummyConversationService)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    monkeypatch.setattr(
+        conversation_route, "ConversationService", _DummyConversationService
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.post("/api/v1/internal/conversations/s1/clear")
         assert resp.status_code == 200
         assert resp.json()["cleared"] is True
@@ -490,9 +529,13 @@ async def test_clear_conversation(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_regenerate(monkeypatch):
-    monkeypatch.setattr(conversation_route, "ConversationService", _DummyConversationService)
+    monkeypatch.setattr(
+        conversation_route, "ConversationService", _DummyConversationService
+    )
     app.dependency_overrides[get_internal_orchestrator] = lambda: _DummyOrchestrator()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.post(
             "/api/v1/internal/conversations/s1/regenerate",
             json={"model": "gpt-4o-mini"},

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.mcp_market import McpMarketTool, UserMcpSubscription, McpToolCategory
+from app.models.mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 
 
 class McpMarketRepository:
@@ -51,17 +51,23 @@ class McpMarketRepository:
     async def get_market_tool(self, tool_id: UUID) -> McpMarketTool | None:
         return await self.session.get(McpMarketTool, tool_id)
 
-    async def get_market_tool_by_identifier(self, identifier: str) -> McpMarketTool | None:
+    async def get_market_tool_by_identifier(
+        self, identifier: str
+    ) -> McpMarketTool | None:
         stmt = select(McpMarketTool).where(McpMarketTool.identifier == identifier)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_subscriptions(self, user_id: UUID) -> list[tuple[UserMcpSubscription, McpMarketTool]]:
+    async def list_subscriptions(
+        self, user_id: UUID
+    ) -> list[tuple[UserMcpSubscription, McpMarketTool]]:
         stmt = (
             select(UserMcpSubscription, McpMarketTool)
             .join(McpMarketTool, McpMarketTool.id == UserMcpSubscription.market_tool_id)
             .where(UserMcpSubscription.user_id == user_id)
-            .order_by(UserMcpSubscription.created_at.desc(), UserMcpSubscription.id.desc())
+            .order_by(
+                UserMcpSubscription.created_at.desc(), UserMcpSubscription.id.desc()
+            )
         )
         result = await self.session.execute(stmt)
         return list(result.all())

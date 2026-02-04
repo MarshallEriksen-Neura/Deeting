@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from uuid import uuid4
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
@@ -54,7 +54,9 @@ async def test_upsert_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.asyncio
-async def test_upsert_documents_skips_empty_docs(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_upsert_documents_skips_empty_docs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     svc = MeilisearchIndexService()
     mock = AsyncMock(return_value={"taskUid": 1})
     monkeypatch.setattr(svc, "_request", mock)
@@ -81,7 +83,9 @@ async def test_delete_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.asyncio
-async def test_delete_documents_skips_empty_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_delete_documents_skips_empty_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     svc = MeilisearchIndexService()
     mock = AsyncMock(return_value={"taskUid": 1})
     monkeypatch.setattr(svc, "_request", mock)
@@ -92,7 +96,9 @@ async def test_delete_documents_skips_empty_ids(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
-async def test_delete_all_documents_calls_meili(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_delete_all_documents_calls_meili(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     svc = MeilisearchIndexService()
     mock = AsyncMock(return_value={"taskUid": 1})
     monkeypatch.setattr(svc, "_request", mock)

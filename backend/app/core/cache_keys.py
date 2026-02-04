@@ -95,7 +95,9 @@ class CacheKeys:
             "pst": sorted(presets or []),
             "itm": sorted(preset_items or []),
         }
-        digest = hashlib.md5(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()[:10]
+        digest = hashlib.md5(
+            json.dumps(payload, separators=(",", ":")).encode()
+        ).hexdigest()[:10]
         return f"{base}:f:{digest}"
 
     @classmethod
@@ -256,7 +258,9 @@ class CacheKeys:
 
     # ===== Monitoring =====
     @classmethod
-    def monitoring_latency_heatmap(cls, tenant_id: str | None, time_range: str, model: str | None) -> str:
+    def monitoring_latency_heatmap(
+        cls, tenant_id: str | None, time_range: str, model: str | None
+    ) -> str:
         return f"{cls.prefix}:mon:heatmap:{tenant_id or 'anonymous'}:{time_range}:{model or 'all'}"
 
     @classmethod
@@ -268,12 +272,18 @@ class CacheKeys:
         return f"{cls.prefix}:mon:model_cost:{tenant_id or 'anonymous'}:{time_range}"
 
     @classmethod
-    def monitoring_error_distribution(cls, tenant_id: str | None, time_range: str, model: str | None) -> str:
+    def monitoring_error_distribution(
+        cls, tenant_id: str | None, time_range: str, model: str | None
+    ) -> str:
         return f"{cls.prefix}:mon:err_dist:{tenant_id or 'anonymous'}:{time_range}:{model or 'all'}"
 
     @classmethod
-    def monitoring_key_ranking(cls, tenant_id: str | None, time_range: str, limit: int) -> str:
-        return f"{cls.prefix}:mon:key_rank:{tenant_id or 'anonymous'}:{time_range}:{limit}"
+    def monitoring_key_ranking(
+        cls, tenant_id: str | None, time_range: str, limit: int
+    ) -> str:
+        return (
+            f"{cls.prefix}:mon:key_rank:{tenant_id or 'anonymous'}:{time_range}:{limit}"
+        )
 
     # ===== Auth & ACL =====
     @classmethod
@@ -323,7 +333,9 @@ class CacheKeys:
 
     # ===== Secrets =====
     @classmethod
-    def upstream_credential(cls, provider: str, secret_ref_id: str | None = None) -> str:
+    def upstream_credential(
+        cls, provider: str, secret_ref_id: str | None = None
+    ) -> str:
         base = f"{cls.prefix}:upstream_cred:{provider}"
         return f"{base}:{secret_ref_id}" if secret_ref_id else base
 

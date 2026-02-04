@@ -23,5 +23,7 @@ async def test_internal_chat_cancel_sets_cache(
     assert data["request_id"] == request_id
     assert data["status"] == "canceled"
 
-    cached = await cache.get(CacheKeys.request_cancel("chat", str(test_user["id"]), request_id))
+    cached = await cache.get(
+        CacheKeys.request_cancel("chat", str(test_user["id"]), request_id)
+    )
     assert cached is True

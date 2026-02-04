@@ -3,21 +3,25 @@ import inspect
 import json
 import logging
 import uuid
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from app.core.celery_app import celery_app
+from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
 from app.agent_plugins.builtins.database.plugin import DatabasePlugin
 from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
-from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
-from app.schemas.tool import ToolDefinition
 from app.agent_plugins.core.manager import PluginManager
+from app.core.celery_app import celery_app
+from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
 
 _MAX_AGENT_STEPS = 5
 _CONTENT_LIMIT = 20000
 
-def _build_tools_and_handlers(plugins: list[Any]) -> tuple[list[ToolDefinition], dict[str, Callable]]:
+
+def _build_tools_and_handlers(
+    plugins: list[Any],
+) -> tuple[list[ToolDefinition], dict[str, Callable]]:
     tools: list[ToolDefinition] = []
     tool_map: dict[str, Callable] = {}
 
@@ -30,17 +34,20 @@ def _build_tools_and_handlers(plugins: list[Any]) -> tuple[list[ToolDefinition],
             name = function_info.get("name")
             if not name:
                 continue
-            tools.append(ToolDefinition(
-                name=name,
-                description=function_info.get("description"),
-                input_schema=function_info.get("parameters", {})
-            ))
+            tools.append(
+                ToolDefinition(
+                    name=name,
+                    description=function_info.get("description"),
+                    input_schema=function_info.get("parameters", {}),
+                )
+            )
             if hasattr(plugin, name):
                 if name in tool_map:
                     logger.warning("Duplicate tool name detected: %s", name)
                 tool_map[name] = getattr(plugin, name)
 
     return tools, tool_map
+
 
 async def _invoke_tool(handler: Callable, args: dict[str, Any]) -> Any:
     try:
@@ -56,10 +63,14 @@ async def _invoke_tool(handler: Callable, args: dict[str, Any]) -> Any:
 
     return await _call_handler(handler, args, use_kwargs=True)
 
-async def _call_handler(handler: Callable, args: dict[str, Any], *, use_kwargs: bool = False) -> Any:
+
+async def _call_handler(
+    handler: Callable, args: dict[str, Any], *, use_kwargs: bool = False
+) -> Any:
     if inspect.iscoroutinefunction(handler):
         return await (handler(**args) if use_kwargs else handler(args))
     return handler(**args) if use_kwargs else handler(args)
+
 
 async def _chat_completion_with_fallback(
     messages: list[dict],
@@ -67,12 +78,10 @@ async def _chat_completion_with_fallback(
     model_hint: str | None,
 ) -> tuple[Any, str | None]:
     from app.services.providers.llm import llm_service
+
     try:
         response = await llm_service.chat_completion(
-            messages=messages,
-            tools=tools,
-            temperature=0.0,
-            model=model_hint
+            messages=messages, tools=tools, temperature=0.0, model=model_hint
         )
         return response, model_hint
     except Exception as exc:
@@ -90,6 +99,7 @@ async def _chat_completion_with_fallback(
         )
         return response, None
 
+
 def _build_discovery_instruction(
     capability: str,
     provider_name_hint: str | None,
@@ -100,11 +110,12 @@ def _build_discovery_instruction(
         "Use get_unified_schema(capability) to understand the gateway's internal request/response schema.",
         "Extract provider details (name, slug, base_url, auth_type, auth_config_key, category, default_params).",
         "Do not store secrets; only reference secret key names in auth_config_key.",
-        "If required information is missing, explain what is missing and avoid creating incomplete presets."
+        "If required information is missing, explain what is missing and avoid creating incomplete presets.",
     ]
     if provider_name_hint:
         lines.append(f"Provider name hint: {provider_name_hint}.")
     return "\n".join(lines)
+
 
 async def _run_ingestion_workflow(
     target_url: str,
@@ -118,7 +129,7 @@ async def _run_ingestion_workflow(
     logger.info("[Worker-%s] Started ingestion for: %s", job_id, target_url)
 
     manager = PluginManager()
-    for plugin_cls in (plugin_classes or []):
+    for plugin_cls in plugin_classes or []:
         manager.register_class(plugin_cls)
 
     await manager.activate_all()
@@ -136,7 +147,7 @@ async def _run_ingestion_workflow(
         content = crawl_result.get("markdown", "")[:_CONTENT_LIMIT]
 
         tool_plugins = []
-        for name in (tool_plugin_names or []):
+        for name in tool_plugin_names or []:
             plugin = manager.get_plugin(name)
             if plugin:
                 tool_plugins.append(plugin)
@@ -176,17 +187,22 @@ Extract the relevant information from the context and use the available tools to
                     return f"Job {job_id} Completed: {response}"
 
                 if isinstance(response, list):
-                    messages.append({
-                        "role": "assistant",
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}
-                            }
-                            for tc in response
-                        ]
-                    })
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.name,
+                                        "arguments": json.dumps(tc.arguments),
+                                    },
+                                }
+                                for tc in response
+                            ],
+                        }
+                    )
 
                     for tc in response:
                         handler = tool_map.get(tc.name)
@@ -198,7 +214,9 @@ Extract the relevant information from the context and use the available tools to
                         else:
                             res_str = "Error: Tool not found"
 
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": res_str})
+                        messages.append(
+                            {"role": "tool", "tool_call_id": tc.id, "content": res_str}
+                        )
             except Exception as exc:
                 logger.error("[Worker-%s] LLM Error: %s", job_id, exc)
                 return f"Job failed: {exc}"
@@ -206,6 +224,7 @@ Extract the relevant information from the context and use the available tools to
         return f"Job finished. Actions: {'; '.join(actions_taken)}"
     finally:
         await manager.deactivate_all()
+
 
 @celery_app.task(queue="agent_tasks", name="app.tasks.agent.run_auto_ingestion_job")
 def run_auto_ingestion_job(target_url: str, instruction: str):
@@ -215,28 +234,32 @@ def run_auto_ingestion_job(target_url: str, instruction: str):
     2. Uses LLM to extract data based on 'instruction'.
     3. Writes data to DB using DatabasePlugin.
     """
-    return asyncio.run(_run_ingestion_workflow(
-        target_url,
-        instruction,
-        plugin_classes=[CrawlerPlugin, DatabasePlugin],
-        tool_plugin_names=["system/database_manager"]
-    ))
+    return asyncio.run(
+        _run_ingestion_workflow(
+            target_url,
+            instruction,
+            plugin_classes=[CrawlerPlugin, DatabasePlugin],
+            tool_plugin_names=["system/database_manager"],
+        )
+    )
+
 
 @celery_app.task(queue="agent_tasks", name="app.tasks.agent.run_discovery_task")
 def run_discovery_task(
     target_url: str,
     capability: str = "chat",
     model_hint: str | None = None,
-    provider_name_hint: str | None = None
+    provider_name_hint: str | None = None,
 ):
     instruction = _build_discovery_instruction(
-        capability=capability,
-        provider_name_hint=provider_name_hint
+        capability=capability, provider_name_hint=provider_name_hint
     )
-    return asyncio.run(_run_ingestion_workflow(
-        target_url,
-        instruction,
-        model_hint=model_hint,
-        plugin_classes=[CrawlerPlugin, ProviderRegistryPlugin, DatabasePlugin],
-        tool_plugin_names=["core.registry.provider", "system/database_manager"]
-    ))
+    return asyncio.run(
+        _run_ingestion_workflow(
+            target_url,
+            instruction,
+            model_hint=model_hint,
+            plugin_classes=[CrawlerPlugin, ProviderRegistryPlugin, DatabasePlugin],
+            tool_plugin_names=["core.registry.provider", "system/database_manager"],
+        )
+    )

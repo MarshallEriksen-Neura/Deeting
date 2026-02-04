@@ -118,7 +118,11 @@ class ConversationSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Integer, nullable=False, default=0, server_default="0", comment="累计消息数"
     )
     last_summary_version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0", comment="最近一次摘要版本"
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="最近一次摘要版本",
     )
     first_message_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -173,9 +177,7 @@ class ConversationMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str | None] = mapped_column(
         String(128), nullable=True, comment="可选：tool/function 名称"
     )
-    content: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="消息内容"
-    )
+    content: Mapped[str | None] = mapped_column(Text, nullable=True, comment="消息内容")
     meta_info: Mapped[dict | None] = mapped_column(
         JSONBCompat,
         nullable=True,
@@ -188,10 +190,18 @@ class ConversationMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="本次消息使用的 persona/assistant ID",
     )
     token_estimate: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0", comment="估算 token 数（用于窗口判定）"
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="估算 token 数（用于窗口判定）",
     )
     is_truncated: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false", comment="是否为截断内容"
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="是否为截断内容",
     )
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,
@@ -233,9 +243,7 @@ class ConversationSummary(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="摘要版本号（递增）"
     )
-    summary_text: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="摘要内容"
-    )
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False, comment="摘要内容")
     covered_from_turn: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="摘要覆盖的起始 turn"
     )
@@ -261,7 +269,11 @@ class ConversationSummary(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="摘要覆盖的末条消息 ID",
     )
     token_estimate: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0", comment="摘要的估算 token 数"
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="摘要的估算 token 数",
     )
     summarizer_model: Mapped[str | None] = mapped_column(
         String(128), nullable=True, comment="生成摘要的模型名称"

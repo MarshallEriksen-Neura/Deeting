@@ -23,7 +23,9 @@ def _normalize(status: AssistantStatus | str) -> AssistantStatus:
 
 class AssistantStateMachine:
     @staticmethod
-    def validate_transition(current: AssistantStatus | str, target: AssistantStatus | str) -> None:
+    def validate_transition(
+        current: AssistantStatus | str, target: AssistantStatus | str
+    ) -> None:
         """
         校验状态迁移是否允许；允许幂等（current == target）。
         """

@@ -7,8 +7,8 @@ Create Date: 2026-01-26
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision: str = "20260126_01_add_user_avatar_url"
 down_revision: str | None = "20260124_04_add_mcp_sources"
@@ -25,7 +25,9 @@ def upgrade() -> None:
 
     op.add_column(
         "user_account",
-        sa.Column("avatar_url", sa.String(length=512), nullable=True, comment="头像 URL"),
+        sa.Column(
+            "avatar_url", sa.String(length=512), nullable=True, comment="头像 URL"
+        ),
     )
 
 

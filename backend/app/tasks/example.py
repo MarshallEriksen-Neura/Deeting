@@ -11,6 +11,7 @@ def add(x: int, y: int) -> int:
     logger.info(f"Adding {x} + {y}")
     return x + y
 
+
 @celery_app.task
 def check_health() -> str:
     """

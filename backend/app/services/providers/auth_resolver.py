@@ -20,7 +20,9 @@ def resolve_auth_for_protocol(
     """
     resolved_auth_type = auth_type or "bearer"
     resolved_auth_config: dict[str, Any] = dict(auth_config or {})
-    resolved_headers: dict[str, str] = {k: str(v) for k, v in (default_headers or {}).items()}
+    resolved_headers: dict[str, str] = {
+        k: str(v) for k, v in (default_headers or {}).items()
+    }
 
     proto = (protocol or "").strip().lower()
     provider_lower = (provider or "").strip().lower()

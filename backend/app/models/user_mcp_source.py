@@ -17,9 +17,7 @@ class UserMcpSource(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
 
     __tablename__ = "user_mcp_source"
-    __table_args__ = (
-        Index("ix_user_mcp_source_user", "user_id"),
-    )
+    __table_args__ = (Index("ix_user_mcp_source_user", "user_id"),)
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         SA_UUID(as_uuid=True),

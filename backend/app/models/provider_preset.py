@@ -1,4 +1,3 @@
-import uuid
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Integer, String
@@ -31,11 +30,25 @@ class ProviderPreset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "provider_preset"
 
-    name: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, comment="模板名称（展示用）")
-    slug: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True, comment="机器可读标识，供实例引用")
-    provider: Mapped[str] = mapped_column(String(40), nullable=False, comment="上游厂商/驱动名称")
+    name: Mapped[str] = mapped_column(
+        String(80), unique=True, nullable=False, comment="模板名称（展示用）"
+    )
+    slug: Mapped[str] = mapped_column(
+        String(80),
+        unique=True,
+        nullable=False,
+        index=True,
+        comment="机器可读标识，供实例引用",
+    )
+    provider: Mapped[str] = mapped_column(
+        String(40), nullable=False, comment="上游厂商/驱动名称"
+    )
     icon: Mapped[str] = mapped_column(
-        String(255), nullable=False, default="lucide:cpu", server_default="lucide:cpu", comment="品牌/图标引用"
+        String(255),
+        nullable=False,
+        default="lucide:cpu",
+        server_default="lucide:cpu",
+        comment="品牌/图标引用",
     )
     theme_color: Mapped[str] = mapped_column(
         String(20), nullable=True, comment="品牌主色调 (Hex/Tailwind class)"
@@ -43,22 +56,54 @@ class ProviderPreset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     category: Mapped[str | None] = mapped_column(
         String(50), nullable=True, comment="分类 (Cloud API / Local Hosted / Custom)"
     )
-    base_url: Mapped[str] = mapped_column(String(255), nullable=False, comment="上游基础 URL")
+    base_url: Mapped[str] = mapped_column(
+        String(255), nullable=False, comment="上游基础 URL"
+    )
     url_template: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, comment="URL 模板，用于 Azure 等动态域名，如 https://{resource}.openai.azure.com"
+        String(255),
+        nullable=True,
+        comment="URL 模板，用于 Azure 等动态域名，如 https://{resource}.openai.azure.com",
     )
 
-    auth_type: Mapped[str] = mapped_column(String(20), nullable=False, comment="认证方式: api_key, bearer, none")
-    auth_config: Mapped[dict[str, Any]] = mapped_column(JSONBCompat, nullable=False, default=dict, server_default="{}", comment="认证配置（无明文密钥）")
+    auth_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="认证方式: api_key, bearer, none"
+    )
+    auth_config: Mapped[dict[str, Any]] = mapped_column(
+        JSONBCompat,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+        comment="认证配置（无明文密钥）",
+    )
 
-    default_headers: Mapped[dict[str, Any]] = mapped_column(JSONBCompat, nullable=False, default=dict, server_default="{}", comment="通用 Header 模板")
-    default_params: Mapped[dict[str, Any]] = mapped_column(JSONBCompat, nullable=False, default=dict, server_default="{}", comment="通用请求体参数默认值")
+    default_headers: Mapped[dict[str, Any]] = mapped_column(
+        JSONBCompat,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+        comment="通用 Header 模板",
+    )
+    default_params: Mapped[dict[str, Any]] = mapped_column(
+        JSONBCompat,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+        comment="通用请求体参数默认值",
+    )
     capability_configs: Mapped[dict[str, Any]] = mapped_column(
-        JSONBCompat, nullable=False, default=dict, server_default="{}", comment="按能力配置的模板/路由/异步策略"
+        JSONBCompat,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+        comment="按能力配置的模板/路由/异步策略",
     )
 
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1", comment="乐观锁版本号")
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", comment="是否启用")
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1", comment="乐观锁版本号"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true", comment="是否启用"
+    )
 
     def __repr__(self) -> str:
         return f"<ProviderPreset(slug={self.slug}, provider={self.provider})>"

@@ -66,52 +66,60 @@ SPEC_AGENT_CAPABILITY_INJECTION = """
 class AssistantPromptInjectionStep(BaseStep):
     """
     助手提示词注入步骤
-    
+
     从上下文读取:
         - validation.request: 原始请求
         - validation.validated: 校验后的请求数据
-    
+
     写入上下文:
         - assistant.id: 助手 ID
         - assistant.system_prompt: 原始 system prompt
         - assistant.enhanced_prompt: 增强后的 system prompt (注入 Spec Agent 能力)
     """
-    
+
     name = "assistant_prompt_injection"
     depends_on = ["validation", "conversation_load"]
-    
+
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """执行助手提示词注入"""
         # 仅内部通道启用
         if ctx.is_external:
             return StepResult(status=StepStatus.SUCCESS, message="skip_external")
-        
+
         request = ctx.get("validation", "request")
         if not request:
             return StepResult(status=StepStatus.FAILED, message="No request found")
-        
+
         validated = ctx.get("validation", "validated") or {}
         assistant_id = (
             getattr(request, "assistant_id", None)
             or validated.get("assistant_id")
             or ctx.get("conversation", "session_assistant_id")
         )
-        
+
         # 如果没有指定 assistant_id,跳过
         if not assistant_id:
-            logger.debug(f"No assistant_id provided, skipping prompt injection trace_id={ctx.trace_id}")
+            logger.debug(
+                f"No assistant_id provided, skipping prompt injection trace_id={ctx.trace_id}"
+            )
             return StepResult(status=StepStatus.SUCCESS, message="no_assistant_id")
-        
+
         # 加载助手信息
         try:
-            assistant_prompt, assistant_name = await self._load_assistant_prompt_info(ctx, assistant_id)
+            assistant_prompt, assistant_name = await self._load_assistant_prompt_info(
+                ctx, assistant_id
+            )
             if not assistant_prompt:
-                logger.warning(f"Assistant {assistant_id} not found, skipping injection")
-                return StepResult(status=StepStatus.SUCCESS, message="assistant_not_found")
-            
+                logger.warning(
+                    f"Assistant {assistant_id} not found, skipping injection"
+                )
+                return StepResult(
+                    status=StepStatus.SUCCESS, message="assistant_not_found"
+                )
+
             # 注入 Spec Agent 能力
             enhanced_prompt = self._inject_spec_agent_capability(assistant_prompt)
-            
+
             # 存储到上下文
             ctx.set("assistant", "id", str(assistant_id))
             ctx.set("assistant", "name", assistant_name)
@@ -128,30 +136,29 @@ class AssistantPromptInjectionStep(BaseStep):
                     "assistant_name": assistant_name,
                 },
             )
-            
+
             logger.info(
                 f"Assistant prompt injected trace_id={ctx.trace_id} "
                 f"assistant_id={assistant_id}"
             )
-            
+
             return StepResult(
-                status=StepStatus.SUCCESS,
-                data={"assistant_id": str(assistant_id)}
+                status=StepStatus.SUCCESS, data={"assistant_id": str(assistant_id)}
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to inject assistant prompt: {e}")
             return StepResult(
-                status=StepStatus.FAILED,
-                message=f"Prompt injection failed: {str(e)}"
+                status=StepStatus.FAILED, message=f"Prompt injection failed: {e!s}"
             )
-    
+
     async def _load_assistant_prompt_info(
         self, ctx: "WorkflowContext", assistant_id: UUID
     ) -> tuple[str | None, str | None]:
         """加载助手的 system_prompt 与名称"""
-        from app.models.assistant import Assistant, AssistantVersion
         from sqlalchemy import select
+
+        from app.models.assistant import Assistant, AssistantVersion
 
         # 查询助手及其当前版本
         stmt = (
@@ -165,7 +172,7 @@ class AssistantPromptInjectionStep(BaseStep):
         if not row:
             return None, None
         return row[0], row[1]
-    
+
     def _inject_spec_agent_capability(self, original_prompt: str) -> str:
         """注入 Spec Agent 模式切换能力"""
         # 在原始 prompt 后追加能力说明

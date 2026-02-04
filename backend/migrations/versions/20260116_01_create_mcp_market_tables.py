@@ -5,27 +5,35 @@ Revises: 20260115_07_add_user_secretary_model
 Create Date: 2026-01-16
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "20260116_01_create_mcp_market_tables"
-down_revision: Union[str, None] = "20260115_07_add_user_secretary_model"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260115_07_add_user_secretary_model"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     op.create_table(
         "mcp_market_tool",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("identifier", sa.String(length=120), nullable=False, comment="人类可读标识 (e.g. mcp/github)"),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
+        sa.Column(
+            "identifier",
+            sa.String(length=120),
+            nullable=False,
+            comment="人类可读标识 (e.g. mcp/github)",
+        ),
         sa.Column("name", sa.String(length=200), nullable=False, comment="展示名称"),
         sa.Column("description", sa.Text(), nullable=False, comment="工具简介"),
-        sa.Column("avatar_url", sa.String(length=512), nullable=True, comment="展示头像 URL"),
+        sa.Column(
+            "avatar_url", sa.String(length=512), nullable=True, comment="展示头像 URL"
+        ),
         sa.Column(
             "category",
             sa.String(length=40),
@@ -88,7 +96,9 @@ def upgrade() -> None:
 
     op.create_table(
         "user_mcp_subscription",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),
@@ -104,7 +114,12 @@ def upgrade() -> None:
             comment="市场工具 ID",
         ),
         sa.Column("alias", sa.String(length=100), nullable=True, comment="用户侧别名"),
-        sa.Column("config_hash_snapshot", sa.String(length=128), nullable=True, comment="订阅时的配置快照 Hash"),
+        sa.Column(
+            "config_hash_snapshot",
+            sa.String(length=128),
+            nullable=True,
+            comment="订阅时的配置快照 Hash",
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -117,10 +132,16 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-        sa.UniqueConstraint("user_id", "market_tool_id", name="uq_user_mcp_subscription_user_tool"),
+        sa.UniqueConstraint(
+            "user_id", "market_tool_id", name="uq_user_mcp_subscription_user_tool"
+        ),
     )
-    op.create_index("ix_user_mcp_subscription_user", "user_mcp_subscription", ["user_id"])
-    op.create_index("ix_user_mcp_subscription_tool", "user_mcp_subscription", ["market_tool_id"])
+    op.create_index(
+        "ix_user_mcp_subscription_user", "user_mcp_subscription", ["user_id"]
+    )
+    op.create_index(
+        "ix_user_mcp_subscription_tool", "user_mcp_subscription", ["market_tool_id"]
+    )
 
 
 def downgrade() -> None:

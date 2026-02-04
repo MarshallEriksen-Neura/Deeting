@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select, and_, or_, func, case
+from sqlalchemy import and_, case, func, or_, select
 
 from app.models.assistant import Assistant, AssistantStatus, AssistantVersion
 from app.models.assistant_install import AssistantInstall
 from app.models.assistant_tag import AssistantTag, AssistantTagLink
-from app.models.review import ReviewTask, ReviewStatus
+from app.models.review import ReviewStatus, ReviewTask
 
 
 class AssistantMarketRepository:

@@ -5,6 +5,8 @@ import uuid
 
 from sqlalchemy import (
     UUID as SA_UUID,
+)
+from sqlalchemy import (
     Boolean,
     ForeignKey,
     Index,
@@ -106,7 +108,9 @@ class McpMarketTool(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 class UserMcpSubscription(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "user_mcp_subscription"
     __table_args__ = (
-        UniqueConstraint("user_id", "market_tool_id", name="uq_user_mcp_subscription_user_tool"),
+        UniqueConstraint(
+            "user_id", "market_tool_id", name="uq_user_mcp_subscription_user_tool"
+        ),
         Index("ix_user_mcp_subscription_user", "user_id"),
         Index("ix_user_mcp_subscription_tool", "market_tool_id"),
     )

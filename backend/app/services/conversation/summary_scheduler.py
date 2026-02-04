@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from loguru import logger
 
@@ -18,7 +17,7 @@ class SummaryScheduler:
     - 任务执行时二次校验是否仍在活跃窗口
     """
 
-    def __init__(self, delay_seconds: Optional[int] = None):
+    def __init__(self, delay_seconds: int | None = None):
         self.redis = cache._redis
         if not self.redis:
             raise RuntimeError("Redis 未初始化，无法使用 SummaryScheduler")
@@ -47,7 +46,9 @@ class SummaryScheduler:
             )
             await self.redis.set(pending_key, task.id, ex=self.delay_seconds)
         except Exception as exc:  # pragma: no cover - 防御
-            logger.warning(f"summary scheduler touch failed session={session_id}: {exc}")
+            logger.warning(
+                f"summary scheduler touch failed session={session_id}: {exc}"
+            )
 
 
 summary_scheduler = SummaryScheduler()

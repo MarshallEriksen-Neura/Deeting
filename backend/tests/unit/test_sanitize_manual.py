@@ -1,5 +1,5 @@
-
 import asyncio
+
 import pytest
 
 from app.core.config import settings
@@ -18,7 +18,7 @@ async def test_sanitize_step():
         "Authorization": "Bearer secret",
         "X-Request-ID": "req-123",
         "Content-Type": "application/json",
-        "X-Envoy-Upstream-Service-Time": "100"
+        "X-Envoy-Upstream-Service-Time": "100",
     }
     ctx.set("upstream_call", "headers", headers)
     ctx.set("response_transform", "response", {"foo": "bar"})
@@ -63,14 +63,15 @@ async def test_sanitize_step():
 
     # 4. Test Body Sanitization Rules
     ctx_body = WorkflowContext(channel=Channel.EXTERNAL)
-    response = {"id": "sk-1234567890abcdef123456", "usage": {"prompt": 10}, "secret_field": "hidden"}
+    response = {
+        "id": "sk-1234567890abcdef123456",
+        "usage": {"prompt": 10},
+        "secret_field": "hidden",
+    }
     ctx_body.set("response_transform", "response", response)
     # Mock routing config with sanitization rules
     response_transform_config = {
-        "sanitization": {
-            "remove_fields": ["usage"],
-            "mask_fields": ["id"]
-        }
+        "sanitization": {"remove_fields": ["usage"], "mask_fields": ["id"]}
     }
     ctx_body.set("routing", "response_transform", response_transform_config)
 
@@ -87,7 +88,7 @@ async def test_sanitize_step():
     data = {
         "api_key": "sk-1234567890abcdef1234567890abcdef",
         "nested": {"token": "secret_token"},
-        "url": "https://api.openai.com?key=sk-1234567890abcdef1234567890abcdef"
+        "url": "https://api.openai.com?key=sk-1234567890abcdef1234567890abcdef",
     }
     log_data = SanitizeStep.sanitize_for_log(data)
     assert log_data["api_key"] == "[REDACTED]" or "*" in log_data["api_key"]
@@ -100,6 +101,7 @@ async def test_sanitize_step():
     # But for now, let's verify what we have.
     print(f"Log Data: {log_data}")
     print("PASS: Log Sanitization")
+
 
 if __name__ == "__main__":
     asyncio.run(test_sanitize_step())

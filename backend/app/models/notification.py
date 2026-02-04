@@ -5,8 +5,16 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy import UUID as SA_UUID
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
@@ -39,7 +47,9 @@ class Notification(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "notification"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "dedupe_key", name="uq_notification_tenant_dedupe"),
+        UniqueConstraint(
+            "tenant_id", "dedupe_key", name="uq_notification_tenant_dedupe"
+        ),
         Index("ix_notification_tenant_id", "tenant_id"),
         Index("ix_notification_type", "type"),
         Index("ix_notification_level", "level"),
@@ -118,7 +128,9 @@ class NotificationReceipt(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "notification_receipt"
     __table_args__ = (
-        UniqueConstraint("notification_id", "user_id", name="uq_notification_receipt_user"),
+        UniqueConstraint(
+            "notification_id", "user_id", name="uq_notification_receipt_user"
+        ),
         Index("ix_notification_receipt_notification_id", "notification_id"),
         Index("ix_notification_receipt_user_id", "user_id"),
         Index("ix_notification_receipt_tenant_id", "tenant_id"),

@@ -32,8 +32,12 @@ class SpecKnowledgeCandidateDTO(IDSchema, TimestampSchema):
     plan_id: UUID | None = None
     user_id: UUID | None = None
     project_name: str | None = None
-    usage_stats: SpecKnowledgeUsageStats = Field(default_factory=SpecKnowledgeUsageStats)
-    eval_snapshot: SpecKnowledgeEvalSnapshot = Field(default_factory=SpecKnowledgeEvalSnapshot)
+    usage_stats: SpecKnowledgeUsageStats = Field(
+        default_factory=SpecKnowledgeUsageStats
+    )
+    eval_snapshot: SpecKnowledgeEvalSnapshot = Field(
+        default_factory=SpecKnowledgeEvalSnapshot
+    )
     review_status: str | None = None
     last_positive_at: datetime | None = None
     last_negative_at: datetime | None = None

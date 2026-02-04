@@ -19,16 +19,22 @@ class AssistantRatingService:
         self.install_repo = install_repo
         self.rating_repo = rating_repo
 
-    async def rate_assistant(self, *, user_id: UUID, assistant_id: UUID, rating: float) -> Assistant:
+    async def rate_assistant(
+        self, *, user_id: UUID, assistant_id: UUID, rating: float
+    ) -> Assistant:
         assistant = await self.assistant_repo.get(assistant_id)
         if not assistant:
             raise ValueError("助手不存在")
 
-        install = await self.install_repo.get_by_user_and_assistant(user_id, assistant_id)
+        install = await self.install_repo.get_by_user_and_assistant(
+            user_id, assistant_id
+        )
         if not install:
             raise ValueError("请先安装助手后再评分")
 
-        existing = await self.rating_repo.get_by_user_and_assistant(user_id, assistant_id)
+        existing = await self.rating_repo.get_by_user_and_assistant(
+            user_id, assistant_id
+        )
         if existing:
             old = float(existing.rating)
             if old == float(rating):

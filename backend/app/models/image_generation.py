@@ -4,6 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
+from sqlalchemy import UUID as SA_UUID
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -15,7 +16,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -154,9 +154,15 @@ class GenerationTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="提示词密文（Fernet）",
     )
 
-    width: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="输出宽度")
-    height: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="输出高度")
-    aspect_ratio: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="纵横比")
+    width: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="输出宽度"
+    )
+    height: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="输出高度"
+    )
+    aspect_ratio: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="纵横比"
+    )
     num_outputs: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -164,13 +170,19 @@ class GenerationTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         server_default="1",
         comment="输出数量",
     )
-    steps: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="推理步数")
+    steps: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="推理步数"
+    )
     cfg_scale: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="CFG 指数"
     )
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="随机种子")
-    sampler_name: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="采样器")
-    quality: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="质量/风格")
+    sampler_name: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="采样器"
+    )
+    quality: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="质量/风格"
+    )
     style: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="风格")
     response_format: Mapped[str | None] = mapped_column(
         String(32), nullable=True, comment="返回格式 url/b64_json"
@@ -347,8 +359,12 @@ class ImageGenerationShare(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         server_default="false",
         comment="提示词是否加密（公开时隐藏）",
     )
-    width: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="输出宽度")
-    height: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="输出高度")
+    width: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="输出宽度"
+    )
+    height: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="输出高度"
+    )
     num_outputs: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -356,7 +372,9 @@ class ImageGenerationShare(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         server_default="1",
         comment="输出数量",
     )
-    steps: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="推理步数")
+    steps: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="推理步数"
+    )
     cfg_scale: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="CFG 指数"
     )

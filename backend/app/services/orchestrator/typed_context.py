@@ -196,7 +196,9 @@ class TypedContext:
     def response_transform(self) -> ResponseTransformData:
         """response_transform 步骤数据"""
         return ResponseTransformData(
-            transformed_response=self._ctx.get("response_transform", "transformed_response"),
+            transformed_response=self._ctx.get(
+                "response_transform", "transformed_response"
+            ),
             input_tokens=self._ctx.get("response_transform", "input_tokens", 0),
             output_tokens=self._ctx.get("response_transform", "output_tokens", 0),
             total_tokens=self._ctx.get("response_transform", "total_tokens", 0),
@@ -249,11 +251,15 @@ class TypedContext:
 
     def is_stream(self) -> bool:
         """是否为流式请求"""
-        return self._ctx.get("upstream_call", "stream", False) or self._ctx.get("validation", "stream", False)
+        return self._ctx.get("upstream_call", "stream", False) or self._ctx.get(
+            "validation", "stream", False
+        )
 
     def get_provider(self) -> str | None:
         """获取使用的 provider"""
-        return self._ctx.get("routing", "provider") or self._ctx.get("upstream_call", "provider")
+        return self._ctx.get("routing", "provider") or self._ctx.get(
+            "upstream_call", "provider"
+        )
 
     def get_model(self) -> str | None:
         """获取使用的 model"""

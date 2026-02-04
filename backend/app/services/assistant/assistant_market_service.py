@@ -4,26 +4,36 @@ from uuid import UUID
 
 from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi_pagination.ext.sqlalchemy import paginate
+
 from app.models.assistant import Assistant, AssistantStatus, AssistantVisibility
 from app.models.notification import NotificationLevel, NotificationType
 from app.models.review import ReviewStatus
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
 from app.repositories.assistant_install_repository import AssistantInstallRepository
 from app.repositories.assistant_market_repository import AssistantMarketRepository
-from app.repositories.assistant_tag_repository import AssistantTagLinkRepository, AssistantTagRepository
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
+from app.repositories.assistant_tag_repository import (
+    AssistantTagLinkRepository,
+    AssistantTagRepository,
+)
 from app.repositories.review_repository import ReviewTaskRepository
 from app.schemas.assistant_market import (
-    AssistantInstallItem,
     AssistantInstallCreate,
+    AssistantInstallItem,
     AssistantInstallUpdate,
     AssistantMarketItem,
     AssistantSummary,
     AssistantSummaryVersion,
 )
-from app.services.review.review_service import ReviewService
-from app.services.notifications.notification_service import NotificationService
-from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService, AutoReviewResult
+from app.services.assistant.assistant_auto_review_service import (
+    AssistantAutoReviewService,
+    AutoReviewResult,
+)
 from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.services.notifications.notification_service import NotificationService
+from app.services.review.review_service import ReviewService
 from app.services.search import get_search_backend
 
 ASSISTANT_MARKET_ENTITY = "assistant_market"
@@ -38,8 +48,16 @@ async def ensure_assistant_access(
 ) -> None:
     if assistant.owner_user_id == user_id:
         return
-    visibility = assistant.visibility.value if isinstance(assistant.visibility, AssistantVisibility) else assistant.visibility
-    status = assistant.status.value if isinstance(assistant.status, AssistantStatus) else assistant.status
+    visibility = (
+        assistant.visibility.value
+        if isinstance(assistant.visibility, AssistantVisibility)
+        else assistant.visibility
+    )
+    status = (
+        assistant.status.value
+        if isinstance(assistant.status, AssistantStatus)
+        else assistant.status
+    )
     if visibility != AssistantVisibility.PUBLIC.value:
         raise ValueError(f"助手未公开，无法{action}")
     if status != AssistantStatus.PUBLISHED.value:
@@ -49,7 +67,11 @@ async def ensure_assistant_access(
         return
 
     review = await review_repo.get_by_entity(ASSISTANT_MARKET_ENTITY, assistant.id)
-    review_status = review.status.value if review and isinstance(review.status, ReviewStatus) else (review.status if review else None)
+    review_status = (
+        review.status.value
+        if review and isinstance(review.status, ReviewStatus)
+        else (review.status if review else None)
+    )
     if not review or review_status != ReviewStatus.APPROVED.value:
         raise ValueError(f"助手未通过审核，无法{action}")
 
@@ -120,7 +142,10 @@ class AssistantMarketService:
         try:
             backend = get_search_backend()
         except RuntimeError as exc:
-            if str(exc) not in {"meilisearch_not_configured", "search_backend_not_supported"}:
+            if str(exc) not in {
+                "meilisearch_not_configured",
+                "search_backend_not_supported",
+            }:
                 raise
             stmt = self.market_repo.build_market_query(
                 user_id=user_id,
@@ -128,7 +153,9 @@ class AssistantMarketService:
                 query=query,
                 tags=normalized_tags,
             )
-            return await paginate(self.market_repo.session, stmt, params=params, transformer=_transform)
+            return await paginate(
+                self.market_repo.session, stmt, params=params, transformer=_transform
+            )
 
         assistant_ids, next_cursor = await backend.search_market_assistants(
             query=query,
@@ -204,7 +231,9 @@ class AssistantMarketService:
                 )
             return items
 
-        return await paginate(self.market_repo.session, stmt, params=params, transformer=_transform)
+        return await paginate(
+            self.market_repo.session, stmt, params=params, transformer=_transform
+        )
 
     async def install_assistant(
         self,
@@ -219,7 +248,9 @@ class AssistantMarketService:
 
         await self._ensure_installable(assistant, user_id)
 
-        existing = await self.install_repo.get_by_user_and_assistant(user_id, assistant_id)
+        existing = await self.install_repo.get_by_user_and_assistant(
+            user_id, assistant_id
+        )
         if existing:
             await self._refresh_install_count(assistant_id)
             return await self._load_install_item(existing.id, user_id)
@@ -229,7 +260,9 @@ class AssistantMarketService:
         pinned_version_id = install_payload.pinned_version_id
         if pinned_version_id is not None:
             version_repo = AssistantVersionRepository(self.assistant_repo.session)
-            version = await version_repo.get_for_assistant(assistant_id, pinned_version_id)
+            version = await version_repo.get_for_assistant(
+                assistant_id, pinned_version_id
+            )
             if not version:
                 raise ValueError("锁定版本不存在或不属于该助手")
             follow_latest = False
@@ -249,7 +282,9 @@ class AssistantMarketService:
         return await self._load_install_item(install.id, user_id)
 
     async def uninstall_assistant(self, *, user_id: UUID, assistant_id: UUID) -> None:
-        existing = await self.install_repo.get_by_user_and_assistant(user_id, assistant_id)
+        existing = await self.install_repo.get_by_user_and_assistant(
+            user_id, assistant_id
+        )
         if not existing:
             return
         await self.install_repo.delete(existing.id)
@@ -262,14 +297,18 @@ class AssistantMarketService:
         assistant_id: UUID,
         payload: AssistantInstallUpdate,
     ) -> AssistantInstallItem:
-        install = await self.install_repo.get_by_user_and_assistant(user_id, assistant_id)
+        install = await self.install_repo.get_by_user_and_assistant(
+            user_id, assistant_id
+        )
         if not install:
             raise ValueError("安装记录不存在")
 
         update_data = payload.model_dump(exclude_unset=True)
         if payload.pinned_version_id is not None:
             version_repo = AssistantVersionRepository(self.assistant_repo.session)
-            version = await version_repo.get_for_assistant(assistant_id, payload.pinned_version_id)
+            version = await version_repo.get_for_assistant(
+                assistant_id, payload.pinned_version_id
+            )
             if not version:
                 raise ValueError("锁定版本不存在或不属于该助手")
             if payload.follow_latest is None:
@@ -297,8 +336,16 @@ class AssistantMarketService:
             raise ValueError("助手不存在")
         if assistant.owner_user_id != user_id:
             raise ValueError("无权限提交该助手")
-        visibility = assistant.visibility.value if isinstance(assistant.visibility, AssistantVisibility) else assistant.visibility
-        status = assistant.status.value if isinstance(assistant.status, AssistantStatus) else assistant.status
+        visibility = (
+            assistant.visibility.value
+            if isinstance(assistant.visibility, AssistantVisibility)
+            else assistant.visibility
+        )
+        status = (
+            assistant.status.value
+            if isinstance(assistant.status, AssistantStatus)
+            else assistant.status
+        )
         if visibility != AssistantVisibility.PUBLIC.value:
             raise ValueError("请先将助手设置为 public 可见")
         if status != AssistantStatus.PUBLISHED.value:
@@ -402,7 +449,9 @@ class AssistantMarketService:
             return
 
         version_repo = AssistantVersionRepository(self.assistant_repo.session)
-        version = await version_repo.get_for_assistant(assistant_id, assistant.current_version_id)
+        version = await version_repo.get_for_assistant(
+            assistant_id, assistant.current_version_id
+        )
         assistant_name = version.name if version else "助手"
 
         if status == ReviewStatus.APPROVED:
@@ -444,8 +493,12 @@ class AssistantMarketService:
             return
         await self.assistant_repo.update(assistant, {"install_count": count})
 
-    async def _load_install_item(self, install_id: UUID, user_id: UUID) -> AssistantInstallItem:
-        stmt = self.market_repo.build_install_query(user_id=user_id, install_id=install_id)
+    async def _load_install_item(
+        self, install_id: UUID, user_id: UUID
+    ) -> AssistantInstallItem:
+        stmt = self.market_repo.build_install_query(
+            user_id=user_id, install_id=install_id
+        )
         result = await self.market_repo.session.execute(stmt)
         row = result.first()
         if not row:
@@ -462,7 +515,9 @@ class AssistantMarketService:
             install_count=assistant.install_count,
             rating_avg=assistant.rating_avg,
             rating_count=assistant.rating_count,
-            tags=(await self.tag_service.list_tags_for_assistants([assistant.id])).get(assistant.id, []),
+            tags=(await self.tag_service.list_tags_for_assistants([assistant.id])).get(
+                assistant.id, []
+            ),
             version=AssistantSummaryVersion(
                 id=version.id,
                 version=version.version,

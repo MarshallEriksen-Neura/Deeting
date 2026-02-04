@@ -11,12 +11,12 @@ from app.core.database import get_db
 from app.deps.auth import get_current_active_user
 from app.models import User
 from app.schemas.media_asset import (
+    AssetSignRequest,
+    AssetSignResponse,
     AssetUploadCompleteRequest,
     AssetUploadCompleteResponse,
     AssetUploadInitRequest,
     AssetUploadInitResponse,
-    AssetSignRequest,
-    AssetSignResponse,
 )
 from app.services.oss.asset_storage_service import (
     AssetStorageNotConfigured,
@@ -49,28 +49,46 @@ async def get_asset(
     try:
         verify_signed_asset_request(object_key, expires=expires, sig=sig)
     except SignedAssetUrlError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
     except AssetStorageNotConfigured as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
     if get_effective_asset_storage_mode() == "local":
         try:
             body, content_type = await load_asset_bytes(object_key)
         except FileNotFoundError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="asset not found") from exc
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="asset not found"
+            ) from exc
         except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="asset not found") from exc
-        return Response(content=body, media_type=content_type, headers={"Cache-Control": "no-store"})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="asset not found"
+            ) from exc
+        return Response(
+            content=body, media_type=content_type, headers={"Cache-Control": "no-store"}
+        )
 
     try:
         remaining = max(1, int(expires) - int(time.time()))
         url = await presign_asset_get_url(object_key, expires_seconds=remaining)
     except AssetStorageNotConfigured as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="asset not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="asset not found"
+        ) from exc
 
-    return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND, headers={"Cache-Control": "no-store"})
+    return RedirectResponse(
+        url=url,
+        status_code=status.HTTP_302_FOUND,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/media/assets/upload/init", response_model=AssetUploadInitResponse)
@@ -82,7 +100,7 @@ async def init_asset_upload(
     db: AsyncSession = Depends(get_db),
 ) -> AssetUploadInitResponse:
     """初始化资产上传（全局去重 + 预签名直传）
-    
+
     - bucket_type=public: 使用公共桶，返回永久访问 URL（适合头像等公开资源）
     - bucket_type=private: 使用私有桶，返回签名 URL（适合敏感文件）
     """
@@ -99,13 +117,19 @@ async def init_asset_upload(
             bucket_type=bucket_type,
         )
     except AssetStorageNotConfigured as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     return AssetUploadInitResponse(**result)
 
 
-@router.post("/media/assets/upload/complete", response_model=AssetUploadCompleteResponse)
+@router.post(
+    "/media/assets/upload/complete", response_model=AssetUploadCompleteResponse
+)
 async def complete_asset_upload(
     payload: AssetUploadCompleteRequest,
     request: Request,
@@ -114,7 +138,7 @@ async def complete_asset_upload(
     db: AsyncSession = Depends(get_db),
 ) -> AssetUploadCompleteResponse:
     """完成上传确认（写入去重索引）
-    
+
     - bucket_type=public: 返回公共桶永久访问 URL
     - bucket_type=private: 返回私有桶签名 URL
     """
@@ -130,9 +154,13 @@ async def complete_asset_upload(
             bucket_type=bucket_type,
         )
     except AssetStorageNotConfigured as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     return AssetUploadCompleteResponse(**result)
 
 
@@ -158,7 +186,9 @@ async def sign_assets(
         ]
     except AssetStorageNotConfigured as exc:
         logger.warning("sign_assets_not_configured err=%s", exc)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
     return AssetSignResponse(assets=assets)
 

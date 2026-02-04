@@ -85,7 +85,9 @@ class ImageGenerationTaskListItem(BaseSchema):
 
 
 class ImageGenerationShareRequest(BaseSchema):
-    tags: list[str] | None = Field(default=None, description="标签列表（用于公开分享检索）")
+    tags: list[str] | None = Field(
+        default=None, description="标签列表（用于公开分享检索）"
+    )
 
 
 class ImageGenerationShareState(BaseSchema):
@@ -134,13 +136,13 @@ class ImageGenerationShareDetail(BaseSchema):
 
 __all__ = [
     "ImageGenerationCancelResponse",
-    "ImageGenerationTaskCreateRequest",
-    "ImageGenerationTaskCreateResponse",
     "ImageGenerationOutputItem",
-    "ImageGenerationTaskDetail",
-    "ImageGenerationTaskListItem",
+    "ImageGenerationShareDetail",
+    "ImageGenerationShareItem",
     "ImageGenerationShareRequest",
     "ImageGenerationShareState",
-    "ImageGenerationShareItem",
-    "ImageGenerationShareDetail",
+    "ImageGenerationTaskCreateRequest",
+    "ImageGenerationTaskCreateResponse",
+    "ImageGenerationTaskDetail",
+    "ImageGenerationTaskListItem",
 ]

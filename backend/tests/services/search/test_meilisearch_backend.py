@@ -24,7 +24,9 @@ async def test_search_mcp_tools_applies_category_filter(monkeypatch) -> None:
     )
     monkeypatch.setattr(backend, "_search", search_mock)
 
-    result = await backend.search_mcp_tools(search="git", category=McpToolCategory.DEVELOPER)
+    result = await backend.search_mcp_tools(
+        search="git", category=McpToolCategory.DEVELOPER
+    )
 
     assert result == ["tool-1", "tool-2"]
     assert search_mock.await_count == 1

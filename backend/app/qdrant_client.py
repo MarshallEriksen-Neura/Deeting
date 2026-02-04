@@ -19,9 +19,9 @@ import httpx
 
 from app.core.config import settings
 
-_qdrant_clients_by_loop: WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
-    WeakKeyDictionary()
-)
+_qdrant_clients_by_loop: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, httpx.AsyncClient
+] = WeakKeyDictionary()
 
 
 class QdrantNotConfigured(RuntimeError):
@@ -54,7 +54,9 @@ def _build_headers() -> dict[str, str]:
 
 def _create_client() -> httpx.AsyncClient:
     if not qdrant_is_configured():
-        raise QdrantNotConfigured("Qdrant 未启用或未配置（需要 QDRANT_ENABLED=true 且 QDRANT_URL 非空）")
+        raise QdrantNotConfigured(
+            "Qdrant 未启用或未配置（需要 QDRANT_ENABLED=true 且 QDRANT_URL 非空）"
+        )
 
     url = str(getattr(settings, "QDRANT_URL", "") or "").strip()
     timeout = float(getattr(settings, "QDRANT_TIMEOUT_SECONDS", 10.0) or 10.0)

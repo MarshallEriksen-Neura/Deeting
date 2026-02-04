@@ -27,7 +27,9 @@ def upgrade() -> None:
     if not inspector.has_table("provider_instance"):
         return
 
-    existing_columns = {col["name"] for col in inspector.get_columns("provider_instance")}
+    existing_columns = {
+        col["name"] for col in inspector.get_columns("provider_instance")
+    }
     if "preset_slug" not in existing_columns:
         return
 

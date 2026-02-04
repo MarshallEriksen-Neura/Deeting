@@ -13,17 +13,18 @@ Auth/ACL 依赖与策略函数
 策略函数：
 - can_use_item / assert_can_use_item: 校验 ProviderPresetItem 的可见性规则
 """
+
 import uuid
 from collections.abc import Callable, Iterable
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.permissions import PERMISSION_CODES
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.database import get_db
 from app.core.logging import logger
-from app.constants.permissions import PERMISSION_CODES
 from app.models import User
 from app.repositories import UserRepository
 from app.utils.security import decode_token
@@ -100,7 +101,11 @@ async def _get_user_from_jwt(
     if token_version is not None and token_version != user.token_version:
         logger.warning(
             "token_version_mismatch_access",
-            extra={"user_id": str(user.id), "token_version": token_version, "current": user.token_version},
+            extra={
+                "user_id": str(user.id),
+                "token_version": token_version,
+                "current": user.token_version,
+            },
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

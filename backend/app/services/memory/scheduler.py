@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from loguru import logger
 
@@ -18,13 +17,15 @@ class MemoryScheduler:
     - Worker 执行时二次校验 last_active，若仍在活跃窗口内则跳过
     """
 
-    def __init__(self, delay_seconds: Optional[int] = None):
+    def __init__(self, delay_seconds: int | None = None):
         self.redis = cache._redis  # 复用现有 redis 连接
         if not self.redis:
             raise RuntimeError("Redis 未初始化，无法使用 MemoryScheduler")
         self.delay_seconds = delay_seconds or 15 * 60  # 默认 15 分钟
 
-    async def touch_session(self, session_id: str, user_id: Optional[str] = None) -> None:
+    async def touch_session(
+        self, session_id: str, user_id: str | None = None
+    ) -> None:
         """
         防抖入口：每条消息后调用。轻量，不抛异常。
         """
@@ -34,7 +35,9 @@ class MemoryScheduler:
             pending_key = CacheKeys.memory_pending_task(session_id)
 
             # 记录最后活跃时间
-            await self.redis.set(last_active_key, now, ex=settings.CONVERSATION_REDIS_TTL_SECONDS)
+            await self.redis.set(
+                last_active_key, now, ex=settings.CONVERSATION_REDIS_TTL_SECONDS
+            )
 
             # 若已有 pending 任务，直接返回，由任务自己检查 last_active
             if await self.redis.exists(pending_key):

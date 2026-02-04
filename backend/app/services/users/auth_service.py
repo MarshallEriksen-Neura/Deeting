@@ -1,7 +1,8 @@
 """
 认证服务：JWT 登录/登出/刷新、Token 黑名单、登录限流、验证码
 """
-from datetime import UTC, datetime, timedelta
+
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -15,8 +16,8 @@ from app.models import User
 from app.repositories import UserRepository
 from app.repositories.api_key import ApiKeyRepository
 from app.schemas.auth import TokenPair
-from app.services.providers.api_key import ApiKeyService
 from app.services.assistant.default_assistant_service import DefaultAssistantService
+from app.services.providers.api_key import ApiKeyService
 from app.services.users.user_provisioning_service import UserProvisioningService
 from app.utils.security import (
     create_access_token,
@@ -24,8 +25,6 @@ from app.utils.security import (
     decode_token,
     generate_jti,
     generate_verification_code,
-    get_password_hash,
-    verify_password,
 )
 from app.utils.time_utils import Datetime
 
@@ -40,7 +39,9 @@ class AuthService:
 
     # ========== 登录相关 ==========
 
-    async def send_login_code(self, email: str, invite_code: str | None = None, client_ip: str | None = None) -> None:
+    async def send_login_code(
+        self, email: str, invite_code: str | None = None, client_ip: str | None = None
+    ) -> None:
         """发送登录验证码；首登时会校验/预占邀请码。"""
         # 登录限流
         await self.check_login_rate_limit(email, client_ip)
@@ -57,11 +58,17 @@ class AuthService:
             # 预占邀请码窗口（与 provision 管线一致）
             provisioner = UserProvisioningService(self.db)
             # RegistrationPolicy.ensure_can_register 为同步方法，这里无需 await
-            provisioner.policy.ensure_can_register(invite_code=invite_code, provider="email")
+            provisioner.policy.ensure_can_register(
+                invite_code=invite_code, provider="email"
+            )
             if invite_code and not self._is_dev_env():
                 window = await provisioner.invite_service.consume(invite_code)
                 # 记录到 Redis，便于 login_with_code 使用并最终 finalize
-                await cache.set(CacheKeys.temp_invite(email), {"code": invite_code, "window_id": str(window.id)}, ttl=600)
+                await cache.set(
+                    CacheKeys.temp_invite(email),
+                    {"code": invite_code, "window_id": str(window.id)},
+                    ttl=600,
+                )
 
         await self.send_verification_code(email, "login", client_ip=client_ip)
 
@@ -82,7 +89,10 @@ class AuthService:
 
         if not await self.verify_code(email, code, "login", client_ip=client_ip):
             await self.increment_login_failure(email, client_ip)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired code")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired code",
+            )
 
         user = await self.user_repo.get_by_email(email)
         created = False
@@ -127,7 +137,6 @@ class AuthService:
 
         return tokens
 
-
     async def create_tokens(self, user: User) -> TokenPair:
         """为用户创建 token 对"""
         access_jti = generate_jti()
@@ -149,7 +158,9 @@ class AuthService:
             ttl=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
         )
 
-        logger.info("tokens_created", extra={"user_id": str(user.id), "access_jti": access_jti})
+        logger.info(
+            "tokens_created", extra={"user_id": str(user.id), "access_jti": access_jti}
+        )
 
         return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
@@ -186,7 +197,10 @@ class AuthService:
 
         if refresh_data.get("used"):
             # 检测到 token 重用，可能是攻击，撤销所有 token
-            logger.warning("refresh_token_reuse_detected", extra={"user_id": str(user_id), "jti": jti})
+            logger.warning(
+                "refresh_token_reuse_detected",
+                extra={"user_id": str(user_id), "jti": jti},
+            )
             await self.revoke_all_tokens(user_id)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -289,7 +303,9 @@ class AuthService:
 
     # ========== 登录限流 ==========
 
-    async def check_login_rate_limit(self, email: str, client_ip: str | None = None) -> None:
+    async def check_login_rate_limit(
+        self, email: str, client_ip: str | None = None
+    ) -> None:
         """检查登录限流（邮箱 + IP 双维度）"""
         fail_key_email = CacheKeys.login_fail_email(email)
         fail_key_ip = CacheKeys.login_fail_ip(client_ip) if client_ip else None
@@ -297,29 +313,43 @@ class AuthService:
         fail_count_email = await cache.get(fail_key_email) or 0
         fail_count_ip = await cache.get(fail_key_ip) if fail_key_ip else 0
 
-        if fail_count_email >= settings.LOGIN_RATE_LIMIT_ATTEMPTS or (fail_count_ip or 0) >= settings.LOGIN_RATE_LIMIT_ATTEMPTS:
+        if (
+            fail_count_email >= settings.LOGIN_RATE_LIMIT_ATTEMPTS
+            or (fail_count_ip or 0) >= settings.LOGIN_RATE_LIMIT_ATTEMPTS
+        ):
             logger.warning(
                 "login_rate_limited",
-                extra={"email": email, "ip": client_ip, "count_email": fail_count_email, "count_ip": fail_count_ip},
+                extra={
+                    "email": email,
+                    "ip": client_ip,
+                    "count_email": fail_count_email,
+                    "count_ip": fail_count_ip,
+                },
             )
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many failed login attempts, please try again later",
             )
 
-    async def increment_login_failure(self, email: str, client_ip: str | None = None) -> int:
+    async def increment_login_failure(
+        self, email: str, client_ip: str | None = None
+    ) -> int:
         """记录登录失败（邮箱 + IP）"""
         fail_key_email = CacheKeys.login_fail_email(email)
         fail_key_ip = CacheKeys.login_fail_ip(client_ip) if client_ip else None
 
         fail_count_email = (await cache.get(fail_key_email)) or 0
         fail_count_email += 1
-        await cache.set(fail_key_email, fail_count_email, ttl=settings.LOGIN_RATE_LIMIT_WINDOW)
+        await cache.set(
+            fail_key_email, fail_count_email, ttl=settings.LOGIN_RATE_LIMIT_WINDOW
+        )
 
         if fail_key_ip:
             fail_count_ip = (await cache.get(fail_key_ip)) or 0
             fail_count_ip += 1
-            await cache.set(fail_key_ip, fail_count_ip, ttl=settings.LOGIN_RATE_LIMIT_WINDOW)
+            await cache.set(
+                fail_key_ip, fail_count_ip, ttl=settings.LOGIN_RATE_LIMIT_WINDOW
+            )
 
         return fail_count_email
 
@@ -330,11 +360,15 @@ class AuthService:
 
     # ========== 验证码 ==========
 
-    async def send_verification_code(self, email: str, purpose: str, client_ip: str | None = None) -> str:
+    async def send_verification_code(
+        self, email: str, purpose: str, client_ip: str | None = None
+    ) -> str:
         """发送验证码（测试环境固定 123456，其他环境随机）。"""
         code = "123456" if self._is_dev_env() else generate_verification_code()
         code_key = CacheKeys.verify_code(email, purpose)
-        await cache.set(code_key, code, ttl=settings.VERIFICATION_CODE_TTL_SECONDS)  # 10 分钟有效
+        await cache.set(
+            code_key, code, ttl=settings.VERIFICATION_CODE_TTL_SECONDS
+        )  # 10 分钟有效
 
         # TODO: 接入真实邮件服务；当前仅记录发送动作，不输出验证码
         logger.info(
@@ -344,18 +378,29 @@ class AuthService:
 
         return code
 
-    async def verify_code(self, email: str, code: str, purpose: str, client_ip: str | None = None) -> bool:
+    async def verify_code(
+        self, email: str, code: str, purpose: str, client_ip: str | None = None
+    ) -> bool:
         """验证验证码（含 IP 级重试限制）"""
         code_key = CacheKeys.verify_code(email, purpose)
         attempt_key = CacheKeys.verify_attempts_email(email, purpose)
-        attempt_key_ip = CacheKeys.verify_attempts_ip(client_ip, purpose) if client_ip else None
+        attempt_key_ip = (
+            CacheKeys.verify_attempts_ip(client_ip, purpose) if client_ip else None
+        )
 
-        attempts = await cache.incr(attempt_key, ttl=settings.VERIFICATION_CODE_TTL_SECONDS)
+        attempts = await cache.incr(
+            attempt_key, ttl=settings.VERIFICATION_CODE_TTL_SECONDS
+        )
         attempts_ip = 0
         if attempt_key_ip:
-            attempts_ip = await cache.incr(attempt_key_ip, ttl=settings.VERIFICATION_CODE_TTL_SECONDS)
+            attempts_ip = await cache.incr(
+                attempt_key_ip, ttl=settings.VERIFICATION_CODE_TTL_SECONDS
+            )
 
-        if attempts > settings.VERIFICATION_CODE_MAX_ATTEMPTS or attempts_ip > settings.VERIFICATION_CODE_MAX_ATTEMPTS:
+        if (
+            attempts > settings.VERIFICATION_CODE_MAX_ATTEMPTS
+            or attempts_ip > settings.VERIFICATION_CODE_MAX_ATTEMPTS
+        ):
             # 达到尝试上限后直接作废验证码，防止爆破
             await cache.delete(code_key)
             await cache.delete(attempt_key)
@@ -376,7 +421,10 @@ class AuthService:
         stored_code = await cache.get(code_key)
 
         if not stored_code or stored_code != code:
-            logger.warning("verification_failed", extra={"email": email, "purpose": purpose, "ip": client_ip})
+            logger.warning(
+                "verification_failed",
+                extra={"email": email, "purpose": purpose, "ip": client_ip},
+            )
             return False
 
         # 验证成功后删除验证码（单次使用）
@@ -384,7 +432,10 @@ class AuthService:
         await cache.delete(attempt_key)
         if attempt_key_ip:
             await cache.delete(attempt_key_ip)
-        logger.info("verification_success", extra={"email": email, "purpose": purpose, "ip": client_ip})
+        logger.info(
+            "verification_success",
+            extra={"email": email, "purpose": purpose, "ip": client_ip},
+        )
         return True
 
     # ========== 封禁相关 ==========
@@ -578,11 +629,19 @@ class AuthService:
         service = DefaultAssistantService(self.db)
         await service.ensure_installed(user.id)
 
-    async def request_password_reset(self, email: str) -> None:  # pragma: no cover - 已废弃
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Password login removed")
+    async def request_password_reset(
+        self, email: str
+    ) -> None:  # pragma: no cover - 已废弃
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE, detail="Password login removed"
+        )
 
-    async def confirm_password_reset(self, email: str, code: str, new_password: str) -> None:  # pragma: no cover - 已废弃
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Password login removed")
+    async def confirm_password_reset(
+        self, email: str, code: str, new_password: str
+    ) -> None:  # pragma: no cover - 已废弃
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE, detail="Password login removed"
+        )
 
     async def change_password(
         self,
@@ -590,4 +649,6 @@ class AuthService:
         old_password: str,
         new_password: str,
     ) -> None:  # pragma: no cover - 已废弃
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Password login removed")
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE, detail="Password login removed"
+        )

@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from itertools import islice
-from typing import Iterable
 
 import sqlalchemy as sa
-from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app
 from app.core.db_sync import get_sync_db
 from app.core.logging import logger
 from app.models.notification import Notification, NotificationReceipt
 from app.models.user import User
-
 
 DEFAULT_BATCH_SIZE = 500
 
@@ -42,7 +41,7 @@ def publish_notification_to_user_task(notification_id: str, user_id: str) -> str
         )
         db.commit()
         return f"Inserted receipts: {inserted}"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         db.rollback()
         logger.error("notification_publish_user_failed err=%s", exc)
         raise
@@ -83,7 +82,7 @@ def publish_notification_to_all_users_task(
             total_inserted += inserted
 
         return f"Inserted receipts: {total_inserted}"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         db.rollback()
         logger.error("notification_publish_all_failed err=%s", exc)
         raise
@@ -94,7 +93,7 @@ def publish_notification_to_all_users_task(
 def _parse_uuid(value: str, field: str) -> uuid.UUID | None:
     try:
         return uuid.UUID(str(value))
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("notification_invalid_uuid field=%s value=%s", field, value)
         return None
 
@@ -129,8 +128,12 @@ def _insert_receipts(db: Session, payloads: list[dict[str, object]]) -> int:
 
     dialect = db.bind.dialect.name if db.bind else "postgresql"
     if dialect == "postgresql":
-        stmt = pg_insert(NotificationReceipt).values(payloads).on_conflict_do_nothing(
-            constraint="uq_notification_receipt_user",
+        stmt = (
+            pg_insert(NotificationReceipt)
+            .values(payloads)
+            .on_conflict_do_nothing(
+                constraint="uq_notification_receipt_user",
+            )
         )
     elif dialect == "sqlite":
         stmt = sa.insert(NotificationReceipt).values(payloads).prefix_with("OR IGNORE")

@@ -56,7 +56,11 @@ async def test_preset_updated_triggers_key_deletion_and_version(monkeypatch):
 
     # unlink for direct keys + prefix clears
     redis.unlink = AsyncMock()
-    redis.keys = AsyncMock(side_effect=lambda pattern: [f"{cache._make_key('preset:')}1"] if "preset:" in pattern else [])
+    redis.keys = AsyncMock(
+        side_effect=lambda pattern: (
+            [f"{cache._make_key('preset:')}1"] if "preset:" in pattern else []
+        )
+    )
     redis.incr = AsyncMock(return_value=3)
     redis.set = AsyncMock(return_value=True)
     monkeypatch.setattr(cache, "_redis", redis)
@@ -100,7 +104,9 @@ async def test_singleflight_returns_same_value_and_loader_once(monkeypatch):
     assert call_count == 1
 
     # subsequent read should hit cache without loader
-    r3 = await cache.get_or_set_singleflight(key, loader=loader, ttl=30, version=version)
+    r3 = await cache.get_or_set_singleflight(
+        key, loader=loader, ttl=30, version=version
+    )
     assert r3 == "value"
     assert call_count == 1
 

@@ -11,7 +11,6 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 # revision identifiers, used by Alembic.
 revision = "20260120_02_add_preset_capability_configs"
 down_revision = "20260120_01_backfill_provider_model_templates"

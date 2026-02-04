@@ -1,11 +1,11 @@
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.core.cache import cache
+from app.core.database import get_db
+from app.deps.superuser import get_current_superuser
 from app.models.provider_instance import ProviderModel
 from app.schemas.provider_instance import (
     ProviderInstanceCreate,
@@ -15,9 +15,8 @@ from app.schemas.provider_instance import (
     ProviderVerifyRequest,
     ProviderVerifyResponse,
 )
-from app.deps.superuser import get_current_superuser
-from app.services.providers.provider_instance_service import ProviderInstanceService
 from app.services.providers.health_monitor import HealthMonitorService
+from app.services.providers.provider_instance_service import ProviderInstanceService
 
 router = APIRouter(prefix="/admin/provider-instances", tags=["ProviderInstances"])
 
@@ -45,7 +44,9 @@ async def verify_provider(
     return result
 
 
-@router.post("", response_model=ProviderInstanceResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=ProviderInstanceResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_instance(
     payload: ProviderInstanceCreate,
     db: AsyncSession = Depends(get_db),
@@ -75,23 +76,28 @@ async def create_instance(
         if message == "secret_key_not_configured":
             raise HTTPException(status_code=400, detail="SECRET_KEY not configured")
         if message == "plaintext_secret_ref_forbidden":
-            raise HTTPException(status_code=400, detail="credentials_ref must be a reference, not a raw key")
+            raise HTTPException(
+                status_code=400,
+                detail="credentials_ref must be a reference, not a raw key",
+            )
         raise HTTPException(status_code=400, detail=message)
     return instance
 
 
-@router.get("", response_model=List[ProviderInstanceResponse])
+@router.get("", response_model=list[ProviderInstanceResponse])
 async def list_instances(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_superuser),
 ):
     svc = ProviderInstanceService(db)
-    instances = await svc.list_instances(user_id=getattr(user, "id", None), include_public=True)
+    instances = await svc.list_instances(
+        user_id=getattr(user, "id", None), include_public=True
+    )
 
     # Inject Health Data
     health_svc = HealthMonitorService(cache.redis)
     response_list = []
-    
+
     for inst in instances:
         dto = ProviderInstanceResponse.model_validate(inst)
         try:
@@ -103,11 +109,11 @@ async def list_instances(
             # Redis unavailable or init error
             pass
         response_list.append(dto)
-        
+
     return response_list
 
 
-@router.post("/{instance_id}/models:sync", response_model=List[ProviderModelResponse])
+@router.post("/{instance_id}/models:sync", response_model=list[ProviderModelResponse])
 async def sync_models(
     instance_id: str,
     payload: ProviderModelsUpsertRequest,
@@ -148,11 +154,13 @@ async def sync_models(
         )
         for m in payload.models
     ]
-    results = await svc.upsert_models(instance_uuid, getattr(user, "id", None), model_objs)
+    results = await svc.upsert_models(
+        instance_uuid, getattr(user, "id", None), model_objs
+    )
     return results
 
 
-@router.get("/{instance_id}/models", response_model=List[ProviderModelResponse])
+@router.get("/{instance_id}/models", response_model=list[ProviderModelResponse])
 async def list_models(
     instance_id: str,
     db: AsyncSession = Depends(get_db),

@@ -5,7 +5,9 @@ from main import app
 
 
 @pytest.mark.asyncio
-async def test_internal_skill_execute_returns_artifacts(client, auth_tokens, monkeypatch):
+async def test_internal_skill_execute_returns_artifacts(
+    client, auth_tokens, monkeypatch
+):
     class FakeExecutor:
         async def execute(self, *_args, **_kwargs):
             return {
@@ -14,7 +16,11 @@ async def test_internal_skill_execute_returns_artifacts(client, auth_tokens, mon
                 "stderr": [],
                 "exit_code": 0,
                 "artifacts": [
-                    {"name": "output_docx", "type": "file", "path": "/workspace/output.docx"}
+                    {
+                        "name": "output_docx",
+                        "type": "file",
+                        "path": "/workspace/output.docx",
+                    }
                 ],
             }
 

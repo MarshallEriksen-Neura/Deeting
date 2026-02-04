@@ -1,7 +1,9 @@
-import pytest
 
 from app.core.config import settings
-from app.services.image_generation.prompt_security import PromptCipher, build_prompt_hash
+from app.services.image_generation.prompt_security import (
+    PromptCipher,
+    build_prompt_hash,
+)
 
 
 def test_build_prompt_hash_changes_with_negative(monkeypatch):

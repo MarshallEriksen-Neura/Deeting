@@ -21,7 +21,9 @@ class InviteCode(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "invite_codes"
 
-    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True, comment="邀请码")
+    code: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True, comment="邀请码"
+    )
     status: Mapped[InviteCodeStatus] = mapped_column(
         Enum(
             InviteCodeStatus,
@@ -39,9 +41,15 @@ class InviteCode(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
         comment="所属注册窗口",
     )
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, comment="过期时间")
-    reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, comment="预占时间")
-    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, comment="使用时间")
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="过期时间"
+    )
+    reserved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="预占时间"
+    )
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="使用时间"
+    )
     used_by: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),
         ForeignKey("user_account.id", ondelete="SET NULL"),

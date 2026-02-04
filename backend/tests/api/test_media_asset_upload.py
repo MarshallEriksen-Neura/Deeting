@@ -41,7 +41,9 @@ async def test_media_asset_upload_init_deduped(
             metadata={"sha256": content_hash},
         )
 
-    monkeypatch.setattr("app.services.oss.asset_upload_service.head_asset_object", fake_head)
+    monkeypatch.setattr(
+        "app.services.oss.asset_upload_service.head_asset_object", fake_head
+    )
 
     resp = await client.post(
         "/api/v1/media/assets/upload/init",
@@ -79,7 +81,9 @@ async def test_media_asset_upload_init_requires_upload(
             {"Content-Type": "image/png", "x-oss-meta-sha256": content_hash},
         )
 
-    monkeypatch.setattr("app.services.oss.asset_upload_service.presign_asset_put_url", fake_presign)
+    monkeypatch.setattr(
+        "app.services.oss.asset_upload_service.presign_asset_put_url", fake_presign
+    )
 
     resp = await client.post(
         "/api/v1/media/assets/upload/init",
@@ -119,7 +123,9 @@ async def test_media_asset_upload_complete_creates_record(
             metadata={"sha256": content_hash},
         )
 
-    monkeypatch.setattr("app.services.oss.asset_upload_service.head_asset_object", fake_head)
+    monkeypatch.setattr(
+        "app.services.oss.asset_upload_service.head_asset_object", fake_head
+    )
 
     resp = await client.post(
         "/api/v1/media/assets/upload/complete",
@@ -138,7 +144,9 @@ async def test_media_asset_upload_complete_creates_record(
     assert data["asset_url"].startswith("http://test/api/v1/media/assets/")
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(MediaAsset).where(MediaAsset.content_hash == content_hash))
+        result = await session.execute(
+            select(MediaAsset).where(MediaAsset.content_hash == content_hash)
+        )
         asset = result.scalar_one_or_none()
         assert asset is not None
         assert asset.object_key == object_key
@@ -164,7 +172,9 @@ async def test_media_asset_upload_complete_hash_mismatch(
             metadata={"sha256": hashlib.sha256(b"hash-b").hexdigest()},
         )
 
-    monkeypatch.setattr("app.services.oss.asset_upload_service.head_asset_object", fake_head)
+    monkeypatch.setattr(
+        "app.services.oss.asset_upload_service.head_asset_object", fake_head
+    )
 
     resp = await client.post(
         "/api/v1/media/assets/upload/complete",
@@ -204,6 +214,4 @@ async def test_media_asset_sign_endpoint(
     data = resp.json()
     assert len(data["assets"]) == len(object_keys)
     assert data["assets"][0]["object_key"] == object_keys[0]
-    assert data["assets"][0]["asset_url"].startswith(
-        "http://test/api/v1/media/assets/"
-    )
+    assert data["assets"][0]["asset_url"].startswith("http://test/api/v1/media/assets/")

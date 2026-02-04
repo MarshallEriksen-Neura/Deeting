@@ -1,22 +1,24 @@
 from __future__ import annotations
 
 import logging
-import time
 import random
+import time
 import uuid
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.qdrant_client import get_qdrant_client, qdrant_is_configured
-from app.models.assistant import AssistantStatus, AssistantVisibility
-from app.models.assistant import Assistant, AssistantVersion
+from app.models.assistant import Assistant, AssistantStatus, AssistantVersion, AssistantVisibility
 from app.models.assistant_routing import AssistantRoutingState
 from app.models.review import ReviewStatus, ReviewTask
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
-from app.repositories.review_repository import ReviewTaskRepository
+from app.qdrant_client import get_qdrant_client, qdrant_is_configured
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
 from app.repositories.assistant_routing_repository import AssistantRoutingRepository
+from app.repositories.review_repository import ReviewTaskRepository
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.providers.embedding import EmbeddingService
@@ -38,7 +40,9 @@ class AssistantRetrievalService:
         self.review_repo = ReviewTaskRepository(session)
         self.routing_repo = AssistantRoutingRepository(session)
 
-    async def search_candidates(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
+    async def search_candidates(
+        self, query: str, limit: int = 3
+    ) -> list[dict[str, Any]]:
         if not qdrant_is_configured():
             return await self._fallback_default_assistant(reason="qdrant_disabled")
 
@@ -97,7 +101,9 @@ class AssistantRetrievalService:
             if assistant_uuid not in score_map:
                 ordered_ids.append(assistant_uuid)
             score = hit.get("score")
-            if score is not None and score > score_map.get(assistant_uuid, float("-inf")):
+            if score is not None and score > score_map.get(
+                assistant_uuid, float("-inf")
+            ):
                 score_map[assistant_uuid] = float(score)
 
         if not ordered_ids:
@@ -158,7 +164,9 @@ class AssistantRetrievalService:
                 continue
             if assistant.owner_user_id is not None:
                 normalized_review = (
-                    review_status.value if hasattr(review_status, "value") else review_status
+                    review_status.value
+                    if hasattr(review_status, "value")
+                    else review_status
                 )
                 if normalized_review != ReviewStatus.APPROVED.value:
                     continue
@@ -180,12 +188,23 @@ class AssistantRetrievalService:
     async def _fetch_hydrated_rows(
         self,
         assistant_ids: list[uuid.UUID],
-    ) -> dict[uuid.UUID, tuple[Assistant, AssistantVersion | None, str | None, AssistantRoutingState | None]]:
+    ) -> dict[
+        uuid.UUID,
+        tuple[
+            Assistant, AssistantVersion | None, str | None, AssistantRoutingState | None
+        ],
+    ]:
         if not assistant_ids:
             return {}
         stmt = (
-            select(Assistant, AssistantVersion, ReviewTask.status, AssistantRoutingState)
-            .join(AssistantVersion, Assistant.current_version_id == AssistantVersion.id, isouter=True)
+            select(
+                Assistant, AssistantVersion, ReviewTask.status, AssistantRoutingState
+            )
+            .join(
+                AssistantVersion,
+                Assistant.current_version_id == AssistantVersion.id,
+                isouter=True,
+            )
             .join(
                 ReviewTask,
                 and_(
@@ -205,7 +224,12 @@ class AssistantRetrievalService:
         rows = result.all()
         hydrated: dict[
             uuid.UUID,
-            tuple[Assistant, AssistantVersion | None, str | None, AssistantRoutingState | None],
+            tuple[
+                Assistant,
+                AssistantVersion | None,
+                str | None,
+                AssistantRoutingState | None,
+            ],
         ] = {}
         for assistant, version, review_status, routing_state in rows:
             hydrated[assistant.id] = (assistant, version, review_status, routing_state)
@@ -213,7 +237,9 @@ class AssistantRetrievalService:
 
     def _extract_assistant_uuid(self, hit: dict[str, Any]) -> uuid.UUID | None:
         payload = hit.get("payload") or {}
-        assistant_id = payload.get("assistant_id") or payload.get("uuid") or hit.get("id")
+        assistant_id = (
+            payload.get("assistant_id") or payload.get("uuid") or hit.get("id")
+        )
         try:
             return uuid.UUID(str(assistant_id))
         except Exception:
@@ -243,11 +269,7 @@ class AssistantRetrievalService:
     ) -> float:
         mab_score = self._compute_mab_score(routing_state)
         exploration_bonus = self._compute_exploration_bonus(routing_state)
-        return (
-            (vector_score * 0.6)
-            + (mab_score * 0.3)
-            + (exploration_bonus * 0.1)
-        )
+        return (vector_score * 0.6) + (mab_score * 0.3) + (exploration_bonus * 0.1)
 
     @staticmethod
     def _compute_mab_score(state: AssistantRoutingState | None) -> float:
@@ -272,7 +294,11 @@ class AssistantRetrievalService:
             return {}
         stmt = (
             select(Assistant, AssistantVersion)
-            .join(AssistantVersion, Assistant.current_version_id == AssistantVersion.id, isouter=True)
+            .join(
+                AssistantVersion,
+                Assistant.current_version_id == AssistantVersion.id,
+                isouter=True,
+            )
             .where(Assistant.id.in_(assistant_ids))
         )
         result = await self.session.execute(stmt)
@@ -295,7 +321,9 @@ class AssistantRetrievalService:
 
     async def _hit_to_candidate(self, hit: dict[str, Any]) -> dict[str, Any] | None:
         payload = hit.get("payload") or {}
-        assistant_id = payload.get("assistant_id") or payload.get("uuid") or hit.get("id")
+        assistant_id = (
+            payload.get("assistant_id") or payload.get("uuid") or hit.get("id")
+        )
         try:
             assistant_uuid = uuid.UUID(str(assistant_id))
         except Exception:
@@ -311,21 +339,34 @@ class AssistantRetrievalService:
             else assistant.visibility
         )
         status = (
-            assistant.status.value if isinstance(assistant.status, AssistantStatus) else assistant.status
+            assistant.status.value
+            if isinstance(assistant.status, AssistantStatus)
+            else assistant.status
         )
-        if visibility != AssistantVisibility.PUBLIC.value or status != AssistantStatus.PUBLISHED.value:
+        if (
+            visibility != AssistantVisibility.PUBLIC.value
+            or status != AssistantStatus.PUBLISHED.value
+        ):
             return None
 
         if assistant.owner_user_id is not None:
             # Align with assistant market visibility rule: require approved review for user-owned assistants.
-            review = await self.review_repo.get_by_entity(ASSISTANT_MARKET_ENTITY, assistant.id)
+            review = await self.review_repo.get_by_entity(
+                ASSISTANT_MARKET_ENTITY, assistant.id
+            )
             if not review:
                 return None
-            review_status = review.status.value if isinstance(review.status, ReviewStatus) else review.status
+            review_status = (
+                review.status.value
+                if isinstance(review.status, ReviewStatus)
+                else review.status
+            )
             if review_status != ReviewStatus.APPROVED.value:
                 return None
 
-        version = await self.version_repo.get_for_assistant(assistant_uuid, assistant.current_version_id)
+        version = await self.version_repo.get_for_assistant(
+            assistant_uuid, assistant.current_version_id
+        )
         if not version:
             return None
 

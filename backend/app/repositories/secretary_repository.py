@@ -19,7 +19,9 @@ class UserSecretaryRepository(BaseRepository[UserSecretary]):
         )
         return result.scalars().first()
 
-    async def get_primary_superuser_secretary(self) -> tuple[User, UserSecretary] | None:
+    async def get_primary_superuser_secretary(
+        self,
+    ) -> tuple[User, UserSecretary] | None:
         stmt = (
             select(User, UserSecretary)
             .join(UserSecretary, UserSecretary.user_id == User.id)

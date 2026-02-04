@@ -5,10 +5,9 @@
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from fastapi.responses import PlainTextResponse
 
-from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.request_validator import RequestValidatorMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
 
 @pytest.fixture
@@ -135,6 +134,8 @@ def test_safe_user_agent_allowed(app_with_request_validator):
     client = TestClient(app_with_request_validator)
 
     # 测试正常的User-Agent
-    response = client.get("/test", headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)"})
+    response = client.get(
+        "/test", headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)"}
+    )
     assert response.status_code == 200
     assert response.json() == {"message": "ok"}

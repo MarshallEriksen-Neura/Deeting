@@ -10,7 +10,11 @@ from app.models import Base
 from app.models.spec_agent import SpecPlan
 from app.models.spec_knowledge import SpecKnowledgeCandidate
 from app.repositories.review_repository import ReviewTaskRepository
-from app.services.knowledge.spec_knowledge_service import SpecKnowledgeService, STATUS_PENDING_EVAL, STATUS_PENDING_REVIEW
+from app.services.knowledge.spec_knowledge_service import (
+    STATUS_PENDING_EVAL,
+    STATUS_PENDING_REVIEW,
+    SpecKnowledgeService,
+)
 from app.services.review.review_service import ReviewService
 from app.utils.time_utils import Datetime
 from tests.api.conftest import AsyncSessionLocal, engine
@@ -101,7 +105,7 @@ async def test_evaluate_candidate_llm_pass(monkeypatch):
         await session.commit()
 
         async def fake_review(*_args, **_kwargs):
-            return "{\"score\": 90, \"reason\": \"ok\"}"
+            return '{"score": 90, "reason": "ok"}'
 
         monkeypatch.setattr(
             "app.services.providers.llm.llm_service.chat_completion",
@@ -112,7 +116,9 @@ async def test_evaluate_candidate_llm_pass(monkeypatch):
         result = await service.evaluate_candidate(candidate.id)
         refreshed = await session.get(SpecKnowledgeCandidate, candidate.id)
         review_repo = ReviewTaskRepository(session)
-        review_task = await review_repo.get_by_entity("spec_knowledge_candidate", candidate.id)
+        review_task = await review_repo.get_by_entity(
+            "spec_knowledge_candidate", candidate.id
+        )
 
         assert result == "ok"
         assert refreshed is not None
@@ -170,7 +176,9 @@ async def test_promote_and_reject_candidate(monkeypatch):
         )
 
         service = SpecKnowledgeService(session)
-        promoted = await service.promote_candidate(candidate.id, auto=False, reason="ok")
+        promoted = await service.promote_candidate(
+            candidate.id, auto=False, reason="ok"
+        )
         refreshed = await session.get(SpecKnowledgeCandidate, candidate.id)
 
         assert promoted is True

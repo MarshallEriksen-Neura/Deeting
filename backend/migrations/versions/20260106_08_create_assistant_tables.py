@@ -21,7 +21,9 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "assistant",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "owner_user_id",
             postgresql.UUID(as_uuid=True),
@@ -76,12 +78,16 @@ def upgrade() -> None:
         sa.UniqueConstraint("share_slug", name="uq_assistant_share_slug"),
     )
     op.create_index("ix_assistant_owner", "assistant", ["owner_user_id"])
-    op.create_index("ix_assistant_visibility_status", "assistant", ["visibility", "status"])
+    op.create_index(
+        "ix_assistant_visibility_status", "assistant", ["visibility", "status"]
+    )
     op.create_index("ix_assistant_published_at", "assistant", ["published_at"])
 
     op.create_table(
         "assistant_version",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "assistant_id",
             postgresql.UUID(as_uuid=True),
@@ -89,8 +95,15 @@ def upgrade() -> None:
             nullable=False,
             comment="所属助手 ID",
         ),
-        sa.Column("version", sa.String(length=32), nullable=False, comment="语义化版本号，例如 0.1.0"),
-        sa.Column("name", sa.String(length=100), nullable=False, comment="版本名称/展示名"),
+        sa.Column(
+            "version",
+            sa.String(length=32),
+            nullable=False,
+            comment="语义化版本号，例如 0.1.0",
+        ),
+        sa.Column(
+            "name", sa.String(length=100), nullable=False, comment="版本名称/展示名"
+        ),
         sa.Column("description", sa.Text(), nullable=True, comment="描述/用途说明"),
         sa.Column("system_prompt", sa.Text(), nullable=False, comment="系统提示词内容"),
         sa.Column(
@@ -133,9 +146,13 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-        sa.UniqueConstraint("assistant_id", "version", name="uq_assistant_version_semver"),
+        sa.UniqueConstraint(
+            "assistant_id", "version", name="uq_assistant_version_semver"
+        ),
     )
-    op.create_index("ix_assistant_version_assistant", "assistant_version", ["assistant_id"])
+    op.create_index(
+        "ix_assistant_version_assistant", "assistant_version", ["assistant_id"]
+    )
 
     op.create_foreign_key(
         "fk_assistant_current_version",

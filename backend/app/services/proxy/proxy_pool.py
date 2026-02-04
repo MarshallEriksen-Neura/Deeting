@@ -58,13 +58,17 @@ class ProxyPool:
         self._cfg_ttl_seconds = cfg_ttl_seconds
         self._cfg_cache_until: float = 0.0
         self._runtime_enabled: bool = settings.UPSTREAM_PROXY_ENABLED
-        self._failure_cooldown_seconds: int = settings.UPSTREAM_PROXY_FAILURE_COOLDOWN_SECONDS
+        self._failure_cooldown_seconds: int = (
+            settings.UPSTREAM_PROXY_FAILURE_COOLDOWN_SECONDS
+        )
 
     @property
     def _redis(self):
         return getattr(cache, "_redis", None)
 
-    async def pick(self, *, exclude_endpoints: set[str] | None = None) -> ProxySelection | None:
+    async def pick(
+        self, *, exclude_endpoints: set[str] | None = None
+    ) -> ProxySelection | None:
         """
         选择一个代理，失败或未启用时返回 None（调用层可直接走直连）。
         exclude_endpoints: 已尝试过的 endpoint_id 集合，避免同一请求重复使用。
@@ -133,16 +137,26 @@ class ProxyPool:
             enabled_raw = await redis.get(_CFG_ENABLED_KEY)
             cooldown_raw = await redis.get(_CFG_COOLDOWN_KEY)
             if enabled_raw is not None:
-                enabled_str = enabled_raw.decode() if isinstance(enabled_raw, bytes) else str(enabled_raw)
+                enabled_str = (
+                    enabled_raw.decode()
+                    if isinstance(enabled_raw, bytes)
+                    else str(enabled_raw)
+                )
                 self._runtime_enabled = enabled_str == "1"
             else:
                 self._runtime_enabled = settings.UPSTREAM_PROXY_ENABLED
 
             if cooldown_raw:
-                cooldown_str = cooldown_raw.decode() if isinstance(cooldown_raw, bytes) else str(cooldown_raw)
+                cooldown_str = (
+                    cooldown_raw.decode()
+                    if isinstance(cooldown_raw, bytes)
+                    else str(cooldown_raw)
+                )
                 self._failure_cooldown_seconds = int(cooldown_str)
             else:
-                self._failure_cooldown_seconds = settings.UPSTREAM_PROXY_FAILURE_COOLDOWN_SECONDS
+                self._failure_cooldown_seconds = (
+                    settings.UPSTREAM_PROXY_FAILURE_COOLDOWN_SECONDS
+                )
         except Exception as exc:
             logger.debug("proxy_pool: load runtime config failed (%s)", exc)
         finally:
@@ -158,11 +172,15 @@ class ProxyPool:
 
     async def _in_cooldown(self, redis, endpoint_id: str) -> bool:
         try:
-            return bool(await redis.exists(_COOLDOWN_KEY.format(endpoint_id=endpoint_id)))
+            return bool(
+                await redis.exists(_COOLDOWN_KEY.format(endpoint_id=endpoint_id))
+            )
         except Exception:
             return False
 
-    def build_transport_kwargs(self, selection: ProxySelection | None) -> dict[str, Any]:
+    def build_transport_kwargs(
+        self, selection: ProxySelection | None
+    ) -> dict[str, Any]:
         """给 curl-cffi 传递的 transport_kwargs，未选中代理时返回空 dict。"""
         if not selection:
             return {}
@@ -176,4 +194,4 @@ def get_proxy_pool() -> ProxyPool:
     return _shared_pool
 
 
-__all__ = ["ProxySelection", "ProxyPool", "get_proxy_pool", "mask_proxy_url"]
+__all__ = ["ProxyPool", "ProxySelection", "get_proxy_pool", "mask_proxy_url"]

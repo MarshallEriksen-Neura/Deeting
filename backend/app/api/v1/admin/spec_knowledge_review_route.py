@@ -15,9 +15,9 @@ from app.repositories.review_repository import ReviewTaskRepository
 from app.repositories.spec_knowledge_repository import SpecKnowledgeCandidateRepository
 from app.schemas.spec_knowledge import (
     SpecKnowledgeCandidateDTO,
+    SpecKnowledgeEvalSnapshot,
     SpecKnowledgeReviewDecisionRequest,
     SpecKnowledgeUsageStats,
-    SpecKnowledgeEvalSnapshot,
 )
 from app.services.knowledge.spec_knowledge_service import (
     SPEC_KB_REVIEW_ENTITY,
@@ -30,7 +30,9 @@ router = APIRouter(
 )
 
 
-def get_candidate_repo(db: AsyncSession = Depends(get_db)) -> SpecKnowledgeCandidateRepository:
+def get_candidate_repo(
+    db: AsyncSession = Depends(get_db),
+) -> SpecKnowledgeCandidateRepository:
     return SpecKnowledgeCandidateRepository(db)
 
 
@@ -118,7 +120,9 @@ async def approve_spec_kb_candidate(
 ) -> SpecKnowledgeCandidateDTO:
     candidate = await repo.get(candidate_id)
     if not candidate:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="candidate_not_found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="candidate_not_found"
+        )
     promoted = await service.promote_candidate(
         candidate_id,
         reviewer_user_id=None,
@@ -146,7 +150,9 @@ async def reject_spec_kb_candidate(
 ) -> SpecKnowledgeCandidateDTO:
     candidate = await repo.get(candidate_id)
     if not candidate:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="candidate_not_found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="candidate_not_found"
+        )
     rejected = await service.reject_candidate(
         candidate_id,
         reviewer_user_id=None,

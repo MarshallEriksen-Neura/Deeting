@@ -11,7 +11,11 @@ from app.utils.time_utils import Datetime
 
 ALLOWED_TRANSITIONS: dict[ReviewStatus, set[ReviewStatus]] = {
     ReviewStatus.DRAFT: {ReviewStatus.PENDING},
-    ReviewStatus.PENDING: {ReviewStatus.APPROVED, ReviewStatus.REJECTED, ReviewStatus.SUSPENDED},
+    ReviewStatus.PENDING: {
+        ReviewStatus.APPROVED,
+        ReviewStatus.REJECTED,
+        ReviewStatus.SUSPENDED,
+    },
     ReviewStatus.REJECTED: {ReviewStatus.PENDING},
     ReviewStatus.APPROVED: {ReviewStatus.SUSPENDED, ReviewStatus.PENDING},
     ReviewStatus.SUSPENDED: {ReviewStatus.PENDING},
@@ -24,7 +28,9 @@ def _normalize(status: ReviewStatus | str) -> ReviewStatus:
 
 class ReviewStateMachine:
     @staticmethod
-    def validate_transition(current: ReviewStatus | str, target: ReviewStatus | str) -> None:
+    def validate_transition(
+        current: ReviewStatus | str, target: ReviewStatus | str
+    ) -> None:
         current_enum = _normalize(current)
         target_enum = _normalize(target)
         if current_enum == target_enum:
@@ -51,6 +57,10 @@ class ReviewStateMachine:
         if target_enum == ReviewStatus.PENDING:
             task.submitted_at = ts
             task.reviewed_at = None
-        elif target_enum in {ReviewStatus.APPROVED, ReviewStatus.REJECTED, ReviewStatus.SUSPENDED}:
+        elif target_enum in {
+            ReviewStatus.APPROVED,
+            ReviewStatus.REJECTED,
+            ReviewStatus.SUSPENDED,
+        }:
             task.reviewed_at = ts
         return task

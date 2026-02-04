@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import AsyncIterator
 from datetime import timedelta
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import StreamingResponse
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -34,7 +35,7 @@ def _format_sse(payload: dict[str, Any] | str) -> bytes:
         data = payload
     else:
         data = json.dumps(payload, ensure_ascii=False, default=str)
-    return f"data: {data}\n\n".encode("utf-8")
+    return f"data: {data}\n\n".encode()
 
 
 def _status_value(status: VideoGenerationStatus | str | None) -> str:
@@ -82,7 +83,6 @@ async def create_video_generation(
             "prompt_raw": payload.prompt,
             "negative_prompt": payload.negative_prompt,
             "prompt_encrypted": payload.encrypt_prompt,
-            
             # Input Params
             "image_url": payload.image_url,
             "width": payload.width,
@@ -98,7 +98,6 @@ async def create_video_generation(
             "quality": payload.quality,
             "style": payload.style,
             "extra_params": payload.extra_params or {},
-            
             "status": VideoGenerationStatus.QUEUED,
         }
     )
@@ -167,22 +166,27 @@ async def get_video_generation(
         raise HTTPException(status_code=404, detail="task not found")
 
         outputs = []
-        if include_outputs and _status_value(task.status) == VideoGenerationStatus.SUCCEEDED.value:
+        if (
+            include_outputs
+            and _status_value(task.status) == VideoGenerationStatus.SUCCEEDED.value
+        ):
             outputs = await service.build_signed_outputs(
                 task.id,
                 base_url=str(request.base_url).rstrip("/") if request else None,
             )
-    
-        return VideoGenerationTaskDetail(        task_id=task.id,
-        status=_status_value(task.status),
-        model=task.model,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-        completed_at=task.completed_at,
-        error_code=task.error_code,
-        error_message=task.error_message,
-        outputs=[], # Placeholder until I fix service
-    )
+
+        return VideoGenerationTaskDetail(
+            task_id=task.id,
+            status=_status_value(task.status),
+            model=task.model,
+            created_at=task.created_at,
+            updated_at=task.updated_at,
+            completed_at=task.completed_at,
+            error_code=task.error_code,
+            error_message=task.error_message,
+            outputs=[],  # Placeholder until I fix service
+        )
+
 
 @router.post(
     "/videos/generations/{request_id}/cancel",
@@ -211,7 +215,9 @@ async def cancel_video_generation(
 async def stream_video_generation_events(
     task_id: str,
     request: Request,
-    poll_interval: float = Query(2.0, gt=0.5, le=10.0, description="轮询间隔（秒）"), # Slower poll for video
+    poll_interval: float = Query(
+        2.0, gt=0.5, le=10.0, description="轮询间隔（秒）"
+    ),  # Slower poll for video
     timeout_seconds: int = Query(600, gt=1, le=3600, description="最大等待秒数"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

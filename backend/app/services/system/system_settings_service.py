@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-
 from app.core import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.repositories import ProviderModelRepository, SystemSettingRepository
-
 
 EMBEDDING_SETTING_KEY = "embedding_model"
 
@@ -23,7 +20,9 @@ class SystemSettingsService:
 
     async def get_embedding_model(self) -> str:
         model_name = await self._load_embedding_model()
-        return model_name or getattr(settings, "EMBEDDING_MODEL", "text-embedding-3-small")
+        return model_name or getattr(
+            settings, "EMBEDDING_MODEL", "text-embedding-3-small"
+        )
 
     async def set_embedding_model(self, model_name: str) -> str:
         if not model_name:
@@ -36,7 +35,9 @@ class SystemSettingsService:
         )
         if not candidates:
             raise ValueError("Embedding 模型不可用")
-        await self.settings_repo.upsert(EMBEDDING_SETTING_KEY, {"model_name": model_name})
+        await self.settings_repo.upsert(
+            EMBEDDING_SETTING_KEY, {"model_name": model_name}
+        )
         await cache.set(
             CacheKeys.system_embedding_model(),
             model_name,

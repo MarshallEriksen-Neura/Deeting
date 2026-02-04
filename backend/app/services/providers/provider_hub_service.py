@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,16 +60,18 @@ class ProviderHubService:
 
     async def hub(
         self,
-        user_id: Optional[str],
-        category: Optional[str] = None,
-        q: Optional[str] = None,
+        user_id: str | None,
+        category: str | None = None,
+        q: str | None = None,
         include_public: bool = True,
     ) -> ProviderHubResponse:
         presets = await self._merge_presets()
-        instances = await self.instance_repo.get_available_instances(user_id=user_id, include_public=include_public)
+        instances = await self.instance_repo.get_available_instances(
+            user_id=user_id, include_public=include_public
+        )
 
-        health_cache: Dict[str, dict] = {}
-        cards: List[ProviderCard] = []
+        health_cache: dict[str, dict] = {}
+        cards: list[ProviderCard] = []
         category_lower = category.lower() if category else None
         query = q.strip() if q else None
         allowed_slugs: set[str] | None = None
@@ -77,7 +79,11 @@ class ProviderHubService:
             backend = get_search_backend()
             search_slugs = await backend.search_provider_presets(
                 query=query,
-                category=category_lower if category_lower and category_lower != "all" else None,
+                category=(
+                    category_lower
+                    if category_lower and category_lower != "all"
+                    else None
+                ),
             )
             allowed_slugs = {slug for slug in search_slugs if slug}
             if not allowed_slugs:
@@ -93,8 +99,10 @@ class ProviderHubService:
                 continue
 
             # 关联实例
-            related_instances = [inst for inst in instances if inst.preset_slug == preset.get("slug")]
-            summaries: List[ProviderInstanceSummary] = []
+            related_instances = [
+                inst for inst in instances if inst.preset_slug == preset.get("slug")
+            ]
+            summaries: list[ProviderInstanceSummary] = []
             for inst in related_instances:
                 try:
                     health = health_cache.get(str(inst.id))
@@ -105,8 +113,14 @@ class ProviderHubService:
                         id=inst.id,
                         name=inst.name,
                         is_enabled=inst.is_enabled,
-                        health_status=health.get("status", "unknown") if isinstance(health, dict) else "unknown",
-                        latency_ms=health.get("latency", 0) if isinstance(health, dict) else 0,
+                        health_status=(
+                            health.get("status", "unknown")
+                            if isinstance(health, dict)
+                            else "unknown"
+                        ),
+                        latency_ms=(
+                            health.get("latency", 0) if isinstance(health, dict) else 0
+                        ),
                     )
                     summaries.append(summary)
                 except Exception:
@@ -142,21 +156,23 @@ class ProviderHubService:
         stats = self._build_stats(cards)
         return ProviderHubResponse(providers=cards, stats=stats)
 
-    def _build_stats(self, cards: List[ProviderCard]) -> ProviderHubStats:
+    def _build_stats(self, cards: list[ProviderCard]) -> ProviderHubStats:
         total = len(cards)
         connected = sum(1 for c in cards if c.connected)
-        by_category: Dict[str, int] = {}
+        by_category: dict[str, int] = {}
         for c in cards:
             key = (c.category or "unknown").lower()
             by_category[key] = by_category.get(key, 0) + 1
-        return ProviderHubStats(total=total, connected=connected, by_category=by_category)
+        return ProviderHubStats(
+            total=total, connected=connected, by_category=by_category
+        )
 
     async def detail(
         self,
         slug: str,
-        user_id: Optional[str],
+        user_id: str | None,
         include_public: bool = True,
-    ) -> Optional[ProviderCard]:
+    ) -> ProviderCard | None:
         resp = await self.hub(user_id=user_id, include_public=include_public)
         for item in resp.providers:
             if item.slug == slug:

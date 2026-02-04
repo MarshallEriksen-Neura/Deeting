@@ -1,6 +1,4 @@
 from .spec_knowledge_service import (
-    SpecKnowledgeService,
-    SpecKnowledgeVectorService,
     SPEC_KB_REVIEW_ENTITY,
     STATUS_APPROVED,
     STATUS_DISABLED,
@@ -8,11 +6,11 @@ from .spec_knowledge_service import (
     STATUS_PENDING_REVIEW,
     STATUS_PENDING_SIGNAL,
     STATUS_REJECTED,
+    SpecKnowledgeService,
+    SpecKnowledgeVectorService,
 )
 
 __all__ = [
-    "SpecKnowledgeService",
-    "SpecKnowledgeVectorService",
     "SPEC_KB_REVIEW_ENTITY",
     "STATUS_APPROVED",
     "STATUS_DISABLED",
@@ -20,4 +18,6 @@ __all__ = [
     "STATUS_PENDING_REVIEW",
     "STATUS_PENDING_SIGNAL",
     "STATUS_REJECTED",
+    "SpecKnowledgeService",
+    "SpecKnowledgeVectorService",
 ]

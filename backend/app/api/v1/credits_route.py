@@ -33,7 +33,9 @@ async def get_consumption(
     current_user: User = Depends(get_current_user),
     svc: CreditsService = Depends(get_credits_service),
 ) -> CreditsConsumptionResponse:
-    return await svc.get_consumption(str(current_user.id) if current_user else None, days)
+    return await svc.get_consumption(
+        str(current_user.id) if current_user else None, days
+    )
 
 
 @router.get("/model-usage", response_model=CreditsModelUsageResponse)
@@ -42,7 +44,9 @@ async def get_model_usage(
     current_user: User = Depends(get_current_user),
     svc: CreditsService = Depends(get_credits_service),
 ) -> CreditsModelUsageResponse:
-    return await svc.get_model_usage(str(current_user.id) if current_user else None, days)
+    return await svc.get_model_usage(
+        str(current_user.id) if current_user else None, days
+    )
 
 
 @router.get("/transactions", response_model=CreditsTransactionListResponse)
@@ -52,4 +56,6 @@ async def get_transactions(
     current_user: User = Depends(get_current_user),
     svc: CreditsService = Depends(get_credits_service),
 ) -> CreditsTransactionListResponse:
-    return await svc.list_transactions(str(current_user.id) if current_user else None, limit, offset)
+    return await svc.list_transactions(
+        str(current_user.id) if current_user else None, limit, offset
+    )

@@ -1,16 +1,18 @@
 """
 XSS防护工具测试
 """
+
 import pytest
+
 from app.utils.xss_protection import (
+    escape_for_html_attribute,
+    escape_for_html_content,
+    escape_for_javascript_context,
+    is_xss_attempt,
     sanitize_input,
     sanitize_string,
     strip_html_tags,
-    escape_for_html_content,
-    escape_for_html_attribute,
-    escape_for_javascript_context,
     validate_and_sanitize_user_input,
-    is_xss_attempt
 )
 
 
@@ -65,12 +67,12 @@ def test_escape_for_html_attribute():
     """测试HTML属性转义"""
     input_str = '"><script>alert(1)</script>'
     escaped = escape_for_html_attribute(input_str)
-    assert escaped == '&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;'
+    assert escaped == "&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"
 
 
 def test_escape_for_javascript_context():
     """测试JavaScript上下文转义"""
-    input_str = '</script><script>alert(1)</script>'
+    input_str = "</script><script>alert(1)</script>"
     escaped = escape_for_javascript_context(input_str)
     # 应该转义引号和斜杠
     assert "\\u003c/script\\u003e" in escaped
@@ -88,15 +90,15 @@ def test_validate_and_sanitize_user_input():
     # 测试正常输入
     result = validate_and_sanitize_user_input("Safe input")
     assert result == "Safe input"
-    
+
     # 测试XSS输入应该抛出异常
     with pytest.raises(ValueError):
         validate_and_sanitize_user_input("<script>alert(1)</script>")
-    
+
     # 测试字典输入
     result = validate_and_sanitize_user_input({"safe_key": "safe_value"})
     assert result == {"safe_key": "safe_value"}
-    
+
     # 测试字典中的XSS输入
     with pytest.raises(ValueError):
         validate_and_sanitize_user_input({"xss_key": "<script>alert(1)</script>"})
@@ -110,11 +112,11 @@ def test_sanitize_input_with_complex_data():
             "bio": "<script>alert('XSS')</script>Software Developer",
             "posts": [
                 {"title": "First Post", "content": "Hello World"},
-                {"title": "Second Post", "content": "<img src=x onerror=alert('XSS')>"}
-            ]
+                {"title": "Second Post", "content": "<img src=x onerror=alert('XSS')>"},
+            ],
         }
     }
-    
+
     sanitized = sanitize_input(complex_data)
     # bio中的脚本应该被清理
     assert "alert" not in sanitized["user"]["bio"]
@@ -128,7 +130,7 @@ def test_input_length_validation():
     long_input = "a" * 10001  # 超过默认限制
     with pytest.raises(ValueError):
         validate_and_sanitize_user_input(long_input, max_length=10000)
-    
+
     # 在限制内的长度应该通过
     result = validate_and_sanitize_user_input("a" * 9999, max_length=10000)
     assert len(result) == 9999

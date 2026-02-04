@@ -45,14 +45,21 @@ def upgrade() -> None:
             nullable=False,
             unique=True,
         ),
-        sa.Column("strategy", sa.String(length=32), nullable=False, server_default="epsilon_greedy"),
+        sa.Column(
+            "strategy",
+            sa.String(length=32),
+            nullable=False,
+            server_default="epsilon_greedy",
+        ),
         sa.Column("epsilon", sa.Float(), nullable=False, server_default="0.1"),
         sa.Column("alpha", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column("beta", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column("total_trials", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("successes", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("failures", sa.BigInteger(), nullable=False, server_default="0"),
-        sa.Column("total_latency_ms", sa.BigInteger(), nullable=False, server_default="0"),
+        sa.Column(
+            "total_latency_ms", sa.BigInteger(), nullable=False, server_default="0"
+        ),
         sa.Column("latency_p95_ms", sa.Float(), nullable=True),
         sa.Column("total_cost", sa.Numeric(18, 8), nullable=False, server_default="0"),
         sa.Column("last_reward", sa.Numeric(18, 8), nullable=False, server_default="0"),

@@ -1,8 +1,10 @@
-from typing import Any, List
+from typing import Any
+
 from celery.result import AsyncResult
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.tasks.agent import run_auto_ingestion_job
+
 
 class TaskSchedulerPlugin(AgentPlugin):
     @property
@@ -11,10 +13,10 @@ class TaskSchedulerPlugin(AgentPlugin):
             name="system/task_scheduler",
             version="1.0.0",
             description="Spawns background worker agents to handle long-running tasks.",
-            author="System"
+            author="System",
         )
 
-    def get_tools(self) -> List[Any]:
+    def get_tools(self) -> list[Any]:
         return [
             {
                 "type": "function",
@@ -25,17 +27,17 @@ class TaskSchedulerPlugin(AgentPlugin):
                         "type": "object",
                         "properties": {
                             "url": {
-                                "type": "string", 
-                                "description": "The target URL to process."
+                                "type": "string",
+                                "description": "The target URL to process.",
                             },
                             "instruction": {
-                                "type": "string", 
-                                "description": "Specific goal for the worker (e.g. 'Extract all provider info and save as presets')."
-                            }
+                                "type": "string",
+                                "description": "Specific goal for the worker (e.g. 'Extract all provider info and save as presets').",
+                            },
                         },
-                        "required": ["url", "instruction"]
-                    }
-                }
+                        "required": ["url", "instruction"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -44,13 +46,11 @@ class TaskSchedulerPlugin(AgentPlugin):
                     "description": "Check the status and result of a background job.",
                     "parameters": {
                         "type": "object",
-                        "properties": {
-                            "job_id": {"type": "string"}
-                        },
-                        "required": ["job_id"]
-                    }
-                }
-            }
+                        "properties": {"job_id": {"type": "string"}},
+                        "required": ["job_id"],
+                    },
+                },
+            },
         ]
 
     async def submit_background_ingestion_job(self, url: str, instruction: str) -> str:
@@ -69,6 +69,6 @@ class TaskSchedulerPlugin(AgentPlugin):
             if result.successful():
                 return f"Job Completed. Result: {result.result}"
             else:
-                return f"Job Failed. Error: {str(result.result)}"
+                return f"Job Failed. Error: {result.result!s}"
         else:
             return "Job is still running."

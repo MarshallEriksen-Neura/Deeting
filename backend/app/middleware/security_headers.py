@@ -12,7 +12,7 @@ from app.utils.xss_protection import generate_csp_header
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
     添加安全响应头，防护常见 Web 攻击。
-    
+
     包含的安全头：
     - X-Content-Type-Options: 防止 MIME 类型嗅探
     - X-Frame-Options: 防止点击劫持
@@ -51,7 +51,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if self.strict_csp:
             # 严格模式 - 更安全的CSP策略
             csp_headers = generate_csp_header(report_only=False)
-            response.headers["Content-Security-Policy"] = csp_headers["Content-Security-Policy"]
+            response.headers["Content-Security-Policy"] = csp_headers[
+                "Content-Security-Policy"
+            ]
         else:
             # 默认模式 - 平衡安全性和兼容性
             response.headers["Content-Security-Policy"] = (

@@ -4,9 +4,10 @@ import pytest
 from sqlalchemy import select
 
 from app.core.cache import cache
-from app.core.config import settings
 from app.core.cache_keys import CacheKeys
-from app.models.provider_instance import ProviderInstance, ProviderModel
+from app.core.config import settings
+from app.models import Base
+from app.models.provider_instance import ProviderModel
 from app.models.provider_preset import ProviderPreset
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
@@ -15,7 +16,6 @@ from app.repositories.provider_instance_repository import (
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.services.providers.provider_instance_service import ProviderInstanceService
 from tests.api.conftest import AsyncSessionLocal, engine
-from app.models import Base
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -54,7 +54,9 @@ async def seed_presets():
         existing = set(
             (
                 await session.execute(
-                    select(ProviderPreset.slug).where(ProviderPreset.slug.in_(["openai", "azure"]))
+                    select(ProviderPreset.slug).where(
+                        ProviderPreset.slug.in_(["openai", "azure"])
+                    )
                 )
             ).scalars()
         )
@@ -111,7 +113,9 @@ async def test_provider_instance_list_cached_and_invalidated():
             credentials_ref="ENV_OPENAI_KEY",
         )
         repo = ProviderInstanceRepository(session)
-        instances = await repo.get_available_instances(user_id=None, include_public=True)
+        instances = await repo.get_available_instances(
+            user_id=None, include_public=True
+        )
         assert len(instances) == 1
 
         key = cache._make_key(CacheKeys.provider_instance_list(None, True))  # type: ignore[attr-defined]
@@ -128,7 +132,9 @@ async def test_provider_instance_list_cached_and_invalidated():
         )
         assert key not in cache._redis.store  # type: ignore[attr-defined]
 
-        instances = await repo.get_available_instances(user_id=None, include_public=True)
+        instances = await repo.get_available_instances(
+            user_id=None, include_public=True
+        )
         assert len(instances) == 2
 
 
@@ -166,7 +172,9 @@ async def test_provider_model_candidates_cache_and_invalidate():
         await svc.upsert_models(inst.id, None, [payload])
 
         model_repo = ProviderModelRepository(session)
-        candidates = await model_repo.get_candidates("chat", "gpt-4", user_id=None, include_public=True)
+        candidates = await model_repo.get_candidates(
+            "chat", "gpt-4", user_id=None, include_public=True
+        )
         assert len(candidates) == 1
 
         key = cache._make_key(CacheKeys.provider_model_candidates("chat", "gpt-4", None, True))  # type: ignore[attr-defined]
@@ -194,7 +202,9 @@ async def test_provider_model_candidates_cache_and_invalidate():
 
         assert key not in cache._redis.store  # type: ignore[attr-defined]
 
-        candidates = await model_repo.get_candidates("chat", "gpt-4", user_id=None, include_public=True)
+        candidates = await model_repo.get_candidates(
+            "chat", "gpt-4", user_id=None, include_public=True
+        )
         assert len(candidates) == 1
         assert candidates[0].weight == 500
 
@@ -290,6 +300,7 @@ async def test_provider_preset_cache_and_invalidate():
 
         # 失效调用应清除缓存
         from app.core.cache_invalidation import CacheInvalidator
+
         invalidator = CacheInvalidator()
         await invalidator.on_preset_updated(preset_id=str(preset.id))
 
@@ -335,7 +346,9 @@ async def test_provider_model_alias_match():
 
         model_repo = ProviderModelRepository(session)
         # 通过别名命中
-        candidates = await model_repo.get_candidates("chat", alias_name, user_id=None, include_public=True)
+        candidates = await model_repo.get_candidates(
+            "chat", alias_name, user_id=None, include_public=True
+        )
         assert len(candidates) == 1
         assert candidates[0].model_id == upstream_name
 
@@ -399,7 +412,9 @@ async def test_provider_instance_model_count_updates_with_models():
         )
 
         repo = ProviderInstanceRepository(session)
-        instances = await repo.get_available_instances(user_id=None, include_public=True)
+        instances = await repo.get_available_instances(
+            user_id=None, include_public=True
+        )
         target = next((item for item in instances if item.id == inst.id), None)
         assert target is not None
         assert getattr(target, "model_count", 0) == 0
@@ -424,7 +439,9 @@ async def test_provider_instance_model_count_updates_with_models():
         await svc.upsert_models(inst.id, None, [payload])
 
         # 再次获取实例列表，模型数量应为 1，且缓存已被失效
-        instances = await repo.get_available_instances(user_id=None, include_public=True)
+        instances = await repo.get_available_instances(
+            user_id=None, include_public=True
+        )
         target = next((item for item in instances if item.id == inst.id), None)
         assert target is not None
         assert getattr(target, "model_count", 0) == 1
@@ -443,7 +460,9 @@ async def test_quick_add_models_defaults_and_upstream_path():
             credentials_ref="ENV_OPENAI_KEY",
         )
 
-        results = await svc.quick_add_models(inst.id, None, ["gpt-4o", "text-embedding-3-small"])
+        results = await svc.quick_add_models(
+            inst.id, None, ["gpt-4o", "text-embedding-3-small"]
+        )
         assert len(results) == 2
 
         models = await svc.list_models(inst.id, None)
@@ -459,6 +478,7 @@ async def test_quick_add_models_defaults_and_upstream_path():
 @pytest.mark.asyncio
 async def test_provider_model_test_ping(monkeypatch):
     monkeypatch.setattr(settings, "SECRET_KEY", "secret")
+
     class FakeResp:
         def __init__(self):
             self.status_code = 200
@@ -481,7 +501,9 @@ async def test_provider_model_test_ping(monkeypatch):
         async def post(self, *args, **kwargs):
             return FakeResp()
 
-    monkeypatch.setattr("app.services.providers.provider_instance_service.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr(
+        "app.services.providers.provider_instance_service.httpx.AsyncClient", FakeClient
+    )
 
     async with AsyncSessionLocal() as session:
         svc = ProviderInstanceService(session)
@@ -519,7 +541,9 @@ async def test_provider_model_test_ping(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_provider_instance_update_and_delete_invalidate_cache_and_health(monkeypatch):
+async def test_provider_instance_update_and_delete_invalidate_cache_and_health(
+    monkeypatch,
+):
     monkeypatch.setattr(settings, "SECRET_KEY", "secret")
     async with AsyncSessionLocal() as session:
         svc = ProviderInstanceService(session)

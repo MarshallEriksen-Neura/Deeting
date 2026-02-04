@@ -47,7 +47,9 @@ class GenerationTaskRepository:
             stmt = stmt.where(GenerationTask.session_id == session_id)
         return stmt
 
-    async def create(self, payload: dict[str, Any], commit: bool = True) -> GenerationTask:
+    async def create(
+        self, payload: dict[str, Any], commit: bool = True
+    ) -> GenerationTask:
         task = GenerationTask(**payload)
         self.session.add(task)
         if commit:
@@ -80,17 +82,23 @@ class GenerationTaskRepository:
         if error_message is not None:
             values["error_message"] = error_message
 
-        stmt = update(GenerationTask).where(GenerationTask.id == task_id).values(**values)
+        stmt = (
+            update(GenerationTask).where(GenerationTask.id == task_id).values(**values)
+        )
         await self.session.execute(stmt)
         if commit:
             await self.session.commit()
         else:
             await self.session.flush()
 
-    async def update_fields(self, task_id, payload: dict[str, Any], commit: bool = True) -> None:
+    async def update_fields(
+        self, task_id, payload: dict[str, Any], commit: bool = True
+    ) -> None:
         if not payload:
             return
-        stmt = update(GenerationTask).where(GenerationTask.id == task_id).values(**payload)
+        stmt = (
+            update(GenerationTask).where(GenerationTask.id == task_id).values(**payload)
+        )
         await self.session.execute(stmt)
         if commit:
             await self.session.commit()

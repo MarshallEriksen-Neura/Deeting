@@ -7,26 +7,27 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.external.gateway import _stream_billing_callback
 from app.core.database import AsyncSessionLocal, get_db
 from app.deps.auth import get_current_user
 from app.models import User
 from app.models.assistant import AssistantStatus, AssistantVisibility
 from app.models.review import ReviewStatus
 from app.repositories import (
-    AssistantRepository,
-    AssistantVersionRepository,
     AssistantInstallRepository,
     AssistantMarketRepository,
     AssistantRatingRepository,
-    AssistantTagRepository,
+    AssistantRepository,
     AssistantTagLinkRepository,
-    UserSecretaryRepository,
+    AssistantTagRepository,
+    AssistantVersionRepository,
     ReviewTaskRepository,
     UserRepository,
+    UserSecretaryRepository,
 )
 from app.schemas import (
     AssistantCreate,
@@ -45,17 +46,21 @@ from app.schemas import (
     MessageResponse,
 )
 from app.schemas.gateway import ChatCompletionResponse, GatewayError
-from app.services.orchestrator.config import INTERNAL_PREVIEW_WORKFLOW
-from app.services.orchestrator.context import Channel, WorkflowContext
-from app.services.orchestrator.orchestrator import GatewayOrchestrator
-from app.services.workflow.steps.upstream_call import StreamTokenAccumulator, stream_with_billing
-from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService
+from app.services.assistant.assistant_auto_review_service import (
+    AssistantAutoReviewService,
+)
 from app.services.assistant.assistant_market_service import AssistantMarketService
 from app.services.assistant.assistant_preview_service import AssistantPreviewService
 from app.services.assistant.assistant_rating_service import AssistantRatingService
-from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.services.assistant.assistant_service import AssistantService
-from app.api.v1.external.gateway import _stream_billing_callback
+from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.services.orchestrator.config import INTERNAL_PREVIEW_WORKFLOW
+from app.services.orchestrator.context import Channel, WorkflowContext
+from app.services.orchestrator.orchestrator import GatewayOrchestrator
+from app.services.workflow.steps.upstream_call import (
+    StreamTokenAccumulator,
+    stream_with_billing,
+)
 
 router = APIRouter(prefix="/assistants", tags=["Assistants"])
 
@@ -98,10 +103,14 @@ async def _submit_share_review_task(assistant_id: UUID, user_id: UUID) -> None:
         async with AsyncSessionLocal() as session:
             service = build_market_service(session)
             await service.submit_for_review(user_id=user_id, assistant_id=assistant_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
             "assistant_share_review_failed",
-            extra={"assistant_id": str(assistant_id), "user_id": str(user_id), "error": str(exc)},
+            extra={
+                "assistant_id": str(assistant_id),
+                "user_id": str(user_id),
+                "error": str(exc),
+            },
         )
 
 
@@ -123,13 +132,21 @@ def _schedule_assistant_share_review(assistant_id: UUID, user_id: UUID) -> None:
         except Exception as err:  # pragma: no cover - 避免异常吞噬
             logger.warning(
                 "assistant_share_review_task_exception",
-                extra={"assistant_id": str(assistant_id), "user_id": str(user_id), "error": str(err)},
+                extra={
+                    "assistant_id": str(assistant_id),
+                    "user_id": str(user_id),
+                    "error": str(err),
+                },
             )
             return
         if exc:
             logger.warning(
                 "assistant_share_review_task_failed",
-                extra={"assistant_id": str(assistant_id), "user_id": str(user_id), "error": str(exc)},
+                extra={
+                    "assistant_id": str(assistant_id),
+                    "user_id": str(user_id),
+                    "error": str(exc),
+                },
             )
 
     task.add_done_callback(_log_task_error)
@@ -147,7 +164,9 @@ def get_preview_service(db: AsyncSession = Depends(get_db)) -> AssistantPreviewS
     version_repo = AssistantVersionRepository(db)
     review_repo = ReviewTaskRepository(db)
     secretary_repo = UserSecretaryRepository(db)
-    return AssistantPreviewService(assistant_repo, version_repo, review_repo, secretary_repo)
+    return AssistantPreviewService(
+        assistant_repo, version_repo, review_repo, secretary_repo
+    )
 
 
 def get_tag_service(db: AsyncSession = Depends(get_db)) -> AssistantTagService:
@@ -165,7 +184,9 @@ async def list_market_assistants(
     current_user: User = Depends(get_current_user),
     service: AssistantMarketService = Depends(get_market_service),
 ) -> CursorPage[AssistantMarketItem]:
-    return await service.list_market(user_id=current_user.id, params=params, query=q, tags=tags)
+    return await service.list_market(
+        user_id=current_user.id, params=params, query=q, tags=tags
+    )
 
 
 @router.get("/tags", response_model=list[AssistantTagDTO])
@@ -209,7 +230,9 @@ async def uninstall_assistant(
     current_user: User = Depends(get_current_user),
     service: AssistantMarketService = Depends(get_market_service),
 ) -> MessageResponse:
-    await service.uninstall_assistant(user_id=current_user.id, assistant_id=assistant_id)
+    await service.uninstall_assistant(
+        user_id=current_user.id, assistant_id=assistant_id
+    )
     return MessageResponse(message="assistant uninstalled")
 
 
@@ -286,7 +309,9 @@ async def preview_assistant(
         api_key_id=str(current_user.id) if current_user else None,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
-    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
+    ctx.set(
+        "request", "base_url", str(request.base_url).rstrip("/") if request else None
+    )
     ctx.set("validation", "request", preview_request)
     ctx.set("routing", "include_public", False)
 
@@ -307,7 +332,9 @@ async def preview_assistant(
 
     if ctx.get("upstream_call", "stream"):
         stream = ctx.get("upstream_call", "response_stream")
-        accumulator = ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        accumulator = (
+            ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        )
         wrapped_stream = stream_with_billing(
             stream=stream,
             ctx=ctx,
@@ -337,13 +364,21 @@ async def create_custom_assistant(
                     "status": AssistantStatus.PUBLISHED,
                 }
             )
-        assistant = await service.create_assistant(payload=payload, owner_user_id=current_user.id)
+        assistant = await service.create_assistant(
+            payload=payload, owner_user_id=current_user.id
+        )
         try:
-            await market_service.install_assistant(user_id=current_user.id, assistant_id=assistant.id)
-        except Exception as exc:  # noqa: BLE001
+            await market_service.install_assistant(
+                user_id=current_user.id, assistant_id=assistant.id
+            )
+        except Exception as exc:
             logger.warning(
                 "assistant_install_failed",
-                extra={"assistant_id": str(assistant.id), "user_id": str(current_user.id), "error": str(exc)},
+                extra={
+                    "assistant_id": str(assistant.id),
+                    "user_id": str(current_user.id),
+                    "error": str(exc),
+                },
             )
         assistant = await service.assistant_repo.get_with_versions(assistant.id)
         if share_to_market:
@@ -362,9 +397,13 @@ async def update_custom_assistant(
 ) -> AssistantDTO:
     assistant = await service.assistant_repo.get(assistant_id)
     if not assistant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="assistant not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="assistant not found"
+        )
     if assistant.owner_user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="permission denied"
+        )
     try:
         assistant = await service.update_assistant(assistant_id, payload)
         assistant = await service.assistant_repo.get_with_versions(assistant.id)
@@ -381,12 +420,18 @@ async def delete_custom_assistant(
 ) -> MessageResponse:
     assistant = await service.assistant_repo.get(assistant_id)
     if not assistant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="assistant not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="assistant not found"
+        )
     if assistant.owner_user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="permission denied"
+        )
 
     install_repo = AssistantInstallRepository(service.assistant_repo.session)
-    install_count = await install_repo.count_by_assistant_exclude_owner(assistant_id, current_user.id)
+    install_count = await install_repo.count_by_assistant_exclude_owner(
+        assistant_id, current_user.id
+    )
     if install_count > 0:
         await service.update_assistant(
             assistant_id,

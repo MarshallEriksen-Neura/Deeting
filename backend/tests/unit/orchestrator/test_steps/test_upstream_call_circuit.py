@@ -39,5 +39,7 @@ async def test_circuit_open_state_moves_to_half_open_after_reset_window():
     expected_key = f"{settings.CACHE_PREFIX}{CacheKeys.circuit_breaker(host)}"
     redis_mock.hgetall.assert_awaited_once_with(expected_key)
     redis_mock.hset.assert_awaited()
-    redis_mock.expire.assert_awaited_with(expected_key, settings.CIRCUIT_BREAKER_RESET_SECONDS * 2)
+    redis_mock.expire.assert_awaited_with(
+        expected_key, settings.CIRCUIT_BREAKER_RESET_SECONDS * 2
+    )
     assert is_open is False

@@ -3,13 +3,13 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
-from app.models import Identity, User, Base
+from app.models import Base, Identity, User
 from app.services.users import oauth_linuxdo_service as oauth_svc
-from sqlalchemy import select
 from main import app
 
 
@@ -17,7 +17,9 @@ def _enable_linuxdo(monkeypatch):
     monkeypatch.setattr(settings, "LINUXDO_OAUTH_ENABLED", True)
     monkeypatch.setattr(settings, "LINUXDO_CLIENT_ID", "dummy-client")
     monkeypatch.setattr(settings, "LINUXDO_CLIENT_SECRET", "dummy-secret")
-    monkeypatch.setattr(settings, "LINUXDO_REDIRECT_URI", "https://example.com/callback")
+    monkeypatch.setattr(
+        settings, "LINUXDO_REDIRECT_URI", "https://example.com/callback"
+    )
 
 
 @pytest.mark.asyncio
@@ -40,14 +42,19 @@ async def test_authorize_redirect_and_state_stored(client: AsyncClient, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_callback_creates_user_and_identity(monkeypatch, client: AsyncClient, AsyncSessionLocal):
+async def test_callback_creates_user_and_identity(
+    monkeypatch, client: AsyncClient, AsyncSessionLocal
+):
     _enable_linuxdo(monkeypatch)
     from app.core.database import get_db
+
     # 显式覆盖依赖，确保路由使用内存 SQLite
     prev_overrides = app.dependency_overrides.copy()
+
     async def _override_get_db():
         async with AsyncSessionLocal() as session:
             yield session
+
     app.dependency_overrides[get_db] = _override_get_db
     try:
         # 确保测试内的内存数据库具备模型表
@@ -56,7 +63,9 @@ async def test_callback_creates_user_and_identity(monkeypatch, client: AsyncClie
                 await conn.run_sync(Base.metadata.create_all)
 
         state = "test-state-123"
-        await cache.set(CacheKeys.oauth_linuxdo_state(state), {"provider": "linuxdo"}, ttl=300)
+        await cache.set(
+            CacheKeys.oauth_linuxdo_state(state), {"provider": "linuxdo"}, ttl=300
+        )
 
         async def fake_exchange(client, code):
             return oauth_svc.LinuxDoToken("atk", "Bearer", 3600)
@@ -87,7 +96,9 @@ async def test_callback_creates_user_and_identity(monkeypatch, client: AsyncClie
         async with AsyncSessionLocal() as session:
             user = await session.get(User, user_id)
             assert user is not None
-            res = await session.execute(select(Identity).where(Identity.user_id == user_id))
+            res = await session.execute(
+                select(Identity).where(Identity.user_id == user_id)
+            )
             identity = res.scalar_one_or_none()
             assert identity is not None
             assert identity.external_id == "ext-uid-1"

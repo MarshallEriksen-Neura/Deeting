@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 
 from app.models.gateway_log import GatewayLog
 
@@ -48,10 +48,7 @@ class GatewayLogRepository(BaseRepository[GatewayLog]):
         return stmt.order_by(GatewayLog.created_at.desc(), GatewayLog.id.desc())
 
     async def get_logs_by_time_range(
-        self,
-        start_time: datetime,
-        end_time: datetime,
-        limit: int = 100
+        self, start_time: datetime, end_time: datetime, limit: int = 100
     ) -> list[GatewayLog]:
         """
         基于 BRIN 索引的 created_at 范围查询
@@ -59,8 +56,7 @@ class GatewayLogRepository(BaseRepository[GatewayLog]):
         result = await self.session.execute(
             select(GatewayLog)
             .where(
-                GatewayLog.created_at >= start_time,
-                GatewayLog.created_at <= end_time
+                GatewayLog.created_at >= start_time, GatewayLog.created_at <= end_time
             )
             .order_by(GatewayLog.created_at.desc())
             .limit(limit)

@@ -4,16 +4,21 @@ import uuid
 from uuid import UUID
 
 from fastapi import HTTPException, status
-
 from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi_pagination.ext.sqlalchemy import paginate
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.utils.time_utils import Datetime
-from app.models.conversation import ConversationChannel, ConversationSession, ConversationStatus
-from app.repositories.conversation_session_repository import ConversationSessionRepository
+from app.models.conversation import (
+    ConversationChannel,
+    ConversationSession,
+    ConversationStatus,
+)
 from app.repositories.assistant_repository import AssistantRepository
+from app.repositories.conversation_session_repository import (
+    ConversationSessionRepository,
+)
 from app.schemas.conversation import ConversationSessionItem
+from app.utils.time_utils import Datetime
 
 
 class ConversationSessionService:
@@ -50,7 +55,9 @@ class ConversationSessionService:
                 )
             return items
 
-        return await paginate(self.session_repo.session, stmt, params=params, transformer=_transform)
+        return await paginate(
+            self.session_repo.session, stmt, params=params, transformer=_transform
+        )
 
     async def touch_session(
         self,

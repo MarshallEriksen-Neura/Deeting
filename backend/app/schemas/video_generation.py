@@ -18,19 +18,19 @@ class VideoGenerationTaskCreateRequest(BaseSchema):
     width: int | None = Field(None, ge=1, description="输出宽度")
     height: int | None = Field(None, ge=1, description="输出高度")
     aspect_ratio: str | None = Field(None, description="纵横比 (16:9, 9:16, etc)")
-    
+
     duration: int | None = Field(None, ge=1, description="视频时长(秒)")
     fps: int | None = Field(None, ge=1, description="帧率")
     motion_bucket_id: int | None = Field(None, description="运动幅度 (SVD param)")
-    
+
     num_outputs: int = Field(1, ge=1, description="生成视频数量")
     steps: int | None = Field(None, description="推理步数")
     cfg_scale: float | None = Field(None, description="CFG 指数")
     seed: int | None = Field(None, description="随机种子")
-    
+
     quality: str | None = Field(None, description="质量/风格")
     style: str | None = Field(None, description="风格")
-    
+
     extra_params: dict[str, Any] = Field(default_factory=dict, description="扩展参数")
 
     provider_model_id: UUID | None = Field(None, description="指定 ProviderModel ID")
@@ -87,9 +87,9 @@ class VideoGenerationTaskListItem(BaseSchema):
 
 
 __all__ = [
+    "VideoGenerationOutputItem",
     "VideoGenerationTaskCreateRequest",
     "VideoGenerationTaskCreateResponse",
-    "VideoGenerationOutputItem",
     "VideoGenerationTaskDetail",
     "VideoGenerationTaskListItem",
 ]

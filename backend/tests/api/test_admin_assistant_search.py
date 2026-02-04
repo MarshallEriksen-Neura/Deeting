@@ -5,7 +5,12 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.models.assistant import Assistant, AssistantStatus, AssistantVersion, AssistantVisibility
+from app.models.assistant import (
+    Assistant,
+    AssistantStatus,
+    AssistantVersion,
+    AssistantVisibility,
+)
 
 
 async def _seed_public_assistant(session) -> Assistant:

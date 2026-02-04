@@ -5,7 +5,6 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, select
 
-from app.utils.time_utils import Datetime
 from app.models.conversation import (
     ConversationChannel,
     ConversationMessage,
@@ -14,6 +13,7 @@ from app.models.conversation import (
     ConversationSummary,
 )
 from app.repositories.base import BaseRepository
+from app.utils.time_utils import Datetime
 
 
 class ConversationSessionRepository(BaseRepository[ConversationSession]):
@@ -35,7 +35,9 @@ class ConversationSessionRepository(BaseRepository[ConversationSession]):
             select(ConversationSession, ConversationSummary)
             .outerjoin(ConversationSummary, summary_join)
             .where(ConversationSession.user_id == user_id)
-            .order_by(ConversationSession.last_active_at.desc(), ConversationSession.id.desc())
+            .order_by(
+                ConversationSession.last_active_at.desc(), ConversationSession.id.desc()
+            )
         )
         if channel:
             stmt = stmt.where(ConversationSession.channel == channel)
@@ -87,7 +89,9 @@ class ConversationSessionRepository(BaseRepository[ConversationSession]):
             if last_active_at:
                 session_obj.last_active_at = last_active_at
             if message_count is not None:
-                session_obj.message_count = max(session_obj.message_count or 0, message_count)
+                session_obj.message_count = max(
+                    session_obj.message_count or 0, message_count
+                )
         await self.session.commit()
         await self.session.refresh(session_obj)
         return session_obj

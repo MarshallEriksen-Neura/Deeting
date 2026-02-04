@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from uuid import uuid4
-
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -45,7 +44,9 @@ async def _seed_market_tool(session) -> McpMarketTool:
 
 
 @pytest.mark.asyncio
-async def test_list_market_tools(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal, monkeypatch) -> None:
+async def test_list_market_tools(
+    client: AsyncClient, auth_tokens: dict, AsyncSessionLocal, monkeypatch
+) -> None:
     async with AsyncSessionLocal() as session:
         tool = await _seed_market_tool(session)
 
@@ -69,7 +70,9 @@ async def test_list_market_tools(client: AsyncClient, auth_tokens: dict, AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_subscribe_and_unsubscribe(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
+async def test_subscribe_and_unsubscribe(
+    client: AsyncClient, auth_tokens: dict, AsyncSessionLocal
+) -> None:
     async with AsyncSessionLocal() as session:
         tool = await _seed_market_tool(session)
 

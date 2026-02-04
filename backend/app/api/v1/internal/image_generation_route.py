@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import AsyncIterator
 from datetime import timedelta
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import StreamingResponse
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -24,9 +25,9 @@ from app.schemas.image_generation import (
     ImageGenerationTaskDetail,
     ImageGenerationTaskListItem,
 )
-from app.services.system import CancelService
 from app.services.image_generation.service import ImageGenerationService
 from app.services.image_generation.share_service import ImageGenerationShareService
+from app.services.system import CancelService
 from app.tasks.image_generation import process_image_generation_task
 from app.utils.time_utils import Datetime
 
@@ -38,7 +39,7 @@ def _format_sse(payload: dict[str, Any] | str) -> bytes:
         data = payload
     else:
         data = json.dumps(payload, ensure_ascii=False, default=str)
-    return f"data: {data}\n\n".encode("utf-8")
+    return f"data: {data}\n\n".encode()
 
 
 def _status_value(status: ImageGenerationStatus | str | None) -> str:
@@ -166,7 +167,10 @@ async def get_image_generation(
         raise HTTPException(status_code=404, detail="task not found")
 
     outputs = []
-    if include_outputs and _status_value(task.status) == ImageGenerationStatus.SUCCEEDED.value:
+    if (
+        include_outputs
+        and _status_value(task.status) == ImageGenerationStatus.SUCCEEDED.value
+    ):
         outputs = await service.build_signed_outputs(
             task.id,
             base_url=str(request.base_url).rstrip("/") if request else None,

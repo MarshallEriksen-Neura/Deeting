@@ -4,6 +4,7 @@ Revision ID: 20260109_02
 Revises: 20260109_01
 Create Date: 2026-01-09
 """
+
 import uuid
 
 import sqlalchemy as sa

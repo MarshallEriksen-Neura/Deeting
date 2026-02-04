@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List
+from collections.abc import Iterable
 
 # 显式前缀/通配映射（按顺序匹配，首个命中即用）
 PREFIX_RULES: list[tuple[str, list[str]]] = [

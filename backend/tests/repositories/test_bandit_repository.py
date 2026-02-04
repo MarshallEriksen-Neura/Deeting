@@ -3,8 +3,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.models.base import Base
 from app.models.bandit import BanditArmState
+from app.models.base import Base
 from app.models.skill_registry import SkillRegistry
 from app.repositories.bandit_repository import BanditRepository
 
@@ -16,7 +16,9 @@ class FakeCache:
     async def get_with_version(self, key: str, _version: int | None):
         return self._store.get(key)
 
-    async def set_with_version(self, key: str, payload: dict, _version: int, ttl: int | None = None) -> None:
+    async def set_with_version(
+        self, key: str, payload: dict, _version: int, ttl: int | None = None
+    ) -> None:
         self._store[key] = payload
 
 
@@ -51,7 +53,9 @@ async def async_session() -> AsyncSession:
 async def test_bandit_repository_uses_scene_and_arm_id(async_session, monkeypatch):
     repo = BanditRepository(async_session)
     monkeypatch.setattr("app.repositories.bandit_repository.cache", FakeCache())
-    monkeypatch.setattr("app.repositories.bandit_repository.CacheInvalidator", FakeInvalidator)
+    monkeypatch.setattr(
+        "app.repositories.bandit_repository.CacheInvalidator", FakeInvalidator
+    )
 
     state = await repo.ensure_state(
         scene="router:llm",

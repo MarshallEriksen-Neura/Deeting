@@ -17,10 +17,15 @@ from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.repositories.api_key import ApiKeyRepository
-from app.services.providers.api_key import ApiKeyService
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
-from app.services.workflow.steps.base import BaseStep, StepConfig, StepResult, StepStatus
+from app.services.providers.api_key import ApiKeyService
+from app.services.workflow.steps.base import (
+    BaseStep,
+    StepConfig,
+    StepResult,
+    StepStatus,
+)
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -67,7 +72,11 @@ class SignatureVerifyStep(BaseStep):
     _memory_fail_counts: dict[str, int] = {}
     _memory_blacklist: set[str] = set()
 
-    def __init__(self, config: StepConfig | None = None, api_key_repo: ApiKeyRepository | None = None):
+    def __init__(
+        self,
+        config: StepConfig | None = None,
+        api_key_repo: ApiKeyRepository | None = None,
+    ):
         super().__init__(config)
         # 内部通道默认跳过
         if config is None:
@@ -293,7 +302,9 @@ class SignatureVerifyStep(BaseStep):
                 b"1",
                 ex=SIGNATURE_FAIL_WINDOW_SECONDS,
             )
-            await redis_client.set(f"gw:blacklist:{api_key_id}", "1", ex=SIGNATURE_FAIL_WINDOW_SECONDS)
+            await redis_client.set(
+                f"gw:blacklist:{api_key_id}", "1", ex=SIGNATURE_FAIL_WINDOW_SECONDS
+            )
             await redis_client.set(
                 CacheKeys.api_key_revoked(str(api_key_id)),
                 b"1",

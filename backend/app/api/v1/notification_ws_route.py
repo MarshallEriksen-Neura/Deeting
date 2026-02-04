@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from typing import Deque
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from pydantic import ValidationError
@@ -33,7 +32,7 @@ def _extract_token(websocket: WebSocket) -> str | None:
 
 class _DedupStore:
     def __init__(self, max_size: int):
-        self._queue: Deque[str] = deque()
+        self._queue: deque[str] = deque()
         self._seen: set[str] = set()
         self._max_size = max_size
 
@@ -61,7 +60,7 @@ async def notifications_ws(websocket: WebSocket) -> None:
     async with AsyncSessionLocal() as session:
         try:
             user = await get_current_active_user_from_token(token, session)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("notification_ws_auth_failed", extra={"error": str(exc)})
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -90,7 +89,7 @@ async def notifications_ws(websocket: WebSocket) -> None:
                         websocket.receive_text(),
                         timeout=_POLL_INTERVAL_SECONDS,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     new_items, new_last_seen = await service.fetch_since(
                         user.id,
                         since=last_seen_at,
@@ -129,7 +128,9 @@ async def notifications_ws(websocket: WebSocket) -> None:
 
                 if payload.type == "ping":
                     await websocket.send_json(
-                        NotificationWSOutbound(type="pong", data={"ts": "ok"}).model_dump(mode="json")
+                        NotificationWSOutbound(
+                            type="pong", data={"ts": "ok"}
+                        ).model_dump(mode="json")
                     )
                     continue
 
@@ -162,7 +163,10 @@ async def notifications_ws(websocket: WebSocket) -> None:
                     await websocket.send_json(
                         NotificationWSOutbound(
                             type="ack",
-                            data={"action": "mark_all_read", "unread_count": unread_count},
+                            data={
+                                "action": "mark_all_read",
+                                "unread_count": unread_count,
+                            },
                         ).model_dump(mode="json")
                     )
                     continue
@@ -177,6 +181,9 @@ async def notifications_ws(websocket: WebSocket) -> None:
                     )
         except WebSocketDisconnect:
             logger.info("notification_ws_disconnected", extra={"user_id": str(user.id)})
-        except Exception as exc:  # noqa: BLE001
-            logger.error("notification_ws_error", extra={"user_id": str(user.id), "error": str(exc)})
+        except Exception as exc:
+            logger.error(
+                "notification_ws_error",
+                extra={"user_id": str(user.id), "error": str(exc)},
+            )
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)

@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.schemas.base import BaseSchema
 from app.models.registration_window import RegistrationWindowStatus
+from app.schemas.base import BaseSchema
 
 
 class RegistrationWindowCreate(BaseSchema):

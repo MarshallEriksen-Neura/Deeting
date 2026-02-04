@@ -1,7 +1,8 @@
 from typing import Any
-import logging
-from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
+
 from app.agent_plugins.builtins.code_interpreter.tools import run_python
+from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
+
 
 class CodeInterpreterPlugin(AgentPlugin):
     """
@@ -15,7 +16,7 @@ class CodeInterpreterPlugin(AgentPlugin):
             name="system.code_interpreter",
             version="1.0.0",
             description="Executes Python code in a stateful sandbox. Use for data analysis, math, and file processing.",
-            author="Gemini CLI"
+            author="Gemini CLI",
         )
 
     def get_tools(self) -> list[dict]:
@@ -30,37 +31,41 @@ class CodeInterpreterPlugin(AgentPlugin):
                         "properties": {
                             "code": {
                                 "type": "string",
-                                "description": "The Python code to execute."
+                                "description": "The Python code to execute.",
                             },
                             "session_id": {
                                 "type": "string",
-                                "description": "Optional session ID for state persistence."
-                            }
+                                "description": "Optional session ID for state persistence.",
+                            },
                         },
-                        "required": ["code"]
-                    }
-                }
+                        "required": ["code"],
+                    },
+                },
             }
         ]
 
-    async def handle_run_python(self, code: str, session_id: str | None = None, **kwargs) -> Any:
+    async def handle_run_python(
+        self, code: str, session_id: str | None = None, **kwargs
+    ) -> Any:
         """
         Handler for run_python tool.
         """
         # Construct the args object expected by the implementation
         # We need to construct a context-like object or pass the session_id
         # The base AgentPlugin likely has self.context
-        
+
         # Checking base class implementation (inferred), self.context usually has user/session info
         # Let's wrap the context to match what tools.run_python expects
-        
+
         class ContextWrapper:
             def __init__(self, ctx):
                 self.session_id = ctx.session_id if ctx else "default-session"
-        
+
         class ArgsWrapper:
             def __init__(self, c, sid):
                 self.code = c
                 self.session_id = sid
 
-        return await run_python(ContextWrapper(self.context), ArgsWrapper(code, session_id))
+        return await run_python(
+            ContextWrapper(self.context), ArgsWrapper(code, session_id)
+        )

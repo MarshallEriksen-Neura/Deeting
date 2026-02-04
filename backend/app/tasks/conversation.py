@@ -164,7 +164,9 @@ async def _run_summarize(session_id: str) -> str:
     try:
         svc = get_conversation_service()
     except Exception as exc:
-        logger.error(f"conversation_summarize_redis_unavailable session={session_id} exc={exc}")
+        logger.error(
+            f"conversation_summarize_redis_unavailable session={session_id} exc={exc}"
+        )
         return "redis_unavailable"
     try:
         payload = await svc.load_window(session_id)
@@ -238,6 +240,7 @@ async def _persist_summary(
     session_uuid = uuid.UUID(session_id)
     async with AsyncSessionLocal() as db:
         try:
+
             def _parse_dt(val: Any) -> Any | None:
                 if not val:
                     return None
@@ -272,9 +275,13 @@ async def _persist_summary(
                     session_obj.message_count or 0, meta.get("last_turn", 0)
                 )
                 session_obj.last_summary_version = summary_payload["version"]
-                session_obj.last_active_at = _parse_dt(meta.get("last_active_at")) or session_obj.last_active_at
+                session_obj.last_active_at = (
+                    _parse_dt(meta.get("last_active_at")) or session_obj.last_active_at
+                )
                 if not session_obj.first_message_at:
-                    session_obj.first_message_at = _parse_dt(meta.get("first_message_at"))
+                    session_obj.first_message_at = _parse_dt(
+                        meta.get("first_message_at")
+                    )
 
             # 写入消息（幂等）
             if messages:
@@ -295,9 +302,7 @@ async def _persist_summary(
                 stmt = (
                     insert(ConversationMessage)
                     .values(msg_rows)
-                    .on_conflict_do_nothing(
-                        index_elements=["session_id", "turn_index"]
-                    )
+                    .on_conflict_do_nothing(index_elements=["session_id", "turn_index"])
                 )
                 await db.execute(stmt)
 
@@ -329,7 +334,9 @@ async def _persist_summary(
             await db.commit()
         except (SQLAlchemyError, ValueError) as exc:
             await db.rollback()
-            logger.error(f"conversation_summary_persist_failed session={session_id} exc={exc}")
+            logger.error(
+                f"conversation_summary_persist_failed session={session_id} exc={exc}"
+            )
 
 
 @celery_app.task(name="conversation.topic_naming")

@@ -6,7 +6,11 @@ from app.services.system import FeatureRollout
 
 
 class DummyRedis:
-    def __init__(self, values: dict[str, str] | None = None, sets: dict[str, set[str]] | None = None) -> None:
+    def __init__(
+        self,
+        values: dict[str, str] | None = None,
+        sets: dict[str, set[str]] | None = None,
+    ) -> None:
         self._values = values or {}
         self._sets = sets or {}
 
@@ -18,7 +22,9 @@ class DummyRedis:
 
 
 @pytest.mark.asyncio
-async def test_feature_rollout_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_feature_rollout_disabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(cache, "_redis", None)
     rollout = FeatureRollout(cfg_ttl_seconds=0.0)
     assert await rollout.is_enabled("memory_read", subject_id="u1") is False

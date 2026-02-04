@@ -1,6 +1,5 @@
-from typing import Any, List
-
 import logging
+from typing import Any
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.services.assistant.assistant_retrieval_service import AssistantRetrievalService
@@ -19,7 +18,7 @@ class ExpertNetworkPlugin(AgentPlugin):
             author="System",
         )
 
-    def get_tools(self) -> List[Any]:
+    def get_tools(self) -> list[Any]:
         return [
             {
                 "type": "function",

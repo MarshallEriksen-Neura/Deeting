@@ -107,7 +107,7 @@ def _ensure_model(model_cls, raw: Any):
 
 
 __all__ = [
-    "adapt_openai_chat",
     "adapt_anthropic_messages",
+    "adapt_openai_chat",
     "adapt_responses_request",
 ]

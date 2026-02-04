@@ -18,7 +18,6 @@ from app.services.providers.embedding import EmbeddingService
 from app.services.providers.sanitizer import sanitizer
 from app.services.vector.qdrant_user_service import QdrantUserVectorService
 
-
 DEDUP_SCORE_THRESHOLD = 0.92
 TRAIN_SAMPLE_RATE = 1.0
 TRAIN_LABEL_FACT = "__label__fact"
@@ -27,7 +26,12 @@ _TRAINING_LOCK = asyncio.Lock()
 
 
 def _training_sample_path() -> Path:
-    return Path(__file__).resolve().parents[3] / "scripts" / "data" / "fact_train_samples.txt"
+    return (
+        Path(__file__).resolve().parents[3]
+        / "scripts"
+        / "data"
+        / "fact_train_samples.txt"
+    )
 
 
 def _normalize_label(decision: bool) -> str:
@@ -86,7 +90,9 @@ def _parse_decision(content: str | None) -> tuple[bool | None, float | None]:
         )
         if isinstance(save_value, bool):
             confidence = data.get("confidence")
-            return save_value, float(confidence) if isinstance(confidence, (int, float)) else None
+            return save_value, (
+                float(confidence) if isinstance(confidence, (int, float)) else None
+            )
         if isinstance(save_value, str):
             lowered = save_value.strip().lower()
             if lowered in {"true", "yes", "y", "1"}:
@@ -95,9 +101,17 @@ def _parse_decision(content: str | None) -> tuple[bool | None, float | None]:
                 return False, None
         label = str(data.get("label") or data.get("decision") or "").strip().lower()
         if label in {"fact", "memory", "save", "yes", "true"}:
-            return True, data.get("confidence") if isinstance(data.get("confidence"), (int, float)) else None
+            return True, (
+                data.get("confidence")
+                if isinstance(data.get("confidence"), (int, float))
+                else None
+            )
         if label in {"chat", "no", "false", "skip"}:
-            return False, data.get("confidence") if isinstance(data.get("confidence"), (int, float)) else None
+            return False, (
+                data.get("confidence")
+                if isinstance(data.get("confidence"), (int, float))
+                else None
+            )
 
     lowered = raw.lower()
     if lowered in {"yes", "true", "是", "需要"}:
@@ -121,7 +135,9 @@ async def _resolve_secretary_model(
     return secretary.model_name
 
 
-async def _classify_with_llm(text: str, *, model: str | None) -> tuple[bool | None, float | None]:
+async def _classify_with_llm(
+    text: str, *, model: str | None
+) -> tuple[bool | None, float | None]:
     from app.services.providers.llm import llm_service
 
     messages = [

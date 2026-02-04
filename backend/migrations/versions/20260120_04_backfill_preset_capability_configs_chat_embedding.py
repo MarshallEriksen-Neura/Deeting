@@ -92,9 +92,7 @@ def upgrade() -> None:
 
         if "chat" not in updated:
             chat_config = copy.deepcopy(DEFAULT_CHAT_CONFIG)
-            chat_config["template_engine"] = _resolve_chat_template_engine(
-                row.provider
-            )
+            chat_config["template_engine"] = _resolve_chat_template_engine(row.provider)
             updated["chat"] = chat_config
             changed = True
         if "embedding" not in updated:

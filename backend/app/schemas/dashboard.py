@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import Field
 
@@ -12,18 +11,18 @@ class FinancialStats(BaseSchema):
     monthly_spent: float = Field(0, alias="monthlySpent")
     balance: float = 0
     quota_used_percent: float = Field(0, alias="quotaUsedPercent")
-    estimated_month_end: Optional[float] = Field(None, alias="estimatedMonthEnd")
+    estimated_month_end: float | None = Field(None, alias="estimatedMonthEnd")
 
 
 class TrafficStats(BaseSchema):
     today_requests: int = Field(0, alias="todayRequests")
-    hourly_trend: List[int] = Field(default_factory=list, alias="hourlyTrend")
-    trend_percent: Optional[float] = Field(None, alias="trendPercent")
+    hourly_trend: list[int] = Field(default_factory=list, alias="hourlyTrend")
+    trend_percent: float | None = Field(None, alias="trendPercent")
 
 
 class SpeedStats(BaseSchema):
     avg_ttft: float = Field(0, alias="avgTTFT")
-    trend_percent: Optional[float] = Field(None, alias="trendPercent")
+    trend_percent: float | None = Field(None, alias="trendPercent")
 
 
 class HealthStats(BaseSchema):
@@ -46,7 +45,7 @@ class TokenTimelinePoint(BaseSchema):
 
 
 class TokenThroughputResponse(BaseSchema):
-    timeline: List[TokenTimelinePoint]
+    timeline: list[TokenTimelinePoint]
     total_input: int = Field(0, alias="totalInput")
     total_output: int = Field(0, alias="totalOutput")
     ratio: float
@@ -65,7 +64,7 @@ class ProviderHealthItem(BaseSchema):
     status: str
     priority: int
     latency: int
-    sparkline: List[int] | None = None
+    sparkline: list[int] | None = None
 
 
 class RecentErrorItem(BaseSchema):
@@ -75,4 +74,3 @@ class RecentErrorItem(BaseSchema):
     model: str
     error_message: str = Field(..., alias="errorMessage")
     error_code: str | None = Field(None, alias="errorCode")
-

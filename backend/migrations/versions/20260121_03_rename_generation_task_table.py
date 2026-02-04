@@ -5,14 +5,14 @@ Revises: 20260121_02_add_generation_task_fields
 Create Date: 2026-01-21
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 revision: str = "20260121_03_rename_generation_task_table"
-down_revision: Union[str, None] = "20260121_02_add_generation_task_fields"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260121_02_add_generation_task_fields"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

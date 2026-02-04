@@ -18,7 +18,9 @@ class RegistrationWindow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "registration_windows"
 
-    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    start_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     max_registrations: Mapped[int] = mapped_column(Integer, nullable=False)
     registered_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

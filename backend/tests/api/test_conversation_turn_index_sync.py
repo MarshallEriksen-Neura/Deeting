@@ -1,6 +1,6 @@
-import pytest
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import func, select
 
 from app.models.conversation import (
@@ -81,11 +81,7 @@ async def test_conversation_append_syncs_turn_index(AsyncSessionLocal):
         ctx.set(
             "response_transform",
             "response",
-            {
-                "choices": [
-                    {"message": {"role": "assistant", "content": "next reply"}}
-                ]
-            },
+            {"choices": [{"message": {"role": "assistant", "content": "next reply"}}]},
         )
 
         step = ConversationAppendStep()
@@ -99,8 +95,8 @@ async def test_conversation_append_syncs_turn_index(AsyncSessionLocal):
         assert int(max_turn_result.scalar() or 0) == 4
 
         count_result = await session.execute(
-            select(func.count()).select_from(ConversationMessage).where(
-                ConversationMessage.session_id == session_id
-            )
+            select(func.count())
+            .select_from(ConversationMessage)
+            .where(ConversationMessage.session_id == session_id)
         )
         assert int(count_result.scalar() or 0) == 4

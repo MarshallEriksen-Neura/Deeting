@@ -8,10 +8,14 @@ from fastapi_pagination.ext.sqlalchemy import paginate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.image_generation import ImageGenerationStatus
-from app.repositories.generation_task_repository import GenerationTaskRepository
-from app.repositories.image_generation_output_repository import ImageGenerationOutputRepository
-from app.repositories.image_generation_share_repository import ImageGenerationShareRepository
 from app.repositories.assistant_tag_repository import AssistantTagRepository
+from app.repositories.generation_task_repository import GenerationTaskRepository
+from app.repositories.image_generation_output_repository import (
+    ImageGenerationOutputRepository,
+)
+from app.repositories.image_generation_share_repository import (
+    ImageGenerationShareRepository,
+)
 from app.repositories.image_generation_share_tag_repository import (
     ImageGenerationShareTagLinkRepository,
 )
@@ -23,7 +27,9 @@ from app.schemas.image_generation import (
     ImageGenerationShareState,
 )
 from app.services.image_generation.service import ImageGenerationService
-from app.services.image_generation.share_tag_service import ImageGenerationShareTagService
+from app.services.image_generation.share_tag_service import (
+    ImageGenerationShareTagService,
+)
 from app.utils.time_utils import Datetime
 
 
@@ -102,7 +108,9 @@ class ImageGenerationShareService:
             tags=normalized,
         )
 
-    async def unshare_task(self, *, user_id: UUID, task_id: UUID) -> ImageGenerationShareState | None:
+    async def unshare_task(
+        self, *, user_id: UUID, task_id: UUID
+    ) -> ImageGenerationShareState | None:
         share = await self.share_repo.get_by_task_id(task_id)
         if not share or share.user_id != user_id:
             return None
@@ -211,7 +219,11 @@ class ImageGenerationShareService:
             if output.task_id not in first_outputs:
                 first_outputs[output.task_id] = output
 
-        asset_ids = [output.media_asset_id for output in first_outputs.values() if output.media_asset_id]
+        asset_ids = [
+            output.media_asset_id
+            for output in first_outputs.values()
+            if output.media_asset_id
+        ]
         assets = await self.asset_repo.list_by_ids(asset_ids)
         asset_map = {asset.id: asset for asset in assets}
 
@@ -227,9 +239,12 @@ class ImageGenerationShareService:
                     expire_at = asset.expire_at
                     if expire_at and expire_at.tzinfo is None:
                         from datetime import UTC
+
                         expire_at = expire_at.replace(tzinfo=UTC)
                     if not expire_at or expire_at > now:
-                        asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                        asset_url = build_signed_asset_url(
+                            asset.object_key, base_url=base_url
+                        )
             preview_map[task_id] = ImageGenerationOutputItem(
                 output_index=output.output_index,
                 asset_url=asset_url,

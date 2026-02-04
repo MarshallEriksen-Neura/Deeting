@@ -41,7 +41,9 @@ class SkippedStep(BaseStep):
         super().__init__(config)
         self.name = name
 
-    async def execute(self, ctx: WorkflowContext) -> StepResult:  # pragma: no cover - execute 不会被调用
+    async def execute(
+        self, ctx: WorkflowContext
+    ) -> StepResult:  # pragma: no cover - execute 不会被调用
         return StepResult()
 
 
@@ -49,7 +51,9 @@ class RetryStep(BaseStep):
     name = "retry"
 
     def __init__(self, fail_times: int):
-        super().__init__(StepConfig(max_retries=fail_times, retry_delay=0, retry_backoff=1))
+        super().__init__(
+            StepConfig(max_retries=fail_times, retry_delay=0, retry_backoff=1)
+        )
         self.fail_times = fail_times
         self.calls = 0
 

@@ -32,7 +32,7 @@ class UserService:
             return None
         if str(user.avatar_object_key).startswith(("http://", "https://")):
             return str(user.avatar_object_key)
-        
+
         if user.avatar_storage_type == "public":
             return build_public_asset_url(user.avatar_object_key)
         else:
@@ -50,11 +50,15 @@ class UserService:
         update_data = request.model_dump(exclude_unset=True)
 
         # 如果更新头像 object_key，自动设置 storage_type
-        if "avatar_url" in update_data and update_data["avatar_url"]:
+        if update_data.get("avatar_url"):
             update_data["avatar_object_key"] = update_data.pop("avatar_url")
-            update_data["avatar_storage_type"] = update_data.get("avatar_storage_type", "public")
-        if "avatar_object_key" in update_data and update_data["avatar_object_key"]:
-            update_data["avatar_storage_type"] = update_data.get("avatar_storage_type", "public")
+            update_data["avatar_storage_type"] = update_data.get(
+                "avatar_storage_type", "public"
+            )
+        if update_data.get("avatar_object_key"):
+            update_data["avatar_storage_type"] = update_data.get(
+                "avatar_storage_type", "public"
+            )
 
         if update_data:
             user = await self.user_repo.update_user(user.id, **update_data)

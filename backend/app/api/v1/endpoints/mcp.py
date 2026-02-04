@@ -1,26 +1,26 @@
 import uuid
-import httpx
-from datetime import datetime, timezone
-from typing import Any, List, Dict
+from datetime import UTC, datetime
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
-from sqlalchemy import select, delete
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps.auth import get_current_active_user
-from app.core.http_client import create_async_http_client
 from app.core.database import get_db
+from app.core.http_client import create_async_http_client
+from app.deps.auth import get_current_active_user
 from app.models.user import User
 from app.models.user_mcp_server import UserMcpServer
 from app.models.user_mcp_source import UserMcpSource
 from app.schemas.mcp_server import (
-    UserMcpServerCreate,
-    UserMcpServerResponse,
-    UserMcpServerUpdate,
     McpServerToolItem,
     McpServerToolToggleRequest,
     McpToolTestRequest,
     McpToolTestResponse,
+    UserMcpServerCreate,
+    UserMcpServerResponse,
+    UserMcpServerUpdate,
 )
 from app.schemas.mcp_source import (
     McpSourceSyncRequest,
@@ -29,9 +29,9 @@ from app.schemas.mcp_source import (
     UserMcpSourceResponse,
 )
 from app.schemas.tool import ToolDefinition
-from app.services.secrets.manager import SecretManager
-from app.services.mcp.discovery import mcp_discovery_service
 from app.services.mcp.client import mcp_client
+from app.services.mcp.discovery import mcp_discovery_service
+from app.services.secrets.manager import SecretManager
 from app.services.tools.tool_sync_service import tool_sync_service
 from app.utils.security import is_safe_upstream_url
 
@@ -39,7 +39,7 @@ router = APIRouter()
 secret_manager = SecretManager()
 
 
-def _sanitize_draft_config(payload: Dict[str, Any] | None) -> Dict[str, Any] | None:
+def _sanitize_draft_config(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     if not payload or not isinstance(payload, dict):
         return None
     command = payload.get("command")
@@ -47,7 +47,7 @@ def _sanitize_draft_config(payload: Dict[str, Any] | None) -> Dict[str, Any] | N
     env = payload.get("env")
     if command is None and args is None and env is None:
         return None
-    sanitized: Dict[str, Any] = {}
+    sanitized: dict[str, Any] = {}
     if isinstance(command, str):
         sanitized["command"] = command
     if isinstance(args, list):
@@ -57,17 +57,19 @@ def _sanitize_draft_config(payload: Dict[str, Any] | None) -> Dict[str, Any] | N
     return sanitized or None
 
 
-def _extract_mcp_servers(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
     servers = payload.get("mcpServers")
     if not isinstance(servers, dict):
         raise HTTPException(status_code=400, detail="invalid mcpServers payload")
     return servers
 
 
-async def _fetch_mcp_source_payload(source_url: str, auth_token: str | None) -> Dict[str, Any]:
+async def _fetch_mcp_source_payload(
+    source_url: str, auth_token: str | None
+) -> dict[str, Any]:
     if not is_safe_upstream_url(source_url):
         raise HTTPException(status_code=400, detail="unsafe source_url")
-    headers: Dict[str, str] = {"Accept": "application/json"}
+    headers: dict[str, str] = {"Accept": "application/json"}
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
     client = create_async_http_client(timeout=10.0, headers=headers)
@@ -77,14 +79,17 @@ async def _fetch_mcp_source_payload(source_url: str, auth_token: str | None) -> 
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"failed to fetch source: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"failed to fetch source: {exc}"
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid json payload") from exc
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="invalid mcp source payload")
     return data
 
-@router.get("/servers", response_model=List[UserMcpServerResponse])
+
+@router.get("/servers", response_model=list[UserMcpServerResponse])
 async def list_mcp_servers(
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_db),
@@ -96,6 +101,7 @@ async def list_mcp_servers(
     result = await session.execute(stmt)
     servers = result.scalars().all()
     return [UserMcpServerResponse.from_orm_model(s) for s in servers]
+
 
 @router.post("/servers", response_model=UserMcpServerResponse)
 async def create_mcp_server(
@@ -111,7 +117,9 @@ async def create_mcp_server(
     server_type = server_in.server_type or "sse"
     sse_url = str(server_in.sse_url) if server_in.sse_url else None
     if server_type == "sse" and not sse_url:
-        raise HTTPException(status_code=400, detail="sse_url is required for remote MCP servers")
+        raise HTTPException(
+            status_code=400, detail="sse_url is required for remote MCP servers"
+        )
 
     # 1. Handle Secret (if provided)
     secret_ref_id = None
@@ -122,13 +130,17 @@ async def create_mcp_server(
             provider="mcp_custom",
             key=secret_key,
             value=server_in.secret_value,
-            session=session
+            session=session,
         )
         secret_ref_id = secret_key
 
     # 2. Create DB Record
     is_enabled = server_in.is_enabled if server_type == "sse" else False
-    draft_config = _sanitize_draft_config(server_in.draft_config) if server_type == "stdio" else None
+    draft_config = (
+        _sanitize_draft_config(server_in.draft_config)
+        if server_type == "stdio"
+        else None
+    )
 
     new_server = UserMcpServer(
         user_id=current_user.id,
@@ -142,7 +154,7 @@ async def create_mcp_server(
         tools_cache=[],
         draft_config=draft_config,
     )
-    
+
     session.add(new_server)
     await session.commit()
     await session.refresh(new_server)
@@ -152,9 +164,9 @@ async def create_mcp_server(
         background_tasks.add_task(
             mcp_discovery_service.sync_user_tools,
             session,  # Note: passing session to bg task can be tricky if session closes.
-                      # Better to let the service create its own session or handle it carefully.
-                      # For now, we rely on the service being robust or passing IDs.
-            current_user.id
+            # Better to let the service create its own session or handle it carefully.
+            # For now, we rely on the service being robust or passing IDs.
+            current_user.id,
         )
         # Actually, sync_user_tools needs a session.
         # It's safer to not pass the request-scoped session to background task.
@@ -162,12 +174,13 @@ async def create_mcp_server(
         # Let's run it inline for "Connect" action so user sees results immediately (or error).
         try:
             await mcp_discovery_service.sync_user_tools(session, current_user.id)
-            await session.refresh(new_server) # Refresh to get updated tools_cache
+            await session.refresh(new_server)  # Refresh to get updated tools_cache
         except Exception:
             # Don't fail the creation if sync fails, user can retry
             pass
 
     return UserMcpServerResponse.from_orm_model(new_server)
+
 
 @router.put("/servers/{server_id}", response_model=UserMcpServerResponse)
 async def update_mcp_server(
@@ -181,12 +194,11 @@ async def update_mcp_server(
     Update an MCP server configuration.
     """
     stmt = select(UserMcpServer).where(
-        UserMcpServer.id == server_id,
-        UserMcpServer.user_id == current_user.id
+        UserMcpServer.id == server_id, UserMcpServer.user_id == current_user.id
     )
     result = await session.execute(stmt)
     server = result.scalar_one_or_none()
-    
+
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
 
@@ -210,7 +222,9 @@ async def update_mcp_server(
         server.is_enabled = False
         server.sse_url = None
     elif server.server_type == "sse" and not server.sse_url:
-        raise HTTPException(status_code=400, detail="sse_url is required for remote MCP servers")
+        raise HTTPException(
+            status_code=400, detail="sse_url is required for remote MCP servers"
+        )
 
     # Update secret if provided
     if server_in.secret_value:
@@ -220,7 +234,7 @@ async def update_mcp_server(
                 provider="mcp_custom",
                 key=server.secret_ref_id,
                 value=server_in.secret_value,
-                session=session
+                session=session,
             )
         else:
             # Create new secret
@@ -229,7 +243,7 @@ async def update_mcp_server(
                 provider="mcp_custom",
                 key=secret_key,
                 value=server_in.secret_value,
-                session=session
+                session=session,
             )
             server.secret_ref_id = secret_key
 
@@ -250,6 +264,7 @@ async def update_mcp_server(
 
     return UserMcpServerResponse.from_orm_model(server)
 
+
 @router.post("/servers/{server_id}/sync", response_model=UserMcpServerResponse)
 async def sync_mcp_server(
     *,
@@ -261,29 +276,30 @@ async def sync_mcp_server(
     Manually trigger a tool sync for this server.
     """
     stmt = select(UserMcpServer).where(
-        UserMcpServer.id == server_id,
-        UserMcpServer.user_id == current_user.id
+        UserMcpServer.id == server_id, UserMcpServer.user_id == current_user.id
     )
     result = await session.execute(stmt)
     server = result.scalar_one_or_none()
-    
+
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
     if server.server_type != "sse" or not server.sse_url:
-        raise HTTPException(status_code=400, detail="MCP server is not a remote SSE server")
+        raise HTTPException(
+            status_code=400, detail="MCP server is not a remote SSE server"
+        )
 
-    # We reuse the bulk sync service but it filters by user. 
+    # We reuse the bulk sync service but it filters by user.
     # To be more specific, we might want a sync_single_server method later.
     # For now, syncing all user's servers is acceptable or we rely on the service loop.
-    
+
     # Let's call sync for this user, it will update this server (and others).
     await mcp_discovery_service.sync_user_tools(session, current_user.id)
-    
+
     await session.refresh(server)
     return UserMcpServerResponse.from_orm_model(server)
 
 
-@router.get("/sources", response_model=List[UserMcpSourceResponse])
+@router.get("/sources", response_model=list[UserMcpSourceResponse])
 async def list_mcp_sources(
     *,
     current_user: User = Depends(get_current_active_user),
@@ -346,7 +362,9 @@ async def sync_mcp_source(
     skipped = 0
 
     try:
-        payload_data = await _fetch_mcp_source_payload(str(source.path_or_url), payload.auth_token)
+        payload_data = await _fetch_mcp_source_payload(
+            str(source.path_or_url), payload.auth_token
+        )
         servers_payload = _extract_mcp_servers(payload_data)
         for key, config in servers_payload.items():
             if not isinstance(key, str) or not isinstance(config, dict):
@@ -357,8 +375,14 @@ async def sync_mcp_source(
             server_type = "sse" if isinstance(url, str) and url else "stdio"
             sse_url = str(url) if server_type == "sse" else None
             name = config.get("name") if isinstance(config.get("name"), str) else key
-            description = config.get("description") if isinstance(config.get("description"), str) else None
-            draft_config = _sanitize_draft_config(config) if server_type == "stdio" else None
+            description = (
+                config.get("description")
+                if isinstance(config.get("description"), str)
+                else None
+            )
+            draft_config = (
+                _sanitize_draft_config(config) if server_type == "stdio" else None
+            )
 
             server_stmt = select(UserMcpServer).where(
                 UserMcpServer.user_id == current_user.id,
@@ -400,7 +424,7 @@ async def sync_mcp_source(
         await mcp_discovery_service.sync_user_tools(session, current_user.id)
 
         source.status = "active"
-        source.last_synced_at = datetime.now(timezone.utc)
+        source.last_synced_at = datetime.now(UTC)
         await session.commit()
         await session.refresh(source)
     except HTTPException:
@@ -458,7 +482,7 @@ async def delete_mcp_source(
     return Response(status_code=204)
 
 
-@router.get("/servers/{server_id}/tools", response_model=List[McpServerToolItem])
+@router.get("/servers/{server_id}/tools", response_model=list[McpServerToolItem])
 async def list_mcp_server_tools(
     *,
     server_id: uuid.UUID,
@@ -466,8 +490,7 @@ async def list_mcp_server_tools(
     session: AsyncSession = Depends(get_db),
 ) -> Any:
     stmt = select(UserMcpServer).where(
-        UserMcpServer.id == server_id,
-        UserMcpServer.user_id == current_user.id
+        UserMcpServer.id == server_id, UserMcpServer.user_id == current_user.id
     )
     result = await session.execute(stmt)
     server = result.scalar_one_or_none()
@@ -491,7 +514,9 @@ async def list_mcp_server_tools(
     return tools
 
 
-@router.patch("/servers/{server_id}/tools/{tool_name}", response_model=McpServerToolItem)
+@router.patch(
+    "/servers/{server_id}/tools/{tool_name}", response_model=McpServerToolItem
+)
 async def toggle_mcp_server_tool(
     *,
     server_id: uuid.UUID,
@@ -501,17 +526,21 @@ async def toggle_mcp_server_tool(
     session: AsyncSession = Depends(get_db),
 ) -> Any:
     stmt = select(UserMcpServer).where(
-        UserMcpServer.id == server_id,
-        UserMcpServer.user_id == current_user.id
+        UserMcpServer.id == server_id, UserMcpServer.user_id == current_user.id
     )
     result = await session.execute(stmt)
     server = result.scalar_one_or_none()
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
     if server.server_type != "sse":
-        raise HTTPException(status_code=400, detail="MCP server is not a remote SSE server")
+        raise HTTPException(
+            status_code=400, detail="MCP server is not a remote SSE server"
+        )
 
-    tool = next((item for item in (server.tools_cache or []) if item.get("name") == tool_name), None)
+    tool = next(
+        (item for item in (server.tools_cache or []) if item.get("name") == tool_name),
+        None,
+    )
     if not tool:
         raise HTTPException(status_code=404, detail="MCP tool not found")
 
@@ -531,7 +560,11 @@ async def toggle_mcp_server_tool(
             user_id=current_user.id,
             origin=str(server.id),
             old_payloads=server.tools_cache or [],
-            new_tools=[ToolDefinition(**item) for item in (server.tools_cache or []) if item.get("name")],
+            new_tools=[
+                ToolDefinition(**item)
+                for item in (server.tools_cache or [])
+                if item.get("name")
+            ],
             old_disabled=old_disabled_tools,
             new_disabled=disabled_tools,
         )
@@ -553,24 +586,32 @@ async def test_mcp_tool(
     session: AsyncSession = Depends(get_db),
 ) -> Any:
     stmt = select(UserMcpServer).where(
-        UserMcpServer.id == payload.server_id,
-        UserMcpServer.user_id == current_user.id
+        UserMcpServer.id == payload.server_id, UserMcpServer.user_id == current_user.id
     )
     result = await session.execute(stmt)
     server = result.scalar_one_or_none()
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
     if server.server_type != "sse" or not server.sse_url:
-        raise HTTPException(status_code=400, detail="MCP server is not a remote SSE server")
+        raise HTTPException(
+            status_code=400, detail="MCP server is not a remote SSE server"
+        )
 
-    tool = next((item for item in (server.tools_cache or []) if item.get("name") == payload.tool_name), None)
+    tool = next(
+        (
+            item
+            for item in (server.tools_cache or [])
+            if item.get("name") == payload.tool_name
+        ),
+        None,
+    )
     if not tool:
         raise HTTPException(status_code=404, detail="MCP tool not found")
     if payload.tool_name in (server.disabled_tools or []):
         raise HTTPException(status_code=400, detail="MCP tool is disabled")
 
     trace_id = uuid.uuid4().hex
-    logs: List[str] = []
+    logs: list[str] = []
     try:
         logs.append(f"trace={trace_id} connect {server.sse_url}")
         headers = await mcp_discovery_service._get_auth_headers(session, server)
@@ -582,10 +623,15 @@ async def test_mcp_tool(
             headers=headers,
         )
         logs.append(f"trace={trace_id} success")
-        return McpToolTestResponse(status="success", result=result, logs=logs, trace_id=trace_id)
+        return McpToolTestResponse(
+            status="success", result=result, logs=logs, trace_id=trace_id
+        )
     except Exception as exc:
         logs.append(f"trace={trace_id} error: {exc}")
-        return McpToolTestResponse(status="error", error=str(exc), logs=logs, trace_id=trace_id)
+        return McpToolTestResponse(
+            status="error", error=str(exc), logs=logs, trace_id=trace_id
+        )
+
 
 @router.delete("/servers/{server_id}")
 async def delete_mcp_server(
@@ -598,12 +644,11 @@ async def delete_mcp_server(
     Delete an MCP server configuration.
     """
     stmt = select(UserMcpServer).where(
-        UserMcpServer.id == server_id,
-        UserMcpServer.user_id == current_user.id
+        UserMcpServer.id == server_id, UserMcpServer.user_id == current_user.id
     )
     result = await session.execute(stmt)
     server = result.scalar_one_or_none()
-    
+
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
 

@@ -78,8 +78,7 @@ class GatewayOrchestrator:
             )
 
         logger.debug(
-            f"Building engine template={config.template.value} "
-            f"steps={config.steps}"
+            f"Building engine template={config.template.value} " f"steps={config.steps}"
         )
 
         # 获取步骤实例

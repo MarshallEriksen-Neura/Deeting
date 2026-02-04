@@ -3,7 +3,11 @@ from __future__ import annotations
 import httpx
 from fastapi import Depends
 
-from app.qdrant_client import QdrantNotConfigured, get_qdrant_client, qdrant_is_configured
+from app.qdrant_client import (
+    QdrantNotConfigured,
+    get_qdrant_client,
+    qdrant_is_configured,
+)
 
 
 async def get_qdrant() -> httpx.AsyncClient:
@@ -17,4 +21,4 @@ async def get_qdrant() -> httpx.AsyncClient:
 QdrantClientDep = Depends(get_qdrant)
 
 
-__all__ = ["get_qdrant", "QdrantClientDep"]
+__all__ = ["QdrantClientDep", "get_qdrant"]

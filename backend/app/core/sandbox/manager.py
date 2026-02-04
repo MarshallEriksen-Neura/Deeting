@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -44,7 +44,7 @@ class SandboxManager:
         self.url = settings.OPENSANDBOX_URL
         self.default_timeout = timedelta(minutes=default_timeout_mins)
         self.max_sandboxes = max_sandboxes
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
         logger.info("SandboxManager initialized (Redis-backed). Max: %s", max_sandboxes)
 
     @classmethod
@@ -99,7 +99,9 @@ class SandboxManager:
         service = factory.create_sandbox_service()
 
         for sid_bytes in active_ids:
-            sandbox_id = sid_bytes.decode() if isinstance(sid_bytes, bytes) else sid_bytes
+            sandbox_id = (
+                sid_bytes.decode() if isinstance(sid_bytes, bytes) else sid_bytes
+            )
 
             if not await redis.exists(key_ref(sandbox_id)):
                 logger.info("Reaping expired sandbox: %s", sandbox_id)
@@ -107,9 +109,70 @@ class SandboxManager:
                     await service.kill_sandbox(sandbox_id)
                 except Exception as exc:
                     logger.warning(
-                        "Failed to kill zombie %s (maybe already gone): %s", sandbox_id, exc
+                        "Failed to kill zombie %s (maybe already gone): %s",
+                        sandbox_id,
+                        exc,
                     )
                 await redis.srem(KEY_ACTIVE_SET, sandbox_id)
+
+    async def get_or_create_sandbox(self, session_id: str) -> Sandbox:
+        """
+        Retrieves an existing sandbox for the session or creates a new one.
+        Handles TTL renewal and resource limits.
+        """
+        sandbox_id = await cache.get(key_session(session_id))
+        if sandbox_id:
+            try:
+                sandbox = await self._connect_sandbox(sandbox_id)
+                # Renew TTL
+                redis = self._get_redis()
+                if redis:
+                    ttl = int(self.default_timeout.total_seconds())
+                    await cache.set(key_session(session_id), sandbox_id, ttl=ttl)
+                    await cache.set(key_ref(sandbox_id), "1", ttl=ttl)
+                try:
+                    await sandbox.renew(self.default_timeout)
+                except Exception:
+                    pass
+                return sandbox
+            except Exception as exc:
+                logger.warning(
+                    "Failed to reuse sandbox %s for session %s: %s",
+                    sandbox_id,
+                    session_id,
+                    exc,
+                )
+
+        # Create new if none exists or connection failed
+        sandbox = await self._create_sandbox(session_id)
+        sandbox_id = sandbox.id
+
+        redis = self._get_redis()
+        if redis:
+            ttl = int(self.default_timeout.total_seconds())
+            await cache.set(key_session(session_id), sandbox_id, ttl=ttl)
+            await cache.set(key_ref(sandbox_id), "1", ttl=ttl)
+
+        return sandbox
+
+    async def stop_sandbox(self, sandbox_id: str, session_id: str | None = None):
+        """Explicitly kill and remove a sandbox from management."""
+        if session_id:
+            await cache.delete(key_session(session_id))
+        await cache.delete(key_ref(sandbox_id))
+
+        config = ConnectionConfig(domain=self.url, request_timeout=timedelta(minutes=5))
+        factory = AdapterFactory(config)
+        service = factory.create_sandbox_service()
+        try:
+            await service.kill_sandbox(sandbox_id)
+            logger.info("Explicitly killed sandbox: %s", sandbox_id)
+        except Exception as exc:
+            logger.warning("Failed to kill sandbox %s: %s", sandbox_id, exc)
+
+        redis = self._get_redis()
+        if redis:
+            await redis.srem(KEY_ACTIVE_SET, sandbox_id)
 
     async def run_code(
         self,
@@ -126,23 +189,7 @@ class SandboxManager:
         """
         sandbox = None
         try:
-            sandbox_id = await cache.get(key_session(session_id))
-            if sandbox_id:
-                sandbox = await self._connect_sandbox(sandbox_id)
-            else:
-                sandbox = await self._create_sandbox(session_id)
-                sandbox_id = sandbox.id
-
-            redis = self._get_redis()
-            if redis:
-                ttl = int(self.default_timeout.total_seconds())
-                await cache.set(key_session(session_id), sandbox_id, ttl=ttl)
-                await cache.set(key_ref(sandbox_id), "1", ttl=ttl)
-
-            try:
-                await sandbox.renew(self.default_timeout)
-            except Exception:
-                pass
+            sandbox = await self.get_or_create_sandbox(session_id)
 
             interpreter = await CodeInterpreter.create(sandbox)
             lang = SupportedLanguage.PYTHON
@@ -152,8 +199,12 @@ class SandboxManager:
             result = await interpreter.codes.run(code, language=lang)
             return {
                 "result": [r.text for r in result.result] if result.result else [],
-                "stdout": [l.text for l in result.logs.stdout] if result.logs.stdout else [],
-                "stderr": [l.text for l in result.logs.stderr] if result.logs.stderr else [],
+                "stdout": (
+                    [l.text for l in result.logs.stdout] if result.logs.stdout else []
+                ),
+                "stderr": (
+                    [l.text for l in result.logs.stderr] if result.logs.stderr else []
+                ),
                 "exit_code": 0,
             }
         except ResourceWarning as exc:
@@ -193,7 +244,9 @@ class SandboxManager:
         if redis:
             await redis.sadd(KEY_ACTIVE_SET, response.id)
 
-        return await self._connect_sandbox(response.id, factory, service, wait_ready=True)
+        return await self._connect_sandbox(
+            response.id, factory, service, wait_ready=True
+        )
 
     async def _connect_sandbox(
         self,
@@ -208,7 +261,9 @@ class SandboxManager:
         if not service:
             service = factory.create_sandbox_service()
 
-        execd_endpoint = await service.get_sandbox_endpoint(sandbox_id, DEFAULT_EXECD_PORT)
+        execd_endpoint = await service.get_sandbox_endpoint(
+            sandbox_id, DEFAULT_EXECD_PORT
+        )
         execd_endpoint.endpoint = self._resolve_endpoint(execd_endpoint.endpoint)
 
         sandbox = Sandbox(
@@ -222,14 +277,20 @@ class SandboxManager:
         )
 
         if wait_ready:
-            await sandbox.check_ready(timedelta(seconds=60), timedelta(milliseconds=500))
+            await sandbox.check_ready(
+                timedelta(seconds=60), timedelta(milliseconds=500)
+            )
         return sandbox
 
     def _resolve_endpoint(self, original_endpoint: str) -> str:
         if ":" not in original_endpoint:
             return original_endpoint
         internal_host = original_endpoint.split(":")[0]
-        if internal_host.startswith("10.") or internal_host.startswith("172.") or internal_host == "localhost":
+        if (
+            internal_host.startswith("10.")
+            or internal_host.startswith("172.")
+            or internal_host == "localhost"
+        ):
             public_url = urlparse(self.url)
             public_host = public_url.hostname or self.url
             if internal_host != public_host:

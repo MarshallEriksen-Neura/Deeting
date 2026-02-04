@@ -5,8 +5,8 @@ Revises: 20260117_04_fix_custom_http_preset_slug
 Create Date: 2026-01-17
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20260117_05_simplify_user_secretary_schema"
 down_revision = "20260117_04_fix_custom_http_preset_slug"
@@ -19,7 +19,9 @@ def upgrade() -> None:
     inspector = sa.inspect(bind)
 
     if inspector.has_table("user_secretary"):
-        existing_columns = {col["name"] for col in inspector.get_columns("user_secretary")}
+        existing_columns = {
+            col["name"] for col in inspector.get_columns("user_secretary")
+        }
         for column in (
             "current_phase_id",
             "custom_instructions",
@@ -47,7 +49,9 @@ def downgrade() -> None:
                 nullable=False,
                 comment="Phase Name (e.g. 'alpha', 'v1')",
             ),
-            sa.Column("description", sa.Text(), nullable=True, comment="Internal description"),
+            sa.Column(
+                "description", sa.Text(), nullable=True, comment="Internal description"
+            ),
             sa.Column(
                 "enable_retrieval",
                 sa.Boolean(),
@@ -95,7 +99,9 @@ def downgrade() -> None:
         )
 
     if inspector.has_table("user_secretary"):
-        existing_columns = {col["name"] for col in inspector.get_columns("user_secretary")}
+        existing_columns = {
+            col["name"] for col in inspector.get_columns("user_secretary")
+        }
         if "current_phase_id" not in existing_columns:
             op.add_column(
                 "user_secretary",

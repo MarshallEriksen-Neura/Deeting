@@ -46,7 +46,10 @@ async def test_create_stdio_server_draft(
         assert server.is_enabled is False
         assert server.draft_config is not None
         assert server.draft_config.get("command") == "npx"
-        assert server.draft_config.get("args") == ["-y", "@modelcontextprotocol/server-filesystem"]
+        assert server.draft_config.get("args") == [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+        ]
         assert server.draft_config.get("env_keys") == ["TOKEN", "PATH"]
 
 
@@ -148,7 +151,11 @@ async def test_tool_test_endpoint(
 
     resp = await client.post(
         "/api/v1/mcp/tools/test",
-        json={"server_id": str(server.id), "tool_name": "echo", "arguments": {"text": "hi"}},
+        json={
+            "server_id": str(server.id),
+            "tool_name": "echo",
+            "arguments": {"text": "hi"},
+        },
         headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
     )
     assert resp.status_code == 200

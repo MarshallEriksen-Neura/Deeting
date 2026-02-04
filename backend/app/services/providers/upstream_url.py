@@ -62,4 +62,7 @@ def build_upstream_url_with_params(
     if "gemini" in proto or "google" in proto or "vertex" in proto:
         return build_upstream_url(base, path, protocol, auto_append_v1=False), params
 
-    return build_upstream_url(base, path, protocol, auto_append_v1=auto_append_v1), params
+    return (
+        build_upstream_url(base, path, protocol, auto_append_v1=auto_append_v1),
+        params,
+    )

@@ -7,6 +7,7 @@
 - GET    /admin/skills/{skill_id} 获取技能详情
 - PATCH  /admin/skills/{skill_id} 更新技能
 """
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,11 @@ from app.repositories.skill_artifact_repository import SkillArtifactRepository
 from app.repositories.skill_capability_repository import SkillCapabilityRepository
 from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
-from app.schemas.skill_registry import SkillRegistryCreate, SkillRegistryDTO, SkillRegistryUpdate
+from app.schemas.skill_registry import (
+    SkillRegistryCreate,
+    SkillRegistryDTO,
+    SkillRegistryUpdate,
+)
 from app.schemas.skill_self_heal import SkillSelfHealResult
 from app.services.skill_registry.dry_run_service import SkillDryRunService
 from app.services.skill_registry.skill_metrics_service import SkillMetricsService
@@ -100,7 +105,9 @@ async def get_skill(
 ) -> SkillRegistryDTO:
     skill = await service.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found"
+        )
     return SkillRegistryDTO.model_validate(skill)
 
 
@@ -116,11 +123,15 @@ async def update_skill(
 ) -> SkillRegistryDTO:
     skill = await service.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found"
+        )
 
     update_data = payload.model_dump(exclude_unset=True)
     if not update_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update"
+        )
 
     updated = await service.repo.update(skill, update_data)
     return SkillRegistryDTO.model_validate(updated)

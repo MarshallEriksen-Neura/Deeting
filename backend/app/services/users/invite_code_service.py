@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from app.utils.time_utils import Datetime
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -16,6 +15,7 @@ from app.services.users.registration_window_service import (
     claim_registration_slot_for_window,
     rollback_registration_slot,
 )
+from app.utils.time_utils import Datetime
 
 
 def _now() -> datetime:
@@ -53,15 +53,22 @@ class InviteCodeService:
         """
         invite = await self.repo.reserve(code)
         if not invite:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or used invite code")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or used invite code",
+            )
 
         # 过期检查
         if invite.expires_at and invite.expires_at < _now():
             await self.repo.revoke(code)
-            raise HTTPException(status_code=status.HTTP_410_GONE, detail="Invite code expired")
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE, detail="Invite code expired"
+            )
 
         try:
-            window = await claim_registration_slot_for_window(self.session, invite.window_id, now=_now())
+            window = await claim_registration_slot_for_window(
+                self.session, invite.window_id, now=_now()
+            )
         except RegistrationWindowNotFoundError as exc:
             await self.repo.rollback(code)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
@@ -76,7 +83,10 @@ class InviteCodeService:
         if window.id != invite.window_id:
             await rollback_registration_slot(self.session, window.id)
             await self.repo.rollback(code)
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite code not valid for current window")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invite code not valid for current window",
+            )
 
         return window
 
@@ -84,7 +94,9 @@ class InviteCodeService:
         updated = await self.repo.mark_used(code, user_id)
         if not updated:
             # 极端情况下回滚窗口计数
-            logger.warning("invite_mark_used_failed", extra={"code": code, "user_id": str(user_id)})
+            logger.warning(
+                "invite_mark_used_failed", extra={"code": code, "user_id": str(user_id)}
+            )
 
     async def rollback(self, code: str, window_id: UUID) -> None:
         await self.repo.rollback(code)
@@ -93,8 +105,17 @@ class InviteCodeService:
     async def revoke(self, code: str) -> InviteCode | None:
         return await self.repo.revoke(code)
 
-    async def list_by_window(self, window_id: UUID, *, status: InviteCodeStatus | None = None, limit: int = 50, offset: int = 0):
-        return await self.repo.list_by_window(window_id, status=status, limit=limit, offset=offset)
+    async def list_by_window(
+        self,
+        window_id: UUID,
+        *,
+        status: InviteCodeStatus | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        return await self.repo.list_by_window(
+            window_id, status=status, limit=limit, offset=offset
+        )
 
 
 __all__ = ["InviteCodeService"]

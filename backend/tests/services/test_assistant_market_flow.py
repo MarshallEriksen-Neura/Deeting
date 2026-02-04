@@ -13,9 +13,16 @@ from app.repositories import (
     AssistantVersionRepository,
     ReviewTaskRepository,
 )
-from app.schemas.assistant import AssistantCreate, AssistantUpdate, AssistantVersionCreate
+from app.schemas.assistant import (
+    AssistantCreate,
+    AssistantUpdate,
+    AssistantVersionCreate,
+)
 from app.schemas.assistant_market import AssistantInstallCreate, AssistantInstallUpdate
-from app.services.assistant.assistant_market_service import AssistantMarketService, ASSISTANT_MARKET_ENTITY
+from app.services.assistant.assistant_market_service import (
+    ASSISTANT_MARKET_ENTITY,
+    AssistantMarketService,
+)
 from app.services.assistant.assistant_service import AssistantService
 from app.services.review.review_service import ReviewService
 from tests.api.conftest import AsyncSessionLocal, engine
@@ -84,13 +91,18 @@ async def test_market_install_flow_marks_installed():
         assert sorted(page.items[0].tags) == ["#Debug", "#Python"]
         assert page.items[0].install_count == 0
 
-        await market_service.install_assistant(user_id=user.id, assistant_id=assistant.id)
+        await market_service.install_assistant(
+            user_id=user.id, assistant_id=assistant.id
+        )
 
         install_page = await market_service.list_installs(
             user_id=user.id,
             params=CursorParams(size=10),
         )
-        assert install_page.items[0].assistant.version.system_prompt == "You are a helpful assistant."
+        assert (
+            install_page.items[0].assistant.version.system_prompt
+            == "You are a helpful assistant."
+        )
 
         page_after = await market_service.list_market(
             user_id=user.id,
@@ -110,7 +122,10 @@ async def test_market_install_flow_marks_installed():
         assert install_item.alias == "My Assistant"
         assert install_item.pinned_version_id == assistant.current_version_id
         assert install_item.follow_latest is False
-        assert install_item.assistant.version.system_prompt == "You are a helpful assistant."
+        assert (
+            install_item.assistant.version.system_prompt
+            == "You are a helpful assistant."
+        )
 
 
 @pytest.mark.asyncio
@@ -162,7 +177,9 @@ async def test_list_installs_filters_archived_assistants():
             AssistantMarketRepository(session),
         )
 
-        await market_service.install_assistant(user_id=user.id, assistant_id=assistant.id)
+        await market_service.install_assistant(
+            user_id=user.id, assistant_id=assistant.id
+        )
 
         await assistant_service.update_assistant(
             assistant.id,
@@ -252,7 +269,10 @@ async def test_install_follow_latest_false_pins_version():
             user_id=user.id,
             params=CursorParams(size=10),
         )
-        assert install_page.items[0].assistant.version.system_prompt == "You are a helpful assistant."
+        assert (
+            install_page.items[0].assistant.version.system_prompt
+            == "You are a helpful assistant."
+        )
 
 
 @pytest.mark.asyncio
@@ -326,4 +346,7 @@ async def test_install_follow_latest_true_uses_latest_version():
             user_id=user.id,
             params=CursorParams(size=10),
         )
-        assert install_page.items[0].assistant.version.system_prompt == "You are a newer assistant."
+        assert (
+            install_page.items[0].assistant.version.system_prompt
+            == "You are a newer assistant."
+        )

@@ -16,7 +16,9 @@ async def test_plugin_lifecycle():
 
     # 2. Activate
     # Mock ConcretePluginContext.get_db_session to avoid real DB usage
-    with patch("app.agent_plugins.core.context.ConcretePluginContext.get_db_session") as mock_get_db:
+    with patch(
+        "app.agent_plugins.core.context.ConcretePluginContext.get_db_session"
+    ) as mock_get_db:
         # Create a mock session with an async close method
         mock_session = AsyncMock()
         mock_get_db.return_value = mock_session

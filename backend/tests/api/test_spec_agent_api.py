@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import uuid
 
@@ -13,10 +14,8 @@ from app.models.conversation import (
     ConversationStatus,
 )
 from app.models.spec_agent import SpecExecutionLog, SpecPlan
-from app.schemas.spec_agent import SpecManifest
 from app.repositories.provider_instance_repository import ProviderModelRepository
-import importlib
-
+from app.schemas.spec_agent import SpecManifest
 from app.services.agent import spec_agent_service
 from app.utils.time_utils import Datetime
 
@@ -268,9 +267,7 @@ async def test_spec_agent_update_node_model_success(
         await session.commit()
         plan_id = plan.id
 
-    async def fake_candidates(
-        self, capability, model_id, user_id, include_public=True
-    ):
+    async def fake_candidates(self, capability, model_id, user_id, include_public=True):
         if model_id == "gpt-4o":
             return [object()]
         return []
@@ -375,9 +372,7 @@ async def test_spec_agent_update_node_model_invalid_model(
         await session.commit()
         plan_id = plan.id
 
-    async def fake_candidates(
-        self, capability, model_id, user_id, include_public=True
-    ):
+    async def fake_candidates(self, capability, model_id, user_id, include_public=True):
         return []
 
     monkeypatch.setattr(ProviderModelRepository, "get_candidates", fake_candidates)

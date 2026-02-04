@@ -18,27 +18,28 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
+from app.core.cache_keys import CacheKeys
+from app.core.config import settings
 from app.models.bandit import BanditArmState
-from app.models.provider_instance import ProviderInstance, ProviderModel
-from app.services.providers.upstream_url import build_upstream_url
+from app.models.provider_preset import ProviderPreset
+from app.repositories.bandit_repository import BanditRepository
+from app.repositories.provider_credential_repository import ProviderCredentialRepository
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
-from app.repositories.bandit_repository import BanditRepository
 from app.repositories.provider_preset_repository import ProviderPresetRepository
-from app.models.provider_preset import ProviderPreset
-from app.repositories.provider_credential_repository import ProviderCredentialRepository
-from app.core.cache import cache
-from app.core.cache_keys import CacheKeys
-from app.core.config import settings
 from app.services.providers.auth_resolver import resolve_auth_for_protocol
 from app.services.providers.config_utils import deep_merge
+from app.services.providers.upstream_url import build_upstream_url
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_capability_config(preset: ProviderPreset, capability: str | None) -> dict[str, Any] | None:
+def _resolve_capability_config(
+    preset: ProviderPreset, capability: str | None
+) -> dict[str, Any] | None:
     if not preset:
         return None
     configs = preset.capability_configs or {}
@@ -99,7 +100,9 @@ class RoutingSelector:
     ) -> list[RoutingCandidate]:
         results: list[RoutingCandidate] = []
 
-        instances = await self.instance_repo.get_available_instances(user_id=user_id, include_public=include_public)
+        instances = await self.instance_repo.get_available_instances(
+            user_id=user_id, include_public=include_public
+        )
         if not instances:
             return results
 
@@ -118,7 +121,9 @@ class RoutingSelector:
         presets_by_slug = {}
 
         # 预取实例凭证（多 Key）
-        credentials_map = await self.credential_repo.get_by_instance_ids([str(i.id) for i in instances])
+        credentials_map = await self.credential_repo.get_by_instance_ids(
+            [str(i.id) for i in instances]
+        )
 
         for instance in instances:
             instance_models = models_by_instance.get(str(instance.id), [])
@@ -181,15 +186,19 @@ class RoutingSelector:
                     )
                     continue
 
-                allow_override = (m.routing_config or {}).get("allow_template_override") is True
+                allow_override = (m.routing_config or {}).get(
+                    "allow_template_override"
+                ) is True
                 effective_config = dict(capability_config)
                 if allow_override and m.config_override:
                     effective_config = deep_merge(effective_config, m.config_override)
 
-                template_engine = effective_config.get("template_engine") or "simple_replace"
-                request_template = effective_config.get("request_template") or effective_config.get(
-                    "body_template"
+                template_engine = (
+                    effective_config.get("template_engine") or "simple_replace"
                 )
+                request_template = effective_config.get(
+                    "request_template"
+                ) or effective_config.get("body_template")
                 if not request_template:
                     logger.warning(
                         "routing_skip_missing_template instance_id=%s model_id=%s capability=%s preset=%s",
@@ -224,12 +233,14 @@ class RoutingSelector:
                     protocol=protocol,
                     auto_append_v1=meta.get("auto_append_v1"),
                 )
-                resolved_auth_type, base_auth_config, resolved_headers = resolve_auth_for_protocol(
-                    protocol=protocol,
-                    provider=preset.provider if preset else None,
-                    auth_type=preset.auth_type if preset else None,
-                    auth_config=preset.auth_config if preset else None,
-                    default_headers=preset.default_headers if preset else None,
+                resolved_auth_type, base_auth_config, resolved_headers = (
+                    resolve_auth_for_protocol(
+                        protocol=protocol,
+                        provider=preset.provider if preset else None,
+                        auth_type=preset.auth_type if preset else None,
+                        auth_config=preset.auth_config if preset else None,
+                        default_headers=preset.default_headers if preset else None,
+                    )
                 )
                 capability_headers = (
                     effective_config.get("default_headers")
@@ -337,7 +348,9 @@ class RoutingSelector:
             return results
 
         # Use requested capability or the first capability of the model
-        resolved_cap = capability or (model.capabilities[0] if model.capabilities else "chat")
+        resolved_cap = capability or (
+            model.capabilities[0] if model.capabilities else "chat"
+        )
         capability_config = _resolve_capability_config(preset, resolved_cap)
         if not capability_config:
             logger.warning(
@@ -349,15 +362,17 @@ class RoutingSelector:
             )
             return results
 
-        allow_override = (model.routing_config or {}).get("allow_template_override") is True
+        allow_override = (model.routing_config or {}).get(
+            "allow_template_override"
+        ) is True
         effective_config = dict(capability_config)
         if allow_override and model.config_override:
             effective_config = deep_merge(effective_config, model.config_override)
 
         template_engine = effective_config.get("template_engine") or "simple_replace"
-        request_template = effective_config.get("request_template") or effective_config.get(
-            "body_template"
-        )
+        request_template = effective_config.get(
+            "request_template"
+        ) or effective_config.get("body_template")
         if not request_template:
             logger.warning(
                 "routing_skip_missing_template instance_id=%s model_id=%s capability=%s preset=%s",
@@ -383,7 +398,9 @@ class RoutingSelector:
             or "POST"
         )
 
-        credentials_map = await self.credential_repo.get_by_instance_ids([str(instance.id)])
+        credentials_map = await self.credential_repo.get_by_instance_ids(
+            [str(instance.id)]
+        )
         cred_entries: list[dict] = []
         extra_creds = credentials_map.get(str(instance.id), [])
         for cred in extra_creds:
@@ -426,12 +443,14 @@ class RoutingSelector:
             protocol=protocol,
             auto_append_v1=meta.get("auto_append_v1"),
         )
-        resolved_auth_type, base_auth_config, resolved_headers = resolve_auth_for_protocol(
-            protocol=protocol,
-            provider=preset.provider if preset else None,
-            auth_type=preset.auth_type if preset else None,
-            auth_config=preset.auth_config if preset else None,
-            default_headers=preset.default_headers if preset else None,
+        resolved_auth_type, base_auth_config, resolved_headers = (
+            resolve_auth_for_protocol(
+                protocol=protocol,
+                provider=preset.provider if preset else None,
+                auth_type=preset.auth_type if preset else None,
+                auth_config=preset.auth_config if preset else None,
+                default_headers=preset.default_headers if preset else None,
+            )
         )
         capability_headers = (
             effective_config.get("default_headers")
@@ -493,7 +512,9 @@ class RoutingSelector:
         return results
 
     # ===== 前缀亲和（KV Cache 命中优化） =====
-    async def _compute_prefix_fingerprint(self, messages: list[dict] | None) -> str | None:
+    async def _compute_prefix_fingerprint(
+        self, messages: list[dict] | None
+    ) -> str | None:
         """
         基于请求 messages 计算前缀指纹，用于亲和路由。
         - 取前缀比例（默认 70%）并截断最大字符数，避免键过长
@@ -526,7 +547,9 @@ class RoutingSelector:
             return None
         return await cache.get(CacheKeys.routing_affinity(fp))
 
-    async def _set_affinity_provider(self, messages: list[dict] | None, provider_model_id: str) -> None:
+    async def _set_affinity_provider(
+        self, messages: list[dict] | None, provider_model_id: str
+    ) -> None:
         if not settings.AFFINITY_ROUTING_ENABLED:
             return
         fp = await self._compute_prefix_fingerprint(messages)
@@ -538,7 +561,9 @@ class RoutingSelector:
         except Exception:
             logger.debug("affinity_cache_set_failed", exc_info=True)
 
-    async def _clear_affinity(self, messages: list[dict] | None, provider_model_id: str | None = None) -> None:
+    async def _clear_affinity(
+        self, messages: list[dict] | None, provider_model_id: str | None = None
+    ) -> None:
         if not settings.AFFINITY_ROUTING_ENABLED:
             return
         fp = await self._compute_prefix_fingerprint(messages)
@@ -627,15 +652,27 @@ class RoutingSelector:
         def score(c: RoutingCandidate) -> float:
             state = c.bandit_state
             affinity_bonus = 0.0
-            if affinity_provider_id and affinity_provider_id == c.model_id and state and state.total_trials >= 0:
+            if (
+                affinity_provider_id
+                and affinity_provider_id == c.model_id
+                and state
+                and state.total_trials >= 0
+            ):
                 affinity_bonus = float(settings.AFFINITY_ROUTING_BONUS or 0.0)
             if state and state.total_trials > 0:
                 success_rate = state.successes / state.total_trials
                 latency_penalty = 0.0
                 if state.latency_p95_ms:
                     target = float(routing_config.get("latency_target_ms", 3000))
-                    latency_penalty = min(state.latency_p95_ms / max(target, 1.0), 1.5) * 0.2
-                return success_rate - latency_penalty + float(c.weight or 0) * 0.0001 + affinity_bonus
+                    latency_penalty = (
+                        min(state.latency_p95_ms / max(target, 1.0), 1.5) * 0.2
+                    )
+                return (
+                    success_rate
+                    - latency_penalty
+                    + float(c.weight or 0) * 0.0001
+                    + affinity_bonus
+                )
             return float(c.weight or 1) + affinity_bonus
 
         return max(candidates, key=score)
@@ -645,7 +682,9 @@ class RoutingSelector:
         UCB1：score = p_hat + sqrt(2 ln N / n)
         若某臂未试过则优先选择该臂。
         """
-        explored = [c for c in candidates if c.bandit_state and c.bandit_state.total_trials > 0]
+        explored = [
+            c for c in candidates if c.bandit_state and c.bandit_state.total_trials > 0
+        ]
         if len(explored) < len(candidates):
             # 存在未试臂，直接返回首个未试臂（可随机）
             for c in candidates:
@@ -677,7 +716,11 @@ class RoutingSelector:
             alpha = (s.alpha or 1.0) + s.successes
             beta = (s.beta or 1.0) + s.failures
             if alpha <= 0 or beta <= 0:
-                logger.warning("invalid_beta_params alpha=%s beta=%s, fallback_weighted", alpha, beta)
+                logger.warning(
+                    "invalid_beta_params alpha=%s beta=%s, fallback_weighted",
+                    alpha,
+                    beta,
+                )
                 return self._weighted_choice(candidates)
             samples.append((random.betavariate(alpha, beta), c))
         return max(samples, key=lambda x: x[0])[1]
@@ -703,11 +746,15 @@ class RoutingSelector:
         affinity_provider_id = None
         if strategy == "bandit":
             affinity_provider_id = await self._get_affinity_provider(messages)
-            primary = self._bandit_choice(candidates, routing_config, affinity_provider_id)
+            primary = self._bandit_choice(
+                candidates, routing_config, affinity_provider_id
+            )
         else:
             primary = self._weighted_choice(candidates)
 
-        affinity_hit = bool(affinity_provider_id and affinity_provider_id == primary.model_id)
+        affinity_hit = bool(
+            affinity_provider_id and affinity_provider_id == primary.model_id
+        )
 
         # 备份列表：去掉主路由后按 priority / weight 排序
         backups = [

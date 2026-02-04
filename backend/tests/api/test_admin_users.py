@@ -7,6 +7,7 @@
 - 封禁/解封
 - 权限检查
 """
+
 import pytest
 from httpx import AsyncClient
 
@@ -41,7 +42,9 @@ class TestAdminUserList:
         assert data["limit"] == 5
 
     @pytest.mark.asyncio
-    async def test_list_users_filter_email(self, client: AsyncClient, admin_tokens: dict):
+    async def test_list_users_filter_email(
+        self, client: AsyncClient, admin_tokens: dict
+    ):
         """测试邮箱筛选"""
         response = await client.get(
             "/api/v1/admin/users?email=test",
@@ -50,7 +53,9 @@ class TestAdminUserList:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_list_users_no_permission(self, client: AsyncClient, auth_tokens: dict):
+    async def test_list_users_no_permission(
+        self, client: AsyncClient, auth_tokens: dict
+    ):
         """测试无权限访问"""
         response = await client.get(
             "/api/v1/admin/users",

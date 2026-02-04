@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.models.assistant import AssistantStatus, AssistantVisibility
+
 from .base import BaseSchema, IDSchema, TimestampSchema
 
 
@@ -63,9 +64,15 @@ class AssistantBase(BaseSchema):
         AssistantStatus.DRAFT,
         description="发布状态: draft/published/archived",
     )
-    share_slug: str | None = Field(None, max_length=64, description="分享访问标识（unlisted/public 使用）")
-    summary: str | None = Field(None, max_length=200, description="助手简介（两行展示）")
-    icon_id: str | None = Field(None, max_length=255, description="图标 ID（如 lucide:bot）")
+    share_slug: str | None = Field(
+        None, max_length=64, description="分享访问标识（unlisted/public 使用）"
+    )
+    summary: str | None = Field(
+        None, max_length=200, description="助手简介（两行展示）"
+    )
+    icon_id: str | None = Field(
+        None, max_length=255, description="图标 ID（如 lucide:bot）"
+    )
 
 
 class AssistantCreate(AssistantBase):

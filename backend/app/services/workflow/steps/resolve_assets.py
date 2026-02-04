@@ -4,11 +4,11 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from app.services.orchestrator.registry import step_registry
 from app.services.oss.asset_storage_service import (
     AssetStorageNotConfigured,
     build_signed_asset_url,
 )
-from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ class ResolveAssetsStep(BaseStep):
     name = "resolve_assets"
     depends_on = ["validation"]
 
-    async def execute(self, ctx: "WorkflowContext") -> StepResult:
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
         if ctx.capability != "chat":
             return StepResult(status=StepStatus.SUCCESS, message="skip_non_chat")
 
@@ -55,10 +55,14 @@ class ResolveAssetsStep(BaseStep):
                     ctx.set("resolve_assets", "merged_messages", resolved_messages)
 
         except AssetStorageNotConfigured as exc:
-            logger.warning("resolve_assets_not_configured trace_id=%s err=%s", ctx.trace_id, exc)
+            logger.warning(
+                "resolve_assets_not_configured trace_id=%s err=%s", ctx.trace_id, exc
+            )
             return StepResult(status=StepStatus.FAILED, message=str(exc))
         except Exception as exc:
-            logger.warning("resolve_assets_failed trace_id=%s err=%s", ctx.trace_id, exc)
+            logger.warning(
+                "resolve_assets_failed trace_id=%s err=%s", ctx.trace_id, exc
+            )
             return StepResult(status=StepStatus.FAILED, message=str(exc))
 
         total = request_count + merged_count
@@ -106,9 +110,7 @@ class ResolveAssetsStep(BaseStep):
                 resolved_messages.append(message)
         return resolved_messages, resolved_count
 
-    def _resolve_content(
-        self, content: Any, base_url: str | None
-    ) -> tuple[Any, int]:
+    def _resolve_content(self, content: Any, base_url: str | None) -> tuple[Any, int]:
         if isinstance(content, list):
             return self._resolve_blocks(content, base_url)
 

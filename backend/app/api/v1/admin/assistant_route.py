@@ -11,7 +11,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -21,9 +21,9 @@ from app.repositories import AssistantRepository, AssistantVersionRepository
 from app.schemas.assistant import (
     AssistantCreate,
     AssistantDTO,
+    AssistantListResponse,
     AssistantPublishRequest,
     AssistantUpdate,
-    AssistantListResponse,
 )
 from app.services.assistant.assistant_service import AssistantService
 

@@ -1,4 +1,3 @@
-
 import hashlib
 import hmac
 import time
@@ -15,7 +14,7 @@ class AIHigressUser(HttpUser):
     # 这些是在 init_test_env.py 中生成的或预存在的
     API_KEY = "sk-ext-test-key-placeholder"
     API_SECRET = "test-secret-placeholder"
-    MODEL = "gpt-3.5-turbo" # 确保数据库中有对应的模型配置
+    MODEL = "gpt-3.5-turbo"  # 确保数据库中有对应的模型配置
 
     def on_start(self):
         """用户启动时的初始化"""
@@ -30,9 +29,7 @@ class AIHigressUser(HttpUser):
         """
         message = f"{self.API_KEY}{timestamp}{nonce}"
         signature = hmac.new(
-            self.API_SECRET.encode(),
-            message.encode(),
-            hashlib.sha256
+            self.API_SECRET.encode(), message.encode(), hashlib.sha256
         ).hexdigest()
         return signature
 
@@ -44,10 +41,8 @@ class AIHigressUser(HttpUser):
 
         payload = {
             "model": self.MODEL,
-            "messages": [
-                {"role": "user", "content": "Hello, how are you today?"}
-            ],
-            "stream": False
+            "messages": [{"role": "user", "content": "Hello, how are you today?"}],
+            "stream": False,
         }
 
         signature = self._generate_signature(timestamp, nonce)
@@ -58,7 +53,7 @@ class AIHigressUser(HttpUser):
             "X-Timestamp": timestamp,
             "X-Nonce": nonce,
             "X-Signature": signature,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         with self.client.post(
@@ -66,7 +61,7 @@ class AIHigressUser(HttpUser):
             json=payload,
             headers=headers,
             catch_response=True,
-            name="/chat/completions (Normal)"
+            name="/chat/completions (Normal)",
         ) as response:
             if response.status_code == 200:
                 response.success()
@@ -88,7 +83,7 @@ class AIHigressUser(HttpUser):
             "messages": [
                 {"role": "user", "content": "Tell me a short story about a robot."}
             ],
-            "stream": True
+            "stream": True,
         }
 
         signature = self._generate_signature(timestamp, nonce)
@@ -99,7 +94,7 @@ class AIHigressUser(HttpUser):
             "X-Timestamp": timestamp,
             "X-Nonce": nonce,
             "X-Signature": signature,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         with self.client.post(
@@ -108,7 +103,7 @@ class AIHigressUser(HttpUser):
             headers=headers,
             stream=True,
             catch_response=True,
-            name="/chat/completions (Stream)"
+            name="/chat/completions (Stream)",
         ) as response:
             if response.status_code == 200:
                 # 对于流式响应，我们简单地读取一些数据来模拟真实客户端
@@ -124,10 +119,9 @@ class AIHigressUser(HttpUser):
         """测试模型列表接口 (较轻量)"""
         # 注意：models 接口当前在代码中可能不需要签名（取决于实现）
         # 但为了安全测试，我们可以带上
-        headers = {
-            "X-API-Key": self.API_KEY
-        }
+        headers = {"X-API-Key": self.API_KEY}
         self.client.get("/api/v1/external/models", headers=headers, name="/models")
+
 
 # 启动提示：
 # locust -f backend/tests/performance/locustfile_main.py --host http://localhost:8000

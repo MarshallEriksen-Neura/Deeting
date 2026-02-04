@@ -1,7 +1,6 @@
-from typing import List, Optional, Dict
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProviderInstanceSummary(BaseModel):
@@ -19,18 +18,18 @@ class ProviderCard(BaseModel):
     name: str
     provider: str
     category: str
-    description: Optional[str] = None
-    icon: Optional[str] = None
-    theme_color: Optional[str] = None
-    base_url: Optional[str] = None
-    url_template: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
-    capabilities: List[str] = Field(default_factory=list)
+    description: str | None = None
+    icon: str | None = None
+    theme_color: str | None = None
+    base_url: str | None = None
+    url_template: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
     is_popular: bool = False
     sort_order: int = 0
 
     connected: bool = False
-    instances: List[ProviderInstanceSummary] = Field(default_factory=list)
+    instances: list[ProviderInstanceSummary] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,9 +37,9 @@ class ProviderCard(BaseModel):
 class ProviderHubStats(BaseModel):
     total: int
     connected: int
-    by_category: Dict[str, int] = Field(default_factory=dict)
+    by_category: dict[str, int] = Field(default_factory=dict)
 
 
 class ProviderHubResponse(BaseModel):
-    providers: List[ProviderCard]
+    providers: list[ProviderCard]
     stats: ProviderHubStats

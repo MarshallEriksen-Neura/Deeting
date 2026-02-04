@@ -36,19 +36,23 @@ class AssetUploadService:
         bucket_type: str = "private",
     ) -> dict:
         """初始化上传
-        
+
         Args:
             bucket_type: "private" 或 "public"，决定存储桶和返回的 URL 类型
         """
         existing = await self.asset_repo.get_by_hash(content_hash, size_bytes)
         if existing:
-            if await self._validate_existing(existing, content_hash, size_bytes, content_type):
+            if await self._validate_existing(
+                existing, content_hash, size_bytes, content_type
+            ):
                 # 根据 bucket_type 返回不同格式的 asset_url
                 if bucket_type == "public":
                     asset_url = build_public_asset_url(existing.object_key)
                 else:
-                    asset_url = build_signed_asset_url(existing.object_key, base_url=base_url)
-                
+                    asset_url = build_signed_asset_url(
+                        existing.object_key, base_url=base_url
+                    )
+
                 return {
                     "deduped": True,
                     "object_key": existing.object_key,
@@ -64,7 +68,10 @@ class AssetUploadService:
                 await self.session.rollback()
                 logger.warning(
                     "media_asset_stale_cleanup_failed",
-                    extra={"asset_id": str(existing.id), "object_key": existing.object_key},
+                    extra={
+                        "asset_id": str(existing.id),
+                        "object_key": existing.object_key,
+                    },
                 )
 
         object_key, upload_url, ttl, upload_headers = await presign_asset_put_url(
@@ -95,7 +102,7 @@ class AssetUploadService:
         bucket_type: str = "private",
     ) -> dict:
         """完成上传
-        
+
         Args:
             bucket_type: "private" 或 "public"，决定返回的 URL 类型
         """
@@ -108,8 +115,10 @@ class AssetUploadService:
             if bucket_type == "public":
                 asset_url = build_public_asset_url(existing.object_key)
             else:
-                asset_url = build_signed_asset_url(existing.object_key, base_url=base_url)
-            
+                asset_url = build_signed_asset_url(
+                    existing.object_key, base_url=base_url
+                )
+
             return {
                 "object_key": existing.object_key,
                 "asset_url": asset_url,
@@ -162,7 +171,9 @@ class AssetUploadService:
             return False
 
         try:
-            _ensure_meta_valid(meta, content_hash, size_bytes, content_type, allow_missing_hash=True)
+            _ensure_meta_valid(
+                meta, content_hash, size_bytes, content_type, allow_missing_hash=True
+            )
             return True
         except ValueError:
             return False

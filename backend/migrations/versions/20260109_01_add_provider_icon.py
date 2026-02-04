@@ -5,9 +5,8 @@ Revises: 20260108_04_drop_provider_preset_item
 Create Date: 2026-01-09 00:00:00
 """
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260109_01"
@@ -19,7 +18,9 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "provider_preset",
-        sa.Column("icon", sa.String(length=255), nullable=False, server_default="lucide:cpu"),
+        sa.Column(
+            "icon", sa.String(length=255), nullable=False, server_default="lucide:cpu"
+        ),
     )
     op.add_column(
         "provider_instance",

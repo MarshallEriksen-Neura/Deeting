@@ -16,7 +16,7 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID | None:
         return value
     try:
         return uuid.UUID(str(value))
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("audit_invalid_uuid field=%s value=%s", field, value)
         return None
 

@@ -13,7 +13,6 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 # revision identifiers, used by Alembic.
 revision = "20260119_02_seed_image_models_openai_compat"
 down_revision = "20260119_01_create_image_generation_tables"
@@ -79,9 +78,13 @@ def upgrade() -> None:
 
         upstream_path = row.upstream_path or ""
         if "/chat/completions" in upstream_path:
-            upstream_path = upstream_path.replace("/chat/completions", "/images/generations")
+            upstream_path = upstream_path.replace(
+                "/chat/completions", "/images/generations"
+            )
         elif "chat/completions" in upstream_path:
-            upstream_path = upstream_path.replace("chat/completions", "images/generations")
+            upstream_path = upstream_path.replace(
+                "chat/completions", "images/generations"
+            )
         if not upstream_path:
             inserted_instances.add(str(instance_id))
             continue

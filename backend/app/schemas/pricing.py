@@ -1,4 +1,3 @@
-
 from pydantic import Field, model_validator
 
 from .base import BaseSchema
@@ -43,9 +42,13 @@ class ImagePricing(BaseSchema):
 
 
 class AudioPricing(BaseSchema):
-    tts_per_1k_chars: float | None = Field(None, ge=0, description="TTS 每 1000 字符单价")
+    tts_per_1k_chars: float | None = Field(
+        None, ge=0, description="TTS 每 1000 字符单价"
+    )
     stt_per_minute: float | None = Field(None, ge=0, description="STT 每分钟单价")
-    stt_per_second: float | None = Field(None, ge=0, description="STT 每秒单价（优先于每分钟）")
+    stt_per_second: float | None = Field(
+        None, ge=0, description="STT 每秒单价（优先于每分钟）"
+    )
 
     @model_validator(mode="after")
     def ensure_price(self):
@@ -54,7 +57,9 @@ class AudioPricing(BaseSchema):
             for v in (self.tts_per_1k_chars, self.stt_per_minute, self.stt_per_second)
         ):
             return self
-        raise ValueError("audio 定价需提供 tts_per_1k_chars 或 stt_per_minute/stt_per_second")
+        raise ValueError(
+            "audio 定价需提供 tts_per_1k_chars 或 stt_per_minute/stt_per_second"
+        )
 
 
 class VideoPricing(BaseSchema):
@@ -108,13 +113,19 @@ class PricingConfig(BaseSchema):
                     raise ValueError("capability=chat 需提供 chat 定价配置")
             case "image_generation":
                 if not self.image:
-                    raise ValueError("capability=image_generation 需提供 image 定价配置")
+                    raise ValueError(
+                        "capability=image_generation 需提供 image 定价配置"
+                    )
             case "text_to_speech" | "speech_to_text":
                 if not self.audio:
-                    raise ValueError("capability=text_to_speech/speech_to_text 需提供 audio 定价配置")
+                    raise ValueError(
+                        "capability=text_to_speech/speech_to_text 需提供 audio 定价配置"
+                    )
             case "video_generation":
                 if not self.video:
-                    raise ValueError("capability=video_generation 需提供 video 定价配置")
+                    raise ValueError(
+                        "capability=video_generation 需提供 video 定价配置"
+                    )
             case _:
                 # 其他能力保持向后兼容，不强制
                 return

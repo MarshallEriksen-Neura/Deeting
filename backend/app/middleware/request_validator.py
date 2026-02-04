@@ -166,9 +166,7 @@ class RequestValidatorMiddleware(BaseHTTPMiddleware):
 
         if self.ban_ip_on_detection or redis_client or redis_client_provider:
             self.ban_store = (
-                RedisBanStore(redis_client)
-                if redis_client
-                else InMemoryBanStore()
+                RedisBanStore(redis_client) if redis_client else InMemoryBanStore()
             )
         else:
             self.ban_store = None
@@ -333,7 +331,10 @@ class RequestValidatorMiddleware(BaseHTTPMiddleware):
 
         # 只检查文本类型的请求体
         content_type = request.headers.get("content-type", "").lower()
-        if not any(ct in content_type for ct in ["application/json", "application/x-www-form-urlencoded", "text/"]):
+        if not any(
+            ct in content_type
+            for ct in ["application/json", "application/x-www-form-urlencoded", "text/"]
+        ):
             return "", None
 
         async def receive() -> dict[str, bytes | bool]:

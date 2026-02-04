@@ -1,11 +1,11 @@
 import uuid
-from typing import Any, List, Optional
-from loguru import logger
+
 import httpx
-from app.core.config import settings
+from loguru import logger
+
+from app.models.agent_plugin import AgentPlugin
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.services.providers.embedding import EmbeddingService
-from app.models.agent_plugin import AgentPlugin
 from app.storage.qdrant_kb_collections import (
     get_kb_candidates_collection_name,
     get_kb_system_collection_name,
@@ -25,10 +25,11 @@ SCOPE_SYSTEM_PUBLIC = "SYSTEM_PUBLIC"
 SCOPE_SYSTEM_INTERNAL = "SYSTEM_INTERNAL"
 SCOPE_USER_PRIVATE = "USER_PRIVATE"
 
+
 class SystemQdrantService:
     """
     System-level Qdrant Service (The 'OS Kernel' for Vectors).
-    
+
     Responsibilities:
     1. Manage Global Collections (Marketplace, Cache, Memory, Tools).
     2. Execute 'Root' level queries (Discovery, Cache Lookup, Tool Retrieval).
@@ -54,7 +55,7 @@ class SystemQdrantService:
         # We use the raw Qdrant REST API via httpx for full control
         # 1. Plugin Marketplace
         await self._ensure_collection(COLLECTION_PLUGIN_MARKETPLACE, vector_size=1536)
-        
+
         # 2. Semantic Cache
         await self._ensure_collection(COLLECTION_SEMANTIC_CACHE, vector_size=1536)
 
@@ -95,26 +96,22 @@ class SystemQdrantService:
             "visibility": plugin.visibility,
             "is_system": plugin.is_system,
             "is_approved": plugin.is_approved,
-            "capabilities": plugin.capabilities
+            "capabilities": plugin.capabilities,
         }
 
         body = {
-            "points": [
-                {
-                    "id": str(plugin.id),
-                    "vector": vector,
-                    "payload": payload
-                }
-            ]
+            "points": [{"id": str(plugin.id), "vector": vector, "payload": payload}]
         }
-        
+
         await self.client.put(
             f"/collections/{COLLECTION_PLUGIN_MARKETPLACE}/points",
             json=body,
-            params={"wait": "true"}
+            params={"wait": "true"},
         )
 
-    async def search_plugins(self, query: str, user_id: uuid.UUID, limit: int = 5) -> List[dict]:
+    async def search_plugins(
+        self, query: str, user_id: uuid.UUID, limit: int = 5
+    ) -> list[dict]:
         """
         Discover plugins using natural language.
         Applies strict visibility filters:
@@ -129,17 +126,17 @@ class SystemQdrantService:
 
         # Filter Logic:
         # (is_system=True) OR (visibility='PUBLIC' AND is_approved=True) OR (owner_id=user_id)
-        
+
         filter_payload = {
             "should": [
                 {"key": "is_system", "match": {"value": True}},
                 {
                     "must": [
                         {"key": "visibility", "match": {"value": "PUBLIC"}},
-                        {"key": "is_approved", "match": {"value": True}}
+                        {"key": "is_approved", "match": {"value": True}},
                     ]
                 },
-                {"key": "owner_id", "match": {"value": str(user_id)}}
+                {"key": "owner_id", "match": {"value": str(user_id)}},
             ]
         }
 
@@ -147,15 +144,14 @@ class SystemQdrantService:
             "vector": vector,
             "filter": filter_payload,
             "limit": limit,
-            "with_payload": True
+            "with_payload": True,
         }
 
         resp = await self.client.post(
-            f"/collections/{COLLECTION_PLUGIN_MARKETPLACE}/points/search",
-            json=body
+            f"/collections/{COLLECTION_PLUGIN_MARKETPLACE}/points/search", json=body
         )
         resp.raise_for_status()
-        
+
         results = resp.json().get("result", [])
         return [
             {
@@ -163,12 +159,16 @@ class SystemQdrantService:
                 "name": item["payload"]["name"],
                 "score": item["score"],
                 "display_name": item["payload"].get("display_name"),
-                "description": item["payload"].get("description") # Can fetch full desc from DB if needed
+                "description": item["payload"].get(
+                    "description"
+                ),  # Can fetch full desc from DB if needed
             }
             for item in results
         ]
 
-    async def semantic_cache_lookup(self, query: str, threshold: float = 0.95) -> Optional[str]:
+    async def semantic_cache_lookup(
+        self, query: str, threshold: float = 0.95
+    ) -> str | None:
         """
         Check if we have a semantic cache hit for the query.
         Returns the cached response text or None.
@@ -177,23 +177,22 @@ class SystemQdrantService:
             return None
 
         vector = await self._embedding_service.embed_text(query)
-        
+
         body = {
             "vector": vector,
             "limit": 1,
             "with_payload": True,
-            "score_threshold": threshold
+            "score_threshold": threshold,
         }
 
         resp = await self.client.post(
-            f"/collections/{COLLECTION_SEMANTIC_CACHE}/points/search",
-            json=body
+            f"/collections/{COLLECTION_SEMANTIC_CACHE}/points/search", json=body
         )
-        
+
         results = resp.json().get("result", [])
         if not results:
             return None
-            
+
         return results[0]["payload"].get("response")
 
     async def semantic_cache_save(self, query: str, response: str) -> None:
@@ -205,29 +204,18 @@ class SystemQdrantService:
 
         vector = await self._embedding_service.embed_text(query)
         point_id = str(uuid.uuid4())
-        
-        payload = {
-            "query": query,
-            "response": response,
-            "timestamp": "TODO_TIMESTAMP" 
-        }
 
-        body = {
-            "points": [
-                {
-                    "id": point_id,
-                    "vector": vector,
-                    "payload": payload
-                }
-            ]
-        }
-        
+        payload = {"query": query, "response": response, "timestamp": "TODO_TIMESTAMP"}
+
+        body = {"points": [{"id": point_id, "vector": vector, "payload": payload}]}
+
         # Fire and forget (don't wait)
         await self.client.put(
             f"/collections/{COLLECTION_SEMANTIC_CACHE}/points",
             json=body,
-            params={"wait": "false"}
+            params={"wait": "false"},
         )
+
 
 # Singleton
 system_qdrant = SystemQdrantService()

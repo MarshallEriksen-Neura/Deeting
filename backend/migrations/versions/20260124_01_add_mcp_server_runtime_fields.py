@@ -7,22 +7,23 @@ Create Date: 2026-01-24 00:00:00.000000
 
 from __future__ import annotations
 
-from typing import Union
-
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "20260124_01_add_mcp_server_runtime_fields"
-down_revision: Union[str, None] = "20260121_03_rename_generation_task_table"
-branch_labels: Union[str, None] = None
-depends_on: Union[str, None] = None
+down_revision: str | None = "20260121_03_rename_generation_task_table"
+branch_labels: str | None = None
+depends_on: str | None = None
 
 
 def _json_type(dialect_name: str):
-    return postgresql.JSONB(astext_type=sa.Text()) if dialect_name == "postgresql" else sa.JSON()
+    return (
+        postgresql.JSONB(astext_type=sa.Text())
+        if dialect_name == "postgresql"
+        else sa.JSON()
+    )
 
 
 def upgrade() -> None:
@@ -30,12 +31,16 @@ def upgrade() -> None:
     dialect_name = bind.dialect.name
     inspector = sa.inspect(bind)
     json_type = _json_type(dialect_name)
-    json_array_default = sa.text("'[]'::jsonb") if dialect_name == "postgresql" else "[]"
+    json_array_default = (
+        sa.text("'[]'::jsonb") if dialect_name == "postgresql" else "[]"
+    )
 
     if not inspector.has_table("user_mcp_server"):
         op.create_table(
             "user_mcp_server",
-            sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+            sa.Column(
+                "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+            ),
             sa.Column(
                 "user_id",
                 postgresql.UUID(as_uuid=True),
@@ -43,9 +48,21 @@ def upgrade() -> None:
                 nullable=False,
                 comment="Owner of this MCP configuration",
             ),
-            sa.Column("name", sa.String(length=120), nullable=False, comment="Display name for this MCP server"),
-            sa.Column("description", sa.Text(), nullable=True, comment="Optional description"),
-            sa.Column("sse_url", sa.String(length=512), nullable=True, comment="Full URL to the MCP SSE endpoint"),
+            sa.Column(
+                "name",
+                sa.String(length=120),
+                nullable=False,
+                comment="Display name for this MCP server",
+            ),
+            sa.Column(
+                "description", sa.Text(), nullable=True, comment="Optional description"
+            ),
+            sa.Column(
+                "sse_url",
+                sa.String(length=512),
+                nullable=True,
+                comment="Full URL to the MCP SSE endpoint",
+            ),
             sa.Column(
                 "server_type",
                 sa.String(length=20),
@@ -53,7 +70,12 @@ def upgrade() -> None:
                 server_default="sse",
                 comment="Server type: sse (remote) or stdio (draft)",
             ),
-            sa.Column("secret_ref_id", sa.String(length=255), nullable=True, comment="Reference to the API Key/Token in UpstreamSecret"),
+            sa.Column(
+                "secret_ref_id",
+                sa.String(length=255),
+                nullable=True,
+                comment="Reference to the API Key/Token in UpstreamSecret",
+            ),
             sa.Column(
                 "auth_type",
                 sa.String(length=40),
@@ -113,12 +135,22 @@ def upgrade() -> None:
     if "server_type" not in columns:
         op.add_column(
             "user_mcp_server",
-            sa.Column("server_type", sa.String(length=20), nullable=False, server_default="sse"),
+            sa.Column(
+                "server_type",
+                sa.String(length=20),
+                nullable=False,
+                server_default="sse",
+            ),
         )
     if "disabled_tools" not in columns:
         op.add_column(
             "user_mcp_server",
-            sa.Column("disabled_tools", json_type, nullable=False, server_default=json_array_default),
+            sa.Column(
+                "disabled_tools",
+                json_type,
+                nullable=False,
+                server_default=json_array_default,
+            ),
         )
     if "draft_config" not in columns:
         op.add_column(

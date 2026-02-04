@@ -32,7 +32,9 @@ class AssistantTagLinkRepository(BaseRepository[AssistantTagLink]):
 
     async def list_for_assistant(self, assistant_id: UUID) -> list[AssistantTagLink]:
         result = await self.session.execute(
-            select(AssistantTagLink).where(AssistantTagLink.assistant_id == assistant_id)
+            select(AssistantTagLink).where(
+                AssistantTagLink.assistant_id == assistant_id
+            )
         )
         return list(result.scalars().all())
 
@@ -51,9 +53,7 @@ class AssistantTagLinkRepository(BaseRepository[AssistantTagLink]):
         if not tag_ids:
             return
         for tag_id in tag_ids:
-            self.session.add(
-                AssistantTagLink(assistant_id=assistant_id, tag_id=tag_id)
-            )
+            self.session.add(AssistantTagLink(assistant_id=assistant_id, tag_id=tag_id))
         await self.session.commit()
 
     async def delete_links_by_tag(self, tag_id: UUID) -> None:
@@ -62,7 +62,9 @@ class AssistantTagLinkRepository(BaseRepository[AssistantTagLink]):
         )
         await self.session.commit()
 
-    async def list_tag_names_for_assistants(self, assistant_ids: list[UUID]) -> dict[UUID, list[str]]:
+    async def list_tag_names_for_assistants(
+        self, assistant_ids: list[UUID]
+    ) -> dict[UUID, list[str]]:
         if not assistant_ids:
             return {}
         result = await self.session.execute(

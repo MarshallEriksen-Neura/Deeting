@@ -14,8 +14,7 @@ class SearchBackend(Protocol):
         size: int,
         cursor: str | None,
         tags: list[str] | None,
-    ) -> tuple[list[str], str | None]:
-        ...
+    ) -> tuple[list[str], str | None]: ...
 
     async def search_market_assistants(
         self,
@@ -24,24 +23,21 @@ class SearchBackend(Protocol):
         size: int,
         cursor: str | None,
         tags: list[str] | None,
-    ) -> tuple[list[str], str | None]:
-        ...
+    ) -> tuple[list[str], str | None]: ...
 
     async def search_mcp_tools(
         self,
         *,
         search: str | None,
         category: object | None,
-    ) -> list[str]:
-        ...
+    ) -> list[str]: ...
 
     async def search_provider_presets(
         self,
         *,
         query: str | None,
         category: str | None,
-    ) -> list[str]:
-        ...
+    ) -> list[str]: ...
 
 
 _backend: SearchBackend | None = None

@@ -13,10 +13,12 @@ from app.core.logging import logger
 
 T = TypeVar("T")
 
+
 class CacheService:
     """
     Redis 缓存服务
     """
+
     def __init__(self):
         self._redis: Redis | None = None
         self._script_sha: dict[str, str] = {}
@@ -27,7 +29,7 @@ class CacheService:
             self._redis = from_url(
                 settings.REDIS_URL,
                 encoding=settings.REDIS_ENCODING,
-                decode_responses=False # 我们手动处理序列化，支持对象缓存
+                decode_responses=False,  # 我们手动处理序列化，支持对象缓存
             )
             logger.info(f"Redis initialized at {settings.REDIS_URL}")
         else:
@@ -86,7 +88,8 @@ class CacheService:
 
     async def get(self, key: str) -> Any | None:
         """获取缓存值 (自动反序列化)"""
-        if not self._redis: return None
+        if not self._redis:
+            return None
         try:
             data = await self._redis.get(self._make_key(key))
             if data:
@@ -107,7 +110,8 @@ class CacheService:
 
         支持 NX 语义，便于幂等键/短锁场景。
         """
-        if not self._redis: return False
+        if not self._redis:
+            return False
         try:
             data = pickle.dumps(value)
             expire = ex if ex is not None else ttl
@@ -121,7 +125,8 @@ class CacheService:
 
     async def delete(self, key: str) -> bool:
         """删除缓存"""
-        if not self._redis: return False
+        if not self._redis:
+            return False
         try:
             await self._redis.delete(self._make_key(key))
             return True
@@ -146,7 +151,8 @@ class CacheService:
 
     async def clear_prefix(self, prefix: str) -> int:
         """根据前缀清除缓存"""
-        if not self._redis: return 0
+        if not self._redis:
+            return 0
         try:
             # 这里的 prefix 不需要包含 settings.CACHE_PREFIX，因为 _make_key 会加
             # 但 keys 搜索需要完整的 pattern
@@ -163,7 +169,7 @@ class CacheService:
         self,
         prefix: str,
         ttl: int = settings.CACHE_DEFAULT_TTL,
-        key_builder: Callable[..., str] | None = None
+        key_builder: Callable[..., str] | None = None,
     ):
         """
         装饰器：缓存异步函数的返回值
@@ -171,6 +177,7 @@ class CacheService:
         :param ttl: 过期时间 (秒)
         :param key_builder: 自定义键生成函数 (func_args, func_kwargs) -> str
         """
+
         def decorator(func: Callable[..., Any]):
             @functools.wraps(func)
             async def wrapper(*args, **kwargs):
@@ -185,16 +192,17 @@ class CacheService:
                     # 注意：args[0] 如果是 self/cls，可能导致 key 过长或无法序列化
                     # 简单的处理：过滤掉 self/cls (通常是第一个参数且是 class/object 实例)
                     safe_args = args
-                    if args and hasattr(args[0], '__dict__'):
-                         # 这是一个简单的 heuristic，可能不完全准确
-                         # 更好的方式是明确指定 key_builder
-                         # 或者仅使用 kwargs
-                         pass
+                    if args and hasattr(args[0], "__dict__"):
+                        # 这是一个简单的 heuristic，可能不完全准确
+                        # 更好的方式是明确指定 key_builder
+                        # 或者仅使用 kwargs
+                        pass
 
                     # 简单序列化参数做 key (MD5 或直接拼接)
                     # 这里为了演示，简单拼接 key + 参数哈希
                     arg_str = str(args) + str(kwargs)
                     import hashlib
+
                     arg_hash = hashlib.md5(arg_str.encode()).hexdigest()
                     cache_key_suffix = f"{func.__name__}:{arg_hash}"
 
@@ -214,7 +222,9 @@ class CacheService:
                     await self.set(full_key, result, ttl=ttl)
 
                 return result
+
             return wrapper
+
         return decorator
 
     # ====== 版本化缓存与防击穿辅助 ======
@@ -230,7 +240,9 @@ class CacheService:
         payload = {"v": version, "data": value}
         return await self.set(key, payload, ttl=ttl)
 
-    async def get_with_version(self, key: str, expected_version: int | None) -> Any | None:
+    async def get_with_version(
+        self, key: str, expected_version: int | None
+    ) -> Any | None:
         """读取并校验版本，不匹配时返回 None"""
         if expected_version is None:
             return await self.get(key)
@@ -287,7 +299,9 @@ class CacheService:
                     if version is None:
                         await self.set(key, value, ttl=ttl_with_jitter)
                     else:
-                        await self.set_with_version(key, value, version, ttl=ttl_with_jitter)
+                        await self.set_with_version(
+                            key, value, version, ttl=ttl_with_jitter
+                        )
                 return value
             else:
                 # 等待持锁者填充，避免击穿
@@ -299,6 +313,7 @@ class CacheService:
                     await self._redis.delete(lock_key)
                 except Exception:
                     pass
+
 
 # 单例实例
 cache = CacheService()

@@ -4,18 +4,18 @@ Revision ID: 20260127_01_create_spec_kb_candidate
 Revises: 20260126_02_add_spec_plan_conversation_session
 Create Date: 2026-01-27
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "20260127_01_create_spec_kb_candidate"
-down_revision: Union[str, None] = "20260126_02_add_spec_plan_conversation_session"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260126_02_add_spec_plan_conversation_session"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -193,7 +193,9 @@ def upgrade() -> None:
             nullable=True,
             comment="晋升时间",
         ),
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -207,7 +209,12 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("ix_spec_kb_candidate_hash", "spec_kb_candidate", ["canonical_hash"], unique=True)
+    op.create_index(
+        "ix_spec_kb_candidate_hash",
+        "spec_kb_candidate",
+        ["canonical_hash"],
+        unique=True,
+    )
     op.create_index("ix_spec_kb_candidate_status", "spec_kb_candidate", ["status"])
 
 

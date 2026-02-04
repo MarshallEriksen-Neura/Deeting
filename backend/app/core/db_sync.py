@@ -10,10 +10,12 @@ from app.core.config import settings
 # 或者 sqlite+aiosqlite -> sqlite
 sync_database_url = settings.DATABASE_URL
 if "postgresql+asyncpg" in sync_database_url:
-    sync_database_url = sync_database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+    sync_database_url = sync_database_url.replace(
+        "postgresql+asyncpg", "postgresql+psycopg2"
+    )
 elif "sqlite+aiosqlite" in sync_database_url:
     sync_database_url = sync_database_url.replace("sqlite+aiosqlite", "sqlite")
-elif "+asyncpg" in sync_database_url: # Generic fallback for other variations
+elif "+asyncpg" in sync_database_url:  # Generic fallback for other variations
     sync_database_url = sync_database_url.replace("+asyncpg", "")
 
 # 创建同步引擎
@@ -33,6 +35,7 @@ SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
 
 def get_sync_db() -> Generator[Session, None, None]:
     """

@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _extract_provider_filters(scopes: list[str] | None) -> tuple[set[str], set[str], set[str]]:
+def _extract_provider_filters(
+    scopes: list[str] | None,
+) -> tuple[set[str], set[str], set[str]]:
     """
     从 scopes（形如 'provider:openai'）解析出 provider/preset/preset_item 限制。
     """
@@ -124,8 +126,8 @@ class RoutingStep(BaseStep):
                 message="Database session missing in context",
             )
 
-        allowed_providers, allowed_presets, allowed_preset_items = _extract_provider_filters(
-            ctx.get("auth", "scopes")
+        allowed_providers, allowed_presets, allowed_preset_items = (
+            _extract_provider_filters(ctx.get("auth", "scopes"))
         )
 
         logger.debug(
@@ -138,12 +140,14 @@ class RoutingStep(BaseStep):
 
         try:
             if provider_model_id:
-                routing_result, backups, affinity_hit = await self._select_by_provider_model_id(
-                    session=ctx.db_session,
-                    provider_model_id=provider_model_id,
-                    channel=ctx.channel.value,
-                    ctx=ctx,
-                    allowed_providers=allowed_providers,
+                routing_result, backups, affinity_hit = (
+                    await self._select_by_provider_model_id(
+                        session=ctx.db_session,
+                        provider_model_id=provider_model_id,
+                        channel=ctx.channel.value,
+                        ctx=ctx,
+                        allowed_providers=allowed_providers,
+                    )
                 )
             else:
                 routing_result, backups, affinity_hit = await self._select_upstream(
@@ -161,16 +165,26 @@ class RoutingStep(BaseStep):
             ctx.set("routing", "preset_id", routing_result["preset_id"])
             ctx.set("routing", "preset_item_id", routing_result["preset_item_id"])
             ctx.set("routing", "instance_id", routing_result.get("instance_id"))
-            ctx.set("routing", "provider_model_id", routing_result.get("provider_model_id"))
+            ctx.set(
+                "routing", "provider_model_id", routing_result.get("provider_model_id")
+            )
             ctx.set("routing", "upstream_url", routing_result["upstream_url"])
             ctx.set("routing", "provider", routing_result["provider"])
             ctx.set("routing", "template_engine", routing_result["template_engine"])
             ctx.set("routing", "request_template", routing_result["request_template"])
-            ctx.set("routing", "response_transform", routing_result["response_transform"])
+            ctx.set(
+                "routing", "response_transform", routing_result["response_transform"]
+            )
             ctx.set("routing", "async_config", routing_result.get("async_config") or {})
-            ctx.set("routing", "http_method", routing_result.get("http_method") or "POST")
+            ctx.set(
+                "routing", "http_method", routing_result.get("http_method") or "POST"
+            )
             ctx.set("routing", "routing_config", routing_result["routing_config"])
-            ctx.set("routing", "config_override", routing_result.get("config_override") or {})
+            ctx.set(
+                "routing",
+                "config_override",
+                routing_result.get("config_override") or {},
+            )
             ctx.set("routing", "limit_config", routing_result["limit_config"])
             ctx.set("routing", "pricing_config", routing_result["pricing_config"])
             ctx.set("routing", "auth_type", routing_result["auth_type"])
@@ -180,7 +194,11 @@ class RoutingStep(BaseStep):
             ctx.set("routing", "candidates", [routing_result, *backups])
             ctx.set("routing", "candidate_index", 0)
             ctx.set("routing", "affinity_hit", affinity_hit)
-            ctx.set("routing", "affinity_provider_model_id", routing_result.get("provider_model_id"))
+            ctx.set(
+                "routing",
+                "affinity_provider_model_id",
+                routing_result.get("provider_model_id"),
+            )
 
             # 更新顶层字段
             ctx.selected_preset_id = routing_result["preset_id"]
@@ -355,9 +373,9 @@ class RoutingStep(BaseStep):
             )
             backups = []
         else:
-            messages = ctx.get("conversation", "merged_messages") or ctx.get("validation", "validated", {}).get(
-                "messages"
-            )
+            messages = ctx.get("conversation", "merged_messages") or ctx.get(
+                "validation", "validated", {}
+            ).get("messages")
             primary, backups, _ = await selector.choose(candidates, messages=messages)
 
         def to_dict(c):
@@ -403,7 +421,7 @@ class RoutingStep(BaseStep):
     ) -> tuple[dict, list[dict], bool]:
         """
         选择上游（P1-5 集成路由亲和）
-        
+
         流程：
         1. 检查是否有会话 ID 和路由亲和状态
         2. 如果亲和锁定，优先使用锁定的上游
@@ -417,10 +435,10 @@ class RoutingStep(BaseStep):
         session_id = ctx.get("conversation", "session_id") or (
             (ctx.get("validation", "validated") or {}).get("session_id")
         )
-        
+
         affinity_hit = False
         affinity_machine = None
-        
+
         if session_id:
             # 创建亲和状态机
             affinity_machine = RoutingAffinityStateMachine(
@@ -430,10 +448,12 @@ class RoutingStep(BaseStep):
                 lock_duration=3600,  # 锁定 1 小时
                 failure_threshold=3,  # 连续失败 3 次后重新探索
             )
-            
+
             # 检查是否应该使用亲和路由
-            should_use, locked_provider, locked_item_id = await affinity_machine.should_use_affinity()
-            
+            should_use, locked_provider, locked_item_id = (
+                await affinity_machine.should_use_affinity()
+            )
+
             if should_use and locked_item_id:
                 # 尝试使用锁定的上游
                 logger.debug(
@@ -467,7 +487,7 @@ class RoutingStep(BaseStep):
                     # 找到锁定的上游，直接使用
                     primary = candidate
                     backups = [c for c in candidates if c != primary]
-                    
+
                     def to_dict(c):
                         return {
                             "preset_id": c.preset_id,
@@ -495,7 +515,7 @@ class RoutingStep(BaseStep):
                             "credential_id": c.credential_id,
                             "credential_alias": c.credential_alias,
                         }
-                    
+
                     logger.info(
                         "routing_affinity_used session=%s model=%s provider=%s",
                         session_id,
@@ -503,7 +523,7 @@ class RoutingStep(BaseStep):
                         primary.provider,
                     )
                     return to_dict(primary), [to_dict(b) for b in backups], True
-            
+
             # 锁定的上游不在候选中（可能已下线），重新探索
             logger.warning(
                 "routing_affinity_locked_unavailable session=%s model=%s item=%s",
@@ -514,7 +534,9 @@ class RoutingStep(BaseStep):
             affinity_hit = False
 
         # 正常路由选择
-        messages = ctx.get("conversation", "merged_messages") or ctx.get("validation", "validated", {}).get("messages")
+        messages = ctx.get("conversation", "merged_messages") or ctx.get(
+            "validation", "validated", {}
+        ).get("messages")
         primary, backups, _ = await selector.choose(candidates, messages=messages)
 
         def to_dict(c):

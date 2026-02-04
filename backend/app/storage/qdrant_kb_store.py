@@ -27,7 +27,10 @@ def _dig(obj: Any, *keys: str) -> Any:
 
 
 async def get_collection_vector_size(
-    qdrant: httpx.AsyncClient, *, collection_name: str, vector_name: str = QDRANT_DEFAULT_VECTOR_NAME
+    qdrant: httpx.AsyncClient,
+    *,
+    collection_name: str,
+    vector_name: str = QDRANT_DEFAULT_VECTOR_NAME,
 ) -> int | None:
     name = str(collection_name or "").strip()
     if not name:
@@ -41,7 +44,10 @@ async def get_collection_vector_size(
 
     vectors = _dig(payload, "result", "config", "params", "vectors")
     size = None
-    vn = str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip() or QDRANT_DEFAULT_VECTOR_NAME
+    vn = (
+        str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip()
+        or QDRANT_DEFAULT_VECTOR_NAME
+    )
     if isinstance(vectors, dict):
         # 平铺结构 {"size": 2, "distance": "..."}（未命名向量）
         if "size" in vectors:
@@ -54,7 +60,9 @@ async def get_collection_vector_size(
         size = _dig(payload, "result", "config", "params", "vectors", "size")
     if isinstance(size, int) and size > 0:
         return size
-    raise RuntimeError(f"unexpected qdrant collection response (missing vector size): {payload!r}")
+    raise RuntimeError(
+        f"unexpected qdrant collection response (missing vector size): {payload!r}"
+    )
 
 
 async def create_collection(
@@ -134,7 +142,10 @@ async def upsert_point(
         raise ValueError("payload must be dict")
 
     params = {"wait": "true" if wait else "false"}
-    vn = str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip() or QDRANT_DEFAULT_VECTOR_NAME
+    vn = (
+        str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip()
+        or QDRANT_DEFAULT_VECTOR_NAME
+    )
     body = {"points": [{"id": pid, "vector": {vn: vector}, "payload": payload}]}
     resp = await qdrant.put(f"/collections/{name}/points", params=params, json=body)
     _safe_raise(resp)
@@ -153,7 +164,10 @@ async def upsert_points(
         raise ValueError("empty collection_name")
     if not isinstance(points, list) or not points:
         raise ValueError("points must be non-empty list")
-    vn = str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip() or QDRANT_DEFAULT_VECTOR_NAME
+    vn = (
+        str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip()
+        or QDRANT_DEFAULT_VECTOR_NAME
+    )
 
     normalized: list[dict[str, Any]] = []
     for point in points:
@@ -195,7 +209,10 @@ async def search_points(
         k = 3
     k = max(1, min(k, 50))
 
-    vn = str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip() or QDRANT_DEFAULT_VECTOR_NAME
+    vn = (
+        str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip()
+        or QDRANT_DEFAULT_VECTOR_NAME
+    )
     body: dict[str, Any] = {
         "vector": {vn: vector},
         "limit": k,
@@ -273,7 +290,9 @@ async def delete_points(
     if not body:
         return
 
-    resp = await qdrant.post(f"/collections/{name}/points/delete", params=params, json=body)
+    resp = await qdrant.post(
+        f"/collections/{name}/points/delete", params=params, json=body
+    )
     if resp.request is not None:
         resp.raise_for_status()
 

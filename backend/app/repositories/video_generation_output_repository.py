@@ -13,8 +13,10 @@ class VideoGenerationOutputRepository:
         self.session = session
 
     async def list_by_task(self, task_id) -> list[VideoGenerationOutput]:
-        stmt = select(VideoGenerationOutput).where(VideoGenerationOutput.task_id == task_id).order_by(
-            VideoGenerationOutput.output_index.asc()
+        stmt = (
+            select(VideoGenerationOutput)
+            .where(VideoGenerationOutput.task_id == task_id)
+            .order_by(VideoGenerationOutput.output_index.asc())
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -25,12 +27,17 @@ class VideoGenerationOutputRepository:
         stmt = (
             select(VideoGenerationOutput)
             .where(VideoGenerationOutput.task_id.in_(task_ids))
-            .order_by(VideoGenerationOutput.task_id.asc(), VideoGenerationOutput.output_index.asc())
+            .order_by(
+                VideoGenerationOutput.task_id.asc(),
+                VideoGenerationOutput.output_index.asc(),
+            )
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def create(self, payload: dict[str, Any], commit: bool = True) -> VideoGenerationOutput:
+    async def create(
+        self, payload: dict[str, Any], commit: bool = True
+    ) -> VideoGenerationOutput:
         output = VideoGenerationOutput(**payload)
         self.session.add(output)
         if commit:
@@ -41,7 +48,9 @@ class VideoGenerationOutputRepository:
         return output
 
     async def delete_by_task(self, task_id, commit: bool = True) -> None:
-        stmt = delete(VideoGenerationOutput).where(VideoGenerationOutput.task_id == task_id)
+        stmt = delete(VideoGenerationOutput).where(
+            VideoGenerationOutput.task_id == task_id
+        )
         await self.session.execute(stmt)
         if commit:
             await self.session.commit()

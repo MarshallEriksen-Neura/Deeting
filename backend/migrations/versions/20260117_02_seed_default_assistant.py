@@ -13,7 +13,6 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 # revision identifiers, used by Alembic.
 revision = "20260117_02_seed_default_assistant"
 down_revision = "20260117_01_add_system_setting_and_secretary_embedding_model"
@@ -113,5 +112,9 @@ def downgrade() -> None:
     ).scalar_one_or_none()
     if not assistant_id:
         return
-    conn.execute(sa.delete(assistant_version_table).where(assistant_version_table.c.assistant_id == assistant_id))
+    conn.execute(
+        sa.delete(assistant_version_table).where(
+            assistant_version_table.c.assistant_id == assistant_id
+        )
+    )
     conn.execute(sa.delete(assistant_table).where(assistant_table.c.id == assistant_id))

@@ -2,7 +2,12 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.orchestrator.context import BillingInfo, Channel, UpstreamResult, WorkflowContext
+from app.services.orchestrator.context import (
+    BillingInfo,
+    Channel,
+    UpstreamResult,
+    WorkflowContext,
+)
 from app.services.workflow.steps.audit_log import AuditLogStep
 
 
@@ -17,14 +22,9 @@ async def test_audit_log_dispatches_task():
         is_success=True,
     )
     ctx.billing = BillingInfo(
-        input_tokens=10,
-        output_tokens=20,
-        total_tokens=30,
-        total_cost=0.05
+        input_tokens=10, output_tokens=20, total_tokens=30, total_cost=0.05
     )
-    ctx.upstream_result = UpstreamResult(
-        status_code=200
-    )
+    ctx.upstream_result = UpstreamResult(status_code=200)
     ctx.step_timings = {"step1": 100.0}
 
     # Patch the task inside the module where it is imported/used

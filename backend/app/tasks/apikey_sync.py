@@ -13,7 +13,6 @@ import logging
 from decimal import Decimal
 
 from sqlalchemy import select, update
-from sqlalchemy.orm import Session
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
@@ -27,10 +26,10 @@ logger = logging.getLogger(__name__)
 def sync_apikey_budget_from_redis_to_db(api_key_id: str) -> dict:
     """
     同步单个 API Key 的预算从 Redis 到 DB
-    
+
     Args:
         api_key_id: API Key ID
-        
+
     Returns:
         同步结果字典
     """
@@ -42,11 +41,14 @@ def sync_apikey_budget_from_redis_to_db(api_key_id: str) -> dict:
         # 从 Redis 读取预算
         key = CacheKeys.apikey_budget_hash(api_key_id)
         full_key = cache._make_key(key)
-        
+
         # 使用同步 Redis 客户端
         import redis
-        sync_redis = redis.from_url(cache._redis.connection_pool.connection_kwargs["url"])
-        
+
+        sync_redis = redis.from_url(
+            cache._redis.connection_pool.connection_kwargs["url"]
+        )
+
         data = sync_redis.hgetall(full_key)
         if not data:
             return {"status": "skipped", "reason": "redis_key_not_found"}
@@ -59,7 +61,7 @@ def sync_apikey_budget_from_redis_to_db(api_key_id: str) -> dict:
         with get_sync_session() as session:
             stmt = select(ApiKey).where(ApiKey.id == api_key_id)
             api_key = session.execute(stmt).scalars().first()
-            
+
             if not api_key:
                 logger.warning("sync_apikey_budget_db_not_found api_key=%s", api_key_id)
                 return {"status": "failed", "reason": "db_record_not_found"}
@@ -108,7 +110,7 @@ def sync_apikey_budget_from_redis_to_db(api_key_id: str) -> dict:
 def sync_all_apikey_budgets() -> dict:
     """
     同步所有 API Key 的预算
-    
+
     Returns:
         同步汇总结果
     """
@@ -128,18 +130,20 @@ def sync_all_apikey_budgets() -> dict:
 
         for api_key_id in api_key_ids:
             result = sync_apikey_budget_from_redis_to_db(str(api_key_id))
-            
+
             if result["status"] == "synced":
                 results["synced"] += 1
             elif result["status"] == "skipped":
                 results["skipped"] += 1
             else:
                 results["failed"] += 1
-            
-            results["details"].append({
-                "api_key_id": str(api_key_id),
-                **result,
-            })
+
+            results["details"].append(
+                {
+                    "api_key_id": str(api_key_id),
+                    **result,
+                }
+            )
 
         logger.info(
             "sync_all_apikey_budgets_complete total=%d synced=%d skipped=%d failed=%d",

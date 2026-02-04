@@ -14,7 +14,6 @@ from app.prompts.topic_naming import TOPIC_NAMING_PROMPT_TEMPLATE
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.services.providers.provider_instance_service import ProviderInstanceService
 
-
 TOPIC_NAMING_META_KEY = "topic_naming_scheduled"
 TOPIC_TITLE_MAX_LENGTH = 40
 
@@ -95,7 +94,9 @@ async def generate_conversation_title(
     except ValueError:
         return "invalid_uuid"
 
-    session_stmt = select(ConversationSession).where(ConversationSession.id == session_uuid)
+    session_stmt = select(ConversationSession).where(
+        ConversationSession.id == session_uuid
+    )
     session_result = await db.execute(session_stmt)
     session_obj = session_result.scalar_one_or_none()
     if not session_obj:

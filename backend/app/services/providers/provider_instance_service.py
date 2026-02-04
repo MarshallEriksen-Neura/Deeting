@@ -1,29 +1,34 @@
 import inspect
-import uuid
-import httpx
-import time
 import json
-from typing import Iterable, List, Dict, Any
+import time
+import uuid
+from collections.abc import Iterable
+from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from google.oauth2 import service_account
 import google.auth.transport.requests
+import httpx
+from google.oauth2 import service_account
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.provider_instance import ProviderInstance, ProviderModel, ProviderCredential
+from app.constants.model_capability_map import guess_capabilities
+from app.core.cache_invalidation import CacheInvalidator
 from app.core.config import settings
+from app.models.provider_instance import (
+    ProviderCredential,
+    ProviderInstance,
+    ProviderModel,
+)
+from app.repositories.provider_credential_repository import ProviderCredentialRepository
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
-from app.repositories.provider_credential_repository import ProviderCredentialRepository
 from app.repositories.provider_preset_repository import ProviderPresetRepository
-from app.core.cache_invalidation import CacheInvalidator
-from app.constants.model_capability_map import guess_capabilities, primary_capability
-from app.services.secrets.manager import SecretManager
 from app.services.providers.upstream_url import (
     build_upstream_url,
     build_upstream_url_with_params,
 )
+from app.services.secrets.manager import SecretManager
 from app.utils.time_utils import Datetime
 
 
@@ -39,6 +44,7 @@ class ProviderInstanceService:
         self._invalidator = CacheInvalidator()
         self.secret_manager = SecretManager()
         from app.core.cache import cache
+
         self.cache = cache
 
     async def verify_credentials(
@@ -54,12 +60,12 @@ class ProviderInstanceService:
         project_id: str | None = None,
         region: str | None = None,
         api_version: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """验证凭证有效性并尝试发现模型列表。"""
         # 1. 构造探测 URL
         url = base_url.rstrip("/")
         headers = {}
-        
+
         # Vertex AI 特殊处理
         if "vertexai" in preset_slug.lower():
             if project_id and region:
@@ -82,7 +88,7 @@ class ProviderInstanceService:
                 result = await self._probe_azure_deployment(url, headers)
                 result["probe_url"] = url
                 return result
-        
+
         # 协议处理
         elif protocol == "claude" or protocol == "anthropic":
             url = build_upstream_url(
@@ -101,22 +107,22 @@ class ProviderInstanceService:
                 auto_append_v1=auto_append_v1,
             )
             headers["Authorization"] = f"Bearer {api_key}"
-        
+
         start = time.time()
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers)
                 latency = int((time.time() - start) * 1000)
-                
+
                 if resp.status_code == 200:
                     data = resp.json()
                     models = []
                     if isinstance(data, dict):
                         if "data" in data and isinstance(data["data"], list):
-                             models = [m["id"] for m in data["data"] if "id" in m]
+                            models = [m["id"] for m in data["data"] if "id" in m]
                         elif "models" in data and isinstance(data["models"], list):
-                             models = [m["id"] for m in data["models"] if "id" in m]
-                    
+                            models = [m["id"] for m in data["models"] if "id" in m]
+
                     return {
                         "success": True,
                         "message": "Verification successful",
@@ -135,7 +141,7 @@ class ProviderInstanceService:
         except Exception as e:
             return {
                 "success": False,
-                "message": f"Verification error: {str(e)}",
+                "message": f"Verification error: {e!s}",
                 "latency_ms": 0,
                 "discovered_models": [],
                 "probe_url": url,
@@ -146,8 +152,7 @@ class ProviderInstanceService:
             info = json.loads(creds_input)
             if "type" in info and info["type"] == "service_account":
                 creds = service_account.Credentials.from_service_account_info(
-                    info,
-                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                    info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
                 )
                 auth_req = google.auth.transport.requests.Request()
                 creds.refresh(auth_req)
@@ -156,7 +161,7 @@ class ProviderInstanceService:
             pass
         return creds_input
 
-    async def _probe_vertex_deployment(self, url: str, headers: dict) -> Dict[str, Any]:
+    async def _probe_vertex_deployment(self, url: str, headers: dict) -> dict[str, Any]:
         start = time.time()
         auth_header = headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
@@ -166,71 +171,70 @@ class ProviderInstanceService:
 
         payload = {
             "contents": [{"role": "user", "parts": [{"text": "ping"}]}],
-            "generationConfig": {"maxOutputTokens": 1}
+            "generationConfig": {"maxOutputTokens": 1},
         }
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 latency = int((time.time() - start) * 1000)
-                
+
                 if resp.status_code == 200:
                     return {
                         "success": True,
                         "message": "Vertex AI connection verified",
                         "latency_ms": latency,
-                        "discovered_models": ["gemini-vertex"]
+                        "discovered_models": ["gemini-vertex"],
                     }
                 else:
                     return {
                         "success": False,
                         "message": f"Vertex AI verification failed: {resp.status_code} - {resp.text[:100]}",
                         "latency_ms": latency,
-                        "discovered_models": []
+                        "discovered_models": [],
                     }
         except Exception as e:
             return {
                 "success": False,
-                "message": f"Vertex AI probe error: {str(e)}",
+                "message": f"Vertex AI probe error: {e!s}",
                 "latency_ms": 0,
-                "discovered_models": []
+                "discovered_models": [],
             }
 
-    async def _probe_azure_deployment(self, url: str, headers: dict) -> Dict[str, Any]:
+    async def _probe_azure_deployment(self, url: str, headers: dict) -> dict[str, Any]:
         start = time.time()
-        payload = {
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1
-        }
+        payload = {"messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 latency = int((time.time() - start) * 1000)
-                
+
                 if resp.status_code == 200:
                     return {
                         "success": True,
                         "message": "Azure deployment verified",
                         "latency_ms": latency,
-                        "discovered_models": ["azure-deployment"]
+                        "discovered_models": ["azure-deployment"],
                     }
                 else:
                     return {
                         "success": False,
                         "message": f"Azure verification failed: {resp.status_code} - {resp.text[:100]}",
                         "latency_ms": latency,
-                        "discovered_models": []
+                        "discovered_models": [],
                     }
         except Exception as e:
             return {
                 "success": False,
-                "message": f"Azure probe error: {str(e)}",
+                "message": f"Azure probe error: {e!s}",
                 "latency_ms": 0,
-                "discovered_models": []
+                "discovered_models": [],
             }
 
     async def _get_secret(self, preset, instance: ProviderInstance) -> str | None:
         """解析实例默认凭证：先查实例内 credential，再查 SecretManager。"""
-        secret_ref = instance.credentials_ref or getattr(preset, "auth_config", {}).get("secret_ref_id")
+        secret_ref = instance.credentials_ref or getattr(preset, "auth_config", {}).get(
+            "secret_ref_id"
+        )
         if secret_ref and not secret_ref.startswith("db:"):
             grouped = await self.credential_repo.get_by_instance_ids([str(instance.id)])
             creds = grouped.get(str(instance.id), [])
@@ -246,7 +250,11 @@ class ProviderInstanceService:
         tpl = getattr(preset, "url_template", None)
         meta = getattr(instance, "meta", {}) or {}
 
-        resource_name = meta.get("resource_name") or meta.get("resource") or meta.get("deployment_name")
+        resource_name = (
+            meta.get("resource_name")
+            or meta.get("resource")
+            or meta.get("deployment_name")
+        )
         if tpl and "{resource}" in tpl and resource_name:
             base = tpl.replace("{resource}", resource_name)
         return (base or "").rstrip("/")
@@ -290,7 +298,11 @@ class ProviderInstanceService:
             url = f"{base_url}/openai/deployments"
             params["api-version"] = version
             headers["api-key"] = secret or ""
-        elif "gemini" in provider_lower or "google" in provider_lower or "vertex" in provider_lower:
+        elif (
+            "gemini" in provider_lower
+            or "google" in provider_lower
+            or "vertex" in provider_lower
+        ):
             # Gemini API key 通过 header 传递，避免拼接到 URL
             url = "https://generativelanguage.googleapis.com/v1beta/models"
             if secret:
@@ -332,7 +344,9 @@ class ProviderInstanceService:
         payloads: list[dict[str, Any]] = []
         meta = instance.meta or {}
         model_prefix = meta.get("model_prefix") or ""
-        proto = (meta.get("protocol") or getattr(instance, "preset_slug", "") or "").lower()
+        proto = (
+            meta.get("protocol") or getattr(instance, "preset_slug", "") or ""
+        ).lower()
 
         def extract_model_id(m: dict) -> str:
             mid = m.get("id") or m.get("model") or m.get("name") or ""
@@ -370,19 +384,18 @@ class ProviderInstanceService:
                 return "videos/generations"
             return "chat/completions"
 
-
         now = Datetime.utcnow()
         for m in models:
             raw_model_id = extract_model_id(m)
             if not raw_model_id:
                 continue
             model_id = f"{model_prefix}{raw_model_id}"
-            
+
             if forced_capability:
                 caps = [forced_capability]
             else:
                 caps = guess_capabilities(model_id)
-            
+
             # For upstream_path, we still need a 'primary' one if we only have one record.
             # Usually the first capability defines the path.
             primary_cap = caps[0] if caps else "chat"
@@ -393,7 +406,10 @@ class ProviderInstanceService:
                     "capabilities": caps,
                     "model_id": model_id,
                     "unified_model_id": model_id,
-                    "display_name": m.get("display_name") or m.get("model") or m.get("id") or model_id,
+                    "display_name": m.get("display_name")
+                    or m.get("model")
+                    or m.get("id")
+                    or model_id,
                     "upstream_path": upstream_path,
                     "pricing_config": {},
                     "limit_config": {},
@@ -417,13 +433,15 @@ class ProviderInstanceService:
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
         preserve_user_overrides: bool = True,
-    ) -> List[ProviderModel]:
+    ) -> list[ProviderModel]:
         instance = await self.assert_instance_access(instance_id, user_id)
         preset = await self.preset_repo.get_by_slug(instance.preset_slug)
         if not preset:
             raise ValueError("preset_not_found")
         secret_result = self._get_secret(preset, instance)
-        secret = await secret_result if inspect.isawaitable(secret_result) else secret_result
+        secret = (
+            await secret_result if inspect.isawaitable(secret_result) else secret_result
+        )
         models_raw = await self._fetch_models_from_upstream(preset, instance, secret)
         payloads = self._build_model_payloads(models_raw, instance)
 
@@ -439,7 +457,7 @@ class ProviderInstanceService:
         user_id: uuid.UUID | None,
         model_ids: list[str],
         capability: str | None = None,
-    ) -> List[ProviderModel]:
+    ) -> list[ProviderModel]:
         instance = await self.assert_instance_access(instance_id, user_id)
         # 清洗 + 去重
         cleaned = []
@@ -454,7 +472,9 @@ class ProviderInstanceService:
             raise ValueError("empty_models")
 
         raw_models = [{"id": mid} for mid in cleaned]
-        payloads = self._build_model_payloads(raw_models, instance, forced_capability=capability)
+        payloads = self._build_model_payloads(
+            raw_models, instance, forced_capability=capability
+        )
         results = await self.model_repo.upsert_for_instance(instance_id, payloads)
         await self._invalidator.on_provider_model_changed(str(instance_id))
         return results
@@ -503,7 +523,9 @@ class ProviderInstanceService:
             meta["region"] = region
 
         final_credentials_ref = credentials_ref
-        if final_credentials_ref and self.secret_manager._looks_like_plain_secret(final_credentials_ref):
+        if final_credentials_ref and self.secret_manager._looks_like_plain_secret(
+            final_credentials_ref
+        ):
             raise ValueError("plaintext_secret_ref_forbidden")
         if api_key:
             try:
@@ -532,10 +554,12 @@ class ProviderInstanceService:
             "is_enabled": is_enabled,
             "meta": meta,
         }
-        
+
         instance = await self.instance_repo.create(instance_data)
-        
-        await self._invalidator.on_provider_instance_changed(str(user_id) if user_id else None)
+
+        await self._invalidator.on_provider_instance_changed(
+            str(user_id) if user_id else None
+        )
         return instance
 
     async def update_instance(
@@ -549,7 +573,15 @@ class ProviderInstanceService:
         # 提取允许更新的字段
         updatable = {}
         meta_updates = {}
-        for key in ["name", "description", "base_url", "icon", "priority", "is_enabled", "credentials_ref"]:
+        for key in [
+            "name",
+            "description",
+            "base_url",
+            "icon",
+            "priority",
+            "is_enabled",
+            "credentials_ref",
+        ]:
             if key in fields and fields[key] is not None:
                 updatable[key] = fields[key]
 
@@ -565,7 +597,11 @@ class ProviderInstanceService:
         ]:
             if key not in fields or fields[key] is None:
                 continue
-            if key == "protocol" and isinstance(fields[key], str) and not fields[key].strip():
+            if (
+                key == "protocol"
+                and isinstance(fields[key], str)
+                and not fields[key].strip()
+            ):
                 continue
             meta_updates[key] = fields[key]
 
@@ -574,14 +610,24 @@ class ProviderInstanceService:
             meta.update(meta_updates)
             updatable["meta"] = meta
 
-        if "credentials_ref" in updatable and self.secret_manager._looks_like_plain_secret(updatable["credentials_ref"]):
+        if (
+            "credentials_ref" in updatable
+            and self.secret_manager._looks_like_plain_secret(
+                updatable["credentials_ref"]
+            )
+        ):
             raise ValueError("plaintext_secret_ref_forbidden")
 
         # 处理 api_key 更新：写入加密密钥并更新 credentials_ref
         api_key = fields.get("api_key")
         if api_key:
             preset = await self.preset_repo.get_by_slug(instance.preset_slug)
-            existing_ref = instance.credentials_ref if instance.credentials_ref and instance.credentials_ref.startswith("db:") else None
+            existing_ref = (
+                instance.credentials_ref
+                if instance.credentials_ref
+                and instance.credentials_ref.startswith("db:")
+                else None
+            )
             try:
                 new_ref = await self.secret_manager.store(
                     provider=preset.provider if preset else None,
@@ -595,7 +641,9 @@ class ProviderInstanceService:
             await self._invalidator.on_provider_credentials_changed(str(instance_id))
         elif "credentials_ref" not in updatable:
             current_ref = (instance.credentials_ref or "").strip()
-            if current_ref and self.secret_manager._looks_like_plain_secret(current_ref):
+            if current_ref and self.secret_manager._looks_like_plain_secret(
+                current_ref
+            ):
                 preset = await self.preset_repo.get_by_slug(instance.preset_slug)
                 try:
                     new_ref = await self.secret_manager.store(
@@ -606,25 +654,31 @@ class ProviderInstanceService:
                 except RuntimeError as exc:
                     raise ValueError("secret_key_not_configured") from exc
                 updatable["credentials_ref"] = new_ref
-                await self._invalidator.on_provider_credentials_changed(str(instance_id))
+                await self._invalidator.on_provider_credentials_changed(
+                    str(instance_id)
+                )
 
         if updatable:
             await self.instance_repo.update(instance, updatable)
 
-        await self._invalidator.on_provider_instance_changed(str(user_id) if user_id else None)
+        await self._invalidator.on_provider_instance_changed(
+            str(user_id) if user_id else None
+        )
         return await self.instance_repo.get(instance_id)  # refresh
 
     async def list_instances(
         self,
         user_id: uuid.UUID | None,
         include_public: bool = True,
-    ) -> List[ProviderInstance]:
+    ) -> list[ProviderInstance]:
         return await self.instance_repo.get_available_instances(
             user_id=str(user_id) if user_id else None,
             include_public=include_public,
         )
 
-    async def assert_instance_access(self, instance_id: uuid.UUID, user_id: uuid.UUID | None) -> ProviderInstance:
+    async def assert_instance_access(
+        self, instance_id: uuid.UUID, user_id: uuid.UUID | None
+    ) -> ProviderInstance:
         instance = await self.instance_repo.get(instance_id)
         if not instance:
             raise ValueError("instance_not_found")
@@ -637,9 +691,9 @@ class ProviderInstanceService:
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
         models: Iterable[ProviderModel],
-    ) -> List[ProviderModel]:
+    ) -> list[ProviderModel]:
         await self.assert_instance_access(instance_id, user_id)
-        
+
         # Convert Pydantic models/objects to dicts for repository
         models_data = []
         for m in models:
@@ -662,7 +716,7 @@ class ProviderInstanceService:
         self,
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
-    ) -> List[ProviderModel]:
+    ) -> list[ProviderModel]:
         await self.assert_instance_access(instance_id, user_id)
         from app.core.cache_keys import CacheKeys
 
@@ -703,7 +757,9 @@ class ProviderInstanceService:
             "routing_config",
             "config_override",
         }
-        updates = {k: v for k, v in fields.items() if k in updatable_fields and v is not None}
+        updates = {
+            k: v for k, v in fields.items() if k in updatable_fields and v is not None
+        }
         if not updates:
             return model
 
@@ -743,14 +799,18 @@ class ProviderInstanceService:
             raise ValueError("model_not_found")
         instance = await self.assert_instance_access(model.instance_id, user_id)
         preset = await self.preset_repo.get_by_slug(instance.preset_slug)
-        protocol = (instance.meta or {}).get("protocol") or getattr(preset, "provider", "openai")
+        protocol = (instance.meta or {}).get("protocol") or getattr(
+            preset, "provider", "openai"
+        )
 
         secret = await self._get_secret(preset, instance)
         if not secret:
             raise ValueError("secret_not_found")
 
         base_url = self._normalize_base_url(preset, instance)
-        url, params = self._build_upstream_url(base_url, model.upstream_path, protocol, instance)
+        url, params = self._build_upstream_url(
+            base_url, model.upstream_path, protocol, instance
+        )
 
         headers: dict[str, str] = {"Content-Type": "application/json"}
         proto_lower = (protocol or "").lower()
@@ -759,7 +819,11 @@ class ProviderInstanceService:
             headers["anthropic-version"] = "2023-06-01"
         elif "azure" in proto_lower:
             headers["api-key"] = secret
-        elif "gemini" in proto_lower or "google" in proto_lower or "vertex" in proto_lower:
+        elif (
+            "gemini" in proto_lower
+            or "google" in proto_lower
+            or "vertex" in proto_lower
+        ):
             headers["x-goog-api-key"] = secret
         else:
             headers["Authorization"] = f"Bearer {secret}"
@@ -772,7 +836,11 @@ class ProviderInstanceService:
         elif capability == "text_to_speech":
             payload = {"model": model.model_id, "input": prompt, "voice": "alloy"}
         elif capability == "speech_to_text":
-            payload = {"model": model.model_id, "audio_data": prompt, "response_format": "json"}
+            payload = {
+                "model": model.model_id,
+                "audio_data": prompt,
+                "response_format": "json",
+            }
         elif capability == "video_generation":
             payload = {"model": model.model_id, "prompt": prompt}
         else:
@@ -787,7 +855,9 @@ class ProviderInstanceService:
         body = None
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, headers=headers, params=params, json=payload)
+                resp = await client.post(
+                    url, headers=headers, params=params, json=payload
+                )
             status_code = resp.status_code
             try:
                 body = resp.json()
@@ -801,7 +871,13 @@ class ProviderInstanceService:
                 "status_code": status_code,
                 "upstream_url": url,
                 "response_body": body,
-                "error": None if success else body.get("error") if isinstance(body, dict) else resp.text[:200],
+                "error": (
+                    None
+                    if success
+                    else (
+                        body.get("error") if isinstance(body, dict) else resp.text[:200]
+                    )
+                ),
             }
         except Exception as exc:
             latency_ms = int((time.time() - start) * 1000)
@@ -818,7 +894,7 @@ class ProviderInstanceService:
         self,
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
-    ) -> List[ProviderCredential]:
+    ) -> list[ProviderCredential]:
         await self.assert_instance_access(instance_id, user_id)
         grouped = await self.credential_repo.get_by_instance_ids([str(instance_id)])
         return grouped.get(str(instance_id), [])
@@ -835,7 +911,7 @@ class ProviderInstanceService:
         api_key: str | None = None,
     ) -> ProviderCredential:
         instance = await self.assert_instance_access(instance_id, user_id)
-        
+
         # 唯一性校验
         exists = await self.credential_repo.get_by_alias(instance_id, alias)
         if exists:
@@ -881,7 +957,7 @@ class ProviderInstanceService:
         cred = await self.credential_repo.get(credential_id)
         if not cred or cred.instance_id != instance_id:
             raise ValueError("credential_not_found")
-        
+
         await self.credential_repo.delete(credential_id)
         await self._invalidator.on_provider_credentials_changed(str(instance_id))
 
@@ -905,4 +981,6 @@ class ProviderInstanceService:
 
         await self._invalidator.on_provider_model_changed(str(instance_id))
         await self._invalidator.on_provider_credentials_changed(str(instance_id))
-        await self._invalidator.on_provider_instance_changed(str(user_id) if user_id else None)
+        await self._invalidator.on_provider_instance_changed(
+            str(user_id) if user_id else None
+        )

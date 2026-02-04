@@ -7,7 +7,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Dict, Tuple
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,8 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.models.spec_agent import SpecPlan
 from app.models.spec_knowledge import SpecKnowledgeCandidate
+from app.prompts.spec_knowledge_review import SPEC_KB_REVIEW_SYSTEM_PROMPT
+from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.repositories.review_repository import ReviewTaskRepository
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.repositories.spec_knowledge_repository import SpecKnowledgeCandidateRepository
@@ -25,10 +27,12 @@ from app.storage.qdrant_kb_collections import (
     get_kb_candidates_collection_name,
     get_kb_system_collection_name,
 )
-from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_point, delete_points
-from app.qdrant_client import get_qdrant_client, qdrant_is_configured
+from app.storage.qdrant_kb_store import (
+    delete_points,
+    ensure_collection_vector_size,
+    upsert_point,
+)
 from app.utils.time_utils import Datetime
-from app.prompts.spec_knowledge_review import SPEC_KB_REVIEW_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +60,33 @@ class GuardRule:
     description: str
 
 
-STATIC_GUARD_RULES: Tuple[GuardRule, ...] = (
-    GuardRule("danger.rm_rf_root", re.compile(r"\brm\s+-rf\s+/(?:\s|$|\")", re.I), "危险删除指令"),
+STATIC_GUARD_RULES: tuple[GuardRule, ...] = (
+    GuardRule(
+        "danger.rm_rf_root",
+        re.compile(r"\brm\s+-rf\s+/(?:\s|$|\")", re.I),
+        "危险删除指令",
+    ),
     GuardRule("danger.mkfs", re.compile(r"\bmkfs\.", re.I), "磁盘格式化指令"),
     GuardRule("danger.dd", re.compile(r"\bdd\s+if=", re.I), "磁盘覆写指令"),
-    GuardRule("danger.drop_db", re.compile(r"\bdrop\s+database\b", re.I), "数据库删除指令"),
-    GuardRule("danger.drop_table", re.compile(r"\bdrop\s+table\b", re.I), "数据表删除指令"),
-    GuardRule("danger.truncate", re.compile(r"\btruncate\s+table\b", re.I), "数据表清空指令"),
-    GuardRule("danger.exec_pipe", re.compile(r"\b(curl|wget).*\|\s*(sh|bash|zsh)\b", re.I), "下载即执行"),
-    GuardRule("danger.sudoers", re.compile(r"sudoers|authorized_keys", re.I), "权限持久化/授权"),
+    GuardRule(
+        "danger.drop_db", re.compile(r"\bdrop\s+database\b", re.I), "数据库删除指令"
+    ),
+    GuardRule(
+        "danger.drop_table", re.compile(r"\bdrop\s+table\b", re.I), "数据表删除指令"
+    ),
+    GuardRule(
+        "danger.truncate", re.compile(r"\btruncate\s+table\b", re.I), "数据表清空指令"
+    ),
+    GuardRule(
+        "danger.exec_pipe",
+        re.compile(r"\b(curl|wget).*\|\s*(sh|bash|zsh)\b", re.I),
+        "下载即执行",
+    ),
+    GuardRule(
+        "danger.sudoers",
+        re.compile(r"sudoers|authorized_keys", re.I),
+        "权限持久化/授权",
+    ),
     GuardRule("secret.openai", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), "疑似 API Key"),
     GuardRule("secret.aws", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "疑似云密钥"),
 )
@@ -74,7 +96,9 @@ class SpecKnowledgeVectorService:
     def __init__(self, embedding_service: EmbeddingService | None = None):
         self._embedding_service = embedding_service or EmbeddingService()
 
-    async def upsert_candidate(self, *, point_id: str, content: str, payload: dict[str, Any]) -> bool:
+    async def upsert_candidate(
+        self, *, point_id: str, content: str, payload: dict[str, Any]
+    ) -> bool:
         if not qdrant_is_configured():
             return False
         try:
@@ -99,7 +123,9 @@ class SpecKnowledgeVectorService:
             logger.warning("spec_kb_candidate_upsert_failed: %s", exc)
             return False
 
-    async def upsert_system(self, *, point_id: str, content: str, payload: dict[str, Any]) -> bool:
+    async def upsert_system(
+        self, *, point_id: str, content: str, payload: dict[str, Any]
+    ) -> bool:
         if not qdrant_is_configured():
             return False
         try:
@@ -166,7 +192,9 @@ class SpecKnowledgeService:
         if feedback is None and not (apply or revert or error):
             return None
 
-        canonical_hash, normalized_manifest = self._build_canonical_hash(plan.manifest_data)
+        canonical_hash, normalized_manifest = self._build_canonical_hash(
+            plan.manifest_data
+        )
         candidate = await self.repo.get_by_hash(canonical_hash)
         if not candidate:
             candidate = SpecKnowledgeCandidate(
@@ -224,8 +252,13 @@ class SpecKnowledgeService:
         await self.session.commit()
         await self.session.refresh(candidate)
 
-        if candidate.status == STATUS_REJECTED and candidate.negative_feedback > candidate.positive_feedback:
-            await self.vector_service.delete_candidate(point_id=candidate.canonical_hash)
+        if (
+            candidate.status == STATUS_REJECTED
+            and candidate.negative_feedback > candidate.positive_feedback
+        ):
+            await self.vector_service.delete_candidate(
+                point_id=candidate.canonical_hash
+            )
 
         self._maybe_schedule_evaluation(candidate)
         self._maybe_schedule_auto_promote(candidate)
@@ -241,7 +274,10 @@ class SpecKnowledgeService:
         now = Datetime.now()
         if not candidate.last_positive_at:
             return "no_positive_signal"
-        if candidate.last_negative_at and candidate.last_negative_at > candidate.last_positive_at:
+        if (
+            candidate.last_negative_at
+            and candidate.last_negative_at > candidate.last_positive_at
+        ):
             candidate.status = STATUS_REJECTED
             candidate.eval_snapshot = {"blocked": "negative_signal"}
             await self.session.commit()
@@ -253,7 +289,9 @@ class SpecKnowledgeService:
             if since_positive < window_seconds:
                 return "window_not_reached"
 
-        static_pass, static_reason = self._run_static_guard(candidate.manifest_data or {})
+        static_pass, static_reason = self._run_static_guard(
+            candidate.manifest_data or {}
+        )
         if not static_pass:
             candidate.eval_static_pass = False
             candidate.eval_reason = static_reason
@@ -261,7 +299,9 @@ class SpecKnowledgeService:
             candidate.status = STATUS_REJECTED
             candidate.last_eval_at = now
             await self.session.commit()
-            await self.vector_service.delete_candidate(point_id=candidate.canonical_hash)
+            await self.vector_service.delete_candidate(
+                point_id=candidate.canonical_hash
+            )
             return "static_blocked"
 
         llm_score, llm_reason = await self._run_llm_review(
@@ -281,7 +321,9 @@ class SpecKnowledgeService:
         if llm_score is None or llm_score < int(settings.SPEC_KB_EVAL_MIN_SCORE or 0):
             candidate.status = STATUS_REJECTED
             await self.session.commit()
-            await self.vector_service.delete_candidate(point_id=candidate.canonical_hash)
+            await self.vector_service.delete_candidate(
+                point_id=candidate.canonical_hash
+            )
             return "llm_rejected"
 
         candidate.status = STATUS_PENDING_REVIEW
@@ -343,7 +385,9 @@ class SpecKnowledgeService:
                 reason=reason,
             )
         except ValueError:
-            logger.info("spec_kb_review_task_missing", extra={"candidate_id": str(candidate.id)})
+            logger.info(
+                "spec_kb_review_task_missing", extra={"candidate_id": str(candidate.id)}
+            )
         return True
 
     @staticmethod
@@ -355,7 +399,7 @@ class SpecKnowledgeService:
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
     @staticmethod
-    def _normalize_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         raw = json.loads(json.dumps(manifest, ensure_ascii=False, default=str))
         if isinstance(raw, dict):
             raw.pop("context", None)
@@ -371,19 +415,27 @@ class SpecKnowledgeService:
                         if isinstance(rules, list):
                             node["rules"] = sorted(
                                 rules,
-                                key=lambda r: json.dumps(r, ensure_ascii=False, sort_keys=True),
+                                key=lambda r: json.dumps(
+                                    r, ensure_ascii=False, sort_keys=True
+                                ),
                             )
                 raw["nodes"] = sorted(nodes, key=lambda n: str(n.get("id", "")))
         return raw
 
-    def _build_canonical_hash(self, manifest: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    def _build_canonical_hash(
+        self, manifest: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
         normalized = self._normalize_manifest(manifest or {})
-        payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        payload = json.dumps(
+            normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         return digest, normalized
 
     @staticmethod
-    def _classify_event(event: str, payload: dict[str, Any]) -> Tuple[str | None, bool, bool, bool]:
+    def _classify_event(
+        event: str, payload: dict[str, Any]
+    ) -> tuple[str | None, bool, bool, bool]:
         if event in APPLY_EVENTS:
             success_flag = payload.get("success")
             error_flag = payload.get("error") or payload.get("error_code")
@@ -407,7 +459,7 @@ class SpecKnowledgeService:
         return None, False, False, False
 
     @staticmethod
-    def _run_static_guard(manifest: Dict[str, Any]) -> Tuple[bool, str | None]:
+    def _run_static_guard(manifest: dict[str, Any]) -> tuple[bool, str | None]:
         raw_text = json.dumps(manifest, ensure_ascii=False, default=str)
         for rule in STATIC_GUARD_RULES:
             if rule.pattern.search(raw_text):
@@ -416,10 +468,10 @@ class SpecKnowledgeService:
 
     async def _run_llm_review(
         self,
-        manifest: Dict[str, Any],
+        manifest: dict[str, Any],
         *,
         user_id: uuid.UUID | None = None,
-    ) -> Tuple[int | None, str | None]:
+    ) -> tuple[int | None, str | None]:
         payload = json.dumps(manifest, ensure_ascii=False, default=str)
         model = getattr(settings, "SPEC_KB_EVAL_MODEL", None) or None
         try:
@@ -443,7 +495,7 @@ class SpecKnowledgeService:
         return score, reason
 
     @staticmethod
-    def _parse_llm_review(raw: Any) -> Tuple[int | None, str | None]:
+    def _parse_llm_review(raw: Any) -> tuple[int | None, str | None]:
         if raw is None:
             return None, None
         content = str(raw).strip()
@@ -475,18 +527,26 @@ class SpecKnowledgeService:
             payload=payload,
         )
 
-    async def _sync_candidate_to_qdrant(self, candidate: SpecKnowledgeCandidate) -> None:
+    async def _sync_candidate_to_qdrant(
+        self, candidate: SpecKnowledgeCandidate
+    ) -> None:
         payload = self._build_qdrant_payload(candidate)
-        content = json.dumps(candidate.normalized_manifest, ensure_ascii=False, default=str)
+        content = json.dumps(
+            candidate.normalized_manifest, ensure_ascii=False, default=str
+        )
         await self.vector_service.upsert_candidate(
             point_id=candidate.canonical_hash,
             content=content,
             payload=payload,
         )
 
-    async def _sync_candidate_to_system(self, candidate: SpecKnowledgeCandidate) -> None:
+    async def _sync_candidate_to_system(
+        self, candidate: SpecKnowledgeCandidate
+    ) -> None:
         payload = self._build_qdrant_payload(candidate, system_scope=True)
-        content = json.dumps(candidate.normalized_manifest, ensure_ascii=False, default=str)
+        content = json.dumps(
+            candidate.normalized_manifest, ensure_ascii=False, default=str
+        )
         await self.vector_service.upsert_system(
             point_id=candidate.canonical_hash,
             content=content,
@@ -521,8 +581,12 @@ class SpecKnowledgeService:
             "trust_weight": candidate.trust_weight,
             "exploration_tag": candidate.exploration_tag,
             "status": candidate.status,
-            "created_at": candidate.created_at.isoformat() if candidate.created_at else None,
-            "updated_at": candidate.updated_at.isoformat() if candidate.updated_at else None,
+            "created_at": (
+                candidate.created_at.isoformat() if candidate.created_at else None
+            ),
+            "updated_at": (
+                candidate.updated_at.isoformat() if candidate.updated_at else None
+            ),
         }
         if not system_scope:
             payload["user_id"] = str(candidate.user_id) if candidate.user_id else None
@@ -558,7 +622,9 @@ class SpecKnowledgeService:
             return
         window_days = int(settings.SPEC_KB_AUTO_PROMOTE_WINDOW_DAYS or 0)
         if window_days > 0 and candidate.last_positive_at:
-            if candidate.last_positive_at < Datetime.now() - timedelta(days=window_days):
+            if candidate.last_positive_at < Datetime.now() - timedelta(
+                days=window_days
+            ):
                 return
         celery_app.send_task(
             "app.tasks.spec_knowledge.auto_promote_candidate",
@@ -568,13 +634,13 @@ class SpecKnowledgeService:
 
 
 __all__ = [
-    "SpecKnowledgeService",
-    "SpecKnowledgeVectorService",
     "SPEC_KB_REVIEW_ENTITY",
-    "STATUS_PENDING_SIGNAL",
+    "STATUS_APPROVED",
+    "STATUS_DISABLED",
     "STATUS_PENDING_EVAL",
     "STATUS_PENDING_REVIEW",
-    "STATUS_APPROVED",
+    "STATUS_PENDING_SIGNAL",
     "STATUS_REJECTED",
-    "STATUS_DISABLED",
+    "SpecKnowledgeService",
+    "SpecKnowledgeVectorService",
 ]

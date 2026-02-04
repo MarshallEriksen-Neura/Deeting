@@ -52,7 +52,9 @@ class NotificationInboxItem(BaseSchema):
 
 
 class NotificationSnapshot(BaseSchema):
-    items: list[NotificationInboxItem] = Field(default_factory=list, description="通知列表")
+    items: list[NotificationInboxItem] = Field(
+        default_factory=list, description="通知列表"
+    )
     unread_count: int = Field(0, description="未读数量")
 
 

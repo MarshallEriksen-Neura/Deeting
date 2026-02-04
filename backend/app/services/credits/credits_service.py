@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import timedelta
 import uuid
+from collections.abc import Iterable
+from datetime import timedelta
 from decimal import Decimal
-from typing import Dict, Iterable, List, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,7 +58,9 @@ class CreditsService:
         monthly_spent = await self._sum_amount(start_month, now, tenant_uuid)
 
         denominator = monthly_spent + balance
-        used_percent = round((monthly_spent / denominator) * 100, 2) if denominator > 0 else 0.0
+        used_percent = (
+            round((monthly_spent / denominator) * 100, 2) if denominator > 0 else 0.0
+        )
 
         resp = CreditsBalanceResponse(
             balance=balance,
@@ -68,7 +70,9 @@ class CreditsService:
         await cache.set(cache_key, resp, ttl=30)
         return resp
 
-    async def get_consumption(self, tenant_id: str | None, days: int) -> CreditsConsumptionResponse:
+    async def get_consumption(
+        self, tenant_id: str | None, days: int
+    ) -> CreditsConsumptionResponse:
         days = max(1, min(days, 90))
         if not tenant_id:
             return self._empty_consumption(days)
@@ -80,11 +84,15 @@ class CreditsService:
             return cached
 
         now = Datetime.now()
-        start_date = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = (now - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
         bucket_expr = self._date_bucket_expr()
         model_expr = func.coalesce(BillingTransaction.model, "unknown")
-        total_tokens = BillingTransaction.input_tokens + BillingTransaction.output_tokens
+        total_tokens = (
+            BillingTransaction.input_tokens + BillingTransaction.output_tokens
+        )
 
         stmt = (
             select(
@@ -104,15 +112,19 @@ class CreditsService:
 
         rows = (await self.session.execute(stmt)).all()
         models = sorted({row.model for row in rows})
-        tokens_map: Dict[Tuple[str, str], int] = {
+        tokens_map: dict[tuple[str, str], int] = {
             (row.bucket, row.model): int(row.tokens or 0) for row in rows
         }
 
         timeline = []
         for day in self._iter_days(start_date, days):
             day_key = day.strftime("%Y-%m-%d")
-            tokens_by_model = {model: tokens_map.get((day_key, model), 0) for model in models}
-            timeline.append(CreditsConsumptionPoint(date=day_key, tokens_by_model=tokens_by_model))
+            tokens_by_model = {
+                model: tokens_map.get((day_key, model), 0) for model in models
+            }
+            timeline.append(
+                CreditsConsumptionPoint(date=day_key, tokens_by_model=tokens_by_model)
+            )
 
         resp = CreditsConsumptionResponse(
             start_date=start_date.strftime("%Y-%m-%d"),
@@ -124,7 +136,9 @@ class CreditsService:
         await cache.set(cache_key, resp, ttl=60)
         return resp
 
-    async def get_model_usage(self, tenant_id: str | None, days: int) -> CreditsModelUsageResponse:
+    async def get_model_usage(
+        self, tenant_id: str | None, days: int
+    ) -> CreditsModelUsageResponse:
         days = max(1, min(days, 90))
         if not tenant_id:
             return CreditsModelUsageResponse(total_tokens=0, models=[])
@@ -136,9 +150,13 @@ class CreditsService:
             return cached
 
         now = Datetime.now()
-        start_date = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = (now - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         model_expr = func.coalesce(BillingTransaction.model, "unknown")
-        total_tokens = BillingTransaction.input_tokens + BillingTransaction.output_tokens
+        total_tokens = (
+            BillingTransaction.input_tokens + BillingTransaction.output_tokens
+        )
 
         stmt = (
             select(
@@ -157,11 +175,15 @@ class CreditsService:
         )
         rows = (await self.session.execute(stmt)).all()
         total = int(sum((row.tokens or 0) for row in rows))
-        items: List[CreditsModelUsageItem] = []
+        items: list[CreditsModelUsageItem] = []
         for row in rows:
             tokens = int(row.tokens or 0)
             percentage = round((tokens / total) * 100, 2) if total else 0.0
-            items.append(CreditsModelUsageItem(model=row.model, tokens=tokens, percentage=percentage))
+            items.append(
+                CreditsModelUsageItem(
+                    model=row.model, tokens=tokens, percentage=percentage
+                )
+            )
 
         resp = CreditsModelUsageResponse(total_tokens=total, models=items)
         await cache.set(cache_key, resp, ttl=120)
@@ -223,9 +245,14 @@ class CreditsService:
     @staticmethod
     def _empty_consumption(days: int) -> CreditsConsumptionResponse:
         now = Datetime.now()
-        start_date = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = (now - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         timeline = [
-            CreditsConsumptionPoint(date=(start_date + timedelta(days=i)).strftime("%Y-%m-%d"), tokens_by_model={})
+            CreditsConsumptionPoint(
+                date=(start_date + timedelta(days=i)).strftime("%Y-%m-%d"),
+                tokens_by_model={},
+            )
             for i in range(days)
         ]
         return CreditsConsumptionResponse(
@@ -237,15 +264,12 @@ class CreditsService:
         )
 
     async def _sum_amount(self, start, end, tenant_id: uuid.UUID) -> float:
-        stmt = (
-            select(func.sum(BillingTransaction.amount))
-            .where(
-                BillingTransaction.created_at >= start,
-                BillingTransaction.created_at <= end,
-                BillingTransaction.tenant_id == tenant_id,
-                BillingTransaction.status == TransactionStatus.COMMITTED,
-                BillingTransaction.type == TransactionType.DEDUCT,
-            )
+        stmt = select(func.sum(BillingTransaction.amount)).where(
+            BillingTransaction.created_at >= start,
+            BillingTransaction.created_at <= end,
+            BillingTransaction.tenant_id == tenant_id,
+            BillingTransaction.status == TransactionStatus.COMMITTED,
+            BillingTransaction.type == TransactionType.DEDUCT,
         )
         result = await self.session.execute(stmt)
         value = result.scalar() or Decimal("0")

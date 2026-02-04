@@ -21,7 +21,9 @@ class BridgeAgentToken(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "bridge_agent_token"
     __table_args__ = (
-        UniqueConstraint("user_id", "agent_id", name="uq_bridge_agent_token_user_agent"),
+        UniqueConstraint(
+            "user_id", "agent_id", name="uq_bridge_agent_token_user_agent"
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(

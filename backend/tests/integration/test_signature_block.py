@@ -1,31 +1,35 @@
-
 import hashlib
 import hmac
 import time
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
+
 
 def _sign(api_key: str, secret: str, timestamp: int, nonce: str) -> str:
     msg = f"{api_key}{timestamp}{nonce}"
     return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
 
+
 @pytest.mark.asyncio
 async def test_continuous_signature_failure_blocks_key(monkeypatch):
     # This integration test assumes a running app or uses a mock client with real orchestrator
-    # For simplicity in this environment, we will use a more targeted integration test 
+    # For simplicity in this environment, we will use a more targeted integration test
     # that exercises the Orchestrator with a mock Upstream
-    
-    from main import app
-    from app.services.providers.api_key import ApiKeyService, ApiPrincipal
+
     from app.models.api_key import ApiKeyType
-    
+    from app.services.providers.api_key import ApiKeyService, ApiPrincipal
+    from main import app
+
     api_key = "sk-block-test"
     from uuid import uuid4
+
     api_key_id = uuid4()
     tenant_id = uuid4()
-    
+
     # Mock ApiKeyService to return our test key
     principal = ApiPrincipal(
         api_key_id=api_key_id,
@@ -39,7 +43,7 @@ async def test_continuous_signature_failure_blocks_key(monkeypatch):
         secret_hash=None,
         secret_hint=None,
     )
-    
+
     async def mock_validate_key(key):
         if key == api_key:
             # Check if it's blacklisted in Redis
@@ -50,7 +54,9 @@ async def test_continuous_signature_failure_blocks_key(monkeypatch):
 
     monkeypatch.setattr(ApiKeyService, "validate_key", mock_validate_key)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         # 1. 连续 5 次错误签名
         for i in range(5):
             ts = int(time.time())
@@ -62,7 +68,10 @@ async def test_continuous_signature_failure_blocks_key(monkeypatch):
             }
             response = await ac.post(
                 "/external/v1/chat/completions",
-                json={"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hi"}]},
+                json={
+                    "model": "gpt-3.5-turbo",
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
                 headers=headers,
             )
 
@@ -81,7 +90,10 @@ async def test_continuous_signature_failure_blocks_key(monkeypatch):
         }
         response = await ac.post(
             "/external/v1/chat/completions",
-            json={"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hi"}]},
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
             headers=headers,
         )
 

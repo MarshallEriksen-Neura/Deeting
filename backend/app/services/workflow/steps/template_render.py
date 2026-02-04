@@ -9,12 +9,11 @@ TemplateRenderStep: 模板渲染步骤
 
 import logging
 import re
-from datetime import datetime, timezone
-from types import SimpleNamespace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from app.services.orchestrator.registry import step_registry
 from app.prompts.router_base import ROUTER_BASE_PROMPT
+from app.services.orchestrator.registry import step_registry
 from app.services.providers.request_renderer import request_renderer
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
@@ -55,9 +54,11 @@ class TemplateRenderStep(BaseStep):
         """执行模板渲染"""
         upstream_url = ctx.get("routing", "upstream_url") or ctx.selected_upstream
         template_engine = ctx.get("routing", "template_engine") or "simple_replace"
-        request_data = ctx.get("resolve_assets", "request_data") or ctx.get(
-            "validation", "validated"
-        ) or {}
+        request_data = (
+            ctx.get("resolve_assets", "request_data")
+            or ctx.get("validation", "validated")
+            or {}
+        )
         tools = ctx.get("validation", "tools") or None
         default_params = ctx.get("routing", "default_params") or {}
         default_headers = ctx.get("routing", "default_headers") or {}
@@ -132,11 +133,13 @@ class TemplateRenderStep(BaseStep):
         request_data: dict,
     ) -> dict[str, Any]:
         """构建模板渲染上下文"""
-        conversation_messages = ctx.get("conversation", "merged_messages") or request_data.get("messages", [])
+        conversation_messages = ctx.get(
+            "conversation", "merged_messages"
+        ) or request_data.get("messages", [])
         summary = ctx.get("conversation", "summary")
 
         # 获取当前选中的模型对象（由 routing 步骤注入）
-        from app.models.provider_instance import ProviderModel
+
         model_obj = ctx.get("routing", "model_obj")
 
         # 获取增强后的 assistant prompt (由 assistant_prompt_injection 步骤注入)
@@ -146,7 +149,9 @@ class TemplateRenderStep(BaseStep):
         mcp_tools = ctx.get("mcp_discovery", "tools") or []
         tools_desc = ""
         if mcp_tools:
-            lines = ["\n\n# Available Tools\nYou have access to the following tools. Use them when necessary:\n"]
+            lines = [
+                "\n\n# Available Tools\nYou have access to the following tools. Use them when necessary:\n"
+            ]
             for t in mcp_tools:
                 lines.append(f"- {t.name}: {t.description}")
             lines.append(
@@ -258,7 +263,9 @@ class TemplateRenderStep(BaseStep):
 
         通常直接透传请求数据，但可根据配置进行转换
         """
-        effective_template = self._merge_request_template(default_params, request_template)
+        effective_template = self._merge_request_template(
+            default_params, request_template
+        )
         if not effective_template:
             raise TemplateRenderError("request_template_missing")
 
@@ -269,14 +276,16 @@ class TemplateRenderStep(BaseStep):
             template_engine: str
             request_template: dict | str
 
-        item_config = MockConfig(template_engine=engine, request_template=effective_template)
+        item_config = MockConfig(
+            template_engine=engine, request_template=effective_template
+        )
 
-        from app.services.providers.request_renderer import request_renderer
+
         rendered_body = request_renderer.render(
             item_config=item_config,
             internal_req=request_data,
             tools=tools,
-            extra_context=context
+            extra_context=context,
         )
 
         # --- System Prompt & Capability Injection ---
@@ -284,10 +293,10 @@ class TemplateRenderStep(BaseStep):
 
         # 1. 注入当前时间 (Time Injection) - 避免时间幻觉
         # 使用 UTC 时间 + 星期几，通用且无歧义
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         time_str = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC (%A)")
         time_instruction = f"Current Date: {time_str}"
-        
+
         if enhanced_prompt:
             enhanced_prompt = f"{time_instruction}\n{enhanced_prompt}"
         else:
@@ -305,7 +314,11 @@ class TemplateRenderStep(BaseStep):
             enhanced_prompt += memory_reminder
 
         # 3. 注入到消息列表
-        if enhanced_prompt and isinstance(rendered_body, dict) and "messages" in rendered_body:
+        if (
+            enhanced_prompt
+            and isinstance(rendered_body, dict)
+            and "messages" in rendered_body
+        ):
             messages = rendered_body["messages"]
             if isinstance(messages, list):
                 system_msg_index = -1
@@ -313,11 +326,13 @@ class TemplateRenderStep(BaseStep):
                     if isinstance(msg, dict) and msg.get("role") == "system":
                         system_msg_index = i
                         break
-                
+
                 if system_msg_index != -1:
                     # 如果已有 system 消息 (如 Summary), 则前置追加
                     original_content = messages[system_msg_index].get("content", "")
-                    messages[system_msg_index]["content"] = f"{enhanced_prompt}\n\n{original_content}"
+                    messages[system_msg_index][
+                        "content"
+                    ] = f"{enhanced_prompt}\n\n{original_content}"
                 else:
                     # 如果没有, 则插入头部
                     messages.insert(0, {"role": "system", "content": enhanced_prompt})
@@ -325,7 +340,9 @@ class TemplateRenderStep(BaseStep):
         return self._drop_none_fields(rendered_body)
 
     @staticmethod
-    def _merge_request_template(default_params: dict, request_template: dict | str | None):
+    def _merge_request_template(
+        default_params: dict, request_template: dict | str | None
+    ):
         if isinstance(request_template, dict):
             if not request_template and not default_params:
                 return {}

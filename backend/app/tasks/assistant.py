@@ -7,9 +7,16 @@ import uuid
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
 from app.services.providers.embedding import EmbeddingService
-from app.storage.qdrant_kb_store import delete_points, ensure_collection_vector_size, upsert_points
+from app.storage.qdrant_kb_store import (
+    delete_points,
+    ensure_collection_vector_size,
+    upsert_points,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +64,9 @@ async def _run_sync_assistant(assistant_id: uuid.UUID) -> str:
         if not assistant or not assistant.current_version_id:
             return "missing_assistant"
 
-        version = await version_repo.get_for_assistant(assistant_id, assistant.current_version_id)
+        version = await version_repo.get_for_assistant(
+            assistant_id, assistant.current_version_id
+        )
         if not version:
             return "missing_version"
 

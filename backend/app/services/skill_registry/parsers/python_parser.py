@@ -7,7 +7,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
     tomllib = None
 
-from app.services.skill_registry.parsers.base import EvidencePack, RepoContext, RepoParserPlugin
+from app.services.skill_registry.parsers.base import (
+    EvidencePack,
+    RepoContext,
+    RepoParserPlugin,
+)
 
 
 class PythonRepoParser(RepoParserPlugin):

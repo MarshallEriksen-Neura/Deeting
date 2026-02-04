@@ -4,7 +4,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
-from app.models.notification import Notification, NotificationReceipt, NotificationLevel, NotificationType
+from app.models.notification import (
+    Notification,
+    NotificationLevel,
+    NotificationReceipt,
+    NotificationType,
+)
 from app.models.user import User
 from app.tasks import notification as notification_tasks
 from app.tasks.notification import (

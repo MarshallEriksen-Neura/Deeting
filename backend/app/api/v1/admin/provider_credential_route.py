@@ -1,5 +1,4 @@
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +14,9 @@ from app.services.providers.provider_instance_service import ProviderInstanceSer
 router = APIRouter(prefix="/admin/provider-instances", tags=["ProviderCredentials"])
 
 
-@router.get("/{instance_id}/credentials", response_model=List[ProviderCredentialResponse])
+@router.get(
+    "/{instance_id}/credentials", response_model=list[ProviderCredentialResponse]
+)
 async def list_credentials(
     instance_id: str,
     db: AsyncSession = Depends(get_db),
@@ -68,11 +69,18 @@ async def create_credential(
         if str(e) == "alias_exists":
             raise HTTPException(status_code=409, detail="alias already exists")
         if str(e) == "secret_ref_id_or_api_key_required":
-            raise HTTPException(status_code=400, detail="secret_ref_id or api_key required")
+            raise HTTPException(
+                status_code=400, detail="secret_ref_id or api_key required"
+            )
         if str(e) == "plaintext_secret_ref_forbidden":
-            raise HTTPException(status_code=400, detail="secret_ref_id must be a reference, not a raw key")
+            raise HTTPException(
+                status_code=400,
+                detail="secret_ref_id must be a reference, not a raw key",
+            )
         if str(e) == "secret_ref_id_invalid_format":
-            raise HTTPException(status_code=400, detail="secret_ref_id must start with db:")
+            raise HTTPException(
+                status_code=400, detail="secret_ref_id must start with db:"
+            )
         if str(e) == "secret_key_not_configured":
             raise HTTPException(status_code=400, detail="SECRET_KEY not configured")
         raise
@@ -81,7 +89,9 @@ async def create_credential(
     return cred
 
 
-@router.delete("/{instance_id}/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{instance_id}/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def delete_credential(
     instance_id: str,
     credential_id: str,

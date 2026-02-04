@@ -88,7 +88,9 @@ async def test_internal_flow_success_chain():
         ],
     )
 
-    ctx = WorkflowContext(channel=Channel.INTERNAL, capability="chat", requested_model="gpt-3.5")
+    ctx = WorkflowContext(
+        channel=Channel.INTERNAL, capability="chat", requested_model="gpt-3.5"
+    )
 
     result = await orchestrator.execute(ctx)
 

@@ -3,10 +3,10 @@
 
 新增/修改权限时仅需在此处维护，迁移/前端 flags 等从这里导出。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass(frozen=True)
@@ -17,9 +17,11 @@ class PermissionItem:
 
 
 # 按功能模块分组便于后续维护
-PERMISSION_REGISTRY: List[PermissionItem] = [
+PERMISSION_REGISTRY: list[PermissionItem] = [
     PermissionItem("user.manage", "用户管理：增删改查用户、封禁/解封", ("admin",)),
-    PermissionItem("role.manage", "角色管理：创建、更新、删除角色并分配权限", ("admin",)),
+    PermissionItem(
+        "role.manage", "角色管理：创建、更新、删除角色并分配权限", ("admin",)
+    ),
     PermissionItem("role.view", "角色查看：读取角色与权限列表", ("admin",)),
     PermissionItem("api_key.manage", "API Key 管理：创建/禁用/限流", ("admin",)),
     PermissionItem("api_key.view", "API Key 查看：读取密钥与配额", ("admin",)),

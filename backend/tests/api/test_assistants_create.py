@@ -1,7 +1,8 @@
+from uuid import UUID
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from uuid import UUID
 
 from app.models.assistant import AssistantVersion
 from app.models.assistant_install import AssistantInstall
@@ -20,7 +21,9 @@ async def test_create_assistant_share_triggers_review_and_install(
     def fake_schedule(assistant_id: UUID, user_id: UUID) -> None:
         scheduled.append((assistant_id, user_id))
 
-    monkeypatch.setattr("app.api.v1.assistants_route._schedule_assistant_share_review", fake_schedule)
+    monkeypatch.setattr(
+        "app.api.v1.assistants_route._schedule_assistant_share_review", fake_schedule
+    )
 
     payload = {
         "visibility": "private",
@@ -67,7 +70,9 @@ async def test_create_assistant_without_share_skips_review(
     def fail_schedule(*_args, **_kwargs) -> None:
         raise AssertionError("share review should not be scheduled")
 
-    monkeypatch.setattr("app.api.v1.assistants_route._schedule_assistant_share_review", fail_schedule)
+    monkeypatch.setattr(
+        "app.api.v1.assistants_route._schedule_assistant_share_review", fail_schedule
+    )
 
     payload = {
         "visibility": "private",
@@ -125,12 +130,17 @@ async def test_create_assistant_persists_model_config(
     resp = await client.post("/api/v1/assistants", json=payload, headers=headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["versions"][0]["model_config"] == {"temperature": 0.2, "max_tokens": 128}
+    assert data["versions"][0]["model_config"] == {
+        "temperature": 0.2,
+        "max_tokens": 128,
+    }
 
     assistant_id = UUID(data["id"])
     async with AsyncSessionLocal() as session:
         res = await session.execute(
-            select(AssistantVersion).where(AssistantVersion.assistant_id == assistant_id)
+            select(AssistantVersion).where(
+                AssistantVersion.assistant_id == assistant_id
+            )
         )
         version = res.scalar_one()
         assert version.model_config == {"temperature": 0.2, "max_tokens": 128}

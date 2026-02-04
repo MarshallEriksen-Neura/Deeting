@@ -31,7 +31,9 @@ async def test_media_asset_local_success(client: AsyncClient, tmp_path, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_media_asset_invalid_signature(client: AsyncClient, tmp_path, monkeypatch):
+async def test_media_asset_invalid_signature(
+    client: AsyncClient, tmp_path, monkeypatch
+):
     monkeypatch.setattr(settings, "ASSET_STORAGE_MODE", "local")
     monkeypatch.setattr(settings, "ASSET_LOCAL_DIR", str(tmp_path))
     monkeypatch.setattr(settings, "ASSET_OSS_PREFIX", "assets")

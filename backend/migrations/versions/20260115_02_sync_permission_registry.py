@@ -4,6 +4,7 @@ Revision ID: 20260115_02_sync_permission_registry
 Revises: 20260115_01_create_notification_tables
 Create Date: 2026-01-15
 """
+
 import uuid
 
 import sqlalchemy as sa
@@ -41,7 +42,11 @@ role_permission_table = sa.table(
 
 
 def _ensure_permissions(conn):
-    existing = dict(conn.execute(sa.select(permission_table.c.code, permission_table.c.id)).fetchall())
+    existing = dict(
+        conn.execute(
+            sa.select(permission_table.c.code, permission_table.c.id)
+        ).fetchall()
+    )
     for perm in PERMISSION_REGISTRY:
         if perm.code in existing:
             conn.execute(
@@ -63,7 +68,9 @@ def _ensure_permissions(conn):
 
 
 def _ensure_roles(conn):
-    existing = dict(conn.execute(sa.select(role_table.c.name, role_table.c.id)).fetchall())
+    existing = dict(
+        conn.execute(sa.select(role_table.c.name, role_table.c.id)).fetchall()
+    )
     for name, desc in DEFAULT_ROLES.items():
         if name in existing:
             conn.execute(
@@ -147,5 +154,7 @@ def downgrade() -> None:
 
     if registry_codes:
         conn.execute(
-            sa.delete(permission_table).where(permission_table.c.code.in_(registry_codes))
+            sa.delete(permission_table).where(
+                permission_table.c.code.in_(registry_codes)
+            )
         )

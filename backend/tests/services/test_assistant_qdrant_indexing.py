@@ -1,5 +1,4 @@
 import uuid
-
 from unittest.mock import Mock
 
 import pytest
@@ -9,7 +8,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.models import Base
 from app.models.assistant import AssistantStatus, AssistantVisibility
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
 from app.schemas.assistant import (
     AssistantCreate,
     AssistantUpdate,
@@ -17,6 +19,7 @@ from app.schemas.assistant import (
     AssistantVersionUpdate,
 )
 from app.services.assistant.assistant_service import AssistantService
+
 engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",
     echo=False,
@@ -48,7 +51,9 @@ async def test_publish_assistant_enqueues_sync(monkeypatch: pytest.MonkeyPatch) 
     enqueue = Mock()
     monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
     meili_enqueue = Mock()
-    monkeypatch.setattr("app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue)
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue
+    )
 
     async with AsyncSessionLocal() as session:
         service = AssistantService(
@@ -74,15 +79,25 @@ async def test_publish_assistant_enqueues_sync(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
-async def test_update_assistant_unpublish_enqueues_remove(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_assistant_unpublish_enqueues_remove(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sync_enqueue = Mock()
-    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", sync_enqueue)
+    monkeypatch.setattr(
+        "app.tasks.assistant.sync_assistant_to_qdrant.delay", sync_enqueue
+    )
     enqueue = Mock()
-    monkeypatch.setattr("app.tasks.assistant.remove_assistant_from_qdrant.delay", enqueue)
+    monkeypatch.setattr(
+        "app.tasks.assistant.remove_assistant_from_qdrant.delay", enqueue
+    )
     meili_enqueue = Mock()
-    monkeypatch.setattr("app.tasks.search_index.delete_assistant_task.delay", meili_enqueue)
+    monkeypatch.setattr(
+        "app.tasks.search_index.delete_assistant_task.delay", meili_enqueue
+    )
     meili_upsert = Mock()
-    monkeypatch.setattr("app.tasks.search_index.upsert_assistant_task.delay", meili_upsert)
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay", meili_upsert
+    )
 
     async with AsyncSessionLocal() as session:
         service = AssistantService(
@@ -113,11 +128,15 @@ async def test_update_assistant_unpublish_enqueues_remove(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_update_assistant_version_enqueues_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_assistant_version_enqueues_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     enqueue = Mock()
     monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
     meili_enqueue = Mock()
-    monkeypatch.setattr("app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue)
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue
+    )
 
     async with AsyncSessionLocal() as session:
         service = AssistantService(
@@ -153,15 +172,25 @@ async def test_update_assistant_version_enqueues_sync(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_delete_assistant_enqueues_remove(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_delete_assistant_enqueues_remove(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sync_enqueue = Mock()
-    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", sync_enqueue)
+    monkeypatch.setattr(
+        "app.tasks.assistant.sync_assistant_to_qdrant.delay", sync_enqueue
+    )
     enqueue = Mock()
-    monkeypatch.setattr("app.tasks.assistant.remove_assistant_from_qdrant.delay", enqueue)
+    monkeypatch.setattr(
+        "app.tasks.assistant.remove_assistant_from_qdrant.delay", enqueue
+    )
     meili_enqueue = Mock()
-    monkeypatch.setattr("app.tasks.search_index.delete_assistant_task.delay", meili_enqueue)
+    monkeypatch.setattr(
+        "app.tasks.search_index.delete_assistant_task.delay", meili_enqueue
+    )
     meili_upsert = Mock()
-    monkeypatch.setattr("app.tasks.search_index.upsert_assistant_task.delay", meili_upsert)
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay", meili_upsert
+    )
 
     async with AsyncSessionLocal() as session:
         service = AssistantService(
@@ -194,7 +223,9 @@ async def test_update_version_enqueues_sync(monkeypatch: pytest.MonkeyPatch) -> 
     enqueue = Mock()
     monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
     meili_enqueue = Mock()
-    monkeypatch.setattr("app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue)
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue
+    )
 
     async with AsyncSessionLocal() as session:
         service = AssistantService(

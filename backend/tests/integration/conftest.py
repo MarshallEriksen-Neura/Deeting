@@ -4,21 +4,20 @@
 - 复用 API 测试的内存 SQLite/Redis，避免依赖真实数据库
 - 强制路由步骤使用兜底逻辑，避免因缺少预置上游导致流程中断
 """
-from collections.abc import AsyncGenerator
+
 
 import pytest_asyncio
 
-from tests.api.conftest import (
-    AsyncSessionLocal,
-    _init_db,
-    _seed_users,
-    _override_get_db,
-)
 from app.core.database import get_db
-from app.services.workflow.steps.routing import RoutingStep
-from app.services.workflow.steps.quota_check import QuotaCheckStep
 from app.services.workflow.steps.base import StepResult, StepStatus
+from app.services.workflow.steps.quota_check import QuotaCheckStep
+from app.services.workflow.steps.routing import RoutingStep
 from main import app
+from tests.api.conftest import (
+    _init_db,
+    _override_get_db,
+    _seed_users,
+)
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)

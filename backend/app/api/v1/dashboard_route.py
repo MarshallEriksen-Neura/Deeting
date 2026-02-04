@@ -34,7 +34,9 @@ async def get_token_throughput(
     current_user: User = Depends(get_current_user),
     svc: DashboardService = Depends(get_dashboard_service),
 ):
-    return await svc.get_token_throughput(str(current_user.id) if current_user else None, period)
+    return await svc.get_token_throughput(
+        str(current_user.id) if current_user else None, period
+    )
 
 
 @router.get("/smart-router-stats", response_model=SmartRouterStatsResponse)
@@ -42,7 +44,9 @@ async def get_smart_router_stats(
     current_user: User = Depends(get_current_user),
     svc: DashboardService = Depends(get_dashboard_service),
 ):
-    return await svc.get_smart_router_stats(str(current_user.id) if current_user else None)
+    return await svc.get_smart_router_stats(
+        str(current_user.id) if current_user else None
+    )
 
 
 @router.get("/provider-health", response_model=list[ProviderHealthItem])
@@ -59,5 +63,6 @@ async def get_recent_errors(
     current_user: User = Depends(get_current_user),
     svc: DashboardService = Depends(get_dashboard_service),
 ):
-    return await svc.get_recent_errors(str(current_user.id) if current_user else None, limit=limit)
-
+    return await svc.get_recent_errors(
+        str(current_user.id) if current_user else None, limit=limit
+    )

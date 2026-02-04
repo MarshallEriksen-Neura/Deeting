@@ -5,8 +5,8 @@ Revises: 20260120_04_backfill_preset_capability_configs_chat_embedding
 Create Date: 2026-01-20
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.

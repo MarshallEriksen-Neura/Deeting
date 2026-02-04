@@ -10,6 +10,7 @@ class InterceptHandler(logging.Handler):
     """
     拦截标准库 logging 消息并转发到 Loguru
     """
+
     def emit(self, record):
         # 获取对应的 Loguru level
         try:
@@ -26,6 +27,7 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(
             level, record.getMessage()
         )
+
 
 def setup_logging():
     """
@@ -55,7 +57,7 @@ def setup_logging():
             format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
             encoding="utf-8",
             enqueue=settings.LOG_ASYNC,
-            compression="zip", # 轮转后压缩
+            compression="zip",  # 轮转后压缩
         )
 
     # 3. 拦截标准库 logging (Uvicorn, FastAPI, SQLAlchemy 等)

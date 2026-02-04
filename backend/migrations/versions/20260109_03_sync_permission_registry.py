@@ -4,6 +4,7 @@ Revision ID: 20260109_03
 Revises: 20260109_02
 Create Date: 2026-01-09
 """
+
 import uuid
 
 import sqlalchemy as sa
@@ -42,7 +43,9 @@ role_permission_table = sa.table(
 
 def _ensure_permissions(conn):
     existing = dict(
-        conn.execute(sa.select(permission_table.c.code, permission_table.c.id)).fetchall()
+        conn.execute(
+            sa.select(permission_table.c.code, permission_table.c.id)
+        ).fetchall()
     )
     for perm in PERMISSION_REGISTRY:
         if perm.code in existing:
@@ -156,5 +159,7 @@ def downgrade() -> None:
     # 删除权限
     if registry_codes:
         conn.execute(
-            sa.delete(permission_table).where(permission_table.c.code.in_(registry_codes))
+            sa.delete(permission_table).where(
+                permission_table.c.code.in_(registry_codes)
+            )
         )

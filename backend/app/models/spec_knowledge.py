@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
+from sqlalchemy import UUID as SA_UUID
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -14,7 +15,6 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -53,7 +53,7 @@ class SpecKnowledgeCandidate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="来源 Plan ID",
     )
 
-    manifest_data: Mapped[Dict[str, Any]] = mapped_column(
+    manifest_data: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=dict,
@@ -61,7 +61,7 @@ class SpecKnowledgeCandidate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="原始 Spec Manifest",
     )
 
-    normalized_manifest: Mapped[Dict[str, Any]] = mapped_column(
+    normalized_manifest: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=dict,
@@ -133,7 +133,7 @@ class SpecKnowledgeCandidate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="成功运行次数",
     )
 
-    session_hashes: Mapped[List[str]] = mapped_column(
+    session_hashes: Mapped[list[str]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=list,
@@ -161,7 +161,7 @@ class SpecKnowledgeCandidate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="评估原因/说明",
     )
 
-    eval_snapshot: Mapped[Dict[str, Any]] = mapped_column(
+    eval_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=dict,

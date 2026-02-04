@@ -1,17 +1,19 @@
 import asyncio
-import sys
 import os
+import sys
 
 # Add backend to path
 sys.path.append(os.getcwd())
 
-from app.services.memory.qdrant_service import system_qdrant
+from loguru import logger
+
+from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.services.agent import agent_service
+from app.services.memory.qdrant_service import system_qdrant
 from app.services.tools.tool_sync_service import tool_sync_service
 from app.storage.qdrant_kb_store import ensure_collection_vector_size
-from app.qdrant_client import qdrant_is_configured, get_qdrant_client
 from app.tasks.skill_registry import SKILL_COLLECTION_NAME
-from loguru import logger
+
 
 async def main():
     logger.info("Initializing Qdrant Collections...")
@@ -30,6 +32,7 @@ async def main():
         logger.info("Successfully initialized collections.")
     except Exception as e:
         logger.exception(f"Failed to initialize collections: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

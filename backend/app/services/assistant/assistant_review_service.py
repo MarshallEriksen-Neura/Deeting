@@ -4,7 +4,10 @@ import logging
 from uuid import UUID
 
 from app.models.review import ReviewStatus, ReviewTask
-from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService, AutoReviewResult
+from app.services.assistant.assistant_auto_review_service import (
+    AssistantAutoReviewService,
+    AutoReviewResult,
+)
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
 from app.services.review.review_service import ReviewService
 from app.tasks.assistant import sync_assistant_to_qdrant
@@ -41,7 +44,7 @@ class AssistantReviewService:
 
         try:
             result = await self.auto_review(assistant_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "assistant_auto_review_failed",
                 extra={"assistant_id": str(assistant_id), "error": str(exc)},

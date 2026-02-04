@@ -17,7 +17,9 @@ class MediaAssetRepository:
     async def get(self, asset_id) -> MediaAsset | None:
         return await self.session.get(MediaAsset, asset_id)
 
-    async def get_by_hash(self, content_hash: str, size_bytes: int) -> MediaAsset | None:
+    async def get_by_hash(
+        self, content_hash: str, size_bytes: int
+    ) -> MediaAsset | None:
         stmt = select(MediaAsset).where(
             MediaAsset.content_hash == content_hash,
             MediaAsset.size_bytes == size_bytes,
@@ -37,7 +39,9 @@ class MediaAssetRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def create_asset(self, data: dict[str, Any], commit: bool = True) -> MediaAsset:
+    async def create_asset(
+        self, data: dict[str, Any], commit: bool = True
+    ) -> MediaAsset:
         asset = MediaAsset(**data)
         self.session.add(asset)
         if commit:
@@ -55,7 +59,9 @@ class MediaAssetRepository:
             await self.session.flush()
 
     async def delete_expired(self, now, commit: bool = True) -> int:
-        stmt = select(MediaAsset).where(MediaAsset.expire_at.is_not(None), MediaAsset.expire_at <= now)
+        stmt = select(MediaAsset).where(
+            MediaAsset.expire_at.is_not(None), MediaAsset.expire_at <= now
+        )
         result = await self.session.execute(stmt)
         items = list(result.scalars().all())
         for asset in items:

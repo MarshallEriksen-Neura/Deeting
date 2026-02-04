@@ -140,7 +140,12 @@ class RoutingAffinityStateMachine:
                 lock_expires_at=lock_expires_at,
             )
         except Exception as exc:
-            logger.warning("affinity_get_context_failed session=%s model=%s err=%s", self.session_id, self.model, exc)
+            logger.warning(
+                "affinity_get_context_failed session=%s model=%s err=%s",
+                self.session_id,
+                self.model,
+                exc,
+            )
             return AffinityContext(state=AffinityState.INIT)
 
     async def should_use_affinity(self) -> tuple[bool, str | None, str | None]:
@@ -237,7 +242,11 @@ class RoutingAffinityStateMachine:
         ctx.lock_expires_at = None
         ctx.last_updated = Datetime.utcnow()
         await self._save_context(ctx)
-        logger.debug("affinity_transition_to_exploring session=%s model=%s", self.session_id, self.model)
+        logger.debug(
+            "affinity_transition_to_exploring session=%s model=%s",
+            self.session_id,
+            self.model,
+        )
 
     async def _transition_to_locked(
         self,
@@ -274,7 +283,11 @@ class RoutingAffinityStateMachine:
                 "explore_count": str(ctx.explore_count),
                 "success_count": str(ctx.success_count),
                 "failure_count": str(ctx.failure_count),
-                "last_updated": ctx.last_updated.isoformat() if ctx.last_updated else Datetime.utcnow().isoformat(),
+                "last_updated": (
+                    ctx.last_updated.isoformat()
+                    if ctx.last_updated
+                    else Datetime.utcnow().isoformat()
+                ),
             }
 
             if ctx.locked_provider:
@@ -289,7 +302,12 @@ class RoutingAffinityStateMachine:
             ttl = self.lock_duration + 3600
             await redis_client.expire(full_key, ttl)
         except Exception as exc:
-            logger.error("affinity_save_context_failed session=%s model=%s err=%s", self.session_id, self.model, exc)
+            logger.error(
+                "affinity_save_context_failed session=%s model=%s err=%s",
+                self.session_id,
+                self.model,
+                exc,
+            )
 
     async def reset(self) -> None:
         """重置状态机（用于测试或手动干预）"""
@@ -300,6 +318,13 @@ class RoutingAffinityStateMachine:
         try:
             full_key = cache._make_key(self._cache_key)
             await redis_client.delete(full_key)
-            logger.info("affinity_reset session=%s model=%s", self.session_id, self.model)
+            logger.info(
+                "affinity_reset session=%s model=%s", self.session_id, self.model
+            )
         except Exception as exc:
-            logger.error("affinity_reset_failed session=%s model=%s err=%s", self.session_id, self.model, exc)
+            logger.error(
+                "affinity_reset_failed session=%s model=%s err=%s",
+                self.session_id,
+                self.model,
+                exc,
+            )

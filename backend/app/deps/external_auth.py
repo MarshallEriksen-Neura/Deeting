@@ -59,11 +59,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 
 from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-import ipaddress
 
 from app.core.cache import cache
 from app.core.config import settings
@@ -135,7 +135,9 @@ async def get_external_principal(
             try:
                 principal = await service.validate_key()
             except TypeError:
-                validate_unbound = getattr(service.validate_key, "__func__", service.validate_key)
+                validate_unbound = getattr(
+                    service.validate_key, "__func__", service.validate_key
+                )
                 principal = await validate_unbound(x_api_key)
 
         if principal:
@@ -155,7 +157,9 @@ async def get_external_principal(
                                 matched = True
                                 break
                         else:
-                            if ipaddress.ip_address(client_ip) == ipaddress.ip_address(pattern):
+                            if ipaddress.ip_address(client_ip) == ipaddress.ip_address(
+                                pattern
+                            ):
                                 matched = True
                                 break
                     except ValueError:
@@ -174,10 +178,16 @@ async def get_external_principal(
         client_ip=client_ip,
         client_host=client_host,
         scopes=scopes,
-        allowed_models=getattr(principal, "allowed_models", None) if x_api_key else None,
+        allowed_models=(
+            getattr(principal, "allowed_models", None) if x_api_key else None
+        ),
         allowed_ips=getattr(principal, "allowed_ips", None) if x_api_key else None,
-        rate_limit_rpm=getattr(principal, "rate_limit_rpm", None) if x_api_key else None,
+        rate_limit_rpm=(
+            getattr(principal, "rate_limit_rpm", None) if x_api_key else None
+        ),
         budget_limit=getattr(principal, "budget_limit", None) if x_api_key else None,
         budget_used=getattr(principal, "budget_used", 0) if x_api_key else 0,
-        enable_logging=getattr(principal, "enable_logging", True) if x_api_key else True,
+        enable_logging=(
+            getattr(principal, "enable_logging", True) if x_api_key else True
+        ),
     )

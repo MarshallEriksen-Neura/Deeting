@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi.responses import StreamingResponse
+from fastapi_pagination.cursor import CursorPage, CursorParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -41,7 +42,7 @@ def _format_sse_event(event: str, data: dict[str, Any] | str) -> bytes:
         payload = data
     else:
         payload = json.dumps(data, ensure_ascii=False, default=str)
-    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+    return f"event: {event}\ndata: {payload}\n\n".encode()
 
 
 @router.post("/draft", response_model=SpecDraftResponse)
@@ -56,10 +57,11 @@ async def draft_spec_plan(
             plan, manifest = await spec_agent_service.generate_plan(
                 db, user.id, payload.query, payload.context, payload.model
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("spec_agent_draft_failed")
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail="spec_agent_draft_failed"
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="spec_agent_draft_failed",
             ) from exc
         return SpecDraftResponse(plan_id=plan.id, manifest=manifest)
 
@@ -74,9 +76,11 @@ async def draft_spec_plan(
                 {
                     "plan_id": str(plan.id),
                     "project_name": manifest.project_name,
-                    "conversation_session_id": str(plan.conversation_session_id)
-                    if plan.conversation_session_id
-                    else None,
+                    "conversation_session_id": (
+                        str(plan.conversation_session_id)
+                        if plan.conversation_session_id
+                        else None
+                    ),
                 },
             )
             for node in manifest.nodes:
@@ -88,9 +92,11 @@ async def draft_spec_plan(
                         "link_added", {"source": dep, "target": node.id}
                     )
             yield _format_sse_event("plan_ready", {"plan_id": str(plan.id)})
-        except Exception as exc:  # noqa: BLE001
+        except Exception:
             logger.exception("spec_agent_draft_stream_failed")
-            yield _format_sse_event("plan_error", {"message": "spec_agent_draft_failed"})
+            yield _format_sse_event(
+                "plan_error", {"message": "spec_agent_draft_failed"}
+            )
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -104,7 +110,9 @@ async def get_spec_plan(
     try:
         detail = await spec_agent_service.get_plan_detail(db, user.id, plan_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     return detail
 
 
@@ -129,7 +137,9 @@ async def get_spec_plan_status(
     try:
         status_payload = await spec_agent_service.get_plan_status(db, user.id, plan_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     return status_payload
 
 
@@ -169,9 +179,7 @@ async def rerun_spec_plan_node(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        detail = await spec_agent_service.rerun_plan_node(
-            db, user.id, plan_id, node_id
-        )
+        detail = await spec_agent_service.rerun_plan_node(db, user.id, plan_id, node_id)
     except ValueError as exc:
         detail_text = str(exc)
         if detail_text in ("plan_not_found", "node_not_found"):
@@ -197,7 +205,13 @@ async def append_spec_plan_node_event(
 ):
     try:
         result = await spec_agent_service.append_plan_node_event(
-            db, user.id, plan_id, node_id, payload.event, payload.source, payload.payload
+            db,
+            user.id,
+            plan_id,
+            node_id,
+            payload.event,
+            payload.source,
+            payload.payload,
         )
     except ValueError as exc:
         detail_text = str(exc)
@@ -220,7 +234,9 @@ async def start_spec_plan(
     try:
         result = await spec_agent_service.start_plan(db, user.id, plan_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     return SpecPlanStartResponse(**result)
 
 
@@ -238,8 +254,12 @@ async def interact_spec_plan(
     except ValueError as exc:
         detail = str(exc)
         if detail == "plan_not_found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=detail
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail
+        ) from exc
     return SpecPlanInteractResponse(
         plan_id=plan_id, node_id=payload.node_id, decision=payload.decision
     )
@@ -268,6 +288,10 @@ async def update_spec_plan_node(
     except ValueError as exc:
         detail = str(exc)
         if detail in ("plan_not_found", "node_not_found"):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=detail
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail
+        ) from exc
     return SpecPlanNodeUpdateResponse(**result)

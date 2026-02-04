@@ -1,15 +1,21 @@
-from typing import Any, Dict
-import httpx
 import uuid
+from typing import Any
+
+import httpx
+
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
 from app.repositories.knowledge_repository import KnowledgeRepository
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
-from app.services.knowledge.crawler_knowledge_service import CrawlerKnowledgeService
-from app.services.assistant.assistant_service import AssistantService
 from app.services.assistant.assistant_ingestion_service import AssistantIngestionService
+from app.services.assistant.assistant_service import AssistantService
+from app.services.knowledge.crawler_knowledge_service import CrawlerKnowledgeService
+
 
 class CrawlerPlugin(AgentPlugin):
     """
@@ -22,9 +28,9 @@ class CrawlerPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.tools.crawler",
-            version="2.2.0", # Added Assistant Conversion
+            version="2.2.0",  # Added Assistant Conversion
             description="Provides web crawling capabilities via Deeting Scout Service.",
-            author="Gemini CLI"
+            author="Gemini CLI",
         )
 
     def get_tools(self) -> list[dict]:
@@ -39,17 +45,17 @@ class CrawlerPlugin(AgentPlugin):
                         "properties": {
                             "url": {
                                 "type": "string",
-                                "description": "The target URL to crawl."
+                                "description": "The target URL to crawl.",
                             },
                             "js_mode": {
                                 "type": "boolean",
                                 "default": True,
-                                "description": "Whether to render JavaScript (slower but more accurate)."
-                            }
+                                "description": "Whether to render JavaScript (slower but more accurate).",
+                            },
                         },
-                        "required": ["url"]
-                    }
-                }
+                        "required": ["url"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -61,22 +67,22 @@ class CrawlerPlugin(AgentPlugin):
                         "properties": {
                             "url": {
                                 "type": "string",
-                                "description": "The root URL to start crawling from (e.g. documentation homepage)."
+                                "description": "The root URL to start crawling from (e.g. documentation homepage).",
                             },
                             "max_depth": {
                                 "type": "integer",
                                 "default": 2,
-                                "description": "How deep to follow links (1=root only, 2=root+children)."
+                                "description": "How deep to follow links (1=root only, 2=root+children).",
                             },
                             "max_pages": {
                                 "type": "integer",
                                 "default": 20,
-                                "description": "Maximum number of pages to ingest."
-                            }
+                                "description": "Maximum number of pages to ingest.",
+                            },
                         },
-                        "required": ["url"]
-                    }
-                }
+                        "required": ["url"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -88,25 +94,25 @@ class CrawlerPlugin(AgentPlugin):
                         "properties": {
                             "repo_url": {
                                 "type": "string",
-                                "description": "Git repository URL to ingest."
+                                "description": "Git repository URL to ingest.",
                             },
                             "revision": {
                                 "type": "string",
                                 "default": "main",
-                                "description": "Git branch/tag/commit to ingest."
+                                "description": "Git branch/tag/commit to ingest.",
                             },
                             "skill_id": {
                                 "type": "string",
-                                "description": "Optional skill ID to use when persisting."
+                                "description": "Optional skill ID to use when persisting.",
                             },
                             "runtime_hint": {
                                 "type": "string",
-                                "description": "Optional runtime hint (e.g. python_library, node_library)."
-                            }
+                                "description": "Optional runtime hint (e.g. python_library, node_library).",
+                            },
                         },
-                        "required": ["repo_url"]
-                    }
-                }
+                        "required": ["repo_url"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -118,20 +124,17 @@ class CrawlerPlugin(AgentPlugin):
                         "properties": {
                             "artifact_id": {
                                 "type": "string",
-                                "description": "The UUID of the ingested Knowledge Artifact."
+                                "description": "The UUID of the ingested Knowledge Artifact.",
                             }
                         },
-                        "required": ["artifact_id"]
-                    }
-                }
-            }
+                        "required": ["artifact_id"],
+                    },
+                },
+            },
         ]
 
     async def handle_fetch_web_content(
-        self,
-        url: str,
-        js_mode: bool = True,
-        **kwargs
+        self, url: str, js_mode: bool = True, **kwargs
     ) -> dict[str, Any]:
         """
         Tool Handler: Single Page Inspection (Stateless).
@@ -139,37 +142,31 @@ class CrawlerPlugin(AgentPlugin):
         """
         logger = self.context.get_logger()
         scout_url = f"{settings.SCOUT_SERVICE_URL}/v1/scout/inspect"
-        
+
         logger.info(f"Dispatching Scout to: {url}")
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    scout_url,
-                    json={"url": url, "js_mode": js_mode},
-                    timeout=60.0
+                    scout_url, json={"url": url, "js_mode": js_mode}, timeout=60.0
                 )
                 response.raise_for_status()
                 data = response.json()
-                
+
                 if data.get("status") == "failed":
                     return {"status": "error", "error": data.get("error")}
-                
+
                 return {
                     "status": "success",
                     "title": data.get("metadata", {}).get("title"),
                     "markdown": data.get("markdown"),
-                    "metadata": data.get("metadata")
+                    "metadata": data.get("metadata"),
                 }
         except Exception as e:
-            return {"status": "error", "error": f"Scout Service Unavailable: {str(e)}"}
+            return {"status": "error", "error": f"Scout Service Unavailable: {e!s}"}
 
     async def handle_crawl_website(
-        self,
-        url: str,
-        max_depth: int = 2,
-        max_pages: int = 20,
-        **kwargs
+        self, url: str, max_depth: int = 2, max_pages: int = 20, **kwargs
     ) -> dict[str, Any]:
         """
         Tool Handler: Deep Dive Ingestion (Stateful).
@@ -181,37 +178,40 @@ class CrawlerPlugin(AgentPlugin):
         async with AsyncSessionLocal() as session:
             repo = KnowledgeRepository(session)
             service = CrawlerKnowledgeService(repo)
-            
+
             try:
                 result = await service.ingest_deep_dive(
                     seed_url=url,
                     max_depth=max_depth,
                     max_pages=max_pages,
-                    artifact_type="assistant" # Default to assistant type if intention is cloning
+                    artifact_type="assistant",  # Default to assistant type if intention is cloning
                 )
-                
+
                 # We return the list of artifact IDs so the Agent can pick one to convert
                 return {
                     "status": "success",
                     "message": f"Successfully ingested {len(result.get('ingested_ids', []))} pages. You can now use 'convert_artifact_to_assistant' with these IDs.",
-                    "artifact_ids": result.get('ingested_ids', [])
+                    "artifact_ids": result.get("ingested_ids", []),
                 }
             except Exception as e:
                 logger.error(f"Deep Dive failed: {e}")
                 return {"status": "error", "error": str(e)}
 
-    async def handle_convert_artifact_to_assistant(self, artifact_id: str) -> Dict[str, Any]:
+    async def handle_convert_artifact_to_assistant(
+        self, artifact_id: str
+    ) -> dict[str, Any]:
         """
         Tool Handler: Refine Artifact -> Create Assistant -> Sync Qdrant.
         """
         async with AsyncSessionLocal() as session:
             knowledge_repo = KnowledgeRepository(session)
             assistant_service = AssistantService(
-                AssistantRepository(session),
-                AssistantVersionRepository(session)
+                AssistantRepository(session), AssistantVersionRepository(session)
             )
-            ingestion_service = AssistantIngestionService(assistant_service, knowledge_repo)
-            
+            ingestion_service = AssistantIngestionService(
+                assistant_service, knowledge_repo
+            )
+
             try:
                 # Validate UUID format
                 uuid_obj = uuid.UUID(artifact_id)
@@ -230,8 +230,8 @@ class CrawlerPlugin(AgentPlugin):
         revision: str = "main",
         skill_id: str | None = None,
         runtime_hint: str | None = None,
-        **kwargs
-    ) -> Dict[str, Any]:
+        **kwargs,
+    ) -> dict[str, Any]:
         task = celery_app.send_task(
             "skill_registry.ingest_repo",
             args=[repo_url, revision, skill_id, runtime_hint],

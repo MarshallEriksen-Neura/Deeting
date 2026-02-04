@@ -6,6 +6,7 @@
 - 业务异常在 Service 内抛出 HTTPException
 - 统一日志字段方便审计
 """
+
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -23,12 +24,12 @@ from app.schemas.user import (
     UserRead,
     UserWithRoles,
 )
-from app.services.users.auth_service import AuthService
+from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.oss.asset_storage_service import (
     build_public_asset_url,
     build_signed_asset_url,
 )
-from app.services.assistant.default_assistant_service import DefaultAssistantService
+from app.services.users.auth_service import AuthService
 
 
 class UserAdminService:
@@ -156,9 +157,11 @@ class UserAdminService:
 
         # 更新字段
         update_data = request.model_dump(exclude_unset=True)
-        if "avatar_url" in update_data and update_data["avatar_url"]:
+        if update_data.get("avatar_url"):
             update_data["avatar_object_key"] = update_data.pop("avatar_url")
-            update_data["avatar_storage_type"] = update_data.get("avatar_storage_type", "public")
+            update_data["avatar_storage_type"] = update_data.get(
+                "avatar_storage_type", "public"
+            )
 
         # 权限检查：只有超管可以修改 is_superuser
         if "is_superuser" in update_data and not current_admin.is_superuser:
@@ -253,7 +256,9 @@ class UserAdminService:
             duration_hours=duration_hours,
         )
 
-        ban_type = "permanently" if not duration_hours else f"for {duration_hours} hours"
+        ban_type = (
+            "permanently" if not duration_hours else f"for {duration_hours} hours"
+        )
         return f"User banned {ban_type}"
 
     async def unban_user(self, user_id: UUID) -> None:

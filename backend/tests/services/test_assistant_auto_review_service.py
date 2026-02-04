@@ -4,9 +4,9 @@ import pytest
 import pytest_asyncio
 
 from app.models import Base, User
-from app.models.secretary import UserSecretary
-from app.models.review import ReviewStatus
 from app.models.assistant import AssistantStatus, AssistantVisibility
+from app.models.review import ReviewStatus
+from app.models.secretary import UserSecretary
 from app.repositories import (
     AssistantRepository,
     AssistantVersionRepository,
@@ -14,7 +14,9 @@ from app.repositories import (
     UserSecretaryRepository,
 )
 from app.schemas.assistant import AssistantCreate, AssistantVersionCreate
-from app.services.assistant.assistant_auto_review_service import AssistantAutoReviewService
+from app.services.assistant.assistant_auto_review_service import (
+    AssistantAutoReviewService,
+)
 from app.services.assistant.assistant_service import AssistantService
 from tests.api.conftest import AsyncSessionLocal, engine
 
@@ -69,7 +71,9 @@ async def test_auto_review_build_request_uses_superuser_secretary():
             version_repo=AssistantVersionRepository(session),
         )
 
-        request, reviewer_id = await auto_review_service.build_review_request(assistant.id)
+        request, reviewer_id = await auto_review_service.build_review_request(
+            assistant.id
+        )
         assert reviewer_id == superuser.id
         assert request.model == "gpt-4"
         assert system_prompt in (request.messages[1].content or "")

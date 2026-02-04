@@ -11,7 +11,6 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 # revision identifiers, used by Alembic.
 revision = "20260121_01_add_conversation_meta_summary_link"
 down_revision = "20260120_09_normalize_provider_model_capabilities"

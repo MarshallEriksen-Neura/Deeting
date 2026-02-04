@@ -11,13 +11,17 @@ def mock_db():
     db = MagicMock()
     return db
 
+
 @pytest.fixture
 def mock_get_sync_db(mock_db):
     with patch("app.tasks.billing.get_sync_db") as mock:
+
         def get_db_gen():
             yield mock_db
+
         mock.side_effect = get_db_gen
         yield mock
+
 
 @pytest.fixture
 def mock_redis_sync():
@@ -25,6 +29,7 @@ def mock_redis_sync():
         r = MagicMock()
         mock.return_value = r
         yield r
+
 
 def test_record_usage_task_updates_quota(mock_get_sync_db, mock_db, mock_redis_sync):
     """测试异步计费任务更新 API Key 配额"""
@@ -34,7 +39,7 @@ def test_record_usage_task_updates_quota(mock_get_sync_db, mock_db, mock_redis_s
         "input_tokens": 100,
         "output_tokens": 50,
         "total_cost": 0.0015,
-        "is_error": False
+        "is_error": False,
     }
 
     mock_redis_sync.exists.return_value = True

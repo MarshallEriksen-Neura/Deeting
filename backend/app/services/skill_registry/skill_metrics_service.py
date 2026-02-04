@@ -25,7 +25,9 @@ class SkillMetricsService:
         await self.repo.update(skill, payload)
         return metrics
 
-    async def record_failure(self, skill_id: str, error: str | None = None) -> dict[str, Any]:
+    async def record_failure(
+        self, skill_id: str, error: str | None = None
+    ) -> dict[str, Any]:
         skill = await self.repo.get_by_id(skill_id)
         if not skill:
             raise ValueError("Skill not found")
@@ -72,7 +74,9 @@ class SkillMetricsService:
         metrics["dry_run_fail"] += 1
         metrics["consecutive_failures"] += 1
         metrics["last_error"] = {"code": error_code, "message": error_message}
-        payload: dict[str, Any] = {"manifest_json": _merge_metrics(skill.manifest_json, metrics)}
+        payload: dict[str, Any] = {
+            "manifest_json": _merge_metrics(skill.manifest_json, metrics)
+        }
         await self.repo.update(skill, payload)
         return metrics
 
@@ -95,7 +99,9 @@ def _extract_metrics(manifest: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _merge_metrics(manifest: dict[str, Any] | None, metrics: dict[str, Any]) -> dict[str, Any]:
+def _merge_metrics(
+    manifest: dict[str, Any] | None, metrics: dict[str, Any]
+) -> dict[str, Any]:
     base = dict(manifest or {})
     base["metrics"] = metrics
     return base

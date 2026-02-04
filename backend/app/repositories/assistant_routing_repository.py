@@ -17,7 +17,9 @@ class AssistantRoutingRepository(BaseRepository[AssistantRoutingState]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, AssistantRoutingState)
 
-    async def get_by_assistant_id(self, assistant_id: UUID) -> AssistantRoutingState | None:
+    async def get_by_assistant_id(
+        self, assistant_id: UUID
+    ) -> AssistantRoutingState | None:
         result = await self.session.execute(
             select(AssistantRoutingState).where(
                 AssistantRoutingState.assistant_id == assistant_id

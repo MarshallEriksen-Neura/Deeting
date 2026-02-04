@@ -10,11 +10,16 @@ class PluginMetadata(BaseModel):
     Plugin Metadata (Manifest).
     Equivalent to the core part of VS Code's package.json.
     """
-    name: str = Field(..., description="Unique plugin identifier (e.g., 'core.crawler')")
+
+    name: str = Field(
+        ..., description="Unique plugin identifier (e.g., 'core.crawler')"
+    )
     version: str = Field(..., description="Semantic version string")
     description: str = Field("", description="Human-readable description")
     author: str | None = None
-    dependencies: list[str] = Field(default_factory=list, description="Other plugins this plugin requires")
+    dependencies: list[str] = Field(
+        default_factory=list, description="Other plugins this plugin requires"
+    )
 
 
 class PluginContext(ABC):
@@ -61,7 +66,6 @@ class PluginContext(ABC):
         Returns a VectorStoreClient.
         """
         pass
-
 
 
 class AgentPlugin(ABC):

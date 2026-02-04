@@ -1,12 +1,17 @@
 import hashlib
 import json
 import logging
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, Iterable, TypeVar
+from typing import Any, Generic, TypeVar
 
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.services.providers.embedding import EmbeddingService
-from app.storage.qdrant_kb_store import delete_points, ensure_collection_vector_size, upsert_points
+from app.storage.qdrant_kb_store import (
+    delete_points,
+    ensure_collection_vector_size,
+    upsert_points,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +148,9 @@ class QdrantIndexSyncService(Generic[T]):
             )
 
         if points:
-            await upsert_points(client, collection_name=collection_name, points=points, wait=True)
+            await upsert_points(
+                client, collection_name=collection_name, points=points, wait=True
+            )
 
     async def delete(
         self,

@@ -8,13 +8,16 @@ from app.repositories.assistant_repository import (
     AssistantRepository,
     AssistantVersionRepository,
 )
-from app.repositories.assistant_tag_repository import AssistantTagRepository, AssistantTagLinkRepository
+from app.repositories.assistant_tag_repository import (
+    AssistantTagLinkRepository,
+    AssistantTagRepository,
+)
 from app.schemas.assistant import (
     AssistantCreate,
+    AssistantListResponse,
     AssistantUpdate,
     AssistantVersionCreate,
     AssistantVersionUpdate,
-    AssistantListResponse,
 )
 from app.services.assistant.assistant_state import AssistantStateMachine
 from app.services.assistant.assistant_tag_service import AssistantTagService
@@ -22,7 +25,6 @@ from app.services.search import get_search_backend
 from app.tasks.assistant import remove_assistant_from_qdrant, sync_assistant_to_qdrant
 from app.tasks.search_index import delete_assistant_task, upsert_assistant_task
 from app.utils.time_utils import Datetime
-from app.repositories.assistant_tag_repository import AssistantTagRepository, AssistantTagLinkRepository
 
 
 class AssistantService:
@@ -96,8 +98,16 @@ class AssistantService:
     ) -> Assistant:
         assistant_data = {
             "owner_user_id": owner_user_id,
-            "visibility": payload.visibility.value if isinstance(payload.visibility, AssistantVisibility) else payload.visibility,
-            "status": payload.status.value if isinstance(payload.status, AssistantStatus) else payload.status,
+            "visibility": (
+                payload.visibility.value
+                if isinstance(payload.visibility, AssistantVisibility)
+                else payload.visibility
+            ),
+            "status": (
+                payload.status.value
+                if isinstance(payload.status, AssistantStatus)
+                else payload.status
+            ),
             "share_slug": payload.share_slug,
             "summary": payload.summary,
             "icon_id": payload.icon_id,
@@ -159,7 +169,9 @@ class AssistantService:
             update_data["published_at"] = assistant.published_at
 
         if payload.version is not None:
-            version_payload = await self._prepare_version_payload(assistant, payload.version)
+            version_payload = await self._prepare_version_payload(
+                assistant, payload.version
+            )
             version = await self._create_version_internal(assistant_id, version_payload)
             await self.tag_service.sync_assistant_tags(assistant_id, version.tags)
             update_data["current_version_id"] = version.id
@@ -182,12 +194,16 @@ class AssistantService:
             raise ValueError("助手不存在")
 
         if version_id:
-            version = await self.version_repo.get_for_assistant(assistant_id, version_id)
+            version = await self.version_repo.get_for_assistant(
+                assistant_id, version_id
+            )
             if not version:
                 raise ValueError("版本不存在或不属于该助手")
             assistant.current_version_id = version.id
 
-        AssistantStateMachine.apply(assistant, AssistantStatus.PUBLISHED, now=Datetime.now())
+        AssistantStateMachine.apply(
+            assistant, AssistantStatus.PUBLISHED, now=Datetime.now()
+        )
 
         assistant = await self.assistant_repo.update(
             assistant,
@@ -233,7 +249,9 @@ class AssistantService:
 
         update_data = payload.model_dump(exclude_unset=True, by_alias=True)
         if "tags" in update_data:
-            update_data["tags"] = self.tag_service.normalize_tags(update_data.get("tags"))
+            update_data["tags"] = self.tag_service.normalize_tags(
+                update_data.get("tags")
+            )
         # published_at 由外部决定; 此处仅更新提供的字段
         version = await self.version_repo.update(version, update_data)
         if payload.tags is not None:
@@ -273,15 +291,21 @@ class AssistantService:
         assistant: Assistant,
         payload: AssistantVersionCreate,
     ) -> AssistantVersionCreate:
-        candidate_version = payload.version if "version" in payload.model_fields_set else None
+        candidate_version = (
+            payload.version if "version" in payload.model_fields_set else None
+        )
         if candidate_version:
-            existing = await self.version_repo.get_by_semver(assistant.id, candidate_version)
+            existing = await self.version_repo.get_by_semver(
+                assistant.id, candidate_version
+            )
             if not existing:
                 return payload
 
         base_version = "0.1.0"
         if assistant.current_version_id:
-            current = await self.version_repo.get_for_assistant(assistant.id, assistant.current_version_id)
+            current = await self.version_repo.get_for_assistant(
+                assistant.id, assistant.current_version_id
+            )
             if current and current.version:
                 base_version = current.version
 
@@ -298,15 +322,23 @@ class AssistantService:
     ):
         version_data = payload.model_dump(by_alias=True)
         if "tags" in version_data:
-            version_data["tags"] = self.tag_service.normalize_tags(version_data.get("tags"))
+            version_data["tags"] = self.tag_service.normalize_tags(
+                version_data.get("tags")
+            )
         version_data["assistant_id"] = assistant_id
         if "published_at" not in version_data:
             version_data["published_at"] = None
         return await self.version_repo.create(version_data)
 
     @staticmethod
-    def _is_indexable(visibility: AssistantVisibility | str, status: AssistantStatus | str) -> bool:
-        visibility_value = visibility.value if isinstance(visibility, AssistantVisibility) else visibility
+    def _is_indexable(
+        visibility: AssistantVisibility | str, status: AssistantStatus | str
+    ) -> bool:
+        visibility_value = (
+            visibility.value
+            if isinstance(visibility, AssistantVisibility)
+            else visibility
+        )
         status_value = status.value if isinstance(status, AssistantStatus) else status
         return (
             visibility_value == AssistantVisibility.PUBLIC.value

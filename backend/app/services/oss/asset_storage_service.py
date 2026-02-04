@@ -13,8 +13,8 @@ from urllib.parse import quote
 
 import anyio
 
-from app.core.logging import logger
 from app.core.config import settings
+from app.core.logging import logger
 
 
 class AssetStorageNotConfigured(RuntimeError):
@@ -93,12 +93,14 @@ def _resolve_region() -> str:
 
 def _resolve_bucket(bucket_type: str = "private") -> str:
     """解析存储桶名称
-    
+
     Args:
         bucket_type: "private" 或 "public"
     """
     if bucket_type == "public":
-        return str(settings.OSS_PUBLIC_BUCKET or settings.OSS_PRIVATE_BUCKET or "").strip()
+        return str(
+            settings.OSS_PUBLIC_BUCKET or settings.OSS_PRIVATE_BUCKET or ""
+        ).strip()
     # 业务资产默认走私有桶，兜底公共桶
     return str(settings.OSS_PRIVATE_BUCKET or settings.OSS_PUBLIC_BUCKET or "").strip()
 
@@ -107,11 +109,11 @@ def _resolve_public_base_url() -> str:
     """获取公共桶基础 URL（用于 CDN 或 OSS 公共访问）"""
     if settings.OSS_PUBLIC_BASE_URL:
         return settings.OSS_PUBLIC_BASE_URL.rstrip("/")
-    
+
     # 根据 OSS 提供商构建默认 URL
     bucket = _resolve_bucket("public")
     endpoint = _resolve_endpoint()
-    
+
     if _oss_backend_kind() == "aliyun_oss":
         # 阿里云 OSS: https://bucket.endpoint
         return f"https://{bucket}.{endpoint}"
@@ -122,7 +124,7 @@ def _resolve_public_base_url() -> str:
 
 def build_public_asset_url(object_key: str) -> str:
     """构建公共桶资源的永久访问 URL
-    
+
     适用于头像等需要长期公开访问的资源
     """
     base_url = _resolve_public_base_url()
@@ -139,7 +141,12 @@ def _resolve_access_key_secret() -> str:
 
 
 def _oss_is_configured() -> bool:
-    required = (_resolve_endpoint(), _resolve_bucket(), _resolve_access_key_id(), _resolve_access_key_secret())
+    required = (
+        _resolve_endpoint(),
+        _resolve_bucket(),
+        _resolve_access_key_id(),
+        _resolve_access_key_secret(),
+    )
     return all(bool(str(v or "").strip()) for v in required)
 
 
@@ -208,7 +215,9 @@ async def store_asset_bytes(
     if not data:
         raise ValueError("empty asset bytes")
 
-    detected_type = content_type or mimetypes.guess_type("file")[0] or "application/octet-stream"
+    detected_type = (
+        content_type or mimetypes.guess_type("file")[0] or "application/octet-stream"
+    )
     ext = _guess_ext(detected_type)
     object_key = _build_object_key(ext=ext, kind=kind)
 
@@ -240,7 +249,9 @@ async def store_asset_bytes(
         else:
             await anyio.to_thread.run_sync(_put_s3)
 
-    return StoredAsset(object_key=object_key, content_type=detected_type, size_bytes=len(data))
+    return StoredAsset(
+        object_key=object_key, content_type=detected_type, size_bytes=len(data)
+    )
 
 
 async def store_asset_b64(
@@ -258,6 +269,7 @@ async def store_asset_b64(
 
 async def load_asset_bytes(object_key: str) -> tuple[bytes, str]:
     if get_effective_asset_storage_mode() == "local":
+
         def _get_local() -> tuple[bytes, str]:
             path = _local_path_for_object_key(object_key)
             body = path.read_bytes()
@@ -277,17 +289,25 @@ async def load_asset_bytes(object_key: str) -> tuple[bytes, str]:
         if not content_type:
             headers: Any = getattr(result, "headers", None)
             if isinstance(headers, dict):
-                content_type = str(headers.get("Content-Type") or headers.get("content-type") or "")
+                content_type = str(
+                    headers.get("Content-Type") or headers.get("content-type") or ""
+                )
         body = result.read()
         if not content_type:
-            content_type = mimetypes.guess_type(object_key)[0] or "application/octet-stream"
+            content_type = (
+                mimetypes.guess_type(object_key)[0] or "application/octet-stream"
+            )
         return body, content_type
 
     def _get_s3() -> tuple[bytes, str]:
         client = _create_s3_client()
         result = client.get_object(Bucket=_resolve_bucket(), Key=object_key)
         body_bytes: bytes = result["Body"].read()
-        content_type = str(result.get("ContentType") or mimetypes.guess_type(object_key)[0] or "application/octet-stream")
+        content_type = str(
+            result.get("ContentType")
+            or mimetypes.guess_type(object_key)[0]
+            or "application/octet-stream"
+        )
         return body_bytes, content_type
 
     if _oss_backend_kind() == "aliyun_oss":
@@ -302,11 +322,13 @@ def _hmac_signature(object_key: str, expires_at: int) -> str:
             secret = b"test-secret"
         else:
             raise AssetStorageNotConfigured("SECRET_KEY 未配置，无法生成签名")
-    msg = f"{object_key}\n{int(expires_at)}".encode("utf-8")
+    msg = f"{object_key}\n{int(expires_at)}".encode()
     return hmac.new(secret, msg, sha256).hexdigest()
 
 
-def _build_upload_headers(*, content_type: str, content_hash: str | None = None) -> dict[str, str]:
+def _build_upload_headers(
+    *, content_type: str, content_hash: str | None = None
+) -> dict[str, str]:
     headers = {"Content-Type": content_type}
     if content_hash:
         if _oss_backend_kind() == "aliyun_oss":
@@ -336,7 +358,9 @@ def build_signed_asset_url(
     if not api_base:
         api_base = "http://localhost:8000"
 
-    api_prefix = str(getattr(settings, "API_V1_STR", "/api/v1") or "/api/v1").rstrip("/")
+    api_prefix = str(getattr(settings, "API_V1_STR", "/api/v1") or "/api/v1").rstrip(
+        "/"
+    )
     if not api_prefix.startswith("/"):
         api_prefix = "/" + api_prefix
 
@@ -345,7 +369,9 @@ def build_signed_asset_url(
     sig = _hmac_signature(object_key, expires_at)
 
     safe_key = quote(_normalize_object_key(object_key), safe="/")
-    return f"{api_base}{api_prefix}/media/assets/{safe_key}?expires={expires_at}&sig={sig}"
+    return (
+        f"{api_base}{api_prefix}/media/assets/{safe_key}?expires={expires_at}&sig={sig}"
+    )
 
 
 def verify_signed_asset_request(object_key: str, *, expires: int, sig: str) -> None:
@@ -364,7 +390,9 @@ def verify_signed_asset_request(object_key: str, *, expires: int, sig: str) -> N
 
 async def head_asset_object(object_key: str) -> AssetObjectMeta:
     if get_effective_asset_storage_mode() == "local":
-        raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持获取对象元信息")
+        raise AssetStorageNotConfigured(
+            "ASSET_STORAGE_MODE=local 时不支持获取对象元信息"
+        )
     if not _oss_is_configured():
         raise AssetStorageNotConfigured("OSS_* 未配置，无法获取对象元信息")
 
@@ -378,8 +406,14 @@ async def head_asset_object(object_key: str) -> AssetObjectMeta:
         header_map: dict[str, Any] = {}
         if isinstance(headers, dict):
             header_map = {str(k).lower(): v for k, v in headers.items()}
-        content_length = getattr(result, "content_length", None) or header_map.get("content-length")
-        content_type = getattr(result, "content_type", None) or header_map.get("content-type") or ""
+        content_length = getattr(result, "content_length", None) or header_map.get(
+            "content-length"
+        )
+        content_type = (
+            getattr(result, "content_type", None)
+            or header_map.get("content-type")
+            or ""
+        )
         etag = getattr(result, "etag", None) or header_map.get("etag")
         metadata = _extract_metadata_from_headers(header_map)
         return AssetObjectMeta(
@@ -411,10 +445,12 @@ async def head_asset_object(object_key: str) -> AssetObjectMeta:
 
 async def delete_asset_object(object_key: str) -> None:
     if get_effective_asset_storage_mode() == "local":
+
         def _delete_local() -> None:
             path = _local_path_for_object_key(object_key)
             if path.exists():
                 path.unlink()
+
         await anyio.to_thread.run_sync(_delete_local)
         return
 
@@ -437,7 +473,9 @@ async def delete_asset_object(object_key: str) -> None:
 
 async def presign_asset_get_url(object_key: str, *, expires_seconds: int) -> str:
     if get_effective_asset_storage_mode() == "local":
-        raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持生成预签名 URL")
+        raise AssetStorageNotConfigured(
+            "ASSET_STORAGE_MODE=local 时不支持生成预签名 URL"
+        )
     if not _oss_is_configured():
         raise AssetStorageNotConfigured("OSS_* 未配置，无法生成预签名 URL")
     ttl = int(expires_seconds)
@@ -470,7 +508,7 @@ async def presign_asset_put_url(
     bucket_type: str = "private",
 ) -> tuple[str, str, int, dict[str, str]]:
     """生成上传预签名 URL
-    
+
     Args:
         content_type: 文件内容类型
         kind: 文件分类（如 avatar, attachment 等）
@@ -479,7 +517,9 @@ async def presign_asset_put_url(
         bucket_type: 存储桶类型，"private" 或 "public"
     """
     if get_effective_asset_storage_mode() == "local":
-        raise AssetStorageNotConfigured("ASSET_STORAGE_MODE=local 时不支持生成上传预签名 URL")
+        raise AssetStorageNotConfigured(
+            "ASSET_STORAGE_MODE=local 时不支持生成上传预签名 URL"
+        )
     if not _oss_is_configured():
         raise AssetStorageNotConfigured("OSS_* 未配置，无法生成上传预签名 URL")
     ttl = int(expires_seconds)
@@ -489,12 +529,15 @@ async def presign_asset_put_url(
     ext = _guess_ext(content_type)
     object_key = _build_object_key(ext=ext, kind=kind)
 
-    upload_headers = _build_upload_headers(content_type=content_type, content_hash=content_hash)
-    
+    upload_headers = _build_upload_headers(
+        content_type=content_type, content_hash=content_hash
+    )
+
     bucket = _resolve_bucket(bucket_type)
 
     def _sign_oss() -> str:
         import oss2
+
         auth = oss2.Auth(_resolve_access_key_id(), _resolve_access_key_secret())
         bucket_obj = oss2.Bucket(auth, _resolve_endpoint(), bucket)
         return bucket_obj.sign_url(
@@ -526,16 +569,16 @@ async def presign_asset_put_url(
 
 
 __all__ = [
+    "AssetObjectMeta",
     "AssetStorageNotConfigured",
     "SignedAssetUrlError",
     "StoredAsset",
-    "AssetObjectMeta",
-    "build_signed_asset_url",
     "build_public_asset_url",
+    "build_signed_asset_url",
+    "delete_asset_object",
     "get_effective_asset_storage_mode",
     "head_asset_object",
     "load_asset_bytes",
-    "delete_asset_object",
     "presign_asset_get_url",
     "presign_asset_put_url",
     "store_asset_b64",

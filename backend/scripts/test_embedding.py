@@ -44,7 +44,9 @@ def load_input(args: argparse.Namespace) -> list[str]:
     # stdin fallback
     data = sys.stdin.read().strip()
     if not data:
-        raise ValueError("No input provided. Use --text, --file or pipe content to stdin.")
+        raise ValueError(
+            "No input provided. Use --text, --file or pipe content to stdin."
+        )
     return [data]
 
 
@@ -71,7 +73,9 @@ def env_first(*names: str, fallback: str | None = None) -> str | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Probe an embeddings endpoint (OpenAI-compatible).")
+    parser = argparse.ArgumentParser(
+        description="Probe an embeddings endpoint (OpenAI-compatible)."
+    )
     parser.add_argument(
         "--url",
         default=env_first("TEST_EMBED_URL", "EMBED_API_URL", "TEST_API_URL"),
@@ -84,12 +88,16 @@ def main() -> int:
     )
     parser.add_argument(
         "--model",
-        default=env_first("TEST_EMBED_MODEL", "EMBED_MODEL", fallback="text-embedding-3-small"),
+        default=env_first(
+            "TEST_EMBED_MODEL", "EMBED_MODEL", fallback="text-embedding-3-small"
+        ),
         help="Model name (env: TEST_EMBED_MODEL / EMBED_MODEL)",
     )
     parser.add_argument("--text", help="Single text input")
     parser.add_argument("--file", help="Read text from file instead of --text")
-    parser.add_argument("--input-type", help="Optional input_type field (for asymmetric models)")
+    parser.add_argument(
+        "--input-type", help="Optional input_type field (for asymmetric models)"
+    )
     parser.add_argument(
         "--truncate",
         choices=["NONE", "START", "END"],
@@ -102,11 +110,15 @@ def main() -> int:
         default=os.getenv("TEST_EMBED_ENCODING_FORMAT"),
         help="Optional encoding_format (e.g. float/base64).",
     )
-    parser.add_argument("--timeout", type=float, default=20.0, help="HTTP timeout seconds")
+    parser.add_argument(
+        "--timeout", type=float, default=20.0, help="HTTP timeout seconds"
+    )
     args = parser.parse_args()
 
     if not args.url or not args.api_key:
-        print("Error: please provide --url and --api-key, or set TEST_EMBED_URL/TEST_EMBED_API_KEY")
+        print(
+            "Error: please provide --url and --api-key, or set TEST_EMBED_URL/TEST_EMBED_API_KEY"
+        )
         return 1
 
     inputs = load_input(args)

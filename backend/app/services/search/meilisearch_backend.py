@@ -57,7 +57,9 @@ class MeilisearchBackend(SearchBackend):
 
         url = f"{self._base_url}/indexes/{index_name}/search"
         try:
-            async with create_async_http_client(timeout=self._timeout, headers=self._headers) as client:
+            async with create_async_http_client(
+                timeout=self._timeout, headers=self._headers
+            ) as client:
                 resp = await client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json()
@@ -106,9 +108,9 @@ class MeilisearchBackend(SearchBackend):
         tags: list[str] | None,
     ) -> tuple[list[str], str | None]:
         offset = await self._resolve_offset(cursor)
-        filters = ["visibility = \"public\"", "status = \"published\""]
+        filters = ['visibility = "public"', 'status = "published"']
         if tags:
-            filters.extend([f"tags = \"{tag}\"" for tag in tags])
+            filters.extend([f'tags = "{tag}"' for tag in tags])
 
         data = await self._search(
             index_name=self._assistants_public_index(),
@@ -150,9 +152,9 @@ class MeilisearchBackend(SearchBackend):
         tags: list[str] | None,
     ) -> tuple[list[str], str | None]:
         offset = await self._resolve_offset(cursor)
-        filters = ["visibility = \"public\"", "status = \"published\""]
+        filters = ['visibility = "public"', 'status = "published"']
         if tags:
-            filters.extend([f"tags = \"{tag}\"" for tag in tags])
+            filters.extend([f'tags = "{tag}"' for tag in tags])
 
         data = await self._search(
             index_name=self._assistants_market_index(),

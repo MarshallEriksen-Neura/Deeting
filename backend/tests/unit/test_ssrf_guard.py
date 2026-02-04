@@ -2,7 +2,10 @@ import httpx
 import pytest
 
 from app.core import config
-from app.services.workflow.steps.upstream_call import UpstreamCallStep, UpstreamSecurityError
+from app.services.workflow.steps.upstream_call import (
+    UpstreamCallStep,
+    UpstreamSecurityError,
+)
 from app.utils.security import is_safe_upstream_url
 
 
@@ -62,7 +65,9 @@ async def test_request_with_redirects_blocks_unsafe_location(monkeypatch):
 async def test_request_with_redirects_follows_safe_location(monkeypatch):
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "start.example.com":
-            return httpx.Response(302, headers={"Location": "https://api.allowed.com/v1"})
+            return httpx.Response(
+                302, headers={"Location": "https://api.allowed.com/v1"}
+            )
         return httpx.Response(200, json={"ok": True})
 
     monkeypatch.setattr(

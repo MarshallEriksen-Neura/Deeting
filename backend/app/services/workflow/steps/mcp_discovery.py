@@ -3,19 +3,23 @@ import time
 from typing import TYPE_CHECKING
 
 from app.services.orchestrator.registry import step_registry
+from app.services.tools.tool_context_service import (
+    extract_last_user_message,
+    tool_context_service,
+)
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
-from app.services.tools.tool_context_service import extract_last_user_message, tool_context_service
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
 
 logger = logging.getLogger(__name__)
 
+
 @step_registry.register
 class McpDiscoveryStep(BaseStep):
     """
     MCP Discovery Step.
-    
+
     Responsibilities:
     - Identify the current user.
     - Fetch active MCP tools from UserMcpServer cache.
@@ -23,7 +27,7 @@ class McpDiscoveryStep(BaseStep):
     """
 
     name = "mcp_discovery"
-    # This should run after validation (to have user_id) 
+    # This should run after validation (to have user_id)
     # but before routing/template_render (to inject tools into the LLM request)
     depends_on = ["validation"]
 
@@ -47,7 +51,9 @@ class McpDiscoveryStep(BaseStep):
         if not query:
             req = ctx.get("validation", "request")
             if req and getattr(req, "messages", None):
-                query = extract_last_user_message([m.model_dump() for m in req.messages])
+                query = extract_last_user_message(
+                    [m.model_dump() for m in req.messages]
+                )
 
         try:
             build_start = time.perf_counter()
@@ -73,23 +79,22 @@ class McpDiscoveryStep(BaseStep):
         if final_tools:
             # 3. Inject into context
             ctx.set("mcp_discovery", "tools", final_tools)
-            
-            logger.debug(f"McpDiscoveryStep: Injected {len(final_tools)} tools (Core + Dynamic)")
-            
+
+            logger.debug(
+                f"McpDiscoveryStep: Injected {len(final_tools)} tools (Core + Dynamic)"
+            )
+
             ctx.emit_status(
                 stage="discovery",
                 step=self.name,
                 state="success",
                 code="mcp.tools.discovered",
-                meta={"count": len(final_tools)}
+                meta={"count": len(final_tools)},
             )
-        
+
         logger.info(
             "McpDiscoveryStep: end trace_id=%s duration_ms=%.2f",
             trace_id,
             (time.perf_counter() - start_time) * 1000,
         )
-        return StepResult(
-            status=StepStatus.SUCCESS,
-            data={"count": len(final_tools)}
-        )
+        return StepResult(status=StepStatus.SUCCESS, data={"count": len(final_tools)})

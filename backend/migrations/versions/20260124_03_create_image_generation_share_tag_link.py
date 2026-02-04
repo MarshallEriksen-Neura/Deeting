@@ -7,17 +7,14 @@ Create Date: 2026-01-24
 
 from __future__ import annotations
 
-from typing import Union
-
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "20260124_03_create_image_generation_share_tag_link"
-down_revision: Union[str, None] = "20260124_02_create_image_generation_share_table"
-branch_labels: Union[str, None] = None
-depends_on: Union[str, None] = None
+down_revision: str | None = "20260124_02_create_image_generation_share_table"
+branch_labels: str | None = None
+depends_on: str | None = None
 
 
 def upgrade() -> None:

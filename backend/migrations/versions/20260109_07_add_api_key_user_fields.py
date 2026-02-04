@@ -5,8 +5,9 @@ Revision ID: 20260109_07_add_api_key_user_fields
 Revises: 20260109_06_add_unified_model_id
 Create Date: 2026-01-09 00:00:00.000000
 """
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260109_07_add_api_key_user_fields"
@@ -38,7 +39,12 @@ def upgrade() -> None:
     )
     op.add_column(
         "api_key",
-        sa.Column("enable_logging", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column(
+            "enable_logging",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
+        ),
     )
 
 

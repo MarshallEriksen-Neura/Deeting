@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from app.core.cache import cache
 
@@ -71,13 +71,22 @@ class DistributedLock:
                 )
                 if acquired:
                     self._acquired = True
-                    logger.debug("distributed_lock_acquired key=%s value=%s", self.key, self.lock_value)
+                    logger.debug(
+                        "distributed_lock_acquired key=%s value=%s",
+                        self.key,
+                        self.lock_value,
+                    )
                     return True
 
                 if attempt < self.retry_times - 1:
                     await asyncio.sleep(self.retry_delay)
             except Exception as exc:
-                logger.warning("distributed_lock_acquire_error key=%s attempt=%d err=%s", self.key, attempt, exc)
+                logger.warning(
+                    "distributed_lock_acquire_error key=%s attempt=%d err=%s",
+                    self.key,
+                    attempt,
+                    exc,
+                )
                 if attempt < self.retry_times - 1:
                     await asyncio.sleep(self.retry_delay)
 
@@ -112,9 +121,17 @@ class DistributedLock:
             result = await redis_client.eval(lua_script, 1, full_key, self.lock_value)
             released = bool(result)
             if released:
-                logger.debug("distributed_lock_released key=%s value=%s", self.key, self.lock_value)
+                logger.debug(
+                    "distributed_lock_released key=%s value=%s",
+                    self.key,
+                    self.lock_value,
+                )
             else:
-                logger.warning("distributed_lock_release_failed key=%s value=%s", self.key, self.lock_value)
+                logger.warning(
+                    "distributed_lock_release_failed key=%s value=%s",
+                    self.key,
+                    self.lock_value,
+                )
             self._acquired = False
             return released
         except Exception as exc:
@@ -150,7 +167,9 @@ class DistributedLock:
             end
             """
             full_key = cache._make_key(self.key)
-            result = await redis_client.eval(lua_script, 1, full_key, self.lock_value, ttl)
+            result = await redis_client.eval(
+                lua_script, 1, full_key, self.lock_value, ttl
+            )
             extended = bool(result)
             if extended:
                 logger.debug("distributed_lock_extended key=%s ttl=%d", self.key, ttl)

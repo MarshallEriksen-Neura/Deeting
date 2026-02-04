@@ -15,10 +15,10 @@ from sqlalchemy import (
 )
 from sqlalchemy import (
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
-    Float,
     String,
     Text,
     UniqueConstraint,
@@ -123,7 +123,7 @@ class Assistant(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     # 关系
-    versions: Mapped[list["AssistantVersion"]] = relationship(
+    versions: Mapped[list[AssistantVersion]] = relationship(
         "AssistantVersion",
         back_populates="assistant",
         foreign_keys="AssistantVersion.assistant_id",
@@ -211,7 +211,7 @@ class AssistantVersion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="该版本发布时间（与主表状态一致时填写）",
     )
 
-    assistant: Mapped["Assistant"] = relationship(
+    assistant: Mapped[Assistant] = relationship(
         "Assistant",
         back_populates="versions",
         foreign_keys="AssistantVersion.assistant_id",

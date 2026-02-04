@@ -7,7 +7,10 @@ from fastapi_pagination.cursor import CursorPage, CursorParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.schemas.image_generation import ImageGenerationShareDetail, ImageGenerationShareItem
+from app.schemas.image_generation import (
+    ImageGenerationShareDetail,
+    ImageGenerationShareItem,
+)
 from app.services.image_generation.share_service import ImageGenerationShareService
 
 router = APIRouter(tags=["Public Image Share"])
@@ -47,7 +50,9 @@ async def get_public_image_share(
         base_url=str(request.base_url).rstrip("/") if request else None,
     )
     if not detail:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="share not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="share not found"
+        )
     return detail
 
 

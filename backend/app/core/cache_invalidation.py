@@ -124,7 +124,9 @@ class CacheInvalidator:
         await self._delete_keys([CacheKeys.limit(preset_id)])
         await self.bump_version()
 
-    async def on_api_key_changed(self, key_id: str, tenant_id: str | None = None) -> None:
+    async def on_api_key_changed(
+        self, key_id: str, tenant_id: str | None = None
+    ) -> None:
         keys = [CacheKeys.api_key(key_id), CacheKeys.api_key_revoked(key_id)]
         if tenant_id:
             keys.append(CacheKeys.api_key_list(tenant_id))
@@ -162,7 +164,9 @@ class CacheInvalidator:
     async def on_bandit_updated(self, preset_item_id: str | None = None) -> None:
         """Bandit 臂状态变更或策略参数更新时失效缓存"""
         if preset_item_id:
-            await self._delete_keys([CacheKeys.bandit_state("router:llm", preset_item_id)])
+            await self._delete_keys(
+                [CacheKeys.bandit_state("router:llm", preset_item_id)]
+            )
         else:
             await self._clear_prefix("bandit:")
         await self.bump_version()
@@ -200,7 +204,9 @@ class CacheInvalidator:
         await self._clear_prefix(f"{CacheKeys.prefix}:pi:list:")
         await self.bump_version()
 
-    async def on_provider_credentials_changed(self, instance_id: str | None = None) -> None:
+    async def on_provider_credentials_changed(
+        self, instance_id: str | None = None
+    ) -> None:
         """
         凭证变更后清理对应实例的凭证列表缓存。
         """
@@ -210,7 +216,9 @@ class CacheInvalidator:
         await self._delete_keys(keys)
         await self.bump_version()
 
-    async def on_provider_credentials_changed(self, instance_id: str | None = None) -> None:
+    async def on_provider_credentials_changed(
+        self, instance_id: str | None = None
+    ) -> None:
         """
         多凭证变更后，失效凭证列表缓存与路由候选缓存。
         """
@@ -255,7 +263,11 @@ class CacheInvalidator:
             return 0
         try:
             version = await redis.incr(cache._make_key(self.version_key))
-            await redis.set(cache._make_key(self.updated_at_key), Datetime.now().isoformat(), ex=24 * 3600)
+            await redis.set(
+                cache._make_key(self.updated_at_key),
+                Datetime.now().isoformat(),
+                ex=24 * 3600,
+            )
             return version
         except Exception as exc:
             logger.warning(f"cache_bump_version_failed exc={exc}")

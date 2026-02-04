@@ -64,6 +64,7 @@ class ConversationLoadStep(BaseStep):
         if ctx.db_session is not None:
             try:
                 from sqlalchemy import select
+
                 from app.models.conversation import ConversationSession
 
                 session_uuid = uuid.UUID(session_id)
@@ -87,7 +88,9 @@ class ConversationLoadStep(BaseStep):
             conv_service = ConversationService()
         except Exception as exc:
             logger.warning(f"ConversationLoad skipped (redis unavailable): {exc}")
-            return StepResult(status=StepStatus.SUCCESS, data={"session_id": session_id})
+            return StepResult(
+                status=StepStatus.SUCCESS, data={"session_id": session_id}
+            )
 
         window = await conv_service.load_window(session_id)
         window_messages_raw: list[dict[str, Any]] = window.get("messages", []) or []

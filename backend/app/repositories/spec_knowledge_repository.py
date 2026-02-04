@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import select
 
 from app.models.spec_knowledge import SpecKnowledgeCandidate
@@ -21,7 +19,7 @@ class SpecKnowledgeCandidateRepository(BaseRepository[SpecKnowledgeCandidate]):
     def build_query(
         self,
         *,
-        status: Optional[str] = None,
+        status: str | None = None,
     ):
         stmt = select(SpecKnowledgeCandidate)
         if status:

@@ -16,21 +16,26 @@ from app.repositories import (
     AssistantInstallRepository,
     AssistantMarketRepository,
     AssistantRepository,
-    AssistantTagRepository,
     AssistantTagLinkRepository,
+    AssistantTagRepository,
     ReviewTaskRepository,
 )
 from app.schemas import (
     AssistantReviewDecisionRequest,
-    ReviewTaskDTO,
-    AssistantTagDTO,
     AssistantTagCreateRequest,
+    AssistantTagDTO,
     MessageResponse,
+    ReviewTaskDTO,
 )
-from app.services.assistant.assistant_market_service import AssistantMarketService, ASSISTANT_MARKET_ENTITY
+from app.services.assistant.assistant_market_service import (
+    ASSISTANT_MARKET_ENTITY,
+    AssistantMarketService,
+)
 from app.services.assistant.assistant_tag_service import AssistantTagService
 
-router = APIRouter(prefix="/admin/assistant-reviews", tags=["Admin - Assistant Reviews"])
+router = APIRouter(
+    prefix="/admin/assistant-reviews", tags=["Admin - Assistant Reviews"]
+)
 
 
 def get_market_service(db: AsyncSession = Depends(get_db)) -> AssistantMarketService:

@@ -113,7 +113,7 @@ class TransactionAwareCelery:
         """注册事务钩子"""
 
         @event.listens_for(self.session.sync_session, "after_commit", once=True)
-        def _on_commit(_session):  # noqa: ANN001
+        def _on_commit(_session):
             """事务提交后执行所有待处理任务"""
             if not celery_is_available():
                 self._pending_tasks.clear()
@@ -151,7 +151,7 @@ class TransactionAwareCelery:
             self._pending_tasks.clear()
 
         @event.listens_for(self.session.sync_session, "after_rollback", once=True)
-        def _on_rollback(_session):  # noqa: ANN001
+        def _on_rollback(_session):
             """事务回滚时清空待处理任务"""
             if self._pending_tasks:
                 logger.info(

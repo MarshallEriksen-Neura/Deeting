@@ -7,7 +7,9 @@ from sqlalchemy.pool import StaticPool
 
 from app.models import Base
 from app.models.user import User
-from app.services.notifications.notification_inbox_service import NotificationInboxService
+from app.services.notifications.notification_inbox_service import (
+    NotificationInboxService,
+)
 from app.services.notifications.notification_service import NotificationService
 
 

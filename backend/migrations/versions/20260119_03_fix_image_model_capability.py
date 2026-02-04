@@ -13,7 +13,6 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 # revision identifiers, used by Alembic.
 revision = "20260119_03_fix_image_model_capability"
 down_revision = "20260119_02_seed_image_models_openai_compat"
@@ -21,7 +20,9 @@ branch_labels = None
 depends_on = None
 
 
-IMAGE_MODEL_PATTERN = re.compile(r"(dall[-_]?e|sdxl?|flux|image|img|pixart|kolors|kandinsky)", re.I)
+IMAGE_MODEL_PATTERN = re.compile(
+    r"(dall[-_]?e|sdxl?|flux|image|img|pixart|kolors|kandinsky)", re.I
+)
 
 
 provider_model = sa.table(

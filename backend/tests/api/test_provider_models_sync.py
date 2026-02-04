@@ -3,8 +3,8 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.services.providers import provider_instance_service
 from app.models.provider_preset import ProviderPreset
+from app.services.providers import provider_instance_service
 from tests.api.conftest import AsyncSessionLocal
 
 DEFAULT_CAPABILITY_CONFIGS = {
@@ -31,7 +31,9 @@ DEFAULT_CAPABILITY_CONFIGS = {
 
 async def _seed_preset(session, slug: str):
     existing = (
-        await session.execute(select(ProviderPreset.slug).where(ProviderPreset.slug == slug))
+        await session.execute(
+            select(ProviderPreset.slug).where(ProviderPreset.slug == slug)
+        )
     ).scalar_one_or_none()
     if existing:
         return

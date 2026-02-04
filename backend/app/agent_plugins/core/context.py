@@ -8,7 +8,10 @@ from app.agent_plugins.core.interfaces import PluginContext
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
-from app.services.vector.qdrant_user_service import QdrantUserVectorService, VectorStoreClient
+from app.services.vector.qdrant_user_service import (
+    QdrantUserVectorService,
+    VectorStoreClient,
+)
 
 
 class ConcretePluginContext(PluginContext):
@@ -21,7 +24,7 @@ class ConcretePluginContext(PluginContext):
         self._plugin_name = plugin_name
         self._plugin_id = plugin_id
         self._user_id = user_id
-        
+
         # Loguru uses bind() to add context fields.
         # We bind 'plugin' so logs from this context have {plugin: name}
         self._logger = root_logger.bind(plugin=plugin_name, user_id=str(user_id))
@@ -67,12 +70,14 @@ class ConcretePluginContext(PluginContext):
         """
         if self._memory_client:
             return self._memory_client
-            
+
         if not qdrant_is_configured():
             # In a real app, maybe return an InMemoryVectorStore or raise Error
             # For now, raise Error to prompt configuration
-            raise RuntimeError("Qdrant is not configured. Plugin memory is unavailable.")
-            
+            raise RuntimeError(
+                "Qdrant is not configured. Plugin memory is unavailable."
+            )
+
         raw_client = get_qdrant_client()
 
         self._memory_client = QdrantUserVectorService(

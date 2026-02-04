@@ -5,8 +5,8 @@ import hashlib
 import logging
 from datetime import timedelta
 from typing import Any
-from uuid import UUID
 from urllib.parse import urlparse
+from uuid import UUID
 
 import httpx
 from fastapi_pagination.cursor import CursorPage, CursorParams
@@ -20,16 +20,24 @@ from app.models.image_generation import (
     ImageGenerationOutput,
     ImageGenerationStatus,
 )
-from app.repositories.image_generation_output_repository import ImageGenerationOutputRepository
 from app.repositories.generation_task_repository import GenerationTaskRepository
+from app.repositories.image_generation_output_repository import (
+    ImageGenerationOutputRepository,
+)
 from app.repositories.media_asset_repository import MediaAssetRepository
 from app.repositories.provider_instance_repository import ProviderModelRepository
-from app.schemas.image_generation import ImageGenerationOutputItem, ImageGenerationTaskListItem
-from app.services.system import CancelService
-from app.services.image_generation.prompt_security import PromptCipher, build_prompt_hash
-from app.services.oss.asset_storage_service import store_asset_bytes
+from app.schemas.image_generation import (
+    ImageGenerationOutputItem,
+    ImageGenerationTaskListItem,
+)
+from app.services.image_generation.prompt_security import (
+    PromptCipher,
+    build_prompt_hash,
+)
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import get_internal_orchestrator
+from app.services.oss.asset_storage_service import store_asset_bytes
+from app.services.system import CancelService
 from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
@@ -140,7 +148,9 @@ class ImageGenerationService:
         result = await orchestrator.execute(ctx)
 
         if await self._is_task_canceled(task.id):
-            logger.info("image_generation_task_canceled_before_finalize task_id=%s", task.id)
+            logger.info(
+                "image_generation_task_canceled_before_finalize task_id=%s", task.id
+            )
             return
 
         if not result.success or not ctx.is_success:
@@ -157,7 +167,9 @@ class ImageGenerationService:
             return
 
         if await self._is_task_canceled(task.id):
-            logger.info("image_generation_task_canceled_before_persist task_id=%s", task.id)
+            logger.info(
+                "image_generation_task_canceled_before_persist task_id=%s", task.id
+            )
             return
 
         response = (
@@ -181,7 +193,9 @@ class ImageGenerationService:
             return
 
         if await self._is_task_canceled(task.id):
-            logger.info("image_generation_task_canceled_before_commit task_id=%s", task.id)
+            logger.info(
+                "image_generation_task_canceled_before_commit task_id=%s", task.id
+            )
             return
 
         pricing = ctx.get("routing", "pricing_config") or {}
@@ -240,8 +254,12 @@ class ImageGenerationService:
         )
         return await self.task_repo.get(task.id)
 
-    async def cancel_task_by_request_id(self, *, user_id, request_id: str) -> Any | None:
-        task = await self.task_repo.get_by_request_id(user_id=user_id, request_id=request_id)
+    async def cancel_task_by_request_id(
+        self, *, user_id, request_id: str
+    ) -> Any | None:
+        task = await self.task_repo.get_by_request_id(
+            user_id=user_id, request_id=request_id
+        )
         if not task:
             return None
         status_value = _status_value(task.status)
@@ -297,7 +315,9 @@ class ImageGenerationService:
     async def list_outputs(self, task_id) -> list[ImageGenerationOutput]:
         return await self.output_repo.list_by_task(task_id)
 
-    async def build_signed_outputs(self, task_id, base_url: str | None) -> list[dict[str, Any]]:
+    async def build_signed_outputs(
+        self, task_id, base_url: str | None
+    ) -> list[dict[str, Any]]:
         outputs = await self.output_repo.list_by_task(task_id)
         result: list[dict[str, Any]] = []
         for output in outputs:
@@ -308,13 +328,19 @@ class ImageGenerationService:
                     expire_at = asset.expire_at
                     if expire_at and expire_at.tzinfo is None:
                         from datetime import UTC
+
                         expire_at = expire_at.replace(tzinfo=UTC)
-                    
+
                     if expire_at and expire_at <= Datetime.now():
                         asset_url = None
                     else:
-                        from app.services.oss.asset_storage_service import build_signed_asset_url
-                        asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                        from app.services.oss.asset_storage_service import (
+                            build_signed_asset_url,
+                        )
+
+                        asset_url = build_signed_asset_url(
+                            asset.object_key, base_url=base_url
+                        )
             result.append(
                 {
                     "output_index": output.output_index,
@@ -371,7 +397,9 @@ class ImageGenerationService:
                 )
             return items
 
-        return await paginate(self.task_repo.session, stmt, params=params, transformer=_transform)
+        return await paginate(
+            self.task_repo.session, stmt, params=params, transformer=_transform
+        )
 
     async def _build_task_previews(
         self,
@@ -392,7 +420,11 @@ class ImageGenerationService:
             if output.task_id not in first_outputs:
                 first_outputs[output.task_id] = output
 
-        asset_ids = [output.media_asset_id for output in first_outputs.values() if output.media_asset_id]
+        asset_ids = [
+            output.media_asset_id
+            for output in first_outputs.values()
+            if output.media_asset_id
+        ]
         assets = await self.asset_repo.list_by_ids(asset_ids)
         asset_map = {asset.id: asset for asset in assets}
 
@@ -408,10 +440,13 @@ class ImageGenerationService:
                     expire_at = asset.expire_at
                     if expire_at and expire_at.tzinfo is None:
                         from datetime import UTC
+
                         expire_at = expire_at.replace(tzinfo=UTC)
-                    
+
                     if not expire_at or expire_at > now:
-                        asset_url = build_signed_asset_url(asset.object_key, base_url=base_url)
+                        asset_url = build_signed_asset_url(
+                            asset.object_key, base_url=base_url
+                        )
             preview_map[task_id] = ImageGenerationOutputItem(
                 output_index=output.output_index,
                 asset_url=asset_url,
@@ -424,7 +459,9 @@ class ImageGenerationService:
             )
         return preview_map
 
-    async def _persist_outputs(self, task, response: dict[str, Any]) -> list[ImageGenerationOutput]:
+    async def _persist_outputs(
+        self, task, response: dict[str, Any]
+    ) -> list[ImageGenerationOutput]:
         items = _extract_image_items(response)
         outputs: list[ImageGenerationOutput] = []
         for index, item in enumerate(items):
@@ -477,7 +514,10 @@ class ImageGenerationService:
             fetched = await _fetch_image(source_url)
             if not fetched:
                 # 下载失败，回退到仅存储 source_url
-                logger.warning("failed to fetch image from url=%s; fallback to source_url", source_url)
+                logger.warning(
+                    "failed to fetch image from url=%s; fallback to source_url",
+                    source_url,
+                )
                 return {
                     "asset_id": None,
                     "content_type": None,

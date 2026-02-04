@@ -19,7 +19,9 @@ from app.models import Base  # noqa: E402
 target_metadata = Base.metadata
 
 
-def _ensure_alembic_version_num_length(connection: sa.Connection, length: int = 128) -> None:
+def _ensure_alembic_version_num_length(
+    connection: sa.Connection, length: int = 128
+) -> None:
     """
     兼容历史数据库：alembic_version.version_num 早期可能是 VARCHAR(32)，
     当 revision id 长于 32（例如 0006_add_api_key_provider_restrictions）会导致迁移在更新版本号时直接失败。
@@ -29,18 +31,14 @@ def _ensure_alembic_version_num_length(connection: sa.Connection, length: int = 
         return
 
     try:
-        current_len = connection.execute(
-            sa.text(
-                """
+        current_len = connection.execute(sa.text("""
                 SELECT character_maximum_length
                 FROM information_schema.columns
                 WHERE table_name = 'alembic_version'
                   AND column_name = 'version_num'
                 ORDER BY table_schema
                 LIMIT 1
-                """
-            )
-        ).scalar_one_or_none()
+                """)).scalar_one_or_none()
     except Exception:
         # 表不存在/权限不足等情况：交给 Alembic 正常创建或后续报错处理
         return
@@ -49,7 +47,9 @@ def _ensure_alembic_version_num_length(connection: sa.Connection, length: int = 
         return
 
     connection.execute(
-        sa.text(f"ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR({int(length)})")
+        sa.text(
+            f"ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR({int(length)})"
+        )
     )
 
 
@@ -63,7 +63,9 @@ def _configure_alembic() -> AlembicConfig:
     # 但本项目在应用进程内有自己的 logging 初始化逻辑，若在进程启动时
     # 通过 command.upgrade() 触发迁移，再调用 fileConfig() 可能会污染/覆盖
     # 应用日志配置。因此仅在通过 Alembic CLI 执行时启用它。
-    if cfg.config_file_name is not None and pathlib.Path(sys.argv[0]).name.lower().endswith("alembic"):
+    if cfg.config_file_name is not None and pathlib.Path(
+        sys.argv[0]
+    ).name.lower().endswith("alembic"):
         fileConfig(cfg.config_file_name, disable_existing_loggers=False)
 
     db_url = settings.DATABASE_URL

@@ -12,5 +12,5 @@ __all__ = [
     "get_db",
     "logger",
     "settings",
-    "setup_logging"
+    "setup_logging",
 ]

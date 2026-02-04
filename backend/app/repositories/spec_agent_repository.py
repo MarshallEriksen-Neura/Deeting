@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import Any
 
-from sqlalchemy import select, update, func, desc
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.spec_agent import SpecPlan, SpecExecutionLog, SpecWorkerSession
+from app.models.spec_agent import SpecExecutionLog, SpecPlan, SpecWorkerSession
 from app.utils.time_utils import Datetime
+
 
 class SpecAgentRepository:
     def __init__(self, session: AsyncSession):
@@ -20,9 +21,9 @@ class SpecAgentRepository:
         self,
         user_id: uuid.UUID,
         project_name: str,
-        manifest_data: Dict[str, Any],
+        manifest_data: dict[str, Any],
         conversation_session_id: uuid.UUID | None = None,
-        priority: int = 0
+        priority: int = 0,
     ) -> SpecPlan:
         plan = SpecPlan(
             user_id=user_id,
@@ -31,38 +32,50 @@ class SpecAgentRepository:
             conversation_session_id=conversation_session_id,
             priority=priority,
             status="DRAFT",
-            version=1
+            version=1,
         )
         self.session.add(plan)
         await self.session.flush()
         await self.session.refresh(plan)
         return plan
 
-    async def get_plan(self, plan_id: uuid.UUID) -> Optional[SpecPlan]:
+    async def get_plan(self, plan_id: uuid.UUID) -> SpecPlan | None:
         return await self.session.get(SpecPlan, plan_id)
 
     async def update_plan_status(self, plan_id: uuid.UUID, status: str) -> None:
         stmt = update(SpecPlan).where(SpecPlan.id == plan_id).values(status=status)
         await self.session.execute(stmt)
 
-    async def update_plan_context(self, plan_id: uuid.UUID, context: Dict[str, Any]) -> None:
+    async def update_plan_context(
+        self, plan_id: uuid.UUID, context: dict[str, Any]
+    ) -> None:
         """Fully replace or merge context. Here we assume replace or caller handles merge."""
-        stmt = update(SpecPlan).where(SpecPlan.id == plan_id).values(current_context=context)
+        stmt = (
+            update(SpecPlan)
+            .where(SpecPlan.id == plan_id)
+            .values(current_context=context)
+        )
         await self.session.execute(stmt)
 
-    async def update_plan_manifest(self, plan_id: uuid.UUID, manifest_data: Dict[str, Any]) -> None:
-        stmt = update(SpecPlan).where(SpecPlan.id == plan_id).values(manifest_data=manifest_data)
+    async def update_plan_manifest(
+        self, plan_id: uuid.UUID, manifest_data: dict[str, Any]
+    ) -> None:
+        stmt = (
+            update(SpecPlan)
+            .where(SpecPlan.id == plan_id)
+            .values(manifest_data=manifest_data)
+        )
         await self.session.execute(stmt)
 
     # ==========================================
     # Execution Log (State Machine)
     # ==========================================
     async def init_node_execution(
-        self, 
-        plan_id: uuid.UUID, 
-        node_id: str, 
-        input_snapshot: Dict[str, Any],
-        worker_info: str = "generic_worker"
+        self,
+        plan_id: uuid.UUID,
+        node_id: str,
+        input_snapshot: dict[str, Any],
+        worker_info: str = "generic_worker",
     ) -> SpecExecutionLog:
         """
         Creates a new log entry for a node start.
@@ -75,7 +88,7 @@ class SpecAgentRepository:
             status="RUNNING",
             input_snapshot=input_snapshot,
             worker_info=worker_info,
-            started_at=Datetime.now()
+            started_at=Datetime.now(),
         )
         self.session.add(log)
         await self.session.flush()
@@ -85,16 +98,13 @@ class SpecAgentRepository:
     async def finish_node_execution(
         self,
         log_id: uuid.UUID,
-        status: str, # SUCCESS, FAILED, WAITING_APPROVAL
-        output_data: Optional[Dict[str, Any]] = None,
-        error_message: Optional[str] = None,
-        raw_response: Optional[Any] = None,
-        worker_snapshot: Optional[Dict[str, Any]] = None,
+        status: str,  # SUCCESS, FAILED, WAITING_APPROVAL
+        output_data: dict[str, Any] | None = None,
+        error_message: str | None = None,
+        raw_response: Any | None = None,
+        worker_snapshot: dict[str, Any] | None = None,
     ) -> None:
-        values = {
-            "status": status,
-            "completed_at": Datetime.now()
-        }
+        values = {"status": status, "completed_at": Datetime.now()}
         if output_data is not None:
             values["output_data"] = output_data
         if error_message is not None:
@@ -104,10 +114,14 @@ class SpecAgentRepository:
         if worker_snapshot is not None:
             values["worker_snapshot"] = worker_snapshot
 
-        stmt = update(SpecExecutionLog).where(SpecExecutionLog.id == log_id).values(**values)
+        stmt = (
+            update(SpecExecutionLog)
+            .where(SpecExecutionLog.id == log_id)
+            .values(**values)
+        )
         await self.session.execute(stmt)
 
-    async def get_latest_node_logs(self, plan_id: uuid.UUID) -> List[SpecExecutionLog]:
+    async def get_latest_node_logs(self, plan_id: uuid.UUID) -> list[SpecExecutionLog]:
         """
         Get the latest log entry for each node in the plan.
         Useful for rebuilding context or UI display.
@@ -140,30 +154,30 @@ class SpecAgentRepository:
 
     async def get_latest_log_for_node(
         self, plan_id: uuid.UUID, node_id: str
-    ) -> Optional[SpecExecutionLog]:
+    ) -> SpecExecutionLog | None:
         stmt = (
             select(SpecExecutionLog)
-            .where(SpecExecutionLog.plan_id == plan_id, SpecExecutionLog.node_id == node_id)
+            .where(
+                SpecExecutionLog.plan_id == plan_id, SpecExecutionLog.node_id == node_id
+            )
             .order_by(desc(SpecExecutionLog.created_at))
             .limit(1)
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def get_pending_nodes(self, plan_id: uuid.UUID) -> List[SpecExecutionLog]:
+    async def get_pending_nodes(self, plan_id: uuid.UUID) -> list[SpecExecutionLog]:
         """Find nodes that are PENDING or WAITING_APPROVAL"""
         latest_logs = await self.get_latest_node_logs(plan_id)
         return [
-            log
-            for log in latest_logs
-            if log.status in ("PENDING", "WAITING_APPROVAL")
+            log for log in latest_logs if log.status in ("PENDING", "WAITING_APPROVAL")
         ]
 
     async def mark_node_skipped(
         self,
         plan_id: uuid.UUID,
         node_id: str,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> SpecExecutionLog:
         log = SpecExecutionLog(
             plan_id=plan_id,
@@ -182,7 +196,7 @@ class SpecAgentRepository:
         self,
         plan_id: uuid.UUID,
         node_id: str,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> SpecExecutionLog:
         log = SpecExecutionLog(
             plan_id=plan_id,
@@ -205,9 +219,11 @@ class SpecAgentRepository:
         await self.session.refresh(session)
         return session
 
-    async def append_session_thought(self, session_id: uuid.UUID, thought_step: Dict[str, Any]) -> None:
+    async def append_session_thought(
+        self, session_id: uuid.UUID, thought_step: dict[str, Any]
+    ) -> None:
         """
-        Appends a step to the thought_trace. 
+        Appends a step to the thought_trace.
         Note: JSONB append can be tricky in generic SQL, we might need to read-modify-write if not using specific PG operators.
         For safety/compatibility, we read-modify-write here or trust the session object is attached.
         """
@@ -218,25 +234,31 @@ class SpecAgentRepository:
             current_trace.append(thought_step)
             session.thought_trace = current_trace
             # session.total_tokens += ... (if we had token usage)
-            
-            # Auto-save is handled by flush/commit at upper layer usually, 
+
+            # Auto-save is handled by flush/commit at upper layer usually,
             # but here we might want to be explicit if streaming.
 
-    async def append_session_message(self, session_id: uuid.UUID, message: Dict[str, Any]) -> None:
+    async def append_session_message(
+        self, session_id: uuid.UUID, message: dict[str, Any]
+    ) -> None:
         session = await self.session.get(SpecWorkerSession, session_id)
         if session:
-            current_messages = list(session.internal_messages) if session.internal_messages else []
+            current_messages = (
+                list(session.internal_messages) if session.internal_messages else []
+            )
             current_messages.append(message)
             session.internal_messages = current_messages
 
-    async def get_sessions_by_log_ids(self, log_ids: List[uuid.UUID]) -> Dict[uuid.UUID, SpecWorkerSession]:
+    async def get_sessions_by_log_ids(
+        self, log_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, SpecWorkerSession]:
         """
         Batch retrieve the latest session for each log_id.
         Usually 1 log has 1 session, but if multiple, we take the latest.
         """
         if not log_ids:
             return {}
-        
+
         stmt = (
             select(SpecWorkerSession)
             .where(SpecWorkerSession.log_id.in_(log_ids))
@@ -244,9 +266,9 @@ class SpecAgentRepository:
         )
         result = await self.session.execute(stmt)
         sessions = result.scalars().all()
-        
+
         # Map log_id -> session (latest overwrites earlier if multiple, though usually 1:1)
-        # Reversing first to ensure first found (latest) keeps its place if we iterate? 
+        # Reversing first to ensure first found (latest) keeps its place if we iterate?
         # Actually sessions are ordered by desc, so the first one we see for a log_id is the latest.
         session_map = {}
         for s in sessions:

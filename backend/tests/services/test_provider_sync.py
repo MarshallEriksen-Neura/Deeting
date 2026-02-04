@@ -1,9 +1,10 @@
 import uuid
+
 import pytest
 
-from app.models import Base, ProviderModel, ProviderInstance, ProviderPreset
-from app.services.providers.provider_instance_service import ProviderInstanceService
+from app.models import Base, ProviderModel, ProviderPreset
 from app.repositories.provider_instance_repository import ProviderModelRepository
+from app.services.providers.provider_instance_service import ProviderInstanceService
 from tests.api.conftest import AsyncSessionLocal, engine
 
 DEFAULT_CAPABILITY_CONFIGS = {
@@ -65,10 +66,18 @@ async def ensure_tables():
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def _seed_preset(session, *, slug: str, name: str, base_url: str) -> ProviderPreset:
+async def _seed_preset(
+    session, *, slug: str, name: str, base_url: str
+) -> ProviderPreset:
     existing = (
-        await session.execute(select(ProviderPreset).where(ProviderPreset.slug == slug))
-    ).scalars().first()
+        (
+            await session.execute(
+                select(ProviderPreset).where(ProviderPreset.slug == slug)
+            )
+        )
+        .scalars()
+        .first()
+    )
     if existing:
         return existing
     preset = ProviderPreset(

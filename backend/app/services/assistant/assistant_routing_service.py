@@ -70,7 +70,9 @@ class AssistantRoutingService:
                     "last_feedback_at": state.last_feedback_at,
                 }
             )
-        filtered = self._filter_report_items(items, min_trials=min_trials, min_rating=min_rating)
+        filtered = self._filter_report_items(
+            items, min_trials=min_trials, min_rating=min_rating
+        )
         sorted_items = self._sort_report_items(filtered, sort=sort)
         if limit is not None:
             return sorted_items[: max(limit, 0)]
@@ -85,20 +87,34 @@ class AssistantRoutingService:
     ) -> list[dict]:
         filtered = items
         if min_trials is not None:
-            filtered = [item for item in filtered if item.get("total_trials", 0) >= min_trials]
+            filtered = [
+                item for item in filtered if item.get("total_trials", 0) >= min_trials
+            ]
         if min_rating is not None:
-            filtered = [item for item in filtered if item.get("rating_score", 0.0) >= min_rating]
+            filtered = [
+                item for item in filtered if item.get("rating_score", 0.0) >= min_rating
+            ]
         return filtered
 
     @staticmethod
     def _sort_report_items(items: list[dict], *, sort: str | None) -> list[dict]:
         key = (sort or "score_desc").lower()
         if key in {"score_desc", "routing_score_desc"}:
-            return sorted(items, key=lambda item: item.get("routing_score", 0.0), reverse=True)
+            return sorted(
+                items, key=lambda item: item.get("routing_score", 0.0), reverse=True
+            )
         if key in {"rating_desc"}:
-            return sorted(items, key=lambda item: item.get("rating_score", 0.0), reverse=True)
+            return sorted(
+                items, key=lambda item: item.get("rating_score", 0.0), reverse=True
+            )
         if key in {"trials_desc"}:
-            return sorted(items, key=lambda item: item.get("total_trials", 0), reverse=True)
+            return sorted(
+                items, key=lambda item: item.get("total_trials", 0), reverse=True
+            )
         if key in {"recent_desc"}:
-            return sorted(items, key=lambda item: item.get("last_used_at") or 0, reverse=True)
-        return sorted(items, key=lambda item: item.get("routing_score", 0.0), reverse=True)
+            return sorted(
+                items, key=lambda item: item.get("last_used_at") or 0, reverse=True
+            )
+        return sorted(
+            items, key=lambda item: item.get("routing_score", 0.0), reverse=True
+        )

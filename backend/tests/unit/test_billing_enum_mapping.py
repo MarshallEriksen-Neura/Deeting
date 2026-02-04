@@ -1,4 +1,3 @@
-
 from sqlalchemy.dialects import postgresql
 
 from app.models.billing import BillingTransaction, TransactionStatus, TransactionType

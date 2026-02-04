@@ -21,19 +21,21 @@ import httpx
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
-from app.services.system import CancelService
 from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.core.metrics import record_upstream_call
 from app.repositories.bandit_repository import BanditRepository
-from app.services.providers.config_utils import deep_merge, extract_by_path, render_value
-from app.services.providers.blocks_transformer import extract_stream_blocks
-from app.services.providers.routing_selector import RoutingSelector
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
+from app.services.providers.blocks_transformer import extract_stream_blocks
+from app.services.providers.config_utils import (
+    deep_merge,
+    extract_by_path,
+    render_value,
+)
 from app.services.proxy.proxy_pool import get_proxy_pool, mask_proxy_url
 from app.services.secrets.manager import SecretManager
-from app.utils.security import is_hostname_whitelisted, is_safe_upstream_url
+from app.services.system import CancelService
 from app.services.workflow.steps.base import (
     BaseStep,
     FailureAction,
@@ -41,6 +43,7 @@ from app.services.workflow.steps.base import (
     StepResult,
     StepStatus,
 )
+from app.utils.security import is_hostname_whitelisted, is_safe_upstream_url
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -109,6 +112,7 @@ class StreamTokenAccumulator:
     - 累计 input/output tokens
     - 支持中断时获取部分用量
     """
+
     input_tokens: int = 0
     output_tokens: int = 0
     chunks_count: int = 0
@@ -169,7 +173,11 @@ class StreamTokenAccumulator:
                             tool_calls = delta.get("tool_calls")
                             if isinstance(tool_calls, list):
                                 for tc in tool_calls:
-                                    func = tc.get("function") if isinstance(tc, dict) else None
+                                    func = (
+                                        tc.get("function")
+                                        if isinstance(tc, dict)
+                                        else None
+                                    )
                                     name = None
                                     if isinstance(func, dict):
                                         name = func.get("name")
@@ -245,7 +253,9 @@ async def stream_with_billing(
     stream: AsyncIterator[bytes],
     ctx: "WorkflowContext",
     accumulator: StreamTokenAccumulator,
-    on_complete: Callable[["WorkflowContext", StreamTokenAccumulator], Any] | None = None,
+    on_complete: (
+        Callable[["WorkflowContext", StreamTokenAccumulator], Any] | None
+    ) = None,
 ) -> AsyncIterator[bytes]:
     """
     流式响应包装器，在流完成后触发计费
@@ -262,9 +272,9 @@ async def stream_with_billing(
     """
     tool_call_emitted = False
     request_id = ctx.get("request", "request_id")
-    stream_transform = (
-        (ctx.get("routing", "response_transform") or {}).get("stream_transform") or {}
-    )
+    stream_transform = (ctx.get("routing", "response_transform") or {}).get(
+        "stream_transform"
+    ) or {}
     cancel_service = CancelService()
     can_check_cancel = bool(request_id and ctx.user_id)
     last_cancel_check = 0.0
@@ -277,16 +287,15 @@ async def stream_with_billing(
                     user_id=str(ctx.user_id),
                     request_id=str(request_id),
                 ):
-                    ctx.mark_error(ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled")
+                    ctx.mark_error(
+                        ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled"
+                    )
                     accumulator.error = "client canceled"
                     break
             # 解析并累计 token
             accumulator.parse_sse_chunk(chunk)
             _emit_blocks_for_chunk(ctx, chunk, stream_transform)
-            if (
-                not tool_call_emitted
-                and accumulator.tool_call_names
-            ):
+            if not tool_call_emitted and accumulator.tool_call_names:
                 ctx.emit_status(
                     stage="evolve",
                     step="tool_call",
@@ -301,7 +310,9 @@ async def stream_with_billing(
         logger.error(f"Stream error trace_id={ctx.trace_id}: {e}")
     finally:
         # 更新上下文中的 billing 信息
-        output_tokens = accumulator.output_tokens or accumulator.estimate_output_tokens()
+        output_tokens = (
+            accumulator.output_tokens or accumulator.estimate_output_tokens()
+        )
         ctx.billing.input_tokens = accumulator.input_tokens
         ctx.billing.output_tokens = output_tokens
 
@@ -572,16 +583,26 @@ class UpstreamCallStep(BaseStep):
                 success=True,
                 latency_ms=latency_ms,
             )
-            
+
             # 记录路由亲和成功（P1-5）
             await self._record_affinity_success(ctx)
 
             # 亲和节省估算：仅在命中亲和且有 token 计费数据时计算
             affinity_hit = ctx.get("routing", "affinity_hit", False)
-            if affinity_hit and getattr(ctx, "billing", None) and ctx.billing.total_tokens > 0:
-                discount = max(0.0, min(1.0, float(settings.AFFINITY_ROUTING_DISCOUNT_RATE)))
+            if (
+                affinity_hit
+                and getattr(ctx, "billing", None)
+                and ctx.billing.total_tokens > 0
+            ):
+                discount = max(
+                    0.0, min(1.0, float(settings.AFFINITY_ROUTING_DISCOUNT_RATE))
+                )
                 saved_tokens = int(ctx.billing.total_tokens * discount)
-                saved_cost = float(ctx.billing.total_cost) * discount if ctx.billing.total_cost else 0.0
+                saved_cost = (
+                    float(ctx.billing.total_cost) * discount
+                    if ctx.billing.total_cost
+                    else 0.0
+                )
                 ctx.set("routing", "affinity_saved_tokens_est", saved_tokens)
                 ctx.set("routing", "affinity_saved_cost_est", saved_cost)
             else:
@@ -732,7 +753,12 @@ class UpstreamCallStep(BaseStep):
             )
             if auth_type != "none":
                 message = f"Upstream auth secret missing provider={provider} auth_type={auth_type} secret_ref_id={masked_ref}"
-                ctx.mark_error(ErrorSource.UPSTREAM, "UPSTREAM_AUTH_MISSING", message, upstream_code="AUTH_MISSING")
+                ctx.mark_error(
+                    ErrorSource.UPSTREAM,
+                    "UPSTREAM_AUTH_MISSING",
+                    message,
+                    upstream_code="AUTH_MISSING",
+                )
                 raise UpstreamAuthError(message)
 
         if auth_type == "api_key":
@@ -784,7 +810,9 @@ class UpstreamCallStep(BaseStep):
                 if not next_url:
                     raise UpstreamSecurityError("Upstream redirect missing location")
                 if not is_safe_upstream_url(next_url):
-                    raise UpstreamSecurityError("Upstream redirect blocked by security policy")
+                    raise UpstreamSecurityError(
+                        "Upstream redirect blocked by security policy"
+                    )
 
                 logger.info("Upstream redirecting url=%s -> %s", current_url, next_url)
                 current_url = next_url
@@ -822,11 +850,17 @@ class UpstreamCallStep(BaseStep):
                         response.headers.get("Location"),
                     )
                     if not next_url:
-                        raise UpstreamSecurityError("Upstream redirect missing location")
+                        raise UpstreamSecurityError(
+                            "Upstream redirect missing location"
+                        )
                     if not is_safe_upstream_url(next_url):
-                        raise UpstreamSecurityError("Upstream redirect blocked by security policy")
+                        raise UpstreamSecurityError(
+                            "Upstream redirect blocked by security policy"
+                        )
 
-                    logger.info("Upstream redirecting url=%s -> %s", current_url, next_url)
+                    logger.info(
+                        "Upstream redirecting url=%s -> %s", current_url, next_url
+                    )
                     current_url = next_url
                     redirect_count += 1
                     continue
@@ -926,7 +960,9 @@ class UpstreamCallStep(BaseStep):
             return {"data": data}
         return {}
 
-    def _extract_async_result(self, payload: dict[str, Any], async_config: dict[str, Any]) -> dict[str, Any]:
+    def _extract_async_result(
+        self, payload: dict[str, Any], async_config: dict[str, Any]
+    ) -> dict[str, Any]:
         extraction = async_config.get("result_extraction") or {}
         location = self._normalize_location(extraction.get("location") or "")
         result_format = extraction.get("format") or "raw"
@@ -937,7 +973,9 @@ class UpstreamCallStep(BaseStep):
             return {"data": [{"url": url} for url in urls if isinstance(url, str)]}
         if result_format == "b64_list":
             items = extracted if isinstance(extracted, list) else []
-            return {"data": [{"b64_json": item} for item in items if isinstance(item, str)]}
+            return {
+                "data": [{"b64_json": item} for item in items if isinstance(item, str)]
+            }
         return payload
 
     async def _poll_async_result(
@@ -985,10 +1023,14 @@ class UpstreamCallStep(BaseStep):
                     headers=poll_headers,
                 )
                 if response.status_code >= 400:
-                    raise RuntimeError(f"async poll failed status={response.status_code}")
+                    raise RuntimeError(
+                        f"async poll failed status={response.status_code}"
+                    )
                 payload = self._normalize_json_response(_parse_response_body(response))
 
-            status_value = extract_by_path(payload, status_path) if status_path else None
+            status_value = (
+                extract_by_path(payload, status_path) if status_path else None
+            )
             if status_value in success_values:
                 return self._extract_async_result(payload, async_config)
             if status_value in fail_values:
@@ -1152,8 +1194,7 @@ class UpstreamCallStep(BaseStep):
         3. 使用备用上游重试
         """
         logger.warning(
-            f"Upstream degraded trace_id={ctx.trace_id} "
-            f"original_error={error}"
+            f"Upstream degraded trace_id={ctx.trace_id} " f"original_error={error}"
         )
 
         candidates = ctx.get("routing", "candidates") or []
@@ -1200,7 +1241,9 @@ class UpstreamCallStep(BaseStep):
         """
         if not ctx.db_session:
             return
-        preset_item_id = ctx.selected_preset_item_id or ctx.get("routing", "preset_item_id")
+        preset_item_id = ctx.selected_preset_item_id or ctx.get(
+            "routing", "preset_item_id"
+        )
         if not preset_item_id:
             return
 
@@ -1224,19 +1267,19 @@ class UpstreamCallStep(BaseStep):
     async def _record_affinity_success(self, ctx: "WorkflowContext") -> None:
         """
         记录路由亲和成功（P1-5）
-        
+
         在上游调用成功后调用，更新亲和状态机。
         """
         affinity_machine = ctx.get("routing", "affinity_machine")
         if not affinity_machine:
             return
-        
+
         provider = ctx.get("routing", "affinity_provider")
         item_id = ctx.get("routing", "affinity_item_id")
-        
+
         if not provider or not item_id:
             return
-        
+
         try:
             await affinity_machine.record_request(
                 provider=provider,
@@ -1255,19 +1298,19 @@ class UpstreamCallStep(BaseStep):
     async def _record_affinity_failure(self, ctx: "WorkflowContext") -> None:
         """
         记录路由亲和失败（P1-5）
-        
+
         在上游调用失败后调用，更新亲和状态机。
         """
         affinity_machine = ctx.get("routing", "affinity_machine")
         if not affinity_machine:
             return
-        
+
         provider = ctx.get("routing", "affinity_provider")
         item_id = ctx.get("routing", "affinity_item_id")
-        
+
         if not provider or not item_id:
             return
-        
+
         try:
             await affinity_machine.record_request(
                 provider=provider,
@@ -1332,7 +1375,12 @@ class UpstreamCallStep(BaseStep):
         if state["state"] == "half_open":
             state["success_count"] += 1
             if state["success_count"] >= settings.CIRCUIT_BREAKER_HALF_OPEN_SUCCESS:
-                state = {"failures": 0, "state": "closed", "opened_at": 0, "success_count": 0}
+                state = {
+                    "failures": 0,
+                    "state": "closed",
+                    "opened_at": 0,
+                    "success_count": 0,
+                }
         else:
             state["failures"] = 0
         await self._set_cb_state(cb_key, state)
@@ -1351,6 +1399,7 @@ class UpstreamCallStep(BaseStep):
             data = await redis_client.hgetall(key)
             if not data:
                 return default.copy()
+
             def _pick(field: bytes, fallback: str, default_val: Any) -> Any:
                 if field in data:
                     return data.get(field)

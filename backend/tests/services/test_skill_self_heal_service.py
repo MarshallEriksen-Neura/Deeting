@@ -28,7 +28,10 @@ def test_self_heal_result_schema():
                     "value": "print('ok')",
                 }
             ],
-            "updated_manifest": {"name": "docx", "usage_spec": {"example_code": "print('ok')"}},
+            "updated_manifest": {
+                "name": "docx",
+                "usage_spec": {"example_code": "print('ok')"},
+            },
         },
     }
 
@@ -99,7 +102,10 @@ async def test_self_heal_updates_manifest_and_retries():
         )
         llm = _FakeLLM(
             {
-                "request": {"skill_id": created.id, "manifest_json": created.manifest_json},
+                "request": {
+                    "skill_id": created.id,
+                    "manifest_json": created.manifest_json,
+                },
                 "response": {
                     "status": "success",
                     "patches": [
@@ -146,7 +152,10 @@ async def test_self_heal_rejects_unsafe_fields():
         )
         llm = _FakeLLM(
             {
-                "request": {"skill_id": created.id, "manifest_json": created.manifest_json},
+                "request": {
+                    "skill_id": created.id,
+                    "manifest_json": created.manifest_json,
+                },
                 "response": {
                     "status": "success",
                     "patches": [
@@ -185,7 +194,10 @@ async def test_self_heal_rejects_mismatched_error_code():
         )
         llm = _FakeLLM(
             {
-                "request": {"skill_id": created.id, "manifest_json": created.manifest_json},
+                "request": {
+                    "skill_id": created.id,
+                    "manifest_json": created.manifest_json,
+                },
                 "response": {
                     "status": "success",
                     "patches": [
@@ -227,7 +239,10 @@ async def test_self_heal_records_history():
         )
         llm = _FakeLLM(
             {
-                "request": {"skill_id": created.id, "manifest_json": created.manifest_json},
+                "request": {
+                    "skill_id": created.id,
+                    "manifest_json": created.manifest_json,
+                },
                 "response": {
                     "status": "success",
                     "patches": [

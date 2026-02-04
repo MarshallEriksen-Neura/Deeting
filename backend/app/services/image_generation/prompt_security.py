@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -34,7 +33,7 @@ class PromptCipher:
         self._fernet = Fernet(fernet_key)
         return self._fernet
 
-    def encrypt(self, value: str) -> Optional[str]:
+    def encrypt(self, value: str) -> str | None:
         if not value:
             return None
         try:
@@ -43,7 +42,7 @@ class PromptCipher:
             return None
         return fernet.encrypt(value.encode("utf-8")).decode("utf-8")
 
-    def decrypt(self, token: str) -> Optional[str]:
+    def decrypt(self, token: str) -> str | None:
         if not token:
             return None
         try:

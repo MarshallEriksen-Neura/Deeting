@@ -13,7 +13,9 @@ class ValidationStub(BaseStep):
     async def execute(self, ctx: WorkflowContext) -> StepResult:
         ctx.set("validation", "validated", {"model": ctx.requested_model})
         ctx.set("validation", "model", ctx.requested_model)
-        return StepResult(status=StepStatus.SUCCESS, data={"model": ctx.requested_model})
+        return StepResult(
+            status=StepStatus.SUCCESS, data={"model": ctx.requested_model}
+        )
 
 
 class RoutingStub(BaseStep):
@@ -26,7 +28,9 @@ class RoutingStub(BaseStep):
         ctx.selected_upstream = upstream_url
         ctx.selected_preset_id = 1
         ctx.selected_preset_item_id = 2
-        return StepResult(status=StepStatus.SUCCESS, data={"upstream_url": upstream_url})
+        return StepResult(
+            status=StepStatus.SUCCESS, data={"upstream_url": upstream_url}
+        )
 
 
 class UpstreamStub(BaseStep):
@@ -37,7 +41,10 @@ class UpstreamStub(BaseStep):
         ctx.upstream_result.provider = "stub"
         ctx.upstream_result.status_code = 200
         ctx.upstream_result.model = ctx.requested_model
-        return StepResult(status=StepStatus.SUCCESS, data={"choices": [{"message": {"content": "ok"}}]})
+        return StepResult(
+            status=StepStatus.SUCCESS,
+            data={"choices": [{"message": {"content": "ok"}}]},
+        )
 
 
 class BillingStub(BaseStep):
@@ -79,5 +86,10 @@ async def test_external_flow_full_success():
     assert ctx.selected_upstream == "https://stub-upstream.test/chat"
     assert ctx.upstream_result.provider == "stub"
     assert ctx.billing.total_cost == 0.01
-    assert set(result.step_results.keys()) == {"validation", "routing", "upstream_call", "billing"}
+    assert set(result.step_results.keys()) == {
+        "validation",
+        "routing",
+        "upstream_call",
+        "billing",
+    }
     assert ctx.executed_steps == ["validation", "routing", "upstream_call", "billing"]

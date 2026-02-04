@@ -29,9 +29,7 @@ def build_blocks_from_message(
                 args_str = args
             else:
                 args_str = json.dumps(args, ensure_ascii=False)
-            blocks.append(
-                {"type": "tool_call", "toolName": name, "toolArgs": args_str}
-            )
+            blocks.append({"type": "tool_call", "toolName": name, "toolArgs": args_str})
     return blocks
 
 

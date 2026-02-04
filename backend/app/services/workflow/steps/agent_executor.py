@@ -1,18 +1,19 @@
 import json
 import logging
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
+from app.schemas.tool import ToolCall
 from app.services.mcp.client import mcp_client
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 from app.services.workflow.steps.upstream_call import UpstreamCallStep
-from app.schemas.tool import ToolCall
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
 
 logger = logging.getLogger(__name__)
+
 
 @step_registry.register
 class AgentExecutorStep(BaseStep):
@@ -33,42 +34,37 @@ class AgentExecutorStep(BaseStep):
         """Helper to emit text content delta to the client stream."""
         if not ctx.status_emitter or not content:
             return
-        
-        payload = {
-            "choices": [{
-                "index": 0,
-                "delta": {
-                    "content": content
-                }
-            }]
-        }
+
+        payload = {"choices": [{"index": 0, "delta": {"content": content}}]}
         ctx.status_emitter(payload)
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         # 1. Get initial state
         raw_request_body = ctx.get("template_render", "request_body")
         if not raw_request_body:
-            return StepResult(status=StepStatus.FAILED, message="Missing rendered request body")
+            return StepResult(
+                status=StepStatus.FAILED, message="Missing rendered request body"
+            )
 
         # Deep copy to avoid mutating the original context prematurely
         request_body = deepcopy(raw_request_body)
-        
+
         # Remember original stream setting
         original_stream = request_body.get("stream", False)
-        
+
         # We MUST use non-streaming for intermediate turns to parse tool calls
         request_body["stream"] = False
 
         # Maintain chat history locally for the loop
         messages = request_body.get("messages", [])
-        
+
         turn = 0
         last_step_result = None
 
         while turn < self.max_turns:
             turn += 1
             logger.info(f"AgentExecutor turn {turn} for trace_id {ctx.trace_id}")
-            
+
             # Update request body with current history
             request_body["messages"] = messages
             ctx.set("template_render", "request_body", request_body)
@@ -80,7 +76,7 @@ class AgentExecutorStep(BaseStep):
 
             # --- B. Analyze Response ---
             raw_response = ctx.get("upstream_call", "response")
-            
+
             if not raw_response:
                 break
 
@@ -89,7 +85,7 @@ class AgentExecutorStep(BaseStep):
                 choice = raw_response["choices"][0]
                 message = choice["message"]
                 tool_calls_raw = message.get("tool_calls")
-                
+
                 # If we are in the loop and got text content, emit it if stream was requested
                 # Note: This simulates streaming for the intermediate thought steps if the model outputs them with tool calls
                 if original_stream and message.get("content"):
@@ -103,14 +99,14 @@ class AgentExecutorStep(BaseStep):
                 # If original_stream was True, we should probably emit the final content here
                 # because the downstream gateway logic receives stream=False context.
                 if original_stream and message.get("content"):
-                     # We already emitted content above if it existed.
-                     pass
+                    # We already emitted content above if it existed.
+                    pass
                 break
 
             # --- C. Execute Tools ---
             # 1. Add Assistant message to history
             messages.append(message)
-            
+
             # 2. Process each call
             for tc_raw in tool_calls_raw:
                 func = tc_raw.get("function", {})
@@ -121,16 +117,16 @@ class AgentExecutorStep(BaseStep):
                 tc = ToolCall(
                     id=tc_raw.get("id"),
                     name=func.get("name"),
-                    arguments=json.loads(args_str)
+                    arguments=json.loads(args_str),
                 )
-                
+
                 # Emit Status Event (Transient Spinner)
                 ctx.emit_status(
                     stage="execution",
                     step=self.name,
                     state="running",
                     code="tool.call",
-                    meta={"name": tc.name}
+                    meta={"name": tc.name},
                 )
 
                 # Emit Tool Block (Persistent UI)
@@ -142,22 +138,24 @@ class AgentExecutorStep(BaseStep):
 
                 # Find and execute tool
                 result = await self._dispatch_tool(ctx, tc)
-                
+
                 # Emit Result (Persistent UI)
                 result_str = json.dumps(result, ensure_ascii=False)
                 if len(result_str) > 2000:
                     result_str = result_str[:2000] + "... (truncated)"
-                
+
                 output_block = f"\n> **Tool Output:**\n> {result_str}\n\n"
                 self._emit_delta(ctx, output_block)
 
                 # 3. Add Tool result to history
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "name": tc.name,
-                    "content": json.dumps(result, ensure_ascii=False)
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": tc.name,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
 
             # Loop continues...
 
@@ -174,9 +172,10 @@ class AgentExecutorStep(BaseStep):
         # 1. Check User MCP Servers
         user_id = ctx.user_id
         if user_id:
-            from app.models.user_mcp_server import UserMcpServer
             from sqlalchemy import select
-            
+
+            from app.models.user_mcp_server import UserMcpServer
+
             # Find which server owns this tool
             # Optimization: We could have a map in context from discovery step
             stmt = select(UserMcpServer).where(
@@ -186,7 +185,7 @@ class AgentExecutorStep(BaseStep):
             )
             res = await ctx.db_session.execute(stmt)
             servers = res.scalars().all()
-            
+
             for server in servers:
                 if not server.sse_url:
                     continue
@@ -196,49 +195,56 @@ class AgentExecutorStep(BaseStep):
                         if tool_call.name in disabled:
                             return {"error": f"Tool '{tool_call.name}' is disabled."}
                         # Found! Call the remote MCP
-                        logger.info(f"Calling remote MCP tool '{tool_call.name}' on {server.sse_url}")
-                        
+                        logger.info(
+                            f"Calling remote MCP tool '{tool_call.name}' on {server.sse_url}"
+                        )
+
                         # Get auth headers
                         from app.services.mcp.discovery import mcp_discovery_service
-                        headers = await mcp_discovery_service._get_auth_headers(ctx.db_session, server)
-                        
+
+                        headers = await mcp_discovery_service._get_auth_headers(
+                            ctx.db_session, server
+                        )
+
                         try:
                             result = await mcp_client.call_tool(
-                                server.sse_url, 
-                                tool_call.name, 
+                                server.sse_url,
+                                tool_call.name,
                                 tool_call.arguments,
-                                headers=headers
+                                headers=headers,
                             )
                             return result
                         except Exception as e:
-                            return {"error": f"Remote MCP call failed: {str(e)}"}
+                            return {"error": f"Remote MCP call failed: {e!s}"}
 
         # 2. Check Local Plugins (Fallthrough)
         from app.agent_plugins.core.manager import global_plugin_manager
+
         plugin = global_plugin_manager.get_plugin_for_tool(tool_call.name)
         if plugin:
             # 1. Try specific handler (handle_toolname)
             handler = getattr(plugin, f"handle_{tool_call.name}", None)
             if not handler:
                 handler = getattr(plugin, tool_call.name, None)
-            
+
             # 2. Try generic handler (handle_tool_call)
             is_generic = False
             if not handler and hasattr(plugin, "handle_tool_call"):
                 handler = plugin.handle_tool_call
                 is_generic = True
-            
+
             if handler:
                 # Introspect handler to see if it accepts context
                 import inspect
+
                 sig = inspect.signature(handler)
                 kwargs = tool_call.arguments.copy()
                 if "__context__" in sig.parameters or "kwargs" in sig.parameters:
                     kwargs["__context__"] = ctx
-                
+
                 if is_generic:
                     return await handler(tool_call.name, **kwargs)
                 else:
                     return await handler(**kwargs)
-        
+
         return {"error": f"Tool '{tool_call.name}' not found."}

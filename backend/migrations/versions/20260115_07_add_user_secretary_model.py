@@ -5,19 +5,18 @@ Revises: 20260115_06_add_assistant_rating_table, 20260115_06_create_media_asset_
 Create Date: 2026-01-15
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "20260115_07_add_user_secretary_model"
-down_revision: Union[str, tuple[str, str], None] = (
+down_revision: str | tuple[str, str] | None = (
     "20260115_06_add_assistant_rating_table",
     "20260115_06_create_media_asset_table",
 )
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -29,31 +28,99 @@ def upgrade() -> None:
     if not has_secretary_phase:
         op.create_table(
             "secretary_phase",
-            sa.Column("name", sa.String(length=50), nullable=False, comment="Phase Name"),
-            sa.Column("description", sa.Text(), nullable=True, comment="Internal description"),
-            sa.Column("enable_retrieval", sa.Boolean(), nullable=False, comment="Enable RAG/Qdrant Retrieval"),
-            sa.Column("enable_ingest", sa.Boolean(), nullable=False, comment="Enable Memory Ingestion"),
-            sa.Column("enable_compression", sa.Boolean(), nullable=False, comment="Enable History Compression"),
-            sa.Column("policy_config", sa.JSON(), nullable=False, comment="Detailed Policy Configuration"),
+            sa.Column(
+                "name", sa.String(length=50), nullable=False, comment="Phase Name"
+            ),
+            sa.Column(
+                "description", sa.Text(), nullable=True, comment="Internal description"
+            ),
+            sa.Column(
+                "enable_retrieval",
+                sa.Boolean(),
+                nullable=False,
+                comment="Enable RAG/Qdrant Retrieval",
+            ),
+            sa.Column(
+                "enable_ingest",
+                sa.Boolean(),
+                nullable=False,
+                comment="Enable Memory Ingestion",
+            ),
+            sa.Column(
+                "enable_compression",
+                sa.Boolean(),
+                nullable=False,
+                comment="Enable History Compression",
+            ),
+            sa.Column(
+                "policy_config",
+                sa.JSON(),
+                nullable=False,
+                comment="Detailed Policy Configuration",
+            ),
             sa.Column("id", sa.UUID(), nullable=False),
-            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=False,
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=False,
+            ),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index(op.f("ix_secretary_phase_name"), "secretary_phase", ["name"], unique=True)
+        op.create_index(
+            op.f("ix_secretary_phase_name"), "secretary_phase", ["name"], unique=True
+        )
 
     if not has_user_secretary:
         op.create_table(
             "user_secretary",
             sa.Column("user_id", sa.UUID(), nullable=False, comment="Owner User ID"),
-            sa.Column("current_phase_id", sa.UUID(), nullable=False, comment="Current Capability Phase"),
-            sa.Column("name", sa.String(length=50), nullable=False, comment="Secretary Name"),
-            sa.Column("custom_instructions", sa.Text(), nullable=True, comment="User-defined system prompt additions"),
-            sa.Column("ui_preferences", sa.JSON(), nullable=True, comment="UI specific settings"),
-            sa.Column("model_name", sa.String(length=128), nullable=True, comment="秘书使用的模型名称"),
+            sa.Column(
+                "current_phase_id",
+                sa.UUID(),
+                nullable=False,
+                comment="Current Capability Phase",
+            ),
+            sa.Column(
+                "name", sa.String(length=50), nullable=False, comment="Secretary Name"
+            ),
+            sa.Column(
+                "custom_instructions",
+                sa.Text(),
+                nullable=True,
+                comment="User-defined system prompt additions",
+            ),
+            sa.Column(
+                "ui_preferences",
+                sa.JSON(),
+                nullable=True,
+                comment="UI specific settings",
+            ),
+            sa.Column(
+                "model_name",
+                sa.String(length=128),
+                nullable=True,
+                comment="秘书使用的模型名称",
+            ),
             sa.Column("id", sa.UUID(), nullable=False),
-            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=False,
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=False,
+            ),
             sa.ForeignKeyConstraint(["current_phase_id"], ["secretary_phase.id"]),
             sa.ForeignKeyConstraint(["user_id"], ["user_account.id"]),
             sa.PrimaryKeyConstraint("id"),
@@ -67,7 +134,12 @@ def upgrade() -> None:
 
     op.add_column(
         "user_secretary",
-        sa.Column("model_name", sa.String(length=128), nullable=True, comment="秘书使用的模型名称"),
+        sa.Column(
+            "model_name",
+            sa.String(length=128),
+            nullable=True,
+            comment="秘书使用的模型名称",
+        ),
     )
 
 

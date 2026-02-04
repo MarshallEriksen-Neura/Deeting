@@ -1,20 +1,17 @@
-from typing import List
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.provider_preset import ProviderPreset
-from app.schemas.provider_preset import ProviderPresetDTO, ProviderWish
+from app.core.logging import logger
 from app.deps.auth import get_current_user
 from app.repositories.provider_preset_repository import ProviderPresetRepository
-from app.core.logging import logger
+from app.schemas.provider_preset import ProviderPresetDTO, ProviderWish
 
 router = APIRouter(prefix="/admin/provider-presets", tags=["ProviderPresets"])
 
-@router.get("", response_model=List[ProviderPresetDTO])
+
+@router.get("", response_model=list[ProviderPresetDTO])
 async def list_presets(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
@@ -23,6 +20,7 @@ async def list_presets(
     # Market only shows system/curated presets.
     presets = await repo.get_active_presets()
     return presets
+
 
 @router.post("/wishes", status_code=status.HTTP_202_ACCEPTED)
 async def wish_provider(
@@ -39,7 +37,7 @@ async def wish_provider(
             "user_id": str(user.id),
             "provider_name": payload.provider_name,
             "url": payload.url,
-            "description": payload.description
-        }
+            "description": payload.description,
+        },
     )
     return {"message": "Wish received"}

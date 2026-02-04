@@ -10,7 +10,9 @@ from app.services.workflow.steps.jit_persona_tool_injection import (
 
 @pytest.fixture
 def ctx_factory():
-    def _factory(*, assistant_id: str | None, session_assistant_id: str | None) -> WorkflowContext:
+    def _factory(
+        *, assistant_id: str | None, session_assistant_id: str | None
+    ) -> WorkflowContext:
         ctx = WorkflowContext(channel=Channel.INTERNAL)
         ctx.set(
             "validation",

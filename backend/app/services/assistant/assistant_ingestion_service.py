@@ -1,17 +1,17 @@
 import json
 import logging
 import uuid
-from typing import Dict, Any, Optional
+from typing import Any
 
-from app.models.knowledge import KnowledgeArtifact
 from app.models.assistant import AssistantStatus, AssistantVisibility
-from app.services.assistant.assistant_service import AssistantService
+from app.repositories.knowledge_repository import KnowledgeRepository
 from app.schemas.assistant import AssistantCreate, AssistantVersionCreate
+from app.services.assistant.assistant_service import AssistantService
 from app.services.providers.llm import llm_service
 from app.tasks.assistant import sync_assistant_to_qdrant
-from app.repositories.knowledge_repository import KnowledgeRepository
 
 logger = logging.getLogger(__name__)
+
 
 class AssistantIngestionService:
     """
@@ -19,11 +19,15 @@ class AssistantIngestionService:
     The 'Kitchen' that turns 'Raw Meat' (Markdown) into 'Gourmet Dishes' (Assistants).
     """
 
-    def __init__(self, assistant_service: AssistantService, knowledge_repo: KnowledgeRepository):
+    def __init__(
+        self, assistant_service: AssistantService, knowledge_repo: KnowledgeRepository
+    ):
         self.assistant_service = assistant_service
         self.knowledge_repo = knowledge_repo
 
-    async def refine_and_create_assistant(self, artifact_id: uuid.UUID) -> Dict[str, Any]:
+    async def refine_and_create_assistant(
+        self, artifact_id: uuid.UUID
+    ) -> dict[str, Any]:
         """
         1. Fetch the raw artifact.
         2. Use LLM to extract Assistant details.
@@ -36,7 +40,7 @@ class AssistantIngestionService:
 
         # 1. LLM Extraction
         refinement_data = await self._extract_assistant_data(artifact.raw_content)
-        
+
         # 2. Prepare Payload
         # We create a 'System' assistant (owner_user_id=None)
         payload = AssistantCreate(
@@ -50,26 +54,28 @@ class AssistantIngestionService:
                 description=refinement_data.get("description", ""),
                 system_prompt=refinement_data.get("system_prompt", ""),
                 tags=refinement_data.get("tags", []),
-                model_config={"model": "gpt-4o", "temperature": 0.7}
-            )
+                model_config={"model": "gpt-4o", "temperature": 0.7},
+            ),
         )
 
         # 3. Create in DB (Bypassing review because it's system-level)
-        assistant = await self.assistant_service.create_assistant(payload, owner_user_id=None)
-        
+        assistant = await self.assistant_service.create_assistant(
+            payload, owner_user_id=None
+        )
+
         # 4. CRITICAL: Trigger Qdrant Sync (The missing link!)
         sync_assistant_to_qdrant.delay(str(assistant.id))
-        
+
         # 5. Update Artifact Status
         await self.knowledge_repo.update(artifact, {"status": "indexed"})
-        
+
         return {
             "status": "success",
             "assistant_id": str(assistant.id),
-            "name": refinement_data.get("name")
+            "name": refinement_data.get("name"),
         }
 
-    async def _extract_assistant_data(self, markdown: str) -> Dict[str, Any]:
+    async def _extract_assistant_data(self, markdown: str) -> dict[str, Any]:
         """
         The 'Refinery' logic using LLM.
         """
@@ -100,20 +106,19 @@ class AssistantIngestionService:
             "icon_id": "lucide:..."
         }}
         """
-        
+
         try:
             # Note: Using the internal llm_service which already handles API Keys/BaseURLs from config
             response = await llm_service.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
+                messages=[{"role": "user", "content": prompt}], temperature=0.1
             )
-            
+
             # Basic cleanup of LLM response
             text = response.strip()
             if text.startswith("```json"):
                 text = text.replace("```json", "").replace("```", "").strip()
-            
+
             return json.loads(text)
         except Exception as e:
             logger.error(f"LLM Refinement failed: {e}")
-            raise RuntimeError(f"Failed to refine assistant data: {str(e)}")
+            raise RuntimeError(f"Failed to refine assistant data: {e!s}")

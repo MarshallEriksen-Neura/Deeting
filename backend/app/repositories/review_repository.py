@@ -12,7 +12,9 @@ from .base import BaseRepository
 class ReviewTaskRepository(BaseRepository[ReviewTask]):
     model = ReviewTask
 
-    async def get_by_entity(self, entity_type: str, entity_id: UUID) -> ReviewTask | None:
+    async def get_by_entity(
+        self, entity_type: str, entity_id: UUID
+    ) -> ReviewTask | None:
         result = await self.session.execute(
             select(ReviewTask).where(
                 ReviewTask.entity_type == entity_type,

@@ -16,10 +16,15 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from app.models.conversation import ConversationChannel
-from app.services.conversation.session_service import ConversationSessionService
-from app.repositories.conversation_message_repository import ConversationMessageRepository
+from app.repositories.conversation_message_repository import (
+    ConversationMessageRepository,
+)
 from app.services.conversation.service import ConversationService
-from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
+from app.services.conversation.session_service import ConversationSessionService
+from app.services.conversation.topic_namer import (
+    TOPIC_NAMING_META_KEY,
+    extract_first_user_message,
+)
 from app.services.conversation.turn_index_sync import sync_redis_last_turn
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
@@ -120,12 +125,14 @@ class ConversationAppendStep(BaseStep):
         if redis_available and conv_service:
             try:
                 # 使用分布式锁防止并发写入冲突（P1-4）
-                from app.core.distributed_lock import distributed_lock
                 from app.core.cache_keys import CacheKeys
+                from app.core.distributed_lock import distributed_lock
 
                 lock_key = CacheKeys.session_lock(session_id)
 
-                async with distributed_lock(lock_key, ttl=10, retry_times=3) as acquired:
+                async with distributed_lock(
+                    lock_key, ttl=10, retry_times=3
+                ) as acquired:
                     if not acquired:
                         logger.warning(
                             "conversation_append_lock_failed session=%s trace=%s",
@@ -185,9 +192,7 @@ class ConversationAppendStep(BaseStep):
                     session_uuid = uuid.UUID(session_id)
                 user_uuid = uuid.UUID(ctx.user_id) if ctx.user_id else None
                 tenant_uuid = uuid.UUID(ctx.tenant_id) if ctx.tenant_id else None
-                assistant_uuid = (
-                    uuid.UUID(str(assistant_id)) if assistant_id else None
-                )
+                assistant_uuid = uuid.UUID(str(assistant_id)) if assistant_id else None
                 session_service = ConversationSessionService(ctx.db_session)
                 if redis_available:
                     message_count = (
@@ -307,9 +312,11 @@ class ConversationAppendStep(BaseStep):
             normalized = {
                 **msg,
                 "content": content_text,
-                "token_estimate": token_est
-                if token_est is not None
-                else self._estimate_tokens(content_for_tokens),
+                "token_estimate": (
+                    token_est
+                    if token_est is not None
+                    else self._estimate_tokens(content_for_tokens)
+                ),
                 "meta_info": meta_info,
             }
             if used_persona_id and msg.get("role") == "assistant":
@@ -320,7 +327,7 @@ class ConversationAppendStep(BaseStep):
         return db_messages, redis_messages
 
     @staticmethod
-    def _resolve_used_persona_id(ctx: "WorkflowContext") -> str | None:
+    def _resolve_used_persona_id(ctx: WorkflowContext) -> str | None:
         assistant_id = ctx.get("assistant", "id")
         if assistant_id:
             return str(assistant_id)
@@ -333,7 +340,9 @@ class ConversationAppendStep(BaseStep):
         return None
 
     @staticmethod
-    def _build_meta_info(message: dict[str, Any], content: Any) -> dict[str, Any] | None:
+    def _build_meta_info(
+        message: dict[str, Any], content: Any
+    ) -> dict[str, Any] | None:
         meta_info = message.get("meta_info") or {}
         extras = {}
         for key in (
@@ -365,7 +374,7 @@ class ConversationAppendStep(BaseStep):
             last_index = 0
             for match in think_regex.finditer(content_text):
                 if match.start() > last_index:
-                    text = content_text[last_index:match.start()]
+                    text = content_text[last_index : match.start()]
                     if text.strip():
                         blocks.append({"type": "text", "content": text})
                 thought = match.group(1).strip()

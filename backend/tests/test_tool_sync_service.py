@@ -18,15 +18,40 @@ async def test_search_tools_prefers_user_hits(monkeypatch):
 
     async def fake_search_system(*_args, **_kwargs):
         return [
-            {"payload": {"tool_name": "tool_b", "description": "sys", "schema_json": {}}},
-            {"payload": {"tool_name": "tool_a", "description": "sys", "schema_json": {}}},
+            {
+                "payload": {
+                    "tool_name": "tool_b",
+                    "description": "sys",
+                    "schema_json": {},
+                }
+            },
+            {
+                "payload": {
+                    "tool_name": "tool_a",
+                    "description": "sys",
+                    "schema_json": {},
+                }
+            },
         ]
 
     async def fake_search_user(*_args, **_kwargs):
         return [
-            {"payload": {"tool_name": "tool_b", "description": "user", "schema_json": {}}},
-            {"payload": {"tool_name": "tool_c", "description": "user", "schema_json": {}}},
+            {
+                "payload": {
+                    "tool_name": "tool_b",
+                    "description": "user",
+                    "schema_json": {},
+                }
+            },
+            {
+                "payload": {
+                    "tool_name": "tool_c",
+                    "description": "user",
+                    "schema_json": {},
+                }
+            },
         ]
+
     async def fake_search_skills(*_args, **_kwargs):
         return []
 
@@ -56,7 +81,9 @@ async def test_search_tools_empty_query_returns_empty(monkeypatch):
 
 def test_hit_to_def_accepts_schema_string():
     service = ToolSyncService()
-    hit = {"payload": {"tool_name": "tool_x", "description": "demo", "schema_json": "{}"}}
+    hit = {
+        "payload": {"tool_name": "tool_x", "description": "demo", "schema_json": "{}"}
+    }
     tool = service._hit_to_def(hit)
     assert isinstance(tool, ToolDefinition)
     assert tool.name == "tool_x"
@@ -91,6 +118,7 @@ async def test_search_tools_reranks_skill_hits(monkeypatch):
         "app.services.tools.tool_sync_service.qdrant_is_configured",
         lambda: True,
     )
+
     async def fake_search_system(*_args, **_kwargs):
         return []
 
@@ -140,6 +168,7 @@ async def test_search_tools_rerank_uses_decision_config(monkeypatch):
         fake_session_factory,
     )
     monkeypatch.setattr(service, "_search_skills", fake_search_skills)
+
     async def fake_search_system(*_args, **_kwargs):
         return []
 

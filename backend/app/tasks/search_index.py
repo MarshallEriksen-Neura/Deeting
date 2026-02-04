@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
@@ -11,10 +12,18 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.meilisearch_client import meilisearch_is_configured
-from app.models.assistant import Assistant, AssistantStatus, AssistantVersion, AssistantVisibility
+from app.models.assistant import (
+    Assistant,
+    AssistantStatus,
+    AssistantVersion,
+    AssistantVisibility,
+)
 from app.models.provider_preset import ProviderPreset
 from app.models.review import ReviewStatus, ReviewTask
-from app.repositories.assistant_tag_repository import AssistantTagLinkRepository, AssistantTagRepository
+from app.repositories.assistant_tag_repository import (
+    AssistantTagLinkRepository,
+    AssistantTagRepository,
+)
 from app.repositories.mcp_market_repository import McpMarketRepository
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
@@ -72,8 +81,12 @@ def _build_assistant_doc(
         "tags": tags,
         "visibility": _enum_value(assistant.visibility),
         "status": _enum_value(assistant.status),
-        "created_at": assistant.created_at.isoformat() if assistant.created_at else None,
-        "published_at": assistant.published_at.isoformat() if assistant.published_at else None,
+        "created_at": (
+            assistant.created_at.isoformat() if assistant.created_at else None
+        ),
+        "published_at": (
+            assistant.published_at.isoformat() if assistant.published_at else None
+        ),
     }
 
 
@@ -311,7 +324,10 @@ async def _run_upsert_assistant(assistant_id: str) -> str:
         assistant, version = row
         visibility = _enum_value(assistant.visibility)
         status = _enum_value(assistant.status)
-        if visibility != AssistantVisibility.PUBLIC.value or status != AssistantStatus.PUBLISHED.value:
+        if (
+            visibility != AssistantVisibility.PUBLIC.value
+            or status != AssistantStatus.PUBLISHED.value
+        ):
             await svc.delete_documents(
                 index=_assistants_public_index(),
                 ids=[assistant_id],

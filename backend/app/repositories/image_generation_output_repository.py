@@ -13,8 +13,10 @@ class ImageGenerationOutputRepository:
         self.session = session
 
     async def list_by_task(self, task_id) -> list[ImageGenerationOutput]:
-        stmt = select(ImageGenerationOutput).where(ImageGenerationOutput.task_id == task_id).order_by(
-            ImageGenerationOutput.output_index.asc()
+        stmt = (
+            select(ImageGenerationOutput)
+            .where(ImageGenerationOutput.task_id == task_id)
+            .order_by(ImageGenerationOutput.output_index.asc())
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -25,12 +27,17 @@ class ImageGenerationOutputRepository:
         stmt = (
             select(ImageGenerationOutput)
             .where(ImageGenerationOutput.task_id.in_(task_ids))
-            .order_by(ImageGenerationOutput.task_id.asc(), ImageGenerationOutput.output_index.asc())
+            .order_by(
+                ImageGenerationOutput.task_id.asc(),
+                ImageGenerationOutput.output_index.asc(),
+            )
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def create(self, payload: dict[str, Any], commit: bool = True) -> ImageGenerationOutput:
+    async def create(
+        self, payload: dict[str, Any], commit: bool = True
+    ) -> ImageGenerationOutput:
         output = ImageGenerationOutput(**payload)
         self.session.add(output)
         if commit:
@@ -41,7 +48,9 @@ class ImageGenerationOutputRepository:
         return output
 
     async def delete_by_task(self, task_id, commit: bool = True) -> None:
-        stmt = delete(ImageGenerationOutput).where(ImageGenerationOutput.task_id == task_id)
+        stmt = delete(ImageGenerationOutput).where(
+            ImageGenerationOutput.task_id == task_id
+        )
         await self.session.execute(stmt)
         if commit:
             await self.session.commit()

@@ -5,21 +5,24 @@ Revises: 20260201_01_add_skill_registry
 Create Date: 2026-02-01
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "20260201_02_expand_skill_registry"
-down_revision: Union[str, None] = "20260201_01_add_skill_registry"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260201_01_add_skill_registry"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def _json_type(dialect_name: str):
-    return postgresql.JSONB(astext_type=sa.Text()) if dialect_name == "postgresql" else sa.JSON()
+    return (
+        postgresql.JSONB(astext_type=sa.Text())
+        if dialect_name == "postgresql"
+        else sa.JSON()
+    )
 
 
 def _json_default(dialect_name: str):
@@ -44,11 +47,18 @@ def upgrade() -> None:
     )
     op.add_column(
         "skill_registry",
-        sa.Column("runtime", sa.String(length=40), nullable=True, comment="运行时类型（如 opensandbox）"),
+        sa.Column(
+            "runtime",
+            sa.String(length=40),
+            nullable=True,
+            comment="运行时类型（如 opensandbox）",
+        ),
     )
     op.add_column(
         "skill_registry",
-        sa.Column("version", sa.String(length=32), nullable=True, comment="语义化版本号"),
+        sa.Column(
+            "version", sa.String(length=32), nullable=True, comment="语义化版本号"
+        ),
     )
     op.add_column(
         "skill_registry",
@@ -56,19 +66,30 @@ def upgrade() -> None:
     )
     op.add_column(
         "skill_registry",
-        sa.Column("source_repo", sa.String(length=1024), nullable=True, comment="源码仓库地址"),
+        sa.Column(
+            "source_repo", sa.String(length=1024), nullable=True, comment="源码仓库地址"
+        ),
     )
     op.add_column(
         "skill_registry",
-        sa.Column("source_subdir", sa.String(length=255), nullable=True, comment="源码子目录"),
+        sa.Column(
+            "source_subdir", sa.String(length=255), nullable=True, comment="源码子目录"
+        ),
     )
     op.add_column(
         "skill_registry",
-        sa.Column("source_revision", sa.String(length=128), nullable=True, comment="源码版本/提交"),
+        sa.Column(
+            "source_revision",
+            sa.String(length=128),
+            nullable=True,
+            comment="源码版本/提交",
+        ),
     )
     op.add_column(
         "skill_registry",
-        sa.Column("risk_level", sa.String(length=20), nullable=True, comment="风险等级"),
+        sa.Column(
+            "risk_level", sa.String(length=20), nullable=True, comment="风险等级"
+        ),
     )
     op.add_column(
         "skill_registry",
@@ -96,7 +117,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "skill_registry",
-        sa.Column("vector_id", sa.String(length=120), nullable=True, comment="向量索引 ID"),
+        sa.Column(
+            "vector_id", sa.String(length=120), nullable=True, comment="向量索引 ID"
+        ),
     )
 
     op.create_table(

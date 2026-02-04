@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import UTC, datetime
-from app.utils.time_utils import Datetime
 from typing import Any
 
 from redis.asyncio import Redis
@@ -14,6 +12,9 @@ from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.logging import logger as app_logger
 from app.models.conversation import ConversationChannel
+from app.utils.time_utils import Datetime
+
+
 class ConversationService:
     """
     管理会话上下文的 Redis 窗口与摘要触发。
@@ -129,9 +130,11 @@ class ConversationService:
                     msg.get("token_estimate", 0),
                     1 if msg.get("is_truncated") else 0,
                     msg.get("name") or "",
-                    json.dumps(msg.get("meta_info") or {}, ensure_ascii=False)
-                    if msg.get("meta_info")
-                    else "",
+                    (
+                        json.dumps(msg.get("meta_info") or {}, ensure_ascii=False)
+                        if msg.get("meta_info")
+                        else ""
+                    ),
                     max_turns,
                     max_turns_overflow,
                     settings.CONVERSATION_FLUSH_THRESHOLD_TOKENS,
@@ -161,7 +164,9 @@ class ConversationService:
         # 空闲触发摘要调度（仅内部通道）
         if channel == ConversationChannel.INTERNAL:
             try:
-                from app.services.conversation.summary_scheduler import summary_scheduler
+                from app.services.conversation.summary_scheduler import (
+                    summary_scheduler,
+                )
 
                 await summary_scheduler.touch_session(session_id)
             except Exception:
@@ -262,7 +267,9 @@ class ConversationService:
         except Exception:
             # meta 不存在或类型不匹配时忽略
             pass
-        await self.redis.hset(meta_key, mapping={"last_active_at": Datetime.now().isoformat()})
+        await self.redis.hset(
+            meta_key, mapping={"last_active_at": Datetime.now().isoformat()}
+        )
         return {"deleted": True, "turn_index": turn_index}
 
     async def clear_session(self, session_id: str) -> None:

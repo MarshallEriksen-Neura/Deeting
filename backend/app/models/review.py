@@ -6,6 +6,8 @@ from datetime import datetime
 
 from sqlalchemy import (
     UUID as SA_UUID,
+)
+from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,

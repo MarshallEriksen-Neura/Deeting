@@ -70,7 +70,11 @@ class DummyRedis:
     async def keys(self, pattern: str):
         if pattern.endswith("*"):
             prefix = pattern[:-1]
-            return [k for k in list(self.store) + list(self.hash_store) if k.startswith(prefix)]
+            return [
+                k
+                for k in list(self.store) + list(self.hash_store)
+                if k.startswith(prefix)
+            ]
         return [k for k in list(self.store) + list(self.hash_store) if k == pattern]
 
     async def unlink(self, *keys):
@@ -83,8 +87,8 @@ class DummyRedis:
             numkeys = keys_and_args[0]
             if not isinstance(numkeys, int):
                 return None
-            keys = list(keys_and_args[1:1 + numkeys])
-            args = list(keys_and_args[1 + numkeys:])
+            keys = list(keys_and_args[1 : 1 + numkeys])
+            args = list(keys_and_args[1 + numkeys :])
         if not keys or not args:
             return None
         key = keys[0]
@@ -94,7 +98,9 @@ class DummyRedis:
 
         # quota_deduct.lua 模拟
         def _get_num(field, default=0.0):
-            field_key = field.decode() if isinstance(field, (bytes, bytearray)) else str(field)
+            field_key = (
+                field.decode() if isinstance(field, (bytes, bytearray)) else str(field)
+            )
             raw = bucket.get(field_key)
             if raw is None:
                 return default

@@ -16,7 +16,9 @@ class ImageGenerationShareRepository:
         return await self.session.get(ImageGenerationShare, share_id)
 
     async def get_by_task_id(self, task_id) -> ImageGenerationShare | None:
-        stmt = select(ImageGenerationShare).where(ImageGenerationShare.task_id == task_id)
+        stmt = select(ImageGenerationShare).where(
+            ImageGenerationShare.task_id == task_id
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -40,10 +42,14 @@ class ImageGenerationShareRepository:
         return (
             select(ImageGenerationShare)
             .where(ImageGenerationShare.is_active.is_(True))
-            .order_by(ImageGenerationShare.shared_at.desc(), ImageGenerationShare.id.desc())
+            .order_by(
+                ImageGenerationShare.shared_at.desc(), ImageGenerationShare.id.desc()
+            )
         )
 
-    async def create(self, payload: dict[str, Any], commit: bool = True) -> ImageGenerationShare:
+    async def create(
+        self, payload: dict[str, Any], commit: bool = True
+    ) -> ImageGenerationShare:
         share = ImageGenerationShare(**payload)
         self.session.add(share)
         if commit:
@@ -53,10 +59,16 @@ class ImageGenerationShareRepository:
             await self.session.flush()
         return share
 
-    async def update_fields(self, share_id, payload: dict[str, Any], commit: bool = True) -> None:
+    async def update_fields(
+        self, share_id, payload: dict[str, Any], commit: bool = True
+    ) -> None:
         if not payload:
             return
-        stmt = update(ImageGenerationShare).where(ImageGenerationShare.id == share_id).values(**payload)
+        stmt = (
+            update(ImageGenerationShare)
+            .where(ImageGenerationShare.id == share_id)
+            .values(**payload)
+        )
         await self.session.execute(stmt)
         if commit:
             await self.session.commit()

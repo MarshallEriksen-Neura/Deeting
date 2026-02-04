@@ -1,9 +1,9 @@
-
 import pytest
+
 from app.core.config import settings
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.workflow.steps.sanitize import SanitizeStep
-from app.services.workflow.steps.base import StepStatus
+
 
 @pytest.mark.asyncio
 async def test_sanitize_headers_external():
@@ -13,7 +13,7 @@ async def test_sanitize_headers_external():
         "Authorization": "Bearer secret",
         "X-Request-ID": "req-123",
         "Content-Type": "application/json",
-        "X-Envoy-Upstream-Service-Time": "100"
+        "X-Envoy-Upstream-Service-Time": "100",
     }
     ctx.set("upstream_call", "headers", headers)
     ctx.set("response_transform", "response", {"foo": "bar"})
@@ -26,6 +26,7 @@ async def test_sanitize_headers_external():
     assert "X-Envoy-Upstream-Service-Time" not in sanitized_headers
     assert sanitized_headers["Content-Type"] == "application/json"
 
+
 @pytest.mark.asyncio
 async def test_sanitize_headers_internal_debug_on():
     with patch_settings(INTERNAL_CHANNEL_DEBUG_INFO=True):
@@ -34,7 +35,7 @@ async def test_sanitize_headers_internal_debug_on():
         headers = {
             "Authorization": "Bearer secret",
             "X-Request-ID": "req-123",
-            "X-Envoy-Upstream-Service-Time": "100"
+            "X-Envoy-Upstream-Service-Time": "100",
         }
         ctx.set("upstream_call", "headers", headers)
         ctx.set("response_transform", "response", {"foo": "bar"})
@@ -46,6 +47,7 @@ async def test_sanitize_headers_internal_debug_on():
         assert sanitized_headers["X-Request-ID"] == "req-123"
         assert sanitized_headers["X-Envoy-Upstream-Service-Time"] == "100"
 
+
 @pytest.mark.asyncio
 async def test_sanitize_body_rules():
     step = SanitizeStep()
@@ -53,16 +55,13 @@ async def test_sanitize_body_rules():
     response = {
         "id": "sk-1234567890abcdef123456",
         "usage": {"prompt": 10},
-        "secret_field": "hidden"
+        "secret_field": "hidden",
     }
     ctx.set("response_transform", "response", response)
-    
+
     # Mock routing config with sanitization rules
     response_transform_config = {
-        "sanitization": {
-            "remove_fields": ["usage"],
-            "mask_fields": ["id"]
-        }
+        "sanitization": {"remove_fields": ["usage"], "mask_fields": ["id"]}
     }
     ctx.set("routing", "response_transform", response_transform_config)
 
@@ -74,16 +73,18 @@ async def test_sanitize_body_rules():
     assert "..." in sanitized_body["id"]
     assert sanitized_body["secret_field"] == "hidden"
 
+
 def test_sanitize_for_log():
     data = {
         "api_key": "sk-1234567890abcdef1234567890abcdef",
         "nested": {"token": "secret_token"},
-        "password": "my-password"
+        "password": "my-password",
     }
     log_data = SanitizeStep.sanitize_for_log(data)
     assert log_data["api_key"] == "[REDACTED]"
     assert log_data["nested"]["token"] == "[REDACTED]"
     assert log_data["password"] == "[REDACTED]"
+
 
 class patch_settings:
     def __init__(self, **kwargs):

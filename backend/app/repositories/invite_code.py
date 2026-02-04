@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime
-from typing import Iterable
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -54,7 +53,9 @@ class InviteCodeRepository:
         return codes
 
     async def get_by_code(self, code: str) -> InviteCode | None:
-        res = await self.session.execute(select(InviteCode).where(InviteCode.code == code))
+        res = await self.session.execute(
+            select(InviteCode).where(InviteCode.code == code)
+        )
         return res.scalar_one_or_none()
 
     async def reserve(self, code: str) -> InviteCode | None:
@@ -100,7 +101,11 @@ class InviteCodeRepository:
         stmt = (
             update(InviteCode)
             .where(InviteCode.code == code)
-            .where(InviteCode.status.in_([InviteCodeStatus.UNUSED, InviteCodeStatus.RESERVED]))
+            .where(
+                InviteCode.status.in_(
+                    [InviteCodeStatus.UNUSED, InviteCodeStatus.RESERVED]
+                )
+            )
             .values(status=InviteCodeStatus.REVOKED)
             .returning(InviteCode)
         )
@@ -123,7 +128,9 @@ class InviteCodeRepository:
             query = query.where(InviteCode.status == status)
         total_res = await self.session.execute(query.with_only_columns(InviteCode.id))
         total = len(total_res.scalars().all())
-        res = await self.session.execute(query.order_by(InviteCode.created_at.desc()).limit(limit).offset(offset))
+        res = await self.session.execute(
+            query.order_by(InviteCode.created_at.desc()).limit(limit).offset(offset)
+        )
         return res.scalars().all(), total
 
 

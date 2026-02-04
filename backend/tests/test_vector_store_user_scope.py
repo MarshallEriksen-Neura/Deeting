@@ -59,7 +59,10 @@ async def test_upsert_creates_user_collection_and_writes_points():
     await client.aclose()
 
     # 第一次 upsert 应该创建 collection 并写入 point
-    assert any(r.method == "GET" and r.url.path == f"/collections/{collection_name}" for r in requests)
+    assert any(
+        r.method == "GET" and r.url.path == f"/collections/{collection_name}"
+        for r in requests
+    )
     assert any(r.method == "PUT" and r.url.path.endswith("/points") for r in requests)
 
 
@@ -75,7 +78,11 @@ async def test_upsert_raises_on_vector_mismatch():
             if request.method == "GET":
                 return httpx.Response(
                     200,
-                    json={"result": {"config": {"params": {"vectors": {"text": {"size": 4}}}}}},
+                    json={
+                        "result": {
+                            "config": {"params": {"vectors": {"text": {"size": 4}}}}
+                        }
+                    },
                 )
         return httpx.Response(404)
 

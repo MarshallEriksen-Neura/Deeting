@@ -12,16 +12,17 @@
 - 业务逻辑封装在 Service 层
 - 禁止在路由中直接操作 ORM/Session
 """
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps.auth import get_current_active_user, get_permission_flags
 from app.models import User
-from app.schemas.auth import MessageResponse
-from app.schemas.user import UserRead, UserUpdate, UserWithPermissions
-from app.schemas.secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
 from app.repositories import ProviderModelRepository, UserSecretaryRepository
+from app.schemas.auth import MessageResponse
+from app.schemas.secretary import UserSecretaryDTO, UserSecretaryUpdateRequest
+from app.schemas.user import UserRead, UserUpdate, UserWithPermissions
 from app.services.secretary.secretary_service import UserSecretaryService
 from app.services.users import UserService
 
@@ -47,12 +48,12 @@ def _build_avatar_url(user: User) -> str | None:
         build_public_asset_url,
         build_signed_asset_url,
     )
-    
+
     if not user.avatar_object_key:
         return None
     if str(user.avatar_object_key).startswith(("http://", "https://")):
         return str(user.avatar_object_key)
-    
+
     if user.avatar_storage_type == "public":
         return build_public_asset_url(user.avatar_object_key)
     else:
@@ -131,7 +132,12 @@ async def update_user_secretary(
     return UserSecretaryDTO.model_validate(secretary)
 
 
-@router.post("/me/change-password", response_model=MessageResponse, include_in_schema=False)
+@router.post(
+    "/me/change-password", response_model=MessageResponse, include_in_schema=False
+)
 async def change_password_deprecated():
     """密码登录已移除，保留兼容端点。"""
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Password login removed; use email code")
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Password login removed; use email code",
+    )

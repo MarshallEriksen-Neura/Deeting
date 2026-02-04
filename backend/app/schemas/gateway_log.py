@@ -27,9 +27,11 @@ class GatewayLogBase(BaseSchema):
     is_cached: bool = Field(False, description="是否命中缓存")
     error_code: str | None = Field(None, max_length=64, description="统一错误码")
 
+
 class GatewayLogCreate(GatewayLogBase):
     pass
 
+
 class GatewayLogDTO(GatewayLogBase, IDSchema):
     # GatewayLog 没有 updated_at，只有 created_at
-    created_at: Any # datetime, but Pydantic handles it
+    created_at: Any  # datetime, but Pydantic handles it

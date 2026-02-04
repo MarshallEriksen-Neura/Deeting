@@ -37,5 +37,6 @@ async def main():
 
     await manager.deactivate_all()
 
+
 if __name__ == "__main__":
     asyncio.run(main())

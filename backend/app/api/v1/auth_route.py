@@ -35,11 +35,11 @@ from app.models import User
 from app.schemas.auth import (
     LoginRequest,
     MessageResponse,
+    OAuthCallbackRequest,
+    OAuthCallbackResponse,
     RefreshRequest,
     SendLoginCodeRequest,
     TokenPair,
-    OAuthCallbackRequest,
-    OAuthCallbackResponse,
 )
 from app.services.users import AuthService
 from app.services.users.oauth_linuxdo_service import (
@@ -64,11 +64,7 @@ def _refresh_cookie_secure() -> bool:
     """
     mode = os.getenv("MODE", "").lower()
     env = (settings.ENVIRONMENT or "").lower()
-    return not (
-        settings.DEBUG
-        or mode == "development"
-        or env == "development"
-    )
+    return not (settings.DEBUG or mode == "development" or env == "development")
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -103,9 +99,8 @@ async def send_login_code(
 ) -> MessageResponse:
     """发送邮箱验证码（无密码登录入口，支持携带邀请码用于首登注册）。"""
     service = AuthService(db)
-    client_ip = (
-        req.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        or (req.client.host if req.client else None)
+    client_ip = req.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        req.client.host if req.client else None
     )
     await service.send_login_code(
         email=payload.email,
@@ -129,10 +124,9 @@ async def login(
     - 首次登录可携带 invite_code 与 username
     """
     service = AuthService(db)
-    client_ip = (
-        raw_request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        or (raw_request.client.host if raw_request.client else None)
-    )
+    client_ip = raw_request.headers.get("x-forwarded-for", "").split(",")[
+        0
+    ].strip() or (raw_request.client.host if raw_request.client else None)
     tokens = await service.login_with_code(
         email=request.email,
         code=request.code,

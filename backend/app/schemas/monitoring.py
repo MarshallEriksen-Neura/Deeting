@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import Field
 
 from .base import BaseSchema
@@ -13,7 +11,7 @@ class LatencyHeatmapCell(BaseSchema):
 
 
 class LatencyHeatmapResponse(BaseSchema):
-    grid: List[List[LatencyHeatmapCell]]
+    grid: list[list[LatencyHeatmapCell]]
     peak_latency: float = Field(0, alias="peakLatency")
     median_latency: float = Field(0, alias="medianLatency")
 
@@ -25,7 +23,7 @@ class PercentilePoint(BaseSchema):
 
 
 class PercentileTrendsResponse(BaseSchema):
-    timeline: List[PercentilePoint]
+    timeline: list[PercentilePoint]
 
 
 class ModelCostItem(BaseSchema):
@@ -35,7 +33,7 @@ class ModelCostItem(BaseSchema):
 
 
 class ModelCostBreakdownResponse(BaseSchema):
-    models: List[ModelCostItem]
+    models: list[ModelCostItem]
 
 
 class ErrorCategoryItem(BaseSchema):
@@ -46,7 +44,7 @@ class ErrorCategoryItem(BaseSchema):
 
 
 class ErrorDistributionResponse(BaseSchema):
-    categories: List[ErrorCategoryItem]
+    categories: list[ErrorCategoryItem]
 
 
 class KeyActivityItem(BaseSchema):
@@ -58,4 +56,4 @@ class KeyActivityItem(BaseSchema):
 
 
 class KeyActivityRankingResponse(BaseSchema):
-    keys: List[KeyActivityItem]
+    keys: list[KeyActivityItem]

@@ -35,6 +35,7 @@ API Key Repository
     if key and key.status == ApiKeyStatus.ACTIVE:
         ...
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -199,9 +200,7 @@ class ApiKeyRepository:
 
     async def delete(self, api_key_id: UUID) -> bool:
         """删除 API Key"""
-        res = await self.session.execute(
-            delete(ApiKey).where(ApiKey.id == api_key_id)
-        )
+        res = await self.session.execute(delete(ApiKey).where(ApiKey.id == api_key_id))
         await self.session.flush()
         return res.rowcount > 0
 

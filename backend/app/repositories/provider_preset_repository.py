@@ -1,10 +1,9 @@
+from sqlalchemy import select
 
-from sqlalchemy import select, or_
-
-from app.models.provider_preset import ProviderPreset
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
+from app.models.provider_preset import ProviderPreset
 
 from .base import BaseRepository
 

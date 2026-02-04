@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from app.models.assistant_install import AssistantInstall
 
@@ -49,9 +48,9 @@ class AssistantInstallRepository(BaseRepository[AssistantInstall]):
 
     async def count_by_assistant(self, assistant_id: UUID) -> int:
         result = await self.session.execute(
-            select(func.count()).select_from(AssistantInstall).where(
-                AssistantInstall.assistant_id == assistant_id
-            )
+            select(func.count())
+            .select_from(AssistantInstall)
+            .where(AssistantInstall.assistant_id == assistant_id)
         )
         return int(result.scalar() or 0)
 
@@ -62,7 +61,9 @@ class AssistantInstallRepository(BaseRepository[AssistantInstall]):
     ) -> int:
         """统计其他用户的安装数量（排除所有者），用于判断是否可硬删除"""
         result = await self.session.execute(
-            select(func.count()).select_from(AssistantInstall).where(
+            select(func.count())
+            .select_from(AssistantInstall)
+            .where(
                 AssistantInstall.assistant_id == assistant_id,
                 AssistantInstall.user_id != owner_user_id,
             )

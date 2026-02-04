@@ -7,8 +7,8 @@ Create Date: 2026-01-24
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20260124_04_add_mcp_sources"
@@ -25,7 +25,9 @@ def upgrade() -> None:
     if not inspector.has_table("user_mcp_source"):
         op.create_table(
             "user_mcp_source",
-            sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+            sa.Column(
+                "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+            ),
             sa.Column(
                 "user_id",
                 postgresql.UUID(as_uuid=True),
@@ -33,7 +35,12 @@ def upgrade() -> None:
                 nullable=False,
                 comment="Owner of this MCP source",
             ),
-            sa.Column("name", sa.String(length=120), nullable=False, comment="Display name for this MCP source"),
+            sa.Column(
+                "name",
+                sa.String(length=120),
+                nullable=False,
+                comment="Display name for this MCP source",
+            ),
             sa.Column(
                 "source_type",
                 sa.String(length=40),
@@ -41,7 +48,12 @@ def upgrade() -> None:
                 server_default="url",
                 comment="Source type: modelscope, github, url, cloud, local",
             ),
-            sa.Column("path_or_url", sa.String(length=512), nullable=False, comment="Source URL or path"),
+            sa.Column(
+                "path_or_url",
+                sa.String(length=512),
+                nullable=False,
+                comment="Source URL or path",
+            ),
             sa.Column(
                 "trust_level",
                 sa.String(length=40),

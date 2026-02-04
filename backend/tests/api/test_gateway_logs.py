@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,7 +10,9 @@ from app.models import GatewayLog, User
 
 
 async def _get_test_user_id(session: AsyncSession) -> UUID:
-    result = await session.execute(select(User).where(User.email == "testuser@example.com"))
+    result = await session.execute(
+        select(User).where(User.email == "testuser@example.com")
+    )
     user = result.scalar_one()
     return user.id
 
@@ -22,7 +24,7 @@ async def _clear_logs(session: AsyncSession) -> None:
 
 async def _seed_logs(session: AsyncSession, user_id, total: int = 3) -> None:
     """为指定用户插入多条日志，创建时间递减，确保游标分页顺序稳定。"""
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
     for i in range(total):
         session.add(
             GatewayLog(
@@ -42,7 +44,9 @@ async def _seed_logs(session: AsyncSession, user_id, total: int = 3) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_gateway_logs_only_current_user(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
+async def test_list_gateway_logs_only_current_user(
+    client: AsyncClient, auth_tokens: dict, AsyncSessionLocal
+) -> None:
     async with AsyncSessionLocal() as session:
         user_id = await _get_test_user_id(session)
         await _clear_logs(session)
@@ -61,7 +65,9 @@ async def test_list_gateway_logs_only_current_user(client: AsyncClient, auth_tok
 
 
 @pytest.mark.asyncio
-async def test_list_gateway_logs_cursor_pagination(client: AsyncClient, auth_tokens: dict, AsyncSessionLocal) -> None:
+async def test_list_gateway_logs_cursor_pagination(
+    client: AsyncClient, auth_tokens: dict, AsyncSessionLocal
+) -> None:
     async with AsyncSessionLocal() as session:
         user_id = await _get_test_user_id(session)
         await _clear_logs(session)

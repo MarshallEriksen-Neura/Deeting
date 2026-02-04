@@ -24,7 +24,9 @@ async def test_resolve_assets_step_updates_request_data(monkeypatch):
                     "content": [
                         {
                             "type": "image_url",
-                            "image_url": {"url": "asset://assets/demo/2026/01/15/hello.png"},
+                            "image_url": {
+                                "url": "asset://assets/demo/2026/01/15/hello.png"
+                            },
                         },
                         {"type": "text", "text": "hi"},
                     ],

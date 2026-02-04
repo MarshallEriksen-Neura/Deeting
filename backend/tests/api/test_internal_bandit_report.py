@@ -1,5 +1,6 @@
-import pytest
 from uuid import uuid4
+
+import pytest
 
 from app.deps.auth import get_current_user
 from app.models import User
@@ -72,7 +73,9 @@ async def test_internal_bandit_skill_report_filters(
         assert data["summary"]["total_arms"] == 1
         assert data["items"][0]["skill_id"] == "skill.active"
 
-        resp = await client.get("/api/v1/internal/bandit/report/skills?skill_id=skill.disabled")
+        resp = await client.get(
+            "/api/v1/internal/bandit/report/skills?skill_id=skill.disabled"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["summary"]["total_arms"] == 1

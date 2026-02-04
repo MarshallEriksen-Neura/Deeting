@@ -4,6 +4,7 @@ AI Higress Gateway - FastAPI Application Entry Point
 启动命令:
     uvicorn main:app --reload --host 0.0.0.0 --port 8000
 """
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,12 +14,11 @@ from fastapi_pagination import add_pagination
 from app.core import cache, settings, setup_logging
 from app.middleware.concurrency import concurrency_middleware
 from app.middleware.metrics import metrics_middleware
-from app.middleware.trace import trace_middleware
+from app.middleware.request_validator import RequestValidatorMiddleware
 
 # 安全中间件
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.middleware.request_validator import RequestValidatorMiddleware
-
+from app.middleware.trace import trace_middleware
 
 # 设置日志
 setup_logging()
@@ -41,8 +41,8 @@ async def lifespan(app: FastAPI):
         if not qdrant_is_configured():
             logger.info("qdrant_init_skipped")
         else:
-            from app.services.memory.qdrant_service import system_qdrant
             from app.services.agent import agent_service
+            from app.services.memory.qdrant_service import system_qdrant
             from app.services.tools.tool_sync_service import tool_sync_service
 
             await system_qdrant.initialize_collections()
@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
 
     # Start Sandbox Manager Cleanup Worker
     from app.core.sandbox.manager import sandbox_manager
+
     await sandbox_manager.start_background_worker()
 
     yield
@@ -84,8 +85,9 @@ def create_app() -> FastAPI:
     # 安全相关中间件：仅在安全中间件启用时添加
     if settings.ENABLE_SECURITY_MIDDLEWARE:
         from app.core.logging import logger
+
         logger.info("Enabling security middleware stack")
-        
+
         # 添加安全头中间件
         app.add_middleware(
             SecurityHeadersMiddleware,
@@ -111,6 +113,7 @@ def create_app() -> FastAPI:
         )
     else:
         from app.core.logging import logger
+
         logger.warning(
             "Security middleware stack is disabled; set ENABLE_SECURITY_MIDDLEWARE=True to enable."
         )
@@ -136,45 +139,45 @@ def register_routes(app: FastAPI) -> None:
     # Auth 路由
     from app.api.metrics_route import router as metrics_router
     from app.api.v1 import (
-        admin_api_keys_router,
-        admin_users_router,
         admin_agent_router,
-        admin_assistants_router,
+        admin_api_keys_router,
         admin_assistant_reviews_router,
-        admin_spec_knowledge_reviews_router,
-        admin_registration_router,
-        admin_provider_credential_router,
-        admin_provider_instance_router,
+        admin_assistants_router,
         admin_discovery_router,
         admin_notification_router,
+        admin_provider_credential_router,
+        admin_provider_instance_router,
+        admin_registration_router,
         admin_settings_router,
         admin_skill_registry_router,
-        notification_ws_router,
-        auth_router,
+        admin_spec_knowledge_reviews_router,
+        admin_users_router,
         assistants_router,
-        user_api_keys_router,
+        auth_router,
         available_models_router,
+        credits_router,
+        dashboard_router,
         external_gateway_router,
+        gateway_logs_router,
         internal_bridge_router,
-        internal_gateway_router,
         internal_conversation_router,
+        internal_gateway_router,
         internal_image_generation_router,
+        internal_sandbox_router,
         internal_skill_execution_router,
         internal_video_generation_router,
-        internal_sandbox_router,
-        public_image_share_router,
-        media_router,
-        users_router,
-        provider_router,
-        gateway_logs_router,
-        dashboard_router,
-        monitoring_router,
-        credits_router,
-        spec_agent_router,
-        mcp_router,
-        user_mcp_router,
-        settings_router,
         knowledge_router,
+        mcp_router,
+        media_router,
+        monitoring_router,
+        notification_ws_router,
+        provider_router,
+        public_image_share_router,
+        settings_router,
+        spec_agent_router,
+        user_api_keys_router,
+        user_mcp_router,
+        users_router,
     )
 
     api_prefix = settings.API_V1_STR
@@ -186,54 +189,84 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(available_models_router, prefix=api_prefix, tags=["Models"])
     app.include_router(admin_users_router, prefix=api_prefix, tags=["Admin - Users"])
     app.include_router(admin_agent_router, prefix=api_prefix, tags=["Admin - Agent"])
-    app.include_router(admin_api_keys_router, prefix=api_prefix, tags=["Admin - API Keys"])
-    app.include_router(admin_assistants_router, prefix=api_prefix, tags=["Admin - Assistants"])
-    app.include_router(admin_assistant_reviews_router, prefix=api_prefix, tags=["Admin - Assistant Reviews"])
+    app.include_router(
+        admin_api_keys_router, prefix=api_prefix, tags=["Admin - API Keys"]
+    )
+    app.include_router(
+        admin_assistants_router, prefix=api_prefix, tags=["Admin - Assistants"]
+    )
+    app.include_router(
+        admin_assistant_reviews_router,
+        prefix=api_prefix,
+        tags=["Admin - Assistant Reviews"],
+    )
     app.include_router(
         admin_spec_knowledge_reviews_router,
         prefix=api_prefix,
         tags=["Admin - Spec Knowledge"],
     )
-    app.include_router(admin_registration_router, prefix=api_prefix, tags=["Admin - Registration"])
-    app.include_router(admin_notification_router, prefix=api_prefix, tags=["Admin - Notifications"])
-    app.include_router(admin_settings_router, prefix=api_prefix, tags=["Admin - Settings"])
-    app.include_router(admin_skill_registry_router, prefix=api_prefix, tags=["Admin - Skills"])
-    app.include_router(notification_ws_router, prefix=api_prefix, tags=["Notifications"])
     app.include_router(
-        admin_provider_credential_router, prefix=api_prefix, tags=["Admin - Provider Credentials"]
+        admin_registration_router, prefix=api_prefix, tags=["Admin - Registration"]
     )
-    app.include_router(admin_provider_instance_router, prefix=api_prefix, tags=["Admin - Provider Instances"])
-    app.include_router(admin_discovery_router, prefix=api_prefix, tags=["Admin - Discovery Agent"])
+    app.include_router(
+        admin_notification_router, prefix=api_prefix, tags=["Admin - Notifications"]
+    )
+    app.include_router(
+        admin_settings_router, prefix=api_prefix, tags=["Admin - Settings"]
+    )
+    app.include_router(
+        admin_skill_registry_router, prefix=api_prefix, tags=["Admin - Skills"]
+    )
+    app.include_router(
+        notification_ws_router, prefix=api_prefix, tags=["Notifications"]
+    )
+    app.include_router(
+        admin_provider_credential_router,
+        prefix=api_prefix,
+        tags=["Admin - Provider Credentials"],
+    )
+    app.include_router(
+        admin_provider_instance_router,
+        prefix=api_prefix,
+        tags=["Admin - Provider Instances"],
+    )
+    app.include_router(
+        admin_discovery_router, prefix=api_prefix, tags=["Admin - Discovery Agent"]
+    )
 
     # Gateway 路由
     app.include_router(
         external_gateway_router, prefix=f"{api_prefix}/external", tags=["Gateway"]
     )
     # 兼容文档与测试所用的外部通道前缀 `/external/v1`
-    app.include_router(
-        external_gateway_router, prefix="/external/v1", tags=["Gateway"]
-    )
+    app.include_router(external_gateway_router, prefix="/external/v1", tags=["Gateway"])
     app.include_router(
         internal_gateway_router, prefix=f"{api_prefix}/internal", tags=["Gateway"]
     )
     # 兼容文档所用的内部通道前缀 `/internal/v1`
-    app.include_router(
-        internal_gateway_router, prefix="/internal/v1", tags=["Gateway"]
-    )
+    app.include_router(internal_gateway_router, prefix="/internal/v1", tags=["Gateway"])
     app.include_router(
         internal_bridge_router, prefix=f"{api_prefix}/internal", tags=["Bridge"]
     )
     app.include_router(
-        internal_conversation_router, prefix=f"{api_prefix}/internal", tags=["Conversations"]
+        internal_conversation_router,
+        prefix=f"{api_prefix}/internal",
+        tags=["Conversations"],
     )
     app.include_router(
-        internal_image_generation_router, prefix=f"{api_prefix}/internal", tags=["Image Generation"]
+        internal_image_generation_router,
+        prefix=f"{api_prefix}/internal",
+        tags=["Image Generation"],
     )
     app.include_router(
-        internal_skill_execution_router, prefix=f"{api_prefix}/internal", tags=["Skills"]
+        internal_skill_execution_router,
+        prefix=f"{api_prefix}/internal",
+        tags=["Skills"],
     )
     app.include_router(
-        internal_video_generation_router, prefix=f"{api_prefix}/internal", tags=["Video Generation"]
+        internal_video_generation_router,
+        prefix=f"{api_prefix}/internal",
+        tags=["Video Generation"],
     )
     app.include_router(
         internal_sandbox_router, prefix=f"{api_prefix}/internal", tags=["Sandbox"]
@@ -249,9 +282,13 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(credits_router, prefix=api_prefix, tags=["Credits"])
     app.include_router(spec_agent_router, prefix=api_prefix, tags=["Spec Agent"])
     app.include_router(mcp_router, prefix=api_prefix, tags=["MCP Market"])
-    app.include_router(user_mcp_router, prefix=f"{api_prefix}/mcp", tags=["User MCP Servers"])
+    app.include_router(
+        user_mcp_router, prefix=f"{api_prefix}/mcp", tags=["User MCP Servers"]
+    )
     app.include_router(settings_router, prefix=api_prefix, tags=["Settings"])
-    app.include_router(knowledge_router, prefix=api_prefix, tags=["Knowledge Ingestion"])
+    app.include_router(
+        knowledge_router, prefix=api_prefix, tags=["Knowledge Ingestion"]
+    )
     # Metrics
     app.include_router(metrics_router, tags=["Metrics"])
 

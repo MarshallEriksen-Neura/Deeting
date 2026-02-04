@@ -90,7 +90,7 @@ async def test_rate_limit_tpm_exceeded_returns_failed():
     # rpm allowed, tpm denied
     redis_mock.evalsha.side_effect = [
         [1, 3, 60],  # rpm
-        [0, 0, 5],   # tpm denied with retry_after=5
+        [0, 0, 5],  # tpm denied with retry_after=5
     ]
 
     original_redis = getattr(cache, "_redis", None)

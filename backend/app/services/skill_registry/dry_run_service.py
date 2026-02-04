@@ -25,7 +25,9 @@ class SkillDryRunService:
         self.self_heal_service = self_heal_service
         self.self_heal_max_attempts = self_heal_max_attempts
 
-    async def run(self, skill_id: str, *, allow_self_heal: bool = True) -> dict[str, Any]:
+    async def run(
+        self, skill_id: str, *, allow_self_heal: bool = True
+    ) -> dict[str, Any]:
         skill = await self.repo.get_by_id(skill_id)
         if not skill:
             raise ValueError("Skill not found")
@@ -44,7 +46,9 @@ class SkillDryRunService:
                 skill, "exec_failed", str(exc), allow_self_heal=allow_self_heal
             )
 
-        error_code = _validate_artifacts(required_artifacts, result.get("artifacts", []))
+        error_code = _validate_artifacts(
+            required_artifacts, result.get("artifacts", [])
+        )
         if error_code:
             return await self._handle_failure(
                 skill, error_code, None, allow_self_heal=allow_self_heal

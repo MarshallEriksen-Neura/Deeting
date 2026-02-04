@@ -10,9 +10,9 @@ AuditLogStep: 审计日志步骤
 import logging
 from typing import TYPE_CHECKING
 
+from app.core.transaction_celery import celery_is_available
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
-from app.core.transaction_celery import celery_is_available
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -66,7 +66,8 @@ class AuditLogStep(BaseStep):
                 "routing_result": self._get_routing_result(ctx),
                 "upstream": {
                     "provider": ctx.get("routing", "provider"),
-                    "url": ctx.upstream_result.upstream_url or ctx.get("routing", "upstream_url"),
+                    "url": ctx.upstream_result.upstream_url
+                    or ctx.get("routing", "upstream_url"),
                     "latency_ms": ctx.upstream_result.latency_ms,
                     "retry_count": ctx.upstream_result.retry_count,
                     "status_code": ctx.upstream_result.status_code,
@@ -77,9 +78,12 @@ class AuditLogStep(BaseStep):
             }
 
             # 全局脱敏 (Meta & URL)
-            upstream_url = ctx.upstream_result.upstream_url or ctx.get("routing", "upstream_url")
+            upstream_url = ctx.upstream_result.upstream_url or ctx.get(
+                "routing", "upstream_url"
+            )
             try:
                 from app.services.workflow.steps.sanitize import SanitizeStep
+
                 meta = SanitizeStep.sanitize_for_log(meta)
                 upstream_url = SanitizeStep.sanitize_for_log(upstream_url)
             except Exception as e:
@@ -94,8 +98,12 @@ class AuditLogStep(BaseStep):
                 "output_tokens": ctx.billing.output_tokens,
                 "total_tokens": ctx.billing.total_tokens,
                 "cost_user": ctx.billing.total_cost,
-                "preset_id": str(ctx.selected_preset_id) if ctx.selected_preset_id else None,
-                "api_key_id": str(ctx.api_key_id) if getattr(ctx, "api_key_id", None) else None,
+                "preset_id": (
+                    str(ctx.selected_preset_id) if ctx.selected_preset_id else None
+                ),
+                "api_key_id": (
+                    str(ctx.api_key_id) if getattr(ctx, "api_key_id", None) else None
+                ),
                 "error_code": ctx.error_code,
                 "upstream_url": upstream_url,
                 "retry_count": ctx.upstream_result.retry_count,
@@ -138,14 +146,17 @@ class AuditLogStep(BaseStep):
             "stream": data.get("stream"),
             "messages_count": len(data.get("messages", [])),
             # 仅记录第一条和最后一条消息的角色，不记录内容
-            "messages_structure": [
-                {"role": m.get("role")} for m in data.get("messages", [])
-            ] if "messages" in data else None,
+            "messages_structure": (
+                [{"role": m.get("role")} for m in data.get("messages", [])]
+                if "messages" in data
+                else None
+            ),
             "max_tokens": data.get("max_tokens"),
             "temperature": data.get("temperature"),
         }
         try:
             from app.services.workflow.steps.sanitize import SanitizeStep
+
             summary = SanitizeStep.sanitize_for_log(summary)
         except Exception:
             pass
@@ -155,8 +166,14 @@ class AuditLogStep(BaseStep):
         """获取选路结果快照"""
         return {
             "provider": ctx.get("routing", "provider"),
-            "preset_id": str(ctx.selected_preset_id) if ctx.selected_preset_id else None,
-            "preset_item_id": str(ctx.selected_preset_item_id) if ctx.selected_preset_item_id else None,
+            "preset_id": (
+                str(ctx.selected_preset_id) if ctx.selected_preset_id else None
+            ),
+            "preset_item_id": (
+                str(ctx.selected_preset_item_id)
+                if ctx.selected_preset_item_id
+                else None
+            ),
             "template_engine": ctx.get("routing", "template_engine"),
             "upstream_url": ctx.get("routing", "upstream_url"),
         }

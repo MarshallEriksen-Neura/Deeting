@@ -6,9 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
-from app.models.assistant import Assistant, AssistantStatus, AssistantVisibility, AssistantVersion
-from app.services.assistant.assistant_routing_service import AssistantRoutingService
+from app.models.assistant import (
+    Assistant,
+    AssistantStatus,
+    AssistantVersion,
+    AssistantVisibility,
+)
 from app.repositories.assistant_routing_repository import AssistantRoutingRepository
+from app.services.assistant.assistant_routing_service import AssistantRoutingService
 
 
 @pytest_asyncio.fixture

@@ -7,23 +7,22 @@ Create Date: 2026-01-24
 
 from __future__ import annotations
 
-from typing import Union
-
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "20260124_02_create_image_generation_share_table"
-down_revision: Union[str, None] = "20260124_01_add_mcp_server_runtime_fields"
-branch_labels: Union[str, None] = None
-depends_on: Union[str, None] = None
+down_revision: str | None = "20260124_01_add_mcp_server_runtime_fields"
+branch_labels: str | None = None
+depends_on: str | None = None
 
 
 def upgrade() -> None:
     op.create_table(
         "image_generation_share",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "task_id",
             postgresql.UUID(as_uuid=True),
@@ -65,7 +64,12 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
             comment="分享时间",
         ),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True, comment="取消分享时间"),
+        sa.Column(
+            "revoked_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment="取消分享时间",
+        ),
         sa.Column(
             "is_active",
             sa.Boolean(),
@@ -86,10 +90,14 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("uq_image_share_task_id", "image_generation_share", ["task_id"], unique=True)
+    op.create_index(
+        "uq_image_share_task_id", "image_generation_share", ["task_id"], unique=True
+    )
     op.create_index("ix_image_share_user_id", "image_generation_share", ["user_id"])
     op.create_index("ix_image_share_is_active", "image_generation_share", ["is_active"])
-    op.create_index("idx_image_share_shared_at", "image_generation_share", ["shared_at"])
+    op.create_index(
+        "idx_image_share_shared_at", "image_generation_share", ["shared_at"]
+    )
 
 
 def downgrade() -> None:

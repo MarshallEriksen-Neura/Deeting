@@ -13,7 +13,12 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from app.core.config import settings
 from app.services.orchestrator.registry import step_registry
-from app.services.workflow.steps.base import BaseStep, StepConfig, StepResult, StepStatus
+from app.services.workflow.steps.base import (
+    BaseStep,
+    StepConfig,
+    StepResult,
+    StepStatus,
+)
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -91,7 +96,9 @@ class SanitizeStep(BaseStep):
             },
         )
 
-    def _sanitize_headers(self, headers: dict[str, str], ctx: "WorkflowContext") -> dict[str, str]:
+    def _sanitize_headers(
+        self, headers: dict[str, str], ctx: "WorkflowContext"
+    ) -> dict[str, str]:
         """脱敏响应头: 移除敏感信息"""
         sensitive_headers = set(k.lower() for k in settings.SECURITY_SENSITIVE_HEADERS)
 
@@ -99,11 +106,7 @@ class SanitizeStep(BaseStep):
         if ctx.is_internal and settings.INTERNAL_CHANNEL_DEBUG_INFO:
             sensitive_headers = sensitive_headers - DEBUG_HEADERS
 
-        return {
-            k: v
-            for k, v in headers.items()
-            if k.lower() not in sensitive_headers
-        }
+        return {k: v for k, v in headers.items() if k.lower() not in sensitive_headers}
 
     def _sanitize_response(self, response: Any, rules: dict) -> Any:
         """

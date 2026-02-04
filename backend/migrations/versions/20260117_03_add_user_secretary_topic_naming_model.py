@@ -5,17 +5,15 @@ Revises: 20260117_02_seed_default_assistant
 Create Date: 2026-01-17 00:00:00.000000
 """
 
-from typing import Union
 
 import sqlalchemy as sa
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = "20260117_03_add_user_secretary_topic_naming_model"
-down_revision: Union[str, None] = "20260117_02_seed_default_assistant"
-branch_labels: Union[str, None] = None
-depends_on: Union[str, None] = None
+down_revision: str | None = "20260117_02_seed_default_assistant"
+branch_labels: str | None = None
+depends_on: str | None = None
 
 
 def upgrade() -> None:
@@ -45,6 +43,8 @@ def downgrade() -> None:
     inspector = sa.inspect(bind)
 
     if inspector.has_table("user_secretary"):
-        existing_columns = {col["name"] for col in inspector.get_columns("user_secretary")}
+        existing_columns = {
+            col["name"] for col in inspector.get_columns("user_secretary")
+        }
         if "topic_naming_model" in existing_columns:
             op.drop_column("user_secretary", "topic_naming_model")

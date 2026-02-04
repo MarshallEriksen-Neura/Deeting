@@ -4,10 +4,11 @@ Revision ID: 20260131_01_add_avatar_object_key
 Revises: 20260127_02_merge_heads
 Create Date: 2026-01-31
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision: str = "20260131_01_add_avatar_object_key"
 down_revision: str | None = "20260127_02_merge_heads"
@@ -49,16 +50,14 @@ def upgrade() -> None:
     # 注意：这里假设 avatar_url 是完整的 URL，需要解析出 object_key
     # 实际迁移时需要根据具体 URL 格式调整
     # 如果 avatar_url 存在，尝试提取 object_key（取 URL 路径最后一部分）
-    bind.execute(
-        sa.text("""
+    bind.execute(sa.text("""
             UPDATE user_account 
             SET avatar_object_key = substring(avatar_url from '[^/]+$'),
                 avatar_storage_type = 'public'
             WHERE avatar_url IS NOT NULL 
               AND avatar_url != ''
               AND avatar_object_key IS NULL
-        """)
-    )
+        """))
 
 
 def downgrade() -> None:

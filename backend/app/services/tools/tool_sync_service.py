@@ -2,35 +2,39 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal
 from app.core.plugin_config import plugin_config_loader
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
-from app.core.database import AsyncSessionLocal
 from app.repositories.bandit_repository import BanditRepository
-from app.services.decision import DecisionCandidate, DecisionService
 from app.schemas.tool import ToolDefinition
-from app.services.indexing.index_sync_service import QdrantIndexSyncService, stable_fingerprint
+from app.services.decision import DecisionCandidate, DecisionService
+from app.services.indexing.index_sync_service import (
+    QdrantIndexSyncService,
+    stable_fingerprint,
+)
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_collections import (
     get_kb_user_tool_collection_name,
-    get_tool_system_collection_name,
     get_skill_collection_name,
+    get_tool_system_collection_name,
 )
 from app.storage.qdrant_kb_store import (
     delete_points,
-    search_points,
     scroll_points,
+    search_points,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_schema(schema: Any) -> Dict[str, Any]:
+def _safe_schema(schema: Any) -> dict[str, Any]:
     if isinstance(schema, dict):
         return schema
     if isinstance(schema, str):
@@ -85,7 +89,7 @@ class ToolSyncService:
     # 1. Sync Logic (Write Path)
     # =========================================================================
 
-    async def sync_system_tools(self, tools: List[ToolDefinition]) -> int:
+    async def sync_system_tools(self, tools: list[ToolDefinition]) -> int:
         """
         同步系统级工具到 Qdrant 系统索引。
         仅索引 enabled_by_default=True 且 is_always_on=False 的工具。
@@ -108,7 +112,8 @@ class ToolSyncService:
                 core_tool_names.update(plugin.tools or [])
 
         to_index = [
-            tool for tool in tools
+            tool
+            for tool in tools
             if tool.name in allowed_tool_names and tool.name not in core_tool_names
         ]
         if not to_index:
@@ -116,7 +121,9 @@ class ToolSyncService:
 
         collection = get_tool_system_collection_name()
         new_items = [
-            SystemToolIndexItem(tool=tool, plugin_id=tool_name_to_plugin.get(tool.name, "system"))
+            SystemToolIndexItem(
+                tool=tool, plugin_id=tool_name_to_plugin.get(tool.name, "system")
+            )
             for tool in to_index
         ]
         new_hash = self._system_tools_hash(new_items)
@@ -146,7 +153,10 @@ class ToolSyncService:
             id_fn=lambda item: _make_point_id("system", item.plugin_id, item.tool.name),
         )
         try:
-            ttl = int(getattr(settings, "MCP_TOOL_SYSTEM_INDEX_HASH_TTL_SECONDS", 86400) or 86400)
+            ttl = int(
+                getattr(settings, "MCP_TOOL_SYSTEM_INDEX_HASH_TTL_SECONDS", 86400)
+                or 86400
+            )
             if ttl > 0:
                 await cache.set(CacheKeys.tool_system_index_hash(), new_hash, ttl=ttl)
         except Exception:
@@ -159,7 +169,7 @@ class ToolSyncService:
         user_id: uuid.UUID,
         origin: str,
         old_payloads: list[dict],
-        new_tools: List[ToolDefinition],
+        new_tools: list[ToolDefinition],
         old_disabled: set[str] | None = None,
         new_disabled: set[str] | None = None,
     ) -> int:
@@ -170,7 +180,9 @@ class ToolSyncService:
         new_disabled_set = new_disabled or set()
 
         old_tools = self._payloads_to_tools(old_payloads, old_disabled_set)
-        new_enabled_tools = [tool for tool in new_tools if tool.name not in new_disabled_set]
+        new_enabled_tools = [
+            tool for tool in new_tools if tool.name not in new_disabled_set
+        ]
 
         collection = get_kb_user_tool_collection_name(user_id)
         delta = await self._index_syncer.sync(
@@ -260,7 +272,9 @@ class ToolSyncService:
         entries.sort(key=lambda it: (it["plugin_id"], it["name"]))
         return stable_fingerprint({"items": entries})
 
-    async def _load_system_index_items(self, collection_name: str) -> list[SystemToolIndexItem]:
+    async def _load_system_index_items(
+        self, collection_name: str
+    ) -> list[SystemToolIndexItem]:
         if not qdrant_is_configured():
             return []
         client = get_qdrant_client()
@@ -273,7 +287,9 @@ class ToolSyncService:
                     client,
                     collection_name=collection_name,
                     limit=100,
-                    query_filter={"must": [{"key": "scope", "match": {"value": "system"}}]},
+                    query_filter={
+                        "must": [{"key": "scope", "match": {"value": "system"}}]
+                    },
                     offset=offset,
                 )
                 if not points:
@@ -309,8 +325,8 @@ class ToolSyncService:
     async def search_tools(
         self,
         query: str,
-        user_id: Optional[uuid.UUID] = None,
-    ) -> List[ToolDefinition]:
+        user_id: uuid.UUID | None = None,
+    ) -> list[ToolDefinition]:
         start_time = time.perf_counter()
         logger.info(
             "ToolSyncService: search_tools start query_len=%s user_id=%s",
@@ -338,15 +354,19 @@ class ToolSyncService:
         threshold = float(getattr(settings, "MCP_TOOL_SCORE_THRESHOLD", 0.75) or 0.75)
 
         sys_start = time.perf_counter()
-        sys_hits = await self._search_system(vector, limit=total_limit, threshold=threshold)
+        sys_hits = await self._search_system(
+            vector, limit=total_limit, threshold=threshold
+        )
         logger.info(
             "ToolSyncService: system search duration_ms=%.2f hits=%s",
             (time.perf_counter() - sys_start) * 1000,
             len(sys_hits),
         )
-        
+
         skill_start = time.perf_counter()
-        skill_hits = await self._search_skills(vector, limit=skill_limit, threshold=threshold)
+        skill_hits = await self._search_skills(
+            vector, limit=skill_limit, threshold=threshold
+        )
         logger.info(
             "ToolSyncService: skill search duration_ms=%.2f hits=%s",
             (time.perf_counter() - skill_start) * 1000,
@@ -357,7 +377,9 @@ class ToolSyncService:
         user_hits: list[dict[str, Any]] = []
         if user_id:
             user_start = time.perf_counter()
-            user_hits = await self._search_user(user_id, vector, limit=user_limit, threshold=threshold)
+            user_hits = await self._search_user(
+                user_id, vector, limit=user_limit, threshold=threshold
+            )
             logger.info(
                 "ToolSyncService: user search duration_ms=%.2f hits=%s",
                 (time.perf_counter() - user_start) * 1000,
@@ -412,7 +434,9 @@ class ToolSyncService:
                 limit=limit,
                 with_payload=True,
                 score_threshold=threshold,
-                query_filter={"must": [{"key": "status", "match": {"value": "active"}}]},
+                query_filter={
+                    "must": [{"key": "status", "match": {"value": "active"}}]
+                },
             )
         except Exception as exc:  # pragma: no cover - fail-open
             logger.warning("skill search failed", exc_info=exc)
@@ -441,7 +465,9 @@ class ToolSyncService:
             logger.warning("user tool search failed", exc_info=exc)
             return []
 
-    async def _rerank_skill_hits(self, skill_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def _rerank_skill_hits(
+        self, skill_hits: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         if not skill_hits:
             return skill_hits
 
@@ -476,7 +502,9 @@ class ToolSyncService:
                         exploration_bonus=float(
                             getattr(settings, "DECISION_EXPLORATION_BONUS", 0.3) or 0.3
                         ),
-                        strategy=str(getattr(settings, "DECISION_STRATEGY", "thompson")),
+                        strategy=str(
+                            getattr(settings, "DECISION_STRATEGY", "thompson")
+                        ),
                         final_score=str(
                             getattr(settings, "DECISION_FINAL_SCORE", "weighted_sum")
                         ),
@@ -485,10 +513,12 @@ class ToolSyncService:
                             getattr(settings, "DECISION_UCB_MIN_TRIALS", 5) or 5
                         ),
                         thompson_prior_alpha=float(
-                            getattr(settings, "DECISION_THOMPSON_PRIOR_ALPHA", 1.0) or 1.0
+                            getattr(settings, "DECISION_THOMPSON_PRIOR_ALPHA", 1.0)
+                            or 1.0
                         ),
                         thompson_prior_beta=float(
-                            getattr(settings, "DECISION_THOMPSON_PRIOR_BETA", 1.0) or 1.0
+                            getattr(settings, "DECISION_THOMPSON_PRIOR_BETA", 1.0)
+                            or 1.0
                         ),
                     )
                     ranked = await decision_service.rank_candidates(
@@ -542,7 +572,7 @@ class ToolSyncService:
             seen.add(name)
             if len(merged) >= total_limit:
                 return merged
-        
+
         for hit in skill_hits:
             name = self._get_skill_name(hit)
             if not name or name in seen:
@@ -566,9 +596,9 @@ class ToolSyncService:
         skill_id = str(payload.get("skill_id") or "").strip()
         return f"skill__{skill_id}" if skill_id else ""
 
-    def _hit_to_def(self, hit: Dict[str, Any]) -> ToolDefinition:
+    def _hit_to_def(self, hit: dict[str, Any]) -> ToolDefinition:
         payload = hit.get("payload") or {}
-        
+
         if payload.get("is_skill"):
             # Special handling for Skills
             skill_id = str(payload.get("skill_id") or "")

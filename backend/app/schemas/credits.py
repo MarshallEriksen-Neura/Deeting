@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List
 
 from pydantic import Field
 
@@ -22,20 +21,20 @@ class CreditsModelUsageItem(BaseSchema):
 
 class CreditsModelUsageResponse(BaseSchema):
     total_tokens: int = Field(0, alias="totalTokens")
-    models: List[CreditsModelUsageItem]
+    models: list[CreditsModelUsageItem]
 
 
 class CreditsConsumptionPoint(BaseSchema):
     date: str
-    tokens_by_model: Dict[str, int] = Field(default_factory=dict, alias="tokensByModel")
+    tokens_by_model: dict[str, int] = Field(default_factory=dict, alias="tokensByModel")
 
 
 class CreditsConsumptionResponse(BaseSchema):
     start_date: str = Field(..., alias="startDate")
     end_date: str = Field(..., alias="endDate")
     days: int
-    models: List[str]
-    timeline: List[CreditsConsumptionPoint]
+    models: list[str]
+    timeline: list[CreditsConsumptionPoint]
 
 
 class CreditsTransactionItem(BaseSchema):
@@ -51,5 +50,5 @@ class CreditsTransactionItem(BaseSchema):
 
 
 class CreditsTransactionListResponse(BaseSchema):
-    items: List[CreditsTransactionItem]
+    items: list[CreditsTransactionItem]
     next_offset: int | None = Field(None, alias="nextOffset")

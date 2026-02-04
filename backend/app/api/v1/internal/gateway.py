@@ -37,71 +37,81 @@ import json
 import logging
 import re
 import time
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
 
 router = APIRouter(tags=["Internal Gateway"])
 
-from fastapi import Depends, HTTPException, Request, Query, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.external.gateway import _stream_billing_callback
+from app.constants.model_capability_map import expand_capabilities
 from app.core.cache_keys import CacheKeys
-from app.core.distributed_lock import distributed_lock
 from app.core.database import get_db
-from app.services.system import CancelService
-from app.services.orchestrator.context import Channel, ErrorSource, WorkflowContext
-from app.services.orchestrator.config import INTERNAL_DEBUG_WORKFLOW
-from app.services.orchestrator.orchestrator import GatewayOrchestrator, get_internal_orchestrator
-from app.services.orchestrator.registry import step_registry
+from app.core.distributed_lock import distributed_lock
 from app.deps.auth import get_current_user
+from app.models import User
 from app.models.conversation import ConversationChannel
-from app.services.conversation.service import ConversationService
-from app.services.conversation.session_service import ConversationSessionService
-from app.services.conversation.turn_index_sync import sync_redis_last_turn
-from app.repositories.conversation_message_repository import ConversationMessageRepository
-from app.services.conversation.topic_namer import TOPIC_NAMING_META_KEY, extract_first_user_message
-from app.schemas.gateway import (
-    ChatCompletionRequest,
-    ChatCompletionResponse,
-    ChatCompletionCancelResponse,
-    EmbeddingsRequest,
-    EmbeddingsResponse,
-    ModelGroupListResponse,
-    GatewayError,
-    RoutingTestRequest,
-    RoutingTestResponse,
-    StepRegistryResponse,
-)
-from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.repositories.bandit_repository import BanditRepository
+from app.repositories.conversation_message_repository import (
+    ConversationMessageRepository,
+)
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
-from app.constants.model_capability_map import expand_capabilities
-from app.models import User
-from app.services.workflow.steps.upstream_call import (
-    StreamTokenAccumulator,
-    stream_with_billing,
-)
-from app.api.v1.external.gateway import _stream_billing_callback
+from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.schemas.bandit import (
     BanditReportResponse,
     BanditReportSummary,
     BanditSkillReportResponse,
 )
+from app.schemas.gateway import (
+    ChatCompletionCancelResponse,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    EmbeddingsRequest,
+    EmbeddingsResponse,
+    GatewayError,
+    ModelGroupListResponse,
+    RoutingTestRequest,
+    RoutingTestResponse,
+    StepRegistryResponse,
+)
+from app.services.conversation.service import ConversationService
+from app.services.conversation.session_service import ConversationSessionService
+from app.services.conversation.topic_namer import (
+    TOPIC_NAMING_META_KEY,
+    extract_first_user_message,
+)
+from app.services.conversation.turn_index_sync import sync_redis_last_turn
+from app.services.orchestrator.config import INTERNAL_DEBUG_WORKFLOW
+from app.services.orchestrator.context import Channel, ErrorSource, WorkflowContext
+from app.services.orchestrator.orchestrator import (
+    GatewayOrchestrator,
+    get_internal_orchestrator,
+)
+from app.services.orchestrator.registry import step_registry
+from app.services.system import CancelService
+from app.services.workflow.steps.upstream_call import (
+    StreamTokenAccumulator,
+    stream_with_billing,
+)
 
 logger = logging.getLogger(__name__)
+
 
 def _format_sse(payload: dict[str, Any] | str) -> bytes:
     if isinstance(payload, str):
         data = payload
     else:
         data = json.dumps(payload, ensure_ascii=False, default=str)
-    return f"data: {data}\n\n".encode("utf-8")
+    return f"data: {data}\n\n".encode()
 
 
 async def _status_stream_chat(
@@ -135,7 +145,9 @@ async def _status_stream_chat(
             ):
                 if not task.done():
                     task.cancel()
-                ctx.mark_error(ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled")
+                ctx.mark_error(
+                    ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled"
+                )
                 yield _format_sse("[DONE]")
                 return
         if task.done() and queue.empty():
@@ -173,7 +185,9 @@ async def _status_stream_chat(
                 }
             )
         stream = ctx.get("upstream_call", "response_stream")
-        accumulator = ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        accumulator = (
+            ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        )
         wrapped_stream = stream_with_billing(
             stream=stream,
             ctx=ctx,
@@ -190,7 +204,11 @@ async def _status_stream_chat(
             yield chunk
         return
 
-    response_body = ctx.get("response_transform", "response") or ctx.get("upstream_call", "response") or {}
+    response_body = (
+        ctx.get("response_transform", "response")
+        or ctx.get("upstream_call", "response")
+        or {}
+    )
     yield _format_sse(response_body)
     yield _format_sse("[DONE]")
 
@@ -242,7 +260,7 @@ def _build_blocks(
         last_index = 0
         for match in think_regex.finditer(content_text):
             if match.start() > last_index:
-                text = content_text[last_index:match.start()]
+                text = content_text[last_index : match.start()]
                 if text.strip():
                     blocks.append({"type": "text", "content": text})
             thought = match.group(1).strip()
@@ -300,9 +318,11 @@ def _prepare_messages(
         normalized = {
             **msg,
             "content": content_text,
-            "token_estimate": token_est
-            if token_est is not None
-            else _estimate_tokens(content_for_tokens),
+            "token_estimate": (
+                token_est
+                if token_est is not None
+                else _estimate_tokens(content_for_tokens)
+            ),
             "meta_info": meta_info,
         }
         db_messages.append(normalized)
@@ -329,17 +349,13 @@ async def _append_stream_conversation(
         conv_service = ConversationService()
     except Exception as exc:
         redis_available = False
-        logger.warning(
-            "ConversationAppend redis unavailable, fallback to db: %s", exc
-        )
+        logger.warning("ConversationAppend redis unavailable, fallback to db: %s", exc)
 
     req = ctx.get("validation", "validated") or {}
     user_messages: list[dict[str, Any]] = req.get("messages", []) or []
     assistant_id = req.get("assistant_id")
     assistant_msg = (
-        {"role": "assistant", "content": assistant_text}
-        if assistant_text
-        else None
+        {"role": "assistant", "content": assistant_text} if assistant_text else None
     )
 
     raw_messages: list[dict[str, Any]] = []
@@ -616,7 +632,9 @@ async def test_routing(
         api_key_id=str(user.id) if user else None,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
-    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
+    ctx.set(
+        "request", "base_url", str(request.base_url).rstrip("/") if request else None
+    )
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
     if request_body.request_id:
@@ -646,7 +664,9 @@ async def test_routing(
         preset_id=ctx.get("routing", "preset_id"),
         preset_item_id=ctx.get("routing", "preset_item_id"),
         instance_id=str(instance_id) if instance_id is not None else None,
-        provider_model_id=str(provider_model_id) if provider_model_id is not None else None,
+        provider_model_id=(
+            str(provider_model_id) if provider_model_id is not None else None
+        ),
         upstream_url=ctx.get("routing", "upstream_url"),
         template_engine=ctx.get("routing", "template_engine"),
         routing_config=ctx.get("routing", "routing_config"),
@@ -674,10 +694,14 @@ async def chat_completions(
         db_session=db,
         tenant_id=str(user.id) if user else None,
         user_id=str(user.id) if user else None,
-        api_key_id=str(user.id) if user else None,  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
+        api_key_id=(
+            str(user.id) if user else None
+        ),  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
-    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
+    ctx.set(
+        "request", "base_url", str(request.base_url).rstrip("/") if request else None
+    )
     if request_body.request_id:
         ctx.set("request", "request_id", request_body.request_id)
     ctx.set("validation", "request", request_body)
@@ -705,7 +729,9 @@ async def chat_completions(
 
     if ctx.get("upstream_call", "stream"):
         stream = ctx.get("upstream_call", "response_stream")
-        accumulator = ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        accumulator = (
+            ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        )
 
         # 包装流式响应，在流完成后记录计费/用量
         wrapped_stream = stream_with_billing(
@@ -731,7 +757,9 @@ async def cancel_chat_completions(
 ) -> ChatCompletionCancelResponse:
     req_id = request_id.strip()
     if not req_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid request_id")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="invalid request_id"
+        )
     cancel_service = CancelService()
     await cancel_service.mark_cancel(
         capability="chat",
@@ -759,10 +787,14 @@ async def embeddings(
         db_session=db,
         tenant_id=str(user.id) if user else None,
         user_id=str(user.id) if user else None,
-        api_key_id=str(user.id) if user else None,  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
+        api_key_id=(
+            str(user.id) if user else None
+        ),  # 内部通道用用户 UUID 充当 key 维度，便于统一监控
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
-    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
+    ctx.set(
+        "request", "base_url", str(request.base_url).rstrip("/") if request else None
+    )
     ctx.set("validation", "request", request_body)
     ctx.set("routing", "require_provider_model_id", True)
 
@@ -789,14 +821,18 @@ async def embeddings(
 async def list_models(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    capability: str | None = Query(None, description="能力过滤 (chat/image_generation/embedding 等)"),
+    capability: str | None = Query(
+        None, description="能力过滤 (chat/image_generation/embedding 等)"
+    ),
 ) -> ModelGroupListResponse:
     preset_repo = ProviderPresetRepository(db)
     instance_repo = ProviderInstanceRepository(db)
     model_repo = ProviderModelRepository(db)
 
     logger.info(f"internal_models_list start user_id={user.id}")
-    instances = await instance_repo.get_available_instances(user_id=str(user.id), include_public=True)
+    instances = await instance_repo.get_available_instances(
+        user_id=str(user.id), include_public=True
+    )
     if not instances:
         logger.warning(f"internal_models_list empty_instances user_id={user.id}")
         return ModelGroupListResponse(instances=[])
@@ -820,7 +856,9 @@ async def list_models(
     capability_filter = set(expand_capabilities(capability)) if capability else set()
     for m in models:
         # Check if model has any of the requested capabilities
-        if capability_filter and not set(m.capabilities).intersection(capability_filter):
+        if capability_filter and not set(m.capabilities).intersection(
+            capability_filter
+        ):
             continue
         inst = inst_map.get(str(m.instance_id))
         if not inst:
@@ -830,7 +868,9 @@ async def list_models(
             skipped_inactive_model += 1
             continue
         if inst.preset_slug not in preset_cache:
-            preset_cache[inst.preset_slug] = await preset_repo.get_by_slug(inst.preset_slug)
+            preset_cache[inst.preset_slug] = await preset_repo.get_by_slug(
+                inst.preset_slug
+            )
         preset = preset_cache.get(inst.preset_slug)
         if not preset:
             skipped_preset_missing += 1
@@ -868,7 +908,9 @@ async def list_models(
         )
         added_models += 1
 
-    instances_data = [grouped[str(inst.id)] for inst in inst_list if str(inst.id) in grouped]
+    instances_data = [
+        grouped[str(inst.id)] for inst in inst_list if str(inst.id) in grouped
+    ]
     if not instances_data:
         logger.warning(
             f"internal_models_list result_empty user_id={user.id} "

@@ -13,7 +13,7 @@ class HelloWorldPlugin(AgentPlugin):
             name="examples.hello_world",
             version="1.0.0",
             description="A sample plugin that provides basic time and echo tools.",
-            author="Gemini CLI"
+            author="Gemini CLI",
         )
 
     async def on_activate(self) -> None:
@@ -21,7 +21,9 @@ class HelloWorldPlugin(AgentPlugin):
         Called when the plugin is activated.
         """
         logger = self.context.get_logger()
-        logger.info(f"HelloWorldPlugin activated! Working dir: {self.context.working_directory}")
+        logger.info(
+            f"HelloWorldPlugin activated! Working dir: {self.context.working_directory}"
+        )
 
         # Async DB access
         db = self.context.get_db_session()
@@ -42,12 +44,8 @@ class HelloWorldPlugin(AgentPlugin):
                 "function": {
                     "name": "get_current_system_time",
                     "description": "Get the current time from the server.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
             },
             {
                 "type": "function",
@@ -59,13 +57,13 @@ class HelloWorldPlugin(AgentPlugin):
                         "properties": {
                             "message": {
                                 "type": "string",
-                                "description": "The message to echo"
+                                "description": "The message to echo",
                             }
                         },
-                        "required": ["message"]
-                    }
-                }
-            }
+                        "required": ["message"],
+                    },
+                },
+            },
         ]
 
     # --- Tool Handlers ---

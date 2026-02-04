@@ -41,7 +41,9 @@ async def test_routing_success_populates_context(monkeypatch):
         db_session=AsyncMock(spec=AsyncSession),
     )
     step = RoutingStep()
-    monkeypatch.setattr(step, "_select_upstream", AsyncMock(return_value=_fake_routing_result()))
+    monkeypatch.setattr(
+        step, "_select_upstream", AsyncMock(return_value=_fake_routing_result())
+    )
 
     result = await step.execute(ctx)
 
@@ -67,7 +69,11 @@ async def test_routing_with_provider_model_id(monkeypatch):
     ctx.set("validation", "request", DummyRequest())
 
     step = RoutingStep()
-    monkeypatch.setattr(step, "_select_by_provider_model_id", AsyncMock(return_value=_fake_routing_result()))
+    monkeypatch.setattr(
+        step,
+        "_select_by_provider_model_id",
+        AsyncMock(return_value=_fake_routing_result()),
+    )
 
     result = await step.execute(ctx)
 
@@ -79,7 +85,9 @@ async def test_routing_with_provider_model_id(monkeypatch):
 async def test_routing_requires_model_and_db():
     step = RoutingStep()
 
-    ctx_no_model = WorkflowContext(channel=Channel.EXTERNAL, db_session=AsyncMock(spec=AsyncSession))
+    ctx_no_model = WorkflowContext(
+        channel=Channel.EXTERNAL, db_session=AsyncMock(spec=AsyncSession)
+    )
     result = await step.execute(ctx_no_model)
     assert result.status == StepStatus.FAILED
 

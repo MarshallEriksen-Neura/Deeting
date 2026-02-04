@@ -28,7 +28,7 @@ class MemoryWriteStep(BaseStep):
     name = "memory_write"
     depends_on = ["response_transform"]
 
-    async def execute(self, ctx: "WorkflowContext") -> StepResult:
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
         if ctx.capability != "chat":
             return StepResult(status=StepStatus.SUCCESS, message="skip_non_chat")
         if not ctx.is_external:
@@ -68,10 +68,16 @@ class MemoryWriteStep(BaseStep):
             try:
                 exc = t.exception()
             except Exception as err:
-                logger.warning("external_memory_task_exception trace_id=%s err=%s", ctx.trace_id, err)
+                logger.warning(
+                    "external_memory_task_exception trace_id=%s err=%s",
+                    ctx.trace_id,
+                    err,
+                )
                 return
             if exc:
-                logger.warning("external_memory_task_failed trace_id=%s err=%s", ctx.trace_id, exc)
+                logger.warning(
+                    "external_memory_task_failed trace_id=%s err=%s", ctx.trace_id, exc
+                )
 
         task.add_done_callback(_log_task_error)
         return StepResult(status=StepStatus.SUCCESS, message="scheduled")

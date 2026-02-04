@@ -122,7 +122,9 @@ class SecretManager:
 
         if self._is_db_ref(secret_ref_id):
             if not db_session:
-                self._logger.warning("secret_db_ref_without_session ref=%s", secret_ref_id)
+                self._logger.warning(
+                    "secret_db_ref_without_session ref=%s", secret_ref_id
+                )
                 return None
             secret = await self._fetch_from_db(db_session, namespace, secret_ref_id)
             if secret:
@@ -187,7 +189,13 @@ class SecretManager:
         await self._cache_set_encrypted(cache_key, raw_secret)
         return secret_ref_id
 
-    async def rotate(self, provider: str, secret_ref_id: str, new_secret: str, db_session: AsyncSession | None = None) -> bool:
+    async def rotate(
+        self,
+        provider: str,
+        secret_ref_id: str,
+        new_secret: str,
+        db_session: AsyncSession | None = None,
+    ) -> bool:
         """
         轮换上游凭证：写入新密钥并失效缓存。
 
@@ -205,7 +213,9 @@ class SecretManager:
         try:
             await self._invalidator.on_secret_rotated(namespace)
         except Exception as exc:
-            self._logger.warning(f"secret_rotate_invalidate_failed provider={namespace}: {exc}")
+            self._logger.warning(
+                f"secret_rotate_invalidate_failed provider={namespace}: {exc}"
+            )
 
         # 审计日志（仅记录引用信息，避免泄露密钥）
         secret_hint = new_secret[-4:] if len(new_secret) >= 4 else "****"

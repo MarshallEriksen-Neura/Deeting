@@ -81,7 +81,9 @@ class BridgeAgentTokenService:
     def _redis_key(*, user_id: uuid.UUID, agent_id: str) -> str:
         return _REDIS_KEY_TEMPLATE.format(user_id=str(user_id), agent_id=agent_id)
 
-    async def _cache_version(self, *, user_id: uuid.UUID, agent_id: str, version: int, expires_at: datetime) -> None:
+    async def _cache_version(
+        self, *, user_id: uuid.UUID, agent_id: str, version: int, expires_at: datetime
+    ) -> None:
         if not self.redis:
             return
         exp = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)
@@ -101,7 +103,9 @@ class BridgeAgentTokenService:
             # 缓存失败不阻断主流程
             return
 
-    async def _fetch_record(self, *, user_id: uuid.UUID, agent_id: str) -> BridgeAgentToken | None:
+    async def _fetch_record(
+        self, *, user_id: uuid.UUID, agent_id: str
+    ) -> BridgeAgentToken | None:
         stmt = select(BridgeAgentToken).where(
             BridgeAgentToken.user_id == user_id,
             BridgeAgentToken.agent_id == agent_id,
@@ -131,12 +135,21 @@ class BridgeAgentTokenService:
                 issued_at=record.issued_at,
                 expires_at=record.expires_at,
             )
-            await self._cache_version(user_id=user_id, agent_id=agent_id, version=record.version, expires_at=record.expires_at)
-            return BridgeAgentTokenResult(token=token, expires_at=record.expires_at, version=record.version)
+            await self._cache_version(
+                user_id=user_id,
+                agent_id=agent_id,
+                version=record.version,
+                expires_at=record.expires_at,
+            )
+            return BridgeAgentTokenResult(
+                token=token, expires_at=record.expires_at, version=record.version
+            )
 
         next_version = 1 if record is None else int(record.version) + 1
         issued_at = now
-        expires_at = issued_at + timedelta(days=int(settings.BRIDGE_AGENT_TOKEN_EXPIRE_DAYS))
+        expires_at = issued_at + timedelta(
+            days=int(settings.BRIDGE_AGENT_TOKEN_EXPIRE_DAYS)
+        )
 
         token = _create_jwt_token(
             user_id=str(user_id),
@@ -164,9 +177,16 @@ class BridgeAgentTokenService:
         # 不在 Service 层直接 commit，由上层管理事务
         await self.session.refresh(record)
 
-        await self._cache_version(user_id=user_id, agent_id=agent_id, version=record.version, expires_at=record.expires_at)
+        await self._cache_version(
+            user_id=user_id,
+            agent_id=agent_id,
+            version=record.version,
+            expires_at=record.expires_at,
+        )
 
-        return BridgeAgentTokenResult(token=token, expires_at=record.expires_at, version=record.version)
+        return BridgeAgentTokenResult(
+            token=token, expires_at=record.expires_at, version=record.version
+        )
 
     async def list_tokens(self, *, user_id: uuid.UUID) -> list[BridgeAgentToken]:
         stmt = select(BridgeAgentToken).where(BridgeAgentToken.user_id == user_id)
@@ -177,17 +197,19 @@ class BridgeAgentTokenService:
         record = await self._fetch_record(user_id=user_id, agent_id=agent_id)
         if not record:
             return False
-        
+
         await self.session.delete(record)
         # 不在 Service 层直接 commit，由上层管理事务
-        
+
         # 清除缓存
         if self.redis:
             try:
-                await self.redis.delete(self._redis_key(user_id=user_id, agent_id=agent_id))
+                await self.redis.delete(
+                    self._redis_key(user_id=user_id, agent_id=agent_id)
+                )
             except Exception:
                 pass
-                
+
         return True
 
 

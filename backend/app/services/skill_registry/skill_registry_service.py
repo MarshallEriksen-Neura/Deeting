@@ -7,7 +7,6 @@ from app.repositories.skill_capability_repository import SkillCapabilityReposito
 from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 
-
 STATUS_DRY_RUN_FAIL = "dry_run_fail"
 STATUS_NEEDS_REVIEW = "needs_review"
 

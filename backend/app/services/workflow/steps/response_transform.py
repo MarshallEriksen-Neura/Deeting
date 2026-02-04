@@ -9,12 +9,12 @@ ResponseTransformStep: 响应转换步骤
 
 import logging
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from app.services.orchestrator.registry import step_registry
-from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 from app.services.providers.blocks_transformer import build_blocks_from_message
 from app.services.providers.response_transformer import response_transformer
+from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -68,7 +68,7 @@ class ResponseTransformStep(BaseStep):
             )
 
         try:
-        # 根据模板引擎与响应规则转换响应
+            # 根据模板引擎与响应规则转换响应
             item_config = SimpleNamespace(
                 template_engine=template_engine,
                 response_transform=response_transform,
@@ -95,7 +95,9 @@ class ResponseTransformStep(BaseStep):
                 choices = transformed.get("choices") or []
                 if choices:
                     message = (
-                        choices[0].get("message") if isinstance(choices[0], dict) else None
+                        choices[0].get("message")
+                        if isinstance(choices[0], dict)
+                        else None
                     )
                     if isinstance(message, dict):
                         content = message.get("content")
@@ -104,7 +106,9 @@ class ResponseTransformStep(BaseStep):
                         blocks = build_blocks_from_message(
                             content=content if isinstance(content, str) else None,
                             reasoning=reasoning if isinstance(reasoning, str) else None,
-                            tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                            tool_calls=(
+                                tool_calls if isinstance(tool_calls, list) else None
+                            ),
                         )
                         if blocks:
                             meta_info = message.get("meta_info") or {}
@@ -115,7 +119,11 @@ class ResponseTransformStep(BaseStep):
             if isinstance(transformed, dict):
                 choices = transformed.get("choices") or []
                 if choices:
-                    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+                    message = (
+                        choices[0].get("message")
+                        if isinstance(choices[0], dict)
+                        else None
+                    )
                     if isinstance(message, dict):
                         tool_calls = message.get("tool_calls") or []
             if isinstance(tool_calls, list) and tool_calls:

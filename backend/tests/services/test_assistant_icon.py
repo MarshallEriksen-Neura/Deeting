@@ -3,8 +3,15 @@ import pytest_asyncio
 
 from app.models import Base
 from app.models.assistant import AssistantStatus, AssistantVisibility
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
-from app.schemas.assistant import AssistantCreate, AssistantUpdate, AssistantVersionCreate
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
+from app.schemas.assistant import (
+    AssistantCreate,
+    AssistantUpdate,
+    AssistantVersionCreate,
+)
 from app.services.assistant.assistant_service import AssistantService
 from tests.api.conftest import AsyncSessionLocal, engine
 

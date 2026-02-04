@@ -5,6 +5,7 @@
 - POST /admin/notifications/users/{user_id} - 发布单用户通知 [权限: notification.manage]
 - POST /admin/notifications/broadcast - 发布全员通知 [权限: notification.manage]
 """
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends

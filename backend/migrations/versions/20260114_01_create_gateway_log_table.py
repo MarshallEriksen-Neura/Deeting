@@ -5,17 +5,16 @@ Revises: 20260106_08_create_assistant_tables
 Create Date: 2026-01-14
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20260114_01_create_gateway_log_table"
-down_revision: Union[str, None] = "20260110_02_seed_default_providers"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260110_02_seed_default_providers"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -37,7 +36,9 @@ def upgrade() -> None:
         sa.Column("total_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("cost_upstream", sa.Float(), nullable=False, server_default="0.0"),
         sa.Column("cost_user", sa.Float(), nullable=False, server_default="0.0"),
-        sa.Column("is_cached", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_cached", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("error_code", sa.String(length=64), nullable=True),
         sa.Column("meta", sa.JSON(), nullable=True),
         sa.Column(

@@ -2,30 +2,30 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any
 
+from sqlalchemy import UUID as SA_UUID
 from sqlalchemy import (
-    String,
-    Text,
-    Boolean,
     DateTime,
-    Integer,
     ForeignKey,
     Index,
-    Float,
-    SmallInteger
+    Integer,
+    SmallInteger,
+    String,
+    Text,
 )
-from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.provider_preset import JSONBCompat
+
 
 class SpecPlan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
     SpecPlan (施工蓝图表)
     存储 Master Agent 生成的 DAG 计划及全局执行状态。
     """
+
     __tablename__ = "spec_plan"
     __table_args__ = (
         Index("ix_spec_plan_user", "user_id"),
@@ -52,13 +52,13 @@ class SpecPlan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="任务/项目名称",
     )
 
-    manifest_data: Mapped[Dict[str, Any]] = mapped_column(
+    manifest_data: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,
         nullable=False,
         comment="完整的 DAG 蓝图结构 (Nodes, Edges, Rules)",
     )
 
-    current_context: Mapped[Dict[str, Any]] = mapped_column(
+    current_context: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=dict,
@@ -90,7 +90,7 @@ class SpecPlan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="调度优先级 (越大越高)",
     )
 
-    execution_config: Mapped[Dict[str, Any]] = mapped_column(
+    execution_config: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=dict,
@@ -99,7 +99,7 @@ class SpecPlan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     # Relationship
-    logs: Mapped[List["SpecExecutionLog"]] = relationship(
+    logs: Mapped[list[SpecExecutionLog]] = relationship(
         "SpecExecutionLog", back_populates="plan", cascade="all, delete-orphan"
     )
 
@@ -112,6 +112,7 @@ class SpecExecutionLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     SpecExecutionLog (施工日志表)
     记录每个 Node 的执行快照、结果与状态。
     """
+
     __tablename__ = "spec_execution_log"
     __table_args__ = (
         Index("ix_spec_log_plan_node", "plan_id", "node_id"),
@@ -139,7 +140,7 @@ class SpecExecutionLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="节点状态: PENDING, RUNNING, SUCCESS, FAILED, SKIPPED, WAITING_APPROVAL",
     )
 
-    input_snapshot: Mapped[Dict[str, Any]] = mapped_column(
+    input_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,
         nullable=True,
         comment="执行时的入参快照 (Resolved Args)",
@@ -151,7 +152,7 @@ class SpecExecutionLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="Worker/Tool 的原始返回 (用于 Debug/人工修复)",
     )
 
-    output_data: Mapped[Dict[str, Any] | None] = mapped_column(
+    output_data: Mapped[dict[str, Any] | None] = mapped_column(
         JSONBCompat,
         nullable=True,
         comment="清洗后的结构化结果 (供下游消费)",
@@ -163,7 +164,7 @@ class SpecExecutionLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="执行者标识 (e.g. GenericWorker/Kimi-K2)",
     )
 
-    worker_snapshot: Mapped[Dict[str, Any] | None] = mapped_column(
+    worker_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
         JSONBCompat,
         nullable=True,
         comment="执行时的 Prompt/Config 备份",
@@ -196,8 +197,8 @@ class SpecExecutionLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     # Relationships
-    plan: Mapped["SpecPlan"] = relationship("SpecPlan", back_populates="logs")
-    sessions: Mapped[List["SpecWorkerSession"]] = relationship(
+    plan: Mapped[SpecPlan] = relationship("SpecPlan", back_populates="logs")
+    sessions: Mapped[list[SpecWorkerSession]] = relationship(
         "SpecWorkerSession", back_populates="log", cascade="all, delete-orphan"
     )
 
@@ -210,10 +211,9 @@ class SpecWorkerSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     SpecWorkerSession (员工执行会话/思维链路表)
     记录 Sub-Agent 在执行某个 Node 时的内部思维过程 (CoT)。
     """
+
     __tablename__ = "spec_worker_session"
-    __table_args__ = (
-        Index("ix_spec_session_log", "log_id"),
-    )
+    __table_args__ = (Index("ix_spec_session_log", "log_id"),)
 
     log_id: Mapped[uuid.UUID] = mapped_column(
         SA_UUID(as_uuid=True),
@@ -222,7 +222,7 @@ class SpecWorkerSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="关联的执行日志节点",
     )
 
-    internal_messages: Mapped[List[Dict[str, Any]]] = mapped_column(
+    internal_messages: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=list,
@@ -230,7 +230,7 @@ class SpecWorkerSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="内部对话历史 (Role: system/user/assistant/tool)",
     )
 
-    thought_trace: Mapped[List[Dict[str, Any]]] = mapped_column(
+    thought_trace: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONBCompat,
         nullable=False,
         default=list,
@@ -247,7 +247,9 @@ class SpecWorkerSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     # Relationships
-    log: Mapped["SpecExecutionLog"] = relationship("SpecExecutionLog", back_populates="sessions")
+    log: Mapped[SpecExecutionLog] = relationship(
+        "SpecExecutionLog", back_populates="sessions"
+    )
 
     def __repr__(self) -> str:
         return f"<SpecWorkerSession(log_id={self.log_id})>"

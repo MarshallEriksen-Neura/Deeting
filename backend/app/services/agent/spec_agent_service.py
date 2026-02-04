@@ -1,35 +1,40 @@
-import inspect
 import asyncio
+import inspect
 import json
 import logging
 import re
 import uuid
-from typing import Any, Dict, List, Optional, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_pagination.cursor import CursorPage, CursorParams
 from fastapi_pagination.ext.sqlalchemy import paginate
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_plugins.core.manager import PluginManager
 from app.core.plugin_config import plugin_config_loader
+from app.models.conversation import ConversationChannel
 from app.models.spec_agent import SpecPlan
 from app.models.user_mcp_server import UserMcpServer
-from app.models.conversation import ConversationChannel
 from app.prompts.spec_planner import SPEC_PLANNER_SYSTEM_PROMPT
-from app.repositories.conversation_message_repository import ConversationMessageRepository
-from app.repositories.conversation_session_repository import ConversationSessionRepository
+from app.repositories.conversation_message_repository import (
+    ConversationMessageRepository,
+)
+from app.repositories.conversation_session_repository import (
+    ConversationSessionRepository,
+)
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest, SpecNode
 from app.schemas.tool import ToolCall, ToolDefinition
 from app.services.conversation.service import ConversationService
 from app.services.conversation.turn_index_sync import sync_redis_last_turn
+from app.services.knowledge import SpecKnowledgeService
 from app.services.mcp.client import mcp_client
 from app.services.mcp.discovery import mcp_discovery_service
-from app.services.tools.tool_context_service import tool_context_service
 from app.services.providers.llm import llm_service
-from app.services.knowledge import SpecKnowledgeService
+from app.services.tools.tool_context_service import tool_context_service
 from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
@@ -47,14 +52,16 @@ class SpecExecutor:
         repo: SpecAgentRepository,
         plugin_manager: PluginManager,
         user_id: uuid.UUID,
-        mcp_tools_map: Dict[str, Dict[str, Any]],
-        available_tool_defs: List[ToolDefinition],
-        local_tool_handlers: Dict[str, Any],
+        mcp_tools_map: dict[str, dict[str, Any]],
+        available_tool_defs: list[ToolDefinition],
+        local_tool_handlers: dict[str, Any],
         conversation_session_id: uuid.UUID | None = None,
-        conversation_append: Callable[
-            [AsyncSession, uuid.UUID, uuid.UUID, str, str, str], Awaitable[None]
-        ]
-        | None = None,
+        conversation_append: (
+            Callable[
+                [AsyncSession, uuid.UUID, uuid.UUID, str, str, str], Awaitable[None]
+            ]
+            | None
+        ) = None,
     ):
         self.plan_id = plan_id
         self.manifest = manifest
@@ -67,8 +74,8 @@ class SpecExecutor:
         self.conversation_session_id = conversation_session_id
         self.conversation_append = conversation_append
 
-        self.context: Dict[str, Any] = self.manifest.context.copy()
-        self.node_outputs: Dict[str, Any] = {}
+        self.context: dict[str, Any] = self.manifest.context.copy()
+        self.node_outputs: dict[str, Any] = {}
         self.max_turns = 6
         self._skipped_cache: set[str] = set()
 
@@ -106,7 +113,7 @@ class SpecExecutor:
             if log.status == "SKIPPED":
                 self._skipped_cache.add(log.node_id)
 
-    async def run_step(self) -> Dict[str, Any]:
+    async def run_step(self) -> dict[str, Any]:
         """Execute a single scheduling step."""
         latest_logs = await self.repo.get_latest_node_logs(self.plan_id)
         latest_status = {log.node_id: log.status for log in latest_logs}
@@ -120,7 +127,7 @@ class SpecExecutor:
             await self._commit()
             return {"status": "failed", "nodes": list(failed_ids)}
 
-        executable_nodes: List[SpecNode] = []
+        executable_nodes: list[SpecNode] = []
         for node in self.manifest.nodes:
             if latest_status.get(node.id) in ("RUNNING", "WAITING_APPROVAL"):
                 continue
@@ -130,7 +137,9 @@ class SpecExecutor:
             deps_satisfied = True
             for dep in node.needs:
                 if dep in skipped_ids:
-                    await self.skip_subtree_db(node.id, reason=f"dependency {dep} skipped")
+                    await self.skip_subtree_db(
+                        node.id, reason=f"dependency {dep} skipped"
+                    )
                     deps_satisfied = False
                     break
                 if dep not in completed_ids:
@@ -170,7 +179,7 @@ class SpecExecutor:
         await self._commit()
         return {"status": "running", "executed": executed}
 
-    async def execute_node(self, node: SpecNode) -> Dict[str, Any]:
+    async def execute_node(self, node: SpecNode) -> dict[str, Any]:
         logger.info("Executing Node: %s", node.id)
 
         input_snapshot = node.dict()
@@ -219,7 +228,9 @@ class SpecExecutor:
                     "model": getattr(node, "model_override", None) or "auto",
                     "max_turns": self.max_turns,
                     "required_tools": getattr(node, "required_tools", None) or [],
-                    "tools_available": [t.name for t in self._filter_tools_for_node(node)],
+                    "tools_available": [
+                        t.name for t in self._filter_tools_for_node(node)
+                    ],
                     "tools_used": sorted(list(used_tools)),
                     "session_id": str(session_id),
                     "message_count": message_count,
@@ -234,7 +245,9 @@ class SpecExecutor:
                 await self.repo.finish_node_execution(
                     log_entry.id,
                     "SUCCESS",
-                    output_data=result if isinstance(result, dict) else {"result": result},
+                    output_data=(
+                        result if isinstance(result, dict) else {"result": result}
+                    ),
                     raw_response={
                         "tool_trace": tool_trace,
                         "final_response": self._truncate_text(final_response, 4000),
@@ -267,7 +280,9 @@ class SpecExecutor:
                 children = self.dag_children.get(node.id, [])
                 for child_id in children:
                     if child_id != next_step:
-                        await self.skip_subtree_db(child_id, reason=f"logic_gate:{node.id}")
+                        await self.skip_subtree_db(
+                            child_id, reason=f"logic_gate:{node.id}"
+                        )
 
                 await self.repo.finish_node_execution(log_entry.id, "SUCCESS")
                 await self._commit()
@@ -292,7 +307,7 @@ class SpecExecutor:
 
         return {"status": "unknown"}
 
-    async def skip_subtree_db(self, node_id: str, reason: Optional[str] = None) -> None:
+    async def skip_subtree_db(self, node_id: str, reason: str | None = None) -> None:
         if node_id in self._skipped_cache:
             return
         self._skipped_cache.add(node_id)
@@ -312,7 +327,7 @@ class SpecExecutor:
         system_prompt = (
             "You are a capable execution agent.\n"
             "Your goal is to complete the following task:\n"
-            f"\"{instruction}\"\n\n"
+            f'"{instruction}"\n\n'
             "You have access to the following tools. Use them if necessary.\n"
             "Current Context variables are available if you need them.\n"
             "Return the final result as a JSON object."
@@ -330,7 +345,11 @@ class SpecExecutor:
         await self._record_session_message(session.id, messages[1])
         await self._record_session_step(
             session.id,
-            {"step": "start", "node_id": getattr(node, "id", ""), "tool_count": len(tools_for_llm)},
+            {
+                "step": "start",
+                "node_id": getattr(node, "id", ""),
+                "tool_count": len(tools_for_llm),
+            },
         )
 
         turns = 0
@@ -473,10 +492,14 @@ class SpecExecutor:
             return await result
         return result
 
-    async def _record_session_message(self, session_id: uuid.UUID, message: Dict[str, Any]) -> None:
+    async def _record_session_message(
+        self, session_id: uuid.UUID, message: dict[str, Any]
+    ) -> None:
         await self.repo.append_session_message(session_id, message)
 
-    async def _record_session_step(self, session_id: uuid.UUID, step: Dict[str, Any]) -> None:
+    async def _record_session_step(
+        self, session_id: uuid.UUID, step: dict[str, Any]
+    ) -> None:
         await self.repo.append_session_thought(session_id, step)
 
     def _truncate_text(self, text: str, limit: int) -> str:
@@ -486,8 +509,8 @@ class SpecExecutor:
             return text
         return f"{text[:limit]}...(truncated)"
 
-    def _coerce_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {}
+    def _coerce_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
         for key, value in message.items():
             if key == "content" and isinstance(value, str):
                 payload[key] = self._truncate_text(value, 2000)
@@ -504,14 +527,16 @@ class SpecExecutor:
             pass
         return {"result": response}
 
-    def _filter_tools_for_node(self, node: SpecNode) -> List[ToolDefinition]:
+    def _filter_tools_for_node(self, node: SpecNode) -> list[ToolDefinition]:
         required = getattr(node, "required_tools", None) or []
         if not required:
             return self.available_tool_defs
         required_set = set(required)
         filtered = [t for t in self.available_tool_defs if t.name in required_set]
         if not filtered:
-            logger.warning("No required tools matched for node %s", getattr(node, "id", ""))
+            logger.warning(
+                "No required tools matched for node %s", getattr(node, "id", "")
+            )
             return self.available_tool_defs
         return filtered
 
@@ -597,9 +622,8 @@ class SpecExecutor:
             return None
         if re.match(r"^-?\d+(\.\d+)?$", value):
             return float(value) if "." in value else int(value)
-        if (
-            (value.startswith("'") and value.endswith("'"))
-            or (value.startswith('"') and value.endswith('"'))
+        if (value.startswith("'") and value.endswith("'")) or (
+            value.startswith('"') and value.endswith('"')
         ):
             return value[1:-1]
         return value
@@ -634,12 +658,14 @@ class SpecAgentService:
         self._initialized = True
 
     @staticmethod
-    def _build_tools_description(tools: List[ToolDefinition]) -> str:
+    def _build_tools_description(tools: list[ToolDefinition]) -> str:
         if not tools:
             return "- None"
         lines: list[str] = []
         for tool in tools:
-            schema = json.dumps(tool.input_schema or {}, ensure_ascii=False, default=str)
+            schema = json.dumps(
+                tool.input_schema or {}, ensure_ascii=False, default=str
+            )
             lines.append(
                 f"- Tool: {tool.name}\n  Desc: {tool.description or ''}\n  Schema: {schema}"
             )
@@ -664,7 +690,7 @@ class SpecAgentService:
         3. Text with JSON embedded
         """
         cleaned = raw_text.strip()
-        
+
         # 1. Try finding markdown code block first
         code_block_pattern = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
         match = code_block_pattern.search(cleaned)
@@ -672,7 +698,7 @@ class SpecAgentService:
             try:
                 return json.loads(match.group(1))
             except json.JSONDecodeError:
-                pass # Fallback to wider search
+                pass  # Fallback to wider search
 
         # 2. Try direct parsing
         try:
@@ -689,7 +715,7 @@ class SpecAgentService:
                 return json.loads(potential_json)
         except json.JSONDecodeError:
             pass
-            
+
         # 4. If strict parsing fails, try to repair common issues (optional, risky but helpful)
         # For now, we just re-raise the last error or a generic one
         raise ValueError("Failed to extract valid JSON from response")
@@ -727,7 +753,9 @@ class SpecAgentService:
             {
                 "role": "system",
                 "content": "Drafting execution blueprint...",
-                "token_estimate": self._estimate_tokens("Drafting execution blueprint..."),
+                "token_estimate": self._estimate_tokens(
+                    "Drafting execution blueprint..."
+                ),
                 "is_truncated": False,
                 "meta_info": {
                     "spec_agent_event": "drafting",
@@ -826,7 +854,7 @@ class SpecAgentService:
         node_id: str,
         event: str,
         content: str,
-        source: Optional[str] = None,
+        source: str | None = None,
     ) -> None:
         created_at = Datetime.now().isoformat()
         meta_info = {
@@ -917,8 +945,8 @@ class SpecAgentService:
         session: AsyncSession,
         user_id: uuid.UUID,
         query: str,
-        context: Optional[Dict[str, Any]] = None,
-        model: Optional[str] = None,
+        context: dict[str, Any] | None = None,
+        model: str | None = None,
     ) -> tuple["SpecPlan", SpecManifest]:
         await self.initialize_plugins(user_id=user_id)
 
@@ -929,16 +957,20 @@ class SpecAgentService:
             query=trimmed_query,
         )
         tools_desc = self._build_tools_description(tools)
-        
+
         # Fetch available models for the user
         model_repo = ProviderModelRepository(session)
         user_models = await model_repo.get_available_models_for_user(str(user_id))
         if user_models:
             models_desc = "\n".join([f"- {m}" for m in user_models])
         else:
-            models_desc = "(No user-configured models found. Leave model_override empty.)"
+            models_desc = (
+                "(No user-configured models found. Leave model_override empty.)"
+            )
 
-        system_prompt = SPEC_PLANNER_SYSTEM_PROMPT.replace("{{available_tools}}", tools_desc)
+        system_prompt = SPEC_PLANNER_SYSTEM_PROMPT.replace(
+            "{{available_tools}}", tools_desc
+        )
         system_prompt = system_prompt.replace("{{available_models}}", models_desc)
 
         user_prompt = trimmed_query
@@ -994,10 +1026,10 @@ class SpecAgentService:
         user_id: uuid.UUID,
         plan_id: uuid.UUID,
         max_steps: int = 8,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         executor = await self.execute_plan(session, user_id, plan_id)
         executed_total = 0
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for _ in range(max_steps):
             result = await executor.run_step()
             executed_total += int(result.get("executed", 0) or 0)
@@ -1015,8 +1047,8 @@ class SpecAgentService:
         plan_id: uuid.UUID,
         node_id: str,
         decision: str,
-        feedback: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        feedback: str | None = None,
+    ) -> dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
         if not plan or plan.user_id != user_id:
@@ -1064,17 +1096,19 @@ class SpecAgentService:
         user_id: uuid.UUID,
         plan_id: uuid.UUID,
         node_id: str,
-        model_override: Optional[str],
-        instruction: Optional[str] = None,
+        model_override: str | None,
+        instruction: str | None = None,
         model_override_set: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
         if not plan or plan.user_id != user_id:
             raise ValueError("plan_not_found")
 
         manifest = SpecManifest(**plan.manifest_data)
-        target_node = next((node for node in manifest.nodes if node.id == node_id), None)
+        target_node = next(
+            (node for node in manifest.nodes if node.id == node_id), None
+        )
         if not target_node:
             raise ValueError("node_not_found")
         if getattr(target_node, "type", None) != "action":
@@ -1095,7 +1129,7 @@ class SpecAgentService:
                     raise ValueError("model_not_available")
 
         instruction_value = instruction.strip() if instruction is not None else None
-        pending_instruction: Optional[str] = None
+        pending_instruction: str | None = None
         if instruction is not None:
             if not instruction_value:
                 raise ValueError("instruction_empty")
@@ -1146,7 +1180,7 @@ class SpecAgentService:
         return mapping.get(status.upper(), "pending")
 
     @staticmethod
-    def _build_connections(nodes: List[SpecNode]) -> List[Dict[str, str]]:
+    def _build_connections(nodes: list[SpecNode]) -> list[dict[str, str]]:
         connections: list[dict[str, str]] = []
         for node in nodes:
             for dep in node.needs:
@@ -1158,7 +1192,7 @@ class SpecAgentService:
         session: AsyncSession,
         user_id: uuid.UUID,
         params: CursorParams,
-        status: Optional[str] = None,
+        status: str | None = None,
     ) -> CursorPage[SpecPlan]:
         stmt = select(SpecPlan).where(SpecPlan.user_id == user_id)
         if status:
@@ -1168,7 +1202,7 @@ class SpecAgentService:
 
     async def get_plan_detail(
         self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
         if not plan or plan.user_id != user_id:
@@ -1205,22 +1239,22 @@ class SpecAgentService:
         user_id: uuid.UUID,
         plan_id: uuid.UUID,
         node_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
         if not plan or plan.user_id != user_id:
             raise ValueError("plan_not_found")
 
         manifest = SpecManifest(**plan.manifest_data)
-        target_node = next((node for node in manifest.nodes if node.id == node_id), None)
+        target_node = next(
+            (node for node in manifest.nodes if node.id == node_id), None
+        )
         if not target_node:
             raise ValueError("node_not_found")
 
         log = await repo.get_latest_log_for_node(plan_id, node_id)
-        worker_sessions = await repo.get_sessions_by_log_ids(
-            [log.id] if log else []
-        )
-        node_logs: List[str] = []
+        worker_sessions = await repo.get_sessions_by_log_ids([log.id] if log else [])
+        node_logs: list[str] = []
         execution_status = "pending"
         duration_ms = None
 
@@ -1234,7 +1268,9 @@ class SpecAgentService:
                 node_logs.append(f"> Error: {log.error_message}")
             worker_session = worker_sessions.get(log.id)
             if worker_session and worker_session.thought_trace:
-                node_logs.extend(self._format_trace_to_logs(worker_session.thought_trace))
+                node_logs.extend(
+                    self._format_trace_to_logs(worker_session.thought_trace)
+                )
 
         return {
             "plan_id": str(plan_id),
@@ -1256,7 +1292,7 @@ class SpecAgentService:
         }
 
     @staticmethod
-    def _format_trace_to_logs(trace: List[Dict[str, Any]]) -> List[str]:
+    def _format_trace_to_logs(trace: list[dict[str, Any]]) -> list[str]:
         logs = []
         if not trace:
             return logs
@@ -1279,7 +1315,7 @@ class SpecAgentService:
 
     async def get_plan_status(
         self, session: AsyncSession, user_id: uuid.UUID, plan_id: uuid.UUID
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
         if not plan or plan.user_id != user_id:
@@ -1303,7 +1339,7 @@ class SpecAgentService:
             output_preview = None
             pulse = None
             skipped = False
-            node_logs: List[str] = []
+            node_logs: list[str] = []
 
             if log:
                 status = self._map_log_status(log.status)
@@ -1324,11 +1360,13 @@ class SpecAgentService:
                 if log.error_message:
                     output_preview = log.error_message[:200]
                     node_logs.append(f"> Error: {log.error_message}")
-                
+
                 # Format session trace to logs
                 worker_session = worker_sessions.get(log.id)
                 if worker_session and worker_session.thought_trace:
-                    node_logs.extend(self._format_trace_to_logs(worker_session.thought_trace))
+                    node_logs.extend(
+                        self._format_trace_to_logs(worker_session.thought_trace)
+                    )
 
             nodes_payload.append(
                 {
@@ -1367,7 +1405,7 @@ class SpecAgentService:
         user_id: uuid.UUID,
         plan_id: uuid.UUID,
         node_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
         if not plan or plan.user_id != user_id:
@@ -1421,7 +1459,11 @@ class SpecAgentService:
         await repo.update_plan_status(plan_id, "RUNNING")
         await session.commit()
 
-        return {"plan_id": str(plan_id), "node_id": node_id, "queued_nodes": queued_nodes}
+        return {
+            "plan_id": str(plan_id),
+            "node_id": node_id,
+            "queued_nodes": queued_nodes,
+        }
 
     async def append_plan_node_event(
         self,
@@ -1431,8 +1473,8 @@ class SpecAgentService:
         node_id: str,
         event: str,
         source: str,
-        payload: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         repo = SpecAgentRepository(session)
         plan = await repo.get_plan(plan_id)
         if not plan or plan.user_id != user_id:
@@ -1488,7 +1530,9 @@ class SpecAgentService:
             user_id=user_id,
             query=tool_query,
         )
-        local_handlers = self._build_local_handlers({tool.name for tool in available_tools})
+        local_handlers = self._build_local_handlers(
+            {tool.name for tool in available_tools}
+        )
         mcp_map = await self._build_mcp_tool_map(session, user_id)
 
         executor = SpecExecutor(
@@ -1510,8 +1554,8 @@ class SpecAgentService:
         await executor.initialize()
         return executor
 
-    def _build_local_handlers(self, tool_names: set[str]) -> Dict[str, Any]:
-        handlers: Dict[str, Any] = {}
+    def _build_local_handlers(self, tool_names: set[str]) -> dict[str, Any]:
+        handlers: dict[str, Any] = {}
         raw_tools = self.plugin_manager.get_all_tools()
         for tool_def in raw_tools:
             func_def = tool_def.get("function", {})
@@ -1537,7 +1581,7 @@ class SpecAgentService:
 
     async def _build_mcp_tool_map(
         self, session: AsyncSession, user_id: uuid.UUID
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> dict[str, dict[str, Any]]:
         stmt = select(UserMcpServer).where(
             UserMcpServer.user_id == user_id,
             UserMcpServer.is_enabled == True,
@@ -1546,7 +1590,7 @@ class SpecAgentService:
         result = await session.execute(stmt)
         servers = result.scalars().all()
 
-        tool_map: Dict[str, Dict[str, Any]] = {}
+        tool_map: dict[str, dict[str, Any]] = {}
         for server in servers:
             if not server.sse_url:
                 continue

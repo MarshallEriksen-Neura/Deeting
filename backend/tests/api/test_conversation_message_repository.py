@@ -9,7 +9,9 @@ from app.models.conversation import (
     ConversationSession,
     ConversationStatus,
 )
-from app.repositories.conversation_message_repository import ConversationMessageRepository
+from app.repositories.conversation_message_repository import (
+    ConversationMessageRepository,
+)
 from app.utils.time_utils import Datetime
 
 

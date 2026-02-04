@@ -164,9 +164,7 @@ class BanditArmState(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="状态版本",
     )
 
-    __table_args__ = (
-        UniqueConstraint("scene", "arm_id", name="uq_bandit_arm_scene"),
-    )
+    __table_args__ = (UniqueConstraint("scene", "arm_id", name="uq_bandit_arm_scene"),)
 
     def avg_latency_ms(self) -> float:
         if self.total_trials <= 0:

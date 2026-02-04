@@ -5,7 +5,11 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import settings
-from app.models.image_generation import GenerationTask, ImageGenerationOutput, ImageGenerationStatus
+from app.models.image_generation import (
+    GenerationTask,
+    ImageGenerationOutput,
+    ImageGenerationStatus,
+)
 from app.models.media_asset import MediaAsset
 from app.tasks.image_generation import process_image_generation_task
 from app.utils.time_utils import Datetime
@@ -13,7 +17,10 @@ from app.utils.time_utils import Datetime
 
 @pytest.mark.asyncio
 async def test_internal_image_generation_requires_auth(client: AsyncClient):
-    resp = await client.post("/api/v1/internal/images/generations", json={"model": "gpt-image-1", "prompt": "hi"})
+    resp = await client.post(
+        "/api/v1/internal/images/generations",
+        json={"model": "gpt-image-1", "prompt": "hi"},
+    )
     assert resp.status_code == 401
 
 
@@ -23,7 +30,9 @@ async def test_internal_image_generation_create_task(
     auth_tokens: dict,
     monkeypatch,
 ):
-    monkeypatch.setattr(process_image_generation_task, "delay", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        process_image_generation_task, "delay", lambda *_args, **_kwargs: None
+    )
 
     resp = await client.post(
         "/api/v1/internal/images/generations",
@@ -108,7 +117,9 @@ async def test_internal_image_generation_get_task_outputs(
     data = resp.json()
     assert data["status"] == "succeeded"
     assert data["outputs"]
-    assert data["outputs"][0]["asset_url"].startswith("http://test/api/v1/media/assets/")
+    assert data["outputs"][0]["asset_url"].startswith(
+        "http://test/api/v1/media/assets/"
+    )
 
 
 @pytest.mark.asyncio
@@ -218,9 +229,13 @@ async def test_internal_image_generation_list_tasks(
     task_item = next(item for item in items if item["task_id"] == str(task_id))
     assert task_item["prompt"] == "draw a city"
     assert task_item["session_id"] == str(session_id)
-    assert task_item["preview"]["asset_url"].startswith("http://test/api/v1/media/assets/")
+    assert task_item["preview"]["asset_url"].startswith(
+        "http://test/api/v1/media/assets/"
+    )
 
-    encrypted_item = next(item for item in items if item["task_id"] == str(encrypted_task_id))
+    encrypted_item = next(
+        item for item in items if item["task_id"] == str(encrypted_task_id)
+    )
     assert encrypted_item["prompt"] is None
     assert encrypted_item["prompt_encrypted"] is True
 

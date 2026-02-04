@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import select, or_, func
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.constants.model_capability_map import expand_capabilities
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.logging import logger
+from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.utils.time_utils import Datetime
 
 from .base import BaseRepository
@@ -38,7 +39,11 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
             stmt = (
                 select(ProviderInstance, model_count_sq.c.model_count)
                 .options(selectinload(ProviderInstance.credentials))
-                .join(model_count_sq, ProviderInstance.id == model_count_sq.c.instance_id, isouter=True)
+                .join(
+                    model_count_sq,
+                    ProviderInstance.id == model_count_sq.c.instance_id,
+                    isouter=True,
+                )
                 .where(ProviderInstance.is_enabled == True)  # noqa: E712
             )
             user_uuid = None
@@ -50,7 +55,10 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
             if user_id is not None:
                 if include_public:
                     stmt = stmt.where(
-                        or_(ProviderInstance.user_id == user_uuid, ProviderInstance.user_id.is_(None))
+                        or_(
+                            ProviderInstance.user_id == user_uuid,
+                            ProviderInstance.user_id.is_(None),
+                        )
                     )
                 else:
                     stmt = stmt.where(ProviderInstance.user_id == user_uuid)
@@ -105,7 +113,9 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         """
         按 capability + model_id 获取用户可用的模型条目
         """
-        cache_key = CacheKeys.provider_model_candidates(capability, model_id, user_id, include_public)
+        cache_key = CacheKeys.provider_model_candidates(
+            capability, model_id, user_id, include_public
+        )
         user_uuid = None
         if user_id:
             try:
@@ -119,21 +129,30 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             capability_candidates = expand_capabilities(capability)
             if not capability_candidates:
                 return []
-            
+
             # 使用 capabilities 数组包含任意候选能力的过滤逻辑
             # PostgreSQL: capabilities @> ARRAY[...]
             # SQLAlchemy: ProviderModel.capabilities.contains([capability]) + OR 组合
             stmt = (
                 select(ProviderModel)
-                .join(ProviderInstance, ProviderModel.instance_id == ProviderInstance.id)
+                .join(
+                    ProviderInstance, ProviderModel.instance_id == ProviderInstance.id
+                )
                 .where(
                     # 支持对外别名 unified_model_id 作为匹配键
-                    or_(ProviderModel.model_id == model_id, ProviderModel.unified_model_id == model_id),
+                    or_(
+                        ProviderModel.model_id == model_id,
+                        ProviderModel.unified_model_id == model_id,
+                    ),
                     ProviderModel.is_active == True,  # noqa: E712
                     ProviderInstance.is_enabled == True,  # noqa: E712
                 )
             )
-            dialect = self.session.bind.dialect.name if getattr(self.session, "bind", None) else None
+            dialect = (
+                self.session.bind.dialect.name
+                if getattr(self.session, "bind", None)
+                else None
+            )
             if dialect == "postgresql":
                 overlap_filters = [
                     ProviderModel.capabilities.contains([candidate])
@@ -144,7 +163,10 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             if user_id is not None:
                 if include_public:
                     stmt = stmt.where(
-                        or_(ProviderInstance.user_id == user_uuid, ProviderInstance.user_id.is_(None))
+                        or_(
+                            ProviderInstance.user_id == user_uuid,
+                            ProviderInstance.user_id.is_(None),
+                        )
                     )
                 else:
                     stmt = stmt.where(ProviderInstance.user_id == user_uuid)
@@ -153,7 +175,11 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             models = list(result.scalars().all())
             if dialect != "postgresql":
                 candidate_set = set(capability_candidates)
-                models = [m for m in models if any(c in candidate_set for c in (m.capabilities or []))]
+                models = [
+                    m
+                    for m in models
+                    if any(c in candidate_set for c in (m.capabilities or []))
+                ]
             return models
 
         return await cache.get_or_set_singleflight(
@@ -176,7 +202,9 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         await self.session.refresh(model)
         return model
 
-    async def upsert_for_instance(self, instance_id: uuid.UUID, models_data: list[dict]) -> list[ProviderModel]:
+    async def upsert_for_instance(
+        self, instance_id: uuid.UUID, models_data: list[dict]
+    ) -> list[ProviderModel]:
         """批量 Upsert 模型列表：按 instance_id + capability + model_id + upstream_path 唯一键判断。"""
         now = Datetime.utcnow()
         results: list[ProviderModel] = []
@@ -230,10 +258,10 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
     async def get_available_models_for_user(self, user_id: str) -> list[str]:
         """
         获取用户可用的模型列表
-        
+
         Args:
             user_id: 用户ID
-            
+
         Returns:
             可用模型ID列表
         """
@@ -241,7 +269,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             user_uuid = uuid.UUID(str(user_id))
         except Exception:
             return []
-            
+
         stmt = (
             select(ProviderModel.model_id.distinct())
             .join(ProviderInstance, ProviderInstance.id == ProviderModel.instance_id)

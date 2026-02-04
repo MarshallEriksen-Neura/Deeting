@@ -88,8 +88,3 @@ async def test_update_secretary_model_with_public_provider():
 
         secretary = await service.update_model(user_id=user.id, model_name="gpt-4o")
         assert secretary.model_name == "gpt-4o"
-
-
-
-
-

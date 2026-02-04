@@ -5,17 +5,16 @@ Revises: 20260131_02_add_used_persona_id
 Create Date: 2026-01-31
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "20260131_03_add_assistant_routing_state"
-down_revision: Union[str, None] = "20260131_02_add_used_persona_id"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260131_02_add_used_persona_id"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -74,7 +73,9 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-        sa.UniqueConstraint("assistant_id", name="uq_assistant_routing_state_assistant"),
+        sa.UniqueConstraint(
+            "assistant_id", name="uq_assistant_routing_state_assistant"
+        ),
     )
     op.create_index(
         "ix_assistant_routing_state_assistant_id",

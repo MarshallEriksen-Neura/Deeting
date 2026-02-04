@@ -17,7 +17,9 @@ async def test_create_skill_success(client: AsyncClient, admin_tokens: dict):
 
 
 @pytest.mark.asyncio
-async def test_create_skill_with_manifest_fields(client: AsyncClient, admin_tokens: dict):
+async def test_create_skill_with_manifest_fields(
+    client: AsyncClient, admin_tokens: dict
+):
     payload = {
         "id": "docx",
         "name": "Docx Skill",
@@ -88,7 +90,9 @@ async def test_create_skill_no_permission(client: AsyncClient, auth_tokens: dict
 
 
 @pytest.mark.asyncio
-async def test_self_heal_skill_success(client: AsyncClient, admin_tokens: dict, monkeypatch):
+async def test_self_heal_skill_success(
+    client: AsyncClient, admin_tokens: dict, monkeypatch
+):
     await client.post(
         "/api/v1/admin/skills",
         headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},

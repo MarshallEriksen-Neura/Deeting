@@ -8,13 +8,13 @@ from app.core.database import AsyncSessionLocal
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.services.providers.embedding import EmbeddingService
+from app.services.skill_registry.dry_run_service import SkillDryRunService
 from app.services.skill_registry.manifest_generator import SkillManifestGenerator
 from app.services.skill_registry.parsers.node_parser import NodeRepoParser
 from app.services.skill_registry.parsers.python_parser import PythonRepoParser
 from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
 from app.services.skill_registry.skill_metrics_service import SkillMetricsService
 from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
-from app.services.skill_registry.dry_run_service import SkillDryRunService
 from app.services.skill_registry.skill_self_heal_service import SkillSelfHealService
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
 
@@ -111,7 +111,7 @@ async def _run_sync_skill(skill_id: str) -> str:
             return "skipped"
 
         vector = vectors[0]
-        
+
         manifest = getattr(skill, "manifest_json", {}) or {}
         schema_json = manifest.get("io_schema", {})
 
@@ -127,7 +127,9 @@ async def _run_sync_skill(skill_id: str) -> str:
             "risk_level": getattr(skill, "risk_level", None),
             "source_repo": getattr(skill, "source_repo", None),
         }
-        payload.update({key: value for key, value in optional_payload.items() if value is not None})
+        payload.update(
+            {key: value for key, value in optional_payload.items() if value is not None}
+        )
 
         client = get_qdrant_client()
         await ensure_collection_vector_size(

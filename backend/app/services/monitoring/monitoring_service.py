@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from datetime import UTC, timedelta
 from statistics import median
-from typing import Iterable
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,7 +51,9 @@ class MonitoringService:
         bucket_count = 24  # 与前端 24 列布局保持一致
         row_count = 20
 
-        stmt = select(GatewayLog.created_at, GatewayLog.ttft_ms, GatewayLog.duration_ms).where(
+        stmt = select(
+            GatewayLog.created_at, GatewayLog.ttft_ms, GatewayLog.duration_ms
+        ).where(
             GatewayLog.created_at >= since,
             GatewayLog.created_at <= now,
         )
@@ -64,7 +66,8 @@ class MonitoringService:
 
         # 准备数据结构
         grid: list[list[dict[str, float | int]]] = [
-            [{"count": 0, "intensity": 0.0} for _ in range(row_count)] for _ in range(bucket_count)
+            [{"count": 0, "intensity": 0.0} for _ in range(row_count)]
+            for _ in range(bucket_count)
         ]
 
         # 先收集所有样本，基于全局分位数确定步长，避免早期极值导致分桶漂移
@@ -78,7 +81,9 @@ class MonitoringService:
                 latency = float(ttft_ms or duration_ms or 0)
                 latencies.append(latency)
                 delta = (created_at - since).total_seconds()
-                col = int(min(bucket_count - 1, max(0, math.floor(delta / bucket_width))))
+                col = int(
+                    min(bucket_count - 1, max(0, math.floor(delta / bucket_width)))
+                )
                 samples.append((col, latency))
 
             # 使用 P95 限制步长上限，减少极端值干扰
@@ -102,7 +107,12 @@ class MonitoringService:
 
         resp = LatencyHeatmapResponse(
             grid=[
-                [LatencyHeatmapCell(intensity=float(c["intensity"]), count=int(c["count"])) for c in col]
+                [
+                    LatencyHeatmapCell(
+                        intensity=float(c["intensity"]), count=int(c["count"])
+                    )
+                    for c in col
+                ]
                 for col in grid
             ],
             peak_latency=peak_latency,
@@ -132,8 +142,12 @@ class MonitoringService:
             stmt = (
                 select(
                     bucket_expr.label("bucket"),
-                    func.percentile_cont(0.5).within_group(GatewayLog.ttft_ms).label("p50"),
-                    func.percentile_cont(0.99).within_group(GatewayLog.ttft_ms).label("p99"),
+                    func.percentile_cont(0.5)
+                    .within_group(GatewayLog.ttft_ms)
+                    .label("p50"),
+                    func.percentile_cont(0.99)
+                    .within_group(GatewayLog.ttft_ms)
+                    .label("p99"),
                 )
                 .where(GatewayLog.created_at >= since, GatewayLog.created_at <= now)
                 .group_by(bucket_expr)
@@ -142,7 +156,9 @@ class MonitoringService:
             if tenant_id:
                 stmt = stmt.where(GatewayLog.user_id == tenant_id)
             rows = (await self.session.execute(stmt)).all()
-            bucket_map = {row.bucket: (float(row.p50 or 0), float(row.p99 or 0)) for row in rows}
+            bucket_map = {
+                row.bucket: (float(row.p50 or 0), float(row.p99 or 0)) for row in rows
+            }
             timeline = []
             cursor = since
             for _ in range(bucket_count):
@@ -167,7 +183,9 @@ class MonitoringService:
                     created_at = created_at.replace(tzinfo=UTC)
                 latency = float(ttft_ms or 0)
                 delta = (created_at - since).total_seconds()
-                idx = int(min(bucket_count - 1, max(0, math.floor(delta / bucket_width))))
+                idx = int(
+                    min(bucket_count - 1, max(0, math.floor(delta / bucket_width)))
+                )
                 buckets[idx].append(latency)
 
             timeline: list[PercentilePoint] = []
@@ -206,7 +224,9 @@ class MonitoringService:
         )
         if tenant_id:
             stmt = stmt.where(GatewayLog.user_id == tenant_id)
-        stmt = stmt.group_by(GatewayLog.model).order_by(func.sum(GatewayLog.cost_user).desc())
+        stmt = stmt.group_by(GatewayLog.model).order_by(
+            func.sum(GatewayLog.cost_user).desc()
+        )
 
         rows = (await self.session.execute(stmt)).all()
         total_cost = float(sum(r[1] or 0 for r in rows))
@@ -214,7 +234,9 @@ class MonitoringService:
         for model_name, cost_sum in rows:
             cost_val = float(cost_sum or 0)
             percentage = round((cost_val / total_cost) * 100, 2) if total_cost else 0.0
-            models.append(ModelCostItem(name=model_name, cost=cost_val, percentage=percentage))
+            models.append(
+                ModelCostItem(name=model_name, cost=cost_val, percentage=percentage)
+            )
 
         resp = ModelCostBreakdownResponse(models=models)
         await cache.set(cache_key, resp, ttl=120)
@@ -227,7 +249,9 @@ class MonitoringService:
         time_range: str,
         model: str | None = None,
     ) -> ErrorDistributionResponse:
-        cache_key = CacheKeys.monitoring_error_distribution(tenant_id, time_range, model)
+        cache_key = CacheKeys.monitoring_error_distribution(
+            tenant_id, time_range, model
+        )
         cached = await cache.get(cache_key)
         if cached:
             return cached
@@ -258,10 +282,30 @@ class MonitoringService:
                 counters["others"] += cnt
 
         categories = [
-            ErrorCategoryItem(category="4xx", label="Client Errors", count=counters["4xx"], color="#fbbf24"),
-            ErrorCategoryItem(category="5xx", label="Server Errors", count=counters["5xx"], color="#f87171"),
-            ErrorCategoryItem(category="429", label="Rate Limit", count=counters["429"], color="#60a5fa"),
-            ErrorCategoryItem(category="others", label="Others", count=counters["others"], color="#a78bfa"),
+            ErrorCategoryItem(
+                category="4xx",
+                label="Client Errors",
+                count=counters["4xx"],
+                color="#fbbf24",
+            ),
+            ErrorCategoryItem(
+                category="5xx",
+                label="Server Errors",
+                count=counters["5xx"],
+                color="#f87171",
+            ),
+            ErrorCategoryItem(
+                category="429",
+                label="Rate Limit",
+                count=counters["429"],
+                color="#60a5fa",
+            ),
+            ErrorCategoryItem(
+                category="others",
+                label="Others",
+                count=counters["others"],
+                color="#a78bfa",
+            ),
         ]
 
         resp = ErrorDistributionResponse(categories=categories)
@@ -294,7 +338,11 @@ class MonitoringService:
         )
         if tenant_id:
             stmt = stmt.where(GatewayLog.user_id == tenant_id)
-        stmt = stmt.group_by(GatewayLog.api_key_id).order_by(func.count().desc()).limit(limit)
+        stmt = (
+            stmt.group_by(GatewayLog.api_key_id)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
 
         rows = (await self.session.execute(stmt)).all()
         keys: list[KeyActivityItem] = []

@@ -21,7 +21,9 @@ class _DummyRequest:
 
 
 @pytest.mark.asyncio
-async def test_memory_write_step_schedules_external(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_memory_write_step_schedules_external(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     called = {"count": 0}
 
     async def fake_persist(**kwargs) -> bool:

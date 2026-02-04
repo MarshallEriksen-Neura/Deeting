@@ -4,6 +4,8 @@ import uuid
 
 from sqlalchemy import (
     UUID as SA_UUID,
+)
+from sqlalchemy import (
     ForeignKey,
     Index,
     String,

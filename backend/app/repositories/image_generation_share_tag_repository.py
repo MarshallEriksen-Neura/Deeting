@@ -9,7 +9,9 @@ from app.models.image_generation import ImageGenerationShareTagLink
 from app.repositories.base import BaseRepository
 
 
-class ImageGenerationShareTagLinkRepository(BaseRepository[ImageGenerationShareTagLink]):
+class ImageGenerationShareTagLinkRepository(
+    BaseRepository[ImageGenerationShareTagLink]
+):
     model = ImageGenerationShareTagLink
 
     async def list_for_share(self, share_id: UUID) -> list[ImageGenerationShareTagLink]:

@@ -48,37 +48,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import get_db
-from app.services.orchestrator.context import Channel, WorkflowContext
-from app.services.orchestrator.orchestrator import get_external_orchestrator, GatewayOrchestrator
 from app.deps.external_auth import ExternalPrincipal, get_external_principal
-from app.schemas.gateway import (
-    ChatCompletionRequest,
-    ChatCompletionResponse,
-    AnthropicMessagesRequest,
-    EmbeddingsRequest,
-    EmbeddingsResponse,
-    ModelListResponse,
-    ResponsesRequest,
-    GatewayError,
-)
-from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.repositories.api_key import ApiKeyRepository
+from app.repositories.billing_repository import BillingRepository
 from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
-from app.repositories.api_key import ApiKeyRepository
+from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.repositories.usage_repository import UsageRepository
+from app.schemas.gateway import (
+    AnthropicMessagesRequest,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    EmbeddingsRequest,
+    EmbeddingsResponse,
+    GatewayError,
+    ModelListResponse,
+    ResponsesRequest,
+)
 from app.services.memory.external_memory import (
     derive_external_user_id,
     extract_user_message,
     persist_external_memory,
+)
+from app.services.orchestrator.context import Channel, WorkflowContext
+from app.services.orchestrator.orchestrator import (
+    GatewayOrchestrator,
+    get_external_orchestrator,
 )
 from app.services.providers.api_key import ApiKeyService
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
     stream_with_billing,
 )
-from app.repositories.billing_repository import BillingRepository
-from app.repositories.usage_repository import UsageRepository
 
 router = APIRouter(tags=["External Gateway"])
 logger = logging.getLogger(__name__)
@@ -89,7 +92,9 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 
-def _parse_provider_scopes(scopes: list[str] | None) -> tuple[set[str], set[str], set[str]]:
+def _parse_provider_scopes(
+    scopes: list[str] | None,
+) -> tuple[set[str], set[str], set[str]]:
     """解析 provider/preset/preset_item 范围，供路由与模型列表过滤。"""
     providers: set[str] = set()
     presets: set[str] = set()
@@ -117,7 +122,7 @@ def _extract_bearer_token(value: str | None) -> str | None:
     prefix = "bearer "
     lowered = value.strip()
     if lowered.lower().startswith(prefix):
-        return lowered[len(prefix):].strip()
+        return lowered[len(prefix) :].strip()
     return None
 
 
@@ -158,7 +163,9 @@ async def _resolve_external_user_id(
     raw_key = _resolve_external_key(request, path)
     if not raw_key:
         return None
-    if raw_key.startswith((ApiKeyService.PREFIX_EXTERNAL, ApiKeyService.PREFIX_INTERNAL)):
+    if raw_key.startswith(
+        (ApiKeyService.PREFIX_EXTERNAL, ApiKeyService.PREFIX_INTERNAL)
+    ):
         try:
             repo = ApiKeyRepository(db)
             service = ApiKeyService(
@@ -208,10 +215,14 @@ def _schedule_external_memory(ctx: WorkflowContext) -> None:
         try:
             exc = t.exception()
         except Exception as err:
-            logger.warning("external_memory_task_exception trace_id=%s err=%s", ctx.trace_id, err)
+            logger.warning(
+                "external_memory_task_exception trace_id=%s err=%s", ctx.trace_id, err
+            )
             return
         if exc:
-            logger.warning("external_memory_task_failed trace_id=%s err=%s", ctx.trace_id, exc)
+            logger.warning(
+                "external_memory_task_failed trace_id=%s err=%s", ctx.trace_id, exc
+            )
 
     task.add_done_callback(_log_task_error)
 
@@ -230,7 +241,7 @@ async def _stream_billing_callback(
 ) -> None:
     """
     流式计费回调：在流完成后记录流水并调整差额（P0-1 + P0-3）
-    
+
     改动：
     - 使用 BillingRepository.record_transaction 只记录流水
     - 使用 adjust_redis_balance 调整费用差额
@@ -243,28 +254,38 @@ async def _stream_billing_callback(
     input_tokens = ctx.billing.input_tokens
     output_tokens = ctx.billing.output_tokens
 
-    input_per_1k = Decimal(str(pricing.get("input_per_1k", 0))) if pricing else Decimal("0")
-    output_per_1k = Decimal(str(pricing.get("output_per_1k", 0))) if pricing else Decimal("0")
+    input_per_1k = (
+        Decimal(str(pricing.get("input_per_1k", 0))) if pricing else Decimal("0")
+    )
+    output_per_1k = (
+        Decimal(str(pricing.get("output_per_1k", 0))) if pricing else Decimal("0")
+    )
 
-    input_cost = float((Decimal(input_tokens) / 1000) * input_per_1k) if pricing else 0.0
-    output_cost = float((Decimal(output_tokens) / 1000) * output_per_1k) if pricing else 0.0
+    input_cost = (
+        float((Decimal(input_tokens) / 1000) * input_per_1k) if pricing else 0.0
+    )
+    output_cost = (
+        float((Decimal(output_tokens) / 1000) * output_per_1k) if pricing else 0.0
+    )
     total_cost = input_cost + output_cost
 
     # 更新 billing 信息
     ctx.billing.input_cost = input_cost
     ctx.billing.output_cost = output_cost
     ctx.billing.total_cost = total_cost
-    ctx.billing.currency = pricing.get("currency", "USD") if pricing else ctx.billing.currency or "USD"
+    ctx.billing.currency = (
+        pricing.get("currency", "USD") if pricing else ctx.billing.currency or "USD"
+    )
 
     # 记录流水并调整差额（内外通道统一）
     if pricing and ctx.tenant_id and ctx.db_session:
         try:
             repo = BillingRepository(ctx.db_session)
-            
+
             # 获取预估费用（QuotaCheckStep 中扣减的金额）
             estimated_cost = await _get_estimated_cost_for_stream(ctx)
             cost_diff = Decimal(str(total_cost)) - Decimal(str(estimated_cost))
-            
+
             # 记录交易流水（不扣减配额）
             await repo.record_transaction(
                 tenant_id=ctx.tenant_id,
@@ -274,13 +295,17 @@ async def _stream_billing_callback(
                 output_tokens=output_tokens,
                 input_price=input_per_1k,
                 output_price=output_per_1k,
-                provider=ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
+                provider=(
+                    ctx.upstream_result.provider
+                    if hasattr(ctx, "upstream_result")
+                    else None
+                ),
                 model=ctx.requested_model,
                 preset_item_id=ctx.get("routing", "preset_item_id"),
                 api_key_id=ctx.api_key_id,
                 description="Stream billing completed",
             )
-            
+
             # 如果实际费用与预估费用有差异，调整 Redis 余额
             if abs(float(cost_diff)) > 0.000001:
                 await repo.adjust_redis_balance(ctx.tenant_id, cost_diff)
@@ -291,10 +316,10 @@ async def _stream_billing_callback(
                     total_cost,
                     cost_diff,
                 )
-            
+
             # 提交事务
             await ctx.db_session.commit()
-            
+
         except Exception as e:
             logger.error(f"Stream billing failed trace_id={ctx.trace_id}: {e}")
             await ctx.db_session.rollback()
@@ -304,36 +329,45 @@ async def _stream_billing_callback(
                 try:
                     from app.core.transaction_celery import get_transaction_scheduler
                     from app.tasks.apikey_sync import sync_apikey_budget_task
-                    
+
                     # 更新 Redis Hash 中的 budget_used
                     redis_client = getattr(cache, "_redis", None)
                     if redis_client:
                         from app.core.cache_keys import CacheKeys
+
                         key = CacheKeys.apikey_budget_hash(str(ctx.api_key_id))
                         full_key = cache._make_key(key)
-                        await redis_client.hincrby(full_key, "budget_used", int(total_cost * 1000000))  # 微分单位
+                        await redis_client.hincrby(
+                            full_key, "budget_used", int(total_cost * 1000000)
+                        )  # 微分单位
                         await redis_client.hincrby(full_key, "version", 1)
-                    
+
                     # 使用事务感知调度器，在事务提交后同步到 DB
                     scheduler = get_transaction_scheduler(ctx.db_session)
                     scheduler.delay_after_commit(
                         sync_apikey_budget_task,
                         str(ctx.api_key_id),
                     )
-                    
+
                     # 更新上下文
-                    current_budget_used = float(ctx.get("external_auth", "budget_used") or 0.0)
-                    ctx.set("external_auth", "budget_used", current_budget_used + total_cost)
-                except Exception as exc:  # noqa: PERF203
-                    logger.warning(f"Stream budget_used update failed trace_id={ctx.trace_id}: {exc}")
+                    current_budget_used = float(
+                        ctx.get("external_auth", "budget_used") or 0.0
+                    )
+                    ctx.set(
+                        "external_auth", "budget_used", current_budget_used + total_cost
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"Stream budget_used update failed trace_id={ctx.trace_id}: {exc}"
+                    )
 
     # 记录用量（使用 TransactionAwareCelery）
     if ctx.db_session:
         try:
             from app.core.transaction_celery import get_transaction_scheduler
-            
+
             scheduler = get_transaction_scheduler(ctx.db_session)
-            
+
             # 延迟执行用量记录任务
             scheduler.apply_async_after_commit(
                 _record_usage_task,
@@ -347,8 +381,16 @@ async def _stream_billing_callback(
                     "output_tokens": output_tokens,
                     "total_cost": total_cost,
                     "currency": ctx.billing.currency,
-                    "provider": ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
-                    "latency_ms": ctx.upstream_result.latency_ms if hasattr(ctx, "upstream_result") else None,
+                    "provider": (
+                        ctx.upstream_result.provider
+                        if hasattr(ctx, "upstream_result")
+                        else None
+                    ),
+                    "latency_ms": (
+                        ctx.upstream_result.latency_ms
+                        if hasattr(ctx, "upstream_result")
+                        else None
+                    ),
                     "is_stream": True,
                     "stream_completed": accumulator.is_completed,
                     "stream_error": accumulator.error,
@@ -377,8 +419,7 @@ async def _get_estimated_cost_for_stream(ctx: WorkflowContext) -> float:
     estimated_tokens = max_tokens * 2  # 输入+输出粗估
 
     avg_price = (
-        float(pricing.get("input_per_1k", 0)) +
-        float(pricing.get("output_per_1k", 0))
+        float(pricing.get("input_per_1k", 0)) + float(pricing.get("output_per_1k", 0))
     ) / 2
     return (estimated_tokens / 1000) * avg_price
 
@@ -389,6 +430,7 @@ def _record_usage_task(**kwargs: Any) -> None:
         usage_repo = UsageRepository()
         # 使用同步方法创建用量记录
         import asyncio
+
         asyncio.run(usage_repo.create(kwargs))
     except Exception as e:
         logger.error(f"Usage record failed trace_id={kwargs.get('trace_id')}: {e}")
@@ -396,7 +438,11 @@ def _record_usage_task(**kwargs: Any) -> None:
 
 def _resolve_error_status(ctx: WorkflowContext) -> int:
     """根据上下文错误码推导 HTTP 状态码。"""
-    if ctx.error_code in {"SIGNATURE_INVALID", "SIGNATURE_MISSING", "SIGNATURE_VERIFY_FAILED"} or getattr(ctx, "failed_step", None) == "signature_verify":
+    if (
+        ctx.error_code
+        in {"SIGNATURE_INVALID", "SIGNATURE_MISSING", "SIGNATURE_VERIFY_FAILED"}
+        or getattr(ctx, "failed_step", None) == "signature_verify"
+    ):
         return 401
     if ctx.error_code and ctx.error_code.startswith("RATE_LIMIT"):
         return 429
@@ -444,11 +490,13 @@ def build_external_context(
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )
     ctx.user_id = user_id
-    ctx.set("request", "base_url", str(request.base_url).rstrip("/") if request else None)
+    ctx.set(
+        "request", "base_url", str(request.base_url).rstrip("/") if request else None
+    )
     request_id = getattr(request_body, "request_id", None)
     if request_id:
         ctx.set("request", "request_id", request_id)
-    
+
     # 鉴权与配置
     if principal:
         ctx.set("auth", "scopes", principal.scopes)
@@ -458,7 +506,7 @@ def build_external_context(
         ctx.set("external_auth", "budget_limit", principal.budget_limit)
         ctx.set("external_auth", "budget_used", principal.budget_used)
         ctx.set("external_auth", "enable_logging", principal.enable_logging)
-    
+
     # 签名校验参数
     if principal:
         ctx.set("signature_verify", "timestamp", principal.timestamp)
@@ -469,7 +517,7 @@ def build_external_context(
         ctx.set("signature_verify", "client_host", principal.client_host)
     else:
         ctx.set("signature_verify", "client_host", client_host)
-    
+
     # 路由配置
     ctx.set("routing", "allow_fallback", True)
 
@@ -493,9 +541,13 @@ def handle_workflow_result(ctx: WorkflowContext) -> JSONResponse | StreamingResp
     """
     # 1. 错误处理
     if not ctx.is_success:
-        upstream_status = ctx.get("upstream_call", "status_code") or ctx.upstream_result.status_code
+        upstream_status = (
+            ctx.get("upstream_call", "status_code") or ctx.upstream_result.status_code
+        )
         try:
-            upstream_status = int(upstream_status) if upstream_status is not None else None
+            upstream_status = (
+                int(upstream_status) if upstream_status is not None else None
+            )
         except Exception:
             upstream_status = None
 
@@ -514,7 +566,9 @@ def handle_workflow_result(ctx: WorkflowContext) -> JSONResponse | StreamingResp
     # 2. 流式响应处理
     if ctx.get("upstream_call", "stream"):
         stream = ctx.get("upstream_call", "response_stream")
-        accumulator = ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        accumulator = (
+            ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
+        )
 
         # 包装流式响应，在流完成后触发计费
         wrapped_stream = stream_with_billing(
@@ -667,7 +721,9 @@ async def list_models(
     instance_repo = ProviderInstanceRepository(db)
     model_repo = ProviderModelRepository(db)
 
-    instances = await instance_repo.get_available_instances(user_id=None, include_public=True)
+    instances = await instance_repo.get_available_instances(
+        user_id=None, include_public=True
+    )
     if not instances:
         return ModelListResponse(data=[])
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,12 +82,18 @@ class NotificationReceiptRepository:
             .where(NotificationReceipt.user_id == user_id)
             .where(NotificationReceipt.archived_at.is_(None))
             .where(Notification.is_active.is_(True))
-            .where(or_(Notification.expires_at.is_(None), Notification.expires_at > now))
+            .where(
+                or_(Notification.expires_at.is_(None), Notification.expires_at > now)
+            )
         )
         if since:
             stmt = stmt.where(NotificationReceipt.created_at > since)
 
-        order_by = NotificationReceipt.created_at.desc() if order_desc else NotificationReceipt.created_at.asc()
+        order_by = (
+            NotificationReceipt.created_at.desc()
+            if order_desc
+            else NotificationReceipt.created_at.asc()
+        )
         stmt = stmt.order_by(order_by).limit(limit)
 
         result = await self.session.execute(stmt)
@@ -104,7 +111,9 @@ class NotificationReceiptRepository:
             .where(NotificationReceipt.read_at.is_(None))
             .where(NotificationReceipt.archived_at.is_(None))
             .where(Notification.is_active.is_(True))
-            .where(or_(Notification.expires_at.is_(None), Notification.expires_at > now))
+            .where(
+                or_(Notification.expires_at.is_(None), Notification.expires_at > now)
+            )
         )
         result = await self.session.execute(stmt)
         return int(result.scalar() or 0)

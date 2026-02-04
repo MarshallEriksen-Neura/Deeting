@@ -66,13 +66,17 @@ async def dispose_engine():
 
 
 @pytest.mark.asyncio
-async def test_save_provider_field_mapping_enqueues_index(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_save_provider_field_mapping_enqueues_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "app.agent_plugins.builtins.provider_registry.plugin.AsyncSessionLocal",
         AsyncSessionLocal,
     )
     enqueue = Mock()
-    monkeypatch.setattr("app.tasks.search_index.upsert_provider_preset_task.delay", enqueue)
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_provider_preset_task.delay", enqueue
+    )
 
     admin_id = uuid.uuid4()
     async with AsyncSessionLocal() as session:

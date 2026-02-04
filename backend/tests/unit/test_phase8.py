@@ -14,7 +14,13 @@ from app.services.workflow.steps.validation import ValidationStep
 
 def test_mark_error_with_upstream():
     ctx = WorkflowContext()
-    ctx.mark_error(ErrorSource.UPSTREAM, "UP_ERR", "failed", upstream_status=502, upstream_code="HTTP_502")
+    ctx.mark_error(
+        ErrorSource.UPSTREAM,
+        "UP_ERR",
+        "failed",
+        upstream_status=502,
+        upstream_code="HTTP_502",
+    )
     assert ctx.error_source == ErrorSource.UPSTREAM
     assert ctx.upstream_result.status_code == 502
     assert ctx.upstream_result.error_code == "HTTP_502"

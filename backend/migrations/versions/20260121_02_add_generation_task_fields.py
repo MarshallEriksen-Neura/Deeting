@@ -7,18 +7,17 @@ Create Date: 2026-01-21
 
 from __future__ import annotations
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "20260121_02_add_generation_task_fields"
-down_revision: Union[str, None] = "20260121_01_add_conversation_meta_summary_link"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260121_01_add_conversation_meta_summary_link"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -26,7 +25,9 @@ def upgrade() -> None:
     dialect = bind.dialect.name if bind else "postgresql"
 
     json_type = postgresql.JSONB() if dialect == "postgresql" else sa.JSON()
-    json_default = sa.text("'{}'::jsonb") if dialect == "postgresql" else sa.text("'{}'")
+    json_default = (
+        sa.text("'{}'::jsonb") if dialect == "postgresql" else sa.text("'{}'")
+    )
 
     op.add_column(
         "image_generation_task",

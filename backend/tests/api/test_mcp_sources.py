@@ -1,5 +1,6 @@
-import httpx
 from uuid import UUID
+
+import httpx
 import pytest
 from sqlalchemy import select
 
@@ -39,9 +40,15 @@ async def test_create_and_sync_source(
     async def fake_sync(_session, _user_id):
         return 0
 
-    monkeypatch.setattr("app.api.v1.endpoints.mcp.create_async_http_client", fake_client)
-    monkeypatch.setattr("app.api.v1.endpoints.mcp.is_safe_upstream_url", lambda _url: True)
-    monkeypatch.setattr("app.api.v1.endpoints.mcp.mcp_discovery_service.sync_user_tools", fake_sync)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.mcp.create_async_http_client", fake_client
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.mcp.is_safe_upstream_url", lambda _url: True
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.mcp.mcp_discovery_service.sync_user_tools", fake_sync
+    )
 
     create_resp = await client.post(
         "/api/v1/mcp/sources",

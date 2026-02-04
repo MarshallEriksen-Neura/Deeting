@@ -1,7 +1,8 @@
+import uuid
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from datetime import datetime
-import uuid
 
 from app.models.assistant import Assistant, AssistantVersion
 
@@ -87,7 +88,9 @@ class AssistantRepository(BaseRepository[Assistant]):
 
         return rows, next_cursor
 
-    async def list_public_by_ids(self, assistant_ids: list[str | uuid.UUID]) -> list[Assistant]:
+    async def list_public_by_ids(
+        self, assistant_ids: list[str | uuid.UUID]
+    ) -> list[Assistant]:
         if not assistant_ids:
             return []
         normalized_ids = [str(raw_id) for raw_id in assistant_ids if raw_id]
@@ -112,7 +115,11 @@ class AssistantRepository(BaseRepository[Assistant]):
         result = await self.session.execute(stmt)
         assistants = list(result.scalars().all())
         assistant_map = {str(item.id): item for item in assistants}
-        return [assistant_map[item_id] for item_id in normalized_ids if item_id in assistant_map]
+        return [
+            assistant_map[item_id]
+            for item_id in normalized_ids
+            if item_id in assistant_map
+        ]
 
     async def search_public(
         self,
@@ -129,7 +136,9 @@ class AssistantVersionRepository(BaseRepository[AssistantVersion]):
 
     async def list_for_assistant(self, assistant_id):
         result = await self.session.execute(
-            select(AssistantVersion).where(AssistantVersion.assistant_id == assistant_id)
+            select(AssistantVersion).where(
+                AssistantVersion.assistant_id == assistant_id
+            )
         )
         return list(result.scalars().all())
 

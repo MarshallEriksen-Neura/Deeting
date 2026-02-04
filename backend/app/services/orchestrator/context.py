@@ -5,13 +5,15 @@ WorkflowContext: 编排上下文管理
 各步骤在各自命名空间读写，避免键冲突。
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.utils.time_utils import Datetime
 
 

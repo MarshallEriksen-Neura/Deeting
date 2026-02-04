@@ -55,10 +55,14 @@ class _FakeSelfHeal:
             manifest = dict(skill.manifest_json or {})
             metrics = dict(manifest.get("metrics") or {})
             history = list(metrics.get("self_heal_history") or [])
-            history.append({"status": self.status, "changes": ["usage_spec.example_code"]})
+            history.append(
+                {"status": self.status, "changes": ["usage_spec.example_code"]}
+            )
             metrics["self_heal_history"] = history
             manifest["metrics"] = metrics
-            await self.repo.update(skill, {"status": "active", "manifest_json": manifest})
+            await self.repo.update(
+                skill, {"status": "active", "manifest_json": manifest}
+            )
         return {
             "request": {"skill_id": skill_id, "manifest_json": {}},
             "response": {"status": self.status, "patches": [], "updated_manifest": {}},
@@ -74,7 +78,9 @@ async def test_dry_run_success_sets_active():
                 "id": "core.tools.docx.success",
                 "name": "Docx",
                 "manifest_json": {
-                    "artifacts": [{"name": "output_docx", "type": "file", "path": "out.docx"}],
+                    "artifacts": [
+                        {"name": "output_docx", "type": "file", "path": "out.docx"}
+                    ],
                 },
             }
         )
@@ -114,7 +120,9 @@ async def test_dry_run_missing_artifact_marks_fail():
                 "id": "core.tools.docx.fail",
                 "name": "Docx",
                 "manifest_json": {
-                    "artifacts": [{"name": "output_docx", "type": "file", "path": "out.docx"}],
+                    "artifacts": [
+                        {"name": "output_docx", "type": "file", "path": "out.docx"}
+                    ],
                 },
             }
         )
@@ -140,7 +148,9 @@ async def test_dry_run_threshold_triggers_needs_review():
                 "id": "core.tools.docx.review",
                 "name": "Docx",
                 "manifest_json": {
-                    "artifacts": [{"name": "output_docx", "type": "file", "path": "out.docx"}],
+                    "artifacts": [
+                        {"name": "output_docx", "type": "file", "path": "out.docx"}
+                    ],
                 },
             }
         )
@@ -166,7 +176,9 @@ async def test_dry_run_triggers_self_heal_on_failure():
                 "id": "core.tools.docx.selfheal",
                 "name": "Docx",
                 "manifest_json": {
-                    "artifacts": [{"name": "output_docx", "type": "file", "path": "out.docx"}],
+                    "artifacts": [
+                        {"name": "output_docx", "type": "file", "path": "out.docx"}
+                    ],
                 },
             }
         )
@@ -200,7 +212,9 @@ async def test_dry_run_skips_self_heal_after_max_attempts():
                 "id": "core.tools.docx.selfheal.skip",
                 "name": "Docx",
                 "manifest_json": {
-                    "artifacts": [{"name": "output_docx", "type": "file", "path": "out.docx"}],
+                    "artifacts": [
+                        {"name": "output_docx", "type": "file", "path": "out.docx"}
+                    ],
                     "metrics": {
                         "self_heal_history": [
                             {"status": "failed"},

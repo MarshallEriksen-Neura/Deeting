@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
-from typing import Pattern
+from re import Pattern
 
 # 常见敏感信息模式（可按需扩展）
 PHONE_PATTERN: Pattern = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
 EMAIL_PATTERN: Pattern = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-ID_PATTERN: Pattern = re.compile(r"\b\d{6}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[0-9Xx]\b")
+ID_PATTERN: Pattern = re.compile(
+    r"\b\d{6}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[0-9Xx]\b"
+)
 CARD_PATTERN: Pattern = re.compile(r"\b\d{13,19}\b")
 TOKEN_PATTERN: Pattern = re.compile(r"\b(sk-|rk-|pk_)[A-Za-z0-9-_]{10,}\b")
 

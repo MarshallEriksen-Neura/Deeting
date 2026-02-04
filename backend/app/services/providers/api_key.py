@@ -46,6 +46,7 @@ API Key Service
     if not principal:
         raise HTTPException(401, "Invalid API Key")
 """
+
 import hashlib
 import hmac
 import secrets
@@ -70,6 +71,7 @@ from app.utils.time_utils import Datetime
 # 数据传输对象
 # ============================================================
 
+
 @dataclass
 class ApiPrincipal:
     """
@@ -77,12 +79,13 @@ class ApiPrincipal:
 
     校验通过后注入上下文，供后续限流/计费/审计使用
     """
+
     api_key_id: UUID
     key_type: ApiKeyType
     tenant_id: UUID | None
     user_id: UUID | None
-    scopes: list[str]           # 允许的 scope 列表
-    is_whitelist: bool          # 是否限流白名单
+    scopes: list[str]  # 允许的 scope 列表
+    is_whitelist: bool  # 是否限流白名单
     rate_limit_rpm: int | None
     rate_limit_tpm: int | None
     allowed_models: list[str] | None = None
@@ -90,36 +93,41 @@ class ApiPrincipal:
     budget_limit: float | None = None
     budget_used: float = 0
     enable_logging: bool = True
-    secret_hash: str | None = None   # 独立签名密钥的哈希（不含明文）
-    secret_hint: str | None = None   # 末四位提示，便于审计/运维
+    secret_hash: str | None = None  # 独立签名密钥的哈希（不含明文）
+    secret_hint: str | None = None  # 末四位提示，便于审计/运维
 
 
 @dataclass
 class RateLimitResult:
     """限流检查结果"""
+
     allowed: bool
-    remaining: int              # 剩余请求数
-    reset_at: datetime          # 重置时间
-    limit: int                  # 限制值
+    remaining: int  # 剩余请求数
+    reset_at: datetime  # 重置时间
+    limit: int  # 限制值
     retry_after: int | None  # 需等待秒数（被限流时）
 
 
 @dataclass
 class QuotaCheckResult:
     """配额检查结果"""
+
     allowed: bool
-    remaining: int              # 剩余配额
-    total: int                  # 总配额
+    remaining: int  # 剩余配额
+    total: int  # 总配额
     reset_at: datetime | None  # 下次重置时间
+
 
 class ApiKeyServiceError(Exception):
     """Base exception for API Key service"""
+
     pass
 
 
 # ============================================================
 # Service 实现
 # ============================================================
+
 
 class ApiKeyService:
     """
@@ -256,22 +264,24 @@ class ApiKeyService:
 
     def _generate_raw_key(self, key_type: ApiKeyType) -> str:
         """生成原始 Key（前缀 + Base62 随机字符串）"""
-        prefix = self.PREFIX_EXTERNAL if key_type == ApiKeyType.EXTERNAL else self.PREFIX_INTERNAL
+        prefix = (
+            self.PREFIX_EXTERNAL
+            if key_type == ApiKeyType.EXTERNAL
+            else self.PREFIX_INTERNAL
+        )
         alphabet = string.ascii_letters + string.digits
-        random_part = ''.join(secrets.choice(alphabet) for _ in range(self.KEY_LENGTH))
+        random_part = "".join(secrets.choice(alphabet) for _ in range(self.KEY_LENGTH))
         return f"{prefix}{random_part}"
 
     def _generate_raw_secret(self) -> str:
         """生成原始 Secret（纯 Base62 随机字符串，用于 HMAC 签名）"""
         alphabet = string.ascii_letters + string.digits
-        return ''.join(secrets.choice(alphabet) for _ in range(self.KEY_LENGTH))
+        return "".join(secrets.choice(alphabet) for _ in range(self.KEY_LENGTH))
 
     def _compute_key_hash(self, raw_key: str) -> str:
         """计算 Key 的 HMAC-SHA256 哈希"""
         return hmac.new(
-            self.secret_key.encode(),
-            raw_key.encode(),
-            hashlib.sha256
+            self.secret_key.encode(), raw_key.encode(), hashlib.sha256
         ).hexdigest()
 
     # ============================================================
@@ -317,12 +327,21 @@ class ApiKeyService:
             user_id=obj.user_id,
             scopes=scopes,
             is_whitelist=bool(rl.is_whitelist) if rl else False,
-            rate_limit_rpm=getattr(obj, "rate_limit_rpm", None) or (rl.rpm if rl else None),
+            rate_limit_rpm=getattr(obj, "rate_limit_rpm", None)
+            or (rl.rpm if rl else None),
             rate_limit_tpm=rl.tpm if rl else None,
             allowed_models=getattr(obj, "allowed_models", None),
             allowed_ips=getattr(obj, "allowed_ips", None),
-            budget_limit=float(obj.budget_limit) if getattr(obj, "budget_limit", None) is not None else None,
-            budget_used=float(obj.budget_used) if getattr(obj, "budget_used", None) is not None else 0,
+            budget_limit=(
+                float(obj.budget_limit)
+                if getattr(obj, "budget_limit", None) is not None
+                else None
+            ),
+            budget_used=(
+                float(obj.budget_used)
+                if getattr(obj, "budget_used", None) is not None
+                else 0
+            ),
             enable_logging=bool(getattr(obj, "enable_logging", True)),
             secret_hash=obj.secret_hash,
             secret_hint=obj.secret_hint,
@@ -389,9 +408,7 @@ class ApiKeyService:
         # 4. 重算签名比对
         message = f"{timestamp}.{nonce}.{body_hash}"
         expected_signature = hmac.new(
-            signing_key.encode(),
-            message.encode(),
-            hashlib.sha256
+            signing_key.encode(), message.encode(), hashlib.sha256
         ).hexdigest()
 
         return hmac.compare_digest(signature, expected_signature)
@@ -442,9 +459,7 @@ class ApiKeyService:
         # 5. 重算签名比对
         message = f"{timestamp}.{nonce}.{body_hash}"
         expected_signature = hmac.new(
-            raw_secret.encode(),
-            message.encode(),
-            hashlib.sha256
+            raw_secret.encode(), message.encode(), hashlib.sha256
         ).hexdigest()
 
         return hmac.compare_digest(signature, expected_signature)
@@ -681,10 +696,13 @@ class ApiKeyService:
 
         # 1. 更新旧 Key 状态
         old_expires_at = Datetime.utcnow() + timedelta(hours=grace_period_hours)
-        await self.repository.update(api_key_id, {
-            "status": ApiKeyStatus.EXPIRING,
-            "expires_at": old_expires_at,
-        })
+        await self.repository.update(
+            api_key_id,
+            {
+                "status": ApiKeyStatus.EXPIRING,
+                "expires_at": old_expires_at,
+            },
+        )
 
         # 2. 生成新 Key（继承旧 Key 配置）
         new_key, raw_key, raw_secret = await self.generate_key(
@@ -713,15 +731,18 @@ class ApiKeyService:
         # 4. 复制 rate limit
         if old_key.rate_limit:
             rl = old_key.rate_limit
-            await self.repository.update_rate_limit(new_key.id, {
-                "rpm": rl.rpm,
-                "tpm": rl.tpm,
-                "rpd": rl.rpd,
-                "tpd": rl.tpd,
-                "concurrent_limit": rl.concurrent_limit,
-                "burst_limit": rl.burst_limit,
-                "is_whitelist": rl.is_whitelist,
-            })
+            await self.repository.update_rate_limit(
+                new_key.id,
+                {
+                    "rpm": rl.rpm,
+                    "tpm": rl.tpm,
+                    "rpd": rl.rpd,
+                    "tpd": rl.tpd,
+                    "concurrent_limit": rl.concurrent_limit,
+                    "burst_limit": rl.burst_limit,
+                    "is_whitelist": rl.is_whitelist,
+                },
+            )
 
         # 5. 复制 IP 白名单
         for ip_entry in old_key.ip_whitelist:
@@ -760,10 +781,13 @@ class ApiKeyService:
         secret_hint = raw_secret[-4:]
 
         # 更新数据库
-        await self.repository.update(api_key_id, {
-            "secret_hash": secret_hash,
-            "secret_hint": secret_hint,
-        })
+        await self.repository.update(
+            api_key_id,
+            {
+                "secret_hash": secret_hash,
+                "secret_hint": secret_hint,
+            },
+        )
         # 不在 Service 层直接 commit，由上层管理事务
 
         # 失效缓存
@@ -788,11 +812,14 @@ class ApiKeyService:
             return None
 
         # 更新状态
-        await self.repository.update(api_key_id, {
-            "status": ApiKeyStatus.REVOKED,
-            "revoked_at": Datetime.utcnow(),
-            "revoked_reason": reason,
-        })
+        await self.repository.update(
+            api_key_id,
+            {
+                "status": ApiKeyStatus.REVOKED,
+                "revoked_at": Datetime.utcnow(),
+                "revoked_reason": reason,
+            },
+        )
         # 不在 Service 层直接 commit，由上层管理事务
 
         # 失效缓存
@@ -875,6 +902,7 @@ class ApiKeyService:
         cache_key = CacheKeys.api_key(key_hash)
         try:
             import json
+
             data = await self.redis.get(cache_key)
             if data:
                 return json.loads(data)
@@ -890,6 +918,7 @@ class ApiKeyService:
         cache_key = CacheKeys.api_key(key_hash)
         try:
             import json
+
             await self.redis.set(cache_key, json.dumps(data), ex=ttl)
         except Exception:
             pass
@@ -934,11 +963,14 @@ class ApiKeyService:
 
         count = 0
         for key in keys:
-            await self.repository.update(key.id, {
-                "status": ApiKeyStatus.REVOKED,
-                "revoked_at": Datetime.utcnow(),
-                "revoked_reason": reason,
-            })
+            await self.repository.update(
+                key.id,
+                {
+                    "status": ApiKeyStatus.REVOKED,
+                    "revoked_at": Datetime.utcnow(),
+                    "revoked_reason": reason,
+                },
+            )
             await self._invalidate_cache(key.key_hash)
             count += 1
 
@@ -959,11 +991,14 @@ class ApiKeyService:
 
         count = 0
         for key in keys:
-            await self.repository.update(key.id, {
-                "status": ApiKeyStatus.REVOKED,
-                "revoked_at": Datetime.utcnow(),
-                "revoked_reason": reason,
-            })
+            await self.repository.update(
+                key.id,
+                {
+                    "status": ApiKeyStatus.REVOKED,
+                    "revoked_at": Datetime.utcnow(),
+                    "revoked_reason": reason,
+                },
+            )
             await self._invalidate_cache(key.key_hash)
             count += 1
 

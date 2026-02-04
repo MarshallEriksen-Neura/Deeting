@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Iterable
+from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,14 +57,20 @@ class ToolContextService:
             if plugin.is_always_on:
                 core_tool_names.update(plugin.tools or [])
 
-        system_tools = [tool for tool in agent_service.tools if tool.name in allowed_tool_names]
+        system_tools = [
+            tool for tool in agent_service.tools if tool.name in allowed_tool_names
+        ]
         core_tools = [tool for tool in system_tools if tool.name in core_tool_names]
-        non_core_system_tools = [tool for tool in system_tools if tool.name not in core_tool_names]
+        non_core_system_tools = [
+            tool for tool in system_tools if tool.name not in core_tool_names
+        ]
 
         user_tool_payloads: list[dict] = []
         if user_id and session:
             payload_start = time.perf_counter()
-            user_tool_payloads = await mcp_discovery_service.get_active_tool_payloads(session, user_id)
+            user_tool_payloads = await mcp_discovery_service.get_active_tool_payloads(
+                session, user_id
+            )
             logger.info(
                 "ToolContextService: loaded user tools duration_ms=%.2f count=%s",
                 (time.perf_counter() - payload_start) * 1000,
@@ -73,7 +79,11 @@ class ToolContextService:
 
         total_tool_count = len(system_tools) + len(user_tool_payloads)
         threshold = int(getattr(settings, "MCP_TOOL_JIT_THRESHOLD", 15) or 15)
-        use_jit = bool(qdrant_is_configured()) and total_tool_count > threshold and bool(query)
+        use_jit = (
+            bool(qdrant_is_configured())
+            and total_tool_count > threshold
+            and bool(query)
+        )
         logger.info(
             "ToolContextService: tool counts system=%s user=%s total=%s threshold=%s use_jit=%s qdrant=%s",
             len(system_tools),

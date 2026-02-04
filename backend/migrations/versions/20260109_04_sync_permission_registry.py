@@ -4,6 +4,7 @@ Revision ID: 20260109_04
 Revises: 20260109_03
 Create Date: 2026-01-09
 """
+
 import uuid
 
 import sqlalchemy as sa
@@ -41,7 +42,11 @@ role_permission_table = sa.table(
 
 
 def _ensure_permissions(conn):
-    existing = dict(conn.execute(sa.select(permission_table.c.code, permission_table.c.id)).fetchall())
+    existing = dict(
+        conn.execute(
+            sa.select(permission_table.c.code, permission_table.c.id)
+        ).fetchall()
+    )
     for perm in PERMISSION_REGISTRY:
         if perm.code in existing:
             conn.execute(
@@ -63,7 +68,9 @@ def _ensure_permissions(conn):
 
 
 def _ensure_roles(conn):
-    existing = dict(conn.execute(sa.select(role_table.c.name, role_table.c.id)).fetchall())
+    existing = dict(
+        conn.execute(sa.select(role_table.c.name, role_table.c.id)).fetchall()
+    )
     for name, desc in DEFAULT_ROLES.items():
         if name in existing:
             conn.execute(
@@ -129,7 +136,9 @@ def downgrade() -> None:
         perm_ids = [
             p[0]
             for p in conn.execute(
-                sa.select(permission_table.c.id).where(permission_table.c.code.in_(registry_codes))
+                sa.select(permission_table.c.id).where(
+                    permission_table.c.code.in_(registry_codes)
+                )
             ).fetchall()
         ]
         if role_ids and perm_ids:
@@ -144,4 +153,8 @@ def downgrade() -> None:
         conn.execute(sa.delete(role_table).where(role_table.c.name.in_(registry_roles)))
 
     if registry_codes:
-        conn.execute(sa.delete(permission_table).where(permission_table.c.code.in_(registry_codes)))
+        conn.execute(
+            sa.delete(permission_table).where(
+                permission_table.c.code.in_(registry_codes)
+            )
+        )

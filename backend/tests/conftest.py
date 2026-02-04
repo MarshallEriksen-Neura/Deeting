@@ -4,11 +4,12 @@
 - 默认禁用真实 Redis 连接，统一使用内存 DummyRedis，避免本地未启动 Redis 导致阻塞或退出不干净
 - 该文件在 backend/tests 下的所有测试生效，无需额外设置 REDIS_URL
 """
+
 from __future__ import annotations
 
 import asyncio
-import json
 import faulthandler
+import json
 import os
 import sys
 import threading
@@ -55,7 +56,9 @@ def event_loop():
 
             core_engine = getattr(core_database, "engine", None)
             if core_engine is not None and core_engine is not engine:
-                loop.run_until_complete(asyncio.wait_for(core_engine.dispose(), timeout=5))
+                loop.run_until_complete(
+                    asyncio.wait_for(core_engine.dispose(), timeout=5)
+                )
         except Exception:
             pass
         cache_obj = getattr(api_conftest, "cache", None) if api_conftest else None
@@ -65,7 +68,9 @@ def event_loop():
             except Exception:
                 pass
         try:
-            loop.run_until_complete(asyncio.wait_for(loop.shutdown_asyncgens(), timeout=5))
+            loop.run_until_complete(
+                asyncio.wait_for(loop.shutdown_asyncgens(), timeout=5)
+            )
         except Exception:
             pass
     finally:
@@ -86,7 +91,9 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[unused-argument]
         if core_engine is not None:
             loop = asyncio.new_event_loop()
             try:
-                loop.run_until_complete(asyncio.wait_for(core_engine.dispose(), timeout=5))
+                loop.run_until_complete(
+                    asyncio.wait_for(core_engine.dispose(), timeout=5)
+                )
             finally:
                 loop.close()
     except Exception:
@@ -113,6 +120,7 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[unused-argument]
         # 仅打印线程名，避免日志过重
         threads = ", ".join(t.name for t in threading.enumerate())
         print(f"[pytest-hang-debug] threads={threads}")
+
 
 # 确保测试环境不读取外部 Redis/Celery
 os.environ.setdefault("REDIS_URL", "")
@@ -167,11 +175,25 @@ class DummyRedis:
     async def keys(self, pattern: str):
         if pattern.endswith("*"):
             prefix = pattern[:-1]
-            return [k for k in list(self.store) + list(self.hash_store) + list(self.zset_store) if k.startswith(prefix)]
-        return [k for k in list(self.store) + list(self.hash_store) + list(self.zset_store) if k == pattern]
+            return [
+                k
+                for k in list(self.store)
+                + list(self.hash_store)
+                + list(self.zset_store)
+                if k.startswith(prefix)
+            ]
+        return [
+            k
+            for k in list(self.store) + list(self.hash_store) + list(self.zset_store)
+            if k == pattern
+        ]
 
     async def exists(self, *keys):
-        return sum(1 for k in keys if k in self.store or k in self.hash_store or k in self.zset_store)
+        return sum(
+            1
+            for k in keys
+            if k in self.store or k in self.hash_store or k in self.zset_store
+        )
 
     async def flushall(self):
         self.store.clear()
@@ -330,14 +352,15 @@ class DummyRedis:
             numkeys = keys_and_args[0]
             if not isinstance(numkeys, int):
                 return None
-            keys = list(keys_and_args[1:1 + numkeys])
-            args = list(keys_and_args[1 + numkeys:])
+            keys = list(keys_and_args[1 : 1 + numkeys])
+            args = list(keys_and_args[1 + numkeys :])
         if not keys or not args:
             return None
         key = keys[0]
         bucket = self.hash_store.get(key)
         if not bucket or len(args) < 6:
             return None
+
         # quota_deduct.lua 模拟
         def _get_num(field, default=0.0):
             raw = bucket.get(field if isinstance(field, bytes) else str(field).encode())
@@ -456,7 +479,11 @@ class DummyRedis:
             stored = self.store.get(key)
             if stored is None:
                 return 0
-            stored_val = stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+            stored_val = (
+                stored.decode()
+                if isinstance(stored, (bytes, bytearray))
+                else str(stored)
+            )
             if stored_val != lock_val:
                 return 0
             return 1
@@ -467,7 +494,9 @@ class DummyRedis:
         stored = self.store.get(key)
         if stored is None:
             return 0
-        stored_val = stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+        stored_val = (
+            stored.decode() if isinstance(stored, (bytes, bytearray)) else str(stored)
+        )
         if stored_val != lock_val:
             return 0
         await self.delete(key)

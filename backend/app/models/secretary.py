@@ -1,14 +1,17 @@
 import uuid
+
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
 
 class UserSecretary(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
     User's Personal Secretary Instance.
     One-to-One relationship with User.
     """
+
     __tablename__ = "user_secretary"
 
     user_id: Mapped[uuid.UUID] = mapped_column(

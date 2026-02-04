@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.services.orchestrator.context import Channel, WorkflowContext
-from app.services.workflow.steps.assistant_prompt_injection import AssistantPromptInjectionStep
+from app.services.workflow.steps.assistant_prompt_injection import (
+    AssistantPromptInjectionStep,
+)
 
 
 @pytest.mark.asyncio

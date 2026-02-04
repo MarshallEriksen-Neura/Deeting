@@ -131,7 +131,10 @@ class ValidationStep(BaseStep):
             # (之前已在通用逻辑中检查过 MAX_REQUEST_BYTES)
 
             # 内容过滤
-            if settings.SECURITY_SQL_INJECTION_DETECT or settings.SECURITY_PROMPT_INJECTION_DETECT:
+            if (
+                settings.SECURITY_SQL_INJECTION_DETECT
+                or settings.SECURITY_PROMPT_INJECTION_DETECT
+            ):
                 await self._check_content_injection(serialized)
 
         # 返回校验后的数据
@@ -145,9 +148,14 @@ class ValidationStep(BaseStep):
     async def _check_content_injection(self, data: Any) -> None:
         """递归检查内容注入"""
         if isinstance(data, str):
-            if settings.SECURITY_SQL_INJECTION_DETECT and is_potential_sql_injection(data):
+            if settings.SECURITY_SQL_INJECTION_DETECT and is_potential_sql_injection(
+                data
+            ):
                 raise ValidationError("body", "Potential SQL injection detected")
-            if settings.SECURITY_PROMPT_INJECTION_DETECT and is_potential_prompt_injection(data):
+            if (
+                settings.SECURITY_PROMPT_INJECTION_DETECT
+                and is_potential_prompt_injection(data)
+            ):
                 raise ValidationError("body", "Potential prompt injection detected")
         elif isinstance(data, dict):
             for v in data.values():

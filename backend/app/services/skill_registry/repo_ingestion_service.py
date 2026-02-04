@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Iterable
-
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from app.core.config import settings
@@ -13,8 +12,8 @@ from app.repositories.skill_capability_repository import SkillCapabilityReposito
 from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.services.skill_registry.manifest_generator import SkillManifestGenerator
-from app.services.skill_registry.repo_ingestion_utils import build_file_index
 from app.services.skill_registry.parsers.base import RepoContext, RepoParserPlugin
+from app.services.skill_registry.repo_ingestion_utils import build_file_index
 
 
 class RepoIngestionService:
@@ -63,12 +62,14 @@ class RepoIngestionService:
         temp_root = None
         try:
             repo_root, temp_root = clone_repo(repo_url, revision, workdir)
-            
+
             effective_root = repo_root
             if source_subdir:
                 effective_root = repo_root / source_subdir.strip("/")
                 if not effective_root.exists():
-                    raise ValueError(f"Source subdir '{source_subdir}' not found in repo")
+                    raise ValueError(
+                        f"Source subdir '{source_subdir}' not found in repo"
+                    )
 
             file_index = build_file_index(effective_root)
             repo_context = RepoContext(
@@ -126,7 +127,16 @@ def _ensure_workdir() -> Path:
 def clone_repo(repo_url: str, revision: str, workdir: Path) -> tuple[Path, Path]:
     temp_root = Path(tempfile.mkdtemp(dir=workdir))
     repo_root = temp_root / "repo"
-    cmd = ["git", "clone", "--depth", "1", "--branch", revision, repo_url, str(repo_root)]
+    cmd = [
+        "git",
+        "clone",
+        "--depth",
+        "1",
+        "--branch",
+        revision,
+        repo_url,
+        str(repo_root),
+    ]
     subprocess.run(cmd, check=True, capture_output=True, text=True)
     return repo_root, temp_root
 

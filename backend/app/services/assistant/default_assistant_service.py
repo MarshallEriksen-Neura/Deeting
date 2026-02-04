@@ -8,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.assistants import DEFAULT_ASSISTANT_SLUG
 from app.core.logging import logger
 from app.repositories.assistant_install_repository import AssistantInstallRepository
-from app.repositories.assistant_repository import AssistantRepository, AssistantVersionRepository
+from app.repositories.assistant_repository import (
+    AssistantRepository,
+    AssistantVersionRepository,
+)
 
 
 class DefaultAssistantService:
@@ -25,11 +28,16 @@ class DefaultAssistantService:
         if not assistant:
             logger.warning(
                 "default_assistant_missing",
-                extra={"assistant_slug": DEFAULT_ASSISTANT_SLUG, "user_id": str(user_id)},
+                extra={
+                    "assistant_slug": DEFAULT_ASSISTANT_SLUG,
+                    "user_id": str(user_id),
+                },
             )
             return False
 
-        existing = await self.install_repo.get_by_user_and_assistant(user_id, assistant.id)
+        existing = await self.install_repo.get_by_user_and_assistant(
+            user_id, assistant.id
+        )
         if existing:
             return False
 
@@ -83,7 +91,7 @@ class DefaultAssistantService:
             if not assistant:
                 return
             await self.assistant_repo.update(assistant, {"install_count": count})
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "default_assistant_install_count_failed",
                 extra={"assistant_id": str(assistant_id), "error": str(exc)},

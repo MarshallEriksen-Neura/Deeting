@@ -41,7 +41,9 @@ UPSTREAM_FAILURES = Counter(
 )
 
 
-def record_request(path: str, method: str, status: int, duration_seconds: float) -> None:
+def record_request(
+    path: str, method: str, status: int, duration_seconds: float
+) -> None:
     REQUEST_LATENCY.labels(path=path, method=method, status=status).observe(
         duration_seconds
     )

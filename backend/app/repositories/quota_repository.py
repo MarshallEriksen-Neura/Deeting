@@ -31,7 +31,9 @@ class InsufficientQuotaError(Exception):
         self.quota_type = quota_type
         self.required = required
         self.available = available
-        super().__init__(f"{quota_type} quota insufficient: required={required}, available={available}")
+        super().__init__(
+            f"{quota_type} quota insufficient: required={required}, available={available}"
+        )
 
 
 class QuotaRepository:
@@ -126,7 +128,11 @@ class QuotaRepository:
             "monthly_remaining": max(0, quota.monthly_quota - quota.monthly_used),
             "rpm_limit": quota.rpm_limit,
             "tpm_limit": quota.tpm_limit,
-            "token_remaining": max(0, quota.token_quota - quota.token_used) if quota.token_quota > 0 else -1,
+            "token_remaining": (
+                max(0, quota.token_quota - quota.token_used)
+                if quota.token_quota > 0
+                else -1
+            ),
         }
 
         # 写入缓存
@@ -176,19 +182,25 @@ class QuotaRepository:
         if balance_amount > 0:
             effective_balance = quota.balance + quota.credit_limit
             if not allow_negative and effective_balance < Decimal(str(balance_amount)):
-                raise InsufficientQuotaError("balance", float(balance_amount), float(effective_balance))
+                raise InsufficientQuotaError(
+                    "balance", float(balance_amount), float(effective_balance)
+                )
 
         # 检查日配额
         if daily_requests > 0:
             daily_remaining = quota.daily_quota - quota.daily_used
             if daily_remaining < daily_requests:
-                raise InsufficientQuotaError("daily_requests", daily_requests, daily_remaining)
+                raise InsufficientQuotaError(
+                    "daily_requests", daily_requests, daily_remaining
+                )
 
         # 检查月配额
         if monthly_requests > 0:
             monthly_remaining = quota.monthly_quota - quota.monthly_used
             if monthly_remaining < monthly_requests:
-                raise InsufficientQuotaError("monthly_requests", monthly_requests, monthly_remaining)
+                raise InsufficientQuotaError(
+                    "monthly_requests", monthly_requests, monthly_remaining
+                )
 
         # 检查 Token 配额
         if tokens > 0 and quota.token_quota > 0:
@@ -248,7 +260,9 @@ class QuotaRepository:
 
     async def deduct_balance(self, tenant_id: str, amount: float) -> float:
         """扣减余额（兼容旧接口）"""
-        quota = await self.check_and_deduct(tenant_id, balance_amount=Decimal(str(amount)), allow_negative=True)
+        quota = await self.check_and_deduct(
+            tenant_id, balance_amount=Decimal(str(amount)), allow_negative=True
+        )
         return float(quota.balance)
 
     async def add_balance(
@@ -326,7 +340,9 @@ class QuotaRepository:
         await self._sync_redis_hash(updated)
         return updated
 
-    async def _maybe_reset_quotas(self, quota: TenantQuota, commit: bool = True) -> TenantQuota:
+    async def _maybe_reset_quotas(
+        self, quota: TenantQuota, commit: bool = True
+    ) -> TenantQuota:
         """检查并重置过期的配额"""
         today = date.today()
         needs_update = False
@@ -348,9 +364,7 @@ class QuotaRepository:
         if needs_update:
             values["updated_at"] = Datetime.now()
             stmt = (
-                update(TenantQuota)
-                .where(TenantQuota.id == quota.id)
-                .values(**values)
+                update(TenantQuota).where(TenantQuota.id == quota.id).values(**values)
             )
             await self.session.execute(stmt)
             if commit:
@@ -358,7 +372,9 @@ class QuotaRepository:
             else:
                 await self.session.flush()
             # 重新加载最新值
-            result = await self.session.execute(select(TenantQuota).where(TenantQuota.id == quota.id))
+            result = await self.session.execute(
+                select(TenantQuota).where(TenantQuota.id == quota.id)
+            )
             quota = result.scalars().first()
 
             if commit:
@@ -379,7 +395,11 @@ class QuotaRepository:
             "monthly_remaining": max(0, quota.monthly_quota - quota.monthly_used),
             "rpm_limit": quota.rpm_limit,
             "tpm_limit": quota.tpm_limit,
-            "token_remaining": max(0, quota.token_quota - quota.token_used) if quota.token_quota > 0 else -1,
+            "token_remaining": (
+                max(0, quota.token_quota - quota.token_used)
+                if quota.token_quota > 0
+                else -1
+            ),
         }
 
         ttl = cache.jitter_ttl(self._cache_ttl)
@@ -401,10 +421,18 @@ class QuotaRepository:
             "credit_limit": str(quota.credit_limit),
             "daily_quota": int(quota.daily_quota),
             "daily_used": int(quota.daily_used),
-            "daily_date": quota.daily_reset_at.isoformat() if quota.daily_reset_at else date.today().isoformat(),
+            "daily_date": (
+                quota.daily_reset_at.isoformat()
+                if quota.daily_reset_at
+                else date.today().isoformat()
+            ),
             "monthly_quota": int(quota.monthly_quota),
             "monthly_used": int(quota.monthly_used),
-            "monthly_month": quota.monthly_reset_at.strftime("%Y-%m") if quota.monthly_reset_at else date.today().strftime("%Y-%m"),
+            "monthly_month": (
+                quota.monthly_reset_at.strftime("%Y-%m")
+                if quota.monthly_reset_at
+                else date.today().strftime("%Y-%m")
+            ),
             "rpm_limit": int(quota.rpm_limit),
             "tpm_limit": int(quota.tpm_limit),
             "version": int(quota.version),
@@ -413,7 +441,9 @@ class QuotaRepository:
             await redis_client.hset(key, mapping=payload)
             await redis_client.expire(key, 86400)
         except Exception as exc:
-            logger.warning(f"quota_sync_redis_hash_failed tenant={quota.tenant_id} exc={exc}")
+            logger.warning(
+                f"quota_sync_redis_hash_failed tenant={quota.tenant_id} exc={exc}"
+            )
 
     async def _invalidate_cache(self, tenant_id: str) -> None:
         """失效缓存"""

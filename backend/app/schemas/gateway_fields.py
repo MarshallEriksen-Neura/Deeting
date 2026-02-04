@@ -96,7 +96,9 @@ class ImageOptions(BaseSchema):
 
 class AudioOptions(BaseSchema):
     voice: str | None = Field(None, description="音色/角色标识")
-    format: str | None = Field(None, description="音频格式 mp3/opus/aac/flac/wav/pcm 等")
+    format: str | None = Field(
+        None, description="音频格式 mp3/opus/aac/flac/wav/pcm 等"
+    )
     speed: float | None = Field(None, description="朗读速度倍数")
 
 
@@ -104,7 +106,9 @@ class VideoOptions(BaseSchema):
     aspect_ratio: str | None = Field(None, description="纵横比，如 16:9 / 9:16 / 1:1")
     resolution: str | None = Field(None, description="分辨率标识，如 720p/1080p")
     duration_seconds: int | None = Field(None, description="目标时长（秒）")
-    reference_images: list[str] | None = Field(None, description="参考图像 URL/base64 列表")
+    reference_images: list[str] | None = Field(
+        None, description="参考图像 URL/base64 列表"
+    )
     negative_prompt: str | None = Field(None, description="反向提示词")
     person_generation: str | None = Field(None, description="人物生成开关/模式")
 
@@ -133,15 +137,23 @@ class GatewayRequestFields(BaseSchema):
     top_p: float | None = Field(None, description="核采样 p")
     top_k: int | None = Field(None, description="k 采样")
     stop: list[str] | None = Field(None, description="停止序列（兼容单字段 stop）")
-    stop_sequences: list[str] | None = Field(None, description="停止序列（Gemini/Claude 风格）")
+    stop_sequences: list[str] | None = Field(
+        None, description="停止序列（Gemini/Claude 风格）"
+    )
     presence_penalty: float | None = Field(None, description="存在惩罚")
     frequency_penalty: float | None = Field(None, description="频率惩罚")
     seed: int | None = Field(None, description="随机种子")
-    safety_settings: list[dict[str, Any]] | None = Field(None, description="安全/风控配置")
+    safety_settings: list[dict[str, Any]] | None = Field(
+        None, description="安全/风控配置"
+    )
     user_identifier: str | None = Field(None, description="用户标识（内容安全）")
     safety_identifier: str | None = Field(None, description="安全审计 ID")
-    response_format: Any | None = Field(None, description="输出格式，兼容 JSON schema 等")
-    modalities: list[str] | None = Field(None, description="输出模态列表，例如 ['text','image']")
+    response_format: Any | None = Field(
+        None, description="输出格式，兼容 JSON schema 等"
+    )
+    modalities: list[str] | None = Field(
+        None, description="输出模态列表，例如 ['text','image']"
+    )
 
     # 媒体专属
     image: ImageOptions | None = Field(None, description="图像生成参数")

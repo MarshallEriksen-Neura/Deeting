@@ -15,7 +15,9 @@ async def concurrency_middleware(request: Request, call_next):
     - 超过并发且在队列等待超时时返回 503
     """
     try:
-        await asyncio.wait_for(_semaphore.acquire(), timeout=settings.GATEWAY_QUEUE_TIMEOUT)
+        await asyncio.wait_for(
+            _semaphore.acquire(), timeout=settings.GATEWAY_QUEUE_TIMEOUT
+        )
     except TimeoutError:
         return Response(
             content=GatewayError(

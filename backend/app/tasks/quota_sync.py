@@ -32,10 +32,10 @@ def sync_quota_from_redis_to_db(
 ) -> dict:
     """
     同步单个租户的配额从 Redis 到 DB
-    
+
     Args:
         tenant_id: 租户 ID
-        
+
     Returns:
         同步结果字典
     """
@@ -55,7 +55,10 @@ def sync_quota_from_redis_to_db(
         elif hasattr(redis_client, "connection_pool"):
             # 使用同步 Redis 客户端
             import redis
-            sync_redis = redis.from_url(redis_client.connection_pool.connection_kwargs["url"])
+
+            sync_redis = redis.from_url(
+                redis_client.connection_pool.connection_kwargs["url"]
+            )
             data = sync_redis.hgetall(full_key)
 
         if not data:
@@ -87,16 +90,30 @@ def sync_quota_from_redis_to_db(
                 if not quota:
                     logger.warning("sync_quota_db_not_found tenant=%s", tenant_id)
                     return {"status": "failed", "reason": "db_record_not_found"}
-                sync_result = _sync_quota_row(session, quota, redis_balance, redis_daily_used, redis_monthly_used, redis_version)
+                sync_result = _sync_quota_row(
+                    session,
+                    quota,
+                    redis_balance,
+                    redis_daily_used,
+                    redis_monthly_used,
+                    redis_version,
+                )
                 return sync_result
         else:
             stmt = select(TenantQuota).where(TenantQuota.tenant_id == tenant_uuid)
             quota = session.execute(stmt).scalars().first()
-            
+
             if not quota:
                 logger.warning("sync_quota_db_not_found tenant=%s", tenant_id)
                 return {"status": "failed", "reason": "db_record_not_found"}
-            return _sync_quota_row(session, quota, redis_balance, redis_daily_used, redis_monthly_used, redis_version)
+            return _sync_quota_row(
+                session,
+                quota,
+                redis_balance,
+                redis_daily_used,
+                redis_monthly_used,
+                redis_version,
+            )
 
     except Exception as exc:
         logger.error("sync_quota_error tenant=%s err=%s", tenant_id, exc)
@@ -123,7 +140,10 @@ async def sync_quota_from_redis_to_db_async(
             data = redis_client.hash_store.get(full_key, {}).copy()
         elif hasattr(redis_client, "connection_pool"):
             import redis
-            sync_redis = redis.from_url(redis_client.connection_pool.connection_kwargs["url"])
+
+            sync_redis = redis.from_url(
+                redis_client.connection_pool.connection_kwargs["url"]
+            )
             data = sync_redis.hgetall(full_key)
 
         if not data:
@@ -255,7 +275,7 @@ def _sync_quota_row(
 def sync_all_quotas() -> dict:
     """
     同步所有租户的配额
-    
+
     Returns:
         同步汇总结果
     """
@@ -274,18 +294,20 @@ def sync_all_quotas() -> dict:
 
         for tenant_id in tenant_ids:
             result = sync_quota_from_redis_to_db(str(tenant_id))
-            
+
             if result["status"] == "synced":
                 results["synced"] += 1
             elif result["status"] == "skipped":
                 results["skipped"] += 1
             else:
                 results["failed"] += 1
-            
-            results["details"].append({
-                "tenant_id": str(tenant_id),
-                **result,
-            })
+
+            results["details"].append(
+                {
+                    "tenant_id": str(tenant_id),
+                    **result,
+                }
+            )
 
         logger.info(
             "sync_all_quotas_complete total=%d synced=%d skipped=%d failed=%d",

@@ -27,7 +27,9 @@ async def latency_heatmap(
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
-    return await svc.get_latency_heatmap(str(current_user.id) if current_user else None, time_range, model)
+    return await svc.get_latency_heatmap(
+        str(current_user.id) if current_user else None, time_range, model
+    )
 
 
 @router.get("/percentile-trends", response_model=PercentileTrendsResponse)
@@ -36,7 +38,9 @@ async def percentile_trends(
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
-    return await svc.get_percentile_trends(str(current_user.id) if current_user else None, time_range)
+    return await svc.get_percentile_trends(
+        str(current_user.id) if current_user else None, time_range
+    )
 
 
 @router.get("/model-cost-breakdown", response_model=ModelCostBreakdownResponse)
@@ -45,7 +49,9 @@ async def model_cost_breakdown(
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
-    return await svc.get_model_cost_breakdown(str(current_user.id) if current_user else None, time_range)
+    return await svc.get_model_cost_breakdown(
+        str(current_user.id) if current_user else None, time_range
+    )
 
 
 @router.get("/error-distribution", response_model=ErrorDistributionResponse)
@@ -55,7 +61,9 @@ async def error_distribution(
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
-    return await svc.get_error_distribution(str(current_user.id) if current_user else None, time_range, model)
+    return await svc.get_error_distribution(
+        str(current_user.id) if current_user else None, time_range, model
+    )
 
 
 @router.get("/key-activity-ranking", response_model=KeyActivityRankingResponse)
@@ -65,4 +73,6 @@ async def key_activity_ranking(
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
-    return await svc.get_key_activity_ranking(str(current_user.id) if current_user else None, time_range, limit)
+    return await svc.get_key_activity_ranking(
+        str(current_user.id) if current_user else None, time_range, limit
+    )

@@ -1,10 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from app.models.review import ReviewStatus
 from pydantic import Field
 
-from app.schemas.base import BaseSchema, IDSchema, TimestampSchema
+from app.models.review import ReviewStatus
+from app.schemas.base import IDSchema, TimestampSchema
 
 
 class ReviewTaskDTO(IDSchema, TimestampSchema):

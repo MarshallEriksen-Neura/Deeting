@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, List
+from typing import Any
 
 import httpx
 
@@ -17,16 +17,17 @@ class VectorStoreClient(ABC):
     """抽象向量存储接口，便于未来切换实现。"""
 
     @abstractmethod
-    async def upsert(self, content: str, payload: dict[str, Any] | None = None, id: str | None = None) -> str:
-        ...
+    async def upsert(
+        self, content: str, payload: dict[str, Any] | None = None, id: str | None = None
+    ) -> str: ...
 
     @abstractmethod
-    async def search(self, query: str, limit: int = 5, score_threshold: float = 0.0) -> List[dict[str, Any]]:
-        ...
+    async def search(
+        self, query: str, limit: int = 5, score_threshold: float = 0.0
+    ) -> list[dict[str, Any]]: ...
 
     @abstractmethod
-    async def delete(self, ids: List[str]) -> None:
-        ...
+    async def delete(self, ids: list[str]) -> None: ...
 
 
 class QdrantUserVectorService(VectorStoreClient):
@@ -51,7 +52,9 @@ class QdrantUserVectorService(VectorStoreClient):
         self._plugin_id = plugin_id
         self._user_id = str(user_id)
         self._embedding_service = embedding_service or EmbeddingService()
-        self._embedding_model = embedding_model or getattr(self._embedding_service, "model", None)
+        self._embedding_model = embedding_model or getattr(
+            self._embedding_service, "model", None
+        )
         self._fail_open = fail_open
         self._collection_name: str | None = None
         self._log = logger.getChild("QdrantUserVectorService")
@@ -86,16 +89,23 @@ class QdrantUserVectorService(VectorStoreClient):
         if self._plugin_id:
             must.append({"key": "plugin_id", "match": {"value": self._plugin_id}})
         if self._embedding_model:
-            must.append({"key": "embedding_model", "match": {"value": self._embedding_model}})
+            must.append(
+                {"key": "embedding_model", "match": {"value": self._embedding_model}}
+            )
         return {"must": must}
 
-    async def upsert(self, content: str, payload: dict[str, Any] | None = None, id: str | None = None) -> str:
+    async def upsert(
+        self, content: str, payload: dict[str, Any] | None = None, id: str | None = None
+    ) -> str:
         point_id = id or str(uuid.uuid4())
         vector = await self._embedding_service.embed_text(content)
         self._refresh_embedding_model()
         collection, degraded = await self._ensure_collection(len(vector))
         if degraded:
-            self._log.warning("upsert degraded; skip write", extra={"collection": collection, "user": self._user_id})
+            self._log.warning(
+                "upsert degraded; skip write",
+                extra={"collection": collection, "user": self._user_id},
+            )
             return point_id
 
         body = {
@@ -103,27 +113,39 @@ class QdrantUserVectorService(VectorStoreClient):
                 {
                     "id": point_id,
                     "vector": vector,
-                    "payload": self._base_payload({**(payload or {}), "content": content}),
+                    "payload": self._base_payload(
+                        {**(payload or {}), "content": content}
+                    ),
                 }
             ]
         }
 
         try:
-            resp = await self._client.put(f"/collections/{collection}/points", json=body, params={"wait": "true"})
+            resp = await self._client.put(
+                f"/collections/{collection}/points", json=body, params={"wait": "true"}
+            )
             resp.raise_for_status()
         except Exception as exc:  # pragma: no cover - fail-open path
             if self._fail_open:
-                self._log.warning("upsert failed but ignored", extra={"collection": collection}, exc_info=exc)
+                self._log.warning(
+                    "upsert failed but ignored",
+                    extra={"collection": collection},
+                    exc_info=exc,
+                )
                 return point_id
             raise
         return point_id
 
-    async def search(self, query: str, limit: int = 5, score_threshold: float = 0.0) -> List[dict[str, Any]]:
+    async def search(
+        self, query: str, limit: int = 5, score_threshold: float = 0.0
+    ) -> list[dict[str, Any]]:
         vector = await self._embedding_service.embed_text(query)
         self._refresh_embedding_model()
         collection, degraded = await self._ensure_collection(len(vector))
         if degraded:
-            self._log.warning("search degraded; return empty", extra={"collection": collection})
+            self._log.warning(
+                "search degraded; return empty", extra={"collection": collection}
+            )
             return []
 
         body = {
@@ -134,11 +156,17 @@ class QdrantUserVectorService(VectorStoreClient):
             "score_threshold": score_threshold,
         }
         try:
-            resp = await self._client.post(f"/collections/{collection}/points/search", json=body)
+            resp = await self._client.post(
+                f"/collections/{collection}/points/search", json=body
+            )
             resp.raise_for_status()
         except Exception as exc:  # pragma: no cover - fail-open
             if self._fail_open:
-                self._log.warning("search failed but ignored", extra={"collection": collection}, exc_info=exc)
+                self._log.warning(
+                    "search failed but ignored",
+                    extra={"collection": collection},
+                    exc_info=exc,
+                )
                 return []
             raise
 
@@ -153,7 +181,7 @@ class QdrantUserVectorService(VectorStoreClient):
             for item in results
         ]
 
-    async def delete(self, ids: List[str]) -> None:
+    async def delete(self, ids: list[str]) -> None:
         if not ids:
             return
         collection = self._collection_name or ""
@@ -161,7 +189,9 @@ class QdrantUserVectorService(VectorStoreClient):
             if not collection:
                 collection, degraded = await self._ensure_collection(vector_size=1)
                 if degraded:
-                    self._log.warning("delete degraded; skip", extra={"collection": collection})
+                    self._log.warning(
+                        "delete degraded; skip", extra={"collection": collection}
+                    )
                     return
             body = {
                 "filter": {
@@ -176,13 +206,21 @@ class QdrantUserVectorService(VectorStoreClient):
                     ]
                 }
             }
-            resp = await self._client.post(f"/collections/{collection}/points/delete", json=body, params={"wait": "true"})
+            resp = await self._client.post(
+                f"/collections/{collection}/points/delete",
+                json=body,
+                params={"wait": "true"},
+            )
             resp.raise_for_status()
         except Exception as exc:  # pragma: no cover - fail-open
             if self._fail_open:
-                self._log.warning("delete failed but ignored", extra={"collection": collection}, exc_info=exc)
+                self._log.warning(
+                    "delete failed but ignored",
+                    extra={"collection": collection},
+                    exc_info=exc,
+                )
                 return
             raise
 
 
-__all__ = ["VectorStoreClient", "QdrantUserVectorService"]
+__all__ = ["QdrantUserVectorService", "VectorStoreClient"]

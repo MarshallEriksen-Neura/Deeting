@@ -25,6 +25,7 @@ class SkillRuntimeExecutor:
         session_id: str | None,
         inputs: dict[str, Any],
         intent: str | None,
+        kill_on_exit: bool = False,
     ) -> dict[str, Any]:
         skill = await self.repo.get_by_id(skill_id)
         if not skill:
@@ -47,11 +48,19 @@ class SkillRuntimeExecutor:
         artifacts = _normalize_artifacts(manifest.get("artifacts"))
 
         session = session_id or "default"
-        sandbox = await self.sandbox_manager._create_sandbox(session)
+        # Use public method for reuse
+        sandbox = await self.sandbox_manager.get_or_create_sandbox(session)
+        sandbox_id = sandbox.id
+
         try:
             workspace_root = f"/workspace/skills/{skill_id}"
             repo_root = f"{workspace_root}/repo"
-            await _run_command(sandbox, f"mkdir -p {workspace_root}")
+
+            # Cleanup previous run in the same sandbox to avoid git clone errors
+            await _run_command(
+                sandbox, f"rm -rf {workspace_root} && mkdir -p {workspace_root}"
+            )
+
             await _run_command(
                 sandbox,
                 f"git clone --depth 1 --branch {revision} {repo_url} {repo_root}",
@@ -86,7 +95,10 @@ class SkillRuntimeExecutor:
                 "artifacts": artifact_results,
             }
         finally:
-            await sandbox.close()
+            if kill_on_exit:
+                await self.sandbox_manager.stop_sandbox(sandbox_id, session_id=session)
+            else:
+                await sandbox.close()
 
 
 async def _run_command(
@@ -96,7 +108,11 @@ async def _run_command(
     working_directory: str | None = None,
     return_execution: bool = False,
 ):
-    opts = RunCommandOpts(working_directory=working_directory) if working_directory else None
+    opts = (
+        RunCommandOpts(working_directory=working_directory)
+        if working_directory
+        else None
+    )
     execution = await sandbox.commands.run(command, opts=opts)
     if return_execution:
         return execution

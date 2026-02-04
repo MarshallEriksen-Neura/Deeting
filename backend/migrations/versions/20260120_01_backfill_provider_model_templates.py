@@ -7,7 +7,6 @@ Create Date: 2026-01-20 10:00:00
 
 from __future__ import annotations
 
-
 # revision identifiers, used by Alembic.
 revision = "20260120_01_backfill_provider_model_templates"
 down_revision = "20260119_03_fix_image_model_capability"

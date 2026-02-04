@@ -1,9 +1,8 @@
 import uuid
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, Mock
-
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -124,7 +123,9 @@ async def test_review_rejected_skips_sync(monkeypatch, async_session):
     )
 
     enqueue.assert_not_called()
-    task = await ReviewTaskRepository(async_session).get_by_entity(ASSISTANT_MARKET_ENTITY, assistant_id)
+    task = await ReviewTaskRepository(async_session).get_by_entity(
+        ASSISTANT_MARKET_ENTITY, assistant_id
+    )
     assert task is not None
     assert task.status == ReviewStatus.REJECTED.value
 
@@ -158,7 +159,9 @@ async def test_review_auto_review_error_marks_rejected(monkeypatch, async_sessio
         submitter_user_id=user.id,
     )
 
-    task = await ReviewTaskRepository(async_session).get_by_entity(ASSISTANT_MARKET_ENTITY, assistant_id)
+    task = await ReviewTaskRepository(async_session).get_by_entity(
+        ASSISTANT_MARKET_ENTITY, assistant_id
+    )
     assert task is not None
     assert task.status == ReviewStatus.REJECTED.value
     assert task.reason == "auto review failed"

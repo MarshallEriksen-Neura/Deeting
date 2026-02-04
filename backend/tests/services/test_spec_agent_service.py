@@ -1,20 +1,18 @@
 from __future__ import annotations
 
+import importlib
 from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-
-from app.models import Base
 from sqlalchemy import select
 
+from app.models import Base
 from app.models.spec_agent import SpecExecutionLog, SpecPlan, SpecWorkerSession
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest
 from app.schemas.tool import ToolCall, ToolDefinition
-import importlib
-
 from app.services.agent import SpecAgentService, SpecExecutor
 from app.utils.time_utils import Datetime
 from tests.api.conftest import AsyncSessionLocal, engine
@@ -222,7 +220,7 @@ async def test_tool_call_flow_returns_json_output(monkeypatch):
             calls["count"] += 1
             if calls["count"] == 1:
                 return [ToolCall(id="1", name="tool.echo", arguments={"text": "hi"})]
-            return "{\"answer\": \"ok\"}"
+            return '{"answer": "ok"}'
 
         spec_agent_module = importlib.import_module(
             "app.services.agent.spec_agent_service"

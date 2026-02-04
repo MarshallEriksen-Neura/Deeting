@@ -5,17 +5,16 @@ Revises: 20260116_01_create_mcp_market_tables
 Create Date: 2026-01-16
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "20260116_02_add_conversation_session_assistant_id"
-down_revision: Union[str, None] = "20260116_01_create_mcp_market_tables"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260116_01_create_mcp_market_tables"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -37,5 +36,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_conversation_session_assistant_id", table_name="conversation_session")
+    op.drop_index(
+        "ix_conversation_session_assistant_id", table_name="conversation_session"
+    )
     op.drop_column("conversation_session", "assistant_id")

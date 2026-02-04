@@ -14,10 +14,18 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from app.repositories.billing_repository import BillingRepository, InsufficientBalanceError
+from app.repositories.billing_repository import (
+    BillingRepository,
+    InsufficientBalanceError,
+)
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
-from app.services.workflow.steps.base import BaseStep, StepConfig, StepResult, StepStatus
+from app.services.workflow.steps.base import (
+    BaseStep,
+    StepConfig,
+    StepResult,
+    StepStatus,
+)
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
@@ -39,16 +47,16 @@ class BillingStep(BaseStep):
             config = StepConfig(timeout=10.0, max_retries=3)
         super().__init__(config)
 
-    async def execute(self, ctx: "WorkflowContext") -> StepResult:
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
         is_stream = ctx.get("upstream_call", "stream", False)
         if is_stream:
             return await self._create_pending_for_stream(ctx)
         return await self._deduct_for_non_stream(ctx)
 
-    async def _create_pending_for_stream(self, ctx: "WorkflowContext") -> StepResult:
+    async def _create_pending_for_stream(self, ctx: WorkflowContext) -> StepResult:
         """
         流式：创建 PENDING 交易标记，不扣余额（P0-1）
-        
+
         配额已在 QuotaCheckStep 扣减，此处只创建交易记录。
         """
         pricing = ctx.get("routing", "pricing_config") or {}
@@ -67,22 +75,30 @@ class BillingStep(BaseStep):
                 estimated_tokens=estimated_tokens,
                 pricing=pricing,
                 api_key_id=ctx.api_key_id,
-                provider=ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
+                provider=(
+                    ctx.upstream_result.provider
+                    if hasattr(ctx, "upstream_result")
+                    else None
+                ),
                 model=ctx.requested_model,
                 preset_item_id=ctx.get("routing", "provider_model_id"),
             )
             ctx.set("billing", "pending_transaction_id", str(tx.id))
             ctx.set("billing", "pending_trace_id", ctx.trace_id)
             ctx.set("billing", "pricing_config", pricing)
-            return StepResult(status=StepStatus.SUCCESS, data={"pending_transaction_id": str(tx.id)})
-        except Exception as exc:  # noqa: PERF203
+            return StepResult(
+                status=StepStatus.SUCCESS, data={"pending_transaction_id": str(tx.id)}
+            )
+        except Exception as exc:
             logger.error(f"create_pending_failed trace_id={ctx.trace_id} err={exc}")
-            return StepResult(status=StepStatus.FAILED, message="Create pending billing failed")
+            return StepResult(
+                status=StepStatus.FAILED, message="Create pending billing failed"
+            )
 
-    async def _deduct_for_non_stream(self, ctx: "WorkflowContext") -> StepResult:
+    async def _deduct_for_non_stream(self, ctx: WorkflowContext) -> StepResult:
         """
         非流式：只记录流水，不扣减配额（P0-1）
-        
+
         配额已在 QuotaCheckStep 扣减，此处只记录交易流水。
         如果实际费用与预估费用有差异，需要调整 Redis 余额。
         """
@@ -90,7 +106,9 @@ class BillingStep(BaseStep):
         input_tokens = ctx.billing.input_tokens or 0
         output_tokens = ctx.billing.output_tokens or 0
         input_cost = self._calculate_cost(input_tokens, pricing.get("input_per_1k", 0))
-        output_cost = self._calculate_cost(output_tokens, pricing.get("output_per_1k", 0))
+        output_cost = self._calculate_cost(
+            output_tokens, pricing.get("output_per_1k", 0)
+        )
         total_cost = input_cost + output_cost
         currency = pricing.get("currency", "USD")
 
@@ -102,11 +120,15 @@ class BillingStep(BaseStep):
 
         if not pricing or not ctx.tenant_id:
             ctx.set("billing", "skip_reason", "no_pricing_or_tenant")
-            await self._record_usage(ctx, total_cost, pricing, input_tokens, output_tokens)
+            await self._record_usage(
+                ctx, total_cost, pricing, input_tokens, output_tokens
+            )
             return StepResult(status=StepStatus.SUCCESS)
 
         if ctx.is_internal:
-            await self._record_usage(ctx, total_cost, pricing, input_tokens, output_tokens)
+            await self._record_usage(
+                ctx, total_cost, pricing, input_tokens, output_tokens
+            )
             return StepResult(
                 status=StepStatus.SUCCESS,
                 data={
@@ -126,7 +148,9 @@ class BillingStep(BaseStep):
                 output_tokens,
             )
             if balance_after is None:
-                await self._record_usage(ctx, total_cost, pricing, input_tokens, output_tokens)
+                await self._record_usage(
+                    ctx, total_cost, pricing, input_tokens, output_tokens
+                )
             else:
                 ctx.set("billing", "balance_after", balance_after)
             return StepResult(
@@ -149,13 +173,13 @@ class BillingStep(BaseStep):
                     "available": float(exc.available),
                 },
             )
-        except Exception as exc:  # noqa: PERF203
+        except Exception as exc:
             logger.error(f"billing_failed trace_id={ctx.trace_id} err={exc}")
             return StepResult(status=StepStatus.FAILED, message="billing failed")
 
     async def _deduct_balance(
         self,
-        ctx: "WorkflowContext",
+        ctx: WorkflowContext,
         total_cost: float,
         pricing: dict,
         input_tokens: int,
@@ -177,7 +201,11 @@ class BillingStep(BaseStep):
                 output_tokens=output_tokens,
                 input_price=Decimal(str(pricing.get("input_per_1k", 0))),
                 output_price=Decimal(str(pricing.get("output_per_1k", 0))),
-                provider=ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
+                provider=(
+                    ctx.upstream_result.provider
+                    if hasattr(ctx, "upstream_result")
+                    else None
+                ),
                 model=ctx.requested_model,
                 preset_item_id=ctx.get("routing", "provider_model_id"),
                 api_key_id=ctx.api_key_id,
@@ -187,7 +215,7 @@ class BillingStep(BaseStep):
 
     async def _record_usage(
         self,
-        ctx: "WorkflowContext",
+        ctx: WorkflowContext,
         total_cost: float,
         pricing: dict,
         input_tokens: int,
@@ -208,7 +236,11 @@ class BillingStep(BaseStep):
             output_tokens=output_tokens,
             input_price=Decimal(str(pricing.get("input_per_1k", 0))),
             output_price=Decimal(str(pricing.get("output_per_1k", 0))),
-            provider=ctx.upstream_result.provider if hasattr(ctx, "upstream_result") else None,
+            provider=(
+                ctx.upstream_result.provider
+                if hasattr(ctx, "upstream_result")
+                else None
+            ),
             model=ctx.requested_model,
             preset_item_id=ctx.get("routing", "provider_model_id"),
             api_key_id=ctx.api_key_id,
@@ -226,7 +258,7 @@ class BillingStep(BaseStep):
 
         ctx.set("billing", "balance_after", float(tx.balance_after))
 
-    async def _get_estimated_cost(self, ctx: "WorkflowContext") -> float:
+    async def _get_estimated_cost(self, ctx: WorkflowContext) -> float:
         """获取 QuotaCheckStep 中使用的预估费用"""
         pricing = ctx.get("routing", "pricing_config") or {}
         if not pricing:
@@ -237,8 +269,8 @@ class BillingStep(BaseStep):
         estimated_tokens = max_tokens * 2  # 输入+输出粗估
 
         avg_price = (
-            float(pricing.get("input_per_1k", 0)) +
-            float(pricing.get("output_per_1k", 0))
+            float(pricing.get("input_per_1k", 0))
+            + float(pricing.get("output_per_1k", 0))
         ) / 2
         return (estimated_tokens / 1000) * avg_price
 

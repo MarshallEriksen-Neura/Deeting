@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -12,10 +12,14 @@ McpSourceStatus = Literal["active", "inactive", "syncing", "error", "draft"]
 
 
 class UserMcpSourceBase(BaseModel):
-    name: str = Field(..., max_length=120, description="Display name for the MCP source")
+    name: str = Field(
+        ..., max_length=120, description="Display name for the MCP source"
+    )
     source_type: McpSourceType = Field("url", description="Source type")
     path_or_url: HttpUrl = Field(..., description="Source URL for MCP provider feed")
-    trust_level: McpSourceTrustLevel = Field("community", description="Trust level for this source")
+    trust_level: McpSourceTrustLevel = Field(
+        "community", description="Trust level for this source"
+    )
     status: McpSourceStatus = Field("active", description="Sync status")
     is_read_only: bool = Field(False, description="Whether this source is read-only")
 
@@ -32,14 +36,14 @@ class UserMcpSourceCreate(BaseModel):
 class UserMcpSourceResponse(UserMcpSourceBase):
     id: uuid.UUID
     user_id: uuid.UUID
-    last_synced_at: Optional[datetime] = None
+    last_synced_at: datetime | None = None
     created_at: Any
     updated_at: Any
 
     model_config = ConfigDict(from_attributes=True)
 
     @staticmethod
-    def from_orm_model(model: Any) -> "UserMcpSourceResponse":
+    def from_orm_model(model: Any) -> UserMcpSourceResponse:
         return UserMcpSourceResponse(
             id=model.id,
             user_id=model.user_id,
@@ -56,7 +60,9 @@ class UserMcpSourceResponse(UserMcpSourceBase):
 
 
 class McpSourceSyncRequest(BaseModel):
-    auth_token: Optional[str] = Field(None, description="Optional auth token for source fetch")
+    auth_token: str | None = Field(
+        None, description="Optional auth token for source fetch"
+    )
 
 
 class McpSourceSyncResponse(BaseModel):

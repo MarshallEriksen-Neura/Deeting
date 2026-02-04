@@ -1,15 +1,15 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
+
 import pytest
 import pytest_asyncio
-from datetime import datetime, timedelta, UTC
-
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
 from app.models.invite_code import InviteCodeStatus
-from app.services.users.invite_code_service import InviteCodeService
 from app.repositories import InviteCodeRepository
+from app.services.users.invite_code_service import InviteCodeService
 from app.services.users.registration_window_service import create_registration_window
 
 
@@ -54,7 +54,9 @@ async def test_invite_consume_and_finalize(async_session):
     window_used = await service.consume(code)
     assert window_used.id == window.id
 
-    await service.finalize(code, user_id=window.id)  # reuse window.id for UUID placeholder
+    await service.finalize(
+        code, user_id=window.id
+    )  # reuse window.id for UUID placeholder
     updated = await repo.get_by_code(code)
     assert updated.status == InviteCodeStatus.USED
 
@@ -71,7 +73,9 @@ async def test_invite_expired(async_session):
     )
     repo = InviteCodeRepository(async_session)
     service = InviteCodeService(repo)
-    codes = await service.issue(window.id, count=1, length=8, expires_at=now - timedelta(seconds=10))
+    codes = await service.issue(
+        window.id, count=1, length=8, expires_at=now - timedelta(seconds=10)
+    )
     code = codes[0].code
 
     with pytest.raises(Exception):

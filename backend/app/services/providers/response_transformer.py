@@ -1,27 +1,32 @@
 import json
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any
 
-from jinja2 import Environment, BaseLoader, select_autoescape, Undefined
+from jinja2 import BaseLoader, Environment, Undefined, select_autoescape
 
 logger = logging.getLogger(__name__)
+
 
 # Silent Undefined (同 RequestRenderer，防止崩塌)
 class SilentUndefined(Undefined):
     def _fail_with_undefined_error(self, *args, **kwargs):
         return None
+
     def __getattr__(self, name):
         return SilentUndefined()
+
     def __str__(self):
         return ""
+
 
 jinja_env = Environment(
     loader=BaseLoader(),
     autoescape=select_autoescape(),
     undefined=SilentUndefined,
     trim_blocks=True,
-    lstrip_blocks=True
+    lstrip_blocks=True,
 )
+
 
 class ResponseTransformer:
     """
@@ -31,10 +36,10 @@ class ResponseTransformer:
 
     def transform(
         self,
-        item_config: Any, # provider_model config
-        raw_response: Dict[str, Any],
-        status_code: int = 200
-    ) -> Dict[str, Any]:
+        item_config: Any,  # provider_model config
+        raw_response: dict[str, Any],
+        status_code: int = 200,
+    ) -> dict[str, Any]:
         """
         入口：将原始响应转为标准字典 (模拟 OpenAI ChatCompletionResponse 结构)
         """
@@ -50,15 +55,15 @@ class ResponseTransformer:
             # 2. 调度引擎
             if engine == "jinja2":
                 return self._transform_jinja2(transform_rule, raw_response)
-            
+
             elif engine == "openai_compat":
                 # 直接透传，假设已经是标准格式
                 return raw_response
-            
+
             elif engine == "anthropic_messages":
                 # Claude 原生格式 -> OpenAI 格式
                 return self._adapt_anthropic(raw_response)
-            
+
             elif engine == "google_gemini":
                 # Gemini 原生格式 -> OpenAI 格式
                 return self._adapt_gemini(raw_response)
@@ -71,7 +76,7 @@ class ResponseTransformer:
             # 失败时返回原始数据，让上层决定如何处理
             return raw_response
 
-    def _transform_jinja2(self, template: Dict | str, context: Dict) -> Dict:
+    def _transform_jinja2(self, template: dict | str, context: dict) -> dict:
         """
         使用 Jinja2 提取字段。
         context 就是 raw_response。
@@ -99,29 +104,33 @@ class ResponseTransformer:
                 pass
         return rendered
 
-    def _adapt_anthropic(self, raw: Dict) -> Dict:
+    def _adapt_anthropic(self, raw: dict) -> dict:
         """
         Anthropic Messages API Response -> OpenAI ChatCompletionResponse
         """
         # Anthropic: { "content": [ {"type": "text", "text": "..."} ], "usage": ... }
-        
+
         choices = []
         content_str = ""
         tool_calls = []
-        
+
         # 解析 Content Blocks
         for block in raw.get("content", []):
             if block.get("type") == "text":
                 content_str += block.get("text", "")
             elif block.get("type") == "tool_use":
-                tool_calls.append({
-                    "id": block.get("id"),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name"),
-                        "arguments": json.dumps(block.get("input")) # Anthropic returns dict, OpenAI needs string JSON
+                tool_calls.append(
+                    {
+                        "id": block.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name"),
+                            "arguments": json.dumps(
+                                block.get("input")
+                            ),  # Anthropic returns dict, OpenAI needs string JSON
+                        },
                     }
-                })
+                )
 
         message = {"role": "assistant"}
         if content_str:
@@ -139,11 +148,13 @@ class ResponseTransformer:
         }
         finish_reason = finish_map.get(finish_reason, finish_reason)
 
-        choices.append({
-            "index": 0,
-            "message": message,
-            "finish_reason": finish_reason,
-        })
+        choices.append(
+            {
+                "index": 0,
+                "message": message,
+                "finish_reason": finish_reason,
+            }
+        )
 
         return {
             "id": raw.get("id"),
@@ -156,15 +167,15 @@ class ResponseTransformer:
                     raw.get("usage", {}).get("input_tokens", 0)
                     + raw.get("usage", {}).get("output_tokens", 0)
                 ),
-            }
+            },
         }
 
-    def _adapt_gemini(self, raw: Dict) -> Dict:
+    def _adapt_gemini(self, raw: dict) -> dict:
         """
         Gemini Response -> OpenAI ChatCompletionResponse
         """
         # Gemini: { "candidates": [ { "content": { "parts": [ { "text": "..." } | { "functionCall": {...}} ] }, "finishReason": "STOP" } ] }
-        choices: list[Dict] = []
+        choices: list[dict] = []
 
         candidates = raw.get("candidates") or []
         if candidates:
@@ -172,7 +183,7 @@ class ResponseTransformer:
             parts = cand.get("content", {}).get("parts", [])
 
             text_content = ""
-            tool_calls: list[Dict[str, Any]] = []
+            tool_calls: list[dict[str, Any]] = []
 
             for idx, part in enumerate(parts):
                 # 文本片段
@@ -194,7 +205,7 @@ class ResponseTransformer:
                         }
                     )
 
-            message: Dict[str, Any] = {"role": "assistant"}
+            message: dict[str, Any] = {"role": "assistant"}
             if text_content:
                 message["content"] = text_content
             if tool_calls:
@@ -231,5 +242,6 @@ class ResponseTransformer:
             result["usage"] = usage
 
         return result
+
 
 response_transformer = ResponseTransformer()

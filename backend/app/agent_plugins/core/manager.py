@@ -1,7 +1,6 @@
 import importlib
 import sys
 import uuid
-from typing import Type
 
 from loguru import logger
 from sqlalchemy import select
@@ -21,7 +20,7 @@ class PluginManager:
 
     def __init__(self):
         # Registry of plugin classes: "official/weather" -> WeatherPlugin class
-        self._plugin_classes: dict[str, Type[AgentPlugin]] = {}
+        self._plugin_classes: dict[str, type[AgentPlugin]] = {}
         # Runtime activated plugin instances
         self._plugins: dict[str, AgentPlugin] = {}
         # Cache of initialized system plugins (singletons) - Optional optimization
@@ -32,7 +31,7 @@ class PluginManager:
         """Expose active plugins."""
         return self._plugins
 
-    def register_class(self, plugin_cls: Type[AgentPlugin]) -> None:
+    def register_class(self, plugin_cls: type[AgentPlugin]) -> None:
         """
         Register a plugin class.
         """
@@ -76,38 +75,40 @@ class PluginManager:
                 # Look for an 'Plugin' class or 'plugins' list in the module
                 # Convention: The module should export a class named 'Plugin' inheriting from AgentPlugin
                 # OR have a global variable 'PLUGINS' list.
-                
+
                 # Strategy 1: Search for subclasses in the module
                 found = False
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
                     if (
-                        isinstance(attr, type) 
-                        and issubclass(attr, AgentPlugin) 
+                        isinstance(attr, type)
+                        and issubclass(attr, AgentPlugin)
                         and attr is not AgentPlugin
                     ):
                         self.register_class(attr)
                         found = True
-                
+
                 if not found:
                     logger.warning(f"No AgentPlugin subclass found in {module_path}")
 
             except Exception as e:
                 logger.error(f"Failed to load plugin from {db_plugin.module_path}: {e}")
 
-    async def instantiate_plugin(self, name: str, context: PluginContext) -> AgentPlugin:
+    async def instantiate_plugin(
+        self, name: str, context: PluginContext
+    ) -> AgentPlugin:
         """
         Create an instance of a plugin for a specific context (User/Session).
         """
         cls = self._plugin_classes.get(name)
         if not cls:
             raise ValueError(f"Plugin {name} not found in registry.")
-        
+
         plugin = cls()
         await plugin.initialize(context)
         return plugin
 
-    def get_plugin_class(self, name: str) -> Type[AgentPlugin] | None:
+    def get_plugin_class(self, name: str) -> type[AgentPlugin] | None:
         return self._plugin_classes.get(name)
 
     # ===== Runtime lifecycle =====
@@ -177,6 +178,7 @@ class PluginManager:
             except Exception as exc:
                 logger.warning(f"get_tools failed for {plugin}: {exc}")
         return tools
+
 
 # Global singleton
 global_plugin_manager = PluginManager()

@@ -4,18 +4,18 @@ Revision ID: 20260126_01_create_spec_agent_tables
 Revises: 20260121_03_rename_generation_task_table
 Create Date: 2026-01-26
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "20260126_01_create_spec_agent_tables"
-down_revision: Union[str, None] = "20260121_03_rename_generation_task_table"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260121_03_rename_generation_task_table"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -28,7 +28,12 @@ def upgrade() -> None:
             nullable=False,
             comment="任务发起人",
         ),
-        sa.Column("project_name", sa.String(length=200), nullable=False, comment="任务/项目名称"),
+        sa.Column(
+            "project_name",
+            sa.String(length=200),
+            nullable=False,
+            comment="任务/项目名称",
+        ),
         sa.Column(
             "manifest_data",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -70,7 +75,9 @@ def upgrade() -> None:
             server_default=sa.text("'{}'::jsonb"),
             comment="执行策略 (max_retries, timeout, cache_policy等)",
         ),
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -147,9 +154,21 @@ def upgrade() -> None:
             comment="重试次数",
         ),
         sa.Column("error_message", sa.Text(), nullable=True, comment="错误信息"),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True, comment="开始执行时间"),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True, comment="完成/失败时间"),
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "started_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment="开始执行时间",
+        ),
+        sa.Column(
+            "completed_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment="完成/失败时间",
+        ),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -163,7 +182,9 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("ix_spec_log_plan_node", "spec_execution_log", ["plan_id", "node_id"])
+    op.create_index(
+        "ix_spec_log_plan_node", "spec_execution_log", ["plan_id", "node_id"]
+    )
     op.create_index("ix_spec_log_status", "spec_execution_log", ["status"])
 
     op.create_table(
@@ -196,7 +217,9 @@ def upgrade() -> None:
             server_default="0",
             comment="本次会话消耗 Token 数",
         ),
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

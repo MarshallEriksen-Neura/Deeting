@@ -16,6 +16,7 @@ API Key 管理 API 路由 (/api/v1/admin/api-keys)
 - 业务逻辑封装在 Service 层
 - 禁止在路由中直接操作 ORM/Session
 """
+
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
@@ -50,6 +51,7 @@ router = APIRouter(prefix="/admin/api-keys", tags=["Admin - API Keys"])
 # 依赖注入
 # ============================================================
 
+
 async def get_api_key_service(db: AsyncSession = Depends(get_db)) -> ApiKeyService:
     """获取 ApiKeyService 实例"""
     repository = ApiKeyRepository(db)
@@ -63,6 +65,7 @@ async def get_api_key_service(db: AsyncSession = Depends(get_db)) -> ApiKeyServi
 # ============================================================
 # 路由
 # ============================================================
+
 
 @router.post(
     "",
@@ -172,7 +175,7 @@ async def list_api_keys(
 
     # 简单分页
     total = len(keys)
-    items = keys[skip:skip + limit]
+    items = keys[skip : skip + limit]
 
     return ApiKeyListResponse(
         items=[ApiKeyRead.model_validate(k) for k in items],
@@ -282,7 +285,9 @@ async def revoke_api_key(
 )
 async def rotate_api_key(
     api_key_id: UUID,
-    grace_period_hours: int = Query(24, ge=1, le=168, description="旧 Key 宽限期（小时）"),
+    grace_period_hours: int = Query(
+        24, ge=1, le=168, description="旧 Key 宽限期（小时）"
+    ),
     service: ApiKeyService = Depends(get_api_key_service),
 ) -> ApiKeyRotateResponse:
     """
@@ -357,6 +362,7 @@ async def get_api_key_usage(
 # Scope 管理
 # ============================================================
 
+
 @router.post(
     "/{api_key_id}/scopes",
     response_model=ApiKeyRead,
@@ -411,6 +417,7 @@ async def remove_api_key_scope(
 # Rate Limit 管理
 # ============================================================
 
+
 @router.put(
     "/{api_key_id}/rate-limit",
     response_model=ApiKeyRead,
@@ -449,6 +456,7 @@ async def update_api_key_rate_limit(
 # ============================================================
 # IP Whitelist 管理
 # ============================================================
+
 
 @router.post(
     "/{api_key_id}/ip-whitelist",

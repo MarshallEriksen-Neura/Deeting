@@ -140,7 +140,9 @@ class UserRepository:
             count_stmt = count_stmt.where(*conditions)
         total = (await self.session.execute(count_stmt)).scalar() or 0
 
-        list_stmt = select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)
+        list_stmt = (
+            select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)
+        )
         if conditions:
             list_stmt = list_stmt.where(*conditions)
         result = await self.session.execute(list_stmt)
@@ -170,8 +172,7 @@ class UserRepository:
     async def remove_roles(self, user_id: UUID, role_ids: list[UUID]) -> None:
         """移除用户角色"""
         stmt = delete(UserRole).where(
-            UserRole.user_id == user_id,
-            UserRole.role_id.in_(role_ids)
+            UserRole.user_id == user_id, UserRole.role_id.in_(role_ids)
         )
         await self.session.execute(stmt)
         await self.session.flush()

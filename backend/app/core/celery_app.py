@@ -20,12 +20,10 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
-
     # Phase 12: Task Reliability & Monitoring
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     task_send_sent_event=True,
-
     # Phase 12: Retry & Rate Limit Policies
     task_annotations={
         "*": {
@@ -41,9 +39,8 @@ celery_app.conf.update(
         "app.tasks.async_inference.*": {
             "retry_backoff": True,
             "retry_jitter": True,
-        }
+        },
     },
-
     # 定时任务配置
     beat_schedule={
         "heartbeat-every-minute": {
@@ -105,6 +102,7 @@ def init_worker_cache(**kwargs):
     确保 quota_sync 等任务可以正常访问 Redis。
     """
     from app.core.cache import cache
+
     cache.init()
 
 

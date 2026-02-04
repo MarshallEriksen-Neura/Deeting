@@ -1,8 +1,8 @@
 from pathlib import Path
 
+from app.services.skill_registry.parsers.base import RepoContext
 from app.services.skill_registry.parsers.node_parser import NodeRepoParser
 from app.services.skill_registry.parsers.python_parser import PythonRepoParser
-from app.services.skill_registry.parsers.base import RepoContext
 from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
 
 

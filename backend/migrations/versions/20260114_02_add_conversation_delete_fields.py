@@ -5,17 +5,16 @@ Revises: 20260114_01_create_gateway_log_table
 Create Date: 2026-01-14
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20260114_02_add_conversation_delete_fields"
-down_revision: Union[str, None] = "20260114_01_create_gateway_log_table"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20260114_01_create_gateway_log_table"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -47,6 +46,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_conversation_message_is_deleted", table_name="conversation_message")
+    op.drop_index(
+        "ix_conversation_message_is_deleted", table_name="conversation_message"
+    )
     op.drop_column("conversation_message", "parent_message_id")
     op.drop_column("conversation_message", "is_deleted")

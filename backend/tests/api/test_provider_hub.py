@@ -31,7 +31,9 @@ async def _seed_presets(session):
     existing = set(
         (
             await session.execute(
-                select(ProviderPreset.slug).where(ProviderPreset.slug.in_(["openai", "azure"]))
+                select(ProviderPreset.slug).where(
+                    ProviderPreset.slug.in_(["openai", "azure"])
+                )
             )
         ).scalars()
     )
@@ -74,7 +76,9 @@ async def _seed_presets(session):
 
 
 @pytest.mark.asyncio
-async def test_provider_hub_returns_presets_from_db(client, auth_tokens, AsyncSessionLocal):
+async def test_provider_hub_returns_presets_from_db(
+    client, auth_tokens, AsyncSessionLocal
+):
     async with AsyncSessionLocal() as session:
         await _seed_presets(session)
     headers = {"Authorization": f"Bearer {auth_tokens['access_token']}"}
@@ -90,7 +94,9 @@ async def test_provider_hub_returns_presets_from_db(client, auth_tokens, AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_provider_hub_uses_meili_search(client, auth_tokens, AsyncSessionLocal, monkeypatch):
+async def test_provider_hub_uses_meili_search(
+    client, auth_tokens, AsyncSessionLocal, monkeypatch
+):
     async with AsyncSessionLocal() as session:
         await _seed_presets(session)
 
@@ -111,7 +117,9 @@ async def test_provider_hub_uses_meili_search(client, auth_tokens, AsyncSessionL
 
 
 @pytest.mark.asyncio
-async def test_provider_hub_marks_connected_after_instance_created(client, auth_tokens, AsyncSessionLocal):
+async def test_provider_hub_marks_connected_after_instance_created(
+    client, auth_tokens, AsyncSessionLocal
+):
     async with AsyncSessionLocal() as session:
         await _seed_presets(session)
     headers = {"Authorization": f"Bearer {auth_tokens['access_token']}"}
@@ -125,7 +133,9 @@ async def test_provider_hub_marks_connected_after_instance_created(client, auth_
         "priority": 0,
         "is_enabled": True,
     }
-    resp_create = await client.post("/api/v1/providers", json=create_payload, headers=headers)
+    resp_create = await client.post(
+        "/api/v1/providers", json=create_payload, headers=headers
+    )
     assert resp_create.status_code == 201
 
     resp = await client.get("/api/v1/providers/hub", headers=headers)

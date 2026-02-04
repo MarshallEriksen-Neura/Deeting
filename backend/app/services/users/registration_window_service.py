@@ -6,18 +6,18 @@
 - 查询当前可用窗口
 - 申请/回滚注册名额（用于自动注册流程）
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from app.utils.time_utils import Datetime
-from typing import Iterable
 from uuid import UUID
 
 from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logging import logger
 from app.models import RegistrationWindow, RegistrationWindowStatus
+from app.utils.time_utils import Datetime
 
 
 class RegistrationWindowError(Exception):
@@ -52,7 +52,9 @@ def _select_active_window_stmt(now: datetime) -> Select[tuple[RegistrationWindow
         .where(RegistrationWindow.status == RegistrationWindowStatus.ACTIVE)
         .where(RegistrationWindow.start_time <= now)
         .where(RegistrationWindow.end_time >= now)
-        .where(RegistrationWindow.registered_count < RegistrationWindow.max_registrations)
+        .where(
+            RegistrationWindow.registered_count < RegistrationWindow.max_registrations
+        )
         .order_by(RegistrationWindow.start_time)
         .limit(1)
     )
@@ -104,9 +106,11 @@ async def create_registration_window(
         end_time=end_time,
         max_registrations=max_registrations,
         auto_activate=auto_activate,
-        status=RegistrationWindowStatus.ACTIVE
-        if start_time <= _now()
-        else RegistrationWindowStatus.SCHEDULED,
+        status=(
+            RegistrationWindowStatus.ACTIVE
+            if start_time <= _now()
+            else RegistrationWindowStatus.SCHEDULED
+        ),
     )
     session.add(window)
     await session.commit()
@@ -123,7 +127,9 @@ async def get_active_registration_window(
     return res.scalar_one_or_none()
 
 
-async def activate_window_by_id(session: AsyncSession, window_id: UUID) -> RegistrationWindow | None:
+async def activate_window_by_id(
+    session: AsyncSession, window_id: UUID
+) -> RegistrationWindow | None:
     window = await session.get(RegistrationWindow, window_id)
     if not window:
         return None
@@ -140,7 +146,9 @@ async def activate_window_by_id(session: AsyncSession, window_id: UUID) -> Regis
     return window
 
 
-async def close_window_by_id(session: AsyncSession, window_id: UUID) -> RegistrationWindow | None:
+async def close_window_by_id(
+    session: AsyncSession, window_id: UUID
+) -> RegistrationWindow | None:
     window = await session.get(RegistrationWindow, window_id)
     if not window:
         return None
@@ -232,7 +240,9 @@ async def rollback_registration_slot(
 
 
 async def list_windows(session: AsyncSession) -> Iterable[RegistrationWindow]:
-    res = await session.execute(select(RegistrationWindow).order_by(RegistrationWindow.start_time))
+    res = await session.execute(
+        select(RegistrationWindow).order_by(RegistrationWindow.start_time)
+    )
     return res.scalars().all()
 
 

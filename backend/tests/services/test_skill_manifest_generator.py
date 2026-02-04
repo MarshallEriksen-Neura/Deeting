@@ -8,8 +8,8 @@ from app.services.skill_registry.manifest_generator import SkillManifestGenerato
 async def test_manifest_generator_parses_json(monkeypatch):
     async def fake_chat_completion(*args, **kwargs):
         return (
-            "{\"name\":\"docx\",\"description\":\"docx tool\","
-            "\"capabilities\":[\"docx\"],\"usage_spec\":{\"example_code\":\"print(1)\"}}"
+            '{"name":"docx","description":"docx tool",'
+            '"capabilities":["docx"],"usage_spec":{"example_code":"print(1)"}}'
         )
 
     monkeypatch.setattr(
@@ -18,6 +18,8 @@ async def test_manifest_generator_parses_json(monkeypatch):
     )
 
     evidence = EvidencePack(readme="docx", dependencies=["lxml"])
-    manifest = await SkillManifestGenerator().generate(evidence, runtime="python_library")
+    manifest = await SkillManifestGenerator().generate(
+        evidence, runtime="python_library"
+    )
 
     assert manifest["name"] == "docx"

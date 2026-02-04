@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import UUID as SA_UUID
 from sqlalchemy import (
+    Float,
     ForeignKey,
     Index,
     Integer,
     String,
-    Float,
 )
-from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -69,9 +69,11 @@ class VideoGenerationOutput(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     width: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="宽度")
     height: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="高度")
-    duration: Mapped[float | None] = mapped_column(Float, nullable=True, comment="时长(秒)")
+    duration: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="时长(秒)"
+    )
     fps: Mapped[float | None] = mapped_column(Float, nullable=True, comment="帧率")
-    
+
     meta: Mapped[dict] = mapped_column(
         JSONBCompat,
         nullable=False,
