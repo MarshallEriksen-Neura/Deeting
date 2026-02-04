@@ -24,6 +24,7 @@ class DecisionService:
         exploration_bonus: float = 0.3,
         strategy: str = "thompson",
         final_score: str = "weighted_sum",
+        epsilon: float = 0.1,
         ucb_c: float = 1.5,
         ucb_min_trials: int = 5,
         thompson_prior_alpha: float = 1.0,
@@ -36,6 +37,7 @@ class DecisionService:
         self.exploration_bonus = exploration_bonus
         self.strategy = strategy
         self.final_score = final_score
+        self.epsilon = epsilon
         self.ucb_c = ucb_c
         self.ucb_min_trials = ucb_min_trials
         self.thompson_prior_alpha = thompson_prior_alpha
@@ -56,6 +58,7 @@ class DecisionService:
             candidate.bandit_score = _compute_bandit_score(
                 state,
                 strategy=self.strategy,
+                epsilon=self.epsilon,
                 ucb_c=self.ucb_c,
                 ucb_min_trials=self.ucb_min_trials,
                 thompson_prior_alpha=self.thompson_prior_alpha,
@@ -104,6 +107,7 @@ def _compute_bandit_score(
     state: Any,
     *,
     strategy: str,
+    epsilon: float,
     ucb_c: float,
     ucb_min_trials: int,
     thompson_prior_alpha: float,
@@ -119,6 +123,8 @@ def _compute_bandit_score(
         )
     if strategy == "ucb":
         return _score_ucb(state, c=ucb_c, min_trials=ucb_min_trials)
+    if strategy == "epsilon_greedy":
+        return _score_epsilon_greedy(state, epsilon=epsilon, rng=rng)
     return _score_success_rate(state)
 
 
@@ -147,6 +153,19 @@ def _score_ucb(state: Any, *, c: float, min_trials: int) -> float:
     successes = getattr(state, "successes", 0) or 0
     success_rate = float(successes) / float(total)
     return success_rate + c * math.sqrt(math.log(total + 1) / float(total))
+
+
+def _score_epsilon_greedy(
+    state: Any,
+    *,
+    epsilon: float,
+    rng: random.Random,
+) -> float:
+    if epsilon <= 0:
+        return _score_success_rate(state)
+    if rng.random() < epsilon:
+        return rng.random()
+    return _score_success_rate(state)
 
 
 def _score_success_rate(state: Any) -> float:

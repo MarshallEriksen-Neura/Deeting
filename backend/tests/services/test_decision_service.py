@@ -26,7 +26,7 @@ class FakeBanditRepo:
 
 
 @pytest.mark.asyncio
-async def test_rank_candidates_prefers_bandit_with_exploration():
+async def test_rank_candidates_epsilon_greedy_prefers_random_score():
     repo = FakeBanditRepo(
         states={
             ("retrieval:skill", "skill__a"): FakeState(
@@ -37,7 +37,14 @@ async def test_rank_candidates_prefers_bandit_with_exploration():
             ),
         }
     )
-    service = DecisionService(repo, strategy="epsilon_greedy", final_score="weighted_sum")
+    rng = random.Random(0)
+    service = DecisionService(
+        repo,
+        strategy="epsilon_greedy",
+        epsilon=1.0,
+        final_score="bandit_only",
+        rng=rng,
+    )
     candidates = [
         DecisionCandidate(arm_id="skill__a", base_score=0.80),
         DecisionCandidate(arm_id="skill__b", base_score=0.78),
@@ -45,7 +52,7 @@ async def test_rank_candidates_prefers_bandit_with_exploration():
 
     ranked = await service.rank_candidates("retrieval:skill", candidates)
 
-    assert ranked[0].arm_id == "skill__b"
+    assert ranked[0].arm_id == "skill__a"
 
 
 @pytest.mark.asyncio
