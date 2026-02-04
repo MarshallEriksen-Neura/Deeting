@@ -7,6 +7,11 @@ import math
 import random
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
+_ALLOWED_STRATEGIES = {"thompson", "ucb", "epsilon_greedy"}
+_ALLOWED_FINAL_SCORES = {"weighted_sum", "bandit_only", "vector_only"}
+
 
 @dataclass
 class DecisionCandidate:
@@ -210,7 +215,3 @@ def _compute_final_score(
     if mode == "vector_only":
         return base_score
     return base_score * vector_weight + bandit_value * bandit_weight + exploration_bonus
-logger = logging.getLogger(__name__)
-
-_ALLOWED_STRATEGIES = {"thompson", "ucb", "epsilon_greedy"}
-_ALLOWED_FINAL_SCORES = {"weighted_sum", "bandit_only", "vector_only"}
