@@ -46,3 +46,32 @@ class BanditReportSummary(BaseModel):
 class BanditReportResponse(BaseModel):
     summary: BanditReportSummary
     items: list[BanditArmReport]
+
+
+class BanditSkillReportItem(BaseModel):
+    skill_id: str | None
+    skill_name: str | None
+    status: str | None
+    scene: str | None = None
+    arm_id: str | None = None
+    reward_metric_type: str | None = None
+    strategy: str | None
+    epsilon: float | None
+    alpha: float
+    beta: float
+    total_trials: int
+    successes: int
+    failures: int
+    success_rate: float
+    selection_ratio: float
+    avg_latency_ms: float
+    latency_p95_ms: float | None
+    total_cost: float
+    last_reward: float
+    cooldown_until: datetime | None
+    version: int
+
+
+class BanditSkillReportResponse(BaseModel):
+    summary: BanditReportSummary
+    items: list[BanditSkillReportItem]

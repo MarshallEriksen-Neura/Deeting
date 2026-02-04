@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from datetime import timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import literal, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -24,6 +24,7 @@ from app.core.logging import logger
 from app.models.bandit import BanditArmState, BanditStrategy
 from app.models.provider_instance import ProviderModel, ProviderInstance
 from app.models.provider_preset import ProviderPreset
+from app.models.skill_registry import SkillRegistry
 from app.repositories.base import BaseRepository
 from app.utils.time_utils import Datetime
 
@@ -280,6 +281,76 @@ class BanditRepository(BaseRepository[BanditArmState]):
                     "cooldown_until": state.cooldown_until,
                     "weight": int(item.weight or 0),
                     "priority": int(item.priority or 0),
+                    "version": state.version,
+                }
+            )
+
+        return reports
+
+    async def get_skill_report(
+        self,
+        *,
+        skill_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict]:
+        stmt = (
+            select(BanditArmState, SkillRegistry)
+            .outerjoin(
+                SkillRegistry,
+                BanditArmState.arm_id == (literal("skill__") + SkillRegistry.id),
+            )
+            .where(BanditArmState.scene == "retrieval:skill")
+        )
+        if skill_id:
+            stmt = stmt.where(BanditArmState.arm_id == f"skill__{skill_id}")
+        if status:
+            stmt = stmt.where(SkillRegistry.status == status)
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        total_trials = sum(r.BanditArmState.total_trials for r in rows if r.BanditArmState)
+
+        reports: list[dict] = []
+        for row in rows:
+            state: BanditArmState = row.BanditArmState
+            skill: SkillRegistry | None = row.SkillRegistry
+
+            trials = int(state.total_trials or 0)
+            successes = int(state.successes or 0)
+            failures = int(state.failures or 0)
+            success_rate = (successes / trials) if trials else 0.0
+            avg_latency = (float(state.total_latency_ms) / trials) if trials else 0.0
+            selection_ratio = (trials / total_trials) if total_trials else 0.0
+
+            arm_id = str(state.arm_id or "")
+            resolved_skill_id = skill.id if skill else None
+            if not resolved_skill_id and arm_id.startswith("skill__"):
+                resolved_skill_id = arm_id.replace("skill__", "", 1)
+
+            reports.append(
+                {
+                    "skill_id": resolved_skill_id,
+                    "skill_name": skill.name if skill else None,
+                    "status": skill.status if skill else None,
+                    "scene": state.scene,
+                    "arm_id": arm_id,
+                    "reward_metric_type": state.reward_metric_type,
+                    "strategy": state.strategy,
+                    "epsilon": state.epsilon,
+                    "alpha": state.alpha,
+                    "beta": state.beta,
+                    "total_trials": trials,
+                    "successes": successes,
+                    "success_rate": success_rate,
+                    "failures": failures,
+                    "selection_ratio": selection_ratio,
+                    "avg_latency_ms": avg_latency,
+                    "latency_p95_ms": float(state.latency_p95_ms)
+                    if state.latency_p95_ms is not None
+                    else None,
+                    "total_cost": float(state.total_cost),
+                    "last_reward": float(state.last_reward),
+                    "cooldown_until": state.cooldown_until,
                     "version": state.version,
                 }
             )

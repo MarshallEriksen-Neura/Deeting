@@ -88,7 +88,11 @@ from app.services.workflow.steps.upstream_call import (
     stream_with_billing,
 )
 from app.api.v1.external.gateway import _stream_billing_callback
-from app.schemas.bandit import BanditReportResponse, BanditReportSummary
+from app.schemas.bandit import (
+    BanditReportResponse,
+    BanditReportSummary,
+    BanditSkillReportResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -550,6 +554,36 @@ async def bandit_report(
     )
 
     return BanditReportResponse(summary=summary, items=items)
+
+
+@router.get(
+    "/bandit/report/skills",
+    response_model=BanditSkillReportResponse,
+)
+async def bandit_skill_report(
+    skill_id: str | None = None,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> BanditSkillReportResponse:
+    """
+    Skill 维度 Bandit 报表（内部通道，仅登录用户可见）。
+    """
+
+    repo = BanditRepository(db)
+    items = await repo.get_skill_report(skill_id=skill_id, status=status)
+
+    total_trials = sum(i.get("total_trials", 0) for i in items) or 0
+    total_successes = sum(i.get("successes", 0) for i in items) or 0
+    overall_success_rate = (total_successes / total_trials) if total_trials else 0.0
+
+    summary = BanditReportSummary(
+        total_arms=len(items),
+        total_trials=total_trials,
+        overall_success_rate=overall_success_rate,
+    )
+
+    return BanditSkillReportResponse(summary=summary, items=items)
 
 
 @router.get(
