@@ -31,12 +31,11 @@ from app.services.assistant.assistant_auto_review_service import (
     AssistantAutoReviewService,
     AutoReviewResult,
 )
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.services.notifications.notification_service import NotificationService
 from app.services.review.review_service import ReviewService
 from app.services.search import get_search_backend
-
-ASSISTANT_MARKET_ENTITY = "assistant_market"
 
 
 async def ensure_assistant_access(

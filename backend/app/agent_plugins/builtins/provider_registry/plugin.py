@@ -9,7 +9,6 @@ from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.unified_capabilities import CAPABILITY_MAP
 from app.services.providers.request_renderer import request_renderer
-from app.tasks.search_index import upsert_provider_preset_task
 from app.utils.security import is_safe_upstream_url
 
 logger = logging.getLogger(__name__)
@@ -230,6 +229,8 @@ class ProviderRegistryPlugin(AgentPlugin):
         Handler for saving provider mapping to ProviderPreset.capability_configs.
         SECURITY: Restricted to Superusers only.
         """
+        from app.tasks.search_index import upsert_provider_preset_task
+
         # 1. Security Check
         async with AsyncSessionLocal() as session:
             user_repo = UserRepository(session)

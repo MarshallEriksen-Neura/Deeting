@@ -35,6 +35,7 @@ from .review_repository import ReviewTaskRepository
 from .secretary_repository import UserSecretaryRepository
 from .spec_knowledge_repository import SpecKnowledgeCandidateRepository
 from .system_setting_repository import SystemSettingRepository
+from .trace_feedback_repository import TraceFeedbackRepository
 from .usage_repository import UsageRepository
 from .user_repository import UserRepository
 
@@ -72,6 +73,7 @@ __all__ = [
     "ReviewTaskRepository",
     "SpecKnowledgeCandidateRepository",
     "SystemSettingRepository",
+    "TraceFeedbackRepository",
     "UsageRepository",
     "UserRepository",
     "UserSecretaryRepository",

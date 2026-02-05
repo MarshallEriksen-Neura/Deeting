@@ -8,7 +8,7 @@ from app.services.assistant.assistant_auto_review_service import (
     AssistantAutoReviewService,
     AutoReviewResult,
 )
-from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.review.review_service import ReviewService
 from app.tasks.assistant import sync_assistant_to_qdrant
 

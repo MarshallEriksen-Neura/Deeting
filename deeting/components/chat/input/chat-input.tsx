@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { useDebounce } from "@/hooks/use-debounce"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 import { AttachmentPreview } from "./attachment-preview"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import { buildImageAttachments, UPLOAD_ERROR_CODES } from "@/lib/chat/attachments"
@@ -90,7 +90,7 @@ export const ChatInput = React.memo<ChatInputProps>(
     const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
     
     // 使用 attachments hook 来处理文件上传
-    const { addAttachments } = useChatStateStore()
+    const { addAttachments } = useChatStore()
     
     // 应用防抖优化（300ms）
     // 注意：这里我们对内部状态应用防抖，而不是直接对 inputValue 防抖

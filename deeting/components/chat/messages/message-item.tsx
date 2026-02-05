@@ -89,6 +89,8 @@ export const MessageItem = React.memo<MessageItemProps>(
                 onRegenerate={onRegenerate}
                 onLike={onLike}
                 onDislike={onDislike}
+                liked={message.metaInfo?.feedback_score === 1}
+                disliked={message.metaInfo?.feedback_score === -1}
                 disabled={isActive}
               />
             )}

@@ -22,6 +22,7 @@ export function ChatContent({ agent }: ChatContentProps) {
   const statusStage = useChatStore((state) => state.statusStage)
   const statusCode = useChatStore((state) => state.statusCode)
   const statusMeta = useChatStore((state) => state.statusMeta)
+  const sendFeedback = useChatStore((state) => state.sendFeedback)
 
   return (
     <div className="flex flex-1 min-h-0">
@@ -33,6 +34,8 @@ export function ChatContent({ agent }: ChatContentProps) {
         statusStage={statusStage}
         statusCode={statusCode}
         statusMeta={statusMeta}
+        onLike={(id) => void sendFeedback(id, 1)}
+        onDislike={(id) => void sendFeedback(id, -1)}
       />
     </div>
   )

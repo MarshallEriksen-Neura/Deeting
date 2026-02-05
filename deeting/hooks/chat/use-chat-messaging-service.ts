@@ -29,7 +29,7 @@ export function resolveAssistantRequestContext({
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
-import { useChatStateStore, type Message, type ChatAssistant } from "@/store/chat-state-store"
+import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
 import { useChatSessionStore } from "@/store/chat-session-store"
 
 function createMessageId() {
@@ -116,14 +116,14 @@ export function useChatMessagingService() {
     messages,
     config,
     models,
-    assistants,
-    activeAssistantId,
+    agent,
+    agentId,
     streamEnabled,
     setInput,
     clearAttachments,
     setMessages,
     updateMessage,
-  } = useChatStateStore()
+  } = useChatStore()
 
   const {
     sessionId,
@@ -173,7 +173,7 @@ export function useChatMessagingService() {
   }, [setMessages, setSessionId, setErrorMessage, setHistoryState])
 
   const resetSession = useCallback(() => {
-    const activeAssistantId = useChatStateStore.getState().activeAssistantId
+    const activeAssistantId = useChatStore.getState().agentId
     if (typeof window !== "undefined" && activeAssistantId) {
       localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`)
     }
@@ -184,12 +184,13 @@ export function useChatMessagingService() {
   }, [setMessages, setSessionId, clearAttachments, setHistoryState])
 
   const loadMoreHistory = useCallback(async () => {
+    const state = useChatStore.getState()
     const {
       sessionId,
       historyCursor,
       historyHasMore,
-      historyLoading,
-    } = useChatSessionStore.getState()
+      isLoading: historyLoading,
+    } = state
 
     if (!sessionId || historyLoading || !historyHasMore) return
     if (historyCursor == null) return
@@ -209,7 +210,7 @@ export function useChatMessagingService() {
         setErrorMessage("i18n:input.image.errorSign")
         resolved = mapped
       }
-      const currentMessages = useChatStateStore.getState().messages
+      const currentMessages = useChatStore.getState().messages
       setMessages([...resolved, ...currentMessages])
       setHistoryState({
         cursor: windowState.next_cursor ?? null,
@@ -244,12 +245,12 @@ export function useChatMessagingService() {
     const selectedModel =
       models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
       models[0]
-    const activeAssistant = assistants.find((assistant) => assistant.id === activeAssistantId)
+    const activeAssistant = agent
     if (!selectedModel || (isTauriRuntime && !activeAssistant)) return
 
     const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
       isTauriRuntime,
-      activeAssistantId: activeAssistant?.id ?? null,
+      activeAssistantId: agentId,
     })
 
     const userMessage: Message = {
@@ -326,6 +327,15 @@ export function useChatMessagingService() {
                   code: payload.code ?? null,
                   meta: typeof payload.meta === "object" && payload.meta ? (payload.meta as Record<string, unknown>) : null,
                 })
+                // 如果状态消息带了 trace_id，也记录下来
+                const traceId = (payload as any).trace_id
+                if (traceId) {
+                  const currentMsg = useChatStore.getState().messages.find(m => m.id === assistantMessageId)
+                  if (currentMsg) {
+                    updateMessage(assistantMessageId, currentMsg.content) // trigger re-render
+                    currentMsg.metaInfo = { ...(currentMsg.metaInfo || {}), trace_id: traceId }
+                  }
+                }
                 return
               }
               if (payload.type === "error") {
@@ -336,10 +346,19 @@ export function useChatMessagingService() {
               }
             }
 
-            const session = (data as { session_id?: string | null })?.session_id ?? undefined
+            const res = data as { session_id?: string | null; trace_id?: string | null }
+            const session = res.session_id ?? undefined
+            const traceId = res.trace_id ?? undefined
+
             if (session) {
               setSessionId(session)
               localStorage.setItem(storageKey, session)
+            }
+            if (traceId) {
+              const currentMsg = useChatStore.getState().messages.find(m => m.id === assistantMessageId)
+              if (currentMsg) {
+                currentMsg.metaInfo = { ...(currentMsg.metaInfo || {}), trace_id: traceId }
+              }
             }
           },
         },
@@ -365,8 +384,8 @@ export function useChatMessagingService() {
     messages,
     config,
     models,
-    assistants,
-    activeAssistantId,
+    agent,
+    agentId,
     streamEnabled,
     sessionId,
     setInput,

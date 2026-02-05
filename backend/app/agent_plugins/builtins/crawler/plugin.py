@@ -4,7 +4,6 @@ from typing import Any
 import httpx
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
-from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.repositories.assistant_repository import (
@@ -232,6 +231,8 @@ class CrawlerPlugin(AgentPlugin):
         runtime_hint: str | None = None,
         **kwargs,
     ) -> dict[str, Any]:
+        from app.core.celery_app import celery_app
+
         task = celery_app.send_task(
             "skill_registry.ingest_repo",
             args=[repo_url, revision, skill_id, runtime_hint],

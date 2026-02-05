@@ -3,12 +3,16 @@ import re
 import uuid
 from typing import Any
 
-import httpx
 from loguru import logger
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
+from app.qdrant_client import (
+    close_qdrant_client_for_current_loop,
+    get_qdrant_client,
+    qdrant_is_configured,
+)
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
@@ -85,8 +89,22 @@ async def _index_knowledge_artifact_async(
             # 2. Embedding & Vector Sync (Inject Config)
             embedding_service = EmbeddingService(config=embedding_config)
 
-            # We use a system-level Qdrant client
-            async with httpx.AsyncClient(base_url=settings.QDRANT_URL) as qdrant_client:
+            if not qdrant_is_configured():
+                logger.warning("Qdrant not configured, skip indexing.")
+                meta_info = dict(artifact.meta_info or {})
+                meta_info["error"] = "qdrant_not_configured"
+                await repo.update(
+                    artifact,
+                    {
+                        "status": "failed",
+                        "meta_info": meta_info,
+                    },
+                )
+                await session.commit()
+                return
+
+            qdrant_client = get_qdrant_client()
+            try:
                 # Ensure collection exists (using system collection name from settings)
                 collection_name = settings.QDRANT_KB_SYSTEM_COLLECTION
 
@@ -150,6 +168,8 @@ async def _index_knowledge_artifact_async(
                         collection_name=collection_name,
                         points=points_to_upsert,
                     )
+            finally:
+                await close_qdrant_client_for_current_loop()
 
             # 4. Finalize
             await repo.update(artifact, {"status": "indexed"})

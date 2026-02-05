@@ -133,6 +133,7 @@ class ChatCompletionResponse(BaseModel):
     choices: list[ChatChoice] = Field(default_factory=list)
     usage: UsageInfo | None = None
     session_id: str | None = None
+    trace_id: str | None = None
 
 
 class ChatCompletionCancelResponse(BaseModel):

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 import { ChatContainer } from "@/components/chat/core"
 
 /**
@@ -21,7 +21,7 @@ function ChatRouteClient() {
   const router = useRouter()
   const params = useParams<{ agentId?: string | string[] }>()
   const searchParams = useSearchParams()
-  const storedAgentId = useChatStateStore((state) => state.activeAssistantId)
+  const storedAgentId = useChatStore((state) => state.agentId)
   const isTauriRuntime = React.useMemo(
     () =>
       process.env.NEXT_PUBLIC_IS_TAURI === "true" &&

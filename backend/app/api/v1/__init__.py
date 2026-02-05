@@ -26,6 +26,7 @@ from app.api.v1.credits_route import router as credits_router
 from app.api.v1.dashboard_route import router as dashboard_router
 from app.api.v1.endpoints.mcp import router as user_mcp_router
 from app.api.v1.external.gateway import router as external_gateway_router
+from app.api.v1.feedback_route import router as feedback_router
 from app.api.v1.gateway_logs_route import router as gateway_logs_router
 from app.api.v1.internal import bridge_router as internal_bridge_router
 from app.api.v1.internal import conversation_router as internal_conversation_router
@@ -79,6 +80,7 @@ __all__ = [
     "credits_router",
     "dashboard_router",
     "external_gateway_router",
+    "feedback_router",
     "gateway_logs_router",
     "internal_bridge_router",
     "internal_conversation_router",

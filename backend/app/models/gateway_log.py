@@ -22,6 +22,12 @@ class GatewayLog(Base, UUIDPrimaryKeyMixin):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True), index=True, comment="调用者用户 ID"
     )
+    trace_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="请求追踪 ID",
+    )
     api_key_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True), index=True, comment="调用使用的 API Key ID"
     )

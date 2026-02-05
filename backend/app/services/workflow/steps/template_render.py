@@ -181,6 +181,10 @@ class TemplateRenderStep(BaseStep):
             "enhanced_prompt": enhanced_prompt,
             # 工具描述 (新增)
             "tools_desc": tools_desc,
+            # 语义内核记忆 (新增)
+            "semantic_memories": ctx.get("semantic_kernel", "memories"),
+            # 语义内核主动人设 (新增)
+            "semantic_active_persona": ctx.get("semantic_kernel", "active_persona"),
         }
 
     async def _render_template(
@@ -301,6 +305,31 @@ class TemplateRenderStep(BaseStep):
             enhanced_prompt = f"{time_instruction}\n{enhanced_prompt}"
         else:
             enhanced_prompt = time_instruction
+
+        # [NEW] 1.4 注入主动人设 (Active Persona Injection)
+        active_persona = context.get("semantic_active_persona")
+        if active_persona:
+            persona_name = active_persona.get("name", "Expert")
+            persona_prompt = active_persona.get("prompt", "")
+            if persona_prompt:
+                # Persona 优先级高于 Memory 但低于 Time
+                persona_block = (
+                    f"\n\n**System Recommendation: Active Persona ({persona_name})**\n"
+                    f"The system has detected that the following expert persona is highly relevant to the user's request. "
+                    f"Please adopt this persona's instructions:\n\n{persona_prompt}\n"
+                )
+                enhanced_prompt += persona_block
+
+        # [NEW] 1.5 注入语义内核记忆 (Semantic Memory Injection)
+        memories = context.get("semantic_memories")
+        if memories:
+            memory_block = "\n\n**Contextual Memory (Auto-Retrieved)**:\n"
+            for mem in memories:
+                content = mem.get("content", "")
+                score = mem.get("score", 0.0)
+                memory_block += f"- {content} (Relevance: {score:.2f})\n"
+            enhanced_prompt += memory_block
+
 
         # 2. 注入记忆能力提醒 (Memory Reminder)
         if tools and any(t.name == "search_knowledge" for t in tools):

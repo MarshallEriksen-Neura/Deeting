@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useChatStateStore } from "@/store/chat-state-store"
-import { useChatSessionStore } from "@/store/chat-session-store"
+import { useChatStore } from "@/store/chat-store"
 
 /**
  * ChatConfigContext - 管理聊天配置和会话状态
@@ -101,16 +100,16 @@ interface ChatConfigProviderProps {
  * 从 Zustand stores 读取配置和会话状态并通过 Context 传递给子组件
  */
 export function ChatConfigProvider({ children }: ChatConfigProviderProps) {
-  const { streamEnabled, setStreamEnabled } = useChatStateStore()
-  
   const {
+    streamEnabled,
+    setStreamEnabled,
     errorMessage,
     statusStage,
     statusCode,
     statusMeta,
     setErrorMessage,
     resetSession,
-  } = useChatSessionStore()
+  } = useChatStore()
 
   const contextValue = React.useMemo<ChatConfigContextValue>(
     () => ({

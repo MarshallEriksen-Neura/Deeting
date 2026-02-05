@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
@@ -112,6 +113,18 @@ async def _run_sync_skill(skill_id: str) -> str:
 
         vector = vectors[0]
 
+        vector_id = str(getattr(skill, "vector_id", "") or "").strip()
+        vector_id_valid = False
+        if vector_id:
+            try:
+                uuid.UUID(vector_id)
+                vector_id_valid = True
+            except ValueError:
+                vector_id_valid = False
+        if not vector_id_valid:
+            vector_id = str(uuid.uuid4())
+            await repo.update(skill, {"vector_id": vector_id})
+
         manifest = getattr(skill, "manifest_json", {}) or {}
         schema_json = manifest.get("io_schema", {})
 
@@ -142,7 +155,7 @@ async def _run_sync_skill(skill_id: str) -> str:
             collection_name=SKILL_COLLECTION_NAME,
             points=[
                 {
-                    "id": skill.id,
+                    "id": vector_id,
                     "vector": vector,
                     "payload": payload,
                 }

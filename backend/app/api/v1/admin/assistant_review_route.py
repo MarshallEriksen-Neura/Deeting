@@ -27,10 +27,8 @@ from app.schemas import (
     MessageResponse,
     ReviewTaskDTO,
 )
-from app.services.assistant.assistant_market_service import (
-    ASSISTANT_MARKET_ENTITY,
-    AssistantMarketService,
-)
+from app.services.assistant.assistant_market_service import AssistantMarketService
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_tag_service import AssistantTagService
 
 router = APIRouter(

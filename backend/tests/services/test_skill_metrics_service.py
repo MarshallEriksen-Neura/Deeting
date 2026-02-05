@@ -78,3 +78,28 @@ async def test_dry_run_metrics_updates():
         assert metrics["dry_run_success"] == 1
         assert metrics["dry_run_fail"] == 1
         assert metrics["last_error"]["code"] == "artifact_missing"
+
+
+@pytest.mark.asyncio
+async def test_feedback_metrics_updates():
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        created = await repo.create(
+            {
+                "id": "core.tools.feedback",
+                "name": "Feedback",
+            }
+        )
+        service = SkillMetricsService(repo, failure_threshold=2)
+
+        await service.record_feedback(created.id, 1.0)
+        await service.record_feedback(created.id, -1.0)
+
+        updated = await repo.get_by_id(created.id)
+
+        assert updated is not None
+        metrics = updated.manifest_json["metrics"]
+        assert metrics["feedback_total"] == 2
+        assert metrics["feedback_positive"] == 1
+        assert metrics["feedback_negative"] == 1
+        assert metrics["semantic_score"] == 0.0

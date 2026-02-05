@@ -62,3 +62,9 @@ class GatewayLogRepository(BaseRepository[GatewayLog]):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_by_trace_id(self, trace_id: str) -> GatewayLog | None:
+        result = await self.session.execute(
+            select(GatewayLog).where(GatewayLog.trace_id == trace_id)
+        )
+        return result.scalars().first()

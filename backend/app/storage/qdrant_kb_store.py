@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
 
 QDRANT_DEFAULT_VECTOR_NAME = "text"
+
+logger = logging.getLogger(__name__)
+_collection_vector_cache: dict[str, tuple[list[str], bool]] = {}
 
 
 def _safe_raise(resp: httpx.Response) -> None:
@@ -24,6 +28,10 @@ def _dig(obj: Any, *keys: str) -> Any:
             return None
         cur = cur.get(k)
     return cur
+
+
+def _named_vector_struct(name: str, vector: list[float]) -> dict[str, Any]:
+    return {"name": name, "vector": vector}
 
 
 async def get_collection_vector_size(
@@ -51,18 +59,99 @@ async def get_collection_vector_size(
     if isinstance(vectors, dict):
         # 平铺结构 {"size": 2, "distance": "..."}（未命名向量）
         if "size" in vectors:
+            size = _dig(vectors, "size")
+            if isinstance(size, int) and size > 0:
+                _collection_vector_cache[name] = ([], True)
+                logger.warning(
+                    "qdrant collection uses unnamed vectors; fallback to unnamed size",
+                    extra={"collection": name, "expected_vector": vn},
+                )
+                return size
             raise RuntimeError(
-                f"qdrant collection uses unnamed vectors; expected named vector '{vn}' "
-                f"(collection={name}). Recreate the collection with named vectors."
+                f"unexpected qdrant collection response (missing vector size): {payload!r}"
             )
+
+        _collection_vector_cache[name] = (
+            [key for key in vectors.keys() if isinstance(key, str) and key],
+            False,
+        )
         size = _dig(vectors, vn, "size")
+        if isinstance(size, int) and size > 0:
+            return size
+        # Fallback: if collection has a single named vector, reuse it.
+        vector_names = [key for key in vectors.keys() if isinstance(key, str) and key]
+        if len(vector_names) == 1:
+            fallback_name = vector_names[0]
+            size = _dig(vectors, fallback_name, "size")
+            if isinstance(size, int) and size > 0:
+                logger.warning(
+                    "qdrant collection vector name mismatch; fallback to existing name",
+                    extra={
+                        "collection": name,
+                        "expected_vector": vn,
+                        "actual_vector": fallback_name,
+                    },
+                )
+                return size
     else:
         size = _dig(payload, "result", "config", "params", "vectors", "size")
-    if isinstance(size, int) and size > 0:
-        return size
+        if isinstance(size, int) and size > 0:
+            _collection_vector_cache[name] = ([], True)
+            return size
     raise RuntimeError(
         f"unexpected qdrant collection response (missing vector size): {payload!r}"
     )
+
+
+async def _get_collection_vector_names(
+    qdrant: httpx.AsyncClient,
+    *,
+    collection_name: str,
+    force_refresh: bool = False,
+) -> tuple[list[str], bool]:
+    name = str(collection_name or "").strip()
+    if not name:
+        raise ValueError("empty collection_name")
+    cached = _collection_vector_cache.get(name)
+    if cached is not None and not force_refresh:
+        return cached
+    resp = await qdrant.get(f"/collections/{name}")
+    if resp.status_code == 404:
+        return [], False
+    _safe_raise(resp)
+    payload = resp.json()
+    vectors = _dig(payload, "result", "config", "params", "vectors")
+    if isinstance(vectors, dict):
+        if "size" in vectors:
+            _collection_vector_cache[name] = ([], True)
+            return [], True
+        names = [key for key in vectors.keys() if isinstance(key, str) and key]
+        _collection_vector_cache[name] = (names, False)
+        return names, False
+    return [], False
+
+
+async def _resolve_vector_name(
+    qdrant: httpx.AsyncClient,
+    *,
+    collection_name: str,
+    preferred: str,
+) -> tuple[str, bool]:
+    names, unnamed = await _get_collection_vector_names(
+        qdrant, collection_name=collection_name
+    )
+    cleaned = (preferred or "").strip() or QDRANT_DEFAULT_VECTOR_NAME
+    if unnamed:
+        raise RuntimeError(
+            "qdrant collection uses unnamed vectors; expected named vector "
+            f"'{cleaned}' (collection={collection_name})"
+        )
+    if names and cleaned not in names:
+        raise RuntimeError(
+            "qdrant collection vector name mismatch; expected "
+            f"'{cleaned}', got {names} (collection={collection_name})"
+        )
+    return cleaned, False
 
 
 async def create_collection(
@@ -80,15 +169,14 @@ async def create_collection(
     if size <= 0:
         raise ValueError("vector_size must be positive")
 
-    vn = str(vector_name or "").strip()
-    vectors: dict[str, Any]
-    if vn:
-        vectors = {vn: {"size": size, "distance": str(distance or "Cosine")}}
-    else:
-        vectors = {"size": size, "distance": str(distance or "Cosine")}
+    vn = str(vector_name or "").strip() or QDRANT_DEFAULT_VECTOR_NAME
+    vectors: dict[str, Any] = {
+        vn: {"size": size, "distance": str(distance or "Cosine")}
+    }
     body = {"vectors": vectors}
     resp = await qdrant.put(f"/collections/{name}", json=body)
     _safe_raise(resp)
+    _collection_vector_cache[name] = ([vn], False)
 
 
 async def ensure_collection_vector_size(
@@ -103,6 +191,11 @@ async def ensure_collection_vector_size(
     )
     expected = int(vector_size)
     if existing is not None:
+        await _resolve_vector_name(
+            qdrant,
+            collection_name=collection_name,
+            preferred=str(vector_name or "").strip() or QDRANT_DEFAULT_VECTOR_NAME,
+        )
         if existing != expected:
             raise RuntimeError(
                 f"qdrant collection vector size mismatch: collection={collection_name} "
@@ -146,7 +239,18 @@ async def upsert_point(
         str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip()
         or QDRANT_DEFAULT_VECTOR_NAME
     )
-    body = {"points": [{"id": pid, "vector": {vn: vector}, "payload": payload}]}
+    resolved_name, _ = await _resolve_vector_name(
+        qdrant, collection_name=name, preferred=vn
+    )
+    body = {
+        "points": [
+            {
+                "id": pid,
+                "vector": {resolved_name: vector},
+                "payload": payload,
+            }
+        ]
+    }
     resp = await qdrant.put(f"/collections/{name}/points", params=params, json=body)
     _safe_raise(resp)
 
@@ -168,6 +272,9 @@ async def upsert_points(
         str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip()
         or QDRANT_DEFAULT_VECTOR_NAME
     )
+    resolved_name, _ = await _resolve_vector_name(
+        qdrant, collection_name=name, preferred=vn
+    )
 
     normalized: list[dict[str, Any]] = []
     for point in points:
@@ -180,7 +287,13 @@ async def upsert_points(
             raise ValueError("point vector must be non-empty list")
         if not isinstance(payload, dict):
             raise ValueError("point payload must be dict")
-        normalized.append({"id": pid, "vector": {vn: vector}, "payload": payload})
+        normalized.append(
+            {
+                "id": pid,
+                "vector": {resolved_name: vector},
+                "payload": payload,
+            }
+        )
 
     params = {"wait": "true" if wait else "false"}
     body = {"points": normalized}
@@ -213,8 +326,11 @@ async def search_points(
         str(vector_name or QDRANT_DEFAULT_VECTOR_NAME).strip()
         or QDRANT_DEFAULT_VECTOR_NAME
     )
+    resolved_name, _ = await _resolve_vector_name(
+        qdrant, collection_name=name, preferred=vn
+    )
     body: dict[str, Any] = {
-        "vector": {vn: vector},
+        "vector": _named_vector_struct(resolved_name, vector),
         "limit": k,
         "with_payload": bool(with_payload),
     }

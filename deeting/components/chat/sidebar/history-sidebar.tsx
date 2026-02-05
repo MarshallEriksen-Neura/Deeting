@@ -33,8 +33,7 @@ import { Label } from '@/components/ui/label';
 import { useConversationSessions } from '@/lib/swr/use-conversation-sessions';
 import { archiveConversation, createConversation, unarchiveConversation, renameConversation } from '@/lib/api/conversations';
 import { useI18n } from '@/hooks/use-i18n';
-import { useChatStateStore } from '@/store/chat-state-store';
-import { useChatSessionStore } from '@/store/chat-session-store';
+import { useChatStore } from '@/store/chat-store';
 import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
@@ -58,16 +57,11 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameSaving, setRenameSaving] = useState(false);
   
-  const { activeAssistantId, setMessages, clearAttachments } = useChatStateStore(
+  const { agentId: activeAssistantId, setMessages, clearAttachments, sessionId, resetSession, setSessionId, setGlobalLoading } = useChatStore(
     useShallow((state) => ({
-      activeAssistantId: state.activeAssistantId,
+      agentId: state.agentId,
       setMessages: state.setMessages,
       clearAttachments: state.clearAttachments,
-    }))
-  );
-
-  const { sessionId, resetSession, setSessionId, setGlobalLoading } = useChatSessionStore(
-    useShallow((state) => ({
       sessionId: state.sessionId,
       resetSession: state.resetSession,
       setSessionId: state.setSessionId,

@@ -34,6 +34,7 @@ class SkillMetricsService:
         metrics = _extract_metrics(skill.manifest_json)
         metrics["total_runs"] += 1
         metrics["consecutive_failures"] += 1
+        metrics["failure_count"] += 1
         if error:
             metrics["last_error"] = error
         metrics["success_rate"] = _compute_rate(
@@ -80,6 +81,26 @@ class SkillMetricsService:
         await self.repo.update(skill, payload)
         return metrics
 
+    async def record_feedback(self, skill_id: str, score: float) -> dict[str, Any]:
+        skill = await self.repo.get_by_id(skill_id)
+        if not skill:
+            raise ValueError("Skill not found")
+        metrics = _extract_metrics(skill.manifest_json)
+        previous_total = metrics["feedback_total"]
+        metrics["feedback_total"] += 1
+        if score > 0:
+            metrics["feedback_positive"] += 1
+        elif score < 0:
+            metrics["feedback_negative"] += 1
+        metrics["semantic_score"] = _compute_semantic_score(
+            previous_score=metrics["semantic_score"],
+            previous_total=previous_total,
+            score=score,
+        )
+        payload = {"manifest_json": _merge_metrics(skill.manifest_json, metrics)}
+        await self.repo.update(skill, payload)
+        return metrics
+
 
 def _extract_metrics(manifest: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(manifest, dict):
@@ -96,6 +117,11 @@ def _extract_metrics(manifest: dict[str, Any] | None) -> dict[str, Any]:
         "dry_run_total": int(raw.get("dry_run_total", 0) or 0),
         "dry_run_success": int(raw.get("dry_run_success", 0) or 0),
         "dry_run_fail": int(raw.get("dry_run_fail", 0) or 0),
+        "feedback_total": int(raw.get("feedback_total", 0) or 0),
+        "feedback_positive": int(raw.get("feedback_positive", 0) or 0),
+        "feedback_negative": int(raw.get("feedback_negative", 0) or 0),
+        "semantic_score": float(raw.get("semantic_score", 0.0) or 0.0),
+        "failure_count": int(raw.get("failure_count", 0) or 0),
     }
 
 
@@ -111,3 +137,11 @@ def _compute_rate(success_runs: int, total_runs: int) -> float:
     if total_runs <= 0:
         return 0.0
     return success_runs / total_runs
+
+
+def _compute_semantic_score(
+    *, previous_score: float, previous_total: int, score: float
+) -> float:
+    if previous_total <= 0:
+        return float(score)
+    return (previous_score * previous_total + score) / (previous_total + 1)

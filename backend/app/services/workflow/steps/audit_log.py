@@ -61,6 +61,11 @@ class AuditLogStep(BaseStep):
             from app.tasks.audit import record_audit_log_task
 
             # 构建元数据
+            session_id = ctx.get("conversation", "session_id") or (
+                (ctx.get("validation", "validated") or {}).get("session_id")
+            )
+            tool_calls = ctx.get("execution", "tool_calls")
+            assistant_id = ctx.get("assistant", "id")
             meta = {
                 "request_summary": self._get_request_summary(ctx),
                 "routing_result": self._get_routing_result(ctx),
@@ -75,6 +80,9 @@ class AuditLogStep(BaseStep):
                 "billing_details": vars(ctx.billing) if hasattr(ctx, "billing") else {},
                 "capability": ctx.capability,
                 "client_ip": ctx.client_ip,
+                "assistant_id": assistant_id,
+                "session_id": session_id,
+                "tool_calls": tool_calls if isinstance(tool_calls, list) else None,
             }
 
             # 全局脱敏 (Meta & URL)
@@ -92,6 +100,7 @@ class AuditLogStep(BaseStep):
             # 映射字段到 GatewayLog 模型
             log_payload = {
                 "model": ctx.requested_model or "unknown",
+                "trace_id": ctx.trace_id,
                 "status_code": ctx.upstream_result.status_code or 0,
                 "duration_ms": int(sum(ctx.step_timings.values())),
                 "input_tokens": ctx.billing.input_tokens,

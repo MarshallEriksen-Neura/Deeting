@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 import { buildImageAttachments, UPLOAD_ERROR_CODES } from "@/lib/chat/attachments"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
@@ -9,13 +9,13 @@ import type { ChatImageAttachment } from "@/lib/chat/message-content"
 export function useChatAttachments() {
   const t = useI18n("chat")
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
-  
+
   const {
     attachments,
     addAttachments,
     removeAttachment,
     clearAttachments,
-  } = useChatStateStore()
+  } = useChatStore()
 
   const handleFiles = useCallback(async (files: File[]) => {
     if (!files.length) return

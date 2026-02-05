@@ -36,6 +36,7 @@ from app.services.workflow.steps.resolve_assets import ResolveAssetsStep
 from app.services.workflow.steps.response_transform import ResponseTransformStep
 from app.services.workflow.steps.routing import RoutingStep
 from app.services.workflow.steps.sanitize import SanitizeStep
+from app.services.workflow.steps.semantic_kernel import SemanticKernelStep
 from app.services.workflow.steps.signature_verify import SignatureVerifyStep
 from app.services.workflow.steps.spec_agent_detector import SpecAgentDetectorStep
 from app.services.workflow.steps.template_render import TemplateRenderStep
@@ -70,6 +71,7 @@ __all__ = [
     "ResponseTransformStep",
     "SpecAgentDetectorStep",
     "SanitizeStep",
+    "SemanticKernelStep",
     "BillingStep",
     "AuditLogStep",
 ]

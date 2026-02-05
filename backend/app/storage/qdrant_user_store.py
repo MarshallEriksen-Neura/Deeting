@@ -41,16 +41,17 @@ async def ensure_user_collection(
         )
         return collection_name, False
     except Exception as exc:  # pragma: no cover - 防御性兜底
-        logger.warning(
-            "qdrant ensure_user_collection failed",
-            extra={
-                "collection": collection_name,
-                "vector_size": vector_size,
-                "embedding_model": embedding_model,
-                "fail_open": fail_open,
-            },
-            exc_info=exc,
-        )
+        extra = {
+            "collection": collection_name,
+            "vector_size": vector_size,
+            "embedding_model": embedding_model,
+            "fail_open": fail_open,
+            "error": str(exc),
+        }
+        log_kwargs = {"extra": extra}
+        if not (isinstance(exc, httpx.RequestError) and fail_open):
+            log_kwargs["exc_info"] = exc
+        logger.warning("qdrant ensure_user_collection failed", **log_kwargs)
         if fail_open:
             return collection_name, True
         raise

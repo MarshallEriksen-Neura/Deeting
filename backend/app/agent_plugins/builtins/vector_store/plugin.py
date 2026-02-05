@@ -6,6 +6,7 @@ from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.config import settings
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.services.providers.embedding import EmbeddingService
+from app.storage.qdrant_kb_store import search_points
 
 logger = logging.getLogger(__name__)
 
@@ -129,19 +130,16 @@ class VectorStorePlugin(AgentPlugin):
                 vector = await embedding_service.embed_text(query)
                 client = get_qdrant_client()
 
-                body = {"vector": vector, "limit": limit, "with_payload": True}
-
-                resp = await client.post(
-                    f"/collections/{settings.QDRANT_KB_SYSTEM_COLLECTION}/points/search",
-                    json=body,
-                )
-
-                if resp.status_code == 404:
-                    return ["- [SYSTEM] (Knowledge Base not initialized)"]
-                elif resp.status_code != 200:
-                    return [f"- [SYSTEM] Error: {resp.text}"]
-
-                api_results = resp.json().get("result", [])
+                try:
+                    api_results = await search_points(
+                        client,
+                        collection_name=settings.QDRANT_KB_SYSTEM_COLLECTION,
+                        vector=vector,
+                        limit=limit,
+                        with_payload=True,
+                    )
+                except Exception as exc:
+                    return [f"- [SYSTEM] Error: {exc!s}"]
                 res = []
                 for item in api_results:
                     score = item.get("score", 0.0)

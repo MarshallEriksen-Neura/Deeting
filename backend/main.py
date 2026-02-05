@@ -158,6 +158,7 @@ def register_routes(app: FastAPI) -> None:
         credits_router,
         dashboard_router,
         external_gateway_router,
+        feedback_router,
         gateway_logs_router,
         internal_bridge_router,
         internal_conversation_router,
@@ -220,6 +221,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(
         notification_ws_router, prefix=api_prefix, tags=["Notifications"]
     )
+    app.include_router(feedback_router, prefix=api_prefix, tags=["Feedback"])
     app.include_router(
         admin_provider_credential_router,
         prefix=api_prefix,

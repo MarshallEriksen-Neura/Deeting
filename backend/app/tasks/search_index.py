@@ -26,7 +26,7 @@ from app.repositories.assistant_tag_repository import (
 )
 from app.repositories.mcp_market_repository import McpMarketRepository
 from app.repositories.provider_preset_repository import ProviderPresetRepository
-from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.services.search.indexers import MeilisearchIndexService
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 import type { ModelInfo } from "@/lib/api/models"
 
 interface UseChatModelsProps {
@@ -10,7 +10,7 @@ interface UseChatModelsProps {
 }
 
 export function useChatModels({ models, isLoadingModels }: UseChatModelsProps) {
-  const { config, setModels, setConfig } = useChatStateStore()
+  const { config, setModels, setConfig } = useChatStore()
   const hasInitializedRef = useRef(false)
 
   // 同步模型列表到 store
@@ -20,7 +20,7 @@ export function useChatModels({ models, isLoadingModels }: UseChatModelsProps) {
     setModels(models)
 
     // 使用 getState() 获取当前值，避免将 config.model 放入依赖导致无限循环
-    const currentModel = useChatStateStore.getState().config.model
+    const currentModel = useChatStore.getState().config.model
 
     // 检查当前选中的模型是否还存在
     const hasSelectedModel = currentModel

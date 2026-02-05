@@ -138,6 +138,26 @@ class AgentExecutorStep(BaseStep):
 
                 # Find and execute tool
                 result = await self._dispatch_tool(ctx, tc)
+                tool_error = None
+                tool_success = True
+                if isinstance(result, dict):
+                    tool_error = result.get("error")
+                    status = result.get("status")
+                    if tool_error:
+                        tool_success = False
+                    elif isinstance(status, str) and status.lower() in {"failed", "error"}:
+                        tool_success = False
+                tool_calls_log = ctx.get("execution", "tool_calls") or []
+                if isinstance(tool_calls_log, list):
+                    tool_calls_log.append(
+                        {
+                            "name": tc.name,
+                            "tool_call_id": tc.id,
+                            "success": tool_success,
+                            "error": tool_error,
+                        }
+                    )
+                    ctx.set("execution", "tool_calls", tool_calls_log)
 
                 # Emit Result (Persistent UI)
                 result_str = json.dumps(result, ensure_ascii=False)

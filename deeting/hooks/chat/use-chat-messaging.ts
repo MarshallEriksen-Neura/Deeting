@@ -2,7 +2,7 @@
 
 import { useCallback } from "react"
 import { invoke } from "@tauri-apps/api/core"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 import { useChatSessionStore } from "@/store/chat-session-store"
 import { useChatMessagingService } from "./use-chat-messaging-service"
 import { serializeMessageContent } from "@/lib/chat/message-content"
@@ -16,7 +16,7 @@ interface UseChatMessagingProps {
 export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProps) {
   const t = useI18n("chat")
   
-  const { input, attachments, config } = useChatStateStore()
+  const { input, attachments, config } = useChatStore()
   const { isLoading, errorMessage, setErrorMessage } = useChatSessionStore()
   const { sendMessage: serviceSendMessage, cancelActiveRequest } = useChatMessagingService()
 
@@ -41,7 +41,7 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
       await serviceSendMessage()
 
       // 3. 持久化助手响应到 Tauri DB
-      const currentMessages = useChatStateStore.getState().messages
+      const currentMessages = useChatStore.getState().messages
       const lastMsg = currentMessages[currentMessages.length - 1]
       if (lastMsg && lastMsg.role === 'assistant') {
         void invoke("append_assistant_message", {

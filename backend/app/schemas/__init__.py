@@ -33,6 +33,7 @@ from .auth import (
 )
 from .base import BaseSchema, IDSchema, TimestampSchema
 from .conversation import ConversationSessionItem
+from .feedback import TraceFeedbackDTO, TraceFeedbackRequest, TraceFeedbackResponse
 from .gateway_log import GatewayLogBase, GatewayLogCreate, GatewayLogDTO
 from .image_generation import (
     ImageGenerationCancelResponse,
@@ -199,6 +200,9 @@ __all__ = [
     "BanRequest",
     "BaseSchema",
     "ConversationSessionItem",
+    "TraceFeedbackDTO",
+    "TraceFeedbackRequest",
+    "TraceFeedbackResponse",
     "GatewayLogBase",
     "GatewayLogCreate",
     "GatewayLogDTO",

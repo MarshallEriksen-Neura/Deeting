@@ -19,7 +19,7 @@ from app.repositories.assistant_repository import (
 )
 from app.repositories.assistant_routing_repository import AssistantRoutingRepository
 from app.repositories.review_repository import ReviewTaskRepository
-from app.services.assistant.assistant_market_service import ASSISTANT_MARKET_ENTITY
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import search_points

@@ -6,8 +6,7 @@ import { useMemo, useRef, useState, useCallback, memo } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
-import { useChatStateStore } from '@/store/chat-state-store';
-import { useChatSessionStore } from '@/store/chat-session-store';
+import { useChatStore, type ChatAssistant } from '@/store/chat-store';
 import { useMarketStore } from '@/store/market-store';
 import { useI18n } from '@/hooks/use-i18n';
 import { useChatService } from '@/hooks/use-chat-service';
@@ -53,45 +52,45 @@ function ControlsContainer() {
     attachments,
     setInput,
     setMessages,
-    activeAssistantId,
-    assistants,
+    agentId: activeAssistantId,
+    agent,
     models,
     config,
     setConfig,
-    setActiveAssistantId,
     setOverrideAssistantId,
     clearOverrideAssistantId,
     addAttachments,
     removeAttachment,
     clearAttachments,
-  } = useChatStateStore(
+    isLoading,
+    setSessionId,
+    setGlobalLoading,
+    resetSession,
+  } = useChatStore(
     useShallow((state) => ({
       input: state.input,
       attachments: state.attachments,
       setInput: state.setInput,
       setMessages: state.setMessages,
-      activeAssistantId: state.activeAssistantId,
-      assistants: state.assistants,
+      agentId: state.agentId,
+      agent: state.agent,
       models: state.models,
       config: state.config,
       setConfig: state.setConfig,
-      setActiveAssistantId: state.setActiveAssistantId,
       setOverrideAssistantId: state.setOverrideAssistantId,
       clearOverrideAssistantId: state.clearOverrideAssistantId,
       addAttachments: state.addAttachments,
       removeAttachment: state.removeAttachment,
       clearAttachments: state.clearAttachments,
-    }))
-  );
-
-  const { isLoading, setSessionId, setGlobalLoading, resetSession } = useChatSessionStore(
-    useShallow((state) => ({
       isLoading: state.isLoading,
       setSessionId: state.setSessionId,
       setGlobalLoading: state.setGlobalLoading,
       resetSession: state.resetSession,
     }))
   );
+
+  // 从 agent 派生 assistants 列表
+  const assistants: ChatAssistant[] = agent ? [agent] : [];
 
   const isTauriRuntime = useMemo(
     () =>
@@ -199,12 +198,12 @@ function ControlsContainer() {
 
   const handleSelectAssistant = useCallback((assistantId: string) => {
     if (isTauriRuntime) {
-      setActiveAssistantId(assistantId);
+      setOverrideAssistantId(assistantId);
       router.replace(`/chat/${assistantId}`);
       return;
     }
     setOverrideAssistantId(assistantId);
-  }, [isTauriRuntime, setActiveAssistantId, setOverrideAssistantId, router]);
+  }, [isTauriRuntime, setOverrideAssistantId, router]);
 
   const handleSend = useCallback(() => {
     if (!canSend) return;
@@ -213,7 +212,7 @@ function ControlsContainer() {
       if (!activeAssistantId) {
         const defaultAgent = installedAgents[0] || assistants[0];
         if (defaultAgent) {
-          setActiveAssistantId(defaultAgent.id);
+          setOverrideAssistantId(defaultAgent.id);
           router.replace(`/chat/${defaultAgent.id}`);
           handleSendMessage();
         } else {

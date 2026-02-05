@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useCallback } from "react"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 
 export function useChatStream() {
-  const { streamEnabled, setStreamEnabled } = useChatStateStore()
+  const { streamEnabled, setStreamEnabled } = useChatStore()
 
   // 从 localStorage 同步流式模式设置
   useEffect(() => {

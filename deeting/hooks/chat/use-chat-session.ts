@@ -1,16 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useMemo } from "react"
-import { useChatSessionStore } from "@/store/chat-session-store"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 
 interface UseChatSessionProps {
   agentId: string
 }
 
 export function useChatSession({ agentId }: UseChatSessionProps) {
-  const { sessionId, setSessionId, resetSession } = useChatSessionStore()
-  const { setMessages, clearAttachments } = useChatStateStore()
+  const { sessionId, setSessionId, resetSession, setMessages, clearAttachments } = useChatStore()
 
   const sessionStorageKey = useMemo(
     () => `deeting-chat-session:${agentId}`,

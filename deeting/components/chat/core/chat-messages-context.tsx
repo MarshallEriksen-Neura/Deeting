@@ -1,9 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useChatStateStore } from "@/store/chat-state-store"
-import { useChatSessionStore } from "@/store/chat-session-store"
-import type { Message, MessageRole } from "@/store/chat-state-store"
+import { useChatStore, type Message, type MessageRole } from "@/store/chat-store"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 
 /**
@@ -79,10 +77,8 @@ export function ChatMessagesProvider({ children }: ChatMessagesProviderProps) {
     addMessage,
     updateMessage,
     clearMessages,
-  } = useChatStateStore()
-  
-  // 从 session store 获取加载状态
-  const isTyping = useChatSessionStore((state) => state.isLoading)
+    isLoading: isTyping,
+  } = useChatStore()
 
   const contextValue = React.useMemo<ChatMessagesContextValue>(
     () => ({

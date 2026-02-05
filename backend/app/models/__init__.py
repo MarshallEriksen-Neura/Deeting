@@ -73,6 +73,7 @@ from .skill_dependency import SkillDependency
 from .skill_registry import SkillRegistry
 from .spec_agent import SpecExecutionLog, SpecPlan, SpecWorkerSession
 from .spec_knowledge import SpecKnowledgeCandidate
+from .trace_feedback import TraceFeedback
 from .system_setting import SystemSetting
 from .upstream_secret import UpstreamSecret
 from .user import Permission, Role, RolePermission, User, UserRole
@@ -164,6 +165,7 @@ __all__ = [
     "SpecExecutionLog",
     "SpecWorkerSession",
     "SpecKnowledgeCandidate",
+    "TraceFeedback",
     # Knowledge (Unified Crawler)
     "KnowledgeArtifact",
     "KnowledgeChunk",

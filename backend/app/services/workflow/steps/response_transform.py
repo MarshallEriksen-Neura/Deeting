@@ -89,6 +89,8 @@ class ResponseTransformStep(BaseStep):
             ctx.billing.total_tokens = usage.get("total_tokens", 0)
 
             # 写入转换后的响应
+            if isinstance(transformed, dict):
+                transformed["trace_id"] = ctx.trace_id
             ctx.set("response_transform", "response", transformed)
 
             if isinstance(transformed, dict):

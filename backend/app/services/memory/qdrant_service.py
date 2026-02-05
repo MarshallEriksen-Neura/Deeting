@@ -11,7 +11,11 @@ from app.storage.qdrant_kb_collections import (
     get_kb_system_collection_name,
     get_tool_system_collection_name,
 )
-from app.storage.qdrant_kb_store import ensure_collection_vector_size
+from app.storage.qdrant_kb_store import (
+    ensure_collection_vector_size,
+    search_points,
+    upsert_point,
+)
 
 # Constants for Collection Names
 COLLECTION_PLUGIN_MARKETPLACE = "plugin_marketplace"
@@ -99,14 +103,13 @@ class SystemQdrantService:
             "capabilities": plugin.capabilities,
         }
 
-        body = {
-            "points": [{"id": str(plugin.id), "vector": vector, "payload": payload}]
-        }
-
-        await self.client.put(
-            f"/collections/{COLLECTION_PLUGIN_MARKETPLACE}/points",
-            json=body,
-            params={"wait": "true"},
+        await upsert_point(
+            self.client,
+            collection_name=COLLECTION_PLUGIN_MARKETPLACE,
+            point_id=str(plugin.id),
+            vector=vector,
+            payload=payload,
+            wait=True,
         )
 
     async def search_plugins(
@@ -140,19 +143,14 @@ class SystemQdrantService:
             ]
         }
 
-        body = {
-            "vector": vector,
-            "filter": filter_payload,
-            "limit": limit,
-            "with_payload": True,
-        }
-
-        resp = await self.client.post(
-            f"/collections/{COLLECTION_PLUGIN_MARKETPLACE}/points/search", json=body
+        results = await search_points(
+            self.client,
+            collection_name=COLLECTION_PLUGIN_MARKETPLACE,
+            vector=vector,
+            limit=limit,
+            query_filter=filter_payload,
+            with_payload=True,
         )
-        resp.raise_for_status()
-
-        results = resp.json().get("result", [])
         return [
             {
                 "plugin_id": item["payload"]["plugin_id"],
@@ -178,18 +176,14 @@ class SystemQdrantService:
 
         vector = await self._embedding_service.embed_text(query)
 
-        body = {
-            "vector": vector,
-            "limit": 1,
-            "with_payload": True,
-            "score_threshold": threshold,
-        }
-
-        resp = await self.client.post(
-            f"/collections/{COLLECTION_SEMANTIC_CACHE}/points/search", json=body
+        results = await search_points(
+            self.client,
+            collection_name=COLLECTION_SEMANTIC_CACHE,
+            vector=vector,
+            limit=1,
+            with_payload=True,
+            score_threshold=threshold,
         )
-
-        results = resp.json().get("result", [])
         if not results:
             return None
 
@@ -207,13 +201,13 @@ class SystemQdrantService:
 
         payload = {"query": query, "response": response, "timestamp": "TODO_TIMESTAMP"}
 
-        body = {"points": [{"id": point_id, "vector": vector, "payload": payload}]}
-
-        # Fire and forget (don't wait)
-        await self.client.put(
-            f"/collections/{COLLECTION_SEMANTIC_CACHE}/points",
-            json=body,
-            params={"wait": "false"},
+        await upsert_point(
+            self.client,
+            collection_name=COLLECTION_SEMANTIC_CACHE,
+            point_id=point_id,
+            vector=vector,
+            payload=payload,
+            wait=False,
         )
 
 

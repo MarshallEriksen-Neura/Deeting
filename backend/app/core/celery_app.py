@@ -72,6 +72,7 @@ celery_app.conf.update(
     task_routes={
         "conversation.*": {"queue": "conversation"},
         "app.tasks.audit.*": {"queue": "internal"},
+        "app.tasks.feedback.*": {"queue": "internal"},
         "app.tasks.reports.*": {"queue": "internal"},
         "app.tasks.billing.*": {"queue": "billing"},
         "app.tasks.async_inference.*": {"queue": "external"},

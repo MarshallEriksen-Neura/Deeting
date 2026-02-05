@@ -159,6 +159,7 @@ interface ChatStore {
   setStatus: (status: { stage?: string | null; code?: string | null; meta?: Record<string, unknown> | null }) => void
   clearStatus: () => void
   setErrorMessage: (error: string | null) => void
+  sendFeedback: (messageId: string, score: number) => Promise<void>
 
   // === 兼容性 Actions（逐步废弃）===
   loadHistory: (sessionId: string) => Promise<void>
@@ -443,6 +444,36 @@ export const useChatStore = create<ChatStore>()(
         }),
 
       setErrorMessage: (errorMessage) => set({ errorMessage }),
+
+      sendFeedback: async (messageId: string, score: number) => {
+        const { messages, updateMessage } = get()
+        const message = messages.find((m) => m.id === messageId)
+        if (!message) return
+
+        const traceId = message.metaInfo?.trace_id as string | undefined
+        if (!traceId) {
+          console.warn("sendFeedback failed: trace_id missing in message meta", messageId)
+          return
+        }
+
+        try {
+          const { createTraceFeedback } = await import("@/lib/api/feedback")
+          await createTraceFeedback({
+            trace_id: traceId,
+            score,
+          })
+
+          // 更新本地状态
+          const metaInfo = { ...(message.metaInfo || {}), feedback_score: score }
+          set((state) => ({
+            messages: state.messages.map((m) =>
+              m.id === messageId ? { ...m, metaInfo } : m
+            ),
+          }))
+        } catch (error) {
+          console.error("Failed to send feedback:", error)
+        }
+      },
 
       // === 兼容性 Actions（逐步废弃，保留给旧代码使用）===
 

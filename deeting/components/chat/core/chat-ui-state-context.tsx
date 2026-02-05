@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useChatStateStore } from "@/store/chat-state-store"
+import { useChatStore } from "@/store/chat-store"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 
 /**
@@ -83,7 +83,7 @@ export function ChatUIStateProvider({ children }: ChatUIStateProviderProps) {
     addAttachments,
     removeAttachment,
     clearAttachments,
-  } = useChatStateStore()
+  } = useChatStore()
 
   const contextValue = React.useMemo<ChatUIStateContextValue>(
     () => ({

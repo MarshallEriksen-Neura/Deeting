@@ -8,6 +8,12 @@ from typing import Any
 import httpx
 
 from app.services.providers.embedding import EmbeddingService
+from app.storage.qdrant_kb_store import (
+    QDRANT_DEFAULT_VECTOR_NAME,
+    delete_points,
+    search_points,
+    upsert_point,
+)
 from app.storage.qdrant_user_store import ensure_user_collection
 
 logger = logging.getLogger(__name__)
@@ -47,6 +53,7 @@ class QdrantUserVectorService(VectorStoreClient):
         embedding_model: str | None = None,
         embedding_service: EmbeddingService | None = None,
         fail_open: bool = True,
+        vector_name: str = QDRANT_DEFAULT_VECTOR_NAME,
     ):
         self._client = client
         self._plugin_id = plugin_id
@@ -56,6 +63,7 @@ class QdrantUserVectorService(VectorStoreClient):
             self._embedding_service, "model", None
         )
         self._fail_open = fail_open
+        self._vector_name = str(vector_name or "").strip() or QDRANT_DEFAULT_VECTOR_NAME
         self._collection_name: str | None = None
         self._log = logger.getChild("QdrantUserVectorService")
 
@@ -71,6 +79,7 @@ class QdrantUserVectorService(VectorStoreClient):
             embedding_model=self._embedding_model,
             vector_size=vector_size,
             fail_open=self._fail_open,
+            vector_name=self._vector_name,
         )
         self._collection_name = collection
         return collection, degraded
@@ -108,23 +117,16 @@ class QdrantUserVectorService(VectorStoreClient):
             )
             return point_id
 
-        body = {
-            "points": [
-                {
-                    "id": point_id,
-                    "vector": vector,
-                    "payload": self._base_payload(
-                        {**(payload or {}), "content": content}
-                    ),
-                }
-            ]
-        }
-
         try:
-            resp = await self._client.put(
-                f"/collections/{collection}/points", json=body, params={"wait": "true"}
+            await upsert_point(
+                self._client,
+                collection_name=collection,
+                point_id=point_id,
+                vector=vector,
+                payload=self._base_payload({**(payload or {}), "content": content}),
+                wait=True,
+                vector_name=self._vector_name,
             )
-            resp.raise_for_status()
         except Exception as exc:  # pragma: no cover - fail-open path
             if self._fail_open:
                 self._log.warning(
@@ -148,18 +150,17 @@ class QdrantUserVectorService(VectorStoreClient):
             )
             return []
 
-        body = {
-            "vector": vector,
-            "filter": self._base_filter(),
-            "limit": limit,
-            "with_payload": True,
-            "score_threshold": score_threshold,
-        }
         try:
-            resp = await self._client.post(
-                f"/collections/{collection}/points/search", json=body
+            results = await search_points(
+                self._client,
+                collection_name=collection,
+                vector=vector,
+                limit=limit,
+                query_filter=self._base_filter(),
+                with_payload=True,
+                score_threshold=score_threshold,
+                vector_name=self._vector_name,
             )
-            resp.raise_for_status()
         except Exception as exc:  # pragma: no cover - fail-open
             if self._fail_open:
                 self._log.warning(
@@ -170,13 +171,12 @@ class QdrantUserVectorService(VectorStoreClient):
                 return []
             raise
 
-        results = resp.json().get("result", [])
         return [
             {
-                "id": item["id"],
-                "score": item["score"],
-                "content": item["payload"].get("content", ""),
-                "payload": item["payload"],
+                "id": item.get("id"),
+                "score": item.get("score", 0.0),
+                "content": (item.get("payload") or {}).get("content", ""),
+                "payload": item.get("payload") or {},
             }
             for item in results
         ]
@@ -193,25 +193,18 @@ class QdrantUserVectorService(VectorStoreClient):
                         "delete degraded; skip", extra={"collection": collection}
                     )
                     return
-            body = {
-                "filter": {
-                    "must": [
-                        {"key": "user_id", "match": {"value": self._user_id}},
-                        *(
-                            [{"key": "plugin_id", "match": {"value": self._plugin_id}}]
-                            if self._plugin_id
-                            else []
-                        ),
-                        {"has_id": ids},
-                    ]
-                }
-            }
-            resp = await self._client.post(
-                f"/collections/{collection}/points/delete",
-                json=body,
-                params={"wait": "true"},
+            must_filters = [{"key": "user_id", "match": {"value": self._user_id}}]
+            if self._plugin_id:
+                must_filters.append(
+                    {"key": "plugin_id", "match": {"value": self._plugin_id}}
+                )
+            must_filters.append({"has_id": ids})
+            await delete_points(
+                self._client,
+                collection_name=collection,
+                query_filter={"must": must_filters},
+                wait=True,
             )
-            resp.raise_for_status()
         except Exception as exc:  # pragma: no cover - fail-open
             if self._fail_open:
                 self._log.warning(
