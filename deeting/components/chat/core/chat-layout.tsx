@@ -5,7 +5,7 @@ import { Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/hooks/use-i18n"
 import { useRouter } from "next/navigation"
-import type { ChatAssistant } from "@/store/chat-state-store"
+import type { ChatAssistant } from "@/store/chat-store"
 
 interface ChatLayoutProps {
   children: React.ReactNode

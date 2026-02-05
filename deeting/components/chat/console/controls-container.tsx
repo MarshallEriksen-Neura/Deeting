@@ -230,7 +230,7 @@ function ControlsContainer() {
     activeAssistantId,
     installedAgents,
     assistants,
-    setActiveAssistantId,
+    setOverrideAssistantId,
     router,
     handleSendMessage,
     isTauriRuntime,

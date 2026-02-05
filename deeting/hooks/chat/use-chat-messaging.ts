@@ -3,7 +3,6 @@
 import { useCallback } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useChatStore } from "@/store/chat-store"
-import { useChatSessionStore } from "@/store/chat-session-store"
 import { useChatMessagingService } from "./use-chat-messaging-service"
 import { serializeMessageContent } from "@/lib/chat/message-content"
 import { useI18n } from "@/hooks/use-i18n"
@@ -16,8 +15,7 @@ interface UseChatMessagingProps {
 export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProps) {
   const t = useI18n("chat")
   
-  const { input, attachments, config } = useChatStore()
-  const { isLoading, errorMessage, setErrorMessage } = useChatSessionStore()
+  const { input, attachments, config, isLoading, errorMessage, setErrorMessage } = useChatStore()
   const { sendMessage: serviceSendMessage, cancelActiveRequest } = useChatMessagingService()
 
   const handleSendMessage = useCallback(async () => {

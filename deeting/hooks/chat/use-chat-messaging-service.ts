@@ -30,7 +30,6 @@ import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
-import { useChatSessionStore } from "@/store/chat-session-store"
 
 function createMessageId() {
   const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined
@@ -123,17 +122,21 @@ export function useChatMessagingService() {
     clearAttachments,
     setMessages,
     updateMessage,
-  } = useChatStore()
-
-  const {
     sessionId,
     setSessionId,
     setIsLoading,
     setErrorMessage,
     setStatus,
     clearStatus,
-    setHistoryState,
-  } = useChatSessionStore()
+  } = useChatStore()
+
+  const setHistoryState = useCallback((state: { cursor?: number | null; hasMore?: boolean; loading?: boolean }) => {
+    useChatStore.setState({
+      ...(state.cursor !== undefined && { historyCursor: state.cursor }),
+      ...(state.hasMore !== undefined && { historyHasMore: state.hasMore }),
+      ...(state.loading !== undefined && { isLoading: state.loading }),
+    })
+  }, [])
 
   const isTauriRuntime = useMemo(
     () =>
@@ -165,7 +168,7 @@ export function useChatMessagingService() {
       })
     } catch {
       setMessages([])
-      setSessionId(undefined)
+      setSessionId(null)
       setHistoryState({ cursor: null, hasMore: false })
     } finally {
       setHistoryState({ loading: false })
@@ -178,7 +181,7 @@ export function useChatMessagingService() {
       localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`)
     }
     setMessages([])
-    setSessionId(undefined)
+    setSessionId(null)
     clearAttachments()
     setHistoryState({ cursor: null, hasMore: false, loading: false })
   }, [setMessages, setSessionId, clearAttachments, setHistoryState])
@@ -322,8 +325,6 @@ export function useChatMessagingService() {
               if (payload.type === "status") {
                 setStatus({
                   stage: payload.stage ?? null,
-                  step: payload.step ?? null,
-                  state: payload.state ?? null,
                   code: payload.code ?? null,
                   meta: typeof payload.meta === "object" && payload.meta ? (payload.meta as Record<string, unknown>) : null,
                 })

@@ -85,7 +85,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
       assistant_id: activeAssistantId ?? undefined,
       status: showArchived ? "archived" : "active",
     },
-    { enabled: Boolean(activeAssistantId) }
+    { enabled: true }
   );
 
   useEffect(() => {

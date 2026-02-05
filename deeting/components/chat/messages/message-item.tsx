@@ -7,7 +7,7 @@ import { AIResponseBubble } from "./ai-response-bubble"
 import { MessageActions } from "./message-actions"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { normalizeMessage } from "@/lib/chat/message-normalizer"
-import type { Message, ChatAssistant } from "@/store/chat-state-store"
+import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
@@ -67,7 +67,7 @@ export const MessageItem = React.memo<MessageItemProps>(
       >
         {/* 消息气泡 */}
         {message.role === "assistant" ? (
-          <div className="flex-1 min-w-0">
+          <div className="w-fit max-w-[85%]">
             <AIResponseBubble
               parts={message.blocks ?? normalizeMessage(message.content)}
               isActive={isActive}
@@ -83,22 +83,24 @@ export const MessageItem = React.memo<MessageItemProps>(
                 alt={imageAlt}
               />
             ) : null}
-            {!isActive && (
-              <MessageActions
-                messageId={message.id}
-                onRegenerate={onRegenerate}
-                onLike={onLike}
-                onDislike={onDislike}
-                liked={message.metaInfo?.feedback_score === 1}
-                disliked={message.metaInfo?.feedback_score === -1}
-                disabled={isActive}
-              />
-            )}
-            <div className="text-[10px] mt-1 opacity-70 text-muted-foreground text-left ml-1">
-              {new Date(message.createdAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+            <div className="flex items-center mt-1 ml-1">
+              {!isActive && (
+                <MessageActions
+                  messageId={message.id}
+                  onRegenerate={onRegenerate}
+                  onLike={onLike}
+                  onDislike={onDislike}
+                  liked={message.metaInfo?.feedback_score === 1}
+                  disliked={message.metaInfo?.feedback_score === -1}
+                  disabled={isActive}
+                />
+              )}
+              <span className="text-[10px] opacity-70 text-muted-foreground ml-auto">
+                {new Date(message.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
             </div>
           </div>
         ) : (

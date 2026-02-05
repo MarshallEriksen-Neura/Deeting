@@ -8,8 +8,7 @@ import { useTheme } from 'next-themes';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { HistorySidebar } from '@/components/chat/sidebar/history-sidebar';
 import { ImageHistorySidebar } from '@/components/image/history/image-history-sidebar';
-import { useChatStateStore } from '@/store/chat-state-store';
-import { useChatSessionStore } from '@/store/chat-session-store';
+import { useChatStore, type ChatAssistant } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useI18n } from '@/hooks/use-i18n';
@@ -47,40 +46,34 @@ export default function HUD() {
   const {
     config,
     setConfig,
-    assistants,
+    agent,
     models,
-    activeAssistantId,
-    setAssistants,
+    agentId: activeAssistantId,
+    setAgent,
     setModels,
-    setActiveAssistantId,
+    setOverrideAssistantId,
     clearOverrideAssistantId,
     setMessages,
     clearAttachments,
-  } = useChatStateStore(
-    useShallow((state) => ({
-      config: state.config,
-      setConfig: state.setConfig,
-      assistants: state.assistants,
-      models: state.models,
-      activeAssistantId: state.activeAssistantId,
-      setAssistants: state.setAssistants,
-      setModels: state.setModels,
-      setActiveAssistantId: state.setActiveAssistantId,
-      clearOverrideAssistantId: state.clearOverrideAssistantId,
-      setMessages: state.setMessages,
-      clearAttachments: state.clearAttachments,
-    }))
-  );
-
-  const {
     isLoading,
     statusCode,
     statusMeta,
     resetSession,
     setSessionId,
     setGlobalLoading,
-  } = useChatSessionStore(
+  } = useChatStore(
     useShallow((state) => ({
+      config: state.config,
+      setConfig: state.setConfig,
+      agent: state.agent,
+      models: state.models,
+      agentId: state.agentId,
+      setAgent: state.setAgent,
+      setModels: state.setModels,
+      setOverrideAssistantId: state.setOverrideAssistantId,
+      clearOverrideAssistantId: state.clearOverrideAssistantId,
+      setMessages: state.setMessages,
+      clearAttachments: state.clearAttachments,
       isLoading: state.isLoading,
       statusCode: state.statusCode,
       statusMeta: state.statusMeta,
@@ -89,6 +82,13 @@ export default function HUD() {
       setGlobalLoading: state.setGlobalLoading,
     }))
   );
+
+  // 从 agent 派生 assistants 列表
+  const assistants: ChatAssistant[] = agent ? [agent] : [];
+  const setAssistants = (newAssistants: ChatAssistant[]) => {
+    if (newAssistants.length > 0) setAgent(newAssistants[0]);
+  };
+  const setActiveAssistantId = setOverrideAssistantId;
 
   const { assistants: serviceAssistants, models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
     enabled: !isImage,
