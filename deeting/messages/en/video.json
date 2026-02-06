@@ -31,6 +31,11 @@
     "queued": "Queued",
     "errorGenerate": "Failed to generate video",
     "errorRetry": "Retry",
-    "promptRequired": "Please enter a prompt to generate video"
+    "promptRequired": "Please enter a prompt to generate video",
+    "model": "Model",
+    "modelPlaceholder": "Select a model",
+    "modelLoading": "Loading models...",
+    "modelEmpty": "No video models available",
+    "modelRequired": "Please select a model first"
   }
 }

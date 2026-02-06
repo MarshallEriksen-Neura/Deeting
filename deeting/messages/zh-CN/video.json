@@ -31,6 +31,11 @@
     "queued": "排队中",
     "errorGenerate": "视频生成失败",
     "errorRetry": "重试",
-    "promptRequired": "请输入提示词以生成视频"
+    "promptRequired": "请输入提示词以生成视频",
+    "model": "模型",
+    "modelPlaceholder": "选择模型",
+    "modelLoading": "加载模型中...",
+    "modelEmpty": "暂无可用的视频模型",
+    "modelRequired": "请先选择模型"
   }
 }

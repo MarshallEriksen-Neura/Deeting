@@ -21,6 +21,7 @@ const namespaces = [
   "chat",
   "admin",
   "knowledge",
+  "video",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {
