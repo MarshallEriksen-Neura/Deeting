@@ -28,7 +28,8 @@ class AgentExecutorStep(BaseStep):
     def __init__(self, config=None):
         super().__init__(config)
         self.upstream_step = UpstreamCallStep(config)
-        self.max_turns = 5
+        # Default max_turns is 10, can be overridden by config
+        self.max_turns = getattr(config, "max_turns", 10) if config else 10
 
     def _emit_delta(self, ctx: "WorkflowContext", content: str) -> None:
         """Helper to emit text content delta to the client stream."""
@@ -67,6 +68,9 @@ class AgentExecutorStep(BaseStep):
         # Deep copy to avoid mutating the original context prematurely
         request_body = deepcopy(raw_request_body)
 
+        # Allow overriding max_turns from request body
+        max_turns = request_body.get("max_turns", self.max_turns)
+
         # Remember original stream setting
         original_stream = request_body.get("stream", False)
 
@@ -82,9 +86,9 @@ class AgentExecutorStep(BaseStep):
         turn = 0
         last_step_result = None
 
-        while turn < self.max_turns:
+        while turn < max_turns:
             turn += 1
-            logger.info(f"AgentExecutor turn {turn} for trace_id {ctx.trace_id}")
+            logger.info(f"AgentExecutor turn {turn}/{max_turns} for trace_id {ctx.trace_id}")
 
             # Update request body with current history
             request_body["messages"] = messages
@@ -313,10 +317,11 @@ class AgentExecutorStep(BaseStep):
                 logger.error(f"Remote MCP call failed: {e!s}")
                 return {"error": f"Remote MCP call failed: {e!s}"}
 
-        # 2. Check Local Plugins (Fallthrough)
-        from app.agent_plugins.core.manager import global_plugin_manager
-
-        plugin = global_plugin_manager.get_plugin_for_tool(tool_call.name)
+        # 2. Check Local Plugins (via agent_service)
+        from app.services.agent.agent_service import agent_service
+        await agent_service.initialize()
+        
+        plugin = agent_service.plugin_manager.get_plugin_for_tool(tool_call.name)
         if plugin:
             # 1. Try specific handler (handle_toolname)
             handler = getattr(plugin, f"handle_{tool_call.name}", None)

@@ -91,6 +91,11 @@ class ResponseTransformStep(BaseStep):
             # 写入转换后的响应
             if isinstance(transformed, dict):
                 transformed["trace_id"] = ctx.trace_id
+                # Override model field with the user-requested model name so
+                # the frontend displays the model the user actually selected
+                # rather than the upstream provider's internal model identifier.
+                if ctx.requested_model:
+                    transformed["model"] = ctx.requested_model
             ctx.set("response_transform", "response", transformed)
 
             if isinstance(transformed, dict):

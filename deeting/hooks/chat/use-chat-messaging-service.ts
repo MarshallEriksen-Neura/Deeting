@@ -359,8 +359,23 @@ export function useChatMessagingService() {
               const metaBlocks =
                 body?.choices?.[0]?.message?.meta_info?.blocks ??
                 body?.choices?.[0]?.delta?.meta_info?.blocks
-              if (Array.isArray(metaBlocks)) {
-                setMessageBlocks(assistantMessageId, metaBlocks as any)
+              if (Array.isArray(metaBlocks) && metaBlocks.length > 0) {
+                const currentMsg = useChatStore.getState().messages.find(
+                  (m) => m.id === assistantMessageId
+                )
+                if (currentMsg?.blocks?.length) {
+                  // Blocks were already accumulated during agent execution (streamed
+                  // tool_call / tool_result blocks). Only append non-tool blocks
+                  // (e.g. final text answer) to avoid overwriting the full history.
+                  const nonToolBlocks = (metaBlocks as any[]).filter(
+                    (b: any) => b.type !== "tool_call" && b.type !== "tool_result"
+                  )
+                  if (nonToolBlocks.length) {
+                    appendMessageBlocks(assistantMessageId, nonToolBlocks as any)
+                  }
+                } else {
+                  setMessageBlocks(assistantMessageId, metaBlocks as any)
+                }
               }
             } catch {
               // ignore

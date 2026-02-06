@@ -54,6 +54,7 @@ class StepConfig:
     retry_backoff: float = 2.0  # 重试退避倍数
     enabled: bool = True  # 是否启用
     skip_on_channels: list[str] = field(default_factory=list)  # 在这些通道跳过
+    max_turns: int = 10  # 最大迭代轮次 (仅对支持循环的步骤有效，如 agent_executor)
 
 
 class BaseStep(ABC):
