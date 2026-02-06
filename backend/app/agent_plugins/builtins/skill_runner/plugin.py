@@ -4,7 +4,6 @@ from typing import Any
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.database import AsyncSessionLocal
 from app.repositories.skill_registry_repository import SkillRegistryRepository
-from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +47,13 @@ class SkillRunnerPlugin(AgentPlugin):
         # Extract context if passed by AgentExecutor
         ctx = kwargs.pop("__context__", None)
         session_id = ctx.trace_id if ctx else "unknown_session"
+        user_id = ctx.user_id if ctx else None
 
         async with AsyncSessionLocal() as session:
+            from app.services.skill_registry.skill_runtime_executor import (
+                SkillRuntimeExecutor,
+            )
+
             repo = SkillRegistryRepository(session)
             executor = SkillRuntimeExecutor(repo)
 
@@ -59,6 +63,7 @@ class SkillRunnerPlugin(AgentPlugin):
                 result = await executor.execute(
                     skill_id=skill_id,
                     session_id=session_id,
+                    user_id=user_id,
                     inputs=kwargs,
                     intent="execution",
                 )

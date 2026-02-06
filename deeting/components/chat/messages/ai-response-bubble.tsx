@@ -18,6 +18,7 @@ import {
   resolveStageIndex 
 } from "@/components/chat/visuals/status-visuals";
 import { useTypewriter } from "@/hooks/chat/use-typewriter";
+import { TaskLiveBlock } from "@/components/chat/messages/task-live-block";
 
 interface AIResponseBubbleProps {
   parts: MessageBlock[];
@@ -371,6 +372,21 @@ const ToolResultBlock = memo<{
 }>(function ToolResultBlock({ name, callId, status, result }) {
   const title = name || callId || "tool_result";
   const isError = status === "error";
+
+  // Special Handling for System Skills (Live Tasks)
+  if (
+    !isError &&
+    name?.startsWith("skill__system.") &&
+    typeof result === "object" &&
+    result !== null &&
+    "task_id" in result
+  ) {
+    const taskId = (result as { task_id: string }).task_id;
+    if (taskId) {
+      return <TaskLiveBlock taskId={taskId} />;
+    }
+  }
+
   const content = useMemo(() => {
     if (typeof result === "string") {
       return result;

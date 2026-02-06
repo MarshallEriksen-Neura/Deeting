@@ -7,7 +7,6 @@ from app.core.database import AsyncSessionLocal
 from app.schemas.gateway import ChatCompletionRequest
 from app.schemas.tool import ToolCall, ToolDefinition
 from app.services.orchestrator.context import Channel, WorkflowContext
-from app.services.orchestrator.orchestrator import get_internal_orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +109,10 @@ class LLMService:
             )  # Internal tasks usually manage their own context
 
             # 5. Execute
+            from app.services.orchestrator.orchestrator import (
+                get_internal_orchestrator,
+            )
+
             orchestrator = get_internal_orchestrator()
             result = await orchestrator.execute(ctx)
 

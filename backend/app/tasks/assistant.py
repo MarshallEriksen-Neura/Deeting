@@ -12,6 +12,7 @@ from app.repositories.assistant_repository import (
     AssistantVersionRepository,
 )
 from app.services.providers.embedding import EmbeddingService
+from app.services.notifications.task_notification import push_task_progress
 from app.storage.qdrant_kb_store import (
     delete_points,
     ensure_collection_vector_size,
@@ -141,4 +142,65 @@ def remove_assistant_from_qdrant(assistant_id: str) -> str:
         return asyncio.run(_run_remove_assistant(uuid.UUID(assistant_id)))
     except Exception as exc:
         logger.exception("assistant_remove_from_qdrant_failed: %s", exc)
+        return "failed"
+
+
+async def _run_assistant_onboarding(url: str, user_id: str | None = None) -> dict:
+    from app.repositories.knowledge_repository import KnowledgeRepository
+    from app.services.assistant.assistant_ingestion_service import (
+        AssistantIngestionService,
+    )
+    from app.services.assistant.assistant_service import AssistantService
+    from app.services.knowledge.crawler_knowledge_service import (
+        CrawlerKnowledgeService,
+    )
+
+    job_id = str(uuid.uuid4())[:8]
+    await push_task_progress(
+        user_id, job_id, "initialization", "正在初始化助手性格分析引擎...", percentage=10
+    )
+
+    async with AsyncSessionLocal() as session:
+        knowledge_repo = KnowledgeRepository(session)
+        assistant_service = AssistantService(
+            AssistantRepository(session), AssistantVersionRepository(session)
+        )
+        crawler_service = CrawlerKnowledgeService(knowledge_repo)
+        ingestion_service = AssistantIngestionService(assistant_service, knowledge_repo)
+
+        # 1. Crawl (shallow crawl for onboarding)
+        await push_task_progress(
+            user_id, job_id, "crawling", f"正在抓取网页内容：{url}...", percentage=30
+        )
+        crawl_result = await crawler_service.ingest_deep_dive(
+            seed_url=url, max_depth=1, max_pages=1, artifact_type="assistant"
+        )
+
+        review_ids = crawl_result.get("review_ids", [])
+        if not review_ids:
+            await push_task_progress(
+                user_id, job_id, "error", "网页抓取失败，请检查链接是否有效。", status="failed"
+            )
+            raise ValueError(f"Failed to crawl content from {url}")
+
+        # 2. Refine & Create (Use the first artifact)
+        await push_task_progress(
+            user_id, job_id, "refining", "正在解析网页中的性格特征与指令...", percentage=60
+        )
+        artifact_id = uuid.UUID(review_ids[0])
+        result = await ingestion_service.refine_and_create_assistant(artifact_id)
+        await session.commit()
+
+        await push_task_progress(
+            user_id, job_id, "completed", f"助手 '{result.get('name')}' 已成功创建并发布！", status="completed", percentage=100
+        )
+        return result
+
+
+@celery_app.task(name="assistant.run_onboarding")
+def run_assistant_onboarding(url: str, user_id: str | None = None) -> dict | str:
+    try:
+        return asyncio.run(_run_assistant_onboarding(url, user_id=user_id))
+    except Exception as exc:
+        logger.exception("assistant_run_onboarding_failed: %s", exc)
         return "failed"

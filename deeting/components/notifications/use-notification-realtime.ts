@@ -85,6 +85,12 @@ function safeParseMessage(raw: string): NotificationMessage | null {
   }
 }
 
+let taskProgressCallback: ((task: any) => void) | null = null
+
+export function setTaskProgressCallback(callback: (task: any) => void) {
+  taskProgressCallback = callback
+}
+
 export function useNotificationRealtime(options: RealtimeOptions = {}) {
   const { enabled = true } = options
   const {
@@ -209,9 +215,18 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
 
       if (message.type === "notification") {
         const data = message.data as NotificationPushPayload | undefined
-        const item = data?.item ? mapBackendItem(data.item) : null
-        if (item) {
-          upsert(item, data?.unread_count)
+        const item = data?.item
+        
+        // Check for Live Task Updates
+        if (item?.payload?.is_live_block && taskProgressCallback) {
+          taskProgressCallback(item.payload)
+          // Don't show these as system notifications to avoid noise
+          return 
+        }
+
+        const mappedItem = item ? mapBackendItem(item) : null
+        if (mappedItem) {
+          upsert(mappedItem, data?.unread_count)
         } else if (typeof data?.unread_count === "number") {
           setUnreadCount(data.unread_count)
         }

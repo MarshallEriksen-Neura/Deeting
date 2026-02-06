@@ -6,14 +6,6 @@ import httpx
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
-from app.repositories.assistant_repository import (
-    AssistantRepository,
-    AssistantVersionRepository,
-)
-from app.repositories.knowledge_repository import KnowledgeRepository
-from app.services.assistant.assistant_ingestion_service import AssistantIngestionService
-from app.services.assistant.assistant_service import AssistantService
-from app.services.knowledge.crawler_knowledge_service import CrawlerKnowledgeService
 
 
 class CrawlerPlugin(AgentPlugin):
@@ -171,6 +163,11 @@ class CrawlerPlugin(AgentPlugin):
         Tool Handler: Deep Dive Ingestion (Stateful).
         Calls internal Service to ensure data persistence.
         """
+        from app.repositories.knowledge_repository import KnowledgeRepository
+        from app.services.knowledge.crawler_knowledge_service import (
+            CrawlerKnowledgeService,
+        )
+
         logger = self.context.get_logger()
         logger.info(f"Starting Deep Dive Ingestion for: {url}")
 
@@ -202,6 +199,16 @@ class CrawlerPlugin(AgentPlugin):
         """
         Tool Handler: Refine Artifact -> Create Assistant -> Sync Qdrant.
         """
+        from app.repositories.assistant_repository import (
+            AssistantRepository,
+            AssistantVersionRepository,
+        )
+        from app.repositories.knowledge_repository import KnowledgeRepository
+        from app.services.assistant.assistant_ingestion_service import (
+            AssistantIngestionService,
+        )
+        from app.services.assistant.assistant_service import AssistantService
+
         async with AsyncSessionLocal() as session:
             knowledge_repo = KnowledgeRepository(session)
             assistant_service = AssistantService(

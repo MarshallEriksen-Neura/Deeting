@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 
-from app.services.providers.llm import llm_service
 from app.services.skill_registry.evidence_pack import EvidencePack
 
 logger = logging.getLogger(__name__)
@@ -11,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 class SkillManifestGenerator:
     async def generate(self, evidence: EvidencePack, runtime: str) -> dict:
+        from app.services.providers.llm import llm_service
+
         prompt = _build_prompt(evidence, runtime)
         response = await llm_service.chat_completion(
             messages=[{"role": "user", "content": prompt}],

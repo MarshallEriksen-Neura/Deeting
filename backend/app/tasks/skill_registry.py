@@ -4,16 +4,15 @@ import asyncio
 import logging
 import uuid
 
+from sqlalchemy import select
+
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.services.providers.embedding import EmbeddingService
+from app.services.notifications.task_notification import push_task_progress
 from app.services.skill_registry.dry_run_service import SkillDryRunService
-from app.services.skill_registry.manifest_generator import SkillManifestGenerator
-from app.services.skill_registry.parsers.node_parser import NodeRepoParser
-from app.services.skill_registry.parsers.python_parser import PythonRepoParser
-from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
 from app.services.skill_registry.skill_metrics_service import SkillMetricsService
 from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 from app.services.skill_registry.skill_self_heal_service import SkillSelfHealService
@@ -165,6 +164,36 @@ async def _run_sync_skill(skill_id: str) -> str:
         return "upserted"
 
 
+async def _run_sync_all_active_skills() -> int:
+    if not qdrant_is_configured():
+        return 0
+
+    from app.models.skill_registry import SkillRegistry
+
+    async with AsyncSessionLocal() as session:
+        stmt = select(SkillRegistry).where(SkillRegistry.status == "active")
+        result = await session.execute(stmt)
+        skills = result.scalars().all()
+        count = 0
+        for skill in skills:
+            try:
+                res = await _run_sync_skill(skill.id)
+                if res == "upserted":
+                    count += 1
+            except Exception as e:
+                logger.warning(f"Failed to sync skill {skill.id}: {e}")
+        return count
+
+
+@celery_app.task(name="skill_registry.sync_all_active")
+def sync_all_active_skills_task() -> int:
+    try:
+        return asyncio.run(_run_sync_all_active_skills())
+    except Exception as exc:
+        logger.exception("skill_registry_sync_all_active_failed: %s", exc)
+        return 0
+
+
 @celery_app.task(name="skill_registry.sync_to_qdrant")
 def sync_skill_to_qdrant(skill_id: str) -> str:
     try:
@@ -179,7 +208,18 @@ async def _run_repo_ingestion(
     revision: str = "main",
     skill_id: str | None = None,
     runtime_hint: str | None = None,
+    user_id: str | None = None,
 ) -> dict:
+    from app.services.skill_registry.manifest_generator import SkillManifestGenerator
+    from app.services.skill_registry.parsers.node_parser import NodeRepoParser
+    from app.services.skill_registry.parsers.python_parser import PythonRepoParser
+    from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
+
+    job_id = str(uuid.uuid4())[:8]
+    await push_task_progress(
+        user_id, job_id, "initialization", "正在初始化技能解析引擎...", percentage=10
+    )
+
     async with AsyncSessionLocal() as session:
         repo = SkillRegistryRepository(session)
         service = RepoIngestionService(
@@ -187,12 +227,21 @@ async def _run_repo_ingestion(
             manifest_generator=SkillManifestGenerator(),
             parsers=[PythonRepoParser(), NodeRepoParser()],
         )
-        return await service.ingest_repo(
+
+        await push_task_progress(
+            user_id, job_id, "ingesting", f"正在从 Git 仓库 {repo_url} 获取源码...", percentage=40
+        )
+        result = await service.ingest_repo(
             repo_url=repo_url,
             revision=revision,
             skill_id=skill_id,
             runtime_hint=runtime_hint,
         )
+
+        await push_task_progress(
+            user_id, job_id, "completed", f"技能 '{result.get('skill_id')}' 已成功接入并注册！", status="completed", percentage=100
+        )
+        return result
 
 
 @celery_app.task(name="skill_registry.ingest_repo")
@@ -201,6 +250,7 @@ def ingest_skill_repo(
     revision: str = "main",
     skill_id: str | None = None,
     runtime_hint: str | None = None,
+    user_id: str | None = None,
 ) -> dict | str:
     try:
         result = asyncio.run(
@@ -209,6 +259,7 @@ def ingest_skill_repo(
                 revision=revision,
                 skill_id=skill_id,
                 runtime_hint=runtime_hint,
+                user_id=user_id,
             )
         )
         if isinstance(result, dict):

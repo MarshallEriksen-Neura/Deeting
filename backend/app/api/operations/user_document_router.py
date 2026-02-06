@@ -4,8 +4,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps.db import get_session
-from app.api.deps.user import get_current_user
+from app.core.database import get_db
+from app.deps.auth import get_current_user
 from app.models.user import User
 from app.services.knowledge.user_document_service import UserDocumentService
 
@@ -15,7 +15,7 @@ router = APIRouter()
 async def upload_document(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     上传用户文档 (PDF/Docx/Txt) 并触发 RAG 索引。
@@ -38,7 +38,7 @@ async def upload_document(
 @router.get("/", status_code=status.HTTP_200_OK)
 async def list_documents(
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     获取当前用户的所有文档状态。
@@ -61,7 +61,7 @@ async def list_documents(
 async def delete_document(
     doc_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     删除文档 (包含数据库记录和向量库索引)。
@@ -78,7 +78,7 @@ async def search_documents(
     limit: int = 5,
     doc_ids: list[uuid.UUID] | None = None,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     测试检索接口 (调试用)。

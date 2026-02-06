@@ -7,15 +7,12 @@ from typing import Any
 
 from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.schemas.skill_self_heal import SkillSelfHealPatch, SkillSelfHealResult
-from app.services.providers.llm import llm_service
-
-
 class SkillSelfHealService:
     def __init__(
         self, repo: SkillRegistryRepository, llm_client=None, dry_run_service=None
     ):
         self.repo = repo
-        self.llm_client = llm_client or llm_service
+        self.llm_client = llm_client
         self.dry_run_service = dry_run_service
 
     async def self_heal(self, skill_id: str) -> SkillSelfHealResult:
@@ -48,8 +45,14 @@ class SkillSelfHealService:
     async def _request_patch(
         self, skill_id: str, manifest: dict[str, Any]
     ) -> dict[str, Any]:
+        llm_client = self.llm_client
+        if llm_client is None:
+            from app.services.providers.llm import llm_service
+
+            llm_client = llm_service
+
         prompt = _build_prompt(skill_id, manifest)
-        response = await self.llm_client.chat_completion(
+        response = await llm_client.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
         )

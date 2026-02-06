@@ -4,12 +4,13 @@ import uuid
 
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
-from app.services.knowledge.spec_knowledge_service import SpecKnowledgeService
 
 logger = logging.getLogger(__name__)
 
 
 async def _run_evaluation(candidate_id: uuid.UUID) -> str:
+    from app.services.knowledge.spec_knowledge_service import SpecKnowledgeService
+
     async with AsyncSessionLocal() as session:
         service = SpecKnowledgeService(session)
         result = await service.evaluate_candidate(candidate_id)
@@ -28,6 +29,8 @@ def evaluate_candidate(candidate_id: str) -> str:
 
 
 async def _run_auto_promote(candidate_id: uuid.UUID) -> bool:
+    from app.services.knowledge.spec_knowledge_service import SpecKnowledgeService
+
     async with AsyncSessionLocal() as session:
         service = SpecKnowledgeService(session)
         return await service.promote_candidate(candidate_id, auto=True)

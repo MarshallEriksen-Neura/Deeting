@@ -24,7 +24,10 @@ from app.storage.qdrant_kb_store import (
     ensure_collection_vector_size,
 )
 from app.tasks.assistant import ASSISTANT_COLLECTION_NAME
-from app.tasks.skill_registry import SKILL_COLLECTION_NAME
+from app.tasks.skill_registry import (
+    SKILL_COLLECTION_NAME,
+    _run_sync_all_active_skills,
+)
 
 
 async def _list_collections() -> list[str]:
@@ -143,6 +146,11 @@ async def main():
                 vector_size=1536,
             )
             logger.info("Ensured skill registry collection: {}", SKILL_COLLECTION_NAME)
+
+            # Sync active skills (System Skills) to Qdrant
+            synced_skills = await _run_sync_all_active_skills()
+            logger.info("Synced {} active skills to Qdrant.", synced_skills)
+
             await _self_check()
         logger.info("Successfully initialized collections.")
     except Exception as e:

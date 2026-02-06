@@ -12,6 +12,7 @@ from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistry
 from app.agent_plugins.core.manager import PluginManager
 from app.core.celery_app import celery_app
 from app.schemas.tool import ToolDefinition
+from app.services.notifications.task_notification import push_task_progress
 
 logger = logging.getLogger(__name__)
 
@@ -132,12 +133,17 @@ async def _run_ingestion_workflow(
     target_url: str,
     instruction: str,
     *,
+    user_id: str | None = None,
     model_hint: str | None = None,
     plugin_classes: list[type] | None = None,
     tool_plugin_names: list[str] | None = None,
 ) -> str:
     job_id = str(uuid.uuid4())[:8]
     logger.info("[Worker-%s] Started ingestion for: %s", job_id, target_url)
+
+    await push_task_progress(
+        user_id, job_id, "initialization", "正在初始化自动化接入引擎...", percentage=10
+    )
 
     manager = PluginManager()
     for plugin_cls in plugin_classes or []:
@@ -147,14 +153,26 @@ async def _run_ingestion_workflow(
     try:
         crawler = manager.get_plugin("core.tools.crawler")
         if not crawler:
+            await push_task_progress(
+                user_id, job_id, "error", "任务失败：爬虫插件不可用", status="failed"
+            )
             return "Job failed: Crawler plugin not available."
 
         logger.info("[Worker-%s] Crawling...", job_id)
+        await push_task_progress(
+            user_id, job_id, "crawling", f"正在从 {target_url} 抓取内容...", percentage=30
+        )
         crawl_result = await crawler.handle_fetch_web_content(url=target_url)
 
         if crawl_result.get("error"):
+            await push_task_progress(
+                user_id, job_id, "error", f"爬取失败：{crawl_result['error']}", status="failed"
+            )
             return f"Job failed: Crawl error - {crawl_result['error']}"
 
+        await push_task_progress(
+            user_id, job_id, "analyzing", "抓取成功，正在使用 AI 分析文档结构...", percentage=60
+        )
         content = crawl_result.get("markdown", "")[:_CONTENT_LIMIT]
 
         tool_plugins = []
@@ -185,7 +203,7 @@ Extract the relevant information from the context and use the available tools to
 
         actions_taken: list[str] = []
         selected_model = model_hint
-        for _ in range(_MAX_AGENT_STEPS):
+        for i in range(_MAX_AGENT_STEPS):
             try:
                 response, selected_model = await _chat_completion_with_fallback(
                     messages=messages,
@@ -195,6 +213,9 @@ Extract the relevant information from the context and use the available tools to
 
                 if isinstance(response, str):
                     logger.info("[Worker-%s] Finished: %s", job_id, response)
+                    await push_task_progress(
+                        user_id, job_id, "completed", "接入任务圆满完成！", status="completed", percentage=100
+                    )
                     return f"Job {job_id} Completed: {response}"
 
                 if isinstance(response, list):
@@ -219,6 +240,9 @@ Extract the relevant information from the context and use the available tools to
                         handler = tool_map.get(tc.name)
                         if handler:
                             logger.info("[Worker-%s] Executing %s...", job_id, tc.name)
+                            await push_task_progress(
+                                user_id, job_id, "executing", f"正在执行动作：{tc.name}...", percentage=70 + (i * 5)
+                            )
                             res = await _invoke_tool(handler, tc.arguments)
                             actions_taken.append(f"Called {tc.name}: {res}")
                             res_str = str(res)
@@ -230,15 +254,21 @@ Extract the relevant information from the context and use the available tools to
                         )
             except Exception as exc:
                 logger.error("[Worker-%s] LLM Error: %s", job_id, exc)
+                await push_task_progress(
+                    user_id, job_id, "error", f"AI 执行出错：{exc!s}", status="failed"
+                )
                 return f"Job failed: {exc}"
 
+        await push_task_progress(
+            user_id, job_id, "completed", "任务执行结束。", status="completed", percentage=100
+        )
         return f"Job finished. Actions: {'; '.join(actions_taken)}"
     finally:
         await manager.deactivate_all()
 
 
 @celery_app.task(queue="agent_tasks", name="app.tasks.agent.run_auto_ingestion_job")
-def run_auto_ingestion_job(target_url: str, instruction: str):
+def run_auto_ingestion_job(target_url: str, instruction: str, user_id: str | None = None):
     """
     Background Worker:
     1. Crawls a URL.
@@ -249,6 +279,7 @@ def run_auto_ingestion_job(target_url: str, instruction: str):
         _run_ingestion_workflow(
             target_url,
             instruction,
+            user_id=user_id,
             plugin_classes=[CrawlerPlugin, DatabasePlugin],
             tool_plugin_names=["system/database_manager"],
         )
@@ -261,6 +292,7 @@ def run_discovery_task(
     capability: str = "chat",
     model_hint: str | None = None,
     provider_name_hint: str | None = None,
+    user_id: str | None = None,
 ):
     instruction = _build_discovery_instruction(
         capability=capability, provider_name_hint=provider_name_hint
@@ -269,6 +301,7 @@ def run_discovery_task(
         _run_ingestion_workflow(
             target_url,
             instruction,
+            user_id=user_id,
             model_hint=model_hint,
             plugin_classes=[CrawlerPlugin, ProviderRegistryPlugin, DatabasePlugin],
             tool_plugin_names=["core.registry.provider", "system/database_manager"],

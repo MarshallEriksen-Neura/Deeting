@@ -4,7 +4,6 @@ Admin API 路由包
 
 from app.api.v1.admin.assistant_review_route import router as assistant_reviews_router
 from app.api.v1.admin.assistant_route import router as assistants_router
-from app.api.v1.admin.discovery_route import router as discovery_router
 from app.api.v1.admin.notification_route import router as notification_router
 from app.api.v1.admin.provider_credential_route import (
     router as provider_credential_router,
@@ -27,7 +26,6 @@ __all__ = [
     "api_keys_router",
     "assistant_reviews_router",
     "assistants_router",
-    "discovery_router",
     "notification_router",
     "provider_credential_router",
     "provider_instance_router",

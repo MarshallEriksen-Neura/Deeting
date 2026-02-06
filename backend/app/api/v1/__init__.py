@@ -6,7 +6,6 @@ from app.api.v1.admin import agent_router as admin_agent_router
 from app.api.v1.admin import api_keys_router as admin_api_keys_router
 from app.api.v1.admin import assistant_reviews_router as admin_assistant_reviews_router
 from app.api.v1.admin import assistants_router as admin_assistants_router
-from app.api.v1.admin import discovery_router as admin_discovery_router
 from app.api.v1.admin import notification_router as admin_notification_router
 from app.api.v1.admin import (
     provider_credential_router as admin_provider_credential_router,
@@ -65,7 +64,6 @@ __all__ = [
     "admin_api_keys_router",
     "admin_assistant_reviews_router",
     "admin_assistants_router",
-    "admin_discovery_router",
     "admin_notification_router",
     "admin_provider_credential_router",
     "admin_provider_instance_router",

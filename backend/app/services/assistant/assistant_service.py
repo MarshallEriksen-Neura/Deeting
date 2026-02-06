@@ -22,7 +22,6 @@ from app.schemas.assistant import (
 from app.services.assistant.assistant_state import AssistantStateMachine
 from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.services.search import get_search_backend
-from app.tasks.assistant import remove_assistant_from_qdrant, sync_assistant_to_qdrant
 from app.tasks.search_index import delete_assistant_task, upsert_assistant_task
 from app.utils.time_utils import Datetime
 
@@ -133,6 +132,8 @@ class AssistantService:
             },
         )
         if self._is_indexable(assistant.visibility, assistant.status):
+            from app.tasks.assistant import sync_assistant_to_qdrant
+
             sync_assistant_to_qdrant.delay(str(assistant.id))
             upsert_assistant_task.delay(str(assistant.id))
         return assistant
@@ -214,6 +215,8 @@ class AssistantService:
             },
         )
         if self._is_indexable(assistant.visibility, assistant.status):
+            from app.tasks.assistant import sync_assistant_to_qdrant
+
             sync_assistant_to_qdrant.delay(str(assistant.id))
             upsert_assistant_task.delay(str(assistant.id))
         return assistant
@@ -262,6 +265,8 @@ class AssistantService:
             and assistant.current_version_id == version_id
             and self._is_indexable(assistant.visibility, assistant.status)
         ):
+            from app.tasks.assistant import sync_assistant_to_qdrant
+
             sync_assistant_to_qdrant.delay(str(assistant.id))
             upsert_assistant_task.delay(str(assistant.id))
         return version
@@ -271,6 +276,8 @@ class AssistantService:
         if not assistant:
             return
         if self._is_indexable(assistant.visibility, assistant.status):
+            from app.tasks.assistant import remove_assistant_from_qdrant
+
             remove_assistant_from_qdrant.delay(str(assistant.id))
             delete_assistant_task.delay(str(assistant.id))
         else:
@@ -354,6 +361,8 @@ class AssistantService:
     ) -> None:
         is_indexable = self._is_indexable(assistant.visibility, assistant.status)
         if was_indexable and not is_indexable:
+            from app.tasks.assistant import remove_assistant_from_qdrant
+
             remove_assistant_from_qdrant.delay(str(assistant.id))
             delete_assistant_task.delay(str(assistant.id))
             return
@@ -365,5 +374,7 @@ class AssistantService:
             or payload.summary is not None
             or payload.current_version_id is not None
         ):
+            from app.tasks.assistant import sync_assistant_to_qdrant
+
             sync_assistant_to_qdrant.delay(str(assistant.id))
             upsert_assistant_task.delay(str(assistant.id))
