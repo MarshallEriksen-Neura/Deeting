@@ -8,6 +8,7 @@ import type { ModelInfo } from "@/lib/api/models"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { fetchAssistantInstalls, type AssistantInstallItem } from "@/lib/api/assistants"
+import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 // ============== 类型定义 ==============
 
@@ -145,6 +146,8 @@ interface ChatStore {
   setMessages: (messages: Message[]) => void
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
   updateMessage: (id: string, content: string) => void
+  setMessageBlocks: (id: string, blocks: MessageBlock[]) => void
+  appendMessageBlocks: (id: string, blocks: MessageBlock[]) => void
   clearMessages: () => void
   setInput: (input: string) => void
   setAttachments: (attachments: ChatImageAttachment[]) => void
@@ -397,7 +400,127 @@ export const useChatStore = create<ChatStore>()(
 
       updateMessage: (id, content) =>
         set((state) => ({
-          messages: state.messages.map((msg) => (msg.id === id ? { ...msg, content } : msg)),
+          messages: state.messages.map((msg) => {
+            if (msg.id !== id) return msg
+            // In this dev-only mode we treat blocks as the primary rendering model.
+            // Keep message.content for copy/search, but always mirror it into a trailing text block.
+            if (msg.role !== "assistant") return { ...msg, content }
+
+            const preserved = (msg.blocks || []).filter((b) => b?.type !== "text")
+            const trimmed = (content || "").trim()
+            const textBlock: MessageBlock | null = trimmed
+              ? {
+                  id: `${msg.id}-text`,
+                  type: "text",
+                  content,
+                  streamState: "streaming",
+                  displayMode: "bubble",
+                }
+              : null
+
+            return {
+              ...msg,
+              content,
+              blocks: textBlock ? [...preserved, textBlock] : preserved,
+            }
+          }),
+        })),
+
+      setMessageBlocks: (id, blocks) =>
+        set((state) => ({
+          messages: state.messages.map((msg) => {
+            if (msg.id !== id) return msg
+            const incoming = Array.isArray(blocks) ? blocks : []
+            const normalized: MessageBlock[] = incoming
+              .filter((b): b is MessageBlock => Boolean(b && typeof b === "object" && "type" in b))
+              .map((b, index) => ({
+                ...b,
+                id: (b as any).id || `${msg.id}-block-${index}`,
+                streamState: (b as any).streamState || "completed",
+                displayMode: (b as any).displayMode || "bubble",
+              }))
+
+            // Best-effort: mark tool_call status based on tool_result blocks.
+            for (const block of normalized) {
+              if (block.type !== "tool_result") continue
+              const callId = (block as any).callId
+              if (typeof callId !== "string" || !callId) continue
+              const idx = normalized.findIndex(
+                (b) => b.type === "tool_call" && (b as any).callId === callId
+              )
+              if (idx >= 0) {
+                const toolCall = normalized[idx] as any
+                normalized[idx] = {
+                  ...toolCall,
+                  status: block.status === "error" ? "error" : "success",
+                }
+              }
+            }
+            return { ...msg, blocks: normalized }
+          }),
+        })),
+
+      appendMessageBlocks: (id, blocks) =>
+        set((state) => ({
+          messages: state.messages.map((msg) => {
+            if (msg.id !== id) return msg
+            const existing = msg.blocks ? [...msg.blocks] : []
+            const incoming = Array.isArray(blocks) ? blocks : []
+
+            const normalizedIncoming: MessageBlock[] = incoming
+              .filter((b): b is MessageBlock => Boolean(b && typeof b === "object" && "type" in b))
+              .map((b, index) => ({
+                ...b,
+                id: (b as any).id || `${msg.id}-block-${existing.length + index}`,
+                streamState: (b as any).streamState || "completed",
+                displayMode: (b as any).displayMode || "bubble",
+              }))
+
+            const next = existing
+            for (const block of normalizedIncoming) {
+              if (block.type === "text") {
+                const last = next[next.length - 1]
+                if (last?.type === "text") {
+                  next[next.length - 1] = { ...last, content: `${last.content}${block.content}` }
+                } else {
+                  next.push(block)
+                }
+                continue
+              }
+
+              if (block.type === "thought") {
+                const last = next[next.length - 1]
+                if (last?.type === "thought") {
+                  next[next.length - 1] = { ...last, content: `${last.content}${block.content}` }
+                } else {
+                  next.push(block)
+                }
+                continue
+              }
+
+              if (block.type === "tool_result") {
+                const callId = (block as any).callId
+                if (typeof callId === "string" && callId) {
+                  const idx = next.findIndex(
+                    (b) => b.type === "tool_call" && (b as any).callId === callId
+                  )
+                  if (idx >= 0) {
+                    const toolCall = next[idx] as any
+                    next[idx] = {
+                      ...toolCall,
+                      status: block.status === "error" ? "error" : "success",
+                    }
+                  }
+                }
+                next.push(block)
+                continue
+              }
+
+              next.push(block)
+            }
+
+            return { ...msg, blocks: next }
+          }),
         })),
 
       clearMessages: () => set({ messages: [] }),

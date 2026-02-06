@@ -97,6 +97,7 @@ from app.services.orchestrator.orchestrator import (
     get_internal_orchestrator,
 )
 from app.services.orchestrator.registry import step_registry
+from app.services.providers.blocks_transformer import build_normalized_blocks
 from app.services.system import CancelService
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
@@ -239,6 +240,7 @@ def _build_meta_info(message: dict[str, Any], content: Any) -> dict[str, Any] | 
         "image_url",
         "audio",
         "modalities",
+        "reasoning_content",
     ):
         if message.get(key) is not None:
             extras[key] = message.get(key)
@@ -247,55 +249,6 @@ def _build_meta_info(message: dict[str, Any], content: Any) -> dict[str, Any] | 
     if extras:
         meta_info = {**meta_info, **extras}
     return meta_info or None
-
-
-def _build_blocks(
-    *,
-    content_text: str | None,
-    tool_calls: Any,
-) -> list[dict[str, Any]] | None:
-    blocks: list[dict[str, Any]] = []
-    if content_text:
-        think_regex = re.compile(r"<think>([\\s\\S]*?)</think>", re.IGNORECASE)
-        last_index = 0
-        for match in think_regex.finditer(content_text):
-            if match.start() > last_index:
-                text = content_text[last_index : match.start()]
-                if text.strip():
-                    blocks.append({"type": "text", "content": text})
-            thought = match.group(1).strip()
-            if thought:
-                blocks.append({"type": "thought", "content": thought})
-            last_index = match.end()
-        if last_index < len(content_text):
-            tail = content_text[last_index:]
-            if tail.strip():
-                blocks.append({"type": "text", "content": tail})
-        if not blocks and content_text.strip():
-            blocks.append({"type": "text", "content": content_text})
-
-    if isinstance(tool_calls, list):
-        for call in tool_calls:
-            if not isinstance(call, dict):
-                continue
-            function = call.get("function") or {}
-            name = function.get("name") or call.get("name")
-            args = function.get("arguments") or call.get("arguments")
-            if args is None:
-                args_str = None
-            elif isinstance(args, str):
-                args_str = args
-            else:
-                args_str = json.dumps(args, ensure_ascii=False)
-            blocks.append(
-                {
-                    "type": "tool_call",
-                    "toolName": name,
-                    "toolArgs": args_str,
-                }
-            )
-
-    return blocks or None
 
 
 def _build_tool_result_blocks(tool_calls_log: Any) -> list[dict[str, Any]]:
@@ -346,14 +299,16 @@ def _append_tool_result_blocks(
     if isinstance(existing_blocks, list):
         base_blocks = list(existing_blocks)
     else:
-        base_blocks = _build_blocks(
-            content_text=(
+        # 使用统一的构建逻辑
+        base_blocks = build_normalized_blocks(
+            content=(
                 message.get("content")
                 if isinstance(message.get("content"), str)
                 else None
             ),
+            reasoning=message.get("reasoning_content"),
             tool_calls=message.get("tool_calls"),
-        ) or []
+        )
 
     meta_info["blocks"] = [*base_blocks, *result_blocks]
     message["meta_info"] = meta_info
@@ -368,12 +323,17 @@ def _prepare_messages(
         content = msg.get("content")
         content_text = content if isinstance(content, str) else None
         content_for_tokens = _content_for_tokens(content)
+        reasoning_text = msg.get("reasoning_content")
         token_est = msg.get("token_estimate")
         meta_info = _build_meta_info(msg, content)
-        blocks = _build_blocks(
-            content_text=content_text,
+        
+        # 使用统一的构建逻辑
+        blocks = build_normalized_blocks(
+            content=content_text,
+            reasoning=reasoning_text if isinstance(reasoning_text, str) else None,
             tool_calls=msg.get("tool_calls"),
         )
+        
         if blocks and not (meta_info or {}).get("blocks"):
             meta_info = {**(meta_info or {}), "blocks": blocks}
         normalized = {
@@ -394,6 +354,7 @@ def _prepare_messages(
 async def _append_stream_conversation(
     ctx: WorkflowContext,
     assistant_text: str | None,
+    reasoning_text: str | None = None,
 ) -> None:
     if ctx.capability != "chat" or ctx.is_external:
         return
@@ -416,7 +377,12 @@ async def _append_stream_conversation(
     user_messages: list[dict[str, Any]] = req.get("messages", []) or []
     assistant_id = req.get("assistant_id")
     assistant_msg = (
-        {"role": "assistant", "content": assistant_text} if assistant_text else None
+        {
+            "role": "assistant", 
+            "content": assistant_text,
+            "reasoning_content": reasoning_text,
+        } 
+        if (assistant_text or reasoning_text) else None
     )
     if assistant_msg:
         _append_tool_result_blocks(
@@ -605,7 +571,11 @@ async def _stream_internal_callback(
     accumulator: StreamTokenAccumulator,
 ) -> None:
     await _stream_billing_callback(ctx, accumulator)
-    await _append_stream_conversation(ctx, accumulator.assistant_text)
+    await _append_stream_conversation(
+        ctx,
+        assistant_text=accumulator.assistant_text,
+        reasoning_text=accumulator.reasoning_text,
+    )
 
 
 @router.get(

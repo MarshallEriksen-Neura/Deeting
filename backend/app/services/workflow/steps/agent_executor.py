@@ -38,6 +38,24 @@ class AgentExecutorStep(BaseStep):
         payload = {"choices": [{"index": 0, "delta": {"content": content}}]}
         ctx.status_emitter(payload)
 
+    def _emit_blocks(self, ctx: "WorkflowContext", blocks: list[dict[str, Any]]) -> None:
+        """
+        Emit structured blocks to the client stream.
+
+        NOTE: This is the preferred UI contract in dev mode; the frontend can render blocks
+        directly without parsing legacy tags like <tool_code> / <think>.
+        """
+        if not ctx.status_emitter or not blocks:
+            return
+        ctx.status_emitter(
+            {
+                "type": "blocks",
+                "blocks": blocks,
+                "trace_id": ctx.trace_id,
+                "timestamp": ctx.created_at.isoformat(),
+            }
+        )
+
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         # 1. Get initial state
         raw_request_body = ctx.get("template_render", "request_body")
@@ -127,8 +145,18 @@ class AgentExecutorStep(BaseStep):
                 )
 
                 # Emit Tool Block (Persistent UI)
-                tool_block = f'\n<tool_code name="{tc.name}" status="running">{args_str}</tool_code>\n'
-                self._emit_delta(ctx, tool_block)
+                self._emit_blocks(
+                    ctx,
+                    [
+                        {
+                            "type": "tool_call",
+                            "callId": tc.id,
+                            "toolName": tc.name,
+                            "toolArgs": args_str,
+                            "status": "running",
+                        }
+                    ],
+                )
 
                 # Find and execute tool
                 result = await self._dispatch_tool(ctx, tc, user_mcp_tool_map)
@@ -142,11 +170,6 @@ class AgentExecutorStep(BaseStep):
                 # Format result once for both persistence and UI streaming
                 formatted_result = self._format_tool_result(result)
                 
-                # Update Tool Block status if failed
-                if not tool_success:
-                    error_msg = f"\n> **Tool Error ({tc.name}):** {tool_error}\n"
-                    self._emit_delta(ctx, error_msg)
-
                 tool_calls_log = ctx.get("execution", "tool_calls") or []
                 if isinstance(tool_calls_log, list):
                     tool_calls_log.append(
@@ -160,14 +183,24 @@ class AgentExecutorStep(BaseStep):
                     )
                     ctx.set("execution", "tool_calls", tool_calls_log)
 
-                # Emit Result (Persistent UI)
+                # Emit Tool Result (Persistent UI)
                 result_preview = formatted_result
                 if len(result_preview) > 2000:
                     result_preview = result_preview[:2000] + "... (truncated)"
-
-                if tool_success:
-                    output_block = f"\n> **Tool Output:**\n> {result_preview}\n\n"
-                    self._emit_delta(ctx, output_block)
+                self._emit_blocks(
+                    ctx,
+                    [
+                        {
+                            "type": "tool_result",
+                            "callId": tc.id,
+                            "toolName": tc.name,
+                            "status": "error" if not tool_success else "success",
+                            "result": (
+                                tool_error if not tool_success and tool_error else result_preview
+                            ),
+                        }
+                    ],
+                )
 
                 # 3. Add Tool result to history
                 messages.append(

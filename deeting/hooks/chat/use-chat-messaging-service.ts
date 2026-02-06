@@ -122,6 +122,8 @@ export function useChatMessagingService() {
     clearAttachments,
     setMessages,
     updateMessage,
+    setMessageBlocks,
+    appendMessageBlocks,
     sessionId,
     setSessionId,
     setIsLoading,
@@ -313,6 +315,7 @@ export function useChatMessagingService() {
                 state?: string | null
                 code?: string | null
                 meta?: unknown
+                blocks?: unknown
                 message?: string
                 error_code?: string
               }
@@ -339,6 +342,28 @@ export function useChatMessagingService() {
                 setErrorMessage(payload.error_code ? `${payload.error_code}: ${message}` : message)
                 return
               }
+              if (payload.type === "blocks") {
+                const blocks = (payload as any).blocks
+                if (Array.isArray(blocks)) {
+                  // blocks are the primary rendering model (dev mode: no legacy parsing)
+                  appendMessageBlocks(assistantMessageId, blocks as any)
+                }
+                return
+              }
+            }
+
+            // Non-status payloads might include a final response body. If it contains
+            // structured blocks, prefer them as the authoritative message rendering.
+            try {
+              const body = data as any
+              const metaBlocks =
+                body?.choices?.[0]?.message?.meta_info?.blocks ??
+                body?.choices?.[0]?.delta?.meta_info?.blocks
+              if (Array.isArray(metaBlocks)) {
+                setMessageBlocks(assistantMessageId, metaBlocks as any)
+              }
+            } catch {
+              // ignore
             }
 
             const res = data as { session_id?: string | null; trace_id?: string | null }
@@ -386,6 +411,8 @@ export function useChatMessagingService() {
     clearAttachments,
     setMessages,
     updateMessage,
+    setMessageBlocks,
+    appendMessageBlocks,
     setSessionId,
     setIsLoading,
     setErrorMessage,

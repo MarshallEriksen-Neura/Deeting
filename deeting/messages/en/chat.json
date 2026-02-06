@@ -307,7 +307,9 @@
     "actions": {
       "regenerate": "Regenerate",
       "like": "Like",
-      "dislike": "Dislike"
+      "dislike": "Dislike",
+      "copy": "Copy",
+      "copied": "Copied"
     }
   }
 }

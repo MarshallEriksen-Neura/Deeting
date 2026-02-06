@@ -41,10 +41,18 @@ def _build_tools_and_handlers(
                     input_schema=function_info.get("parameters", {}),
                 )
             )
+            handler: Callable | None = None
             if hasattr(plugin, name):
+                handler = getattr(plugin, name)
+            else:
+                method_name = f"handle_{name}"
+                if hasattr(plugin, method_name):
+                    handler = getattr(plugin, method_name)
+
+            if handler:
                 if name in tool_map:
                     logger.warning("Duplicate tool name detected: %s", name)
-                tool_map[name] = getattr(plugin, name)
+                tool_map[name] = handler
 
     return tools, tool_map
 
@@ -109,6 +117,9 @@ def _build_discovery_instruction(
         f"Target capability: {capability}.",
         "Use get_unified_schema(capability) to understand the gateway's internal request/response schema.",
         "Extract provider details (name, slug, base_url, auth_type, auth_config_key, category, default_params).",
+        "Generate capability mapping: request_template + response_transform (and stream_transform when streaming is supported).",
+        "Before saving, call verify_provider_template with representative test_payload; only save when verification succeeds.",
+        "Persist mappings via save_provider_field_mapping after ensuring provider preset exists.",
         "Do not store secrets; only reference secret key names in auth_config_key.",
         "If required information is missing, explain what is missing and avoid creating incomplete presets.",
     ]

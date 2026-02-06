@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -96,6 +97,7 @@ class ConversationMessage(BaseModel):
     role: str
     content: Any | None = None
     turn_index: int | None = None
+    created_at: datetime | None = None
     is_truncated: bool | None = None
     name: str | None = None
     meta_info: dict | None = None
@@ -375,6 +377,7 @@ async def get_conversation_history(
             role=m.role.value if hasattr(m.role, "value") else m.role,
             content=m.content,
             turn_index=m.turn_index,
+            created_at=m.created_at,
             is_truncated=m.is_truncated,
             name=m.name,
             meta_info=m.meta_info,

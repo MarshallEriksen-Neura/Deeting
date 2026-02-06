@@ -8,6 +8,7 @@ export const ConversationMessageSchema = z.object({
   role: z.string(),
   content: z.any().nullable().optional(),
   turn_index: z.number().int().nullable().optional(),
+  created_at: z.string().nullable().optional(),
   is_truncated: z.boolean().nullable().optional(),
   name: z.string().nullable().optional(),
   meta_info: z.record(z.any()).nullable().optional(),

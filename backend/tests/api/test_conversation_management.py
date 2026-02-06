@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
@@ -44,6 +45,7 @@ class _DummyConversationHistoryMessage:
         self.role = role
         self.content = content
         self.turn_index = turn_index
+        self.created_at = datetime(2026, 2, 1, 10, 20, 30, tzinfo=timezone.utc)
         self.is_truncated = False
         self.name = None
         self.meta_info = {"blocks": [{"type": "text", "content": content}]}
@@ -358,6 +360,7 @@ async def test_get_conversation_history(monkeypatch):
         assert data["next_cursor"] == 8
         assert data["messages"][0]["turn_index"] == 8
         assert data["messages"][1]["turn_index"] == 9
+        assert data["messages"][0]["created_at"] == "2026-02-01T10:20:30Z"
         assert service.called_with["before_turn"] == 10
         assert service.called_with["limit"] == 2
 

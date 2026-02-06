@@ -307,7 +307,9 @@
     "actions": {
       "regenerate": "重新生成",
       "like": "点赞",
-      "dislike": "踩"
+      "dislike": "踩",
+      "copy": "复制",
+      "copied": "已复制"
     }
   }
 }

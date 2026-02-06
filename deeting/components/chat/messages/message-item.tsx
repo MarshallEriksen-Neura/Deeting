@@ -6,11 +6,11 @@ import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { MessageActions } from "./message-actions"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
-import { normalizeMessage } from "@/lib/chat/message-normalizer"
 import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
+import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 interface MessageItemProps {
   message: Message
@@ -25,6 +25,7 @@ interface MessageItemProps {
   onRegenerate?: (messageId: string) => void
   onLike?: (messageId: string) => void
   onDislike?: (messageId: string) => void
+  onCopy?: (messageId: string) => void
 }
 
 /**
@@ -49,6 +50,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     onRegenerate,
     onLike,
     onDislike,
+    onCopy,
   }) => {
     const t = useI18n("chat")
     const imageAlt = t("input.image.alt")
@@ -57,6 +59,20 @@ export const MessageItem = React.memo<MessageItemProps>(
     const isLastAssistantMessage = message.role === "assistant" && message.id === lastAssistantId
     const shouldReveal = !isTyping && !streamEnabled && isLastAssistantMessage
     const typingEnabled = isLastAssistantMessage && (streamEnabled || shouldReveal)
+    const assistantParts = React.useMemo<MessageBlock[]>(() => {
+      if (message.blocks && message.blocks.length) return message.blocks
+      const text = message.content ?? ""
+      if (!text.trim()) return []
+      return [
+        {
+          id: `${message.id}-text-1`,
+          type: "text",
+          content: text,
+          streamState: "completed",
+          displayMode: "bubble",
+        },
+      ]
+    }, [message.blocks, message.content, message.id])
 
     return (
       <div
@@ -69,7 +85,7 @@ export const MessageItem = React.memo<MessageItemProps>(
         {message.role === "assistant" ? (
           <div className="w-fit max-w-[85%]">
             <AIResponseBubble
-              parts={message.blocks ?? normalizeMessage(message.content)}
+              parts={assistantParts}
               isActive={isActive}
               streamEnabled={streamEnabled}
               typingEnabled={typingEnabled}
@@ -87,9 +103,11 @@ export const MessageItem = React.memo<MessageItemProps>(
               {!isActive && (
                 <MessageActions
                   messageId={message.id}
+                  content={message.content}
                   onRegenerate={onRegenerate}
                   onLike={onLike}
                   onDislike={onDislike}
+                  onCopy={onCopy}
                   liked={message.metaInfo?.feedback_score === 1}
                   disliked={message.metaInfo?.feedback_score === -1}
                   disabled={isActive}
@@ -173,7 +191,8 @@ export const MessageItem = React.memo<MessageItemProps>(
     const callbacksUnchanged =
       prevProps.onRegenerate === nextProps.onRegenerate &&
       prevProps.onLike === nextProps.onLike &&
-      prevProps.onDislike === nextProps.onDislike
+      prevProps.onDislike === nextProps.onDislike &&
+      prevProps.onCopy === nextProps.onCopy
 
     return (
       messageUnchanged &&

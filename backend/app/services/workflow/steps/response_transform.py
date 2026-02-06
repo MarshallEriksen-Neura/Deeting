@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from app.services.orchestrator.registry import step_registry
-from app.services.providers.blocks_transformer import build_blocks_from_message
+from app.services.providers.blocks_transformer import build_normalized_blocks
 from app.services.providers.response_transformer import response_transformer
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
 
@@ -105,7 +105,7 @@ class ResponseTransformStep(BaseStep):
                         content = message.get("content")
                         reasoning = message.get("reasoning_content")
                         tool_calls = message.get("tool_calls")
-                        blocks = build_blocks_from_message(
+                        blocks = build_normalized_blocks(
                             content=content if isinstance(content, str) else None,
                             reasoning=reasoning if isinstance(reasoning, str) else None,
                             tool_calls=(

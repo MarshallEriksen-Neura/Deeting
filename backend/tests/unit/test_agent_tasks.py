@@ -25,6 +25,35 @@ def test_run_discovery_task_builds_instruction(monkeypatch):
     assert captured["target_url"] == "https://example.com/docs"
     assert "Target capability: chat." in captured["instruction"]
     assert "Provider name hint: ExampleAI." in captured["instruction"]
+    assert "Generate capability mapping" in captured["instruction"]
+    assert "verify_provider_template" in captured["instruction"]
+    assert "save_provider_field_mapping" in captured["instruction"]
     assert captured["model_hint"] == "gpt-4o"
     assert "core.registry.provider" in captured["tool_plugin_names"]
     assert "system/database_manager" in captured["tool_plugin_names"]
+
+
+class _DummyPlugin:
+    def get_tools(self):
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "verify_provider_template",
+                    "description": "verify",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+
+    async def handle_verify_provider_template(self, **kwargs):
+        return {"ok": True, "payload": kwargs}
+
+
+def test_build_tools_and_handlers_supports_handle_prefix():
+    plugin = _DummyPlugin()
+    tools, tool_map = agent_tasks._build_tools_and_handlers([plugin])
+
+    assert len(tools) == 1
+    assert tools[0].name == "verify_provider_template"
+    assert "verify_provider_template" in tool_map

@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { useChatStore } from '@/store/chat-store';
 import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useI18n } from '@/hooks/use-i18n';
-import { normalizeMessage } from '@/lib/chat/message-normalizer';
+import type { MessageBlock } from '@/lib/chat/message-protocol';
 import type { ChatImageAttachment } from '@/lib/chat/message-content';
 import { MarkdownViewer } from '@/components/chat/markdown-viewer';
 import { CanvasSkeleton } from '@/components/common/skeletons';
@@ -306,10 +306,24 @@ export default function Canvas() {
           const isActive = isLastAssistant && isLoading;
 
           if (msg.role === 'assistant') {
+            const blocks: MessageBlock[] =
+              msg.blocks?.length
+                ? msg.blocks
+                : msg.content?.trim()
+                  ? [
+                      {
+                        id: `${msg.id}-text-1`,
+                        type: 'text',
+                        content: msg.content,
+                        streamState: 'completed',
+                        displayMode: 'bubble',
+                      },
+                    ]
+                  : [];
             return (
               <AssistantMessageBubble
                 key={msg.id}
-                blocks={msg.blocks ?? normalizeMessage(msg.content)}
+                blocks={blocks}
                 attachments={msg.attachments}
                 isActive={isActive}
                 streamEnabled={streamEnabled}

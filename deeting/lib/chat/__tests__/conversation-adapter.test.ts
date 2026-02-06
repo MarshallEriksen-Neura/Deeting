@@ -130,4 +130,23 @@ describe("normalizeConversationMessages", () => {
       }),
     ])
   })
+
+  it("uses backend created_at as message createdAt", () => {
+    const createdAtIso = "2026-02-01T10:20:30.000Z"
+    const [message] = normalizeConversationMessages(
+      [
+        {
+          role: "assistant",
+          content: "hello",
+          turn_index: 12,
+          created_at: createdAtIso,
+        },
+      ] as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.createdAt).toBe(Date.parse(createdAtIso))
+  })
 })

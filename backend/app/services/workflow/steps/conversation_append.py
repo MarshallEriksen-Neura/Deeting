@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -305,10 +304,12 @@ class ConversationAppendStep(BaseStep):
             content = msg.get("content")
             content_text = content if isinstance(content, str) else None
             content_for_tokens = self._content_for_tokens(content)
+            reasoning_text = msg.get("reasoning_content")
             token_est = msg.get("token_estimate")
             meta_info = self._build_meta_info(msg, content)
             blocks = self._build_blocks(
                 content_text=content_text,
+                reasoning_text=reasoning_text if isinstance(reasoning_text, str) else None,
                 tool_calls=msg.get("tool_calls"),
             )
             if blocks and not (meta_info or {}).get("blocks"):
@@ -358,45 +359,40 @@ class ConversationAppendStep(BaseStep):
             "image_url",
             "audio",
             "modalities",
+            "reasoning_content",
         ):
             if message.get(key) is not None:
                 extras[key] = message.get(key)
         if not isinstance(content, str) and content is not None:
             extras["content"] = content
         if extras:
-            meta_info = {**meta_info, **extras}
+            meta_info = {**(meta_info or {}), **extras}
         return meta_info or None
 
     @staticmethod
     def _build_blocks(
         *,
         content_text: str | None,
+        reasoning_text: str | None = None,
         tool_calls: Any,
     ) -> list[dict[str, Any]] | None:
         blocks: list[dict[str, Any]] = []
-        if content_text:
-            think_regex = re.compile(r"<think>([\\s\\S]*?)</think>", re.IGNORECASE)
-            last_index = 0
-            for match in think_regex.finditer(content_text):
-                if match.start() > last_index:
-                    text = content_text[last_index : match.start()]
-                    if text.strip():
-                        blocks.append({"type": "text", "content": text})
-                thought = match.group(1).strip()
-                if thought:
-                    blocks.append({"type": "thought", "content": thought})
-                last_index = match.end()
-            if last_index < len(content_text):
-                tail = content_text[last_index:]
-                if tail.strip():
-                    blocks.append({"type": "text", "content": tail})
-            if not blocks and content_text.strip():
-                blocks.append({"type": "text", "content": content_text})
+
+        # 1. 优先处理显式的思维链字段
+        if reasoning_text and reasoning_text.strip():
+            blocks.append({"type": "thought", "content": reasoning_text.strip()})
+
+        # 2. 处理正文（包含可能的 <think> 标签）
+        if content_text and content_text.strip():
+            # dev 模式下不解析 <think> 等标签，避免多套协议导致维护成本上升。
+            blocks.append({"type": "text", "content": content_text})
 
         if isinstance(tool_calls, list):
             for call in tool_calls:
                 if not isinstance(call, dict):
                     continue
+                call_id = call.get("id")
+                call_id = call_id if isinstance(call_id, str) and call_id else None
                 function = call.get("function") or {}
                 name = function.get("name") or call.get("name")
                 args = function.get("arguments") or call.get("arguments")
@@ -406,13 +402,14 @@ class ConversationAppendStep(BaseStep):
                     args_str = args
                 else:
                     args_str = json.dumps(args, ensure_ascii=False)
-                blocks.append(
-                    {
-                        "type": "tool_call",
-                        "toolName": name,
-                        "toolArgs": args_str,
-                    }
-                )
+                block: dict[str, Any] = {
+                    "type": "tool_call",
+                    "toolName": name,
+                    "toolArgs": args_str,
+                }
+                if call_id:
+                    block["callId"] = call_id
+                blocks.append(block)
 
         return blocks or None
 

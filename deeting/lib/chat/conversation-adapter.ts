@@ -1,5 +1,4 @@
 import { parseMessageContent } from "@/lib/chat/message-content"
-import { normalizeMessage } from "@/lib/chat/message-normalizer"
 import type { ConversationMessage } from "@/lib/api/conversations"
 import type { Message, MessageMetaInfo, ToolCall } from "@/lib/chat/message-types"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
@@ -48,6 +47,20 @@ const decodeEscapedNewlines = (text: string) => {
 
 const normalizeTextValue = (value: string) =>
   decodeEscapedNewlines(normalizeLineBreaks(value))
+
+const buildTextOnlyBlocks = (text: string): MessageBlock[] => {
+  const normalized = normalizeTextValue(text)
+  if (!normalized.trim()) return []
+  return [
+    {
+      id: "text-1",
+      type: "text",
+      content: normalized,
+      streamState: "completed",
+      displayMode: "bubble",
+    },
+  ]
+}
 
 const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBlock[] => {
   return blocks.map((block, index) => {
@@ -118,6 +131,20 @@ const readContentCandidate = (message: ConversationMessage): unknown => {
   return null
 }
 
+const resolveCreatedAt = (
+  message: ConversationMessage,
+  index: number,
+  total: number
+): number => {
+  if (typeof message.created_at === "string" && message.created_at.trim()) {
+    const parsed = Date.parse(message.created_at)
+    if (!Number.isNaN(parsed)) {
+      return parsed
+    }
+  }
+  return Date.now() - (total - index) * 1000
+}
+
 export function normalizeConversationMessages(
   messages: ConversationMessage[],
   options: {
@@ -145,8 +172,8 @@ export function normalizeConversationMessages(
     const messageId = `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`
     const blocks = isBlockArray(metaInfo?.blocks)
       ? normalizeBlocks(metaInfo.blocks, messageId)
-      : normalizeMessage(normalizedText)
-    const textFallback = normalizeMessage(normalizedText)
+      : buildTextOnlyBlocks(normalizedText)
+    const textFallback = buildTextOnlyBlocks(normalizedText)
     const resolvedBlocks =
       blocks.length > 0 && hasRenderableBlocks(blocks) ? blocks : textFallback
     return {
@@ -154,7 +181,7 @@ export function normalizeConversationMessages(
       role: normalizedRole === "assistant" ? "assistant" : normalizedRole === "system" ? "system" : "user",
       content: normalizedText,
       attachments: parsed.attachments.length ? parsed.attachments : undefined,
-      createdAt: Date.now() - (total - index) * 1000,
+      createdAt: resolveCreatedAt(msg, index, total),
       metaInfo,
       toolCalls,
       toolCallId,

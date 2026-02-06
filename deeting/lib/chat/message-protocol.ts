@@ -31,6 +31,9 @@ export interface ThoughtBlock extends BaseBlock {
 
 export interface ToolCallBlock extends BaseBlock {
   type: 'tool_call'
+  // Correlates tool_call <-> tool_result across streaming updates.
+  // We intentionally keep this optional to allow older persisted payloads.
+  callId?: string
   toolName?: string
   toolArgs?: string
   status?: 'running' | 'success' | 'error'
