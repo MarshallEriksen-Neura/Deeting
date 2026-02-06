@@ -6,6 +6,7 @@ import { Virtuoso, VirtuosoHandle } from "react-virtuoso"
 import { Button } from "@/components/ui/button"
 import { MessageItem } from "./message-item"
 import { AIResponseBubble } from "./ai-response-bubble"
+import { cn } from "@/lib/utils"
 import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 
@@ -36,8 +37,8 @@ const VirtuosoList = React.forwardRef<HTMLDivElement, VirtuosoListProps>(
       className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
       style={{
         ...style,
-        paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top) + 16px)",
-        paddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom) + 32px)",
+        paddingTop: "calc(env(safe-area-inset-top) + 16px)",
+        paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)",
       }}
     >
       {children}
@@ -74,8 +75,9 @@ export function ChatMessageList({
   const t = useI18n("chat")
   const virtuosoRef = React.useRef<VirtuosoHandle>(null)
   const scrollEndRef = React.useRef<HTMLDivElement>(null)
-  const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+  const scrollContainerRef = React.useRef<HTMLElement | null>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
+  const [scrollParent, setScrollParent] = React.useState<HTMLElement | null>(null)
 
   // 使用 ref 存储滚动状态，避免 setState 触发重渲染循环
   const scrollStateRef = React.useRef({
@@ -102,20 +104,26 @@ export function ChatMessageList({
   // 根据 HUD/Controls 高度为消息列表预留空间
   React.useEffect(() => {
     const container = containerRef.current
+    const root = typeof document !== "undefined" ? document.documentElement : null
     if (!container) return
 
     const hud = document.querySelector<HTMLElement>('[data-chat-hud]')
     const controls = document.querySelector<HTMLElement>('[data-chat-controls]')
     const fallbackTop = 112
-    const fallbackBottom = 152
+    const fallbackBottom = 96
 
     const updateOffsets = () => {
-      const hudHeight = hud?.getBoundingClientRect().height ?? 0
-      const controlsHeight = controls?.getBoundingClientRect().height ?? 0
-      const topOffset = Math.max(hudHeight + 24, fallbackTop)
-      const bottomOffset = Math.max(controlsHeight + 24, fallbackBottom)
+      const hudRect = hud?.getBoundingClientRect()
+      const controlsRect = controls?.getBoundingClientRect()
+      const topOffset = Math.max((hudRect?.bottom ?? 0) + 16, fallbackTop)
+      const bottomOffset = Math.max(
+        controlsRect ? window.innerHeight - controlsRect.top : fallbackBottom,
+        fallbackBottom
+      )
       container.style.setProperty("--chat-hud-offset", `${topOffset}px`)
       container.style.setProperty("--chat-controls-offset", `${bottomOffset}px`)
+      root?.style.setProperty("--chat-hud-offset", `${topOffset}px`)
+      root?.style.setProperty("--chat-controls-offset", `${bottomOffset}px`)
     }
 
     updateOffsets()
@@ -142,12 +150,21 @@ export function ChatMessageList({
 
   const listPaddingStyle = React.useMemo(
     () => ({
-      paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top) + 16px)",
-      paddingBottom:
-        "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom) + 32px)",
+      paddingTop: "calc(env(safe-area-inset-top) + 16px)",
+      paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)",
     }),
     []
   )
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return
+    const parent = useVirtualScroll
+      ? document.querySelector<HTMLElement>("[data-chat-scroll]")
+      : containerRef.current
+    if (!parent) return
+    scrollContainerRef.current = parent
+    setScrollParent(parent)
+  }, [useVirtualScroll])
 
   // 自动滚动到底部（普通滚动模式）
   React.useEffect(() => {
@@ -177,9 +194,8 @@ export function ChatMessageList({
 
   // 监听滚动事件（普通滚动模式）
   React.useEffect(() => {
-    if (useVirtualScroll) return
-    const container = scrollContainerRef.current
-    if (!container) return
+    if (useVirtualScroll || !scrollParent) return
+    const container = scrollParent
 
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container
@@ -192,7 +208,7 @@ export function ChatMessageList({
     handleScroll()
     container.addEventListener("scroll", handleScroll, { passive: true })
     return () => container.removeEventListener("scroll", handleScroll)
-  }, [useVirtualScroll, updateScrollButtons])
+  }, [useVirtualScroll, scrollParent, updateScrollButtons])
 
   // 滚动到顶部
   const scrollToTop = React.useCallback(() => {
@@ -203,9 +219,9 @@ export function ChatMessageList({
         align: "start",
       })
     } else {
-      scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+      scrollParent?.scrollTo({ top: 0, behavior: "smooth" })
     }
-  }, [useVirtualScroll])
+  }, [useVirtualScroll, scrollParent])
 
   // 滚动到底部
   const scrollToBottom = React.useCallback(() => {
@@ -267,7 +283,7 @@ export function ChatMessageList({
   )
 
   // 渲染正在输入的占位符
-  const renderTypingIndicator = () => {
+  const renderTypingIndicator = React.useCallback(() => {
     if (!isTyping || lastAssistantId) return null
 
     return (
@@ -285,7 +301,7 @@ export function ChatMessageList({
         </div>
       </div>
     )
-  }
+  }, [isTyping, lastAssistantId, streamEnabled, statusStage, statusCode, statusMeta])
 
   // Virtuoso Footer 组件
   const VirtuosoFooter = React.useCallback(() => (
@@ -293,10 +309,16 @@ export function ChatMessageList({
       {renderTypingIndicator()}
       <div style={{ height: "1px" }} />
     </>
-  ), [isTyping, lastAssistantId, streamEnabled, statusStage, statusCode, statusMeta])
+  ), [renderTypingIndicator])
 
   return (
-    <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden">
+    <div
+      ref={containerRef}
+      className={cn(
+        "relative flex-1 min-h-0 h-full w-full",
+        useVirtualScroll ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden"
+      )}
+    >
       {useVirtualScroll ? (
         // 虚拟滚动模式（消息数量 > 50）
         <Virtuoso
@@ -305,6 +327,7 @@ export function ChatMessageList({
           itemContent={renderMessage}
           followOutput="smooth"
           alignToBottom
+          customScrollParent={scrollParent ?? undefined}
           className="h-full"
           style={{ height: "100%" }}
           components={{
@@ -315,12 +338,9 @@ export function ChatMessageList({
         />
       ) : (
         // 普通滚动模式（消息数量 <= 50）- 使用原生 div 避免 ScrollArea ref 问题
-        <div
-          ref={scrollContainerRef}
-          className="h-full overflow-y-auto overflow-x-hidden"
-        >
+        <div className="min-h-full overflow-x-hidden">
           <div
-            className="max-w-5xl 2xl:max-w-6xl mx-auto space-y-6 px-4"
+            className="max-w-5xl 2xl:max-w-6xl mx-auto grid min-h-full auto-rows-max content-end gap-6 px-4"
             style={listPaddingStyle}
           >
             {messages.map((_, index) => renderMessage(index))}

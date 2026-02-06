@@ -58,6 +58,9 @@ class AgentExecutorStep(BaseStep):
         # Maintain chat history locally for the loop
         messages = request_body.get("messages", [])
 
+        # Build User MCP Tool Map once for this execution
+        user_mcp_tool_map = await self._build_user_mcp_tool_map(ctx)
+
         turn = 0
         last_step_result = None
 
@@ -87,7 +90,6 @@ class AgentExecutorStep(BaseStep):
                 tool_calls_raw = message.get("tool_calls")
 
                 # If we are in the loop and got text content, emit it if stream was requested
-                # Note: This simulates streaming for the intermediate thought steps if the model outputs them with tool calls
                 if original_stream and message.get("content"):
                     self._emit_delta(ctx, message.get("content"))
 
@@ -96,11 +98,6 @@ class AgentExecutorStep(BaseStep):
 
             if not tool_calls_raw:
                 # Final answer (no tool calls)
-                # If original_stream was True, we should probably emit the final content here
-                # because the downstream gateway logic receives stream=False context.
-                if original_stream and message.get("content"):
-                    # We already emitted content above if it existed.
-                    pass
                 break
 
             # --- C. Execute Tools ---
@@ -130,23 +127,26 @@ class AgentExecutorStep(BaseStep):
                 )
 
                 # Emit Tool Block (Persistent UI)
-                # Format: <tool_code name="..." status="success">args</tool_code>
-                # We assume success initially for the block render, or we could update it.
-                # For simplicity, we render it as 'success' so it shows up clearly.
-                tool_block = f'\n<tool_code name="{tc.name}" status="success">{args_str}</tool_code>\n'
+                tool_block = f'\n<tool_code name="{tc.name}" status="running">{args_str}</tool_code>\n'
                 self._emit_delta(ctx, tool_block)
 
                 # Find and execute tool
-                result = await self._dispatch_tool(ctx, tc)
+                result = await self._dispatch_tool(ctx, tc, user_mcp_tool_map)
+                
                 tool_error = None
                 tool_success = True
-                if isinstance(result, dict):
+                if isinstance(result, dict) and "error" in result:
                     tool_error = result.get("error")
-                    status = result.get("status")
-                    if tool_error:
-                        tool_success = False
-                    elif isinstance(status, str) and status.lower() in {"failed", "error"}:
-                        tool_success = False
+                    tool_success = False
+
+                # Format result once for both persistence and UI streaming
+                formatted_result = self._format_tool_result(result)
+                
+                # Update Tool Block status if failed
+                if not tool_success:
+                    error_msg = f"\n> **Tool Error ({tc.name}):** {tool_error}\n"
+                    self._emit_delta(ctx, error_msg)
+
                 tool_calls_log = ctx.get("execution", "tool_calls") or []
                 if isinstance(tool_calls_log, list):
                     tool_calls_log.append(
@@ -155,17 +155,19 @@ class AgentExecutorStep(BaseStep):
                             "tool_call_id": tc.id,
                             "success": tool_success,
                             "error": tool_error,
+                            "output": formatted_result,
                         }
                     )
                     ctx.set("execution", "tool_calls", tool_calls_log)
 
                 # Emit Result (Persistent UI)
-                result_str = json.dumps(result, ensure_ascii=False)
-                if len(result_str) > 2000:
-                    result_str = result_str[:2000] + "... (truncated)"
+                result_preview = formatted_result
+                if len(result_preview) > 2000:
+                    result_preview = result_preview[:2000] + "... (truncated)"
 
-                output_block = f"\n> **Tool Output:**\n> {result_str}\n\n"
-                self._emit_delta(ctx, output_block)
+                if tool_success:
+                    output_block = f"\n> **Tool Output:**\n> {result_preview}\n\n"
+                    self._emit_delta(ctx, output_block)
 
                 # 3. Add Tool result to history
                 messages.append(
@@ -173,7 +175,7 @@ class AgentExecutorStep(BaseStep):
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "name": tc.name,
-                        "content": json.dumps(result, ensure_ascii=False),
+                        "content": formatted_result,
                     }
                 )
 
@@ -185,57 +187,98 @@ class AgentExecutorStep(BaseStep):
 
         return last_step_result
 
-    async def _dispatch_tool(self, ctx: "WorkflowContext", tool_call: ToolCall) -> Any:
+    async def _build_user_mcp_tool_map(self, ctx: "WorkflowContext") -> dict[str, Any]:
+        """
+        Pre-builds a map of tool names to their respective MCP servers for the current user.
+        """
+        user_id = ctx.user_id
+        if not user_id or not ctx.db_session:
+            return {}
+
+        from sqlalchemy import select
+        from app.models.user_mcp_server import UserMcpServer
+        from app.services.mcp.discovery import mcp_discovery_service
+
+        stmt = select(UserMcpServer).where(
+            UserMcpServer.user_id == user_id,
+            UserMcpServer.is_enabled == True,
+            UserMcpServer.server_type == "sse",
+        )
+        res = await ctx.db_session.execute(stmt)
+        servers = res.scalars().all()
+
+        tool_map = {}
+        for server in servers:
+            if not server.sse_url:
+                continue
+            
+            # Resolve headers once per server
+            headers = await mcp_discovery_service._get_auth_headers(ctx.db_session, server)
+            disabled = set(server.disabled_tools or [])
+            
+            for cached_tool in server.tools_cache or []:
+                name = cached_tool.get("name")
+                if not name or name in disabled:
+                    continue
+                
+                if name not in tool_map:
+                    tool_map[name] = {
+                        "sse_url": server.sse_url,
+                        "headers": headers,
+                        "server_name": server.name
+                    }
+        
+        return tool_map
+
+    def _format_tool_result(self, result: Any) -> str:
+        """
+        Standardizes tool output into a string format.
+        Handles MCP TextContent lists and other types.
+        """
+        if result is None:
+            return "null"
+        
+        # Handle MCP Content Blocks
+        if isinstance(result, list):
+            texts = []
+            for item in result:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        texts.append(item.get("text", ""))
+                    elif item.get("type") == "image":
+                        texts.append("[Image Content]")
+                elif hasattr(item, "type") and getattr(item, "type") == "text":
+                    texts.append(getattr(item, "text", ""))
+            
+            if texts:
+                return "\n".join(texts)
+        
+        if isinstance(result, (dict, list)):
+            return json.dumps(result, ensure_ascii=False)
+        
+        return str(result)
+
+    async def _dispatch_tool(self, ctx: "WorkflowContext", tool_call: ToolCall, user_mcp_tool_map: dict[str, Any]) -> Any:
         """
         Dispatches the tool call to either a local plugin or a remote MCP server.
         """
-        # 1. Check User MCP Servers
-        user_id = ctx.user_id
-        if user_id:
-            from sqlalchemy import select
-
-            from app.models.user_mcp_server import UserMcpServer
-
-            # Find which server owns this tool
-            # Optimization: We could have a map in context from discovery step
-            stmt = select(UserMcpServer).where(
-                UserMcpServer.user_id == user_id,
-                UserMcpServer.is_enabled == True,
-                UserMcpServer.server_type == "sse",
+        # 1. Check User MCP Servers (via pre-built map)
+        if tool_call.name in user_mcp_tool_map:
+            mcp_info = user_mcp_tool_map[tool_call.name]
+            logger.info(
+                f"Calling remote MCP tool '{tool_call.name}' on {mcp_info['sse_url']} ({mcp_info['server_name']})"
             )
-            res = await ctx.db_session.execute(stmt)
-            servers = res.scalars().all()
-
-            for server in servers:
-                if not server.sse_url:
-                    continue
-                disabled = set(server.disabled_tools or [])
-                for cached_tool in server.tools_cache:
-                    if cached_tool["name"] == tool_call.name:
-                        if tool_call.name in disabled:
-                            return {"error": f"Tool '{tool_call.name}' is disabled."}
-                        # Found! Call the remote MCP
-                        logger.info(
-                            f"Calling remote MCP tool '{tool_call.name}' on {server.sse_url}"
-                        )
-
-                        # Get auth headers
-                        from app.services.mcp.discovery import mcp_discovery_service
-
-                        headers = await mcp_discovery_service._get_auth_headers(
-                            ctx.db_session, server
-                        )
-
-                        try:
-                            result = await mcp_client.call_tool(
-                                server.sse_url,
-                                tool_call.name,
-                                tool_call.arguments,
-                                headers=headers,
-                            )
-                            return result
-                        except Exception as e:
-                            return {"error": f"Remote MCP call failed: {e!s}"}
+            try:
+                result = await mcp_client.call_tool(
+                    mcp_info["sse_url"],
+                    tool_call.name,
+                    tool_call.arguments,
+                    headers=mcp_info["headers"],
+                )
+                return result
+            except Exception as e:
+                logger.error(f"Remote MCP call failed: {e!s}")
+                return {"error": f"Remote MCP call failed: {e!s}"}
 
         # 2. Check Local Plugins (Fallthrough)
         from app.agent_plugins.core.manager import global_plugin_manager

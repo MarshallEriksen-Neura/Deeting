@@ -9,19 +9,18 @@ export function normalizeMessage(
 ): MessageBlock[] {
   const blocks: MessageBlock[] = []
   
-  // Combine regex matching to preserve order
-  // We'll use a simple tokenization approach
+  // 1. 定义正则表达式
   const regex = new RegExp(`${THINK_REGEX.source}|${TOOL_CODE_REGEX.source}`, 'g')
-  
   let lastIndex = 0
   let match: RegExpExecArray | null
   let blockIndex = 0
 
+  // 2. 匹配已闭合的标签
   while ((match = regex.exec(content)) !== null) {
-    // Handle plain text before the match
+    // 提取标签前的文本
     if (match.index > lastIndex) {
       const text = content.substring(lastIndex, match.index)
-      if (text.trim()) {
+      if (text) {
         blocks.push({
           id: `text-${++blockIndex}`,
           type: 'text',
@@ -32,52 +31,82 @@ export function normalizeMessage(
       }
     }
 
-    // Determine which pattern matched
     const fullMatch = match[0]
-    
     if (fullMatch.startsWith('<think>')) {
-      // <think> capture is group 1 (based on source concatenation, it might shift)
-      // THINK_REGEX has 1 capturing group.
-      // TOOL_CODE_REGEX has 3 capturing groups.
-      // In `regex`, the groups are:
-      // 1: think content
-      // 2: tool name
-      // 3: tool status
-      // 4: tool args
-      const thinkContent = match[1]
       blocks.push({
         id: `thought-${++blockIndex}`,
         type: 'thought',
-        content: thinkContent?.trim() || "",
+        content: (match[1] || "").trim(),
         streamState: 'completed',
         displayMode: 'bubble',
       })
     } else if (fullMatch.startsWith('<tool_code')) {
-      const toolName = match[2] || "unknown"
-      const toolStatus = match[3] || "running"
-      const toolArgs = match[4] || ""
-      
       blocks.push({
         id: `tool-${++blockIndex}`,
         type: 'tool_call',
-        toolName: toolName,
-        toolArgs: toolArgs.trim(),
-        status: toolStatus as 'running' | 'success' | 'error',
+        toolName: match[2] || "unknown",
+        toolArgs: (match[4] || "").trim(),
+        status: (match[3] || "running") as 'running' | 'success' | 'error',
         streamState: 'completed',
         displayMode: 'bubble',
       })
     }
-
     lastIndex = regex.lastIndex
   }
 
+  // 3. 处理最后剩余的内容（可能包含未闭合标签）
   if (lastIndex < content.length) {
-    const text = content.substring(lastIndex)
-    if (text.trim()) {
+    const remaining = content.substring(lastIndex)
+    
+    const unfinishedThink = remaining.indexOf('<think>')
+    const unfinishedTool = remaining.indexOf('<tool_code')
+    
+    if (unfinishedThink !== -1 && (unfinishedTool === -1 || unfinishedThink < unfinishedTool)) {
+      if (unfinishedThink > 0) {
+        blocks.push({
+          id: `text-${++blockIndex}`,
+          type: 'text',
+          content: remaining.substring(0, unfinishedThink),
+          streamState: 'completed',
+          displayMode: 'bubble',
+        })
+      }
+      blocks.push({
+        id: `thought-${++blockIndex}`,
+        type: 'thought',
+        content: remaining.substring(unfinishedThink + 7),
+        streamState: 'streaming',
+        displayMode: 'bubble',
+      })
+    } else if (unfinishedTool !== -1) {
+      if (unfinishedTool > 0) {
+        blocks.push({
+          id: `text-${++blockIndex}`,
+          type: 'text',
+          content: remaining.substring(0, unfinishedTool),
+          streamState: 'completed',
+          displayMode: 'bubble',
+        })
+      }
+      const tagFragment = remaining.substring(unfinishedTool)
+      const nameMatch = tagFragment.match(/name="([^"]*)"/)
+      const statusMatch = tagFragment.match(/status="([^"]*)"/)
+      const contentStart = tagFragment.indexOf('>') + 1
+      
+      blocks.push({
+        id: `tool-${++blockIndex}`,
+        type: 'tool_call',
+        toolName: nameMatch?.[1] || "unknown",
+        toolArgs: contentStart > 0 ? tagFragment.substring(contentStart) : "",
+        status: (statusMatch?.[1] || "running") as 'running' | 'success' | 'error',
+        streamState: 'streaming',
+        displayMode: 'bubble',
+      })
+    } else {
       blocks.push({
         id: `text-${++blockIndex}`,
         type: 'text',
-        content: text,
+        content: remaining,
         streamState: 'completed',
         displayMode: 'bubble',
       })
@@ -94,11 +123,6 @@ export function normalizeMessage(
         displayMode: 'bubble',
       },
     ]
-  }
-
-  if (toolOutputs?.length) {
-    // Placeholder for future tool output normalization.
-    void toolOutputs
   }
 
   return blocks

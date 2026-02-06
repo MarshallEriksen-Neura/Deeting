@@ -90,14 +90,6 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     }
   }, [agentId, sessionId, isTauriRuntime, marketLoaded, localAgent, initSession])
 
-  // 同步 sessionId 到 localStorage
-  React.useEffect(() => {
-    const querySessionId = searchParams?.get("session")?.trim()
-    if (querySessionId && typeof window !== "undefined") {
-      localStorage.setItem(`deeting-chat-session:${agentId}`, querySessionId)
-    }
-  }, [searchParams, agentId])
-
   // Tauri 环境：加载本地 assistants
   React.useEffect(() => {
     if (!isTauriRuntime || marketLoaded) return

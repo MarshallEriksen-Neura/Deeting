@@ -23,7 +23,7 @@ interface UseChatHistoryProps {
 }
 
 export function useChatHistory({
-  agentId,
+  agentId: _agentId,
   agent,
   isTauriRuntime,
   loadHistory,
@@ -42,7 +42,6 @@ export function useChatHistory({
     })
   }, [])
 
-  const sessionStorageKey = `deeting-chat-session:${agentId}`
 
   // 稳定化 sessionId 获取，避免 searchParams 引用变化导致重复加载
   const querySessionIdRef = useRef<string | null>(null)
@@ -58,15 +57,10 @@ export function useChatHistory({
     try {
       setHistoryState({ loading: true })
       const querySessionId = querySessionIdRef.current
-      const storedSessionId =
-        querySessionId ??
-        (typeof window !== "undefined" ? localStorage.getItem(sessionStorageKey) : null)
+      const storedSessionId = querySessionId
 
       if (storedSessionId) {
         setSessionId(storedSessionId)
-        if (querySessionId && typeof window !== "undefined") {
-          localStorage.setItem(sessionStorageKey, storedSessionId)
-        }
 
         const windowState = await loadHistory(storedSessionId)
         const mapped = normalizeConversationMessages(windowState.messages || [], {
@@ -97,7 +91,6 @@ export function useChatHistory({
     }
   }, [
     loadHistory,
-    sessionStorageKey,
     setMessages,
     setSessionId,
     setHistoryState,

@@ -168,9 +168,6 @@ export default function HUD() {
      if (!isTauriRuntime) {
        clearOverrideAssistantId();
      }
-     if (typeof window !== "undefined" && activeAssistantId) {
-       localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`);
-     }
      const targetAssistantId = activeAssistantId ?? assistants[0]?.id ?? undefined;
      setGlobalLoading(true);
      try {

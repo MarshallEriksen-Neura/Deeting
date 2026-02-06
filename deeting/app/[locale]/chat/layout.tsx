@@ -24,42 +24,47 @@ export default function ChatLayout({
         {/* Dynamic Animated Background */}
         <DynamicBackground />
 
-      {/* Heads-Up Display (Top Center) */}
-      <div
-        data-chat-hud
-        className="absolute top-0 left-0 right-0 z-50 flex justify-center pt-6 pointer-events-none"
-      >
-        <div className="pointer-events-auto">
-          {hud}
-        </div>
-      </div>
+        {/* Main Canvas (Full Screen behind UI) */}
+        <main className="absolute inset-0 z-10 overflow-hidden">
+          {canvas}
+        </main>
 
-      {/* Main Canvas (Full Screen behind UI) */}
-      <main className="absolute inset-0 z-10 overflow-hidden">
-        {canvas}
-      </main>
-
-      {/* Controls / Morphing Bar (Bottom Center) */}
-      {controls ? (
-        <div
-          data-chat-controls
-          className="absolute bottom-0 left-0 right-0 z-40 flex justify-center pb-8 pointer-events-none"
-        >
-          <div className="pointer-events-auto w-full max-w-5xl 2xl:max-w-6xl px-4">
-            {controls}
+        <div className="relative z-10 grid h-full w-full grid-rows-[auto_minmax(0,1fr)_auto]">
+          {/* Heads-Up Display (Top Center) */}
+          <div
+            data-chat-hud
+            className="flex justify-center pt-6 pointer-events-none"
+          >
+            <div className="pointer-events-auto">
+              {hud}
+            </div>
           </div>
+
+          {/* Chat content */}
+          <div
+            data-chat-scroll
+            className="min-h-0 overflow-y-auto overflow-x-hidden"
+          >
+            <div className="flex min-h-0 h-full w-full">{children}</div>
+          </div>
+
+          {/* Controls / Morphing Bar (Bottom Center) */}
+          {controls ? (
+            <div
+              data-chat-controls
+              className="flex justify-center pb-8 pointer-events-none"
+            >
+              <div className="pointer-events-auto w-full max-w-5xl 2xl:max-w-6xl px-4">
+                {controls}
+              </div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
 
-      {/* Chat content */}
-      <div className="relative z-10">
-        {children}
-      </div>
-
-      {/* Modals / Assistants overlays */}
-      <div className="relative z-[120]">
-        {assistant}
-      </div>
+        {/* Modals / Assistants overlays */}
+        <div className="relative z-[120]">
+          {assistant}
+        </div>
 
         {/* Global TTS Audio Player */}
         {/* <GlobalAudioPlayer /> */}

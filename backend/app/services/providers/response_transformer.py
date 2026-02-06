@@ -112,13 +112,17 @@ class ResponseTransformer:
 
         choices = []
         content_str = ""
+        reasoning_str = ""
         tool_calls = []
 
         # 解析 Content Blocks
         for block in raw.get("content", []):
-            if block.get("type") == "text":
+            block_type = block.get("type")
+            if block_type == "text":
                 content_str += block.get("text", "")
-            elif block.get("type") == "tool_use":
+            elif block_type == "thinking":
+                reasoning_str += block.get("thinking", "")
+            elif block_type == "tool_use":
                 tool_calls.append(
                     {
                         "id": block.get("id"),
@@ -135,6 +139,8 @@ class ResponseTransformer:
         message = {"role": "assistant"}
         if content_str:
             message["content"] = content_str
+        if reasoning_str:
+            message["reasoning_content"] = reasoning_str
         if tool_calls:
             message["tool_calls"] = tool_calls
             if not content_str:
@@ -174,7 +180,7 @@ class ResponseTransformer:
         """
         Gemini Response -> OpenAI ChatCompletionResponse
         """
-        # Gemini: { "candidates": [ { "content": { "parts": [ { "text": "..." } | { "functionCall": {...}} ] }, "finishReason": "STOP" } ] }
+        # Gemini: { "candidates": [ { "content": { "parts": [ { "text": "..." } | { "thought": "..." } | { "functionCall": {...}} ] }, "finishReason": "STOP" } ] }
         choices: list[dict] = []
 
         candidates = raw.get("candidates") or []
@@ -183,12 +189,18 @@ class ResponseTransformer:
             parts = cand.get("content", {}).get("parts", [])
 
             text_content = ""
+            reasoning_content = ""
             tool_calls: list[dict[str, Any]] = []
 
             for idx, part in enumerate(parts):
                 # 文本片段
                 if "text" in part:
                     text_content += part.get("text", "")
+                    continue
+                
+                # 思维过程 (Gemini 2.0 Thinking)
+                if "thought" in part:
+                    reasoning_content += part.get("thought", "")
                     continue
 
                 # 函数调用 (Gemini functionCall)
@@ -208,6 +220,8 @@ class ResponseTransformer:
             message: dict[str, Any] = {"role": "assistant"}
             if text_content:
                 message["content"] = text_content
+            if reasoning_content:
+                message["reasoning_content"] = reasoning_content
             if tool_calls:
                 message["tool_calls"] = tool_calls
                 if "content" not in message:

@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,15 +29,23 @@ class ToolContextService:
         self,
         *,
         session: AsyncSession | None,
-        user_id,
+        user_id: str | uuid.UUID | None,
         query: str | None,
     ) -> list[ToolDefinition]:
         from app.services.agent.agent_service import agent_service
 
+        # Normalize user_id to UUID if provided as string
+        uid = None
+        if user_id:
+            try:
+                uid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+            except (ValueError, AttributeError):
+                uid = None
+
         start_time = time.perf_counter()
         logger.info(
             "ToolContextService: start user_id=%s has_session=%s query_len=%s",
-            user_id,
+            uid,
             bool(session),
             len(query or ""),
         )
@@ -66,10 +75,10 @@ class ToolContextService:
         ]
 
         user_tool_payloads: list[dict] = []
-        if user_id and session:
+        if uid and session:
             payload_start = time.perf_counter()
             user_tool_payloads = await mcp_discovery_service.get_active_tool_payloads(
-                session, user_id
+                session, uid
             )
             logger.info(
                 "ToolContextService: loaded user tools duration_ms=%.2f count=%s",
@@ -99,7 +108,7 @@ class ToolContextService:
 
         if use_jit:
             jit_start = time.perf_counter()
-            dynamic_hits = await tool_sync_service.search_tools(query or "", user_id)
+            dynamic_hits = await tool_sync_service.search_tools(query or "", uid)
             logger.info(
                 "ToolContextService: JIT search duration_ms=%.2f hits=%s",
                 (time.perf_counter() - jit_start) * 1000,

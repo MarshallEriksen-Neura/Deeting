@@ -177,9 +177,6 @@ export function useChatMessagingService() {
 
   const resetSession = useCallback(() => {
     const activeAssistantId = useChatStore.getState().agentId
-    if (typeof window !== "undefined" && activeAssistantId) {
-      localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`)
-    }
     setMessages([])
     setSessionId(null)
     clearAttachments()
@@ -286,9 +283,6 @@ export function useChatMessagingService() {
       if (fallbackSessionId) {
         resolvedSessionId = fallbackSessionId
         setSessionId(resolvedSessionId)
-        if (typeof window !== "undefined") {
-          localStorage.setItem(storageKey, resolvedSessionId)
-        }
       }
     }
     const payload = {
@@ -353,7 +347,6 @@ export function useChatMessagingService() {
 
             if (session) {
               setSessionId(session)
-              localStorage.setItem(storageKey, session)
             }
             if (traceId) {
               const currentMsg = useChatStore.getState().messages.find(m => m.id === assistantMessageId)

@@ -67,6 +67,11 @@ class ConversationAppendStep(BaseStep):
         assistant_msg = self._extract_assistant_message(
             ctx.get("response_transform", "response") or {}
         )
+        if assistant_msg:
+            self._append_tool_result_blocks(
+                assistant_msg,
+                ctx.get("execution", "tool_calls"),
+            )
 
         # 添加 spec_agent_suggestion 到 assistant 消息的 meta_info
         spec_suggestion = ctx.get("spec_agent_detector", "suggestion")
@@ -410,6 +415,68 @@ class ConversationAppendStep(BaseStep):
                 )
 
         return blocks or None
+
+    @classmethod
+    def _append_tool_result_blocks(
+        cls,
+        assistant_message: dict[str, Any],
+        tool_calls_log: Any,
+    ) -> None:
+        if not isinstance(assistant_message, dict):
+            return
+        result_blocks = cls._build_tool_result_blocks(tool_calls_log)
+        if not result_blocks:
+            return
+
+        meta_info = assistant_message.get("meta_info")
+        if not isinstance(meta_info, dict):
+            meta_info = {}
+
+        existing_blocks = meta_info.get("blocks")
+        if isinstance(existing_blocks, list):
+            base_blocks = list(existing_blocks)
+        else:
+            base_blocks = cls._build_blocks(
+                content_text=(
+                    assistant_message.get("content")
+                    if isinstance(assistant_message.get("content"), str)
+                    else None
+                ),
+                tool_calls=assistant_message.get("tool_calls"),
+            ) or []
+
+        meta_info["blocks"] = [*base_blocks, *result_blocks]
+        assistant_message["meta_info"] = meta_info
+
+    @staticmethod
+    def _build_tool_result_blocks(tool_calls_log: Any) -> list[dict[str, Any]]:
+        if not isinstance(tool_calls_log, list):
+            return []
+
+        blocks: list[dict[str, Any]] = []
+        for call in tool_calls_log:
+            if not isinstance(call, dict):
+                continue
+            result = call.get("output")
+            success = call.get("success")
+            if result is None and success is False:
+                result = call.get("error")
+            if result is None:
+                continue
+
+            block: dict[str, Any] = {
+                "type": "tool_result",
+                "result": result,
+                "status": "error" if success is False else "success",
+            }
+            call_id = call.get("tool_call_id")
+            if isinstance(call_id, str) and call_id:
+                block["callId"] = call_id
+            name = call.get("name")
+            if isinstance(name, str) and name:
+                block["toolName"] = name
+            blocks.append(block)
+        return blocks
 
     @staticmethod
     def _extract_assistant_message(response: dict[str, Any]) -> dict[str, Any] | None:

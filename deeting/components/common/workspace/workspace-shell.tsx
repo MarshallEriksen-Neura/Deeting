@@ -32,8 +32,8 @@ export const WorkspaceShell = memo<WorkspaceShellProps>(function WorkspaceShell(
   )
 
   return (
-    <div className="grid h-screen w-screen grid-cols-[minmax(0,1fr)_auto]">
-      <div className="min-w-0">{children}</div>
+    <div className="grid h-screen w-full grid-cols-[minmax(0,1fr)_auto]">
+      <div className="min-w-0 h-full min-h-0">{children}</div>
       <aside
         className={cn(
           "h-screen border-l bg-background transition-all duration-300",

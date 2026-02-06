@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
+from app.core.config import settings
 from app.core.database import get_sync_session
 from app.models.billing import TenantQuota
 from app.utils.time_utils import Datetime
@@ -52,13 +53,11 @@ def sync_quota_from_redis_to_db(
         # 测试环境 DummyRedis 走内存快路径
         if hasattr(redis_client, "hash_store"):
             data = redis_client.hash_store.get(full_key, {}).copy()
-        elif hasattr(redis_client, "connection_pool"):
+        elif settings.REDIS_URL:
             # 使用同步 Redis 客户端
             import redis
 
-            sync_redis = redis.from_url(
-                redis_client.connection_pool.connection_kwargs["url"]
-            )
+            sync_redis = redis.from_url(settings.REDIS_URL)
             data = sync_redis.hgetall(full_key)
 
         if not data:
@@ -135,16 +134,7 @@ async def sync_quota_from_redis_to_db_async(
         key = CacheKeys.quota_hash(tenant_id)
         full_key = cache._make_key(key)
 
-        data = None
-        if hasattr(redis_client, "hash_store"):
-            data = redis_client.hash_store.get(full_key, {}).copy()
-        elif hasattr(redis_client, "connection_pool"):
-            import redis
-
-            sync_redis = redis.from_url(
-                redis_client.connection_pool.connection_kwargs["url"]
-            )
-            data = sync_redis.hgetall(full_key)
+        data = await redis_client.hgetall(full_key)
 
         if not data:
             return {"status": "skipped", "reason": "redis_key_not_found"}

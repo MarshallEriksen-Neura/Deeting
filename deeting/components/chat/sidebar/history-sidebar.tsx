@@ -170,9 +170,6 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     resetSession();
     setMessages([]);
     clearAttachments();
-    if (typeof window !== "undefined" && activeAssistantId) {
-      localStorage.removeItem(`deeting-chat-session:${activeAssistantId}`);
-    }
     setGlobalLoading(true);
     try {
       const created = await createConversation({
@@ -395,14 +392,14 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                 t('history.untitled');
                               const isActive = sessionId === session.session_id;
                               return (
-                                <div key={session.session_id} className="group flex items-center gap-2">
+                                <div key={session.session_id} className="group/session flex items-center gap-1">
                                   <Button
                                     type="button"
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleSelectSession(session.session_id)}
                                     className={cn(
-                                      "flex-1 justify-start gap-3 rounded-lg px-2 py-2 text-left transition-all",
+                                      "min-w-0 flex-1 justify-start gap-3 rounded-lg px-2 py-2 text-left transition-all",
                                       "hover:bg-slate-100/80 dark:hover:bg-white/5",
                                       isActive && "bg-slate-100/80 dark:bg-white/5"
                                     )}
@@ -418,7 +415,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                         type="button"
                                         variant="ghost"
                                         size="icon-sm"
-                                        className="opacity-0 group-hover:opacity-100 text-slate-500 dark:text-white/40 hover:text-slate-900 dark:hover:text-white"
+                                        className="shrink-0 text-slate-300 dark:text-white/20 hover:text-slate-700 dark:hover:text-white/60 data-[state=open]:text-slate-700 dark:data-[state=open]:text-white/60 transition-colors"
                                       >
                                         <MoreHorizontal className="w-4 h-4" />
                                       </Button>

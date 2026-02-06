@@ -39,6 +39,8 @@ export interface ToolCallBlock extends BaseBlock {
 export interface ToolResultBlock extends BaseBlock {
   type: 'tool_result'
   callId?: string
+  toolName?: string
+  status?: 'success' | 'error'
   result?: unknown
 }
 

@@ -159,19 +159,9 @@ async def create_mcp_server(
     await session.commit()
     await session.refresh(new_server)
 
-    # 3. Trigger initial sync in background (remote servers only)
+    # 3. Trigger initial sync (remote servers only)
     if server_type == "sse" and sse_url:
-        background_tasks.add_task(
-            mcp_discovery_service.sync_user_tools,
-            session,  # Note: passing session to bg task can be tricky if session closes.
-            # Better to let the service create its own session or handle it carefully.
-            # For now, we rely on the service being robust or passing IDs.
-            current_user.id,
-        )
-        # Actually, sync_user_tools needs a session.
-        # It's safer to not pass the request-scoped session to background task.
-        # We should refactor sync to create its own session or just run it inline for immediate feedback?
-        # Let's run it inline for "Connect" action so user sees results immediately (or error).
+        # We run it inline for "Connect" action so user sees results immediately (or error).
         try:
             await mcp_discovery_service.sync_user_tools(session, current_user.id)
             await session.refresh(new_server)  # Refresh to get updated tools_cache

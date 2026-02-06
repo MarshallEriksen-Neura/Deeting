@@ -298,6 +298,67 @@ def _build_blocks(
     return blocks or None
 
 
+def _build_tool_result_blocks(tool_calls_log: Any) -> list[dict[str, Any]]:
+    if not isinstance(tool_calls_log, list):
+        return []
+
+    blocks: list[dict[str, Any]] = []
+    for call in tool_calls_log:
+        if not isinstance(call, dict):
+            continue
+        result = call.get("output")
+        success = call.get("success")
+        if result is None and success is False:
+            result = call.get("error")
+        if result is None:
+            continue
+
+        block: dict[str, Any] = {
+            "type": "tool_result",
+            "result": result,
+            "status": "error" if success is False else "success",
+        }
+        call_id = call.get("tool_call_id")
+        if isinstance(call_id, str) and call_id:
+            block["callId"] = call_id
+        name = call.get("name")
+        if isinstance(name, str) and name:
+            block["toolName"] = name
+        blocks.append(block)
+    return blocks
+
+
+def _append_tool_result_blocks(
+    message: dict[str, Any],
+    tool_calls_log: Any,
+) -> None:
+    if not isinstance(message, dict):
+        return
+    result_blocks = _build_tool_result_blocks(tool_calls_log)
+    if not result_blocks:
+        return
+
+    meta_info = message.get("meta_info")
+    if not isinstance(meta_info, dict):
+        meta_info = {}
+
+    existing_blocks = meta_info.get("blocks")
+    if isinstance(existing_blocks, list):
+        base_blocks = list(existing_blocks)
+    else:
+        base_blocks = _build_blocks(
+            content_text=(
+                message.get("content")
+                if isinstance(message.get("content"), str)
+                else None
+            ),
+            tool_calls=message.get("tool_calls"),
+        ) or []
+
+    meta_info["blocks"] = [*base_blocks, *result_blocks]
+    message["meta_info"] = meta_info
+
+
 def _prepare_messages(
     messages: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -357,6 +418,11 @@ async def _append_stream_conversation(
     assistant_msg = (
         {"role": "assistant", "content": assistant_text} if assistant_text else None
     )
+    if assistant_msg:
+        _append_tool_result_blocks(
+            assistant_msg,
+            ctx.get("execution", "tool_calls"),
+        )
 
     raw_messages: list[dict[str, Any]] = []
     if user_messages:

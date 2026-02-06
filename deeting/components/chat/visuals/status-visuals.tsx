@@ -25,7 +25,7 @@ export function StatusStream({
     <div
       className={cn(
         "rounded-xl border border-slate-200/70 dark:border-white/10 bg-white/85 dark:bg-white/5",
-        "px-3 py-2 backdrop-blur-sm transition-all duration-300",
+        "px-3 py-2 backdrop-blur-sm transition-all duration-300 min-w-[180px]",
         compact ? "text-[10px]" : "text-xs",
         remembering && "bg-blue-50/60 dark:bg-blue-500/10 border-blue-200/50 dark:border-blue-500/30"
       )}
@@ -79,7 +79,12 @@ export function StatusStream({
 
 export function HolographicPulse({ label, className }: { label: string, className?: string }) {
   return (
-    <div className={cn("relative w-full h-24 rounded-xl overflow-hidden bg-gradient-to-r from-transparent via-white/5 to-transparent dark:via-white/5", className)}>
+    <div
+      className={cn(
+        "relative w-full h-28 md:h-32 rounded-xl overflow-hidden bg-gradient-to-r from-transparent via-white/5 to-transparent dark:via-white/5",
+        className
+      )}
+    >
         {/* Animated Gradient Background */}
         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-blue-500/5 animate-[shimmer_3s_infinite] bg-[length:200%_100%]" />
         
@@ -87,7 +92,7 @@ export function HolographicPulse({ label, className }: { label: string, classNam
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
              <div className="relative">
                 <div className="absolute -inset-2 bg-blue-500/20 rounded-full blur-xl animate-pulse" />
-                <Sparkles className="w-5 h-5 text-blue-500/80 animate-bounce [animation-duration:3s]" />
+                <Sparkles className="w-6 h-6 text-blue-500/80 animate-bounce [animation-duration:3s]" />
              </div>
              <span className="text-xs font-mono text-slate-500 dark:text-muted-foreground/60 tracking-widest uppercase animate-pulse">
                 {label}

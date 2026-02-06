@@ -54,7 +54,7 @@ export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
   // 加载状态
   if (!agent && isLoadingAssistants) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-60px)] space-y-4">
+      <div className="flex flex-col items-center justify-center w-full h-full min-h-0 space-y-4">
         <div className="bg-muted p-4 rounded-full">
           <Bot className="w-8 h-8 text-muted-foreground" />
         </div>
@@ -69,7 +69,7 @@ export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
       return <>{children}</>
     }
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-60px)] space-y-4">
+      <div className="flex flex-col items-center justify-center w-full h-full min-h-0 space-y-4">
         <div className="bg-muted p-4 rounded-full">
           <Bot className="w-8 h-8 text-muted-foreground" />
         </div>
@@ -84,7 +84,7 @@ export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
 
   // 正常聊天布局
   return (
-    <div className="flex flex-col h-[calc(100vh-60px)] min-h-0 overflow-hidden bg-transparent">
+    <div className="flex flex-1 w-full h-full min-h-0 overflow-hidden bg-transparent">
       {children}
     </div>
   )

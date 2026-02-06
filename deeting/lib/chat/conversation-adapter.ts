@@ -21,13 +21,90 @@ const isToolCallArray = (value: unknown): value is ToolCall[] =>
 const isBlockArray = (value: unknown): value is MessageBlock[] =>
   Array.isArray(value) && value.every((item) => item && typeof item === "object" && "type" in item)
 
+const hasRenderableBlocks = (blocks: MessageBlock[]) =>
+  blocks.some((block) => {
+    if (block.type === "text") {
+      return typeof block.content === "string" && block.content.trim().length > 0
+    }
+    if (block.type === "thought") {
+      return true
+    }
+    if (block.type === "tool_call") {
+      return Boolean(block.toolName || block.toolArgs || block.status)
+    }
+    if (block.type === "tool_result") {
+      return Boolean(block.callId || block.toolName || block.result !== undefined)
+    }
+    return false
+  })
+
+const normalizeLineBreaks = (text: string) => text.replace(/\r\n?/g, "\n")
+
+const decodeEscapedNewlines = (text: string) => {
+  if (text.includes("\n")) return text
+  if (!text.includes("\\n")) return text
+  return text.replace(/\\n/g, "\n")
+}
+
+const normalizeTextValue = (value: string) =>
+  decodeEscapedNewlines(normalizeLineBreaks(value))
+
 const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBlock[] => {
-  return blocks.map((block, index) => ({
-    ...block,
-    id: block.id || `${messageId}-block-${index}`,
-    streamState: block.streamState || 'completed',
-    displayMode: block.displayMode || 'bubble',
-  }))
+  return blocks.map((block, index) => {
+    const normalizedBase = {
+      ...block,
+      id: block.id || `${messageId}-block-${index}`,
+      streamState: block.streamState || "completed",
+      displayMode: block.displayMode || "bubble",
+    }
+
+    if (block.type === "text") {
+      return {
+        ...normalizedBase,
+        content: normalizeTextValue(
+          typeof block.content === "string" ? block.content : String(block.content ?? "")
+        ),
+      }
+    }
+
+    if (block.type === "thought") {
+      return {
+        ...normalizedBase,
+        content: normalizeTextValue(
+          typeof block.content === "string" ? block.content : String(block.content ?? "")
+        ),
+      }
+    }
+
+    if (block.type === "tool_call") {
+      return {
+        ...normalizedBase,
+        toolName: typeof block.toolName === "string" ? block.toolName : undefined,
+        toolArgs:
+          typeof block.toolArgs === "string"
+            ? normalizeTextValue(block.toolArgs)
+            : undefined,
+      }
+    }
+
+    if (block.type === "tool_result") {
+      return {
+        ...normalizedBase,
+        callId: typeof block.callId === "string" ? block.callId : undefined,
+        toolName: typeof block.toolName === "string" ? block.toolName : undefined,
+        status:
+          block.status === "success" || block.status === "error"
+            ? block.status
+            : undefined,
+        result:
+          typeof block.result === "string"
+            ? normalizeTextValue(block.result)
+            : block.result,
+      }
+    }
+
+    return normalizedBase
+  })
 }
 
 const readContentCandidate = (message: ConversationMessage): unknown => {
@@ -58,25 +135,30 @@ export function normalizeConversationMessages(
     const normalizedRole = normalizeRole(msg.role)
     const candidate = readContentCandidate(msg)
     const parsed = parseMessageContent(candidate)
+    const normalizedText = normalizeTextValue(parsed.text)
     const metaInfo = msg.meta_info as MessageMetaInfo | undefined
     const toolCalls = isToolCallArray(metaInfo?.tool_calls)
       ? metaInfo?.tool_calls
       : undefined
     const toolCallId =
       typeof metaInfo?.tool_call_id === "string" ? metaInfo.tool_call_id : undefined
+    const messageId = `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`
     const blocks = isBlockArray(metaInfo?.blocks)
-      ? normalizeBlocks(metaInfo.blocks, `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`)
-      : normalizeMessage(parsed.text)
+      ? normalizeBlocks(metaInfo.blocks, messageId)
+      : normalizeMessage(normalizedText)
+    const textFallback = normalizeMessage(normalizedText)
+    const resolvedBlocks =
+      blocks.length > 0 && hasRenderableBlocks(blocks) ? blocks : textFallback
     return {
-      id: `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`,
+      id: messageId,
       role: normalizedRole === "assistant" ? "assistant" : normalizedRole === "system" ? "system" : "user",
-      content: parsed.text,
+      content: normalizedText,
       attachments: parsed.attachments.length ? parsed.attachments : undefined,
       createdAt: Date.now() - (total - index) * 1000,
       metaInfo,
       toolCalls,
       toolCallId,
-      blocks,
+      blocks: resolvedBlocks,
     }
   })
 }

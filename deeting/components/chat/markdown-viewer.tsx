@@ -5,12 +5,12 @@ import { isValidElement } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
-import rehypePrism from "rehype-prism-plus"
 import { cn } from "@/lib/utils"
 import { CodeBlock } from "@/components/chat/code-block"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
 
 const INLINE_FENCE_REGEX = /```([a-zA-Z0-9_-]+)?\s+([^\n`]+?)```/g
+const FENCE_DELIMITER_REGEX = /```/g
 
 function normalizeInlineFences(raw: string) {
   return raw.replace(INLINE_FENCE_REGEX, (_match, lang, code) => {
@@ -18,6 +18,23 @@ function normalizeInlineFences(raw: string) {
     const content = typeof code === "string" ? code.trim() : ""
     return `\`\`\`${language}\n${content}\n\`\`\``
   })
+}
+
+function normalizeMarkdownContent(raw: string) {
+  const normalizedLineBreaks = raw.replace(/\r\n?/g, "\n")
+  let normalized = normalizeInlineFences(normalizedLineBreaks)
+
+  // Some upstream payloads store escaped newlines as "\\n", which causes one-line rendering.
+  if (!normalized.includes("\n") && normalized.includes("\\n")) {
+    normalized = normalized.replace(/\\n/g, "\n")
+  }
+
+  const fenceCount = normalized.match(FENCE_DELIMITER_REGEX)?.length ?? 0
+  if (fenceCount % 2 !== 0) {
+    normalized = `${normalized}\n\`\`\``
+  }
+
+  return normalized
 }
 
 export function MarkdownViewer({
@@ -30,7 +47,7 @@ export function MarkdownViewer({
   const { resolvedTheme } = useTheme()
   const dataTheme = resolvedTheme === "dark" ? "dark" : "light"
 
-  const normalizedContent = normalizeInlineFences(content)
+  const normalizedContent = normalizeMarkdownContent(content)
 
   return (
     <div
@@ -39,7 +56,6 @@ export function MarkdownViewer({
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
-        rehypePlugins={[rehypePrism]}
         components={{
           a: ({ children, href }) => (
             <a
@@ -81,7 +97,7 @@ export function MarkdownViewer({
               )
             }
             return (
-              <pre className="mt-3 overflow-auto rounded-lg border border-border bg-muted/60 p-3 text-xs font-mono">
+              <pre className="mt-3 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/60 p-3 text-xs font-mono">
                 {children}
               </pre>
             )
@@ -104,7 +120,7 @@ export function MarkdownViewer({
           td: ({ children }) => (
             <td className="border border-border px-2 py-1">{children}</td>
           ),
-          img: ({ src, alt, ...props }) => (
+          img: ({ src, alt }) => (
             <div className="my-2">
               <ImageLightbox src={src || ""} alt={alt || ""} className="max-w-full rounded-lg border border-border/50" />
             </div>

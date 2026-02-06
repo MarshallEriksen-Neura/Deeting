@@ -109,14 +109,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     );
 
     return (
-      <div className="flex flex-col gap-2 w-full items-start">
-        <div
-          className={cn(
-            "w-full max-w-[85%] rounded-2xl rounded-tl-none text-[15px] leading-relaxed",
-            "bg-white/95 dark:bg-zinc-900/95 border border-slate-100 dark:border-zinc-800 text-foreground",
-            "shadow-sm backdrop-blur-sm overflow-hidden"
-          )}
-          data-slot="glass-card"
+      <div
+        className={cn(
+          "w-fit rounded-2xl rounded-tl-none text-[15px] leading-relaxed",
+          "bg-white/95 dark:bg-zinc-900/95 border border-slate-100 dark:border-zinc-800 text-foreground",
+          "shadow-sm backdrop-blur-sm overflow-hidden"
+        )}
+        data-slot="glass-card"
         >
           <div className="px-5 py-3.5">
             {isActive && (
@@ -174,8 +173,22 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                       );
                     }
 
-                    // --- C. 普通文本 ---
-                    if (!part.content?.trim()) return null;
+                    // --- C. MCP 工具结果 ---
+                    if (part.type === 'tool_result') {
+                      return (
+                        <motion.div key={`tool-result-${index}`} variants={itemVariants}>
+                          <ToolResultBlock
+                            name={part.toolName}
+                            callId={part.callId}
+                            status={part.status}
+                            result={part.result}
+                          />
+                        </motion.div>
+                      );
+                    }
+
+                    // --- D. 普通文本 ---
+                    if (!part.content) return null;
 
                     return (
                       <motion.div key={`text-${index}`} variants={itemVariants}>
@@ -197,7 +210,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
             </AnimatePresence>
           </div>
         </div>
-      </div>
     );
   },
   // 自定义比较函数，优化重渲染判断
@@ -216,6 +228,8 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         prevPart.content !== nextPart.content ||
         prevPart.toolName !== nextPart.toolName ||
         prevPart.toolArgs !== nextPart.toolArgs ||
+        prevPart.callId !== nextPart.callId ||
+        prevPart.result !== nextPart.result ||
         prevPart.status !== nextPart.status ||
         prevPart.cost !== nextPart.cost
       );
@@ -339,3 +353,49 @@ const ToolCallBlock = memo<{ name?: string; args?: string; status?: string }>(
     );
   }
 );
+
+const ToolResultBlock = memo<{
+  name?: string;
+  callId?: string;
+  status?: "success" | "error";
+  result?: unknown;
+}>(function ToolResultBlock({ name, callId, status, result }) {
+  const title = name || callId || "tool_result";
+  const isError = status === "error";
+  const content = useMemo(() => {
+    if (typeof result === "string") {
+      return result;
+    }
+    if (result === null || result === undefined) {
+      return "";
+    }
+    try {
+      return `\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``;
+    } catch {
+      return String(result);
+    }
+  }, [result]);
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-3 text-sm",
+        isError
+          ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+          : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
+      )}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <div className="font-mono text-xs font-semibold">{title}</div>
+        <Badge variant="outline" className="h-5 text-[10px] font-normal">
+          {isError ? "ERROR" : "OUTPUT"}
+        </Badge>
+      </div>
+      {content ? (
+        <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />
+      ) : (
+        <div className="text-xs text-muted-foreground">No output</div>
+      )}
+    </div>
+  );
+});

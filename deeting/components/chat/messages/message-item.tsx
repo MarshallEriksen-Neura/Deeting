@@ -61,7 +61,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     return (
       <div
         className={cn(
-          "flex gap-3",
+          "flex w-full min-w-0 gap-3 shrink-0",
           message.role === "user" ? "flex-row-reverse" : "flex-row"
         )}
       >
@@ -104,7 +104,7 @@ export const MessageItem = React.memo<MessageItemProps>(
             </div>
           </div>
         ) : (
-          <div className="relative max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide shadow-md bg-primary text-primary-foreground">
+          <div className="relative min-w-0 max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide shadow-md bg-primary/90 backdrop-blur-sm border border-primary/20 text-primary-foreground">
             {message.attachments?.length ? (
               <div className="mb-3">
                 <MessageAttachments

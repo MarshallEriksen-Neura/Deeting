@@ -25,7 +25,7 @@ export function ChatContent({ agent }: ChatContentProps) {
   const sendFeedback = useChatStore((state) => state.sendFeedback)
 
   return (
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-1 min-h-0 h-full w-full">
       <ChatMessageList
         messages={messages}
         agent={agent}
