@@ -34,6 +34,9 @@ const hasRenderableBlocks = (blocks: MessageBlock[]) =>
     if (block.type === "tool_result") {
       return Boolean(block.callId || block.toolName || block.result !== undefined)
     }
+    if (block.type === "error") {
+      return typeof block.message === "string" && block.message.trim().length > 0
+    }
     return false
   })
 
@@ -106,6 +109,15 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
           typeof block.result === "string"
             ? normalizeTextValue(block.result)
             : block.result,
+      }
+    }
+
+    if (block.type === "error") {
+      return {
+        ...normalizedBase,
+        message: normalizeTextValue(
+          typeof block.message === "string" ? block.message : String(block.message ?? "")
+        ),
       }
     }
 

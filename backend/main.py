@@ -177,6 +177,7 @@ def register_routes(app: FastAPI) -> None:
         settings_router,
         spec_agent_router,
         user_api_keys_router,
+        user_documents_router,
         user_mcp_router,
         users_router,
     )
@@ -286,6 +287,9 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(mcp_router, prefix=api_prefix, tags=["MCP Market"])
     app.include_router(
         user_mcp_router, prefix=f"{api_prefix}/mcp", tags=["User MCP Servers"]
+    )
+    app.include_router(
+        user_documents_router, prefix=f"{api_prefix}/documents", tags=["User Documents"]
     )
     app.include_router(settings_router, prefix=api_prefix, tags=["Settings"])
     app.include_router(

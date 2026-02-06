@@ -250,26 +250,8 @@ MessageItem
 
 ## 迁移指南
 
-### 从旧的 chat-message-list.tsx 迁移
+### 标准接入方式
 
-**之前（旧实现）：**
-```tsx
-// 在 chat-message-list.tsx 中直接渲染所有消息
-// 无虚拟滚动，大列表性能差
-import { ChatMessageList } from "@/app/[locale]/chat/components/chat-message-list"
-
-<ChatMessageList
-  messages={messages}
-  agent={agent}
-  isTyping={isTyping}
-  streamEnabled={streamEnabled}
-  statusStage={statusStage}
-  statusCode={statusCode}
-  statusMeta={statusMeta}
-/>
-```
-
-**之后（新实现）：**
 ```tsx
 // 使用新的 ChatMessageList，自动启用虚拟滚动
 // 使用 MessageItem 组件，性能优化
@@ -289,9 +271,7 @@ import { ChatMessageList } from "@/components/chat/messages"
 **主要变化：**
 
 1. **导入路径变更**：
-   - 旧：`@/app/[locale]/chat/components/chat-message-list`
-   - 新：`@/components/chat/messages`（推荐）
-   - 兼容：旧路径仍可用，但已标记为 deprecated
+   - 统一使用：`@/components/chat/messages`
 
 2. **虚拟滚动**：
    - 消息数量 > 50 时自动启用虚拟滚动
@@ -304,8 +284,7 @@ import { ChatMessageList } from "@/components/chat/messages"
    - 更好的代码组织和性能优化
 
 4. **Props 接口**：
-   - 保持完全兼容，无需修改调用代码
-   - 内部实现优化，外部 API 不变
+   - 使用统一接口，不再维护旧路径差异
 
 ### 从内联消息渲染迁移到 MessageItem
 

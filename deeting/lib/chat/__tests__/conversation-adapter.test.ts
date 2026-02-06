@@ -136,6 +136,39 @@ describe("normalizeConversationMessages", () => {
     ])
   })
 
+  it("keeps error block as renderable assistant output", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: "legacy-error-text",
+        turn_index: 12,
+        meta_info: {
+          blocks: [
+            {
+              type: "error",
+              message: "request failed\\ncode=upstream_timeout",
+            },
+          ],
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.content).toBe("")
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        type: "error",
+        message: "request failed\ncode=upstream_timeout",
+      }),
+    ])
+  })
+
   it("uses backend created_at as message createdAt", () => {
     const createdAtIso = "2026-02-01T10:20:30.000Z"
     const [message] = normalizeConversationMessages(
@@ -143,7 +176,7 @@ describe("normalizeConversationMessages", () => {
         {
           role: "assistant",
           content: "hello",
-          turn_index: 12,
+          turn_index: 13,
           created_at: createdAtIso,
         },
       ] as unknown as Parameters<typeof normalizeConversationMessages>[0],
@@ -161,7 +194,7 @@ describe("normalizeConversationMessages", () => {
         {
           role: "user",
           content: "用户输入",
-          turn_index: 13,
+          turn_index: 14,
         },
       ] as unknown as Parameters<typeof normalizeConversationMessages>[0],
       {

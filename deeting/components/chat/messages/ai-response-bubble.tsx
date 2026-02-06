@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, memo } from "react";
-import { Brain, ChevronDown, ChevronRight, Loader2, Terminal } from "lucide-react";
+import { AlertTriangle, Brain, ChevronDown, ChevronRight, Loader2, Terminal } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -187,6 +187,14 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                       );
                     }
 
+                    if (part.type === 'error') {
+                      return (
+                        <motion.div key={`error-${index}`} variants={itemVariants}>
+                          <ErrorMessageBlock message={part.message} />
+                        </motion.div>
+                      );
+                    }
+
                     // --- D. 普通文本 ---
                     if (!part.content) return null;
 
@@ -230,6 +238,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         prevPart.toolArgs !== nextPart.toolArgs ||
         prevPart.callId !== nextPart.callId ||
         prevPart.result !== nextPart.result ||
+        prevPart.message !== nextPart.message ||
         prevPart.status !== nextPart.status ||
         prevPart.cost !== nextPart.cost
       );
@@ -396,6 +405,21 @@ const ToolResultBlock = memo<{
       ) : (
         <div className="text-xs text-muted-foreground">No output</div>
       )}
+    </div>
+  );
+});
+
+const ErrorMessageBlock = memo<{ message?: string }>(function ErrorMessageBlock({ message }) {
+  const t = useI18n("chat");
+  return (
+    <div className="rounded-lg border border-red-200 bg-red-50/60 p-3 text-sm dark:border-red-900 dark:bg-red-900/20">
+      <div className="mb-1 flex items-center gap-2 font-semibold text-red-700 dark:text-red-300">
+        <AlertTriangle size={14} />
+        <span>{t("error.requestFailed")}</span>
+      </div>
+      <div className="text-xs text-red-700/90 dark:text-red-200/90">
+        {message || t("error.title")}
+      </div>
     </div>
   );
 });

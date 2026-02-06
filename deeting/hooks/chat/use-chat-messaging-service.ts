@@ -121,7 +121,6 @@ export function useChatMessagingService() {
     setInput,
     clearAttachments,
     setMessages,
-    updateMessage,
     mergeMessageMeta,
     setMessageBlocks,
     appendMessageBlocks,
@@ -331,7 +330,15 @@ export function useChatMessagingService() {
               }
               if (payload.type === "error") {
                 const message = payload.message || "Request failed"
-                updateMessage(assistantMessageId, message)
+                setMessageBlocks(assistantMessageId, [
+                  {
+                    id: `${assistantMessageId}-error`,
+                    type: "error",
+                    message,
+                    streamState: "completed",
+                    displayMode: "bubble",
+                  },
+                ])
                 setErrorMessage(payload.error_code ? `${payload.error_code}: ${message}` : message)
                 return
               }
@@ -379,7 +386,15 @@ export function useChatMessagingService() {
       )
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Request failed"
-      updateMessage(assistantMessageId, message)
+      setMessageBlocks(assistantMessageId, [
+        {
+          id: `${assistantMessageId}-error`,
+          type: "error",
+          message,
+          streamState: "completed",
+          displayMode: "bubble",
+        },
+      ])
       setErrorMessage(message)
     } finally {
       setIsLoading(false)
@@ -400,7 +415,6 @@ export function useChatMessagingService() {
     setInput,
     clearAttachments,
     setMessages,
-    updateMessage,
     mergeMessageMeta,
     setMessageBlocks,
     appendMessageBlocks,

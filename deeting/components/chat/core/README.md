@@ -340,14 +340,13 @@ interface ChatMessagesContextValue {
   messages: Message[]              // 消息列表
   isTyping: boolean                // 是否正在输入/加载
   addMessage: (role, content, attachments?) => void  // 添加消息
-  updateMessage: (id, content) => void               // 更新消息
   clearMessages: () => void                          // 清空消息
 }
 ```
 
 **使用场景：**
 - 消息列表组件
-- 需要添加或更新消息
+- 需要添加消息
 - 需要检查加载状态
 
 ### ChatUIStateContext
@@ -393,54 +392,9 @@ interface ChatConfigContextValue {
 - 状态指示器
 - 会话重置
 
-## 向后兼容
+## 导入与使用
 
-为了保持向后兼容，原来的文件已更新为重导出新实现。
-
-### ChatContainer 向后兼容
-
-```tsx
-// 旧路径（仍然可用，但不推荐）
-import { ChatContainer } from "@/app/[locale]/chat/components/chat-container"
-
-// 新路径（推荐）
-import { ChatContainer } from "@/components/chat/core"
-```
-
-### ChatLayout 向后兼容
-
-```tsx
-// 旧路径（仍然可用，但不推荐）
-import { ChatLayout } from "@/app/[locale]/chat/components/chat-layout"
-
-// 新路径（推荐）
-import { ChatLayout } from "@/components/chat/core"
-```
-
-### ChatErrorBoundary 向后兼容
-
-```tsx
-// 旧路径（仍然可用，但不推荐）
-import { ChatErrorBoundary } from "@/app/[locale]/chat/components/chat-error-boundary"
-
-// 新路径（推荐）
-import { ChatErrorBoundary } from "@/components/chat/core"
-```
-
-### ChatProvider 向后兼容
-
-### 旧的使用方式（仍然支持）
-
-```tsx
-import { useChatContext } from "@/app/[locale]/chat/components/chat-provider"
-
-function MyComponent() {
-  const { input, setInput, isTyping } = useChatContext()
-  // ...
-}
-```
-
-### 推荐的新方式
+### 推荐方式
 
 ```tsx
 import { useChatUIState, useChatMessages } from "@/components/chat/core"
@@ -457,15 +411,11 @@ function MyComponent() {
 - 更清晰的依赖关系
 - 更好的类型提示
 
-## 迁移指南
+## 接入步骤
 
-### 步骤 1：更新导入
+### 步骤 1：统一导入
 
 ```tsx
-// 旧
-import { useChatContext } from "@/app/[locale]/chat/components/chat-provider"
-
-// 新
 import { 
   useChatMessages, 
   useChatUIState, 
@@ -473,20 +423,9 @@ import {
 } from "@/components/chat/core"
 ```
 
-### 步骤 2：拆分 Hook 调用
+### 步骤 2：按职责拆分 Hook 调用
 
 ```tsx
-// 旧
-function MyComponent() {
-  const { 
-    input, 
-    setInput, 
-    isTyping, 
-    errorMessage 
-  } = useChatContext()
-}
-
-// 新
 function MyComponent() {
   const { input, setInput } = useChatUIState()
   const { isTyping } = useChatMessages()
@@ -582,7 +521,6 @@ const mockContextValue = {
   messages: [],
   isTyping: false,
   addMessage: jest.fn(),
-  updateMessage: jest.fn(),
   clearMessages: jest.fn(),
 }
 
@@ -610,9 +548,9 @@ A: 是的。组件只订阅需要的 Context，避免了不必要的重渲染。
 - 只显示消息的组件不会因为输入框内容变化而重渲染
 - 只管理输入的组件不会因为消息更新而重渲染
 
-### Q: 我应该使用旧的 useChatContext 还是新的拆分 Hooks？
+### Q: 应该使用哪个聊天 Hook？
 
-A: 推荐使用新的拆分 Hooks。旧的 API 仅为向后兼容保留，新代码应使用拆分的 Hooks。
+A: 直接使用拆分后的 Hooks（`useChatMessages` / `useChatUIState` / `useChatConfig`）。
 
 ### Q: 如何决定使用哪个 Context？
 
@@ -656,7 +594,6 @@ A: 根据组件的职责：
 - ✅ ChatLayout 使用 useCallback 缓存事件处理函数
 - ✅ ChatErrorBoundary 保持类组件实现
 - ✅ DefaultErrorFallback 使用 React.memo 优化
-- ✅ 创建向后兼容的重导出文件
 - ✅ 添加完整的 JSDoc 文档
 - ✅ 更新 ChatContainer 的导入路径
 
@@ -665,11 +602,9 @@ A: 根据组件的职责：
 - ✅ 使用 useCallback 缓存事件处理函数
 - ✅ 使用 useMemo 缓存计算结果和 props
 - ✅ 确保使用 SWR Hooks 获取数据
-- ✅ 创建向后兼容的重导出文件
 - ✅ 添加完整的 JSDoc 文档
 
 ### 2024 - 任务 13.1
 - ✅ 创建三个独立的 Context
 - ✅ 使用 useMemo 缓存 Context 值
-- ✅ 保持向后兼容的 API
 - ✅ 添加完整的文档和示例

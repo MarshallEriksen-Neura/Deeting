@@ -56,6 +56,7 @@ from app.api.v1.user_api_keys_route import (
 from app.api.v1.users_route import router as users_router
 
 from .knowledge_route import router as knowledge_router
+from app.api.operations.user_document_router import router as user_documents_router
 from .mcp_route import router as mcp_router
 from .settings_route import router as settings_router
 
@@ -99,6 +100,7 @@ __all__ = [
     "settings_router",
     "spec_agent_router",
     "user_api_keys_router",
+    "user_documents_router",
     "user_mcp_router",
     "users_router",
 ]

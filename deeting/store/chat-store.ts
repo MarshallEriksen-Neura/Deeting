@@ -154,7 +154,6 @@ interface ChatStore {
   clearOverrideAssistantId: () => void
   setMessages: (messages: Message[]) => void
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
-  updateMessage: (id: string, content: string) => void
   mergeMessageMeta: (id: string, patch: Record<string, unknown>) => void
   setMessageBlocks: (id: string, blocks: MessageBlock[]) => void
   appendMessageBlocks: (id: string, blocks: MessageBlock[]) => void
@@ -408,34 +407,6 @@ export const useChatStore = create<ChatStore>()(
         set((state) => ({ messages: [...state.messages, newMessage] }))
       },
 
-      updateMessage: (id, content) =>
-        set((state) => ({
-          messages: state.messages.map((msg) => {
-            if (msg.id !== id) return msg
-            // In this dev-only mode we treat blocks as the primary rendering model.
-            // Keep message.content for copy/search, but always mirror it into a trailing text block.
-            if (msg.role !== "assistant") return { ...msg, content }
-
-            const preserved = (msg.blocks || []).filter((b) => b?.type !== "text")
-            const trimmed = (content || "").trim()
-            const textBlock: MessageBlock | null = trimmed
-              ? {
-                  id: `${msg.id}-text`,
-                  type: "text",
-                  content,
-                  streamState: "streaming",
-                  displayMode: "bubble",
-                }
-              : null
-
-            return {
-              ...msg,
-              content,
-              blocks: textBlock ? [...preserved, textBlock] : preserved,
-            }
-          }),
-        })),
-
       mergeMessageMeta: (id, patch) =>
         set((state) => ({
           messages: state.messages.map((msg) => {
@@ -604,7 +575,7 @@ export const useChatStore = create<ChatStore>()(
       setErrorMessage: (errorMessage) => set({ errorMessage }),
 
       sendFeedback: async (messageId: string, score: number) => {
-        const { messages, updateMessage } = get()
+        const { messages } = get()
         const message = messages.find((m) => m.id === messageId)
         if (!message) return
 

@@ -66,8 +66,13 @@ export const MessageItem = React.memo<MessageItemProps>(
     const assistantCopyContent = React.useMemo(() => {
       if (message.role !== "assistant") return message.content
       return assistantParts.reduce((acc, block) => {
-        if (block.type !== "text") return acc
-        return typeof block.content === "string" ? `${acc}${block.content}` : acc
+        if (block.type === "text") {
+          return typeof block.content === "string" ? `${acc}${block.content}` : acc
+        }
+        if (block.type === "error") {
+          return typeof block.message === "string" ? `${acc}${block.message}` : acc
+        }
+        return acc
       }, "")
     }, [assistantParts, message.content, message.role])
 

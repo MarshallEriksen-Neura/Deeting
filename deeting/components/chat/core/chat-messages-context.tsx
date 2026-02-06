@@ -39,10 +39,7 @@ export interface ChatMessagesContextValue {
   
   /** 添加新消息 */
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
-  
-  /** 更新指定消息的内容 */
-  updateMessage: (id: string, content: string) => void
-  
+
   /** 清空所有消息 */
   clearMessages: () => void
 }
@@ -75,7 +72,6 @@ export function ChatMessagesProvider({ children }: ChatMessagesProviderProps) {
   const {
     messages,
     addMessage,
-    updateMessage,
     clearMessages,
     isLoading: isTyping,
   } = useChatStore()
@@ -85,10 +81,9 @@ export function ChatMessagesProvider({ children }: ChatMessagesProviderProps) {
       messages,
       isTyping,
       addMessage,
-      updateMessage,
       clearMessages,
     }),
-    [messages, isTyping, addMessage, updateMessage, clearMessages]
+    [messages, isTyping, addMessage, clearMessages]
   )
 
   return (
