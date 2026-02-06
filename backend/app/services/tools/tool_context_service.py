@@ -58,7 +58,28 @@ class ToolContextService:
             len(agent_service.tools),
         )
 
-        enabled_plugins = plugin_config_loader.get_enabled_plugins()
+        # 获取用户角色信息（用于受限插件过滤）
+        user_roles: set[str] = set()
+        is_superuser = False
+        if uid and session:
+            from app.repositories import UserRepository
+
+            try:
+                user_repo = UserRepository(session)
+                user_obj = await user_repo.get_user_with_roles(uid)
+                if user_obj:
+                    is_superuser = user_obj.is_superuser
+                    user_roles = {r.name for r in user_obj.roles}
+            except Exception:
+                logger.warning(
+                    "ToolContextService: failed to fetch user roles user_id=%s",
+                    uid,
+                    exc_info=True,
+                )
+
+        enabled_plugins = plugin_config_loader.get_plugins_for_user(
+            user_roles, is_superuser
+        )
         allowed_tool_names = set()
         core_tool_names = set()
         for plugin in enabled_plugins:
@@ -121,6 +142,8 @@ class ToolContextService:
                 existing_names.add(tool.name)
             for tool in dynamic_hits:
                 if tool.name in existing_names:
+                    continue
+                if tool.name not in allowed_tool_names:
                     continue
                 final_tools.append(tool)
                 existing_names.add(tool.name)

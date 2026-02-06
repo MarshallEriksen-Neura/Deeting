@@ -48,19 +48,12 @@ const decodeEscapedNewlines = (text: string) => {
 const normalizeTextValue = (value: string) =>
   decodeEscapedNewlines(normalizeLineBreaks(value))
 
-const buildTextOnlyBlocks = (text: string): MessageBlock[] => {
-  const normalized = normalizeTextValue(text)
-  if (!normalized.trim()) return []
-  return [
-    {
-      id: "text-1",
-      type: "text",
-      content: normalized,
-      streamState: "completed",
-      displayMode: "bubble",
-    },
-  ]
-}
+const extractAssistantTextFromBlocks = (blocks: MessageBlock[]): string =>
+  blocks.reduce((acc, block) => {
+    if (block.type !== "text") return acc
+    if (typeof block.content !== "string") return acc
+    return `${acc}${block.content}`
+  }, "")
 
 const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBlock[] => {
   return blocks.map((block, index) => {
@@ -170,22 +163,28 @@ export function normalizeConversationMessages(
     const toolCallId =
       typeof metaInfo?.tool_call_id === "string" ? metaInfo.tool_call_id : undefined
     const messageId = `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`
-    const blocks = isBlockArray(metaInfo?.blocks)
+    const assistantBlocks = isBlockArray(metaInfo?.blocks)
       ? normalizeBlocks(metaInfo.blocks, messageId)
-      : buildTextOnlyBlocks(normalizedText)
-    const textFallback = buildTextOnlyBlocks(normalizedText)
+      : []
+    const resolvedAssistantBlocks =
+      assistantBlocks.length > 0 && hasRenderableBlocks(assistantBlocks)
+        ? assistantBlocks
+        : []
+    const assistantText = extractAssistantTextFromBlocks(resolvedAssistantBlocks)
     const resolvedBlocks =
-      blocks.length > 0 && hasRenderableBlocks(blocks) ? blocks : textFallback
+      normalizedRole === "assistant" ? resolvedAssistantBlocks : undefined
+    const resolvedContent =
+      normalizedRole === "assistant" ? assistantText : normalizedText
     return {
       id: messageId,
       role: normalizedRole === "assistant" ? "assistant" : normalizedRole === "system" ? "system" : "user",
-      content: normalizedText,
+      content: resolvedContent,
       attachments: parsed.attachments.length ? parsed.attachments : undefined,
       createdAt: resolveCreatedAt(msg, index, total),
       metaInfo,
       toolCalls,
       toolCallId,
-      blocks: resolvedBlocks,
+      ...(resolvedBlocks !== undefined ? { blocks: resolvedBlocks } : {}),
     }
   })
 }

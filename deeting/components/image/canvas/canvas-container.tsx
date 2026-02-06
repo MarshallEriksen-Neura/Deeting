@@ -306,20 +306,7 @@ export default function Canvas() {
           const isActive = isLastAssistant && isLoading;
 
           if (msg.role === 'assistant') {
-            const blocks: MessageBlock[] =
-              msg.blocks?.length
-                ? msg.blocks
-                : msg.content?.trim()
-                  ? [
-                      {
-                        id: `${msg.id}-text-1`,
-                        type: 'text',
-                        content: msg.content,
-                        streamState: 'completed',
-                        displayMode: 'bubble',
-                      },
-                    ]
-                  : [];
+            const blocks: MessageBlock[] = msg.blocks?.length ? msg.blocks : [];
             return (
               <AssistantMessageBubble
                 key={msg.id}

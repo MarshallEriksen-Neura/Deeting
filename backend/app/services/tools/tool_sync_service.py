@@ -97,14 +97,14 @@ class ToolSyncService:
         if not qdrant_is_configured():
             return 0
 
-        enabled_plugins = plugin_config_loader.get_enabled_plugins()
-        if not enabled_plugins:
+        indexable_plugins = plugin_config_loader.get_indexable_plugins()
+        if not indexable_plugins:
             return 0
 
         core_tool_names: set[str] = set()
         tool_name_to_plugin: dict[str, str] = {}
         allowed_tool_names: set[str] = set()
-        for plugin in enabled_plugins:
+        for plugin in indexable_plugins:
             allowed_tool_names.update(plugin.tools or [])
             for tool_name in plugin.tools or []:
                 tool_name_to_plugin.setdefault(tool_name, plugin.id)

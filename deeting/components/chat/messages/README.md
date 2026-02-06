@@ -108,6 +108,7 @@ ChatMessageList
 - ✅ 自定义比较函数优化性能
 - ✅ 支持流式响应状态显示
 - ✅ 支持思维链和工具调用展示
+- ✅ assistant 消息采用 block-first 渲染（不再从 content 回退生成 text block）
 
 **Props 接口：**
 
@@ -223,7 +224,7 @@ MessageItem
 ├── @/components/ui/image-lightbox
 ├── @/components/chat/markdown-viewer
 ├── @/app/[locale]/chat/components/ai-response-bubble
-├── @/lib/chat/message-normalizer
+├── @/lib/chat/message-protocol
 ├── @/lib/chat/message-content
 ├── @/store/chat-state-store
 └── @/hooks/use-i18n

@@ -67,6 +67,26 @@ class PluginConfigLoader:
         self.load()
         return [p for p in self.plugins if p.enabled_by_default]
 
+    def get_plugins_for_user(
+        self, user_roles: set[str], is_superuser: bool
+    ) -> list[PluginConfigItem]:
+        """返回用户可用的插件：公开插件 + 用户有权限的受限插件"""
+        self.load()
+        result = []
+        for p in self.plugins:
+            if p.enabled_by_default:
+                result.append(p)
+            elif p.restricted and (
+                is_superuser or (set(p.allowed_roles) & user_roles)
+            ):
+                result.append(p)
+        return result
+
+    def get_indexable_plugins(self) -> list[PluginConfigItem]:
+        """返回所有应被索引的插件（公开 + 受限），供 Qdrant JIT 检索"""
+        self.load()
+        return [p for p in self.plugins if p.enabled_by_default or p.restricted]
+
     def get_plugin_class(self, plugin_item: PluginConfigItem):
         """Dynamically import and return the plugin class."""
         try:

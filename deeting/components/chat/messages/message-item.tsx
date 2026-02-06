@@ -60,19 +60,16 @@ export const MessageItem = React.memo<MessageItemProps>(
     const shouldReveal = !isTyping && !streamEnabled && isLastAssistantMessage
     const typingEnabled = isLastAssistantMessage && (streamEnabled || shouldReveal)
     const assistantParts = React.useMemo<MessageBlock[]>(() => {
-      if (message.blocks && message.blocks.length) return message.blocks
-      const text = message.content ?? ""
-      if (!text.trim()) return []
-      return [
-        {
-          id: `${message.id}-text-1`,
-          type: "text",
-          content: text,
-          streamState: "completed",
-          displayMode: "bubble",
-        },
-      ]
-    }, [message.blocks, message.content, message.id])
+      if (message.role !== "assistant") return []
+      return message.blocks ?? []
+    }, [message.blocks, message.role])
+    const assistantCopyContent = React.useMemo(() => {
+      if (message.role !== "assistant") return message.content
+      return assistantParts.reduce((acc, block) => {
+        if (block.type !== "text") return acc
+        return typeof block.content === "string" ? `${acc}${block.content}` : acc
+      }, "")
+    }, [assistantParts, message.content, message.role])
 
     return (
       <div
@@ -103,7 +100,7 @@ export const MessageItem = React.memo<MessageItemProps>(
               {!isActive && (
                 <MessageActions
                   messageId={message.id}
-                  content={message.content}
+                  content={assistantCopyContent}
                   onRegenerate={onRegenerate}
                   onLike={onLike}
                   onDislike={onDislike}

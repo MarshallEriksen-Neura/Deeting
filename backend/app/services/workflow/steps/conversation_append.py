@@ -382,7 +382,7 @@ class ConversationAppendStep(BaseStep):
         if reasoning_text and reasoning_text.strip():
             blocks.append({"type": "thought", "content": reasoning_text.strip()})
 
-        # 2. 处理正文（包含可能的 <think> 标签）
+        # 2. 处理正文（block-first：正文统一作为 text block）
         if content_text and content_text.strip():
             # dev 模式下不解析 <think> 等标签，避免多套协议导致维护成本上升。
             blocks.append({"type": "text", "content": content_text})

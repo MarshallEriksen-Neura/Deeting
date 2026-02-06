@@ -122,6 +122,7 @@ export function useChatMessagingService() {
     clearAttachments,
     setMessages,
     updateMessage,
+    mergeMessageMeta,
     setMessageBlocks,
     appendMessageBlocks,
     sessionId,
@@ -178,7 +179,6 @@ export function useChatMessagingService() {
   }, [setMessages, setSessionId, setErrorMessage, setHistoryState])
 
   const resetSession = useCallback(() => {
-    const activeAssistantId = useChatStore.getState().agentId
     setMessages([])
     setSessionId(null)
     clearAttachments()
@@ -303,9 +303,6 @@ export function useChatMessagingService() {
       await streamChatCompletion(
         { ...payload, stream: streamEnabled, status_stream: true },
         {
-          onDelta: (_delta, snapshot) => {
-            updateMessage(assistantMessageId, snapshot)
-          },
           onMessage: (data) => {
             if (data && typeof data === "object" && "type" in data) {
               const payload = data as {
@@ -328,11 +325,7 @@ export function useChatMessagingService() {
                 // 如果状态消息带了 trace_id，也记录下来
                 const traceId = (payload as any).trace_id
                 if (traceId) {
-                  const currentMsg = useChatStore.getState().messages.find(m => m.id === assistantMessageId)
-                  if (currentMsg) {
-                    updateMessage(assistantMessageId, currentMsg.content) // trigger re-render
-                    currentMsg.metaInfo = { ...(currentMsg.metaInfo || {}), trace_id: traceId }
-                  }
+                  mergeMessageMeta(assistantMessageId, { trace_id: traceId })
                 }
                 return
               }
@@ -374,10 +367,7 @@ export function useChatMessagingService() {
               setSessionId(session)
             }
             if (traceId) {
-              const currentMsg = useChatStore.getState().messages.find(m => m.id === assistantMessageId)
-              if (currentMsg) {
-                currentMsg.metaInfo = { ...(currentMsg.metaInfo || {}), trace_id: traceId }
-              }
+              mergeMessageMeta(assistantMessageId, { trace_id: traceId })
             }
           },
         },
@@ -411,6 +401,7 @@ export function useChatMessagingService() {
     clearAttachments,
     setMessages,
     updateMessage,
+    mergeMessageMeta,
     setMessageBlocks,
     appendMessageBlocks,
     setSessionId,

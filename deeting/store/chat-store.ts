@@ -102,6 +102,15 @@ function createMessageId() {
   return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+const extractAssistantTextFromBlocks = (blocks?: MessageBlock[]): string => {
+  if (!Array.isArray(blocks) || blocks.length === 0) return ""
+  return blocks.reduce((acc, block) => {
+    if (block.type !== "text") return acc
+    if (typeof block.content !== "string") return acc
+    return `${acc}${block.content}`
+  }, "")
+}
+
 // ============== Store 接口 ==============
 
 interface ChatStore {
@@ -146,6 +155,7 @@ interface ChatStore {
   setMessages: (messages: Message[]) => void
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
   updateMessage: (id: string, content: string) => void
+  mergeMessageMeta: (id: string, patch: Record<string, unknown>) => void
   setMessageBlocks: (id: string, blocks: MessageBlock[]) => void
   appendMessageBlocks: (id: string, blocks: MessageBlock[]) => void
   clearMessages: () => void
@@ -426,6 +436,17 @@ export const useChatStore = create<ChatStore>()(
           }),
         })),
 
+      mergeMessageMeta: (id, patch) =>
+        set((state) => ({
+          messages: state.messages.map((msg) => {
+            if (msg.id !== id) return msg
+            return {
+              ...msg,
+              metaInfo: { ...(msg.metaInfo || {}), ...patch },
+            }
+          }),
+        })),
+
       setMessageBlocks: (id, blocks) =>
         set((state) => ({
           messages: state.messages.map((msg) => {
@@ -456,7 +477,14 @@ export const useChatStore = create<ChatStore>()(
                 }
               }
             }
-            return { ...msg, blocks: normalized }
+            if (msg.role !== "assistant") {
+              return { ...msg, blocks: normalized }
+            }
+            return {
+              ...msg,
+              blocks: normalized,
+              content: extractAssistantTextFromBlocks(normalized),
+            }
           }),
         })),
 
@@ -519,7 +547,14 @@ export const useChatStore = create<ChatStore>()(
               next.push(block)
             }
 
-            return { ...msg, blocks: next }
+            if (msg.role !== "assistant") {
+              return { ...msg, blocks: next }
+            }
+            return {
+              ...msg,
+              blocks: next,
+              content: extractAssistantTextFromBlocks(next),
+            }
           }),
         })),
 

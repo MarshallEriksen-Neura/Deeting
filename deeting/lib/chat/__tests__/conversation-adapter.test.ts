@@ -31,9 +31,10 @@ describe("normalizeConversationMessages", () => {
         content: "### 优势\n- 同配置价格更低\n- 散热表现中等偏上",
       }),
     ])
+    expect(message?.content).toBe("### 优势\n- 同配置价格更低\n- 散热表现中等偏上")
   })
 
-  it("falls back to parsed text when meta blocks are empty", () => {
+  it("enforces block-first when assistant meta blocks are empty", () => {
     const messages = [
       {
         role: "assistant",
@@ -52,20 +53,24 @@ describe("normalizeConversationMessages", () => {
       }
     )
 
-    expect(message?.blocks).toEqual([
-      expect.objectContaining({
-        type: "text",
-        content: "第一行\n第二行",
-      }),
-    ])
+    expect(message?.blocks).toEqual([])
+    expect(message?.content).toBe("")
   })
 
-  it("normalizes escaped newlines in content strings", () => {
+  it("normalizes escaped newlines in assistant text blocks", () => {
     const messages = [
       {
         role: "assistant",
-        content: "第一行\\n第二行\\n第三行",
+        content: "should-not-be-used",
         turn_index: 10,
+        meta_info: {
+          blocks: [
+            {
+              type: "text",
+              content: "第一行\\n第二行\\n第三行",
+            },
+          ],
+        },
       },
     ]
 
@@ -148,5 +153,23 @@ describe("normalizeConversationMessages", () => {
     )
 
     expect(message?.createdAt).toBe(Date.parse(createdAtIso))
+  })
+
+  it("does not synthesize blocks for user messages", () => {
+    const [message] = normalizeConversationMessages(
+      [
+        {
+          role: "user",
+          content: "用户输入",
+          turn_index: 13,
+        },
+      ] as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["user"],
+      }
+    )
+
+    expect(message?.content).toBe("用户输入")
+    expect(message?.blocks).toBeUndefined()
   })
 })
