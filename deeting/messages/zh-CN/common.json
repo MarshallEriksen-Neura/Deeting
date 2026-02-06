@@ -126,7 +126,9 @@
       "providerPresets": "Provider 预设",
       "providerCredentials": "Provider 凭证",
       "embeddingSettings": "Embedding 设置",
-      "adminNotifications": "通知管理"
+      "adminNotifications": "通知管理",
+      "storage": "存储",
+      "knowledge": "知识库"
     }
   }
 }

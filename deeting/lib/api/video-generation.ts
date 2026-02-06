@@ -1,111 +1,164 @@
-import { fetcher } from "@/lib/api/fetcher";
+import { z } from "zod"
+
+import { request } from "@/lib/http"
+
+const INTERNAL_VIDEO_BASE = "/api/v1/internal/videos/generations"
+
+// ── Zod Schemas ──────────────────────────────────────────────
+
+const VideoGenerationTaskCreateResponseSchema = z.object({
+  task_id: z.string(),
+  status: z.string(),
+  created_at: z.string(),
+  deduped: z.boolean().optional(),
+})
+
+const VideoGenerationOutputItemSchema = z.object({
+  output_index: z.number(),
+  asset_url: z.string().nullable().optional(),
+  cover_url: z.string().nullable().optional(),
+  source_url: z.string().nullable().optional(),
+  seed: z.number().nullable().optional(),
+  content_type: z.string().nullable().optional(),
+  size_bytes: z.number().nullable().optional(),
+  width: z.number().nullable().optional(),
+  height: z.number().nullable().optional(),
+  duration: z.number().nullable().optional(),
+})
+
+const VideoGenerationTaskListItemSchema = z.object({
+  task_id: z.string(),
+  status: z.string(),
+  model: z.string(),
+  session_id: z.string().nullable().optional(),
+  prompt: z.string().nullable().optional(),
+  prompt_encrypted: z.boolean().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable().optional(),
+  error_code: z.string().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  preview: VideoGenerationOutputItemSchema.nullable().optional(),
+})
+
+const VideoGenerationTaskDetailSchema = z.object({
+  task_id: z.string(),
+  status: z.string(),
+  model: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable().optional(),
+  error_code: z.string().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  outputs: z.array(VideoGenerationOutputItemSchema).optional(),
+})
+
+const VideoGenerationCancelResponseSchema = z.object({
+  request_id: z.string(),
+  status: z.string(),
+})
+
+const VideoGenerationTaskPageSchema = z.object({
+  items: z.array(VideoGenerationTaskListItemSchema),
+  next_page: z.string().nullable().optional(),
+  previous_page: z.string().nullable().optional(),
+})
+
+// ── Types ────────────────────────────────────────────────────
 
 export type VideoGenerationTaskCreateRequest = {
-  model: string;
-  prompt: string;
-  negative_prompt?: string;
-  image_url?: string;
-  width?: number;
-  height?: number;
-  aspect_ratio?: string;
-  duration?: number;
-  fps?: number;
-  motion_bucket_id?: number;
-  num_outputs?: number;
-  steps?: number;
-  cfg_scale?: number;
-  seed?: number;
-  quality?: string;
-  style?: string;
-  extra_params?: Record<string, any>;
-  provider_model_id?: string;
-  session_id?: string;
-  request_id?: string;
-  encrypt_prompt?: boolean;
-};
+  model: string
+  prompt: string
+  negative_prompt?: string | null
+  image_url?: string | null
+  width?: number | null
+  height?: number | null
+  aspect_ratio?: string | null
+  duration?: number | null
+  fps?: number | null
+  motion_bucket_id?: number | null
+  num_outputs?: number
+  steps?: number | null
+  cfg_scale?: number | null
+  seed?: number | null
+  quality?: string | null
+  style?: string | null
+  extra_params?: Record<string, unknown>
+  provider_model_id?: string
+  session_id?: string | null
+  request_id?: string | null
+  encrypt_prompt?: boolean
+}
 
-export type VideoGenerationTaskCreateResponse = {
-  task_id: string;
-  status: string;
-  created_at: string;
-  deduped: boolean;
-};
+export type VideoGenerationTaskCreateResponse = z.infer<
+  typeof VideoGenerationTaskCreateResponseSchema
+>
+export type VideoGenerationOutputItem = z.infer<
+  typeof VideoGenerationOutputItemSchema
+>
+export type VideoGenerationTaskListItem = z.infer<
+  typeof VideoGenerationTaskListItemSchema
+>
+export type VideoGenerationTaskDetail = z.infer<
+  typeof VideoGenerationTaskDetailSchema
+>
+export type VideoGenerationCancelResponse = z.infer<
+  typeof VideoGenerationCancelResponseSchema
+>
+export type VideoGenerationTaskPage = z.infer<
+  typeof VideoGenerationTaskPageSchema
+>
 
-export type VideoGenerationOutputItem = {
-  output_index: number;
-  asset_url?: string;
-  cover_url?: string;
-  source_url?: string;
-  seed?: number;
-  content_type?: string;
-  size_bytes?: number;
-  width?: number;
-  height?: number;
-  duration?: number;
-};
+export type VideoGenerationTasksQuery = {
+  cursor?: string | null
+  size?: number
+  status?: string | null
+  include_outputs?: boolean
+  session_id?: string | null
+}
 
-export type VideoGenerationTaskListItem = {
-  task_id: string;
-  status: string;
-  model: string;
-  session_id?: string;
-  prompt?: string;
-  prompt_encrypted: boolean;
-  created_at: string;
-  updated_at: string;
-  completed_at?: string;
-  error_code?: string;
-  error_message?: string;
-  preview?: VideoGenerationOutputItem;
-};
+// ── API Functions ────────────────────────────────────────────
 
-export type VideoGenerationTaskDetail = {
-  task_id: string;
-  status: string;
-  model: string;
-  created_at: string;
-  updated_at: string;
-  completed_at?: string;
-  error_code?: string;
-  error_message?: string;
-  outputs: VideoGenerationOutputItem[];
-};
-
-export const createVideoGenerationTask = (
+export async function createVideoGenerationTask(
   payload: VideoGenerationTaskCreateRequest
-) => {
-  return fetcher.post<VideoGenerationTaskCreateResponse>(
-    "/internal/videos/generations",
-    payload
-  );
-};
+): Promise<VideoGenerationTaskCreateResponse> {
+  const data = await request({
+    url: INTERNAL_VIDEO_BASE,
+    method: "POST",
+    data: payload,
+  })
+  return VideoGenerationTaskCreateResponseSchema.parse(data)
+}
 
-export const listVideoGenerationTasks = (params?: {
-  cursor?: string;
-  size?: number;
-  status?: string;
-  include_outputs?: boolean;
-  session_id?: string;
-}) => {
-  return fetcher.get<{
-    items: VideoGenerationTaskListItem[];
-    total: number;
-    page: number;
-    size: number;
-    pages: number;
-    next_page: string | null;
-    previous_page: string | null;
-  }>("/internal/videos/generations", { params });
-};
+export async function fetchVideoGenerationTasks(
+  query: VideoGenerationTasksQuery
+): Promise<VideoGenerationTaskPage> {
+  const data = await request({
+    url: INTERNAL_VIDEO_BASE,
+    method: "GET",
+    params: query,
+  })
+  return VideoGenerationTaskPageSchema.parse(data)
+}
 
-export const getVideoGenerationTask = (taskId: string) => {
-  return fetcher.get<VideoGenerationTaskDetail>(
-    `/internal/videos/generations/${taskId}`
-  );
-};
+export async function fetchVideoGenerationTask(
+  taskId: string,
+  includeOutputs = true
+): Promise<VideoGenerationTaskDetail> {
+  const data = await request({
+    url: `${INTERNAL_VIDEO_BASE}/${taskId}`,
+    method: "GET",
+    params: { include_outputs: includeOutputs },
+  })
+  return VideoGenerationTaskDetailSchema.parse(data)
+}
 
-export const cancelVideoGenerationTask = (requestId: string) => {
-  return fetcher.post<{ request_id: string; status: string }>(
-    `/internal/videos/generations/${requestId}/cancel`
-  );
-};
+export async function cancelVideoGenerationTask(
+  requestId: string
+): Promise<VideoGenerationCancelResponse> {
+  const data = await request({
+    url: `${INTERNAL_VIDEO_BASE}/${requestId}/cancel`,
+    method: "POST",
+  })
+  return VideoGenerationCancelResponseSchema.parse(data)
+}

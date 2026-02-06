@@ -101,6 +101,17 @@ export const userNavigation: NavGroup[] = [
     ],
   },
   {
+    title: "nav.storage",
+    items: [
+      {
+        id: "knowledge",
+        label: "nav.knowledge",
+        href: "/dashboard/knowledge",
+        icon: "folderOpen",
+      },
+    ],
+  },
+  {
     title: "nav.account",
     items: [
       {

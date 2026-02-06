@@ -12,7 +12,9 @@ import {
   Database,
   Eye,
   FileText,
+  FolderOpen,
   Gauge,
+  HardDrive,
   Key,
   KeyRound,
   LayoutDashboard,
@@ -57,6 +59,9 @@ export const navIconMap = {
   panelLeft: PanelLeft,
   panelLeftClose: PanelLeftClose,
   bot: Bot,
+  // Storage navigation icons
+  folderOpen: FolderOpen,
+  hardDrive: HardDrive,
   // Admin navigation icons
   eye: Eye,
   sparkles: Sparkles,

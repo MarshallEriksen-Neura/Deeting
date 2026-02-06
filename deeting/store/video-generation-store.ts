@@ -3,6 +3,19 @@
 import { create } from "zustand"
 import { createJSONStorage, persist } from "zustand/middleware"
 
+export type CameraDirection =
+  | "up-left"
+  | "up"
+  | "up-right"
+  | "left"
+  | "center"
+  | "right"
+  | "down-left"
+  | "down"
+  | "down-right"
+  | "zoom-in"
+  | "zoom-out"
+
 interface VideoGenerationState {
   selectedModelId: string | null
   sessionId: string | null
@@ -10,6 +23,9 @@ interface VideoGenerationState {
   duration: number
   fps: number
   motionBucketId: number
+  prompt: string
+  imageUrl: string | null
+  cameraDirection: CameraDirection
 }
 
 interface VideoGenerationActions {
@@ -19,7 +35,11 @@ interface VideoGenerationActions {
   setDuration: (duration: number) => void
   setFps: (fps: number) => void
   setMotionBucketId: (id: number) => void
+  setPrompt: (prompt: string) => void
+  setImageUrl: (url: string | null) => void
+  setCameraDirection: (direction: CameraDirection) => void
   resetSession: () => void
+  resetGeneration: () => void
 }
 
 type VideoGenerationStore = VideoGenerationState & VideoGenerationActions
@@ -31,6 +51,9 @@ const DEFAULT_STATE: VideoGenerationState = {
   duration: 4,
   fps: 24,
   motionBucketId: 127,
+  prompt: "",
+  imageUrl: null,
+  cameraDirection: "center",
 }
 
 export const useVideoGenerationStore = create<VideoGenerationStore>()(
@@ -43,12 +66,22 @@ export const useVideoGenerationStore = create<VideoGenerationStore>()(
       setDuration: (duration) => set({ duration }),
       setFps: (fps) => set({ fps }),
       setMotionBucketId: (id) => set({ motionBucketId: id }),
+      setPrompt: (prompt) => set({ prompt }),
+      setImageUrl: (url) => set({ imageUrl: url }),
+      setCameraDirection: (direction) => set({ cameraDirection: direction }),
       resetSession: () => set({ sessionId: null }),
+      resetGeneration: () =>
+        set({
+          prompt: "",
+          imageUrl: null,
+          cameraDirection: "center",
+          motionBucketId: 127,
+        }),
     }),
     {
       name: "deeting-video-generation-store",
       storage: createJSONStorage(() => sessionStorage),
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         selectedModelId: state.selectedModelId,
         sessionId: state.sessionId,
@@ -56,6 +89,9 @@ export const useVideoGenerationStore = create<VideoGenerationStore>()(
         duration: state.duration,
         fps: state.fps,
         motionBucketId: state.motionBucketId,
+        prompt: state.prompt,
+        imageUrl: state.imageUrl,
+        cameraDirection: state.cameraDirection,
       }),
     }
   )

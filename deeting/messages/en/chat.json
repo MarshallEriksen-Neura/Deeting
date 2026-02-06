@@ -205,6 +205,7 @@
       "image": "Image",
       "chat": "Chat",
       "code": "Code",
+      "video": "Video",
       "placeholder": "Type a message...",
       "menu": "Actions",
       "stop": "Stop",

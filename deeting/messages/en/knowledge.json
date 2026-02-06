@@ -1,0 +1,112 @@
+{
+  "knowledge": {
+    "title": "My Knowledge Base",
+    "subtitle": "Upload documents to your knowledge base. AI will automatically parse and vectorize them for intelligent retrieval and Q&A.",
+    "upload": "Upload Document",
+    "newFolder": "New Folder",
+    "search": "Search file name...",
+    "stats": {
+      "usedSpace": "Used Space",
+      "totalSpace": "Total Space",
+      "vectors": "Vectors",
+      "files": "Files",
+      "folders": "Folders"
+    },
+    "breadcrumb": {
+      "root": "Root"
+    },
+    "table": {
+      "type": "Type",
+      "name": "File Name",
+      "status": "Status",
+      "chunks": "Chunks",
+      "size": "Size",
+      "createdAt": "Uploaded",
+      "actions": "Actions",
+      "empty": "This folder is empty",
+      "emptyHint": "Upload documents or create folders to start managing your knowledge base"
+    },
+    "status": {
+      "active": "Indexed",
+      "processing": "Embedding...",
+      "failed": "Failed"
+    },
+    "actions": {
+      "preview": "Preview",
+      "download": "Download",
+      "rename": "Rename",
+      "move": "Move to...",
+      "copy": "Copy to...",
+      "share": "Share Link",
+      "delete": "Delete",
+      "retry": "Retry"
+    },
+    "uploadDialog": {
+      "title": "Upload Documents",
+      "description": "Drag and drop files here, or click to select",
+      "dropHint": "Release to upload files",
+      "supportedTypes": "Supported formats",
+      "maxSize": "Max file size",
+      "uploading": "Uploading...",
+      "uploadSuccess": "Upload successful",
+      "uploadFailed": "Upload failed",
+      "cancel": "Cancel",
+      "confirm": "Start Upload",
+      "selectFiles": "Select Files"
+    },
+    "detailDrawer": {
+      "title": "File Details",
+      "metadata": "Basic Info",
+      "fileName": "File Name",
+      "fileType": "File Type",
+      "fileSize": "File Size",
+      "uploadTime": "Upload Time",
+      "status": "Status",
+      "chunkCount": "Chunk Count",
+      "chunkPreview": "Chunk Preview",
+      "chunkIndex": "Chunk #{index}",
+      "tokens": "{count} tokens",
+      "noChunks": "No chunks available",
+      "processingHint": "File is being processed. Chunks will appear after processing completes.",
+      "failedHint": "Processing failed: {error}"
+    },
+    "newFolderDialog": {
+      "title": "New Folder",
+      "description": "Create a new folder in the current directory",
+      "nameLabel": "Folder Name",
+      "namePlaceholder": "Enter folder name",
+      "cancel": "Cancel",
+      "confirm": "Create"
+    },
+    "moveCopyDialog": {
+      "moveTitle": "Move File",
+      "copyTitle": "Copy File",
+      "description": "Select destination folder",
+      "root": "Root",
+      "cancel": "Cancel",
+      "confirmMove": "Move",
+      "confirmCopy": "Copy"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete",
+      "fileDescription": "This will permanently delete \"{name}\" and all its vector chunks from the knowledge base. This action cannot be undone.",
+      "folderDescription": "This will permanently delete folder \"{name}\" and all files and chunks within it. This action cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "renameDialog": {
+      "title": "Rename",
+      "nameLabel": "New Name",
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    },
+    "toast": {
+      "deleteSuccess": "Deleted \"{name}\"",
+      "renameSuccess": "Renamed to \"{name}\"",
+      "moveSuccess": "Moved to \"{folder}\"",
+      "copySuccess": "Copied to \"{folder}\"",
+      "shareSuccess": "Share link copied to clipboard",
+      "folderCreated": "Folder \"{name}\" created"
+    }
+  }
+}

@@ -126,7 +126,9 @@
       "providerPresets": "Provider Presets",
       "providerCredentials": "Provider Credentials",
       "embeddingSettings": "Embedding Settings",
-      "adminNotifications": "Notification Management"
+      "adminNotifications": "Notification Management",
+      "storage": "Storage",
+      "knowledge": "Knowledge Base"
     }
   }
 }

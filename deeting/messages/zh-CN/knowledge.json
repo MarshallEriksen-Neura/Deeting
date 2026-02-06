@@ -1,0 +1,112 @@
+{
+  "knowledge": {
+    "title": "我的知识库",
+    "subtitle": "上传文档到知识库，AI 将自动解析和向量化，用于智能检索和问答。",
+    "upload": "上传文档",
+    "newFolder": "新建文件夹",
+    "search": "搜索文件名...",
+    "stats": {
+      "usedSpace": "已用空间",
+      "totalSpace": "总空间",
+      "vectors": "向量数",
+      "files": "文件数",
+      "folders": "文件夹数"
+    },
+    "breadcrumb": {
+      "root": "根目录"
+    },
+    "table": {
+      "type": "类型",
+      "name": "文件名",
+      "status": "状态",
+      "chunks": "知识片段",
+      "size": "大小",
+      "createdAt": "上传时间",
+      "actions": "操作",
+      "empty": "当前文件夹为空",
+      "emptyHint": "上传文档或创建文件夹开始管理您的知识库"
+    },
+    "status": {
+      "active": "已索引",
+      "processing": "向量化中...",
+      "failed": "失败"
+    },
+    "actions": {
+      "preview": "预览",
+      "download": "下载",
+      "rename": "重命名",
+      "move": "移动到...",
+      "copy": "复制到...",
+      "share": "分享链接",
+      "delete": "删除",
+      "retry": "重试"
+    },
+    "uploadDialog": {
+      "title": "上传文档",
+      "description": "拖拽文件到此处，或点击选择文件",
+      "dropHint": "松开鼠标上传文件",
+      "supportedTypes": "支持的格式",
+      "maxSize": "单个文件最大",
+      "uploading": "上传中...",
+      "uploadSuccess": "上传成功",
+      "uploadFailed": "上传失败",
+      "cancel": "取消",
+      "confirm": "开始上传",
+      "selectFiles": "选择文件"
+    },
+    "detailDrawer": {
+      "title": "文件详情",
+      "metadata": "基本信息",
+      "fileName": "文件名",
+      "fileType": "文件类型",
+      "fileSize": "文件大小",
+      "uploadTime": "上传时间",
+      "status": "处理状态",
+      "chunkCount": "知识片段数",
+      "chunkPreview": "知识片段预览",
+      "chunkIndex": "片段 #{index}",
+      "tokens": "{count} tokens",
+      "noChunks": "暂无知识片段",
+      "processingHint": "文件正在处理中，片段将在处理完成后显示",
+      "failedHint": "文件处理失败: {error}"
+    },
+    "newFolderDialog": {
+      "title": "新建文件夹",
+      "description": "在当前目录下创建一个新的文件夹",
+      "nameLabel": "文件夹名称",
+      "namePlaceholder": "请输入文件夹名称",
+      "cancel": "取消",
+      "confirm": "创建"
+    },
+    "moveCopyDialog": {
+      "moveTitle": "移动文件",
+      "copyTitle": "复制文件",
+      "description": "选择目标文件夹",
+      "root": "根目录",
+      "cancel": "取消",
+      "confirmMove": "移动",
+      "confirmCopy": "复制"
+    },
+    "deleteConfirm": {
+      "title": "确认删除",
+      "fileDescription": "此操作将永久删除文件 \"{name}\" 及其在向量数据库中的所有知识片段。此操作不可撤销。",
+      "folderDescription": "此操作将永久删除文件夹 \"{name}\" 及其中的所有文件和知识片段。此操作不可撤销。",
+      "cancel": "取消",
+      "confirm": "确认删除"
+    },
+    "renameDialog": {
+      "title": "重命名",
+      "nameLabel": "新名称",
+      "cancel": "取消",
+      "confirm": "确认"
+    },
+    "toast": {
+      "deleteSuccess": "已删除 \"{name}\"",
+      "renameSuccess": "已重命名为 \"{name}\"",
+      "moveSuccess": "已移动到 \"{folder}\"",
+      "copySuccess": "已复制到 \"{folder}\"",
+      "shareSuccess": "分享链接已复制到剪贴板",
+      "folderCreated": "文件夹 \"{name}\" 已创建"
+    }
+  }
+}

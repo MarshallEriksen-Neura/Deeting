@@ -20,6 +20,7 @@ import { NavLinks } from "./header/NavLinks"
 import { UserMenu } from "./header/UserMenu"
 import { DEFAULT_LOGO, defaultNavItems } from "./header/constants"
 import { HeaderProps } from "./header/types"
+import { shouldHideGlobalHeader } from "./header/visibility"
 
 export function Header({
   logoSrc = DEFAULT_LOGO,
@@ -33,8 +34,7 @@ export function Header({
 }: HeaderProps) {
   const pathname = usePathname()
   
-  // Hide header on chat routes for immersive experience
-  if (pathname?.includes("/chat")) {
+  if (shouldHideGlobalHeader(pathname)) {
     return null
   }
 
