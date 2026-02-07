@@ -111,6 +111,10 @@ function hasRenderableTextBlock(blocks: MessageBlock[]): boolean {
   )
 }
 
+function hasRenderableNonToolBlocks(blocks: MessageBlock[]): boolean {
+  return blocks.some((block) => block.type !== "tool_call" && block.type !== "tool_result")
+}
+
 function mergeToolBlocks(
   existing: MessageBlock[],
   fromFinal: MessageBlock[]
@@ -421,7 +425,7 @@ export function useChatMessagingService() {
     requestIdRef.current = payload.request_id ?? null
 
     try {
-      await streamChatCompletion(
+      const streamedText = await streamChatCompletion(
         { ...payload, stream: streamEnabled, status_stream: true },
         {
           onMessage: (data) => {
@@ -516,6 +520,22 @@ export function useChatMessagingService() {
           },
         }
       )
+
+      const latest = useChatStore.getState().messages.find(
+        (m) => m.id === assistantMessageId
+      )
+      const latestBlocks = Array.isArray(latest?.blocks)
+        ? (latest.blocks as MessageBlock[])
+        : []
+      if (
+        streamedText.trim().length > 0 &&
+        !hasRenderableTextBlock(latestBlocks) &&
+        !hasRenderableNonToolBlocks(latestBlocks)
+      ) {
+        appendMessageBlocks(assistantMessageId, [
+          { type: "text", content: streamedText } as MessageBlock,
+        ])
+      }
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Request failed"
       setMessageBlocks(assistantMessageId, [

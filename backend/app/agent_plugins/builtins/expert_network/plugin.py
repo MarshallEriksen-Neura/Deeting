@@ -2,7 +2,6 @@ import logging
 from typing import Any
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
-from app.services.assistant.assistant_retrieval_service import AssistantRetrievalService
 
 logger = logging.getLogger(__name__)
 MIN_CONFIDENCE = 0.8
@@ -86,6 +85,8 @@ class ExpertNetworkPlugin(AgentPlugin):
             owns_session = True
 
         try:
+            from app.services.assistant.assistant_retrieval_service import AssistantRetrievalService
+
             service = AssistantRetrievalService(session)
             candidates = await service.search_candidates(intent_query, limit=k)
         except Exception as exc:  # pragma: no cover - fail-open

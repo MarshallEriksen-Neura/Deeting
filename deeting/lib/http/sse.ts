@@ -122,11 +122,17 @@ export function openApiSSE<T = unknown>(
 function parseEventChunk(chunk: string): SSEMessage<string> | null {
   const dataLines: string[] = []
   const message: SSEMessage<string> = { data: "" }
+  let hasDataField = false
 
   for (const rawLine of chunk.split("\n")) {
-    const line = rawLine.trim()
-    if (!line || line.startsWith(":")) continue
+    const line = rawLine.replace(/\r$/, "")
+    const trimmed = line.trim()
+
+    if (!trimmed) continue
+    if (trimmed.startsWith(":")) continue
+
     if (line.startsWith("data:")) {
+      hasDataField = true
       dataLines.push(line.slice(5).trimStart())
       continue
     }
@@ -142,6 +148,12 @@ function parseEventChunk(chunk: string): SSEMessage<string> | null {
       const retry = Number.parseInt(line.slice(6).trimStart(), 10)
       if (!Number.isNaN(retry)) message.retry = retry
       continue
+    }
+
+    // 兼容部分代理/网关对超长 data 行的折行（非标准，但线上常见）：
+    // 若已经开始 data 字段，且当前行不是已知字段前缀，则视为 data 续行。
+    if (hasDataField) {
+      dataLines.push(line)
     }
   }
 
