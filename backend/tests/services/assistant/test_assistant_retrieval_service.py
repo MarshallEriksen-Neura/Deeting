@@ -259,7 +259,7 @@ async def test_retrieval_filters_visibility_and_review(mocker, async_session):
             id=private_id,
             visibility=AssistantVisibility.PRIVATE,
             status=AssistantStatus.PUBLISHED,
-            owner_user_id=None,
+            owner_user_id=uuid.uuid4(),  # User-owned private assistant should be filtered
             current_version_id=None,
         ),
     ]

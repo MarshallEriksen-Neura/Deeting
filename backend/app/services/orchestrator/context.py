@@ -79,6 +79,8 @@ class WorkflowContext:
     tenant_id: str | None = None
     api_key_id: str | None = None
     user_id: str | None = None
+    session_id: str | None = None
+
 
     # 请求信息
     capability: str | None = None  # 如 chat, embedding, image_generation

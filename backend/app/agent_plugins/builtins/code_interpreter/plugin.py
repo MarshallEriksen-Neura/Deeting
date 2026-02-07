@@ -50,22 +50,31 @@ class CodeInterpreterPlugin(AgentPlugin):
         """
         Handler for run_python tool.
         """
-        # Construct the args object expected by the implementation
-        # We need to construct a context-like object or pass the session_id
-        # The base AgentPlugin likely has self.context
-
-        # Checking base class implementation (inferred), self.context usually has user/session info
-        # Let's wrap the context to match what tools.run_python expects
-
-        class ContextWrapper:
-            def __init__(self, ctx):
-                self.session_id = ctx.session_id if ctx else "default-session"
+        # 1. Priority: Direct argument from LLM
+        # 2. Secondary: Plugin Context (ConcretePluginContext)
+        # 3. Tertiary: Workflow Context (if passed as __context__)
+        
+        final_session_id = session_id
+        
+        if not final_session_id:
+            # Check ConcretePluginContext
+            if self.context and self.context.session_id:
+                final_session_id = self.context.session_id
+                
+        if not final_session_id:
+            # Check WorkflowContext (__context__)
+            ctx = kwargs.get("__context__")
+            if ctx:
+                # WorkflowContext might have session_id or trace_id
+                if hasattr(ctx, "session_id"):
+                    final_session_id = ctx.session_id
+                elif hasattr(ctx, "trace_id"):
+                    final_session_id = ctx.trace_id
 
         class ArgsWrapper:
             def __init__(self, c, sid):
                 self.code = c
                 self.session_id = sid
 
-        return await run_python(
-            ContextWrapper(self.context), ArgsWrapper(code, session_id)
-        )
+        return await run_python(self.context, ArgsWrapper(code, final_session_id))
+

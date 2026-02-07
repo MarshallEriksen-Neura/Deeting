@@ -36,13 +36,22 @@ class AgentService:
         self.tool_map: dict[str, Any] = {}
         self._initialized = False
 
-    async def initialize(self):
+    async def initialize(self, user_id: Any | None = None, session_id: str | None = None):
         """Lazy initialization of plugins and tools."""
         if self._initialized:
             return
 
-        # Activate plugins
-        await self.plugin_manager.activate_all()
+        # Activate plugins with context
+        import uuid
+        uid = None
+        if user_id:
+            try:
+                uid = uuid.UUID(str(user_id))
+            except (ValueError, TypeError):
+                uid = None
+
+        await self.plugin_manager.activate_all(user_id=uid, session_id=session_id)
+
 
         # Harvest tools
         raw_tools = self.plugin_manager.get_all_tools()

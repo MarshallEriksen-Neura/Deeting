@@ -46,8 +46,17 @@ class SkillRunnerPlugin(AgentPlugin):
 
         # Extract context if passed by AgentExecutor
         ctx = kwargs.pop("__context__", None)
-        session_id = ctx.trace_id if ctx else "unknown_session"
-        user_id = ctx.user_id if ctx else None
+        session_id = None
+        if ctx:
+            if hasattr(ctx, "session_id") and ctx.session_id:
+                session_id = ctx.session_id
+            elif hasattr(ctx, "trace_id"):
+                session_id = ctx.trace_id
+        
+        if not session_id:
+            session_id = self.context.session_id or "unknown_session"
+            
+        user_id = ctx.user_id if ctx else self.context.user_id
 
         async with AsyncSessionLocal() as session:
             from app.services.skill_registry.skill_runtime_executor import (

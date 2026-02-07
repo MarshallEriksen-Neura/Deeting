@@ -20,19 +20,32 @@ class ConcretePluginContext(PluginContext):
     Bridges Backend infrastructure (SQLAlchemy Async, Loguru, Settings) to plugins.
     """
 
-    def __init__(self, plugin_name: str, plugin_id: str, user_id: uuid.UUID):
+    def __init__(
+        self,
+        plugin_name: str,
+        plugin_id: str,
+        user_id: uuid.UUID,
+        session_id: str | None = None,
+    ):
         self._plugin_name = plugin_name
         self._plugin_id = plugin_id
         self._user_id = user_id
+        self._session_id = session_id
 
         # Loguru uses bind() to add context fields.
         # We bind 'plugin' so logs from this context have {plugin: name}
-        self._logger = root_logger.bind(plugin=plugin_name, user_id=str(user_id))
+        self._logger = root_logger.bind(
+            plugin=plugin_name, user_id=str(user_id), session_id=session_id
+        )
         self._memory_client: VectorStoreClient | None = None
 
     @property
     def user_id(self) -> uuid.UUID:
         return self._user_id
+
+    @property
+    def session_id(self) -> str | None:
+        return self._session_id
 
     @property
     def working_directory(self) -> str:

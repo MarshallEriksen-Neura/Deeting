@@ -42,3 +42,16 @@ async def test_plugin_lifecycle():
     # 4. Deactivate
     await manager.deactivate_all()
     assert len(manager._plugins) == 0
+
+
+@pytest.mark.asyncio
+async def test_plugin_session_id():
+    manager = PluginManager()
+    manager.register_class(HelloWorldPlugin)
+
+    session_id = "test-session-123"
+    await manager.activate_all(session_id=session_id)
+
+    plugin = manager.get_plugin("examples.hello_world")
+    assert plugin.context.session_id == session_id
+

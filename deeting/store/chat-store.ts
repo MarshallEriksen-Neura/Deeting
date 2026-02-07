@@ -111,6 +111,16 @@ const extractAssistantTextFromBlocks = (blocks?: MessageBlock[]): string => {
   }, "")
 }
 
+const isEmptyTextLikeBlock = (block: MessageBlock): boolean => {
+  if (block.type === "text" || block.type === "thought") {
+    return typeof block.content !== "string" || block.content.trim().length === 0
+  }
+  if (block.type === "error") {
+    return typeof block.message !== "string" || block.message.trim().length === 0
+  }
+  return false
+}
+
 // ============== Store 接口 ==============
 
 interface ChatStore {
@@ -425,6 +435,7 @@ export const useChatStore = create<ChatStore>()(
             const incoming = Array.isArray(blocks) ? blocks : []
             const normalized: MessageBlock[] = incoming
               .filter((b): b is MessageBlock => Boolean(b && typeof b === "object" && "type" in b))
+              .filter((b) => !isEmptyTextLikeBlock(b))
               .map((b, index) => ({
                 ...b,
                 id: (b as any).id || `${msg.id}-block-${index}`,
@@ -468,6 +479,7 @@ export const useChatStore = create<ChatStore>()(
 
             const normalizedIncoming: MessageBlock[] = incoming
               .filter((b): b is MessageBlock => Boolean(b && typeof b === "object" && "type" in b))
+              .filter((b) => !isEmptyTextLikeBlock(b))
               .map((b, index) => ({
                 ...b,
                 id: (b as any).id || `${msg.id}-block-${existing.length + index}`,

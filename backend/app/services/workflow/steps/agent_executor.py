@@ -85,6 +85,7 @@ class AgentExecutorStep(BaseStep):
 
         turn = 0
         last_step_result = None
+        injected_assistant_id = None
 
         while turn < max_turns:
             turn += 1
@@ -112,8 +113,13 @@ class AgentExecutorStep(BaseStep):
                 tool_calls_raw = message.get("tool_calls")
 
                 # If we are in the loop and got text content, emit it if stream was requested
-                if original_stream and message.get("content"):
-                    self._emit_delta(ctx, message.get("content"))
+                content = message.get("content")
+                if (
+                    original_stream
+                    and isinstance(content, str)
+                    and content.strip()
+                ):
+                    self._emit_delta(ctx, content)
 
             except (KeyError, IndexError, TypeError):
                 break
@@ -216,6 +222,16 @@ class AgentExecutorStep(BaseStep):
                     }
                 )
 
+            # --- D. Mid-loop Assistant Injection ---
+            # If consult_expert_network (or semantic_kernel) activated an assistant,
+            # inject its prompt + tools for subsequent LLM turns.
+            new_assistant_id = ctx.get("assistant", "id")
+            if new_assistant_id and new_assistant_id != injected_assistant_id:
+                injected_assistant_id = new_assistant_id
+                await self._inject_assistant_mid_loop(
+                    ctx, request_body, messages, new_assistant_id
+                )
+
             # Loop continues...
 
         # Final Cleanup: Restore stream and update ctx for downstream steps
@@ -223,6 +239,96 @@ class AgentExecutorStep(BaseStep):
         ctx.set("template_render", "request_body", request_body)
 
         return last_step_result
+
+    async def _inject_assistant_mid_loop(
+        self,
+        ctx: "WorkflowContext",
+        request_body: dict[str, Any],
+        messages: list[dict],
+        assistant_id: str,
+    ) -> None:
+        """
+        Inject an assistant's system prompt and skill_refs tools mid-loop.
+
+        Called when consult_expert_network activates an assistant during the agent loop.
+        Adds the assistant's prompt as a system message and merges its declared tools.
+        """
+        try:
+            from sqlalchemy import select
+            from app.models.assistant import Assistant, AssistantVersion
+            from app.services.assistant.skill_resolver import (
+                resolve_skill_refs,
+                skill_tools_to_openai_format,
+            )
+
+            if not ctx.db_session:
+                return
+
+            # Fetch assistant data
+            stmt = (
+                select(
+                    AssistantVersion.system_prompt,
+                    AssistantVersion.skill_refs,
+                    AssistantVersion.name,
+                )
+                .join(Assistant, Assistant.current_version_id == AssistantVersion.id)
+                .where(Assistant.id == assistant_id)
+            )
+            result = await ctx.db_session.execute(stmt)
+            row = result.first()
+            if not row:
+                logger.warning(
+                    f"Mid-loop injection: Assistant {assistant_id} not found"
+                )
+                return
+
+            system_prompt, skill_refs, name = row[0], row[1], row[2]
+
+            # Inject system prompt as a system message
+            if system_prompt:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": f"[Assistant Activated: {name}]\n\n{system_prompt}",
+                    }
+                )
+                logger.info(
+                    f"Mid-loop: Injected system prompt for assistant '{name}' ({assistant_id})"
+                )
+
+            # Resolve and inject skill_refs tools
+            if skill_refs:
+                skill_tools = await resolve_skill_refs(skill_refs)
+                if skill_tools:
+                    openai_tools = skill_tools_to_openai_format(skill_tools)
+                    existing_tools = request_body.get("tools", [])
+                    existing_names = {
+                        t.get("function", {}).get("name")
+                        for t in existing_tools
+                        if isinstance(t, dict)
+                    }
+                    new_tools = [
+                        t
+                        for t in openai_tools
+                        if t.get("function", {}).get("name") not in existing_names
+                    ]
+                    existing_tools.extend(new_tools)
+                    request_body["tools"] = existing_tools
+                    logger.info(
+                        f"Mid-loop: Injected {len(new_tools)} skill tools for assistant '{name}'"
+                    )
+
+            # Remove consult_expert_network from tools (assistant is now locked)
+            tools = request_body.get("tools", [])
+            request_body["tools"] = [
+                t
+                for t in tools
+                if t.get("function", {}).get("name") != "consult_expert_network"
+            ]
+
+        except Exception as e:
+            # Fail-open: log but don't crash the agent loop
+            logger.error(f"Mid-loop assistant injection failed: {e}", exc_info=True)
 
     async def _build_user_mcp_tool_map(self, ctx: "WorkflowContext") -> dict[str, Any]:
         """
@@ -319,7 +425,8 @@ class AgentExecutorStep(BaseStep):
 
         # 2. Check Local Plugins (via agent_service)
         from app.services.agent.agent_service import agent_service
-        await agent_service.initialize()
+        await agent_service.initialize(user_id=ctx.user_id, session_id=ctx.session_id)
+
         
         plugin = agent_service.plugin_manager.get_plugin_for_tool(tool_call.name)
         if plugin:
@@ -343,9 +450,23 @@ class AgentExecutorStep(BaseStep):
                 if "__context__" in sig.parameters or "kwargs" in sig.parameters:
                     kwargs["__context__"] = ctx
 
-                if is_generic:
-                    return await handler(tool_call.name, **kwargs)
-                else:
-                    return await handler(**kwargs)
+                try:
+                    if is_generic:
+                        return await handler(tool_call.name, **kwargs)
+                    else:
+                        return await handler(**kwargs)
+                except TypeError as e:
+                    logger.warning(
+                        f"Tool '{tool_call.name}' parameter error: {e}"
+                    )
+                    return {
+                        "error": f"Invalid parameters for tool '{tool_call.name}': {e}. Check required parameters."
+                    }
+                except Exception as e:
+                    logger.error(
+                        f"Tool '{tool_call.name}' execution failed: {e}",
+                        exc_info=True,
+                    )
+                    return {"error": f"Tool '{tool_call.name}' failed: {e}"}
 
         return {"error": f"Tool '{tool_call.name}' not found."}

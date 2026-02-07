@@ -173,4 +173,6 @@ CAPABILITY_MAP = {
     "speech_to_text": (STTRequest, STTResponse),
     "video_generation": (VideoGenerationRequest, VideoGenerationResponse),
     "chat": (None, None),  # Handled by ChatCompletionRequest
+    "chat_completion": (None, None),  # Alias for chat
+    "text_generation": (None, None),  # Common alias
 }

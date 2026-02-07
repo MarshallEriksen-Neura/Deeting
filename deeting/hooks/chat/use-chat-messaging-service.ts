@@ -30,6 +30,7 @@ import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
+import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 function createMessageId() {
   const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined
@@ -74,6 +75,127 @@ function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessa
 
 function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
   return normalizeConversationMessages(rawMessages as any, { idPrefix: "conv" })
+}
+
+function tryParseJsonObject(data: unknown): Record<string, unknown> | null {
+  if (data && typeof data === "object") {
+    return data as Record<string, unknown>
+  }
+  if (typeof data !== "string") return null
+  const trimmed = data.trim()
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (parsed && typeof parsed === "object")
+      return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+  return null
+}
+
+function isValidBlock(block: unknown): block is MessageBlock {
+  return Boolean(
+    block &&
+      typeof block === "object" &&
+      "type" in (block as Record<string, unknown>)
+  )
+}
+
+function hasRenderableTextBlock(blocks: MessageBlock[]): boolean {
+  return blocks.some(
+    (block) =>
+      block.type === "text" &&
+      typeof block.content === "string" &&
+      block.content.trim().length > 0
+  )
+}
+
+function mergeToolBlocks(
+  existing: MessageBlock[],
+  fromFinal: MessageBlock[]
+): MessageBlock[] {
+  const next = [...existing]
+
+  for (const block of fromFinal) {
+    if (block.type === "tool_call") {
+      const callId = block.callId
+      if (callId) {
+        const idx = next.findIndex(
+          (b) => b.type === "tool_call" && b.callId === callId
+        )
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], ...block }
+          continue
+        }
+      }
+      next.push(block)
+      continue
+    }
+
+    if (block.type === "tool_result") {
+      const callId = block.callId
+      const toolName = block.toolName
+      const idx = next.findIndex((b) => {
+        if (b.type !== "tool_result") return false
+        if (callId && b.callId === callId) return true
+        if (!callId && toolName && b.toolName === toolName) return true
+        return false
+      })
+      if (idx >= 0) {
+        next[idx] = { ...next[idx], ...block }
+      } else {
+        next.push(block)
+      }
+    }
+  }
+
+  return next
+}
+
+function buildFinalAssistantBlocks(
+  currentBlocks: MessageBlock[],
+  finalBody: Record<string, unknown>
+): MessageBlock[] {
+  const choices = Array.isArray(finalBody?.choices) ? finalBody.choices : []
+  const firstChoice = choices[0]
+  const message =
+    firstChoice && typeof firstChoice === "object"
+      ? (firstChoice as Record<string, unknown>).message
+      : null
+  if (!message || typeof message !== "object") return currentBlocks
+
+  const messageObj = message as Record<string, unknown>
+  const metaInfo =
+    messageObj.meta_info && typeof messageObj.meta_info === "object"
+      ? (messageObj.meta_info as Record<string, unknown>)
+      : {}
+  const metaBlocksRaw = metaInfo.blocks
+  const metaBlocks = Array.isArray(metaBlocksRaw)
+    ? (metaBlocksRaw.filter(isValidBlock) as MessageBlock[])
+    : []
+  const fallbackText =
+    typeof messageObj.content === "string" ? messageObj.content : ""
+
+  const finalBlocks = [...metaBlocks]
+  if (!hasRenderableTextBlock(finalBlocks) && fallbackText.trim().length > 0) {
+    finalBlocks.push({ type: "text", content: fallbackText } as MessageBlock)
+  }
+
+  if (finalBlocks.length === 0) return currentBlocks
+
+  const existingToolBlocks = currentBlocks.filter(
+    (b) => b.type === "tool_call" || b.type === "tool_result"
+  )
+  const finalToolBlocks = finalBlocks.filter(
+    (b) => b.type === "tool_call" || b.type === "tool_result"
+  )
+  const mergedToolBlocks = mergeToolBlocks(existingToolBlocks, finalToolBlocks)
+  const nonToolBlocks = finalBlocks.filter(
+    (b) => b.type !== "tool_call" && b.type !== "tool_result"
+  )
+
+  return [...mergedToolBlocks, ...nonToolBlocks]
 }
 
 const resolveMessageAttachments = async (messages: Message[]) => {
@@ -355,35 +477,30 @@ export function useChatMessagingService() {
             // Non-status payloads might include a final response body. If it contains
             // structured blocks, prefer them as the authoritative message rendering.
             try {
-              const body = data as any
-              const metaBlocks =
-                body?.choices?.[0]?.message?.meta_info?.blocks ??
-                body?.choices?.[0]?.delta?.meta_info?.blocks
-              if (Array.isArray(metaBlocks) && metaBlocks.length > 0) {
+              const body = tryParseJsonObject(data)
+              if (body) {
                 const currentMsg = useChatStore.getState().messages.find(
                   (m) => m.id === assistantMessageId
                 )
-                if (currentMsg?.blocks?.length) {
-                  // Blocks were already accumulated during agent execution (streamed
-                  // tool_call / tool_result blocks). Only append non-tool blocks
-                  // (e.g. final text answer) to avoid overwriting the full history.
-                  const nonToolBlocks = (metaBlocks as any[]).filter(
-                    (b: any) => b.type !== "tool_call" && b.type !== "tool_result"
-                  )
-                  if (nonToolBlocks.length) {
-                    appendMessageBlocks(assistantMessageId, nonToolBlocks as any)
-                  }
-                } else {
-                  setMessageBlocks(assistantMessageId, metaBlocks as any)
+                const currentBlocks = Array.isArray(currentMsg?.blocks)
+                  ? (currentMsg?.blocks as MessageBlock[])
+                  : []
+                const merged = buildFinalAssistantBlocks(currentBlocks, body)
+                if (merged.length > 0) {
+                  // Final body is authoritative for non-tool blocks; preserve streamed
+                  // tool blocks and补齐 final tool_result if needed.
+                  setMessageBlocks(assistantMessageId, merged)
                 }
               }
             } catch {
               // ignore
             }
 
-            const res = data as { session_id?: string | null; trace_id?: string | null }
-            const session = res.session_id ?? undefined
-            const traceId = res.trace_id ?? undefined
+            const res = tryParseJsonObject(data)
+            const session =
+              res && typeof res.session_id === "string" ? res.session_id : undefined
+            const traceId =
+              res && typeof res.trace_id === "string" ? res.trace_id : undefined
 
             if (session) {
               setSessionId(session)

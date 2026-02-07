@@ -140,7 +140,8 @@ class ProviderRegistryPlugin(AgentPlugin):
         This is used by the Agent to align provider mappings.
         """
         if capability not in CAPABILITY_MAP:
-            return f"Error: Capability '{capability}' not found."
+            available = ", ".join(sorted(CAPABILITY_MAP.keys()))
+            return f"Error: Capability '{capability}' not found. Available capabilities: {available}"
 
         req_cls, resp_cls = CAPABILITY_MAP[capability]
 

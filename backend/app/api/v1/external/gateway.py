@@ -486,6 +486,7 @@ def build_external_context(
         db_session=db,
         tenant_id=principal.tenant_id if principal else None,
         api_key_id=principal.api_key_id if principal else None,
+        session_id=getattr(request_body, "session_id", None),
         client_ip=principal.client_ip if principal else client_ip,
         trace_id=getattr(request.state, "trace_id", None) if request else None,
     )

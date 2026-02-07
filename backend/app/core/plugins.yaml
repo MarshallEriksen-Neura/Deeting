@@ -65,6 +65,17 @@ plugins:
     tools:
       - "create_plan"
 
+  # === Expert Network (JIT Persona Routing) ===
+  - id: "system.expert_network"
+    name: "Expert Network"
+    module: "app.agent_plugins.builtins.expert_network.plugin"
+    class_name: "ExpertNetworkPlugin"
+    enabled_by_default: true
+    is_always_on: true
+    description: "Searches expert assistants for persona routing via Qdrant."
+    tools:
+      - "consult_expert_network"
+
   # === Core Execution (Skill Runner) ===
   - id: "core.execution.skill_runner"
     name: "Skill Runner"

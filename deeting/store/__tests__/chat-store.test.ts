@@ -150,6 +150,54 @@ describe("useChatStore agent id normalization", () => {
     expect(message?.blocks).toHaveLength(2)
   })
 
+  it("setMessageBlocks should ignore whitespace-only text and thought blocks", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-5",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [],
+        },
+      ],
+    })
+
+    useChatStore.getState().setMessageBlocks("assistant-5", [
+      { type: "text", content: "   \n\t" } as any,
+      { type: "thought", content: "\n\n" } as any,
+      { type: "tool_call", toolName: "tavily-search", status: "running" } as any,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.content).toBe("")
+    expect(message?.blocks).toHaveLength(1)
+    expect(message?.blocks?.[0]?.type).toBe("tool_call")
+  })
+
+  it("appendMessageBlocks should ignore whitespace-only text blocks", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-6",
+          role: "assistant",
+          content: "A",
+          createdAt: 1,
+          blocks: [{ id: "assistant-6-block-0", type: "text", content: "A" }],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-6", [
+      { type: "text", content: "\n\n" } as any,
+      { type: "text", content: "B" } as any,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.content).toBe("AB")
+    expect(message?.blocks?.filter((block) => block.type === "text")).toHaveLength(1)
+  })
+
   it("mergeMessageMeta should update trace_id without mutating content", () => {
     useChatStore.setState({
       messages: [

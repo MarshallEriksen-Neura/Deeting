@@ -37,6 +37,12 @@ class PluginContext(ABC):
 
     @property
     @abstractmethod
+    def session_id(self) -> str | None:
+        """Get the current session ID if available (for stateful tools)"""
+        pass
+
+    @property
+    @abstractmethod
     def working_directory(self) -> str:
         """Private working directory for the plugin"""
         pass

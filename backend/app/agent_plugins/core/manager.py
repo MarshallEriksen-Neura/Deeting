@@ -113,7 +113,9 @@ class PluginManager:
 
     # ===== Runtime lifecycle =====
 
-    async def activate_all(self, user_id: uuid.UUID | None = None) -> None:
+    async def activate_all(
+        self, user_id: uuid.UUID | None = None, session_id: str | None = None
+    ) -> None:
         """
         实例化并激活所有已注册的插件。
         默认使用随机 user_id 作为上下文隔离。
@@ -129,12 +131,14 @@ class PluginManager:
                     plugin_name=name,
                     plugin_id=plugin_id,
                     user_id=uid,
+                    session_id=session_id,
                 )
                 await plugin.initialize(context)
                 self._plugins[name] = plugin
-                logger.info(f"Activated plugin {name}")
+                logger.info(f"Activated plugin {name} (session={session_id})")
             except Exception as exc:
                 logger.exception(f"Failed to activate plugin {name}: {exc}")
+
 
     async def deactivate_all(self) -> None:
         """关闭并清理所有已激活的插件实例。"""

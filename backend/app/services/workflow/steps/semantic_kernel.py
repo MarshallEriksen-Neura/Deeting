@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from app.models.assistant import Assistant, AssistantVersion
+from app.services.assistant.skill_resolver import resolve_skill_refs
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.services.assistant.assistant_retrieval_service import AssistantRetrievalService
 from app.services.orchestrator.registry import step_registry
@@ -92,6 +93,19 @@ class SemanticKernelStep(BaseStep):
                     f"SemanticKernel: Activated persona '{persona.get('name')}' (Score: {persona.get('score')})"
                 )
 
+                # Inject skill_refs tools into mcp_discovery.tools
+                skill_tools = persona.get("skill_tools", [])
+                if skill_tools:
+                    existing_tools = ctx.get("mcp_discovery", "tools") or []
+                    existing_names = {t.name for t in existing_tools}
+                    new_tools = [t for t in skill_tools if t.name not in existing_names]
+                    existing_tools.extend(new_tools)
+                    ctx.set("mcp_discovery", "tools", existing_tools)
+                    data["injected_skill_tools"] = len(new_tools)
+                    logger.info(
+                        f"SemanticKernel: Injected {len(new_tools)} skill tools from persona '{persona.get('name')}'"
+                    )
+
             if data:
                 ctx.emit_status(
                     stage="perception",
@@ -130,48 +144,62 @@ class SemanticKernelStep(BaseStep):
         """Search and load active persona if confidence is high."""
         if not ctx.db_session:
             return None
-            
+
         try:
             retrieval = AssistantRetrievalService(ctx.db_session)
             # Limit 1 because we only want to dominate the persona if it's a very strong match
             candidates = await retrieval.search_candidates(query, limit=1)
-            
+
             if not candidates:
                 return None
-                
+
             top = candidates[0]
             # High threshold for Active Injection (Passive tool use has lower threshold)
             if top.get("score", 0) < 0.90:
                 return None
-                
+
             assistant_id = top.get("assistant_id")
             if not assistant_id:
                 return None
-                
-            # Fetch full system prompt
-            prompt = await self._fetch_system_prompt(ctx.db_session, assistant_id)
+
+            # Fetch full system prompt and skill_refs
+            prompt, skill_refs = await self._fetch_assistant_data(ctx.db_session, assistant_id)
             if not prompt:
                 return None
-                
+
+            # Resolve skill_refs to ToolDefinition objects
+            skill_tools = []
+            if skill_refs:
+                try:
+                    skill_tools = await resolve_skill_refs(skill_refs)
+                except Exception as e:
+                    logger.warning(f"SemanticKernel: Failed to resolve skill_refs: {e}")
+
             return {
                 "name": top.get("name"),
                 "prompt": prompt,
                 "score": top.get("score"),
-                "assistant_id": assistant_id
+                "assistant_id": assistant_id,
+                "skill_tools": skill_tools,
             }
         except Exception as e:
             logger.warning(f"SemanticKernel: Persona search failed: {e}")
             return None
 
-    async def _fetch_system_prompt(self, session: Any, assistant_id: str) -> str | None:
-        """Fetch the system prompt for an assistant."""
+    async def _fetch_assistant_data(
+        self, session: Any, assistant_id: str
+    ) -> tuple[str | None, list | None]:
+        """Fetch the system prompt and skill_refs for an assistant."""
         try:
             stmt = (
-                select(AssistantVersion.system_prompt)
+                select(AssistantVersion.system_prompt, AssistantVersion.skill_refs)
                 .join(Assistant, Assistant.current_version_id == AssistantVersion.id)
                 .where(Assistant.id == assistant_id)
             )
             result = await session.execute(stmt)
-            return result.scalar_one_or_none()
+            row = result.first()
+            if not row:
+                return None, None
+            return row[0], row[1]
         except Exception:
-            return None
+            return None, None

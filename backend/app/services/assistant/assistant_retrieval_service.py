@@ -160,7 +160,9 @@ class AssistantRetrievalService:
             assistant, version, review_status, routing_state = row
             if not version:
                 continue
-            if not self._is_public_published(assistant):
+            # System assistants (no owner) bypass public+published check
+            is_system = assistant.owner_user_id is None
+            if not is_system and not self._is_public_published(assistant):
                 continue
             if assistant.owner_user_id is not None:
                 normalized_review = (

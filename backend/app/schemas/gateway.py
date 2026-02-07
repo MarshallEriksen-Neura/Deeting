@@ -170,6 +170,10 @@ class RoutingTestRequest(BaseModel):
     provider_model_id: str | None = Field(
         default=None, description="指定 provider model ID（内部网关必填）"
     )
+    session_id: str | None = Field(
+        default=None, description="会话 ID（可选）"
+    )
+
 
 
 class RoutingTestResponse(BaseModel):
