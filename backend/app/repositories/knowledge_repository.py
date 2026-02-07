@@ -6,10 +6,11 @@ from app.models.knowledge import KnowledgeArtifact, KnowledgeChunk
 from app.repositories.base import BaseRepository
 
 
-class KnowledgeRepository(BaseRepository):
+class KnowledgeRepository(BaseRepository[KnowledgeArtifact]):
     """
     Repository for KnowledgeArtifact and KnowledgeChunk.
     """
+    model = KnowledgeArtifact
 
     async def get_artifact_by_url(self, url: str) -> KnowledgeArtifact | None:
         stmt = select(KnowledgeArtifact).where(KnowledgeArtifact.source_url == url)
