@@ -755,3 +755,4 @@ export const useChatInput = () =>
     removeAttachment: state.removeAttachment,
     clearAttachments: state.clearAttachments,
   }))
+

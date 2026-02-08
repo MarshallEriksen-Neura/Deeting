@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, memo } from "react";
-import { AlertTriangle, Brain, ChevronDown, ChevronRight, Loader2, Terminal } from "lucide-react";
+import { AlertTriangle, Brain, ChevronDown, Loader2, Terminal } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -76,38 +76,25 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     // 缓存内容检查结果
     const hasContent = useMemo(() => parts.length > 0, [parts.length]);
     
-    // 缓存状态详情
     const statusDetail = useMemo(
       () => resolveStatusDetail(t, statusCode, statusMeta),
       [t, statusCode, statusMeta]
     );
-    
-    // 缓存动画变体配置
-    const containerVariants = useMemo(
-      () => ({
-        hidden: { opacity: 0 },
-        visible: {
-          opacity: 1,
-          transition: {
-            staggerChildren: 0.1,
-            delayChildren: 0.1
+
+    // 将 tool_result 与对应的 tool_call 配对（通过 callId）
+    const { resultMap, pairedResultIndices } = useMemo(() => {
+      const map = new Map<string, MessageBlock>();
+      const paired = new Set<number>();
+      parts.forEach((part, index) => {
+        if (part.type === 'tool_result' && part.callId) {
+          map.set(part.callId, part);
+          if (parts.some(p => p.type === 'tool_call' && p.callId === part.callId)) {
+            paired.add(index);
           }
         }
-      }),
-      []
-    );
-
-    const itemVariants = useMemo(
-      () => ({
-        hidden: { y: 10, opacity: 0 },
-        visible: { 
-          y: 0, 
-          opacity: 1,
-          transition: { type: "spring", stiffness: 100, damping: 15 }
-        }
-      }),
-      []
-    );
+      });
+      return { resultMap: map, pairedResultIndices: paired };
+    }, [parts]);
 
     return (
       <div
@@ -131,92 +118,118 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
               </div>
             )}
 
-            <AnimatePresence mode="wait">
-              {!hasContent ? (
+            <AnimatePresence mode="sync">
+              {!hasContent && (
                 <motion.div
                   key="placeholder"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
+                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
                 >
                   <HolographicPulse
-                    label={streamEnabled ? t("status.placeholder.stream") : t("status.placeholder.batch")} 
+                    label={streamEnabled ? t("status.placeholder.stream") : t("status.placeholder.batch")}
                   />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="content"
-                  className="space-y-3"
-                  variants={!streamEnabled ? containerVariants : {}}
-                  initial={!streamEnabled ? "hidden" : "visible"}
-                  animate="visible"
-                >
-                  {parts.map((part, index) => {
-                    // --- A. 思维链 (CoT) ---
-                    if (part.type === 'thought') {
-                      return (
-                        <motion.div key={`thought-${index}`} variants={itemVariants}>
-                          <ThoughtBlock content={part.content} cost={part.cost} />
-                        </motion.div>
-                      );
-                    }
-
-                    // --- B. MCP 工具调用 ---
-                    if (part.type === 'tool_call') {
-                      return (
-                        <motion.div key={`tool-${index}`} variants={itemVariants}>
-                          <ToolCallBlock 
-                            name={part.toolName} 
-                            args={part.toolArgs} 
-                            status={part.status} 
-                          />
-                        </motion.div>
-                      );
-                    }
-
-                    // --- C. MCP 工具结果 ---
-                    if (part.type === 'tool_result') {
-                      return (
-                        <motion.div key={`tool-result-${index}`} variants={itemVariants}>
-                          <ToolResultBlock
-                            name={part.toolName}
-                            callId={part.callId}
-                            status={part.status}
-                            result={part.result}
-                          />
-                        </motion.div>
-                      );
-                    }
-
-                    if (part.type === 'error') {
-                      return (
-                        <motion.div key={`error-${index}`} variants={itemVariants}>
-                          <ErrorMessageBlock message={part.message} />
-                        </motion.div>
-                      );
-                    }
-
-                    // --- D. 普通文本 ---
-                    if (!part.content) return null;
-
-                    return (
-                      <motion.div key={`text-${index}`} variants={itemVariants}>
-                        <TypingTextBlock
-                          content={part.content}
-                          typingEnabled={typingEnabled}
-                        />
-                      </motion.div>
-                    );
-                  })}
-
-                  {isActive && streamEnabled && (
-                    <motion.div variants={itemVariants}>
-                      <GhostCursor />
-                    </motion.div>
-                  )}
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {hasContent && (
+              <div className="space-y-3">
+                {parts.map((part, index) => {
+                  // --- A. 思维链 (CoT) ---
+                  if (part.type === 'thought') {
+                    return (
+                      <motion.div
+                        key={`thought-${index}`}
+                        initial={{ y: 8, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                      >
+                        <ThoughtBlock content={part.content} cost={part.cost} />
+                      </motion.div>
+                    );
+                  }
+
+                  // --- B. MCP 工具调用（含折叠结果） ---
+                  if (part.type === 'tool_call') {
+                    return (
+                      <motion.div
+                        key={`tool-${index}`}
+                        initial={{ y: 8, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                      >
+                        <ToolCallBlock
+                          name={part.toolName}
+                          args={part.toolArgs}
+                          status={part.status}
+                          resultBlock={part.callId ? resultMap.get(part.callId) : undefined}
+                        />
+                      </motion.div>
+                    );
+                  }
+
+                  // --- C. MCP 工具结果（已配对的跳过，由 ToolCallBlock 折叠展示） ---
+                  if (part.type === 'tool_result') {
+                    if (pairedResultIndices.has(index)) return null;
+                    return (
+                      <motion.div
+                        key={`tool-result-${index}`}
+                        initial={{ y: 8, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                      >
+                        <ToolResultBlock
+                          name={part.toolName}
+                          callId={part.callId}
+                          status={part.status}
+                          result={part.result}
+                        />
+                      </motion.div>
+                    );
+                  }
+
+                  if (part.type === 'error') {
+                    return (
+                      <motion.div
+                        key={`error-${index}`}
+                        initial={{ y: 8, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                      >
+                        <ErrorMessageBlock message={part.message} />
+                      </motion.div>
+                    );
+                  }
+
+                  // --- D. 普通文本 ---
+                  if (!part.content) return null;
+
+                  return (
+                    <motion.div
+                      key={`text-${index}`}
+                      initial={{ y: 8, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                    >
+                      <TypingTextBlock
+                        content={part.content}
+                        typingEnabled={typingEnabled}
+                      />
+                    </motion.div>
+                  );
+                })}
+
+                {isActive && streamEnabled && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    <GhostCursor />
+                  </motion.div>
+                )}
+              </div>
+            )}
           </div>
         </div>
     );
@@ -318,23 +331,62 @@ const ThoughtBlock = memo<{ content?: string; cost?: string }>(
   }
 );
 
-// === 组件：MCP 工具块 ===
-// 使用 memo 优化子组件
-const ToolCallBlock = memo<{ name?: string; args?: string; status?: string }>(
-  function ToolCallBlock({ name, args, status }) {
+// === 组件：MCP 工具块（可折叠展示结果） ===
+const ToolCallBlock = memo<{
+  name?: string;
+  args?: string;
+  status?: string;
+  resultBlock?: MessageBlock;
+}>(
+  function ToolCallBlock({ name, args, status, resultBlock }) {
+    const [isOpen, setIsOpen] = useState(false);
     const isRunning = status === 'running';
     const isError = status === 'error';
+    const hasResult = !!resultBlock;
 
-    return (
+    // TaskLiveBlock special case
+    const taskLiveId = useMemo(() => {
+      if (!resultBlock || resultBlock.status === 'error') return null;
+      if (
+        resultBlock.toolName?.startsWith("skill__system.") &&
+        typeof resultBlock.result === "object" &&
+        resultBlock.result !== null &&
+        "task_id" in resultBlock.result
+      ) {
+        return (resultBlock.result as { task_id: string }).task_id || null;
+      }
+      return null;
+    }, [resultBlock]);
+
+    const resultContent = useMemo(() => {
+      if (!resultBlock?.result) return "";
+      const r = resultBlock.result;
+      if (typeof r === "string") return r;
+      if (r === null || r === undefined) return "";
+      try {
+        return `\`\`\`json\n${JSON.stringify(r, null, 2)}\n\`\`\``;
+      } catch {
+        return String(r);
+      }
+    }, [resultBlock?.result]);
+
+    const isResultError = resultBlock?.status === "error";
+
+    const card = (
       <div className={cn(
         "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all",
-        isRunning ? "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20" : "border-border bg-card",
-        isError && "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+        isRunning
+          ? "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20"
+          : "border-border bg-card",
+        isError && "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20",
+        hasResult && !isRunning && "cursor-pointer select-none hover:bg-muted/50"
       )}>
         {/* Icon Status */}
         <div className={cn(
           "w-8 h-8 rounded flex items-center justify-center shrink-0",
-          isRunning ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300" : "bg-muted text-muted-foreground",
+          isRunning
+            ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
+            : "bg-muted text-muted-foreground",
           isError && "bg-red-100 text-red-500 dark:bg-red-900 dark:text-red-300"
         )}>
           {isRunning ? <Loader2 size={16} className="animate-spin"/> : <Terminal size={16}/>}
@@ -353,13 +405,51 @@ const ToolCallBlock = memo<{ name?: string; args?: string; status?: string }>(
           </div>
         </div>
 
-        {/* Result Indicator (Click to view details) */}
-        {!isRunning && (
-          <div className="text-muted-foreground cursor-pointer hover:text-foreground">
-            <ChevronRight size={16} />
+        {/* Expand/Collapse indicator */}
+        {hasResult && !isRunning && (
+          <div className="text-muted-foreground">
+            <ChevronDown size={16} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
           </div>
         )}
       </div>
+    );
+
+    if (!hasResult) return card;
+
+    return (
+      <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+        <CollapsibleTrigger asChild>
+          {card}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-2">
+            {taskLiveId ? (
+              <TaskLiveBlock taskId={taskLiveId} />
+            ) : (
+              <div className={cn(
+                "rounded-lg border p-3 text-sm",
+                isResultError
+                  ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+                  : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
+              )}>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="font-mono text-xs font-semibold">
+                    {resultBlock.toolName || resultBlock.callId || "result"}
+                  </div>
+                  <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                    {isResultError ? "ERROR" : "OUTPUT"}
+                  </Badge>
+                </div>
+                {resultContent ? (
+                  <MarkdownViewer content={resultContent} className="chat-markdown chat-markdown-assistant text-sm" />
+                ) : (
+                  <div className="text-xs text-muted-foreground">No output</div>
+                )}
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     );
   }
 );

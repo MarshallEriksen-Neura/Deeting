@@ -248,7 +248,6 @@ export function useChatMessagingService() {
     clearAttachments,
     setMessages,
     mergeMessageMeta,
-    setMessageBlocks,
     appendMessageBlocks,
     sessionId,
     setSessionId,
@@ -456,7 +455,7 @@ export function useChatMessagingService() {
               }
               if (payload.type === "error") {
                 const message = payload.message || "Request failed"
-                setMessageBlocks(assistantMessageId, [
+                appendMessageBlocks(assistantMessageId, [
                   {
                     id: `${assistantMessageId}-error`,
                     type: "error",
@@ -464,7 +463,7 @@ export function useChatMessagingService() {
                     streamState: "completed",
                     displayMode: "bubble",
                   },
-                ])
+                ] as MessageBlock[])
                 setErrorMessage(payload.error_code ? `${payload.error_code}: ${message}` : message)
                 return
               }
@@ -478,39 +477,68 @@ export function useChatMessagingService() {
               }
             }
 
-            // Non-status payloads might include a final response body. If it contains
-            // structured blocks, prefer them as the authoritative message rendering.
-            try {
-              const body = tryParseJsonObject(data)
-              if (body) {
-                const currentMsg = useChatStore.getState().messages.find(
-                  (m) => m.id === assistantMessageId
-                )
-                const currentBlocks = Array.isArray(currentMsg?.blocks)
-                  ? (currentMsg?.blocks as MessageBlock[])
-                  : []
-                const merged = buildFinalAssistantBlocks(currentBlocks, body)
-                if (merged.length > 0) {
-                  // Final body is authoritative for non-tool blocks; preserve streamed
-                  // tool blocks and补齐 final tool_result if needed.
-                  setMessageBlocks(assistantMessageId, merged)
+            // ─── Final response body (non-status/blocks/error event) ───
+            // 当 stream=false 时，后端最终会返回完整的 OpenAI 格式响应体。
+            // 从 meta_info.blocks 中提取尚未流式到达的 blocks（thought, text），
+            // 使用 appendMessageBlocks 追加，避免 setMessageBlocks 全量替换导致的渲染问题。
+            let responseBody: Record<string, unknown> | null = null
+            if (typeof data === "string") {
+              // safeJson 可能因代理折行导致解析失败，这里重试一次
+              try { responseBody = JSON.parse(data) } catch { /* ignore */ }
+            } else if (data && typeof data === "object") {
+              responseBody = data as Record<string, unknown>
+            }
+            if (!responseBody) return
+
+            // 提取 session_id 和 trace_id
+            if (typeof responseBody.session_id === "string") {
+              setSessionId(responseBody.session_id)
+            }
+            if (typeof responseBody.trace_id === "string") {
+              mergeMessageMeta(assistantMessageId, { trace_id: responseBody.trace_id })
+            }
+
+            // 从 choices[0].message.meta_info.blocks 提取新 blocks
+            const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
+            const firstChoice = choices[0]
+            const respMessage = firstChoice && typeof firstChoice === "object"
+              ? (firstChoice as Record<string, unknown>).message
+              : null
+            if (respMessage && typeof respMessage === "object") {
+              const msgObj = respMessage as Record<string, unknown>
+              const metaInfo = msgObj.meta_info && typeof msgObj.meta_info === "object"
+                ? (msgObj.meta_info as Record<string, unknown>)
+                : null
+              const metaBlocks = Array.isArray(metaInfo?.blocks)
+                ? ((metaInfo!.blocks as unknown[]).filter(isValidBlock) as MessageBlock[])
+                : []
+
+              // 只追加尚未通过流式 blocks 事件到达的 blocks（跳过 tool_call/tool_result）
+              const newBlocks: MessageBlock[] = metaBlocks.filter(
+                (b) => b.type !== "tool_call" && b.type !== "tool_result"
+              )
+
+              // 兜底：如果 meta_info.blocks 为空，从 reasoning_content 和 content 构建
+              if (metaBlocks.length === 0) {
+                const reasoning = typeof msgObj.reasoning_content === "string" ? msgObj.reasoning_content : ""
+                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
+                if (reasoning.trim()) {
+                  newBlocks.push({ type: "thought", content: reasoning } as MessageBlock)
+                }
+                if (textContent.trim()) {
+                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
+                }
+              } else if (!newBlocks.some((b) => b.type === "text")) {
+                // meta_info.blocks 存在但没有 text block，从 content 兜底
+                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
+                if (textContent.trim()) {
+                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
                 }
               }
-            } catch {
-              // ignore
-            }
 
-            const res = tryParseJsonObject(data)
-            const session =
-              res && typeof res.session_id === "string" ? res.session_id : undefined
-            const traceId =
-              res && typeof res.trace_id === "string" ? res.trace_id : undefined
-
-            if (session) {
-              setSessionId(session)
-            }
-            if (traceId) {
-              mergeMessageMeta(assistantMessageId, { trace_id: traceId })
+              if (newBlocks.length > 0) {
+                appendMessageBlocks(assistantMessageId, newBlocks)
+              }
             }
           },
         },
@@ -538,7 +566,7 @@ export function useChatMessagingService() {
       }
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Request failed"
-      setMessageBlocks(assistantMessageId, [
+      appendMessageBlocks(assistantMessageId, [
         {
           id: `${assistantMessageId}-error`,
           type: "error",
@@ -546,7 +574,7 @@ export function useChatMessagingService() {
           streamState: "completed",
           displayMode: "bubble",
         },
-      ])
+      ] as MessageBlock[])
       setErrorMessage(message)
     } finally {
       setIsLoading(false)
@@ -568,7 +596,6 @@ export function useChatMessagingService() {
     clearAttachments,
     setMessages,
     mergeMessageMeta,
-    setMessageBlocks,
     appendMessageBlocks,
     setSessionId,
     setIsLoading,

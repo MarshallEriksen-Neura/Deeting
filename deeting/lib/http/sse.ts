@@ -152,8 +152,14 @@ function parseEventChunk(chunk: string): SSEMessage<string> | null {
 
     // 兼容部分代理/网关对超长 data 行的折行（非标准，但线上常见）：
     // 若已经开始 data 字段，且当前行不是已知字段前缀，则视为 data 续行。
+    // 注意：必须直接拼接到上一条 data 行末尾（不加换行符），
+    // 否则换行符会插入 JSON 字符串值内部，导致 JSON.parse 失败。
     if (hasDataField) {
-      dataLines.push(line)
+      if (dataLines.length > 0) {
+        dataLines[dataLines.length - 1] += line
+      } else {
+        dataLines.push(line)
+      }
     }
   }
 
