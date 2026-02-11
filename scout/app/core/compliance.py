@@ -40,6 +40,12 @@ class ComplianceManager:
         # "反动", "暴恐" 等具体词汇根据实际合规要求添加
     ]
 
+    # 4. 白名单 (这些域名不受合规性检查限制，常用于官方文档抓取测试)
+    DOMAIN_WHITELIST = [
+        "openai.com", "anthropic.com", "jina.ai", "microsoft.com", 
+        "google.com", "facebook.com", "github.com"
+    ]
+
     def __init__(self, user_agent: str = "*"):
         self.user_agent = user_agent
         self._robots_cache = {} # 简单内存缓存
@@ -47,9 +53,19 @@ class ComplianceManager:
     async def is_safe_to_crawl(self, url: str) -> bool:
         """
         [Pre-Flight] 飞行前检查：
-        1. 检查黑名单 (政治安全)
-        2. 检查 Robots.txt (法律合规)
+        1. 检查白名单 (快速通行)
+        2. 检查黑名单 (政治安全)
+        3. 检查 Robots.txt (法律合规)
         """
+        parsed = urlparse(url)
+        hostname = parsed.netloc.lower()
+        
+        # 0. 白名单快速通行
+        for white_domain in self.DOMAIN_WHITELIST:
+            if hostname.endswith(white_domain):
+                logger.info(f"✅ Compliance Whitelist Match: {hostname}")
+                return True
+
         if not self._check_blacklist(url):
             logger.warning(f"🚫 Compliance Block (Blacklist URL): {url}")
             return False

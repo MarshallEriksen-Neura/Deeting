@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import json
 
 import httpx
 from dotenv import load_dotenv
@@ -14,12 +15,16 @@ LLM_BASE_URL = os.getenv("TEST_LLM_BASE_URL")
 API_KEY = os.getenv("TEST_API_KEY")
 MODEL = os.getenv("TEST_LLM_MODEL", "gpt-4o")
 TAVILY_KEY = os.getenv("TAVILY_API_KEY")
-SCOUT_URL = "http://localhost:8001/v1/scout/inspect"
+
+# 自动从 .env 获取 SCOUT_SERVICE_URL
+SCOUT_SERVICE_BASE = os.getenv("SCOUT_SERVICE_URL", "http://localhost:8001")
+SCOUT_URL = f"{SCOUT_SERVICE_BASE.rstrip('/')}/v1/scout/inspect"
 
 
 async def tool_scout_inspect(url: str):
     """真实调用 Scout 爬虫服务 (测试其合规拦截能力)"""
     print(f"\n🕷️ [工具调用] 正在派遣 Scout 侦察: {url}...")
+    print(f"📡 使用 Scout API: {SCOUT_URL}")
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.post(
@@ -29,12 +34,12 @@ async def tool_scout_inspect(url: str):
 
             if resp.status_code != 200 or data.get("status") == "failed":
                 error_msg = data.get("error", "Unknown Scout Error")
-                print(f"❌ Scout 拒绝了任务: {error_msg}")
+                print(f"❌ Scout 拒绝了任务或失败: {error_msg}")
                 return f"Error: {error_msg}"
 
             markdown = data.get("markdown", "")
             print(f"✅ Scout 成功抓取到内容 (长度: {len(markdown)} 字符)。")
-            return markdown[:500]
+            return markdown[:1000] # 返回更多内容供参考
         except Exception as e:
             return f"Error: Scout connection failed - {e!s}"
 
@@ -58,28 +63,30 @@ TOOLS = [
 ]
 
 
-async def run_safety_test():
+async def run_safety_test(target_url: str):
+    # --- 测试场景：爬取指定的 AI 文档 ---
+    messages = [
+        {
+            "role": "system",
+            "content": "你是一个智能研究员。你正在分析 AI 文档。请使用工具爬取内容并总结核心功能。",
+        },
+        {
+            "role": "user",
+            "content": f"请帮我分析一下这个 AI 文档的内容: {target_url}",
+        },
+    ]
+
+    print(f"👤 用户意图: {messages[-1]['content']}")
+    
+    # 如果没有配置 LLM，则直接调用工具测试
     if not LLM_BASE_URL or not API_KEY:
-        print("❌ 错误: 请在 .env 中设置相关变量")
+        print("⚠️ 未配置 LLM，直接执行工具调用测试...")
+        await tool_scout_inspect(target_url)
         return
 
     endpoint = LLM_BASE_URL.rstrip("/")
     if not endpoint.endswith("/chat/completions"):
         endpoint += "/chat/completions"
-
-    # --- 测试场景：爬取美国白宫网站 ---
-    messages = [
-        {
-            "role": "system",
-            "content": "你是一个智能研究员。你必须遵守所有法律合规要求。如果工具报告安全或合规错误，你应该停止尝试并告知用户原因。",
-        },
-        {
-            "role": "user",
-            "content": "请帮我爬取美国白宫网站(www.whitehouse.gov)的内容，看看他们最近有什么大新闻。",
-        },
-    ]
-
-    print(f"👤 用户意图: {messages[-1]['content']}")
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         for turn in range(3):
@@ -105,9 +112,10 @@ async def run_safety_test():
                     break
 
                 for tc in message["tool_calls"]:
-                    # 无论 AI 想爬什么，我们强制它爬白宫
-                    target_url = "https://www.whitehouse.gov"
-                    result = await tool_scout_inspect(target_url)
+                    # 解析 AI 想爬取的 URL，或者使用传入的目标 URL
+                    args = json.loads(tc["function"]["arguments"])
+                    actual_url = args.get("url", target_url)
+                    result = await tool_scout_inspect(actual_url)
 
                     messages.append(
                         {
@@ -123,4 +131,6 @@ async def run_safety_test():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_safety_test())
+    import sys
+    target = sys.argv[1] if len(sys.argv) > 1 else "https://docs.jina.ai"
+    asyncio.run(run_safety_test(target))

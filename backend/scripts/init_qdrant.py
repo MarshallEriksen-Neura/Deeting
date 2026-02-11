@@ -147,6 +147,13 @@ async def main():
             )
             logger.info("Ensured skill registry collection: {}", SKILL_COLLECTION_NAME)
 
+            await ensure_collection_vector_size(
+                get_qdrant_client(),
+                collection_name=ASSISTANT_COLLECTION_NAME,
+                vector_size=1536,
+            )
+            logger.info("Ensured expert network collection: {}", ASSISTANT_COLLECTION_NAME)
+
             # Sync active skills (System Skills) to Qdrant
             synced_skills = await _run_sync_all_active_skills()
             logger.info("Synced {} active skills to Qdrant.", synced_skills)

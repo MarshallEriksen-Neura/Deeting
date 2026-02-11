@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { request } from "@/lib/http"
+import { ApiError, request } from "@/lib/http"
 
 export const McpServerSchema = z.object({
   id: z.string(),
@@ -105,12 +105,38 @@ export interface McpToolTestRequest {
 
 const MCP_BASE = "/api/v1/mcp"
 
+/**
+ * Zod v4 的 .parse() 在收到 undefined/null 时会抛出
+ * TypeError: Cannot read properties of undefined (reading '_zod')
+ * 而非标准 ZodError。对列表接口做防御：数据为数组时直接返回，否则回退空数组并 warn。
+ */
+function safeParseArray<T>(
+  schema: z.ZodArray<z.ZodType<T>>,
+  data: unknown,
+  label: string
+): T[] {
+  if (Array.isArray(data)) {
+    try {
+      return schema.parse(data)
+    } catch (e) {
+      console.warn(`[MCP] ${label} schema validation failed, using raw data`, e)
+      return data as T[]
+    }
+  }
+  if (data == null) {
+    console.warn(`[MCP] ${label} returned ${String(data)}, falling back to []`)
+    return []
+  }
+  console.warn(`[MCP] ${label} unexpected data type: ${typeof data}`)
+  return []
+}
+
 export async function fetchMcpServers(): Promise<McpServer[]> {
   const data = await request<McpServer[]>({
     url: `${MCP_BASE}/servers`,
     method: "GET",
   })
-  return z.array(McpServerSchema).parse(data)
+  return safeParseArray(z.array(McpServerSchema), data, "fetchMcpServers")
 }
 
 export async function fetchMcpSources(): Promise<McpSource[]> {
@@ -118,7 +144,7 @@ export async function fetchMcpSources(): Promise<McpSource[]> {
     url: `${MCP_BASE}/sources`,
     method: "GET",
   })
-  return z.array(McpSourceSchema).parse(data)
+  return safeParseArray(z.array(McpSourceSchema), data, "fetchMcpSources")
 }
 
 export async function createMcpServer(payload: McpServerCreateRequest): Promise<McpServer> {
@@ -190,7 +216,7 @@ export async function fetchMcpServerTools(serverId: string): Promise<McpServerTo
     url: `${MCP_BASE}/servers/${serverId}/tools`,
     method: "GET",
   })
-  return z.array(McpServerToolSchema).parse(data)
+  return safeParseArray(z.array(McpServerToolSchema), data, "fetchMcpServerTools")
 }
 
 export async function toggleMcpServerTool(
