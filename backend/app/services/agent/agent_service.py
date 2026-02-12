@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from typing import Any
 
 from app.agent_plugins.core.manager import PluginManager
@@ -33,49 +34,68 @@ class AgentService:
         self.tools: list[ToolDefinition] = []
         self.tool_map: dict[str, Any] = {}
         self._initialized = False
-        self.tool_map: dict[str, Any] = {}
-        self._initialized = False
+
+    @staticmethod
+    def _parse_user_uuid(user_id: Any | None) -> uuid.UUID | None:
+        if not user_id:
+            return None
+        try:
+            parsed = uuid.UUID(str(user_id))
+        except (ValueError, TypeError):
+            return None
+        if parsed.int == 0:
+            return None
+        return parsed
+
+    @staticmethod
+    def _normalize_tools(raw_tools: list[dict[str, Any]]) -> list[ToolDefinition]:
+        normalized: list[ToolDefinition] = []
+        for tool_def in raw_tools:
+            func_def = tool_def.get("function", {})
+            t_name = func_def.get("name")
+            if not t_name:
+                continue
+            normalized.append(
+                ToolDefinition(
+                    name=t_name,
+                    description=func_def.get("description", ""),
+                    input_schema=func_def.get("parameters", {}),
+                )
+            )
+        return normalized
 
     async def initialize(self, user_id: Any | None = None, session_id: str | None = None):
         """Lazy initialization of plugins and tools."""
         if self._initialized:
             return
 
-        # Activate plugins with context
-        import uuid
-        uid = None
-        if user_id:
-            try:
-                uid = uuid.UUID(str(user_id))
-            except (ValueError, TypeError):
-                uid = None
+        uid = self._parse_user_uuid(user_id)
+        if uid is None:
+            raise ValueError("AgentService.initialize requires a real user_id")
 
         await self.plugin_manager.activate_all(user_id=uid, session_id=session_id)
 
-
-        # Harvest tools
-        raw_tools = self.plugin_manager.get_all_tools()
-
-        for tool_def in raw_tools:
-            func_def = tool_def["function"]
-            t_name = func_def["name"]
-
-            self.tools.append(
-                ToolDefinition(
-                    name=t_name,
-                    description=func_def["description"],
-                    input_schema=func_def["parameters"],
-                )
-            )
-
-            # Dynamic handler binding
-            handler = self._find_handler(t_name)
+        self.tools = self._normalize_tools(self.plugin_manager.get_all_tools())
+        self.tool_map = {}
+        for tool in self.tools:
+            handler = self._find_handler(tool.name)
             if handler:
-                self.tool_map[t_name] = handler
+                self.tool_map[tool.name] = handler
             else:
-                logger.warning(f"Tool '{t_name}' advertised but no handler found.")
+                logger.warning(f"Tool '{tool.name}' advertised but no handler found.")
 
         self._initialized = True
+
+    def list_registered_tools(self) -> list[ToolDefinition]:
+        """Build tool list directly from plugin classes (no user context required)."""
+        raw_tools: list[dict[str, Any]] = []
+        for cls in self.plugin_manager._plugin_classes.values():
+            try:
+                plugin = cls()
+                raw_tools.extend(plugin.get_tools() or [])
+            except Exception as exc:
+                logger.warning("list_registered_tools failed for %s: %s", cls, exc)
+        return self._normalize_tools(raw_tools)
 
     def _find_handler(self, tool_name: str):
         method_name = f"handle_{tool_name}"  # Convention: handle_tool_name
@@ -105,7 +125,7 @@ class AgentService:
         """
         from app.services.providers.llm import llm_service
 
-        await self.initialize()
+        await self.initialize(user_id=user_id)
 
         if conversation_history is None:
             conversation_history = []

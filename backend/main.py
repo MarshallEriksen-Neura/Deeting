@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
             from app.services.tools.tool_sync_service import tool_sync_service
 
             await system_qdrant.initialize_collections()
-            await agent_service.initialize()
-            synced = await tool_sync_service.sync_system_tools(agent_service.tools)
+            system_tools = agent_service.list_registered_tools()
+            synced = await tool_sync_service.sync_system_tools(system_tools)
             logger.info(f"qdrant_init_done: synced={synced}")
     except Exception as exc:
         logger.warning(f"qdrant_init_failed: {exc}")

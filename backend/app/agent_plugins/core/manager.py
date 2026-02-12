@@ -118,10 +118,13 @@ class PluginManager:
     ) -> None:
         """
         实例化并激活所有已注册的插件。
-        默认使用随机 user_id 作为上下文隔离。
+        要求必须传入真实 user_id，避免插件上下文漂移到非用户身份。
         """
+        if user_id is None:
+            raise ValueError("PluginManager.activate_all requires a real user_id")
+
         self._plugins.clear()
-        uid = user_id or uuid.uuid4()
+        uid = user_id
 
         for name, cls in self._plugin_classes.items():
             try:

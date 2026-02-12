@@ -50,8 +50,14 @@ class ToolContextService:
             len(query or ""),
         )
 
+        if uid is None:
+            logger.warning(
+                "ToolContextService: skip tool build due to missing real user_id"
+            )
+            return []
+
         init_start = time.perf_counter()
-        await agent_service.initialize()
+        await agent_service.initialize(user_id=uid)
         logger.info(
             "ToolContextService: agent initialized duration_ms=%.2f tools=%s",
             (time.perf_counter() - init_start) * 1000,

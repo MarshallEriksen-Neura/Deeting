@@ -427,21 +427,23 @@ const ToolCallBlock = memo<{
               <TaskLiveBlock taskId={taskLiveId} />
             ) : (
               <div className={cn(
-                "rounded-lg border p-3 text-sm",
+                "rounded-lg border p-3 text-sm overflow-hidden",
                 isResultError
                   ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
                   : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
               )}>
                 <div className="mb-2 flex items-center justify-between">
-                  <div className="font-mono text-xs font-semibold">
+                  <div className="font-mono text-xs font-semibold truncate">
                     {resultBlock.toolName || resultBlock.callId || "result"}
                   </div>
-                  <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                  <Badge variant="outline" className="h-5 text-[10px] font-normal shrink-0">
                     {isResultError ? "ERROR" : "OUTPUT"}
                   </Badge>
                 </div>
                 {resultContent ? (
-                  <MarkdownViewer content={resultContent} className="chat-markdown chat-markdown-assistant text-sm" />
+                  <div className="overflow-x-auto">
+                    <MarkdownViewer content={resultContent} className="chat-markdown chat-markdown-assistant text-sm" />
+                  </div>
                 ) : (
                   <div className="text-xs text-muted-foreground">No output</div>
                 )}
@@ -494,20 +496,22 @@ const ToolResultBlock = memo<{
   return (
     <div
       className={cn(
-        "rounded-lg border p-3 text-sm",
+        "rounded-lg border p-3 text-sm overflow-hidden",
         isError
           ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
           : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
       )}
     >
       <div className="mb-2 flex items-center justify-between">
-        <div className="font-mono text-xs font-semibold">{title}</div>
-        <Badge variant="outline" className="h-5 text-[10px] font-normal">
+        <div className="font-mono text-xs font-semibold truncate">{title}</div>
+        <Badge variant="outline" className="h-5 text-[10px] font-normal shrink-0">
           {isError ? "ERROR" : "OUTPUT"}
         </Badge>
       </div>
       {content ? (
-        <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />
+        <div className="overflow-x-auto">
+          <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />
+        </div>
       ) : (
         <div className="text-xs text-muted-foreground">No output</div>
       )}

@@ -86,10 +86,13 @@ class QdrantUserVectorService(VectorStoreClient):
 
     def _base_payload(self, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = extra.copy() if extra else {}
-        payload.setdefault("user_id", self._user_id)
+        # Enforce trusted scope fields so caller metadata cannot escape user/plugin scope.
+        payload["user_id"] = self._user_id
         if self._plugin_id:
-            payload.setdefault("plugin_id", self._plugin_id)
-        if self._embedding_model and "embedding_model" not in payload:
+            payload["plugin_id"] = self._plugin_id
+        elif "plugin_id" in payload:
+            payload.pop("plugin_id", None)
+        if self._embedding_model:
             payload["embedding_model"] = self._embedding_model
         return payload
 

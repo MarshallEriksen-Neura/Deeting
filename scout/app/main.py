@@ -32,6 +32,8 @@ def create_app() -> FastAPI:
     @app.on_event("shutdown")
     async def shutdown_event():
         logger.info("Deeting Scout System Shutting Down...")
+        from app.services.crawler import crawler_service
+        await crawler_service.close()
 
     @app.get("/health")
     async def health_check():

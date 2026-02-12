@@ -1,8 +1,10 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.deps.auth import get_current_user
+from app.models.user import User
 from app.services.agent import agent_service
 
 # from app.deps.superuser import get_current_superuser
@@ -41,6 +43,7 @@ CATALOG_AGENT_PROMPT = (
 @router.post("/agent/chat", response_model=AgentChatResponse)
 async def chat_with_admin_agent(
     payload: AgentChatRequest,
+    current_user: User = Depends(get_current_user),
     # current_user = Depends(get_current_superuser)
 ):
     """
@@ -57,6 +60,9 @@ async def chat_with_admin_agent(
             system_instruction=instruction,
             model_hint=payload.model_hint,
             conversation_history=payload.history,
+            user_id=str(current_user.id),
+            tenant_id=str(current_user.id),
+            api_key_id=str(current_user.id),
         )
         return AgentChatResponse(response=response_text)
     except Exception as e:

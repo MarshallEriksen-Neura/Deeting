@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import uuid
 
 from app.agent_plugins.core.manager import PluginManager
 from app.agent_plugins.examples.hello_world import HelloWorldPlugin
@@ -23,7 +24,7 @@ async def test_plugin_lifecycle():
         mock_session = AsyncMock()
         mock_get_db.return_value = mock_session
 
-        await manager.activate_all()
+        await manager.activate_all(user_id=uuid.uuid4())
 
         # Verify db.close() was called (inside on_activate)
         mock_session.close.assert_called_once()
@@ -50,8 +51,16 @@ async def test_plugin_session_id():
     manager.register_class(HelloWorldPlugin)
 
     session_id = "test-session-123"
-    await manager.activate_all(session_id=session_id)
+    await manager.activate_all(user_id=uuid.uuid4(), session_id=session_id)
 
     plugin = manager.get_plugin("examples.hello_world")
     assert plugin.context.session_id == session_id
 
+
+@pytest.mark.asyncio
+async def test_activate_all_requires_user_id():
+    manager = PluginManager()
+    manager.register_class(HelloWorldPlugin)
+
+    with pytest.raises(ValueError, match="real user_id"):
+        await manager.activate_all()

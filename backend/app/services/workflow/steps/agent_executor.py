@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from copy import deepcopy
@@ -6,13 +7,23 @@ from typing import TYPE_CHECKING, Any
 from app.schemas.tool import ToolCall
 from app.services.mcp.client import mcp_client
 from app.services.orchestrator.registry import step_registry
-from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
+from app.services.workflow.steps.base import (
+    BaseStep,
+    FailureAction,
+    StepResult,
+    StepStatus,
+)
 from app.services.workflow.steps.upstream_call import UpstreamCallStep
 
 if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
 
 logger = logging.getLogger(__name__)
+
+# Per-tool-call hard timeout (seconds).  Individual tools may define shorter
+# timeouts (e.g. httpx 60 s), but this acts as an upper bound so that a single
+# slow tool cannot consume the entire step budget.
+TOOL_CALL_TIMEOUT: float = 120.0
 
 
 @step_registry.register
@@ -30,6 +41,84 @@ class AgentExecutorStep(BaseStep):
         self.upstream_step = UpstreamCallStep(config)
         # Default max_turns is 10, can be overridden by config
         self.max_turns = getattr(config, "max_turns", 10) if config else 10
+
+    # ------------------------------------------------------------------
+    # Failure / Degrade hooks
+    # ------------------------------------------------------------------
+
+    async def on_failure(
+        self,
+        ctx: "WorkflowContext",
+        error: Exception,
+        attempt: int,
+    ) -> FailureAction:
+        """
+        The multi-turn agent loop must NOT blindly retry on timeout because
+        tool calls may have already executed with side effects.  Instead we
+        *degrade* – return whatever partial result was accumulated so the
+        user still gets a response.
+        """
+        if isinstance(error, TimeoutError):
+            logger.warning(
+                f"AgentExecutor timeout → DEGRADE "
+                f"(attempt={attempt}, trace_id={ctx.trace_id})"
+            )
+            return FailureAction.DEGRADE
+
+        # For other errors, delegate to base class (honours retry_on)
+        return await super().on_failure(ctx, error, attempt)
+
+    async def on_degrade(
+        self,
+        ctx: "WorkflowContext",
+        error: Exception,
+    ) -> StepResult:
+        """
+        Return the last successful LLM response collected during the loop,
+        or a clean timeout message so the frontend can render something
+        meaningful.
+        """
+        last_response = ctx.get("agent_executor", "_last_good_response")
+
+        if last_response:
+            # Restore the partial response so downstream steps
+            # (response_transform, conversation_append, …) can use it.
+            ctx.set("upstream_call", "response", last_response)
+            logger.info(
+                f"AgentExecutor degraded with partial result "
+                f"trace_id={ctx.trace_id}"
+            )
+            return StepResult(
+                status=StepStatus.DEGRADED,
+                message="Agent loop timed out; returning last successful response.",
+            )
+
+        # No partial result available – synthesize a timeout reply so the
+        # frontend can display it instead of a raw 500.
+        timeout_response = {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": (
+                            "抱歉，处理您的请求时超时了。"
+                            "这可能是由于外部工具响应缓慢导致的，请稍后重试。"
+                        ),
+                    },
+                    "finish_reason": "timeout",
+                }
+            ]
+        }
+        ctx.set("upstream_call", "response", timeout_response)
+        logger.warning(
+            f"AgentExecutor degraded without partial result "
+            f"trace_id={ctx.trace_id}"
+        )
+        return StepResult(
+            status=StepStatus.DEGRADED,
+            message="Agent loop timed out before producing a response.",
+        )
 
     def _emit_delta(self, ctx: "WorkflowContext", content: str) -> None:
         """Helper to emit text content delta to the client stream."""
@@ -103,6 +192,11 @@ class AgentExecutorStep(BaseStep):
             # --- B. Analyze Response ---
             raw_response = ctx.get("upstream_call", "response")
 
+            # Snapshot for on_degrade: if the step times out later, we can
+            # return the last valid LLM response instead of a raw error.
+            if raw_response:
+                ctx.set("agent_executor", "_last_good_response", deepcopy(raw_response))
+
             if not raw_response:
                 break
 
@@ -139,10 +233,32 @@ class AgentExecutorStep(BaseStep):
                 if not isinstance(args_str, str):
                     args_str = json.dumps(args_str, ensure_ascii=False)
 
+                try:
+                    parsed_args = json.loads(args_str)
+                except json.JSONDecodeError as e:
+                    logger.warning(
+                        f"Malformed tool call arguments for '{func.get('name')}': {e} "
+                        f"trace_id={ctx.trace_id}"
+                    )
+                    # Return the parse error as a tool result so the LLM can
+                    # self-correct on the next turn instead of crashing the step.
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc_raw.get("id"),
+                            "name": func.get("name"),
+                            "content": (
+                                f"Error: Failed to parse tool call arguments as JSON: {e}. "
+                                f"Please fix the JSON syntax and try again."
+                            ),
+                        }
+                    )
+                    continue
+
                 tc = ToolCall(
                     id=tc_raw.get("id"),
                     name=func.get("name"),
-                    arguments=json.loads(args_str),
+                    arguments=parsed_args,
                 )
 
                 # Emit Status Event (Transient Spinner)
@@ -404,6 +520,31 @@ class AgentExecutorStep(BaseStep):
     async def _dispatch_tool(self, ctx: "WorkflowContext", tool_call: ToolCall, user_mcp_tool_map: dict[str, Any]) -> Any:
         """
         Dispatches the tool call to either a local plugin or a remote MCP server.
+
+        Each invocation is wrapped with a hard timeout (TOOL_CALL_TIMEOUT) so
+        that a single slow tool cannot consume the entire step budget.
+        """
+        try:
+            return await asyncio.wait_for(
+                self._dispatch_tool_inner(ctx, tool_call, user_mcp_tool_map),
+                timeout=TOOL_CALL_TIMEOUT,
+            )
+        except TimeoutError:
+            logger.warning(
+                f"Tool '{tool_call.name}' timed out after {TOOL_CALL_TIMEOUT}s "
+                f"trace_id={ctx.trace_id}"
+            )
+            return {
+                "error": (
+                    f"Tool '{tool_call.name}' timed out after "
+                    f"{int(TOOL_CALL_TIMEOUT)}s. The external service may be "
+                    f"slow or unreachable."
+                )
+            }
+
+    async def _dispatch_tool_inner(self, ctx: "WorkflowContext", tool_call: ToolCall, user_mcp_tool_map: dict[str, Any]) -> Any:
+        """
+        Inner dispatch logic (no timeout wrapper).
         """
         # 1. Check User MCP Servers (via pre-built map)
         if tool_call.name in user_mcp_tool_map:
@@ -425,11 +566,69 @@ class AgentExecutorStep(BaseStep):
 
         # 2. Check Local Plugins (via agent_service)
         from app.services.agent.agent_service import agent_service
-        await agent_service.initialize(user_id=ctx.user_id, session_id=ctx.session_id)
 
-        
+        try:
+            await agent_service.initialize(user_id=ctx.user_id, session_id=ctx.session_id)
+        except ValueError as exc:
+            logger.warning(
+                "Tool '%s' denied: invalid user context trace_id=%s err=%s",
+                tool_call.name,
+                ctx.trace_id,
+                exc,
+            )
+            return {"error": str(exc)}
+
         plugin = agent_service.plugin_manager.get_plugin_for_tool(tool_call.name)
         if plugin:
+            # Always bind local plugin calls to the request's real user context.
+            import uuid as _uuid
+            from app.agent_plugins.core.context import ConcretePluginContext
+
+            _uid = None
+            if ctx.user_id:
+                try:
+                    parsed_uid = _uuid.UUID(str(ctx.user_id))
+                    if parsed_uid.int != 0:
+                        _uid = parsed_uid
+                except (ValueError, TypeError):
+                    pass
+
+            if not _uid:
+                logger.warning(
+                    "Tool '%s' denied: missing real user_id in context trace_id=%s",
+                    tool_call.name,
+                    ctx.trace_id,
+                )
+                return {
+                    "error": (
+                        f"Tool '{tool_call.name}' requires a real user_id context. "
+                        "Please retry with authenticated user context."
+                    )
+                }
+
+            try:
+                fresh = type(plugin)()
+                fresh_ctx = ConcretePluginContext(
+                    plugin_name=plugin.metadata.name,
+                    plugin_id=plugin.metadata.name,
+                    user_id=_uid,
+                    session_id=ctx.session_id,
+                )
+                await fresh.initialize(fresh_ctx)
+                plugin = fresh
+            except Exception as exc:
+                logger.warning(
+                    "Tool '%s' denied: failed to bind user context trace_id=%s err=%s",
+                    tool_call.name,
+                    ctx.trace_id,
+                    exc,
+                )
+                return {
+                    "error": (
+                        f"Tool '{tool_call.name}' could not bind user context: {exc}"
+                    )
+                }
+
             # 1. Try specific handler (handle_toolname)
             handler = getattr(plugin, f"handle_{tool_call.name}", None)
             if not handler:

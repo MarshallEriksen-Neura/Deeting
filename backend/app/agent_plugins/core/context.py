@@ -91,6 +91,12 @@ class ConcretePluginContext(PluginContext):
                 "Qdrant is not configured. Plugin memory is unavailable."
             )
 
+        # For user-scoped memory, random/placeholder identities are forbidden.
+        if self._user_id.int == 0:
+            raise RuntimeError(
+                "Plugin memory requires a real user_id context; got NIL UUID."
+            )
+
         raw_client = get_qdrant_client()
 
         self._memory_client = QdrantUserVectorService(

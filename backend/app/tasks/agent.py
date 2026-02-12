@@ -149,7 +149,22 @@ async def _run_ingestion_workflow(
     for plugin_cls in plugin_classes or []:
         manager.register_class(plugin_cls)
 
-    await manager.activate_all()
+    try:
+        parsed_user_id = uuid.UUID(str(user_id)) if user_id else None
+    except (ValueError, TypeError):
+        parsed_user_id = None
+
+    if not parsed_user_id or parsed_user_id.int == 0:
+        await push_task_progress(
+            user_id,
+            job_id,
+            "error",
+            "任务失败：缺少真实用户 ID，无法绑定插件上下文",
+            status="failed",
+        )
+        return "Job failed: real user_id is required."
+
+    await manager.activate_all(user_id=parsed_user_id)
     try:
         crawler = manager.get_plugin("core.tools.crawler")
         if not crawler:

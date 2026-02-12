@@ -85,7 +85,7 @@ export const MessageItem = React.memo<MessageItemProps>(
       >
         {/* 消息气泡 */}
         {message.role === "assistant" ? (
-          <div className="w-fit max-w-[85%]">
+          <div className="w-fit max-w-[75%]">
             <AIResponseBubble
               parts={assistantParts}
               isActive={isActive}

@@ -41,6 +41,8 @@ async def test_upsert_creates_user_collection_and_writes_points():
             assert payload["user_id"] == str(user_id)
             assert payload["plugin_id"] == plugin_id
             assert payload["embedding_model"] == "test-embed"
+            assert payload["content"] == "hello"
+            assert payload["custom"] == "ok"
             return httpx.Response(200, json={"result": {"status": "ok"}})
         return httpx.Response(404)
 
@@ -55,7 +57,17 @@ async def test_upsert_creates_user_collection_and_writes_points():
         embedding_service=FakeEmbeddingService(dim=2),  # type: ignore[arg-type]
     )
 
-    await vs_client.upsert("hello", payload={}, id="pid-1")
+    await vs_client.upsert(
+        "hello",
+        payload={
+            "user_id": "bad-user",
+            "plugin_id": "bad-plugin",
+            "embedding_model": "bad-model",
+            "content": "bad-content",
+            "custom": "ok",
+        },
+        id="pid-1",
+    )
     await client.aclose()
 
     # 第一次 upsert 应该创建 collection 并写入 point

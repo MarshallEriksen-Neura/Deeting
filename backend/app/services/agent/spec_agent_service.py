@@ -640,22 +640,31 @@ class SpecAgentService:
     def __init__(self):
         self.plugin_manager = PluginManager()
         self._initialized = False
+        self._bound_user_id: uuid.UUID | None = None
 
     async def initialize_plugins(self, user_id: uuid.UUID | None = None) -> None:
-        if self._initialized:
+        if not user_id or user_id.int == 0:
+            raise ValueError("SpecAgentService requires a real user_id")
+
+        if self._initialized and self._bound_user_id == user_id:
             return
 
-        all_plugins = plugin_config_loader.get_all_plugins()
-        for p_config in all_plugins:
-            plugin_class = plugin_config_loader.get_plugin_class(p_config)
-            if plugin_class:
-                try:
-                    self.plugin_manager.register_class(plugin_class)
-                except Exception as exc:
-                    logger.error("Failed to register plugin %s: %s", p_config.id, exc)
+        if not self.plugin_manager._plugin_classes:
+            all_plugins = plugin_config_loader.get_all_plugins()
+            for p_config in all_plugins:
+                plugin_class = plugin_config_loader.get_plugin_class(p_config)
+                if plugin_class:
+                    try:
+                        self.plugin_manager.register_class(plugin_class)
+                    except Exception as exc:
+                        logger.error("Failed to register plugin %s: %s", p_config.id, exc)
+
+        if self._initialized and self._bound_user_id != user_id:
+            await self.plugin_manager.deactivate_all()
 
         await self.plugin_manager.activate_all(user_id=user_id)
         self._initialized = True
+        self._bound_user_id = user_id
 
     @staticmethod
     def _build_tools_description(tools: list[ToolDefinition]) -> str:
