@@ -64,3 +64,13 @@ async def test_activate_all_requires_user_id():
 
     with pytest.raises(ValueError, match="real user_id"):
         await manager.activate_all()
+
+
+def test_get_plugin_name_for_tool_from_registry():
+    manager = PluginManager()
+    manager.register_class(HelloWorldPlugin)
+
+    assert (
+        manager.get_plugin_name_for_tool_from_registry("echo_user_message")
+        == "examples.hello_world"
+    )

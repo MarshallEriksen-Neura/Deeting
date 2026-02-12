@@ -20,6 +20,9 @@ import {
 import { useTypewriter } from "@/hooks/chat/use-typewriter";
 import { TaskLiveBlock } from "@/components/chat/messages/task-live-block";
 
+/** When a non-active message has more than this many tool calls, group them into a collapsible summary. */
+const TOOL_GROUP_THRESHOLD = 2;
+
 interface AIResponseBubbleProps {
   parts: MessageBlock[];
   isActive?: boolean;
@@ -96,6 +99,21 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       return { resultMap: map, pairedResultIndices: paired };
     }, [parts]);
 
+    // 当非活跃消息的工具调用数量超过阈值时，将它们分组折叠展示
+    const { shouldGroupTools, toolCallEntries, firstToolCallIndex } = useMemo(() => {
+      const entries: Array<{ part: MessageBlock; index: number }> = [];
+      parts.forEach((part, idx) => {
+        if (part.type === 'tool_call') {
+          entries.push({ part, index: idx });
+        }
+      });
+      return {
+        shouldGroupTools: entries.length > TOOL_GROUP_THRESHOLD && !isActive,
+        toolCallEntries: entries,
+        firstToolCallIndex: entries.length > 0 ? entries[0].index : -1,
+      };
+    }, [parts, isActive]);
+
     return (
       <div
         className={cn(
@@ -152,6 +170,25 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
                   // --- B. MCP 工具调用（含折叠结果） ---
                   if (part.type === 'tool_call') {
+                    // 分组模式：在第一个 tool_call 位置渲染分组组件，跳过后续的
+                    if (shouldGroupTools) {
+                      if (index === firstToolCallIndex) {
+                        return (
+                          <motion.div
+                            key="tool-group"
+                            initial={{ y: 8, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                          >
+                            <ToolCallGroup
+                              toolCalls={toolCallEntries}
+                              resultMap={resultMap}
+                            />
+                          </motion.div>
+                        );
+                      }
+                      return null;
+                    }
                     return (
                       <motion.div
                         key={`tool-${index}`}
@@ -449,6 +486,70 @@ const ToolCallBlock = memo<{
                 )}
               </div>
             )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  }
+);
+
+// === 组件：多工具调用分组折叠（历史消息优化） ===
+const ToolCallGroup = memo<{
+  toolCalls: Array<{ part: MessageBlock; index: number }>;
+  resultMap: Map<string, MessageBlock>;
+}>(
+  function ToolCallGroup({ toolCalls, resultMap }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const t = useI18n("chat");
+
+    const uniqueNames = useMemo(() => {
+      const names = new Set<string>();
+      toolCalls.forEach(({ part }) => {
+        if (part.toolName) names.add(part.toolName);
+      });
+      return Array.from(names);
+    }, [toolCalls]);
+
+    return (
+      <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+        <CollapsibleTrigger asChild>
+          <div className={cn(
+            "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all cursor-pointer select-none",
+            "border-border bg-card hover:bg-muted/50"
+          )}>
+            <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 bg-muted text-muted-foreground">
+              <Terminal size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold font-mono text-sm">
+                  {t("toolGroup.summary", { count: toolCalls.length })}
+                </span>
+                <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
+                  MCP
+                </Badge>
+              </div>
+              <div className="text-xs text-muted-foreground truncate font-mono mt-0.5 opacity-80">
+                {uniqueNames.join(", ")}
+              </div>
+            </div>
+            <ChevronDown size={16} className={cn(
+              "text-muted-foreground transition-transform duration-200",
+              !isOpen && "-rotate-90"
+            )} />
+          </div>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-2 space-y-2 pl-3 border-l-2 border-border/50">
+            {toolCalls.map(({ part, index }) => (
+              <ToolCallBlock
+                key={`tool-${index}`}
+                name={part.toolName}
+                args={part.toolArgs}
+                status={part.status}
+                resultBlock={part.callId ? resultMap.get(part.callId) : undefined}
+              />
+            ))}
           </div>
         </CollapsibleContent>
       </Collapsible>

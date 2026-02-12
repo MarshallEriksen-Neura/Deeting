@@ -121,8 +121,8 @@ export function MarkdownViewer({
             <td className="border border-border px-2 py-1">{children}</td>
           ),
           img: ({ src, alt }) => (
-            <div className="my-2">
-              <ImageLightbox src={src || ""} alt={alt || ""} className="max-w-full rounded-lg border border-border/50" />
+            <div className="my-2 max-w-sm">
+              <ImageLightbox src={src || ""} alt={alt || ""} className="max-w-full max-h-80 rounded-lg border border-border/50" />
             </div>
           ),
         }}

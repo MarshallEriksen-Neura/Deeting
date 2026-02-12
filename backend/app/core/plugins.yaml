@@ -40,6 +40,19 @@ plugins:
       - "verify_provider_template"
       - "save_provider_field_mapping"
 
+  - id: "system/database_manager"
+    name: "Database Manager"
+    module: "app.agent_plugins.builtins.database.plugin"
+    class_name: "DatabasePlugin"
+    enabled_by_default: false
+    restricted: true
+    allowed_roles: ["admin"]
+    description: "Manage Provider Presets metadata and lifecycle."
+    tools:
+      - "check_provider_preset_exists"
+      - "create_provider_preset"
+      - "update_provider_preset"
+
   # === Other Utilities ===
   - id: "system.code_interpreter"
     name: "Code Interpreter"

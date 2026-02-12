@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.database import AsyncSessionLocal
 from app.models.provider_preset import ProviderPreset
+from app.repositories.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,17 @@ class UpdateProviderPresetInput(BaseModel):
     name: str | None = None
     base_url: str | None = None
     category: str | None = None
-    default_params: str | None = Field(
+    default_params: str | dict[str, Any] | None = Field(
         None,
         description="JSON string of default parameters (e.g. supported models list)",
     )
 
 
 class DatabasePlugin(AgentPlugin):
+    _ADMIN_ONLY_MESSAGE = (
+        "Permission Denied: Only system administrators can modify Provider Presets."
+    )
+
     @property
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
@@ -94,10 +99,38 @@ class DatabasePlugin(AgentPlugin):
                 return f"Provider Preset '{slug}' exists."
             return f"Provider Preset '{slug}' does not exist."
 
-    async def create_provider_preset(self, args: dict) -> str:
+    async def _is_superuser(self, session: Any) -> bool:
         try:
-            input_data = CreateProviderPresetInput(**args)
+            user_id = self.context.user_id
+        except RuntimeError:
+            return False
+
+        user_repo = UserRepository(session)
+        user = await user_repo.get_by_id(user_id)
+        return bool(user and user.is_superuser)
+
+    async def create_provider_preset(
+        self,
+        name: str,
+        slug: str,
+        base_url: str,
+        auth_type: str,
+        auth_config_key: str | None = None,
+        category: str | None = "Cloud API",
+    ) -> str:
+        try:
+            input_data = CreateProviderPresetInput(
+                name=name,
+                slug=slug,
+                base_url=base_url,
+                auth_type=auth_type,
+                auth_config_key=auth_config_key,
+                category=category,
+            )
             async with AsyncSessionLocal() as session:
+                if not await self._is_superuser(session):
+                    return self._ADMIN_ONLY_MESSAGE
+
                 # Check duplication
                 stmt = select(ProviderPreset).where(
                     ProviderPreset.slug == input_data.slug
@@ -127,10 +160,26 @@ class DatabasePlugin(AgentPlugin):
             logger.error(f"create_provider_preset error: {e}")
             return f"Error creating provider preset: {e!s}"
 
-    async def update_provider_preset(self, args: dict) -> str:
+    async def update_provider_preset(
+        self,
+        slug: str,
+        name: str | None = None,
+        base_url: str | None = None,
+        category: str | None = None,
+        default_params: str | dict[str, Any] | None = None,
+    ) -> str:
         try:
-            input_data = UpdateProviderPresetInput(**args)
+            input_data = UpdateProviderPresetInput(
+                slug=slug,
+                name=name,
+                base_url=base_url,
+                category=category,
+                default_params=default_params,
+            )
             async with AsyncSessionLocal() as session:
+                if not await self._is_superuser(session):
+                    return self._ADMIN_ONLY_MESSAGE
+
                 stmt = select(ProviderPreset).where(
                     ProviderPreset.slug == input_data.slug
                 )
@@ -144,7 +193,7 @@ class DatabasePlugin(AgentPlugin):
                     preset.base_url = input_data.base_url
                 if input_data.category:
                     preset.category = input_data.category
-                if input_data.default_params:
+                if input_data.default_params is not None:
                     preset.default_params = self._parse_template(
                         input_data.default_params
                     )
@@ -155,10 +204,10 @@ class DatabasePlugin(AgentPlugin):
             logger.error(f"update_provider_preset error: {e}")
             return f"Error updating provider preset: {e!s}"
 
-    def _parse_template(self, template_str: str) -> Any:
+    def _parse_template(self, template_str: str | dict[str, Any]) -> Any:
         if isinstance(template_str, dict):
             return template_str
         try:
             return json.loads(template_str)
-        except:
+        except Exception:
             return template_str

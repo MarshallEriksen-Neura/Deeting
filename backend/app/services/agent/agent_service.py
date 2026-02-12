@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -34,6 +35,8 @@ class AgentService:
         self.tools: list[ToolDefinition] = []
         self.tool_map: dict[str, Any] = {}
         self._initialized = False
+        self._bound_user_id: uuid.UUID | None = None
+        self._init_lock = asyncio.Lock()
 
     @staticmethod
     def _parse_user_uuid(user_id: Any | None) -> uuid.UUID | None:
@@ -66,25 +69,32 @@ class AgentService:
 
     async def initialize(self, user_id: Any | None = None, session_id: str | None = None):
         """Lazy initialization of plugins and tools."""
-        if self._initialized:
-            return
-
         uid = self._parse_user_uuid(user_id)
         if uid is None:
             raise ValueError("AgentService.initialize requires a real user_id")
 
-        await self.plugin_manager.activate_all(user_id=uid, session_id=session_id)
+        async with self._init_lock:
+            if self._initialized and self._bound_user_id == uid:
+                return
 
-        self.tools = self._normalize_tools(self.plugin_manager.get_all_tools())
-        self.tool_map = {}
-        for tool in self.tools:
-            handler = self._find_handler(tool.name)
-            if handler:
-                self.tool_map[tool.name] = handler
-            else:
-                logger.warning(f"Tool '{tool.name}' advertised but no handler found.")
+            if self._initialized and self._bound_user_id != uid:
+                await self.plugin_manager.deactivate_all()
+                self._initialized = False
+                self._bound_user_id = None
 
-        self._initialized = True
+            await self.plugin_manager.activate_all(user_id=uid, session_id=session_id)
+
+            self.tools = self._normalize_tools(self.plugin_manager.get_all_tools())
+            self.tool_map = {}
+            for tool in self.tools:
+                handler = self._find_handler(tool.name)
+                if handler:
+                    self.tool_map[tool.name] = handler
+                else:
+                    logger.warning(f"Tool '{tool.name}' advertised but no handler found.")
+
+            self._initialized = True
+            self._bound_user_id = uid
 
     def list_registered_tools(self) -> list[ToolDefinition]:
         """Build tool list directly from plugin classes (no user context required)."""

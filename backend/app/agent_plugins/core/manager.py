@@ -176,6 +176,31 @@ class PluginManager:
                 logger.warning(f"get_tools failed for {plugin}: {exc}")
         return None
 
+    def get_plugin_name_for_tool_from_registry(self, tool_name: str) -> str | None:
+        """Resolve owning plugin name by scanning registered plugin classes."""
+        for name, cls in self._plugin_classes.items():
+            try:
+                plugin = cls()
+            except Exception as exc:
+                logger.warning("plugin class init failed for %s: %s", name, exc)
+                continue
+
+            try:
+                if hasattr(plugin, "can_handle_tool") and plugin.can_handle_tool(tool_name):
+                    return name
+            except Exception as exc:
+                logger.warning("can_handle_tool failed for %s: %s", name, exc)
+
+            try:
+                for tool in plugin.get_tools() or []:
+                    func_def = tool.get("function", {}) if isinstance(tool, dict) else {}
+                    if func_def.get("name") == tool_name:
+                        return name
+            except Exception as exc:
+                logger.warning("get_tools failed for %s: %s", name, exc)
+
+        return None
+
     def get_all_tools(self) -> list[dict]:
         """汇总所有插件暴露的工具。"""
         tools: list[dict] = []

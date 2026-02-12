@@ -38,3 +38,4 @@ def test_memory_builds_client_for_real_user(monkeypatch):
     memory = ctx.memory
     assert memory is ctx.memory
     assert getattr(memory, "_user_id") == str(user_id)
+    assert getattr(memory, "_fail_open") is False

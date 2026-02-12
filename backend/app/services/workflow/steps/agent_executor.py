@@ -564,58 +564,47 @@ class AgentExecutorStep(BaseStep):
                 logger.error(f"Remote MCP call failed: {e!s}")
                 return {"error": f"Remote MCP call failed: {e!s}"}
 
-        # 2. Check Local Plugins (via agent_service)
+        # 2. Check Local Plugins (instantiate per-request to avoid shared-state races)
+        from app.agent_plugins.core.context import ConcretePluginContext
         from app.services.agent.agent_service import agent_service
+        import uuid as _uuid
 
-        try:
-            await agent_service.initialize(user_id=ctx.user_id, session_id=ctx.session_id)
-        except ValueError as exc:
+        _uid = None
+        if ctx.user_id:
+            try:
+                parsed_uid = _uuid.UUID(str(ctx.user_id))
+                if parsed_uid.int != 0:
+                    _uid = parsed_uid
+            except (ValueError, TypeError):
+                pass
+
+        if not _uid:
             logger.warning(
-                "Tool '%s' denied: invalid user context trace_id=%s err=%s",
+                "Tool '%s' denied: missing real user_id in context trace_id=%s",
                 tool_call.name,
                 ctx.trace_id,
-                exc,
             )
-            return {"error": str(exc)}
-
-        plugin = agent_service.plugin_manager.get_plugin_for_tool(tool_call.name)
-        if plugin:
-            # Always bind local plugin calls to the request's real user context.
-            import uuid as _uuid
-            from app.agent_plugins.core.context import ConcretePluginContext
-
-            _uid = None
-            if ctx.user_id:
-                try:
-                    parsed_uid = _uuid.UUID(str(ctx.user_id))
-                    if parsed_uid.int != 0:
-                        _uid = parsed_uid
-                except (ValueError, TypeError):
-                    pass
-
-            if not _uid:
-                logger.warning(
-                    "Tool '%s' denied: missing real user_id in context trace_id=%s",
-                    tool_call.name,
-                    ctx.trace_id,
+            return {
+                "error": (
+                    f"Tool '{tool_call.name}' requires a real user_id context. "
+                    "Please retry with authenticated user context."
                 )
-                return {
-                    "error": (
-                        f"Tool '{tool_call.name}' requires a real user_id context. "
-                        "Please retry with authenticated user context."
-                    )
-                }
+            }
 
+        plugin_name = agent_service.plugin_manager.get_plugin_name_for_tool_from_registry(
+            tool_call.name
+        )
+        if plugin_name:
             try:
-                fresh = type(plugin)()
                 fresh_ctx = ConcretePluginContext(
-                    plugin_name=plugin.metadata.name,
-                    plugin_id=plugin.metadata.name,
+                    plugin_name=plugin_name,
+                    plugin_id=plugin_name,
                     user_id=_uid,
                     session_id=ctx.session_id,
                 )
-                await fresh.initialize(fresh_ctx)
-                plugin = fresh
+                plugin = await agent_service.plugin_manager.instantiate_plugin(
+                    plugin_name, fresh_ctx
+                )
             except Exception as exc:
                 logger.warning(
                     "Tool '%s' denied: failed to bind user context trace_id=%s err=%s",

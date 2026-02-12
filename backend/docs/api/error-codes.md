@@ -45,7 +45,7 @@
 | 错误码 | 说明 | 解决方案 |
 |--------|------|----------|
 | `INVALID_SIGNATURE` | 签名验证失败 | 检查签名算法实现，确保 secret 正确 |
-| `INVALID_API_KEY` | API Key 无效或不存在 | 确认 API Key 正确，联系管理员核实 |
+| `INVALID_API_KEY` | API Key 无效/不存在，或未绑定真实用户 ID | 确认 API Key 正确且已绑定用户，联系管理员核实 |
 | `API_KEY_EXPIRED` | API Key 已过期 | 申请新的 API Key 或联系管理员续期 |
 | `API_KEY_REVOKED` | API Key 已被吊销 | 联系管理员了解吊销原因并申请新 Key |
 | `NONCE_REUSED` | Nonce 重复使用 | 每次请求使用唯一的 Nonce（UUID） |

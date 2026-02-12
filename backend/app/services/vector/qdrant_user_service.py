@@ -29,7 +29,7 @@ class VectorStoreClient(ABC):
 
     @abstractmethod
     async def search(
-        self, query: str, limit: int = 5, score_threshold: float = 0.0
+        self, query: str, limit: int = 5, score_threshold: float | None = None
     ) -> list[dict[str, Any]]: ...
 
     @abstractmethod
@@ -142,7 +142,7 @@ class QdrantUserVectorService(VectorStoreClient):
         return point_id
 
     async def search(
-        self, query: str, limit: int = 5, score_threshold: float = 0.0
+        self, query: str, limit: int = 5, score_threshold: float | None = None
     ) -> list[dict[str, Any]]:
         vector = await self._embedding_service.embed_text(query)
         self._refresh_embedding_model()

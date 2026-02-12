@@ -33,6 +33,8 @@
 | `X-Nonce` | 是 | 请求唯一标识（UUID 格式，防重放） |
 | `X-Signature` | 是 | HMAC-SHA256 签名 |
 
+> **重要**: 外部网关请求要求 API Key 绑定真实 `user_id`。若 Key 未绑定用户，接口会返回 `401 INVALID_API_KEY`。
+
 ### 签名算法
 
 ```python
@@ -320,7 +322,7 @@ data: [DONE]
 | 错误码 | HTTP 状态码 | 说明 |
 |--------|-------------|------|
 | `INVALID_SIGNATURE` | 401 | 签名验证失败 |
-| `INVALID_API_KEY` | 401 | API Key 无效或不存在 |
+| `INVALID_API_KEY` | 401 | API Key 无效/不存在，或未绑定真实用户 ID |
 | `API_KEY_EXPIRED` | 401 | API Key 已过期 |
 | `API_KEY_REVOKED` | 401 | API Key 已被吊销 |
 | `NONCE_REUSED` | 401 | Nonce 重复使用（防重放） |

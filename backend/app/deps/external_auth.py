@@ -78,6 +78,7 @@ class ExternalPrincipal:
     api_secret: str | None = None  # 独立签名密钥
     api_key_id: str | None = None
     tenant_id: str | None = None
+    user_id: str | None = None
     timestamp: str | None = None
     nonce: str | None = None
     signature: str | None = None
@@ -119,6 +120,7 @@ async def get_external_principal(
 
     api_key_id = None
     tenant_id = None
+    user_id = None
     scopes: list[str] | None = None
 
     if x_api_key:
@@ -143,6 +145,7 @@ async def get_external_principal(
         if principal:
             api_key_id = str(principal.api_key_id)
             tenant_id = str(principal.tenant_id) if principal.tenant_id else None
+            user_id = str(principal.user_id) if principal.user_id else None
             scopes = principal.scopes
             allowed_ips = principal.allowed_ips or []
 
@@ -172,6 +175,7 @@ async def get_external_principal(
         api_secret=x_api_secret,
         api_key_id=api_key_id,
         tenant_id=tenant_id,
+        user_id=user_id,
         timestamp=x_timestamp,
         nonce=x_nonce,
         signature=x_signature,

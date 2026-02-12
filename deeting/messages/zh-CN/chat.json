@@ -227,6 +227,11 @@
       "withCost": "思考耗时 {cost}",
       "loading": "思考中..."
     },
+    "toolGroup": {
+      "summary": "调用了 {count} 个工具",
+      "expand": "展开详情",
+      "collapse": "收起"
+    },
     "voice": {
       "listening": "正在聆听...",
       "processing": "处理中...",

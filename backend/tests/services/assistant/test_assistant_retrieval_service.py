@@ -38,6 +38,14 @@ async def async_session() -> AsyncSession:
         yield session
 
 
+@pytest.fixture(autouse=True)
+def _mock_ensure_collection_vector_size(mocker):
+    return mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.ensure_collection_vector_size",
+        new=mocker.AsyncMock(return_value=1536),
+    )
+
+
 @pytest.mark.asyncio
 async def test_retrieval_skips_when_qdrant_disabled(mocker, async_session):
     service = AssistantRetrievalService(async_session)
@@ -419,3 +427,82 @@ async def test_retrieval_includes_approved_owner(mocker, async_session):
     result = await service.search_candidates("query", limit=2)
     assert len(result) == 1
     assert result[0]["assistant_id"] == str(approved_id)
+
+
+@pytest.mark.asyncio
+async def test_retrieval_ensures_expert_network_collection_before_search(mocker, async_session):
+    service = AssistantRetrievalService(async_session)
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=True,
+    )
+    ensure_mock = mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.ensure_collection_vector_size",
+        new=mocker.AsyncMock(return_value=2),
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.search_points",
+        return_value=[],
+    )
+    client = object()
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.get_qdrant_client",
+        return_value=client,
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
+
+    result = await service.search_candidates("query", limit=3)
+
+    assert result == []
+    ensure_mock.assert_awaited_once_with(
+        client,
+        collection_name="expert_network",
+        vector_size=2,
+    )
+
+
+@pytest.mark.asyncio
+async def test_retrieval_fallback_when_ensure_collection_failed(mocker, async_session):
+    default_id = uuid.uuid4()
+    service = AssistantRetrievalService(async_session)
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.qdrant_is_configured",
+        return_value=True,
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.ensure_collection_vector_size",
+        new=mocker.AsyncMock(side_effect=RuntimeError("ensure failed")),
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.get_qdrant_client",
+        return_value=object(),
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.EmbeddingService.embed_text",
+        return_value=[0.1, 0.2],
+    )
+    mocker.patch(
+        "app.services.assistant.assistant_retrieval_service.DefaultAssistantService.get_default_candidate",
+        new=mocker.AsyncMock(
+            return_value={
+                "assistant_id": str(default_id),
+                "name": "Default",
+                "summary": "default summary",
+                "score": 0.0,
+            }
+        ),
+    )
+
+    result = await service.search_candidates("query", limit=3)
+
+    assert result == [
+        {
+            "assistant_id": str(default_id),
+            "name": "Default",
+            "summary": "default summary",
+            "score": 0.0,
+        }
+    ]

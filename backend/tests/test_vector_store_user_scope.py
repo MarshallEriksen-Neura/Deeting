@@ -113,3 +113,108 @@ async def test_upsert_raises_on_vector_mismatch():
         await vs_client.upsert("hello", payload={}, id="pid-1")
 
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_search_default_threshold_does_not_filter_zero_scores():
+    user_id = uuid.uuid4()
+    plugin_id = "plugin-test"
+    collection_name = get_kb_user_collection_name(user_id, embedding_model="test-embed")
+    search_bodies: list[dict] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == f"/collections/{collection_name}" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "config": {"params": {"vectors": {"text": {"size": 2}}}}
+                    }
+                },
+            )
+
+        if path == f"/collections/{collection_name}/points/search":
+            body = json.loads(request.content.decode())
+            search_bodies.append(body)
+            return httpx.Response(
+                200,
+                json={
+                    "result": [
+                        {
+                            "id": "pid-1",
+                            "score": 0.0,
+                            "payload": {
+                                "content": "hello",
+                                "user_id": str(user_id),
+                                "plugin_id": plugin_id,
+                                "embedding_model": "test-embed",
+                            },
+                        }
+                    ]
+                },
+            )
+
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://qdrant.test"
+    )
+    vs_client = QdrantUserVectorService(
+        client=client,
+        plugin_id=plugin_id,
+        user_id=user_id,
+        embedding_model="test-embed",
+        fail_open=False,
+        embedding_service=FakeEmbeddingService(dim=2),  # type: ignore[arg-type]
+    )
+
+    results = await vs_client.search("hello", limit=3)
+    await client.aclose()
+
+    assert len(results) == 1
+    assert results[0]["id"] == "pid-1"
+    assert len(search_bodies) == 1
+    assert "score_threshold" not in search_bodies[0]
+
+
+@pytest.mark.asyncio
+async def test_search_explicit_threshold_is_forwarded():
+    user_id = uuid.uuid4()
+    collection_name = get_kb_user_collection_name(user_id, embedding_model="test-embed")
+    captured_thresholds: list[float] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == f"/collections/{collection_name}" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "config": {"params": {"vectors": {"text": {"size": 2}}}}
+                    }
+                },
+            )
+
+        if path == f"/collections/{collection_name}/points/search":
+            body = json.loads(request.content.decode())
+            captured_thresholds.append(body.get("score_threshold"))
+            return httpx.Response(200, json={"result": []})
+
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://qdrant.test"
+    )
+    vs_client = QdrantUserVectorService(
+        client=client,
+        user_id=user_id,
+        embedding_model="test-embed",
+        fail_open=False,
+        embedding_service=FakeEmbeddingService(dim=2),  # type: ignore[arg-type]
+    )
+
+    _ = await vs_client.search("hello", limit=3, score_threshold=0.0)
+    await client.aclose()
+
+    assert captured_thresholds == [0.0]

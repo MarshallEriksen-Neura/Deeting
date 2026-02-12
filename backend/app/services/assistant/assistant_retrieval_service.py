@@ -22,7 +22,7 @@ from app.repositories.review_repository import ReviewTaskRepository
 from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.providers.embedding import EmbeddingService
-from app.storage.qdrant_kb_store import search_points
+from app.storage.qdrant_kb_store import ensure_collection_vector_size, search_points
 from app.tasks.assistant import ASSISTANT_COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,11 @@ class AssistantRetrievalService:
                 return []
 
             client = get_qdrant_client()
+            await ensure_collection_vector_size(
+                client,
+                collection_name=ASSISTANT_COLLECTION_NAME,
+                vector_size=len(vector),
+            )
             query_limit = min(
                 max(normalized_limit * OVERSAMPLE_MULTIPLIER, normalized_limit),
                 MAX_LIMIT,

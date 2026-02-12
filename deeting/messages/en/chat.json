@@ -227,6 +227,11 @@
       "withCost": "Thought for {cost}",
       "loading": "Thinking..."
     },
+    "toolGroup": {
+      "summary": "Used {count} tools",
+      "expand": "Show details",
+      "collapse": "Collapse"
+    },
     "voice": {
       "listening": "Listening...",
       "processing": "Processing...",

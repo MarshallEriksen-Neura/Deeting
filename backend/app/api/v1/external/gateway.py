@@ -68,7 +68,6 @@ from app.schemas.gateway import (
     ResponsesRequest,
 )
 from app.services.memory.external_memory import (
-    derive_external_user_id,
     extract_user_message,
     persist_external_memory,
 )
@@ -159,10 +158,15 @@ async def _resolve_external_user_id(
     request: Request,
     path: str,
     db: AsyncSession,
+    principal: ExternalPrincipal | None = None,
 ) -> str | None:
+    if principal and principal.user_id:
+        return str(principal.user_id)
+
     raw_key = _resolve_external_key(request, path)
     if not raw_key:
         return None
+
     if raw_key.startswith(
         (ApiKeyService.PREFIX_EXTERNAL, ApiKeyService.PREFIX_INTERNAL)
     ):
@@ -173,12 +177,25 @@ async def _resolve_external_user_id(
                 redis_client=getattr(cache, "_redis", None),
                 secret_key=settings.JWT_SECRET_KEY or "dev-secret",
             )
-            principal = await service.validate_key(raw_key)
-            if principal and principal.user_id:
-                return str(principal.user_id)
+            resolved_principal = await service.validate_key(raw_key)
+            if resolved_principal and resolved_principal.user_id:
+                return str(resolved_principal.user_id)
+            logger.warning("external_user_id_missing: key has no bound user_id")
         except Exception as exc:
             logger.warning("external_user_id_resolve_failed err=%s", exc)
-    return str(derive_external_user_id(raw_key))
+
+    return None
+
+
+def _external_user_required_response(request: Request) -> JSONResponse:
+    trace_id = getattr(request.state, "trace_id", None) if request else None
+    err = GatewayError(
+        code="INVALID_API_KEY",
+        message="API key must be bound to a real user_id for external gateway requests",
+        source="gateway",
+        trace_id=trace_id,
+    )
+    return JSONResponse(status_code=401, content=err.model_dump())
 
 
 async def _persist_external_memory(ctx: WorkflowContext) -> None:
@@ -610,7 +627,10 @@ async def chat_completions(
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
     path = request.url.path if request else ""
-    user_id = await _resolve_external_user_id(request, path, db)
+    user_id = await _resolve_external_user_id(request, path, db, principal=principal)
+    if not user_id:
+        return _external_user_required_response(request)
+
     ctx = build_external_context(
         request=request,
         request_body=request_body,
@@ -638,7 +658,10 @@ async def messages(
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
     path = request.url.path if request else ""
-    user_id = await _resolve_external_user_id(request, path, db)
+    user_id = await _resolve_external_user_id(request, path, db, principal=principal)
+    if not user_id:
+        return _external_user_required_response(request)
+
     ctx = build_external_context(
         request=request,
         request_body=request_body,
@@ -667,7 +690,10 @@ async def responses(
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse | StreamingResponse:
     path = request.url.path if request else ""
-    user_id = await _resolve_external_user_id(request, path, db)
+    user_id = await _resolve_external_user_id(request, path, db, principal=principal)
+    if not user_id:
+        return _external_user_required_response(request)
+
     ctx = build_external_context(
         request=request,
         request_body=request_body,
@@ -696,7 +722,10 @@ async def embeddings(
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
     path = request.url.path if request else ""
-    user_id = await _resolve_external_user_id(request, path, db)
+    user_id = await _resolve_external_user_id(request, path, db, principal=principal)
+    if not user_id:
+        return _external_user_required_response(request)
+
     ctx = build_external_context(
         request=request,
         request_body=request_body,
