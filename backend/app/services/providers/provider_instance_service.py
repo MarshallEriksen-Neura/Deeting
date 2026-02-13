@@ -763,6 +763,14 @@ class ProviderInstanceService:
         if not updates:
             return model
 
+        # Sync: when routing_config contains capabilities, mirror to the
+        # dedicated capabilities column so that list/filter queries work.
+        rc = updates.get("routing_config")
+        if isinstance(rc, dict) and "capabilities" in rc:
+            caps = rc["capabilities"]
+            if isinstance(caps, list) and caps:
+                updates["capabilities"] = caps
+
         updated = await self.model_repo.update_fields(model, updates)
         capability = model.capabilities[0] if model.capabilities else None
         await self._invalidator.on_provider_model_changed(

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from "react"
 import { useTranslations } from "next-intl"
+import { toast } from "sonner"
 import {
   Upload,
   X,
@@ -24,6 +25,7 @@ import { GlassButton } from "@/components/ui/glass-button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { uploadFile } from "@/lib/api/knowledge"
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
@@ -58,9 +60,15 @@ interface FileUploadDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentFolderId: string | null
+  onUploadComplete?: () => void
 }
 
-export function FileUploadDialog({ open, onOpenChange }: FileUploadDialogProps) {
+export function FileUploadDialog({
+  open,
+  onOpenChange,
+  currentFolderId,
+  onUploadComplete,
+}: FileUploadDialogProps) {
   const t = useTranslations("knowledge")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>([])
@@ -110,7 +118,7 @@ export function FileUploadDialog({ open, onOpenChange }: FileUploadDialogProps) 
     })
   }, [])
 
-  const handleUpload = useCallback(() => {
+  const handleUpload = useCallback(async () => {
     const statusInit: Record<string, "uploading"> = {}
     const progressInit: Record<string, number> = {}
     files.forEach((f) => {
@@ -120,28 +128,43 @@ export function FileUploadDialog({ open, onOpenChange }: FileUploadDialogProps) 
     setUploadStatus(statusInit)
     setUploadProgress(progressInit)
 
-    // Mock upload progress
-    files.forEach((f) => {
-      let progress = 0
-      const interval = setInterval(() => {
-        progress += Math.random() * 30 + 10
-        if (progress >= 100) {
-          progress = 100
-          clearInterval(interval)
-          setUploadStatus((prev) => ({ ...prev, [f.name]: "success" }))
-        }
-        setUploadProgress((prev) => ({ ...prev, [f.name]: Math.min(progress, 100) }))
-      }, 300 + Math.random() * 200)
-    })
+    let successCount = 0
+    let errorCount = 0
 
-    // Auto-close after completion
-    setTimeout(() => {
-      setFiles([])
-      setUploadProgress({})
-      setUploadStatus({})
-      onOpenChange(false)
-    }, files.length * 500 + 2000)
-  }, [files, onOpenChange])
+    await Promise.allSettled(
+      files.map(async (f) => {
+        try {
+          await uploadFile(f, currentFolderId, (percent) => {
+            setUploadProgress((prev) => ({ ...prev, [f.name]: percent }))
+          })
+          setUploadStatus((prev) => ({ ...prev, [f.name]: "success" }))
+          setUploadProgress((prev) => ({ ...prev, [f.name]: 100 }))
+          successCount++
+        } catch {
+          setUploadStatus((prev) => ({ ...prev, [f.name]: "error" }))
+          errorCount++
+        }
+      })
+    )
+
+    if (successCount > 0) {
+      toast.success(t("toast.uploadSuccess", { count: successCount }))
+      onUploadComplete?.()
+    }
+    if (errorCount > 0) {
+      toast.error(t("toast.uploadFailed", { count: errorCount }))
+    }
+
+    // Auto-close after a short delay if all succeeded
+    if (errorCount === 0) {
+      setTimeout(() => {
+        setFiles([])
+        setUploadProgress({})
+        setUploadStatus({})
+        onOpenChange(false)
+      }, 1000)
+    }
+  }, [files, currentFolderId, onOpenChange, onUploadComplete, t])
 
   const handleClose = useCallback(
     (nextOpen: boolean) => {

@@ -6,6 +6,7 @@ import { Search, X, Filter, ChevronDown } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
+import { useDebounce } from "@/hooks/use-debounce"
 import { Input } from "@/components/ui/input"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +41,8 @@ interface FilterLensProps {
   onFiltersChange: (filters: ModelFilterState) => void
   totalModels: number
   filteredCount: number
+  /** Batch update capabilities for all filtered models */
+  onBatchUpdateCapabilities?: (capabilities: ModelCapability[]) => Promise<void>
   className?: string
 }
 
@@ -216,9 +219,29 @@ export function FilterLens({
   onFiltersChange,
   totalModels,
   filteredCount,
+  onBatchUpdateCapabilities,
   className,
 }: FilterLensProps) {
   const t = useTranslations('models')
+  const [batchCaps, setBatchCaps] = React.useState<ModelCapability[]>([])
+  const [batchLoading, setBatchLoading] = React.useState(false)
+  const [localSearch, setLocalSearch] = React.useState(filters.search)
+  const debouncedSearch = useDebounce(localSearch, 300)
+
+  // Sync debounced value back to parent filters
+  React.useEffect(() => {
+    if (debouncedSearch !== filters.search) {
+      onFiltersChange({ ...filters, search: debouncedSearch })
+    }
+  }, [debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync external search changes (e.g. clear filters) to local
+  React.useEffect(() => {
+    if (filters.search !== localSearch && filters.search === "") {
+      setLocalSearch("")
+    }
+  }, [filters.search]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const hasActiveFilters =
     filters.search ||
     filters.capabilities.length > 0 ||
@@ -234,6 +257,7 @@ export function FilterLens({
   }
 
   const handleClearFilters = () => {
+    setLocalSearch("")
     onFiltersChange({
       search: "",
       capabilities: [],
@@ -241,7 +265,31 @@ export function FilterLens({
       active_only: false,
       price_tier: null,
     })
+    setBatchCaps([])
   }
+
+  const handleBatchCapToggle = (cap: ModelCapability) => {
+    setBatchCaps((prev) =>
+      prev.includes(cap) ? prev.filter((c) => c !== cap) : [...prev, cap]
+    )
+  }
+
+  const handleBatchApply = async () => {
+    if (!onBatchUpdateCapabilities || batchCaps.length === 0) return
+    setBatchLoading(true)
+    try {
+      await onBatchUpdateCapabilities(batchCaps)
+      setBatchCaps([])
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
+  const showBatchBar =
+    !!onBatchUpdateCapabilities &&
+    !!filters.search &&
+    filteredCount > 0 &&
+    filteredCount < totalModels
 
   return (
     <div
@@ -260,15 +308,16 @@ export function FilterLens({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[var(--muted)]" />
           <Input
             placeholder={t('filter.searchPlaceholder')}
-            value={filters.search}
-            onChange={(e) =>
-              onFiltersChange({ ...filters, search: e.target.value })
-            }
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             className="pl-10 bg-white/5 border-white/10 focus:border-[var(--primary)]/50"
           />
-          {filters.search && (
+          {localSearch && (
             <button
-              onClick={() => onFiltersChange({ ...filters, search: "" })}
+              onClick={() => {
+                setLocalSearch("")
+                onFiltersChange({ ...filters, search: "" })
+              }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--foreground)]"
             >
               <X className="size-4" />
@@ -333,6 +382,62 @@ export function FilterLens({
           </span>
         </div>
       </div>
+
+      {/* Batch Capability Update Bar */}
+      <AnimatePresence>
+        {showBatchBar && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 pt-3 border-t border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 space-y-2">
+                  <p className="text-xs text-[var(--muted)]">
+                    {t('filter.batchHint', { count: filteredCount })}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(CAPABILITY_META) as ModelCapability[]).map((cap) => {
+                      const active = batchCaps.includes(cap)
+                      const meta = CAPABILITY_META[cap]
+                      return (
+                        <button
+                          key={cap}
+                          onClick={() => handleBatchCapToggle(cap)}
+                          disabled={batchLoading}
+                          className={cn(
+                            "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium",
+                            "transition-all duration-150 border",
+                            active
+                              ? "bg-[var(--primary)]/20 border-[var(--primary)]/50 text-[var(--primary)]"
+                              : "bg-white/5 border-white/10 text-[var(--muted)] hover:bg-white/10"
+                          )}
+                        >
+                          <span>{meta.icon}</span>
+                          <span>{t(`capabilities.${cap}.label`)}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <GlassButton
+                  size="sm"
+                  disabled={batchCaps.length === 0 || batchLoading}
+                  onClick={handleBatchApply}
+                  className="shrink-0"
+                >
+                  {batchLoading
+                    ? t('filter.batchApplying')
+                    : t('filter.batchApply', { count: filteredCount })}
+                </GlassButton>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

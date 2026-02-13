@@ -14,6 +14,7 @@ from . import audit  # noqa: F401
 from . import billing  # noqa: F401
 from . import callbacks  # noqa: F401
 from . import conversation  # noqa: F401
+from . import document_tasks  # noqa: F401
 from . import example  # noqa: F401
 from . import feedback_attribution  # noqa: F401
 from . import image_generation  # noqa: F401

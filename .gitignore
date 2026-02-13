@@ -31,6 +31,10 @@ backend/logs/
 logs/
 *.log
 
+# Keep Next.js dashboard logs route tracked
+!deeting/app/\[locale\]/dashboard/logs/
+!deeting/app/\[locale\]/dashboard/logs/**
+
 # Backend environment
 backend/.env
 backend/.env.deploy

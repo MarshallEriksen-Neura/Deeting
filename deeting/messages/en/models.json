@@ -55,7 +55,13 @@
       "clear": "Clear",
       "advanced": "Advanced Filters",
       "modelsCount": "{count} models",
-      "filteredCount": "{filtered} / {total} models"
+      "filteredCount": "{filtered} / {total} models",
+      "batchTitle": "Batch Set Capabilities",
+      "batchHint": "Set capability tags for {count} matched models at once",
+      "batchApply": "Apply to {count} models",
+      "batchApplying": "Applying...",
+      "batchSuccess": "Updated capabilities for {count} models",
+      "batchFailed": "Batch update failed, please retry"
     },
     "form": {
       "readonly": {

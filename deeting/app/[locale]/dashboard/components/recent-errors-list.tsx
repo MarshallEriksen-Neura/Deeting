@@ -40,7 +40,7 @@ export function RecentErrorsList() {
               {t("description")}
             </GlassCardDescription>
           </div>
-          <Link href="/logs">
+          <Link href="/dashboard/logs">
             <Button
               variant="ghost"
               size="sm"

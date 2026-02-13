@@ -19,6 +19,7 @@ from .image_generation_output_repository import ImageGenerationOutputRepository
 from .image_generation_share_repository import ImageGenerationShareRepository
 from .image_generation_share_tag_repository import ImageGenerationShareTagLinkRepository
 from .invite_code import InviteCodeRepository
+from .knowledge_folder_repository import KnowledgeFolderRepository
 from .mcp_market_repository import McpMarketRepository
 from .media_asset_repository import MediaAssetRepository
 from .notification_repository import (
@@ -37,6 +38,7 @@ from .spec_knowledge_repository import SpecKnowledgeCandidateRepository
 from .system_setting_repository import SystemSettingRepository
 from .trace_feedback_repository import TraceFeedbackRepository
 from .usage_repository import UsageRepository
+from .user_document_repository import UserDocumentRepository
 from .user_repository import UserRepository
 
 __all__ = [
@@ -62,6 +64,7 @@ __all__ = [
     "InsufficientBalanceError",
     "InsufficientQuotaError",
     "InviteCodeRepository",
+    "KnowledgeFolderRepository",
     "McpMarketRepository",
     "MediaAssetRepository",
     "NotificationReceiptRepository",
@@ -75,6 +78,7 @@ __all__ = [
     "SystemSettingRepository",
     "TraceFeedbackRepository",
     "UsageRepository",
+    "UserDocumentRepository",
     "UserRepository",
     "UserSecretaryRepository",
 ]

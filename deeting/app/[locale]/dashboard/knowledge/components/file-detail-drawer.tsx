@@ -57,6 +57,7 @@ interface FileDetailDrawerProps {
   onOpenChange: (open: boolean) => void
   file: KnowledgeFile | null
   chunks: KnowledgeChunk[]
+  isChunksLoading?: boolean
   onDownload?: () => void
   onShare?: () => void
   onDelete?: () => void
@@ -67,6 +68,7 @@ export function FileDetailDrawer({
   onOpenChange,
   file,
   chunks,
+  isChunksLoading = false,
   onDownload,
   onShare,
   onDelete,
@@ -180,13 +182,21 @@ export function FileDetailDrawer({
                 </div>
               )}
 
-              {file.status === "active" && chunks.length === 0 && (
+              {file.status === "active" && isChunksLoading && (
+                <div className="flex flex-col items-center justify-center py-8 text-[var(--muted)]">
+                  <Loader2 className="h-6 w-6 animate-spin mb-2" />
+                  <p className="text-sm">{t("detailDrawer.loadingChunks")}</p>
+                </div>
+              )}
+
+              {file.status === "active" && !isChunksLoading && chunks.length === 0 && (
                 <p className="text-sm text-[var(--muted)] text-center py-8">
                   {t("detailDrawer.noChunks")}
                 </p>
               )}
 
               {file.status === "active" &&
+                !isChunksLoading &&
                 chunks.map((chunk, idx) => (
                   <div
                     key={chunk.id}

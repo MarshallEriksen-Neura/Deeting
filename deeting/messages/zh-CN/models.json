@@ -55,7 +55,13 @@
       "clear": "清除",
       "advanced": "高级筛选",
       "modelsCount": "{count} 个模型",
-      "filteredCount": "{filtered} / {total} 个模型"
+      "filteredCount": "{filtered} / {total} 个模型",
+      "batchTitle": "批量设置能力",
+      "batchHint": "为匹配的 {count} 个模型一键设置能力标签",
+      "batchApply": "应用到 {count} 个模型",
+      "batchApplying": "应用中...",
+      "batchSuccess": "已更新 {count} 个模型的能力",
+      "batchFailed": "批量更新失败，请重试"
     },
     "form": {
       "readonly": {

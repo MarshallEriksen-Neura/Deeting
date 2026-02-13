@@ -12,7 +12,8 @@
       "errorCode": "错误码",
       "start": "开始",
       "end": "结束",
-      "refresh": "刷新"
+      "refresh": "刷新",
+      "pageSize": "每页条数"
     },
     "table": {
       "headers": {
@@ -130,6 +131,16 @@
     },
     "error": {
       "loadFailed": "加载日志失败：{message}"
+    },
+    "summary": {
+      "totalRequests": "当前页请求数",
+      "errorRate": "错误率",
+      "cacheHitRate": "缓存命中率",
+      "totalCost": "当前页用户成本"
+    },
+    "states": {
+      "selectHint": "从左侧选择一条日志查看完整详情。",
+      "copied": "已复制"
     }
   }
 }

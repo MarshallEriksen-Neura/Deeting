@@ -9,6 +9,7 @@ from .spec_knowledge_service import (
     SpecKnowledgeService,
     SpecKnowledgeVectorService,
 )
+from .user_document_service import UserDocumentService
 
 __all__ = [
     "SPEC_KB_REVIEW_ENTITY",
@@ -20,4 +21,5 @@ __all__ = [
     "STATUS_REJECTED",
     "SpecKnowledgeService",
     "SpecKnowledgeVectorService",
+    "UserDocumentService",
 ]

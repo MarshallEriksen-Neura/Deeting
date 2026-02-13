@@ -5,6 +5,9 @@
     "upload": "Upload Document",
     "newFolder": "New Folder",
     "search": "Search file name...",
+    "error": {
+      "loadFailed": "Failed to load data. Please retry."
+    },
     "stats": {
       "usedSpace": "Used Space",
       "totalSpace": "Total Space",
@@ -67,6 +70,7 @@
       "chunkIndex": "Chunk #{index}",
       "tokens": "{count} tokens",
       "noChunks": "No chunks available",
+      "loadingChunks": "Loading chunks...",
       "processingHint": "File is being processed. Chunks will appear after processing completes.",
       "failedHint": "Processing failed: {error}"
     },
@@ -101,12 +105,22 @@
       "confirm": "Confirm"
     },
     "toast": {
-      "deleteSuccess": "Deleted \"{name}\"",
-      "renameSuccess": "Renamed to \"{name}\"",
-      "moveSuccess": "Moved to \"{folder}\"",
-      "copySuccess": "Copied to \"{folder}\"",
-      "shareSuccess": "Share link copied to clipboard",
-      "folderCreated": "Folder \"{name}\" created"
+      "folderCreated": "Folder created",
+      "folderCreateFailed": "Failed to create folder",
+      "deleted": "Deleted successfully",
+      "deleteFailed": "Failed to delete",
+      "renamed": "Renamed successfully",
+      "renameFailed": "Failed to rename",
+      "moved": "Moved successfully",
+      "copied": "Copied successfully",
+      "operationFailed": "Operation failed",
+      "downloadFailed": "Download failed",
+      "shareLinkCopied": "Share link copied to clipboard",
+      "shareFailed": "Failed to get share link",
+      "retryStarted": "Retry started",
+      "retryFailed": "Retry failed",
+      "uploadSuccess": "{count} file(s) uploaded successfully",
+      "uploadFailed": "{count} file(s) failed to upload"
     }
   }
 }

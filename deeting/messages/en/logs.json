@@ -12,7 +12,8 @@
       "errorCode": "Error code",
       "start": "Start",
       "end": "End",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "pageSize": "Page size"
     },
     "table": {
       "headers": {
@@ -130,6 +131,16 @@
     },
     "error": {
       "loadFailed": "Failed to load logs: {message}"
+    },
+    "summary": {
+      "totalRequests": "Requests on this page",
+      "errorRate": "Error rate",
+      "cacheHitRate": "Cache hit rate",
+      "totalCost": "User cost on this page"
+    },
+    "states": {
+      "selectHint": "Select a log row on the left to inspect details.",
+      "copied": "Copied"
     }
   }
 }

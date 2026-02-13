@@ -8,6 +8,7 @@ from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.knowledge_folder import KnowledgeFolder
 from app.models.media_asset import MediaAsset
 from app.models.provider_preset import JSONBCompat
 
@@ -28,6 +29,7 @@ class UserDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Index("ix_user_document_user_id", "user_id"),
         Index("ix_user_document_status", "status"),
         Index("ix_user_document_media_asset_id", "media_asset_id"),
+        Index("ix_user_document_folder_id", "folder_id"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -46,6 +48,13 @@ class UserDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     filename: Mapped[str] = mapped_column(
         String(255), nullable=False, comment="显示文件名（用户上传时指定或原名）"
+    )
+
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("knowledge_folder.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="所属文件夹 ID，null 代表根目录",
     )
 
     status: Mapped[str] = mapped_column(
@@ -79,6 +88,7 @@ class UserDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # 关系
     media_asset: Mapped[MediaAsset] = relationship("MediaAsset")
+    folder: Mapped[KnowledgeFolder | None] = relationship("KnowledgeFolder")
 
     def __repr__(self) -> str:
         return f"<UserDocument(id={self.id}, user={self.user_id}, file={self.filename}, status={self.status})>"

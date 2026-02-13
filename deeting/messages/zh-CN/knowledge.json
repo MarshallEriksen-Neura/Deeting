@@ -5,6 +5,9 @@
     "upload": "上传文档",
     "newFolder": "新建文件夹",
     "search": "搜索文件名...",
+    "error": {
+      "loadFailed": "加载数据失败，请重试"
+    },
     "stats": {
       "usedSpace": "已用空间",
       "totalSpace": "总空间",
@@ -67,6 +70,7 @@
       "chunkIndex": "片段 #{index}",
       "tokens": "{count} tokens",
       "noChunks": "暂无知识片段",
+      "loadingChunks": "加载知识片段中...",
       "processingHint": "文件正在处理中，片段将在处理完成后显示",
       "failedHint": "文件处理失败: {error}"
     },
@@ -101,12 +105,22 @@
       "confirm": "确认"
     },
     "toast": {
-      "deleteSuccess": "已删除 \"{name}\"",
-      "renameSuccess": "已重命名为 \"{name}\"",
-      "moveSuccess": "已移动到 \"{folder}\"",
-      "copySuccess": "已复制到 \"{folder}\"",
-      "shareSuccess": "分享链接已复制到剪贴板",
-      "folderCreated": "文件夹 \"{name}\" 已创建"
+      "folderCreated": "文件夹已创建",
+      "folderCreateFailed": "创建文件夹失败",
+      "deleted": "删除成功",
+      "deleteFailed": "删除失败",
+      "renamed": "重命名成功",
+      "renameFailed": "重命名失败",
+      "moved": "移动成功",
+      "copied": "复制成功",
+      "operationFailed": "操作失败",
+      "downloadFailed": "下载失败",
+      "shareLinkCopied": "分享链接已复制到剪贴板",
+      "shareFailed": "获取分享链接失败",
+      "retryStarted": "已重新开始处理",
+      "retryFailed": "重试失败",
+      "uploadSuccess": "成功上传 {count} 个文件",
+      "uploadFailed": "{count} 个文件上传失败"
     }
   }
 }

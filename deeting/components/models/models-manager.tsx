@@ -10,9 +10,11 @@ import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
 import { ModelEmptyState } from "./empty-state"
 import { InstanceDashboard } from "./instance-dashboard"
+import { FilterLens } from "./filter-lens"
 import { TestDrawer } from "./test-drawer"
 import type { ProviderModelResponse, ProviderModelUpdate } from "@/lib/api/providers"
-import type { ProviderModel, ModelCapability, ProviderStatus } from "./types"
+import type { ProviderModel, ModelCapability, ModelFilterState, ProviderStatus } from "./types"
+import { getPriceTier } from "./types"
 import { toast } from "sonner"
 import ConnectProviderDrawer from "@/components/providers/connect-provider-drawer"
 import {
@@ -55,6 +57,13 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const [quickAddOpen, setQuickAddOpen] = React.useState(false)
   const [quickAddInput, setQuickAddInput] = React.useState("")
   const [quickAddLoading, setQuickAddLoading] = React.useState(false)
+  const [filters, setFilters] = React.useState<ModelFilterState>({
+    search: "",
+    capabilities: [],
+    min_context_window: null,
+    active_only: false,
+    price_tier: null,
+  })
 
   const normalizeStatus = React.useCallback((value?: string | null): ProviderStatus => {
     const status = (value ?? "").toLowerCase()
@@ -193,6 +202,54 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const normalizedModels = React.useMemo<ProviderModel[]>(
     () => (models || []).map(normalizeModel),
     [models, normalizeModel]
+  )
+
+  const filteredModels = React.useMemo<ProviderModel[]>(() => {
+    let result = normalizedModels
+    if (filters.search) {
+      const q = filters.search.toLowerCase()
+      result = result.filter(
+        (m) =>
+          m.id.toLowerCase().includes(q) ||
+          (m.display_name ?? "").toLowerCase().includes(q) ||
+          (m.unified_model_id ?? "").toLowerCase().includes(q) ||
+          (m.family ?? "").toLowerCase().includes(q)
+      )
+    }
+    if (filters.capabilities.length > 0) {
+      result = result.filter((m) =>
+        filters.capabilities.every((c) => m.capabilities.includes(c))
+      )
+    }
+    if (filters.min_context_window !== null) {
+      result = result.filter((m) => m.context_window >= filters.min_context_window!)
+    }
+    if (filters.active_only) {
+      result = result.filter((m) => m.is_active)
+    }
+    if (filters.price_tier !== null) {
+      result = result.filter((m) => getPriceTier(m.pricing.input) === filters.price_tier)
+    }
+    return result
+  }, [normalizedModels, filters])
+
+  const handleBatchUpdateCapabilities = React.useCallback(
+    async (capabilities: import("./types").ModelCapability[]) => {
+      try {
+        await Promise.all(
+          filteredModels.map((m) =>
+            updateModel(m.uuid, {
+              routing_config: { capabilities },
+            })
+          )
+        )
+        await mutateModels()
+        toast.success(t("filter.batchSuccess", { count: filteredModels.length }))
+      } catch (err) {
+        toast.error(t("filter.batchFailed"))
+      }
+    },
+    [filteredModels, updateModel, mutateModels, t]
   )
 
   const handleToggleActive = React.useCallback(async (model: ProviderModel, active: boolean) => {
@@ -365,10 +422,21 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         </div>
       </GlassCard>
 
+      {/* Filter Lens */}
+      {normalizedModels.length > 0 && (
+        <FilterLens
+          filters={filters}
+          onFiltersChange={setFilters}
+          totalModels={normalizedModels.length}
+          filteredCount={filteredModels.length}
+          onBatchUpdateCapabilities={handleBatchUpdateCapabilities}
+        />
+      )}
+
       {/* Models Matrix or Empty State */}
       {normalizedModels.length > 0 ? (
         <ModelAccordion
-          models={normalizedModels}
+          models={filteredModels}
           onTest={handleTestModel}
           onToggleActive={handleToggleActive}
           onUpdateAlias={handleUpdateAlias}

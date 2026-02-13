@@ -53,6 +53,7 @@ from .image_generation import (
     ImageGenerationStatus,
 )
 from .invite_code import InviteCode, InviteCodeStatus
+from .knowledge_folder import KnowledgeFolder
 from .knowledge import KnowledgeArtifact, KnowledgeChunk
 from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 from .media_asset import MediaAsset
@@ -79,6 +80,7 @@ from .upstream_secret import UpstreamSecret
 from .user import Permission, Role, RolePermission, User, UserRole
 from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
+from .user_document import UserDocument
 
 __all__ = [
     "Base",
@@ -115,6 +117,7 @@ __all__ = [
     "RegistrationWindowStatus",
     "InviteCode",
     "InviteCodeStatus",
+    "KnowledgeFolder",
     "BanditArmState",
     "BanditStrategy",
     "ConversationSession",
@@ -156,6 +159,7 @@ __all__ = [
     "UserMcpSubscription",
     "UserMcpServer",
     "UserMcpSource",
+    "UserDocument",
     "SkillRegistry",
     "SkillCapability",
     "SkillDependency",
