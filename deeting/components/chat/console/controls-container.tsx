@@ -310,12 +310,6 @@ function ControlsContainer() {
     handleSend();
   }, [isGenerating, cancelActiveRequest, handleSend]);
 
-  // 缓存附件网格类名
-  const attachmentGridClassName = useMemo(
-    () => cn("grid gap-2", attachments.length > 3 ? "grid-cols-3" : "grid-cols-2"),
-    [attachments.length]
-  );
-
   return (
     <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
       {/* 1. Main Input Area */}
@@ -388,55 +382,40 @@ function ControlsContainer() {
       </div>
 
       {attachments.length > 0 ? (
-        <div className="flex flex-col gap-2 px-1">
-          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-white/50">
-            <span>{t("input.image.summary", { count: attachments.length })}</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="min-h-[44px] h-8 px-3 text-[11px] sm:h-7 sm:min-h-0 hover:bg-slate-200/70 dark:hover:bg-white/10"
-              onClick={clearAttachments}
-              disabled={isLoading}
+        <div className="flex items-center gap-2 px-1">
+          {attachments
+            .filter((attachment) => attachment.url)
+            .map((attachment) => (
+            <div
+              key={attachment.id}
+              className="group relative h-16 w-16 shrink-0"
             >
-              {t("input.image.clear")}
-            </Button>
-          </div>
-          <div className={attachmentGridClassName}>
-            {attachments
-              .filter((attachment) => attachment.url)
-              .map((attachment) => (
-              <div
-                key={attachment.id}
-                className="group relative overflow-hidden rounded-xl border border-slate-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 shadow-sm"
-              >
+              <div className="h-full w-full overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/10 bg-slate-100 dark:bg-slate-800 transition-colors group-hover:border-slate-300 dark:group-hover:border-white/20">
                 <Image
                   src={attachment.url ?? ""}
                   alt={attachment.name ?? t("input.image.alt")}
-                  width={240}
-                  height={240}
-                  className="h-24 w-full object-cover"
+                  width={64}
+                  height={64}
+                  className="h-full w-full object-cover"
                   unoptimized
                 />
-                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-[10px] text-white/90 backdrop-blur-sm">
-                  <span className="truncate">
-                    {attachment.name ?? t("input.image.alt")}
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1 min-h-[44px] min-w-[44px] h-8 w-8 rounded-full bg-black/60 text-white hover:bg-black/80 opacity-0 transition-all group-hover:opacity-100 sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0"
-                  onClick={() => removeAttachment(attachment.id)}
-                  aria-label={t("input.image.remove")}
-                  disabled={isLoading}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
               </div>
-            ))}
-          </div>
+              <button
+                type="button"
+                className={cn(
+                  "absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full",
+                  "bg-slate-500 text-white hover:bg-slate-700 dark:bg-slate-400 dark:text-black dark:hover:bg-slate-200",
+                  "opacity-0 transition-opacity group-hover:opacity-100",
+                  "shadow-sm"
+                )}
+                onClick={() => removeAttachment(attachment.id)}
+                aria-label={t("input.image.remove")}
+                disabled={isLoading}
+              >
+                <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+              </button>
+            </div>
+          ))}
         </div>
       ) : null}
 

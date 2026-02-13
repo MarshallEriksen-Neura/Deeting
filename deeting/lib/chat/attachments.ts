@@ -50,6 +50,14 @@ const UPLOAD_ERROR_CODES = new Set([
   "missing_asset_url",
 ])
 
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error("read_failed"))
+    reader.readAsDataURL(file)
+  })
+
 const uploadFile = async (url: string, headers: Headers, file: File) => {
   const response = await fetch(url, {
     method: "PUT",
@@ -61,12 +69,25 @@ const uploadFile = async (url: string, headers: Headers, file: File) => {
   }
 }
 
+const buildDataUrlAttachment = async (file: File): Promise<ChatImageAttachment> => {
+  const dataUrl = await fileToDataUrl(file)
+  return {
+    id: createAttachmentId(),
+    url: dataUrl,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    source: "data",
+  }
+}
+
 const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> => {
   let contentHash: string
   try {
     contentHash = await hashFile(file)
   } catch {
-    throw new Error("hash_failed")
+    // hash 失败也可以走 data URL fallback
+    return buildDataUrlAttachment(file)
   }
 
   let init: Awaited<ReturnType<typeof initAssetUpload>>
@@ -77,19 +98,20 @@ const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> =>
       content_type: file.type,
     })
   } catch {
-    throw new Error("upload_init_failed")
+    // OSS 未配置或不可用，fallback 到 base64 data URL
+    return buildDataUrlAttachment(file)
   }
 
   let assetUrl = init.asset_url ?? undefined
   if (!init.deduped) {
     if (!init.upload_url) {
-      throw new Error("missing_upload_url")
+      return buildDataUrlAttachment(file)
     }
     const headers = buildUploadHeaders(init.upload_headers, file.type)
     try {
       await uploadFile(init.upload_url, headers, file)
     } catch {
-      throw new Error("upload_put_failed")
+      return buildDataUrlAttachment(file)
     }
 
     let completed: Awaited<ReturnType<typeof completeAssetUpload>>
@@ -101,13 +123,13 @@ const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> =>
         content_type: file.type,
       })
     } catch {
-      throw new Error("upload_complete_failed")
+      return buildDataUrlAttachment(file)
     }
     assetUrl = completed.asset_url
   }
 
   if (!assetUrl) {
-    throw new Error("missing_asset_url")
+    return buildDataUrlAttachment(file)
   }
 
   return {

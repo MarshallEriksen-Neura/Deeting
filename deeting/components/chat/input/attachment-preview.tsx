@@ -3,7 +3,6 @@
 import * as React from "react"
 import Image from "next/image"
 import { X } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { useLazyImage } from "@/hooks/use-lazy-image"
@@ -63,40 +62,75 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
   ({ attachment, variant, onRemove, disabled }) => {
     const t = useI18n("chat")
     const isUserVariant = variant === 'user'
-    
-    // 使用懒加载 Hook
+
     const { imageSrc, isLoading, error, imgRef } = useLazyImage({
       src: attachment.url ?? "",
       rootMargin: '50px',
       threshold: 0.01,
     })
 
-    // 如果没有 URL，不渲染
     if (!attachment.url) {
       return null
     }
 
+    // 用户输入场景：紧凑缩略图
+    if (isUserVariant) {
+      return (
+        <div className="group relative h-16 w-16 shrink-0">
+          <div className="h-full w-full overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/10 bg-slate-100 dark:bg-slate-800 transition-colors group-hover:border-slate-300 dark:group-hover:border-white/20">
+            {error ? (
+              <div className="flex h-full w-full items-center justify-center">
+                <svg className="h-4 w-4 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="m21 15-5-5L5 21" />
+                </svg>
+              </div>
+            ) : isLoading || !imageSrc ? (
+              <div className="h-full w-full animate-pulse bg-slate-200 dark:bg-slate-700" />
+            ) : (
+              <Image
+                ref={imgRef}
+                src={imageSrc}
+                alt={attachment.name ?? t("input.image.alt")}
+                width={64}
+                height={64}
+                className="h-full w-full object-cover"
+                unoptimized
+              />
+            )}
+          </div>
+          {onRemove && (
+            <button
+              type="button"
+              className={cn(
+                "absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full",
+                "bg-slate-500 text-white hover:bg-slate-700 dark:bg-slate-400 dark:text-black dark:hover:bg-slate-200",
+                "opacity-0 transition-opacity group-hover:opacity-100",
+                "shadow-sm"
+              )}
+              onClick={() => onRemove(attachment.id)}
+              aria-label={t("input.image.remove")}
+              disabled={disabled}
+            >
+              <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
+      )
+    }
+
+    // 助手消息场景：保持原有卡片样式
     return (
-      <div
-        className={cn(
-          "group relative overflow-hidden rounded-xl shadow-sm border",
-          "bg-white dark:bg-background/60",
-          "border-slate-200/70 dark:border-white/10",
-          isUserVariant && "transition-all hover:shadow-md"
-        )}
-      >
-        {/* 图片容器 */}
+      <div className="group relative overflow-hidden rounded-xl shadow-sm border border-slate-200/70 dark:border-white/10 bg-white dark:bg-background/60">
         <div className="relative h-28 w-full bg-slate-100 dark:bg-slate-800">
           {error ? (
-            // 加载失败占位符
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400 dark:text-slate-500">
               {t("input.image.errorLoad")}
             </div>
           ) : isLoading || !imageSrc ? (
-            // 加载中占位符（骨架屏）
             <div className="h-full w-full animate-pulse bg-slate-200 dark:bg-slate-700" />
           ) : (
-            // 实际图片
             <Image
               ref={imgRef}
               src={imageSrc}
@@ -108,8 +142,6 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
             />
           )}
         </div>
-
-        {/* 底部信息栏 */}
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/60 px-2 py-1.5 text-[10px] text-white backdrop-blur-sm">
           <span className="truncate">
             {attachment.name ?? t("input.image.alt")}
@@ -120,30 +152,9 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
             </span>
           )}
         </div>
-
-        {/* 删除按钮（仅用户输入场景显示） */}
-        {isUserVariant && onRemove && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(
-              "absolute right-1 top-1 h-8 w-8 rounded-full",
-              "bg-black/60 text-white hover:bg-black/80",
-              "opacity-0 transition-all group-hover:opacity-100",
-              "min-h-[44px] min-w-[44px]",
-              "sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0"
-            )}
-            onClick={() => onRemove(attachment.id)}
-            aria-label={t("input.image.remove")}
-            disabled={disabled}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        )}
       </div>
     )
   },
-  // 自定义比较函数，优化性能
   (prevProps, nextProps) => {
     return (
       prevProps.attachment.id === nextProps.attachment.id &&
@@ -158,24 +169,38 @@ AttachmentItem.displayName = "AttachmentItem"
 
 /**
  * AttachmentPreview 主组件
- * 使用 React.memo 优化，避免父组件重渲染时不必要的更新
  */
 export const AttachmentPreview = React.memo<AttachmentPreviewProps>(
   ({ attachments, variant = 'user', onRemove, onClear, disabled, className }) => {
-    const t = useI18n("chat")
     const isUserVariant = variant === 'user'
-    
-    // 过滤出有效的附件（有 URL）
+
     const validAttachments = React.useMemo(
       () => attachments.filter((attachment) => attachment.url),
       [attachments]
     )
 
-    // 如果没有有效附件，不渲染
     if (validAttachments.length === 0) {
       return null
     }
 
+    // 用户输入场景：紧凑的水平缩略图条
+    if (isUserVariant) {
+      return (
+        <div className={cn("flex items-center gap-2", className)}>
+          {validAttachments.map((attachment) => (
+            <AttachmentItem
+              key={attachment.id}
+              attachment={attachment}
+              variant={variant}
+              onRemove={onRemove}
+              disabled={disabled}
+            />
+          ))}
+        </div>
+      )
+    }
+
+    // 助手消息场景：保持网格布局
     return (
       <div
         className={cn(
@@ -185,30 +210,6 @@ export const AttachmentPreview = React.memo<AttachmentPreviewProps>(
           className
         )}
       >
-        {/* 头部信息栏（仅用户输入场景显示） */}
-        {isUserVariant && (
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-medium text-slate-600 dark:text-muted-foreground">
-              {t("input.image.summary", { count: validAttachments.length })}
-            </div>
-            {onClear && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "h-8 min-w-[44px] text-xs",
-                  "hover:bg-slate-200/70 dark:hover:bg-white/10"
-                )}
-                onClick={onClear}
-                disabled={disabled}
-              >
-                {t("input.image.clear")}
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* 附件网格 */}
         <div
           className={cn(
             "grid gap-2",
@@ -228,24 +229,17 @@ export const AttachmentPreview = React.memo<AttachmentPreviewProps>(
       </div>
     )
   },
-  // 自定义比较函数
   (prevProps, nextProps) => {
-    // 比较附件数组（浅比较）
     if (prevProps.attachments.length !== nextProps.attachments.length) {
       return false
     }
-    
-    // 比较每个附件的 ID 和 URL
     const attachmentsEqual = prevProps.attachments.every((prev, index) => {
       const next = nextProps.attachments[index]
       return prev.id === next.id && prev.url === next.url
     })
-    
     if (!attachmentsEqual) {
       return false
     }
-    
-    // 比较其他 props
     return (
       prevProps.variant === nextProps.variant &&
       prevProps.disabled === nextProps.disabled &&
