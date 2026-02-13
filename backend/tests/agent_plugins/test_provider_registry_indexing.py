@@ -36,6 +36,10 @@ class DummyContext(PluginContext):
         return self._user_id
 
     @property
+    def session_id(self) -> str | None:
+        return None
+
+    @property
     def working_directory(self) -> str:
         return ""
 
@@ -51,6 +55,29 @@ class DummyContext(PluginContext):
     @property
     def memory(self):
         return None
+
+
+class _FakeResponse:
+    is_success = True
+    status_code = 200
+    text = '{"ok": true}'
+
+
+class _FakeClient:
+    def __init__(self) -> None:
+        self.last_body = None
+        self.last_headers = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url: str, json: dict, headers: dict):
+        self.last_body = json
+        self.last_headers = headers
+        return _FakeResponse()
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -115,3 +142,108 @@ async def test_save_provider_field_mapping_enqueues_index(
 
     assert result["status"] == "success"
     enqueue.assert_called_once_with("openai")
+
+
+@pytest.mark.asyncio
+async def test_verify_provider_template_supports_python_none_literals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.provider_registry.plugin.AsyncSessionLocal",
+        AsyncSessionLocal,
+    )
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.provider_registry.plugin.is_safe_upstream_url",
+        lambda *_: True,
+    )
+
+    fake_client = _FakeClient()
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.provider_registry.plugin.create_async_http_client",
+        lambda **_: fake_client,
+    )
+
+    admin_id = uuid.uuid4()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            User(
+                id=admin_id,
+                email="verify-admin@example.com",
+                username="verify-admin",
+                hashed_password="x",
+                is_superuser=True,
+            )
+        )
+        await session.commit()
+
+    plugin = ProviderRegistryPlugin()
+    await plugin.initialize(DummyContext(admin_id))
+    result = await plugin.handle_verify_provider_template(
+        base_url="https://example.com/v1/chat/completions",
+        test_api_key="sk-test",
+        request_template={"value": "{{ 1 if input.temperature is None else 0 }}"},
+        test_payload={"temperature": None},
+        header_template={"Authorization": "Bearer {{ api_key }}"},
+    )
+
+    assert "Template Rendering Failed" not in result
+    assert fake_client.last_body == {"value": "1"}
+    assert fake_client.last_headers == {"Authorization": "Bearer sk-test"}
+
+
+@pytest.mark.asyncio
+async def test_verify_provider_template_supports_input_namespace_with_tojson(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.provider_registry.plugin.AsyncSessionLocal",
+        AsyncSessionLocal,
+    )
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.provider_registry.plugin.is_safe_upstream_url",
+        lambda *_: True,
+    )
+
+    fake_client = _FakeClient()
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.provider_registry.plugin.create_async_http_client",
+        lambda **_: fake_client,
+    )
+
+    admin_id = uuid.uuid4()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            User(
+                id=admin_id,
+                email="verify-admin2@example.com",
+                username="verify-admin2",
+                hashed_password="x",
+                is_superuser=True,
+            )
+        )
+        await session.commit()
+
+    plugin = ProviderRegistryPlugin()
+    await plugin.initialize(DummyContext(admin_id))
+    result = await plugin.handle_verify_provider_template(
+        base_url="https://example.com/v1/chat/completions",
+        test_api_key="sk-test",
+        request_template={
+            "model": "{{ input.model }}",
+            "messages": "{{ input.messages | tojson }}",
+            "stream": "{{ input.stream | default(false) | tojson }}",
+        },
+        test_payload={
+            "model": "doubao-1-5-pro-32k-250115",
+            "messages": [{"role": "user", "content": "你好"}],
+            "stream": False,
+        },
+        header_template={"Authorization": "Bearer {{ api_key }}"},
+    )
+
+    assert "Template Rendering Failed" not in result
+    assert fake_client.last_body == {
+        "model": "doubao-1-5-pro-32k-250115",
+        "messages": [{"role": "user", "content": "你好"}],
+        "stream": False,
+    }

@@ -257,6 +257,8 @@
         "negative": "负面提示词",
         "negativeSelected": "已选 {count} 个",
         "negativeCustom": "自定义",
+        "negativeCustomPlaceholder": "输入自定义负面提示词...",
+        "negativeAdd": "添加",
         "negativeToggle": "负面提示词",
         "settings": "高级设置",
         "summary": "当前参数摘要",

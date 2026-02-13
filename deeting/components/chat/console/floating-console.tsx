@@ -88,7 +88,10 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
   const [showNegativeTags, setShowNegativeTags] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [showModeMenu, setShowModeMenu] = React.useState(false);
+  const [showCustomInput, setShowCustomInput] = React.useState(false);
+  const [customNegativeValue, setCustomNegativeValue] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const customInputRef = React.useRef<HTMLInputElement>(null);
 
   // 自动调整文本框高度
   React.useEffect(() => {
@@ -131,6 +134,26 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
   const handleToggleNegativeTags = React.useCallback(() => {
     setShowNegativeTags((prev) => !prev);
   }, []);
+
+  const handleToggleCustomInput = React.useCallback(() => {
+    setShowCustomInput((prev) => {
+      const next = !prev;
+      if (next) {
+        setTimeout(() => customInputRef.current?.focus(), 100);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleAddCustomNegative = React.useCallback(() => {
+    const value = customNegativeValue.trim();
+    if (value) {
+      const newSet = new Set(selectedNegatives);
+      newSet.add(value);
+      onSelectedNegativesChange?.(newSet);
+      setCustomNegativeValue("");
+    }
+  }, [customNegativeValue, selectedNegatives, onSelectedNegativesChange]);
 
   const hasPrompt = prompt.trim().length > 0;
   const hasRecent = recentImages.length > 0;
@@ -214,13 +237,57 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-8 rounded-full px-3 text-xs font-medium bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                      onClick={handleToggleCustomInput}
+                      className={cn(
+                        "h-8 rounded-full px-3 text-xs font-medium",
+                        showCustomInput
+                          ? "bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25"
+                          : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                      )}
                     >
                       <Plus className="w-3 h-3" />
                       {t("image.console.negativeCustom")}
                     </Button>
                   </motion.div>
                 </div>
+                <AnimatePresence>
+                  {showCustomInput && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      className="overflow-hidden"
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          ref={customInputRef}
+                          type="text"
+                          value={customNegativeValue}
+                          onChange={(e) => setCustomNegativeValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddCustomNegative();
+                            }
+                          }}
+                          placeholder={t("image.console.negativeCustomPlaceholder")}
+                          className="flex-1 h-8 rounded-full bg-white/10 border border-white/20 px-3 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleAddCustomNegative}
+                          disabled={!customNegativeValue.trim()}
+                          className="h-8 rounded-full px-3 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-40"
+                        >
+                          {t("image.console.negativeAdd")}
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </GlassCard>
           </motion.div>

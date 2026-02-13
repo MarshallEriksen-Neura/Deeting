@@ -257,6 +257,8 @@
         "negative": "Negative Prompts",
         "negativeSelected": "{count} selected",
         "negativeCustom": "Custom",
+        "negativeCustomPlaceholder": "Enter custom negative prompt...",
+        "negativeAdd": "Add",
         "negativeToggle": "Negative prompts",
         "settings": "Advanced settings",
         "summary": "Current settings",

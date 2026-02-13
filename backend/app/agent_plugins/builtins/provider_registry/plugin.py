@@ -66,11 +66,11 @@ class ProviderRegistryPlugin(AgentPlugin):
                             },
                             "request_template": {
                                 "type": "object",
-                                "description": "The Jinja2 template draft to test.",
+                                "description": "The Jinja2 template draft to test. Variables are available as both top-level keys (e.g. {{ model }}) and under {{ input.* }}.",
                             },
                             "test_payload": {
                                 "type": "object",
-                                "description": "Simulated user input (e.g. {'model': 'llama3', 'messages': [{'role': 'user', 'content': 'hi'}]}).",
+                                "description": "Simulated user input (e.g. {'model': 'llama3', 'messages': [{'role': 'user', 'content': 'hi'}]}). The payload is exposed to Jinja as top-level keys and as `input`.",
                                 "default": {
                                     "model": "default",
                                     "messages": [
@@ -109,7 +109,7 @@ class ProviderRegistryPlugin(AgentPlugin):
                             },
                             "request_template": {
                                 "type": "object",
-                                "description": "Jinja2 template for the request body. Keys should match upstream API fields. Values can use {{ input.field }}. ",
+                                "description": "Jinja2 template for the request body. Keys should match upstream API fields. Values can use {{ field }} or {{ input.field }}.",
                             },
                             "response_transform": {
                                 "type": "object",
@@ -181,8 +181,12 @@ class ProviderRegistryPlugin(AgentPlugin):
 
         # 3. Render Body
         try:
-            # Flatten context for Jinja: test_payload becomes the 'input'
+            # Provide both namespaces to reduce template coupling:
+            # - top-level: {{ model }}
+            # - nested: {{ input.model }} / {{ request.model }}
             context = test_payload.copy()
+            context["input"] = test_payload
+            context["request"] = test_payload
             context["api_key"] = test_api_key  # For header rendering
 
             # Render Body

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any
 
 from jinja2 import BaseLoader, Environment, select_autoescape
@@ -31,6 +32,15 @@ jinja_env = Environment(
     trim_blocks=True,
     lstrip_blocks=True,
 )
+
+_PYTHON_LITERAL_TO_JINJA = {
+    "None": "none",
+    "True": "true",
+    "False": "false",
+}
+_PYTHON_LITERAL_PATTERN = re.compile(r"\b(None|True|False)\b")
+_PYTHON_TEST_PATTERN = re.compile(r"No test named '(None|True|False)'")
+_TOJSON_FILTER_PATTERN = re.compile(r"\|\s*tojson\b")
 
 
 class RequestRenderer:
@@ -150,10 +160,37 @@ class RequestRenderer:
         if not template_schema:
             return context
 
+        def render_string(template: str) -> str:
+            try:
+                return jinja_env.from_string(template).render(**context)
+            except Exception as exc:
+                # 兼容 AI 常生成的 Python 字面量写法（None/True/False）。
+                # Jinja2 语法要求使用 none/true/false。
+                msg = str(exc)
+                should_retry = (
+                    " is undefined" in msg
+                    and any(k in msg for k in _PYTHON_LITERAL_TO_JINJA)
+                ) or bool(_PYTHON_TEST_PATTERN.search(msg))
+                if not should_retry:
+                    raise
+
+                normalized = _PYTHON_LITERAL_PATTERN.sub(
+                    lambda m: _PYTHON_LITERAL_TO_JINJA[m.group(1)], template
+                )
+                if normalized == template:
+                    raise
+                return jinja_env.from_string(normalized).render(**context)
+
         def recursive_render(obj):
             if isinstance(obj, str):
-                if "{{" in obj:
-                    return jinja_env.from_string(obj).render(**context)
+                if "{{" in obj or "{%" in obj:
+                    rendered_value = render_string(obj)
+                    if _TOJSON_FILTER_PATTERN.search(obj):
+                        try:
+                            return json.loads(rendered_value)
+                        except Exception:
+                            return rendered_value
+                    return rendered_value
                 return obj
             elif isinstance(obj, dict):
                 return {k: recursive_render(v) for k, v in obj.items()}
