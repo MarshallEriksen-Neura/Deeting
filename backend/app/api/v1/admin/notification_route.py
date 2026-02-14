@@ -8,12 +8,14 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps.auth import require_permissions
 from app.schemas.notification import (
+    NotificationAdminItem,
+    NotificationAdminListResponse,
     NotificationPublishAllRequest,
     NotificationPublishResponse,
     NotificationPublishUserRequest,
@@ -21,6 +23,39 @@ from app.schemas.notification import (
 from app.services.notifications import NotificationService
 
 router = APIRouter(prefix="/admin/notifications", tags=["Admin - Notifications"])
+
+
+@router.get(
+    "",
+    response_model=NotificationAdminListResponse,
+    dependencies=[Depends(require_permissions(["notification.manage"]))],
+)
+async def list_notifications(
+    skip: int = Query(0, ge=0, description="跳过数量"),
+    limit: int = Query(20, ge=1, le=100, description="每页数量"),
+    type: str | None = Query(None, description="通知类型过滤"),
+    level: str | None = Query(None, description="通知级别过滤"),
+    source: str | None = Query(None, description="来源过滤"),
+    q: str | None = Query(None, description="标题/内容/来源搜索"),
+    is_active: bool | None = Query(None, description="有效状态过滤"),
+    db: AsyncSession = Depends(get_db),
+) -> NotificationAdminListResponse:
+    service = NotificationService(db)
+    items, total = await service.list_admin_notifications(
+        skip=skip,
+        limit=limit,
+        notification_type=type,
+        level=level,
+        source=source,
+        q=q,
+        is_active=is_active,
+    )
+    return NotificationAdminListResponse(
+        items=[NotificationAdminItem.model_validate(item) for item in items],
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.post(

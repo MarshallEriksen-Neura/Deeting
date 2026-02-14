@@ -172,20 +172,20 @@ export default function VideoDashboard() {
   );
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 relative overflow-hidden">
       {/* Background noise texture */}
       <div className="absolute inset-0 opacity-20">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(56,189,248,0.1),transparent_50%)] animate-pulse" />
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDU2LCAxODksIDI0OCwgMC4xKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(56,189,248,0.08),transparent_50%)] dark:bg-[radial-gradient(circle_at_50%_50%,rgba(56,189,248,0.1),transparent_50%)] animate-pulse" />
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDU2LCAxODksIDI0OCwgMC4xKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-10 dark:opacity-30" />
       </div>
 
       {/* Left Input Dock */}
-      <aside className="w-full lg:w-80 m-2 lg:m-4 bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-4 lg:p-6 flex flex-col gap-4 lg:gap-6 shadow-2xl shadow-cyan-500/10 relative overflow-hidden">
-        <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/20 via-transparent to-teal-500/20 rounded-2xl blur-xl" />
+      <aside className="w-full lg:w-80 m-2 lg:m-4 bg-black/5 dark:bg-white/5 backdrop-blur-xl rounded-2xl border border-black/10 dark:border-white/10 p-4 lg:p-6 flex flex-col gap-4 lg:gap-6 shadow-2xl shadow-cyan-500/5 dark:shadow-cyan-500/10 relative overflow-hidden">
+        <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 via-transparent to-teal-500/10 dark:from-cyan-500/20 dark:via-transparent dark:to-teal-500/20 rounded-2xl blur-xl" />
 
         <div className="relative z-10 flex flex-col h-full">
-          <h2 className="text-lg lg:text-xl font-medium text-white mb-4 lg:mb-6 flex items-center gap-2">
-            <Sparkles className="w-4 lg:w-5 h-4 lg:h-5 text-cyan-400" />
+          <h2 className="text-lg lg:text-xl font-medium text-foreground mb-4 lg:mb-6 flex items-center gap-2">
+            <Sparkles className="w-4 lg:w-5 h-4 lg:h-5 text-cyan-500 dark:text-cyan-400" />
             {t("create")}
           </h2>
 
@@ -202,7 +202,7 @@ export default function VideoDashboard() {
           >
             {isGenerating ? (
               <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                <div className="w-4 h-4 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin mr-2" />
                 {t("generating")}
               </>
             ) : (

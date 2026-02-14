@@ -6,7 +6,13 @@ from app.api.v1.admin import agent_router as admin_agent_router
 from app.api.v1.admin import api_keys_router as admin_api_keys_router
 from app.api.v1.admin import assistant_reviews_router as admin_assistant_reviews_router
 from app.api.v1.admin import assistants_router as admin_assistants_router
+from app.api.v1.admin import billing_router as admin_billing_router
+from app.api.v1.admin import conversations_router as admin_conversations_router
+from app.api.v1.admin import gateway_logs_router as admin_gateway_logs_router
+from app.api.v1.admin import generation_tasks_router as admin_generation_tasks_router
+from app.api.v1.admin import knowledge_router as admin_knowledge_router
 from app.api.v1.admin import notification_router as admin_notification_router
+from app.api.v1.admin import plugins_router as admin_plugins_router
 from app.api.v1.admin import (
     provider_credential_router as admin_provider_credential_router,
 )
@@ -15,6 +21,7 @@ from app.api.v1.admin import provider_preset_router as admin_provider_preset_rou
 from app.api.v1.admin import registration_router as admin_registration_router
 from app.api.v1.admin import settings_router as admin_settings_router
 from app.api.v1.admin import skill_registry_router as admin_skill_registry_router
+from app.api.v1.admin import spec_plans_router as admin_spec_plans_router
 from app.api.v1.admin import (
     spec_knowledge_reviews_router as admin_spec_knowledge_reviews_router,
 )
@@ -64,13 +71,20 @@ __all__ = [
     "admin_api_keys_router",
     "admin_assistant_reviews_router",
     "admin_assistants_router",
+    "admin_billing_router",
+    "admin_conversations_router",
+    "admin_gateway_logs_router",
+    "admin_generation_tasks_router",
+    "admin_knowledge_router",
     "admin_notification_router",
+    "admin_plugins_router",
     "admin_provider_credential_router",
     "admin_provider_instance_router",
     "admin_provider_preset_router",
     "admin_registration_router",
     "admin_settings_router",
     "admin_skill_registry_router",
+    "admin_spec_plans_router",
     "admin_spec_knowledge_reviews_router",
     "admin_users_router",
     "assistants_router",

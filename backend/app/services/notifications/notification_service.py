@@ -148,6 +148,27 @@ class NotificationService:
         )
         return notification
 
+    async def list_admin_notifications(
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 50,
+        notification_type: str | None = None,
+        level: str | None = None,
+        source: str | None = None,
+        q: str | None = None,
+        is_active: bool | None = None,
+    ):
+        return await self.notification_repo.list_admin_notifications(
+            skip=skip,
+            limit=limit,
+            notification_type=notification_type,
+            level=level,
+            source=source,
+            q=q,
+            is_active=is_active,
+        )
+
 
 def _parse_uuid(value: uuid.UUID | str, field: str) -> uuid.UUID:
     if isinstance(value, uuid.UUID):

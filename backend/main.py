@@ -143,12 +143,20 @@ def register_routes(app: FastAPI) -> None:
         admin_api_keys_router,
         admin_assistant_reviews_router,
         admin_assistants_router,
+        admin_billing_router,
+        admin_conversations_router,
+        admin_gateway_logs_router,
+        admin_generation_tasks_router,
+        admin_knowledge_router,
         admin_notification_router,
+        admin_plugins_router,
         admin_provider_credential_router,
         admin_provider_instance_router,
+        admin_provider_preset_router,
         admin_registration_router,
         admin_settings_router,
         admin_skill_registry_router,
+        admin_spec_plans_router,
         admin_spec_knowledge_reviews_router,
         admin_users_router,
         assistants_router,
@@ -231,6 +239,46 @@ def register_routes(app: FastAPI) -> None:
         admin_provider_instance_router,
         prefix=api_prefix,
         tags=["Admin - Provider Instances"],
+    )
+    app.include_router(
+        admin_provider_preset_router,
+        prefix=api_prefix,
+        tags=["Admin - Provider Presets"],
+    )
+    app.include_router(
+        admin_conversations_router,
+        prefix=api_prefix,
+        tags=["Admin - Conversations"],
+    )
+    app.include_router(
+        admin_spec_plans_router,
+        prefix=api_prefix,
+        tags=["Admin - Spec Plans"],
+    )
+    app.include_router(
+        admin_generation_tasks_router,
+        prefix=api_prefix,
+        tags=["Admin - Generation Tasks"],
+    )
+    app.include_router(
+        admin_billing_router,
+        prefix=api_prefix,
+        tags=["Admin - Billing"],
+    )
+    app.include_router(
+        admin_gateway_logs_router,
+        prefix=api_prefix,
+        tags=["Admin - Gateway Logs"],
+    )
+    app.include_router(
+        admin_knowledge_router,
+        prefix=api_prefix,
+        tags=["Admin - Knowledge"],
+    )
+    app.include_router(
+        admin_plugins_router,
+        prefix=api_prefix,
+        tags=["Admin - Plugins"],
     )
 
     # Gateway 路由

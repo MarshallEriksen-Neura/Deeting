@@ -63,7 +63,7 @@ export const RecentErrorSchema = z.object({
   statusCode: z.number(),
   model: z.string(),
   errorMessage: z.string(),
-  errorCode: z.string().optional(),
+  errorCode: z.string().nullish().transform((value) => value ?? undefined),
 })
 
 // Types

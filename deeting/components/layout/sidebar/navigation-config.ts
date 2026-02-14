@@ -155,6 +155,12 @@ export const adminNavigation: NavGroup[] = [
         href: "/admin/monitoring",
         icon: "eye",
       },
+      {
+        id: "gateway-logs",
+        label: "nav.gatewayLogs",
+        href: "/admin/gateway-logs",
+        icon: "activity",
+      },
     ],
   },
   // 3) 内容与知识
@@ -184,6 +190,36 @@ export const adminNavigation: NavGroup[] = [
         label: "nav.knowledgeReviews",
         href: "/admin/knowledge/reviews",
         icon: "bookOpen",
+      },
+      {
+        id: "skills",
+        label: "nav.skills",
+        href: "/admin/skills",
+        icon: "workflow",
+      },
+    ],
+  },
+  // 3.5) AI 运营
+  {
+    title: "nav.aiOperations",
+    items: [
+      {
+        id: "conversations",
+        label: "nav.conversations",
+        href: "/admin/conversations",
+        icon: "messageSquare",
+      },
+      {
+        id: "agent-tasks",
+        label: "nav.agentTasks",
+        href: "/admin/agent-tasks",
+        icon: "bot",
+      },
+      {
+        id: "generation-tasks",
+        label: "nav.generationTasks",
+        href: "/admin/generation-tasks",
+        icon: "image",
       },
     ],
   },
@@ -217,7 +253,19 @@ export const adminNavigation: NavGroup[] = [
       },
     ],
   },
-  // 5) 系统与运营
+  // 5) 财务
+  {
+    title: "nav.financial",
+    items: [
+      {
+        id: "billing",
+        label: "nav.billing",
+        href: "/admin/billing",
+        icon: "creditCard",
+      },
+    ],
+  },
+  // 6) 系统与运营
   {
     title: "nav.systemOperations",
     items: [

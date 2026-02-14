@@ -1,0 +1,274 @@
+"use client"
+
+import { useMemo, useState } from "react"
+import useSWR from "swr"
+import { Cloud } from "lucide-react"
+import {
+  AdminPageShell,
+  AdminDataTable,
+  AdminFilterBar,
+  AdminStatusBadge,
+  getStatusTone,
+  Sparkline,
+  type ColumnDef,
+} from "@/components/admin"
+import { GlassCard } from "@/components/ui/glass-card"
+import {
+  createAdminProviderInstance,
+  fetchAdminProviderInstances,
+  type ProviderInstanceItem,
+} from "@/lib/api/admin-dashboard"
+
+export function PageContent() {
+  const [searchQuery, setSearchQuery] = useState("")
+  const [healthFilter, setHealthFilter] = useState("")
+  const [enabledFilter, setEnabledFilter] = useState("")
+  const [presetSlug, setPresetSlug] = useState("")
+  const [name, setName] = useState("")
+  const [baseUrl, setBaseUrl] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+
+  const {
+    data,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR("/api/v1/admin/provider-instances", fetchAdminProviderInstances)
+
+  const allRows = useMemo(() => data ?? [], [data])
+
+  const filteredRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    return allRows.filter((row) => {
+      if (healthFilter && (row.health_status ?? "unknown") !== healthFilter) return false
+      if (enabledFilter === "true" && !row.is_enabled) return false
+      if (enabledFilter === "false" && row.is_enabled) return false
+      if (!query) return true
+      return [row.name, row.preset_slug, row.base_url, row.id].some((value) =>
+        String(value ?? "").toLowerCase().includes(query)
+      )
+    })
+  }, [allRows, searchQuery, healthFilter, enabledFilter])
+
+  const handleCreateInstance = async () => {
+    if (!presetSlug.trim() || !name.trim() || !baseUrl.trim() || !apiKey.trim() || isSubmitting) {
+      return
+    }
+    setIsSubmitting(true)
+    setFeedback(null)
+    try {
+      const created = await createAdminProviderInstance({
+        preset_slug: presetSlug.trim(),
+        name: name.trim(),
+        base_url: baseUrl.trim(),
+        api_key: apiKey.trim(),
+      })
+      setPresetSlug("")
+      setName("")
+      setBaseUrl("")
+      setApiKey("")
+      setFeedback(`Created provider instance: ${created.name}`)
+      await mutate()
+    } catch (createError) {
+      const message = createError instanceof Error ? createError.message : "Create failed"
+      setFeedback(message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const statusColor: Record<string, string> = {
+    up: "rgb(52,211,153)",
+    active: "rgb(52,211,153)",
+    degraded: "rgb(251,191,36)",
+    down: "rgb(248,113,113)",
+    unknown: "rgb(148,163,184)",
+  }
+
+  const columns: ColumnDef<ProviderInstanceItem>[] = [
+    {
+      key: "name",
+      header: "Name",
+      sortable: true,
+      render: (row) => {
+        const health = row.health_status ?? "unknown"
+        return (
+          <div className="flex items-center gap-2">
+            <span
+              className="size-2 rounded-full"
+              style={{ backgroundColor: statusColor[health] ?? statusColor.unknown }}
+            />
+            <span className="font-medium text-[var(--foreground)]">{row.name}</span>
+          </div>
+        )
+      },
+    },
+    {
+      key: "preset_slug",
+      header: "Provider",
+      render: (row) => <AdminStatusBadge text={row.preset_slug} tone="info" dot={false} />,
+    },
+    {
+      key: "base_url",
+      header: "Base URL",
+      render: (row) => (
+        <span className="inline-block max-w-[220px] truncate font-mono text-xs text-[var(--muted)]">
+          {row.base_url}
+        </span>
+      ),
+    },
+    {
+      key: "priority",
+      header: "Priority",
+      sortable: true,
+      render: (row) => <span className="font-mono text-xs">{row.priority}</span>,
+    },
+    {
+      key: "is_enabled",
+      header: "Enabled",
+      render: (row) => (
+        <AdminStatusBadge
+          text={row.is_enabled ? "enabled" : "disabled"}
+          tone={row.is_enabled ? "success" : "error"}
+        />
+      ),
+    },
+    {
+      key: "health_status",
+      header: "Health",
+      render: (row) => {
+        const health = row.health_status ?? "unknown"
+        return <AdminStatusBadge text={health} tone={getStatusTone(health)} />
+      },
+    },
+    {
+      key: "latency_ms",
+      header: "Latency",
+      sortable: true,
+      render: (row) => {
+        const latency = row.latency_ms ?? 0
+        return (
+          <span
+            className={
+              latency > 200
+                ? "text-amber-400"
+                : latency === 0
+                  ? "text-[var(--muted)]"
+                  : "text-emerald-400"
+            }
+          >
+            {latency > 0 ? `${latency}ms` : "—"}
+          </span>
+        )
+      },
+    },
+    {
+      key: "model_count",
+      header: "Models",
+      render: (row) => <span>{row.model_count}</span>,
+    },
+    {
+      key: "sparkline",
+      header: "Trend",
+      align: "right",
+      render: (row) => {
+        const health = row.health_status ?? "unknown"
+        return (
+          <Sparkline
+            data={row.sparkline}
+            color={statusColor[health] ?? statusColor.unknown}
+            width={80}
+            height={24}
+          />
+        )
+      },
+    },
+  ]
+
+  return (
+    <AdminPageShell
+      title="Provider Instances"
+      description="Manage AI provider connections and health"
+      icon={Cloud}
+    >
+      <GlassCard padding="default" hover="none">
+        <div className="grid gap-3 md:grid-cols-5">
+          <input
+            value={presetSlug}
+            onChange={(event) => setPresetSlug(event.target.value)}
+            placeholder="Preset slug"
+            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+          />
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Instance name"
+            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+          />
+          <input
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder="Base URL"
+            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+          />
+          <input
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="Provider API Key"
+            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+          />
+          <button
+            onClick={() => void handleCreateInstance()}
+            disabled={!presetSlug.trim() || !name.trim() || !baseUrl.trim() || !apiKey.trim() || isSubmitting}
+            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSubmitting ? "Creating..." : "Add Instance"}
+          </button>
+        </div>
+        {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
+      </GlassCard>
+
+      <AdminFilterBar
+        searchPlaceholder="Search providers..."
+        onSearch={setSearchQuery}
+        onFilterChange={(key, value) => {
+          if (key === "health") setHealthFilter(value)
+          if (key === "enabled") setEnabledFilter(value)
+        }}
+        filters={[
+          {
+            key: "health",
+            label: "Health",
+            options: [
+              { label: "Up", value: "up" },
+              { label: "Degraded", value: "degraded" },
+              { label: "Down", value: "down" },
+              { label: "Unknown", value: "unknown" },
+            ],
+          },
+          {
+            key: "enabled",
+            label: "Enabled",
+            options: [
+              { label: "Yes", value: "true" },
+              { label: "No", value: "false" },
+            ],
+          },
+        ]}
+      />
+      <AdminDataTable
+        columns={columns}
+        data={filteredRows}
+        emptyMessage={
+          isLoading
+            ? "Loading provider instances..."
+            : error
+              ? "Failed to load provider instances"
+              : "No provider instances"
+        }
+      />
+    </AdminPageShell>
+  )
+}

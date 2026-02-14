@@ -5,6 +5,44 @@
 ## 权限
 - `notification.manage`
 
+## GET /admin/notifications
+管理员通知历史列表（分页 + 筛选）。
+
+查询参数：
+- `skip` int，默认 `0`
+- `limit` int，默认 `20`，最大 `100`
+- `type` string，通知类型过滤（如 `system`/`alert`/`security`）
+- `level` string，级别过滤（`info`/`warn`/`error`/`critical`）
+- `source` string，来源过滤
+- `q` string，标题/内容/来源/去重键模糊搜索
+- `is_active` boolean，是否有效
+
+响应示例：
+```json
+{
+  "items": [
+    {
+      "id": "0e4e2c2f-9b6a-4c7a-a7a7-6bdf2d2ffb2a",
+      "tenant_id": null,
+      "type": "system",
+      "level": "info",
+      "title": "System Notice",
+      "content": "Hello everyone",
+      "payload": {},
+      "source": "admin-dashboard",
+      "dedupe_key": null,
+      "expires_at": null,
+      "is_active": true,
+      "created_at": "2026-02-14T10:00:00+00:00",
+      "updated_at": "2026-02-14T10:00:00+00:00"
+    }
+  ],
+  "total": 1,
+  "skip": 0,
+  "limit": 20
+}
+```
+
 ## POST /admin/notifications/users/{user_id}
 发布单用户通知。
 

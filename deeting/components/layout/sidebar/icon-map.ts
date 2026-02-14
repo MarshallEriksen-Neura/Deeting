@@ -9,16 +9,19 @@ import {
   Cloud,
   Coins,
   Cpu,
+  CreditCard,
   Database,
   Eye,
   FileText,
   FolderOpen,
   Gauge,
   HardDrive,
+  Image,
   Key,
   KeyRound,
   LayoutDashboard,
   Lock,
+  MessageSquare,
   Package,
   PanelLeft,
   PanelLeftClose,
@@ -33,6 +36,7 @@ import {
   UserCheck,
   UserCog,
   Users,
+  Workflow,
 } from "lucide-react"
 
 // Icon registry for sidebar navigation. We keep icons in client components
@@ -74,6 +78,11 @@ export const navIconMap = {
   ticket: Ticket,
   cloud: Cloud,
   package: Package,
+  // New admin navigation icons
+  messageSquare: MessageSquare,
+  workflow: Workflow,
+  image: Image,
+  creditCard: CreditCard,
 } satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof navIconMap

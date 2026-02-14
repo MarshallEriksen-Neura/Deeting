@@ -35,6 +35,48 @@ class NotificationRepository:
     async def get_by_id(self, notification_id: uuid.UUID) -> Notification | None:
         return await self.session.get(Notification, notification_id)
 
+    async def list_admin_notifications(
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 50,
+        notification_type: str | None = None,
+        level: str | None = None,
+        source: str | None = None,
+        q: str | None = None,
+        is_active: bool | None = None,
+    ) -> tuple[list[Notification], int]:
+        stmt = select(Notification)
+
+        if notification_type:
+            stmt = stmt.where(Notification.type == notification_type)
+        if level:
+            stmt = stmt.where(Notification.level == level)
+        if source:
+            stmt = stmt.where(Notification.source == source)
+        if is_active is not None:
+            stmt = stmt.where(Notification.is_active.is_(is_active))
+
+        if q and q.strip():
+            pattern = f"%{q.strip().lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(Notification.title).like(pattern),
+                    func.lower(Notification.content).like(pattern),
+                    func.lower(func.coalesce(Notification.source, "")).like(pattern),
+                    func.lower(func.coalesce(Notification.dedupe_key, "")).like(pattern),
+                )
+            )
+
+        total_stmt = select(func.count()).select_from(stmt.subquery())
+        total = int((await self.session.execute(total_stmt)).scalar() or 0)
+
+        result = await self.session.execute(
+            stmt.order_by(Notification.created_at.desc()).offset(skip).limit(limit)
+        )
+        items = list(result.scalars().all())
+        return items, total
+
 
 class NotificationReceiptRepository:
     """通知收件表仓库"""

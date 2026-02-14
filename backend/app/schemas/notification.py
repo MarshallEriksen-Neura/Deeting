@@ -36,6 +36,29 @@ class NotificationPublishResponse(BaseSchema):
     message: str = Field(..., description="提示信息")
 
 
+class NotificationAdminItem(BaseSchema):
+    id: UUID = Field(..., description="通知 ID")
+    tenant_id: UUID | None = Field(None, description="租户 ID（为空表示全局）")
+    type: NotificationType = Field(..., description="通知类型")
+    level: NotificationLevel = Field(..., description="通知级别")
+    title: str = Field(..., description="标题")
+    content: str = Field(..., description="内容")
+    payload: dict[str, Any] = Field(default_factory=dict, description="扩展字段")
+    source: str | None = Field(None, description="来源模块/服务")
+    dedupe_key: str | None = Field(None, description="去重键（幂等）")
+    expires_at: datetime | None = Field(None, description="过期时间")
+    is_active: bool = Field(True, description="是否有效")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+
+
+class NotificationAdminListResponse(BaseSchema):
+    items: list[NotificationAdminItem] = Field(default_factory=list, description="通知列表")
+    total: int = Field(..., ge=0, description="总数")
+    skip: int = Field(..., ge=0, description="跳过数量")
+    limit: int = Field(..., ge=1, description="每页数量")
+
+
 class NotificationInboxItem(BaseSchema):
     id: UUID = Field(..., description="通知 ID")
     notification_id: UUID = Field(..., description="通知 ID")

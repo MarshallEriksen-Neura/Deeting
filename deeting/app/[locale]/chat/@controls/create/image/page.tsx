@@ -75,7 +75,7 @@ export default function ImageControlsPage() {
     [models, selectedModelId]
   );
 
-  const { items: sessionTasks } = useImageGenerationTasks(
+  const { items: sessionTasks, mutate: mutateSessionTasks } = useImageGenerationTasks(
     {
       size: 12,
       include_outputs: true,
@@ -166,8 +166,7 @@ export default function ImageControlsPage() {
               stopRef.current = null;
               activeTaskIdRef.current = null;
               activeRequestIdRef.current = null;
-              // 刷新页面以显示新生成的图片
-              window.location.reload();
+              mutateSessionTasks();
             }
           }
           if (type === "timeout" || type === "error") {
@@ -194,7 +193,7 @@ export default function ImageControlsPage() {
       activeTaskIdRef.current = null;
       activeRequestIdRef.current = null;
     }
-  }, [prompt, selectedNegatives, selectedModelId, selectedModel, ratio, steps, guidance, t]);
+  }, [prompt, selectedNegatives, selectedModelId, selectedModel, ratio, steps, guidance, t, mutateSessionTasks]);
 
   const handleNewSession = useCallback(async () => {
     const requestId = activeRequestIdRef.current;
