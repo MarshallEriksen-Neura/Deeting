@@ -4,8 +4,9 @@ import math
 from collections.abc import Iterable
 from datetime import UTC, timedelta
 from statistics import median
+from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -39,8 +40,12 @@ class MonitoringService:
         tenant_id: str | None,
         time_range: str,
         model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> LatencyHeatmapResponse:
-        cache_key = CacheKeys.monitoring_latency_heatmap(tenant_id, time_range, model)
+        cache_key = CacheKeys.monitoring_latency_heatmap(
+            tenant_id, time_range, model, api_key, error_code
+        )
         cached = await cache.get(cache_key)
         if cached:
             return cached
@@ -57,10 +62,13 @@ class MonitoringService:
             GatewayLog.created_at >= since,
             GatewayLog.created_at <= now,
         )
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
-        if model:
-            stmt = stmt.where(GatewayLog.model == model)
+        stmt = self._apply_common_filters(
+            stmt,
+            tenant_id=tenant_id,
+            model=model,
+            api_key=api_key,
+            error_code=error_code,
+        )
 
         rows = (await self.session.execute(stmt)).all()
 
@@ -126,8 +134,13 @@ class MonitoringService:
         self,
         tenant_id: str | None,
         time_range: str,
+        model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> PercentileTrendsResponse:
-        cache_key = CacheKeys.monitoring_percentile(tenant_id, time_range)
+        cache_key = CacheKeys.monitoring_percentile(
+            tenant_id, time_range, model, api_key, error_code
+        )
         cached = await cache.get(cache_key)
         if cached:
             return cached
@@ -153,8 +166,13 @@ class MonitoringService:
                 .group_by(bucket_expr)
                 .order_by(bucket_expr)
             )
-            if tenant_id:
-                stmt = stmt.where(GatewayLog.user_id == tenant_id)
+            stmt = self._apply_common_filters(
+                stmt,
+                tenant_id=tenant_id,
+                model=model,
+                api_key=api_key,
+                error_code=error_code,
+            )
             rows = (await self.session.execute(stmt)).all()
             bucket_map = {
                 row.bucket: (float(row.p50 or 0), float(row.p99 or 0)) for row in rows
@@ -174,8 +192,13 @@ class MonitoringService:
                 GatewayLog.created_at >= since,
                 GatewayLog.created_at <= now,
             )
-            if tenant_id:
-                stmt = stmt.where(GatewayLog.user_id == tenant_id)
+            stmt = self._apply_common_filters(
+                stmt,
+                tenant_id=tenant_id,
+                model=model,
+                api_key=api_key,
+                error_code=error_code,
+            )
             rows = (await self.session.execute(stmt)).all()
             buckets: list[list[float]] = [[] for _ in range(bucket_count)]
             for created_at, ttft_ms in rows:
@@ -206,8 +229,13 @@ class MonitoringService:
         self,
         tenant_id: str | None,
         time_range: str,
+        model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> ModelCostBreakdownResponse:
-        cache_key = CacheKeys.monitoring_model_cost(tenant_id, time_range)
+        cache_key = CacheKeys.monitoring_model_cost(
+            tenant_id, time_range, model, api_key, error_code
+        )
         cached = await cache.get(cache_key)
         if cached:
             return cached
@@ -222,8 +250,13 @@ class MonitoringService:
             GatewayLog.created_at >= since,
             GatewayLog.created_at <= now,
         )
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        stmt = self._apply_common_filters(
+            stmt,
+            tenant_id=tenant_id,
+            model=model,
+            api_key=api_key,
+            error_code=error_code,
+        )
         stmt = stmt.group_by(GatewayLog.model).order_by(
             func.sum(GatewayLog.cost_user).desc()
         )
@@ -248,9 +281,11 @@ class MonitoringService:
         tenant_id: str | None,
         time_range: str,
         model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> ErrorDistributionResponse:
         cache_key = CacheKeys.monitoring_error_distribution(
-            tenant_id, time_range, model
+            tenant_id, time_range, model, api_key, error_code
         )
         cached = await cache.get(cache_key)
         if cached:
@@ -263,10 +298,13 @@ class MonitoringService:
             GatewayLog.created_at >= since,
             GatewayLog.created_at <= now,
         )
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
-        if model:
-            stmt = stmt.where(GatewayLog.model == model)
+        stmt = self._apply_common_filters(
+            stmt,
+            tenant_id=tenant_id,
+            model=model,
+            api_key=api_key,
+            error_code=error_code,
+        )
         stmt = stmt.group_by(GatewayLog.status_code)
 
         rows = (await self.session.execute(stmt)).all()
@@ -318,8 +356,13 @@ class MonitoringService:
         tenant_id: str | None,
         time_range: str,
         limit: int,
+        model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> KeyActivityRankingResponse:
-        cache_key = CacheKeys.monitoring_key_ranking(tenant_id, time_range, limit)
+        cache_key = CacheKeys.monitoring_key_ranking(
+            tenant_id, time_range, limit, model, api_key, error_code
+        )
         cached = await cache.get(cache_key)
         if cached:
             return cached
@@ -336,8 +379,13 @@ class MonitoringService:
             GatewayLog.created_at >= since,
             GatewayLog.created_at <= now,
         )
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        stmt = self._apply_common_filters(
+            stmt,
+            tenant_id=tenant_id,
+            model=model,
+            api_key=api_key,
+            error_code=error_code,
+        )
         stmt = (
             stmt.group_by(GatewayLog.api_key_id)
             .order_by(func.count().desc())
@@ -358,6 +406,12 @@ class MonitoringService:
                 GatewayLog.created_at >= prev_start,
                 GatewayLog.created_at < since,
                 GatewayLog.api_key_id == api_key_id,
+            )
+            prev_stmt = self._apply_common_filters(
+                prev_stmt,
+                tenant_id=tenant_id,
+                model=model,
+                error_code=error_code,
             )
             prev_cnt = (await self.session.execute(prev_stmt)).scalar() or 0
             trend = round(((cnt - prev_cnt) / prev_cnt) * 100, 2) if prev_cnt else 0.0
@@ -403,6 +457,46 @@ class MonitoringService:
             if bucket_format == "%Y-%m-%d":
                 return func.to_char(GatewayLog.created_at, "YYYY-MM-DD")
         return func.strftime(bucket_format, GatewayLog.created_at)
+
+    @staticmethod
+    def _parse_uuid(value: str | None) -> UUID | None:
+        if not value:
+            return None
+        try:
+            return UUID(value)
+        except (ValueError, TypeError):
+            return None
+
+    def _error_code_clause(self, error_code: str):
+        if error_code == "429":
+            return GatewayLog.status_code == 429
+        if error_code == "4xx":
+            return and_(GatewayLog.status_code >= 400, GatewayLog.status_code < 500)
+        if error_code == "5xx":
+            return GatewayLog.status_code >= 500
+        return GatewayLog.error_code == error_code
+
+    def _apply_common_filters(
+        self,
+        stmt,
+        *,
+        tenant_id: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
+    ):
+        if tenant_id:
+            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        if model:
+            stmt = stmt.where(GatewayLog.model == model)
+        if api_key:
+            api_key_uuid = self._parse_uuid(api_key)
+            if api_key_uuid is None:
+                return stmt.where(False)
+            stmt = stmt.where(GatewayLog.api_key_id == api_key_uuid)
+        if error_code:
+            stmt = stmt.where(self._error_code_clause(error_code))
+        return stmt
 
     @staticmethod
     def _percentile(data: Iterable[float], percentile: float) -> float:

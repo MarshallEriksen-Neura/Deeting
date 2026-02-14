@@ -259,30 +259,73 @@ class CacheKeys:
     # ===== Monitoring =====
     @classmethod
     def monitoring_latency_heatmap(
-        cls, tenant_id: str | None, time_range: str, model: str | None
+        cls,
+        tenant_id: str | None,
+        time_range: str,
+        model: str | None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> str:
-        return f"{cls.prefix}:mon:heatmap:{tenant_id or 'anonymous'}:{time_range}:{model or 'all'}"
+        return (
+            f"{cls.prefix}:mon:heatmap:{tenant_id or 'anonymous'}:{time_range}:"
+            f"{model or 'all'}:{api_key or 'all'}:{error_code or 'all'}"
+        )
 
     @classmethod
-    def monitoring_percentile(cls, tenant_id: str | None, time_range: str) -> str:
-        return f"{cls.prefix}:mon:percentile:{tenant_id or 'anonymous'}:{time_range}"
+    def monitoring_percentile(
+        cls,
+        tenant_id: str | None,
+        time_range: str,
+        model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
+    ) -> str:
+        return (
+            f"{cls.prefix}:mon:percentile:{tenant_id or 'anonymous'}:{time_range}:"
+            f"{model or 'all'}:{api_key or 'all'}:{error_code or 'all'}"
+        )
 
     @classmethod
-    def monitoring_model_cost(cls, tenant_id: str | None, time_range: str) -> str:
-        return f"{cls.prefix}:mon:model_cost:{tenant_id or 'anonymous'}:{time_range}"
+    def monitoring_model_cost(
+        cls,
+        tenant_id: str | None,
+        time_range: str,
+        model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
+    ) -> str:
+        return (
+            f"{cls.prefix}:mon:model_cost:{tenant_id or 'anonymous'}:{time_range}:"
+            f"{model or 'all'}:{api_key or 'all'}:{error_code or 'all'}"
+        )
 
     @classmethod
     def monitoring_error_distribution(
-        cls, tenant_id: str | None, time_range: str, model: str | None
+        cls,
+        tenant_id: str | None,
+        time_range: str,
+        model: str | None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> str:
-        return f"{cls.prefix}:mon:err_dist:{tenant_id or 'anonymous'}:{time_range}:{model or 'all'}"
+        return (
+            f"{cls.prefix}:mon:err_dist:{tenant_id or 'anonymous'}:{time_range}:"
+            f"{model or 'all'}:{api_key or 'all'}:{error_code or 'all'}"
+        )
 
     @classmethod
     def monitoring_key_ranking(
-        cls, tenant_id: str | None, time_range: str, limit: int
+        cls,
+        tenant_id: str | None,
+        time_range: str,
+        limit: int,
+        model: str | None = None,
+        api_key: str | None = None,
+        error_code: str | None = None,
     ) -> str:
         return (
-            f"{cls.prefix}:mon:key_rank:{tenant_id or 'anonymous'}:{time_range}:{limit}"
+            f"{cls.prefix}:mon:key_rank:{tenant_id or 'anonymous'}:{time_range}:{limit}:"
+            f"{model or 'all'}:{api_key or 'all'}:{error_code or 'all'}"
         )
 
     # ===== Auth & ACL =====

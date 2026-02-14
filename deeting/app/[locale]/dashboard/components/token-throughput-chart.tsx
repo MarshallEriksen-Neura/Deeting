@@ -41,20 +41,11 @@ export function TokenThroughputChart() {
     },
   }
 
-  // Sample data structure - will be replaced with real API data
-  const chartData = data?.timeline || [
-    { time: "00:00", inputTokens: 1200000, outputTokens: 450000 },
-    { time: "04:00", inputTokens: 890000, outputTokens: 320000 },
-    { time: "08:00", inputTokens: 2100000, outputTokens: 780000 },
-    { time: "12:00", inputTokens: 3500000, outputTokens: 1200000 },
-    { time: "16:00", inputTokens: 2800000, outputTokens: 950000 },
-    { time: "20:00", inputTokens: 1950000, outputTokens: 680000 },
-    { time: "24:00", inputTokens: 1100000, outputTokens: 420000 },
-  ]
+  const chartData = data?.timeline ?? []
 
   const totalInput = chartData.reduce((sum, item) => sum + item.inputTokens, 0)
   const totalOutput = chartData.reduce((sum, item) => sum + item.outputTokens, 0)
-  const ratio = totalOutput / totalInput
+  const ratio = data?.ratio ?? (totalInput > 0 ? totalOutput / totalInput : 0)
 
   return (
     <GlassCard className="h-full">

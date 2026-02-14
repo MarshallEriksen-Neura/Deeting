@@ -167,3 +167,68 @@ async def test_key_activity_ranking(AsyncSessionLocal):
         ranking = await svc.get_key_activity_ranking(None, "24h", 5)
         assert ranking.keys
         assert ranking.keys[0].rpm > 0
+
+
+@pytest.mark.asyncio
+async def test_monitoring_filters_apply_across_services(AsyncSessionLocal):
+    async with AsyncSessionLocal() as session:
+        now = Datetime.now()
+        key_a = uuid4()
+        key_b = uuid4()
+        session.add_all(
+            [
+                GatewayLog(
+                    user_id=None,
+                    api_key_id=key_a,
+                    model="gpt-4o",
+                    status_code=500,
+                    error_code="UPSTREAM_TIMEOUT",
+                    duration_ms=300,
+                    ttft_ms=120,
+                    input_tokens=20,
+                    output_tokens=10,
+                    total_tokens=30,
+                    cost_user=2.0,
+                    cost_upstream=1.0,
+                    created_at=now,
+                ),
+                GatewayLog(
+                    user_id=None,
+                    api_key_id=key_b,
+                    model="claude-3",
+                    status_code=429,
+                    error_code="RATE_LIMITED",
+                    duration_ms=250,
+                    ttft_ms=80,
+                    input_tokens=15,
+                    output_tokens=0,
+                    total_tokens=15,
+                    cost_user=1.0,
+                    cost_upstream=0.5,
+                    created_at=now - timedelta(minutes=5),
+                ),
+            ]
+        )
+        await session.commit()
+
+        svc = MonitoringService(session)
+        await cache.clear_prefix("mon:")
+
+        model_only = await svc.get_model_cost_breakdown(
+            None, "24h", model="gpt-4o"
+        )
+        assert len(model_only.models) == 1
+        assert model_only.models[0].name == "gpt-4o"
+
+        key_only = await svc.get_key_activity_ranking(
+            None, "24h", 10, api_key=str(key_a)
+        )
+        assert len(key_only.keys) == 1
+        assert key_only.keys[0].id == str(key_a)
+
+        server_errors = await svc.get_error_distribution(
+            None, "24h", error_code="5xx"
+        )
+        categories = {c.category: c.count for c in server_errors.categories}
+        assert categories.get("5xx", 0) >= 1
+        assert categories.get("429", 0) == 0

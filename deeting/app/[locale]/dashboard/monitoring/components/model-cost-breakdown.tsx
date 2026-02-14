@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/glass-card"
 import { useModelCostBreakdown } from "@/lib/swr/use-model-cost-breakdown"
 import { cn } from "@/lib/utils"
+import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
  * Model Cost Breakdown Component
@@ -18,16 +19,13 @@ import { cn } from "@/lib/utils"
  * Horizontal bar chart showing cost by model
  * Purpose: Identify which models are consuming the most budget
  */
-export function ModelCostBreakdown({ timeRange = "24h" }: { timeRange?: "24h" | "7d" | "30d" }) {
+export function ModelCostBreakdown({ filters }: { filters: MonitoringFilters }) {
   const t = useTranslations("monitoring.dimensional.modelCost")
-  const { data, isLoading } = useModelCostBreakdown(timeRange)
+  const { data, isLoading } = useModelCostBreakdown(filters, {
+    autoRefresh: filters.autoRefresh,
+  })
 
-  const models = data?.models || [
-    { name: "gpt-4-turbo", cost: 50.25, percentage: 65 },
-    { name: "claude-3-opus", cost: 18.50, percentage: 24 },
-    { name: "deepseek-chat", cost: 5.80, percentage: 8 },
-    { name: "gpt-3.5-turbo", cost: 2.30, percentage: 3 },
-  ]
+  const models = data?.models ?? []
 
   const totalCost = models.reduce((sum, m) => sum + m.cost, 0)
 

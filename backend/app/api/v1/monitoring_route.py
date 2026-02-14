@@ -24,33 +24,53 @@ def get_monitoring_service(db: AsyncSession = Depends(get_db)) -> MonitoringServ
 async def latency_heatmap(
     time_range: str = Query("24h", pattern="^(24h|7d|30d)$", alias="timeRange"),
     model: str | None = Query(None),
+    api_key: str | None = Query(None, alias="apiKey"),
+    error_code: str | None = Query(None, alias="errorCode"),
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
     return await svc.get_latency_heatmap(
-        str(current_user.id) if current_user else None, time_range, model
+        str(current_user.id) if current_user else None,
+        time_range,
+        model,
+        api_key,
+        error_code,
     )
 
 
 @router.get("/percentile-trends", response_model=PercentileTrendsResponse)
 async def percentile_trends(
     time_range: str = Query("24h", pattern="^(24h|7d|30d)$", alias="timeRange"),
+    model: str | None = Query(None),
+    api_key: str | None = Query(None, alias="apiKey"),
+    error_code: str | None = Query(None, alias="errorCode"),
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
     return await svc.get_percentile_trends(
-        str(current_user.id) if current_user else None, time_range
+        str(current_user.id) if current_user else None,
+        time_range,
+        model,
+        api_key,
+        error_code,
     )
 
 
 @router.get("/model-cost-breakdown", response_model=ModelCostBreakdownResponse)
 async def model_cost_breakdown(
     time_range: str = Query("24h", pattern="^(24h|7d|30d)$", alias="timeRange"),
+    model: str | None = Query(None),
+    api_key: str | None = Query(None, alias="apiKey"),
+    error_code: str | None = Query(None, alias="errorCode"),
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
     return await svc.get_model_cost_breakdown(
-        str(current_user.id) if current_user else None, time_range
+        str(current_user.id) if current_user else None,
+        time_range,
+        model,
+        api_key,
+        error_code,
     )
 
 
@@ -58,21 +78,35 @@ async def model_cost_breakdown(
 async def error_distribution(
     time_range: str = Query("24h", pattern="^(24h|7d|30d)$", alias="timeRange"),
     model: str | None = Query(None),
+    api_key: str | None = Query(None, alias="apiKey"),
+    error_code: str | None = Query(None, alias="errorCode"),
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
     return await svc.get_error_distribution(
-        str(current_user.id) if current_user else None, time_range, model
+        str(current_user.id) if current_user else None,
+        time_range,
+        model,
+        api_key,
+        error_code,
     )
 
 
 @router.get("/key-activity-ranking", response_model=KeyActivityRankingResponse)
 async def key_activity_ranking(
     time_range: str = Query("24h", pattern="^(24h|7d|30d)$", alias="timeRange"),
+    model: str | None = Query(None),
+    api_key: str | None = Query(None, alias="apiKey"),
+    error_code: str | None = Query(None, alias="errorCode"),
     limit: int = Query(5, ge=1, le=20),
     current_user: User = Depends(get_current_user),
     svc: MonitoringService = Depends(get_monitoring_service),
 ):
     return await svc.get_key_activity_ranking(
-        str(current_user.id) if current_user else None, time_range, limit
+        str(current_user.id) if current_user else None,
+        time_range,
+        limit,
+        model,
+        api_key,
+        error_code,
     )

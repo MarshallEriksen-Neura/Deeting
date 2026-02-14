@@ -11,6 +11,7 @@ export function MonitoringClient() {
     model: undefined,
     apiKey: undefined,
     errorCode: undefined,
+    autoRefresh: true,
   })
 
   return (

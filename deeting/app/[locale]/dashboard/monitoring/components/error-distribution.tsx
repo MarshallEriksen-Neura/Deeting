@@ -12,6 +12,7 @@ import {
 import { Cell, Pie, PieChart } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { useErrorDistribution } from "@/lib/swr/use-error-distribution"
+import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
  * Error Distribution Component
@@ -24,26 +25,21 @@ import { useErrorDistribution } from "@/lib/swr/use-error-distribution"
  * Purpose: Quick fault attribution
  */
 export function ErrorDistribution({
-  timeRange = "24h",
-  model,
+  filters,
 }: {
-  timeRange?: "24h" | "7d" | "30d"
-  model?: string
+  filters: MonitoringFilters
 }) {
   const t = useTranslations("monitoring.dimensional.errorDist")
-  const { data, isLoading } = useErrorDistribution(timeRange, model)
+  const { data, isLoading } = useErrorDistribution(filters, {
+    autoRefresh: filters.autoRefresh,
+  })
 
   const errorLabelMap: Record<string, string> = {
     "429": t("labels.rateLimit"),
     "5xx": t("labels.serverError"),
     "4xx": t("labels.clientError"),
   }
-  const defaultErrorData = [
-    { category: "429", count: 145, color: "hsl(var(--chart-3))" },
-    { category: "5xx", count: 89, color: "hsl(var(--chart-1))" },
-    { category: "4xx", count: 56, color: "hsl(var(--chart-4))" },
-  ]
-  const errorData = (data?.categories ?? defaultErrorData).map((item) => ({
+  const errorData = (data?.categories ?? []).map((item) => ({
     ...item,
     label: errorLabelMap[item.category] ?? item.label ?? item.category,
   }))
@@ -121,7 +117,7 @@ function ErrorLegendItem({
   error: { category: string; label: string; count: number; color: string }
   total: number
 }) {
-  const percentage = ((error.count / total) * 100).toFixed(1)
+  const percentage = total > 0 ? ((error.count / total) * 100).toFixed(1) : "0.0"
 
   return (
     <div className="flex items-center justify-between rounded-lg border border-[var(--border)] p-2">

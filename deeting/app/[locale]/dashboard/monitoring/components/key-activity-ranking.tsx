@@ -1,7 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { Key, TrendingUp } from "lucide-react"
+import { Key } from "lucide-react"
 import {
   GlassCard,
   GlassCardContent,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/glass-card"
 import { useKeyActivityRanking } from "@/lib/swr/use-key-activity-ranking"
 import { cn } from "@/lib/utils"
+import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
  * Key Activity Ranking Component
@@ -21,17 +22,13 @@ import { cn } from "@/lib/utils"
  *
  * Purpose: Identify who's hammering the API
  */
-export function KeyActivityRanking({ timeRange = "24h" }: { timeRange?: "24h" | "7d" | "30d" }) {
+export function KeyActivityRanking({ filters }: { filters: MonitoringFilters }) {
   const t = useTranslations("monitoring.dimensional.keyActivity")
-  const { data, isLoading } = useKeyActivityRanking(timeRange)
+  const { data, isLoading } = useKeyActivityRanking(filters, 5, {
+    autoRefresh: filters.autoRefresh,
+  })
 
-  const topKeys = data?.keys || [
-    { id: "1", name: "Production Main", maskedKey: "sk-***x7k2", rpm: 1240, trend: 12 },
-    { id: "2", name: "Mobile App", maskedKey: "sk-***m9p3", rpm: 856, trend: -5 },
-    { id: "3", name: "Web Dashboard", maskedKey: "sk-***a4b1", rpm: 623, trend: 8 },
-    { id: "4", name: "Analytics Service", maskedKey: "sk-***c8d5", rpm: 412, trend: 3 },
-    { id: "5", name: "Testing Env", maskedKey: "sk-***e2f9", rpm: 187, trend: -15 },
-  ]
+  const topKeys = data?.keys ?? []
 
   return (
     <GlassCard className="bg-[var(--card)]">

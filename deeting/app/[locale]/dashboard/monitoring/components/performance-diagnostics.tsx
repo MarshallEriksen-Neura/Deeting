@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/glass-card"
 import { LatencyHeatmap } from "./latency-heatmap"
 import { PercentileTrends } from "./percentile-trends"
+import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
  * Performance Diagnostics Section
@@ -19,7 +20,11 @@ import { PercentileTrends } from "./percentile-trends"
  * 1. Latency Heatmap - Shows request distribution over time
  * 2. P99 vs P50 Trends - Tail latency monitoring
  */
-export function PerformanceDiagnostics({ filters }: { filters: { timeRange: "24h" | "7d" | "30d"; model?: string } }) {
+export function PerformanceDiagnostics({
+  filters,
+}: {
+  filters: MonitoringFilters
+}) {
   const t = useTranslations("monitoring.performance")
 
   return (
@@ -36,7 +41,7 @@ export function PerformanceDiagnostics({ filters }: { filters: { timeRange: "24h
           </GlassCardDescription>
         </GlassCardHeader>
         <GlassCardContent>
-          <LatencyHeatmap timeRange={filters.timeRange} model={filters.model} />
+          <LatencyHeatmap filters={filters} />
         </GlassCardContent>
       </GlassCard>
 
@@ -49,7 +54,7 @@ export function PerformanceDiagnostics({ filters }: { filters: { timeRange: "24h
           </GlassCardDescription>
         </GlassCardHeader>
         <GlassCardContent>
-          <PercentileTrends timeRange={filters.timeRange} />
+          <PercentileTrends filters={filters} />
         </GlassCardContent>
       </GlassCard>
     </div>

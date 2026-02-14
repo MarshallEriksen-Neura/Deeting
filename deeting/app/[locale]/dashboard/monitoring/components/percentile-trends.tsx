@@ -10,6 +10,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { usePercentileTrends } from "@/lib/swr/use-percentile-trends"
+import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
  * Percentile Trends Component
@@ -20,10 +21,12 @@ import { usePercentileTrends } from "@/lib/swr/use-percentile-trends"
  *
  * P99 determines user experience floor
  */
-export function PercentileTrends({ timeRange = "24h" }: { timeRange?: "24h" | "7d" | "30d" }) {
+export function PercentileTrends({ filters }: { filters: MonitoringFilters }) {
   const t = useTranslations("monitoring.performance.percentile")
   const tUnits = useTranslations("monitoring.units")
-  const { data, isLoading } = usePercentileTrends(timeRange)
+  const { data, isLoading } = usePercentileTrends(filters, {
+    autoRefresh: filters.autoRefresh,
+  })
 
   const chartConfig = {
     p50: {
@@ -36,21 +39,7 @@ export function PercentileTrends({ timeRange = "24h" }: { timeRange?: "24h" | "7
     },
   }
 
-  // Sample data
-  const chartData = data?.timeline || [
-    { time: "00:00", p50: 180, p99: 450 },
-    { time: "02:00", p50: 165, p99: 420 },
-    { time: "04:00", p50: 155, p99: 380 },
-    { time: "06:00", p50: 170, p99: 410 },
-    { time: "08:00", p50: 220, p99: 580 },
-    { time: "10:00", p50: 240, p99: 650 },
-    { time: "12:00", p50: 260, p99: 720 },
-    { time: "14:00", p50: 250, p99: 680 },
-    { time: "16:00", p50: 230, p99: 620 },
-    { time: "18:00", p50: 210, p99: 550 },
-    { time: "20:00", p50: 190, p99: 480 },
-    { time: "22:00", p50: 175, p99: 440 },
-  ]
+  const chartData = data?.timeline ?? []
 
   if (isLoading) {
     return (

@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl"
 import { CartesianGrid, Scatter, ScatterChart, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import { useLatencyHeatmap } from "@/lib/swr/use-latency-heatmap"
+import type { MonitoringFilters } from "./monitoring-control-bar"
 
 const LATENCY_MAX_MS = 2000
 const LATENCY_TICKS = [0, 500, 1000, 1500, 2000]
@@ -38,26 +39,24 @@ type HeatmapPoint = {
  * - Entire block moving up = overall slowdown
  */
 export function LatencyHeatmap({
-  timeRange = "24h",
-  model,
+  filters,
 }: {
-  timeRange?: "24h" | "7d" | "30d"
-  model?: string
+  filters: MonitoringFilters
 }) {
   const t = useTranslations("monitoring.performance.heatmap")
   const tUnits = useTranslations("monitoring.units")
-  const { data, isLoading } = useLatencyHeatmap(timeRange, model)
+  const { data, isLoading } = useLatencyHeatmap(filters, {
+    autoRefresh: filters.autoRefresh,
+  })
   const formatMs = (value: number) => tUnits("msValue", { value })
   const formatRequests = (count: number) => t("requests", { count })
   const chartConfig = {
     intensity: { label: t("legend.label"), color: "hsl(var(--primary))" },
   }
 
-  // Sample data structure - would be replaced with real API data
-  const heatmapData = data?.grid || generateSampleHeatmap()
   const heatmapPoints = useMemo(
-    () => buildHeatmapPoints(heatmapData, DEFAULT_CELL_SIZE),
-    [heatmapData]
+    () => buildHeatmapPoints(data?.grid ?? [], DEFAULT_CELL_SIZE),
+    [data?.grid]
   )
 
   if (isLoading) {
@@ -146,13 +145,13 @@ export function LatencyHeatmap({
           <div>
             <span className="text-[var(--muted)]">{t("stats.peak")}: </span>
             <span className="font-semibold text-[var(--foreground)]">
-              {formatMs(data?.peakLatency ?? 1842)}
+              {formatMs(data?.peakLatency ?? 0)}
             </span>
           </div>
           <div>
             <span className="text-[var(--muted)]">{t("stats.median")}: </span>
             <span className="font-semibold text-[var(--foreground)]">
-              {formatMs(data?.medianLatency ?? 240)}
+              {formatMs(data?.medianLatency ?? 0)}
             </span>
           </div>
         </div>
@@ -221,27 +220,6 @@ function HeatmapTooltip({
       </div>
     </div>
   )
-}
-
-// Helper function to generate sample data
-function generateSampleHeatmap() {
-  const grid = []
-  for (let col = 0; col < 24; col++) {
-    const column = []
-    for (let row = 0; row < 20; row++) {
-      // Simulate different patterns
-      const baseIntensity = Math.random() * 0.3
-      const peakHour = col >= 8 && col <= 18 ? 0.4 : 0
-      const highLatency = row > 15 ? Math.random() * 0.2 : 0
-
-      column.push({
-        intensity: Math.min(1, baseIntensity + peakHour + highLatency),
-        count: Math.floor(Math.random() * 500),
-      })
-    }
-    grid.push(column)
-  }
-  return grid
 }
 
 function buildHeatmapPoints(grid: HeatmapCellData[][], cellSize: number): HeatmapPoint[] {

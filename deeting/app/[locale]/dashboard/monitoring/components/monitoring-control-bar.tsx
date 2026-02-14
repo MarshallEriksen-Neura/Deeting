@@ -2,7 +2,6 @@
 
 import { useTranslations } from "next-intl"
 import { Clock, Bot, Key, Tag, RefreshCw, ChevronDown } from "lucide-react"
-import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { GlassButton } from "@/components/ui/glass-button"
 import {
@@ -13,12 +12,16 @@ import {
   GlassDropdownMenuSeparator,
   GlassDropdownMenuTrigger,
 } from "@/components/ui/glass-dropdown"
+import type { MonitoringTimeRange } from "@/lib/api/monitoring"
+import { useModelCostBreakdown } from "@/lib/swr/use-model-cost-breakdown"
+import { useKeyActivityRanking } from "@/lib/swr/use-key-activity-ranking"
 
 export type MonitoringFilters = {
-  timeRange: "24h" | "7d" | "30d"
+  timeRange: MonitoringTimeRange
   model?: string
   apiKey?: string
   errorCode?: string
+  autoRefresh: boolean
 }
 
 /**
@@ -34,23 +37,41 @@ export function MonitoringControlBar({
   onChange: (next: MonitoringFilters) => void
 }) {
   const t = useTranslations("monitoring.controlBar")
-  const [autoRefresh, setAutoRefresh] = useState(true)
   const timeRangeOptions = [
     { label: t("timeRangeOptions.24h"), value: "24h" },
     { label: t("timeRangeOptions.7d"), value: "7d" },
     { label: t("timeRangeOptions.30d"), value: "30d" },
   ]
+  const { data: modelBreakdown } = useModelCostBreakdown(
+    {
+      timeRange: value.timeRange,
+      apiKey: value.apiKey,
+      errorCode: value.errorCode,
+    },
+    { autoRefresh: value.autoRefresh }
+  )
+  const { data: keyRanking } = useKeyActivityRanking(
+    {
+      timeRange: value.timeRange,
+      model: value.model,
+      errorCode: value.errorCode,
+    },
+    20,
+    { autoRefresh: value.autoRefresh }
+  )
   const modelOptions = [
     { label: t("modelOptions.all"), value: undefined },
-    { label: t("modelOptions.gpt4"), value: "gpt-4" },
-    { label: t("modelOptions.claude"), value: "claude" },
-    { label: t("modelOptions.deepseek"), value: "deepseek" },
+    ...(modelBreakdown?.models ?? []).map((item) => ({
+      label: item.name,
+      value: item.name,
+    })),
   ]
   const apiKeyOptions = [
     { label: t("apiKeyOptions.all"), value: undefined },
-    { label: t("apiKeyOptions.production"), value: "prod" },
-    { label: t("apiKeyOptions.development"), value: "dev" },
-    { label: t("apiKeyOptions.testing"), value: "test" },
+    ...(keyRanking?.keys ?? []).map((item) => ({
+      label: item.maskedKey,
+      value: item.id,
+    })),
   ]
   const errorOptions = [
     { label: t("errorOptions.all"), value: undefined },
@@ -95,20 +116,20 @@ export function MonitoringControlBar({
 
       {/* Right: Auto Refresh Toggle */}
       <GlassButton
-        onClick={() => setAutoRefresh(!autoRefresh)}
+        onClick={() => onChange({ ...value, autoRefresh: !value.autoRefresh })}
         type="button"
         variant="ghost"
         size="sm"
-        aria-pressed={autoRefresh}
+        aria-pressed={value.autoRefresh}
         className={cn(
           "w-full justify-center rounded-full px-4 py-2 text-sm font-medium transition-all md:w-auto",
-          autoRefresh
+          value.autoRefresh
             ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
             : "bg-[var(--muted)]/20 text-[var(--muted)] hover:bg-[var(--muted)]/30"
         )}
       >
-        <RefreshCw className={cn("h-4 w-4", autoRefresh && "animate-spin")} />
-        {t("autoRefresh")}: {autoRefresh ? t("on") : t("off")}
+        <RefreshCw className={cn("h-4 w-4", value.autoRefresh && "animate-spin")} />
+        {t("autoRefresh")}: {value.autoRefresh ? t("on") : t("off")}
       </GlassButton>
     </div>
   )

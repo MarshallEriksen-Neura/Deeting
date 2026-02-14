@@ -3,6 +3,7 @@
 import { ModelCostBreakdown } from "./model-cost-breakdown"
 import { ErrorDistribution } from "./error-distribution"
 import { KeyActivityRanking } from "./key-activity-ranking"
+import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
  * Dimensional Breakdown Section
@@ -15,18 +16,18 @@ import { KeyActivityRanking } from "./key-activity-ranking"
 export function DimensionalBreakdown({
   filters,
 }: {
-  filters: { timeRange: "24h" | "7d" | "30d"; model?: string; apiKey?: string; errorCode?: string }
+  filters: MonitoringFilters
 }) {
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       {/* Left: Model Cost */}
-      <ModelCostBreakdown timeRange={filters.timeRange} />
+      <ModelCostBreakdown filters={filters} />
 
       {/* Center: Error Distribution */}
-      <ErrorDistribution timeRange={filters.timeRange} model={filters.model} />
+      <ErrorDistribution filters={filters} />
 
       {/* Right: Key Activity */}
-      <KeyActivityRanking timeRange={filters.timeRange} />
+      <KeyActivityRanking filters={filters} />
     </div>
   )
 }

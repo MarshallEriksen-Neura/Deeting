@@ -1,6 +1,15 @@
 import { z } from "zod"
 import { request } from "@/lib/http"
 
+export type MonitoringTimeRange = "24h" | "7d" | "30d"
+
+export type MonitoringQueryFilters = {
+  timeRange?: MonitoringTimeRange
+  model?: string
+  apiKey?: string
+  errorCode?: string
+}
+
 // =====================
 // Schema Definitions
 // =====================
@@ -78,10 +87,7 @@ const MONITORING_BASE = "/api/v1/monitoring"
  * Fetch latency heatmap data
  */
 export async function fetchLatencyHeatmap(
-  params?: {
-    timeRange?: "24h" | "7d" | "30d"
-    model?: string
-  }
+  params?: MonitoringQueryFilters
 ): Promise<LatencyHeatmap> {
   const data = await request<LatencyHeatmap>({
     url: `${MONITORING_BASE}/latency-heatmap`,
@@ -95,9 +101,7 @@ export async function fetchLatencyHeatmap(
  * Fetch percentile trends (P50, P99)
  */
 export async function fetchPercentileTrends(
-  params?: {
-    timeRange?: "24h" | "7d" | "30d"
-  }
+  params?: MonitoringQueryFilters
 ): Promise<PercentileTrends> {
   const data = await request<PercentileTrends>({
     url: `${MONITORING_BASE}/percentile-trends`,
@@ -111,7 +115,7 @@ export async function fetchPercentileTrends(
  * Fetch model cost breakdown
  */
 export async function fetchModelCostBreakdown(
-  params?: { timeRange?: "24h" | "7d" | "30d" }
+  params?: MonitoringQueryFilters
 ): Promise<ModelCostBreakdown> {
   const data = await request<ModelCostBreakdown>({
     url: `${MONITORING_BASE}/model-cost-breakdown`,
@@ -125,7 +129,7 @@ export async function fetchModelCostBreakdown(
  * Fetch error distribution
  */
 export async function fetchErrorDistribution(
-  params?: { timeRange?: "24h" | "7d" | "30d"; model?: string }
+  params?: MonitoringQueryFilters
 ): Promise<ErrorDistribution> {
   const data = await request<ErrorDistribution>({
     url: `${MONITORING_BASE}/error-distribution`,
@@ -139,8 +143,7 @@ export async function fetchErrorDistribution(
  * Fetch key activity ranking
  */
 export async function fetchKeyActivityRanking(
-  params?: {
-    timeRange?: "24h" | "7d" | "30d"
+  params?: MonitoringQueryFilters & {
     limit?: number
   }
 ): Promise<KeyActivityRanking> {
@@ -149,6 +152,9 @@ export async function fetchKeyActivityRanking(
     method: "GET",
     params: {
       timeRange: params?.timeRange,
+      model: params?.model,
+      apiKey: params?.apiKey,
+      errorCode: params?.errorCode,
       limit: params?.limit || 5,
     },
   })
