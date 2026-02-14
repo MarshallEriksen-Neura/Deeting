@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Workflow } from "lucide-react"
 import {
@@ -24,6 +25,17 @@ function shortId(value?: string | null) {
 }
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.agentTasksPage")
+  const locale = useLocale()
+  const dateTimeFormatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
+  const dateFormatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+  })
+  const numberFormatter = new Intl.NumberFormat(locale)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
 
@@ -53,66 +65,79 @@ export function PageContent() {
   const completed = allRows.filter((item) => item.status === "COMPLETED").length
   const failed = allRows.filter((item) => item.status === "FAILED").length
 
+  const statusLabelMap: Record<string, string> = {
+    DRAFT: t("status.draft"),
+    RUNNING: t("status.running"),
+    PAUSED: t("status.paused"),
+    COMPLETED: t("status.completed"),
+    FAILED: t("status.failed"),
+  }
+
   const stats: StatCardData[] = [
-    { label: "Total Tasks", value: total, color: "primary" },
-    { label: "Running", value: running, color: "teal" },
-    { label: "Completed", value: completed, color: "emerald" },
-    { label: "Failed", value: failed, color: "rose" },
+    { label: t("stats.totalTasks"), value: numberFormatter.format(total), color: "primary" },
+    { label: t("stats.running"), value: numberFormatter.format(running), color: "teal" },
+    { label: t("stats.completed"), value: numberFormatter.format(completed), color: "emerald" },
+    { label: t("stats.failed"), value: numberFormatter.format(failed), color: "rose" },
   ]
 
   const columns: ColumnDef<SpecPlanItem>[] = [
     {
       key: "project_name",
-      header: "Project",
+      header: t("table.headers.project"),
       sortable: true,
       render: (row) => <span className="font-medium text-[var(--foreground)]">{row.project_name}</span>,
     },
     {
       key: "user_id",
-      header: "User",
+      header: t("table.headers.user"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{shortId(row.user_id)}</span>,
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={statusLabelMap[row.status] ?? row.status}
+          tone={getStatusTone(row.status)}
+        />
+      ),
     },
     {
       key: "version",
-      header: "Ver",
+      header: t("table.headers.version"),
       render: (row) => <span className="text-xs text-[var(--muted)]">v{row.version}</span>,
     },
     {
       key: "priority",
-      header: "Priority",
+      header: t("table.headers.priority"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{row.priority}</span>,
     },
     {
       key: "conversation_session_id",
-      header: "Session",
+      header: t("table.headers.session"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{shortId(row.conversation_session_id)}</span>,
     },
     {
       key: "updated_at",
-      header: "Updated",
+      header: t("table.headers.updated"),
       sortable: true,
-      render: (row) => <span className="text-xs text-[var(--muted)]">{new Date(row.updated_at).toLocaleString()}</span>,
+      render: (row) => <span className="text-xs text-[var(--muted)]">{dateTimeFormatter.format(new Date(row.updated_at))}</span>,
     },
     {
       key: "created_at",
-      header: "Created",
+      header: t("table.headers.created"),
       sortable: true,
-      render: (row) => <span className="text-xs text-[var(--muted)]">{new Date(row.created_at).toLocaleDateString()}</span>,
+      render: (row) => <span className="text-xs text-[var(--muted)]">{dateFormatter.format(new Date(row.created_at))}</span>,
     },
   ]
 
   return (
-    <AdminPageShell title="Agent Tasks" description="Monitor Spec Agent task execution" icon={Workflow}>
+    <AdminPageShell title={tAdmin("agentTasks.title")} description={tAdmin("agentTasks.description")} icon={Workflow}>
       <AdminStatCards stats={stats} columns={4} />
       <AdminFilterBar
-        searchPlaceholder="Search tasks..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "status") setStatusFilter(value)
@@ -120,13 +145,13 @@ export function PageContent() {
         filters={[
           {
             key: "status",
-            label: "Status",
+            label: t("filters.status"),
             options: [
-              { label: "Draft", value: "DRAFT" },
-              { label: "Running", value: "RUNNING" },
-              { label: "Paused", value: "PAUSED" },
-              { label: "Completed", value: "COMPLETED" },
-              { label: "Failed", value: "FAILED" },
+              { label: t("status.draft"), value: "DRAFT" },
+              { label: t("status.running"), value: "RUNNING" },
+              { label: t("status.paused"), value: "PAUSED" },
+              { label: t("status.completed"), value: "COMPLETED" },
+              { label: t("status.failed"), value: "FAILED" },
             ],
           },
         ]}
@@ -134,7 +159,13 @@ export function PageContent() {
       <AdminDataTable
         columns={columns}
         data={filteredRows}
-        emptyMessage={isLoading ? "Loading agent tasks..." : error ? "Failed to load agent tasks" : "No agent tasks found"}
+        emptyMessage={
+          isLoading
+            ? t("empty.loading")
+            : error
+              ? t("empty.failed")
+              : t("empty.noData")
+        }
       />
     </AdminPageShell>
   )

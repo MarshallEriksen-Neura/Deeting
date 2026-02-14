@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Search, Filter, X } from "lucide-react"
 
@@ -25,13 +26,15 @@ interface AdminFilterBarProps {
 }
 
 export function AdminFilterBar({
-  searchPlaceholder = "Search...",
+  searchPlaceholder,
   filters = [],
   onSearch,
   onFilterChange,
   actions,
   className,
 }: AdminFilterBarProps) {
+  const t = useTranslations("admin.common")
+  const resolvedSearchPlaceholder = searchPlaceholder ?? t("searchPlaceholder")
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeFilters, setActiveFilters] = React.useState<
     Record<string, string>
@@ -76,7 +79,7 @@ export function AdminFilterBar({
             type="text"
             value={searchQuery}
             onChange={handleSearch}
-            placeholder={searchPlaceholder}
+            placeholder={resolvedSearchPlaceholder}
             className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-9 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none focus:ring-1 focus:ring-[var(--primary)]/25 transition-colors"
           />
           {searchQuery && (
@@ -104,7 +107,7 @@ export function AdminFilterBar({
             )}
           >
             <Filter className="size-3.5" />
-            <span>Filter</span>
+            <span>{t("filter")}</span>
             {Object.keys(activeFilters).length > 0 && (
               <span className="flex size-5 items-center justify-center rounded-full bg-[var(--primary)]/20 text-xs font-medium text-[var(--primary)]">
                 {Object.keys(activeFilters).length}
@@ -120,7 +123,7 @@ export function AdminFilterBar({
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="size-3" />
-            Clear
+            {t("clear")}
           </button>
         )}
 
@@ -143,7 +146,7 @@ export function AdminFilterBar({
                 }
                 className="h-7 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none cursor-pointer"
               >
-                <option value="">All</option>
+                <option value="">{t("all")}</option>
                 {filter.options.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}

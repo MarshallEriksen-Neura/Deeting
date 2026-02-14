@@ -1,36 +1,38 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Users, Shield, UserX, Crown } from "lucide-react"
+import { Users } from "lucide-react"
 import {
   AdminPageShell,
-  AdminStatCards,
   AdminDataTable,
-  AdminFilterBar,
   AdminStatusBadge,
   getStatusTone,
   type ColumnDef,
-  type StatCardData,
 } from "@/components/admin"
-import { GlassCard } from "@/components/ui/glass-card"
-import {
-  createAdminUser,
-  fetchAdminUsers,
-  updateAdminUser,
-  type AdminUserItem,
-} from "@/lib/api/admin-dashboard"
+import { fetchAdminUsers, type AdminUserItem } from "@/lib/api/admin-dashboard"
+
+import { UserCreateForm } from "./components/user-create-form"
+import { UserFilterBar } from "./components/user-filter-bar"
+import { UserStats } from "./components/user-stats"
+
+function formatDate(value: string, locale: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale).format(date)
+}
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.usersPage")
+  const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [superuserFilter, setSuperuserFilter] = useState("")
-  const [email, setEmail] = useState("")
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [feedback, setFeedback] = useState<string | null>(null)
 
+  // 使用 SWR 进行客户端数据获取
+  // 未来可以改为服务端获取后通过 props 传递
   const {
     data,
     error,
@@ -40,6 +42,7 @@ export function PageContent() {
 
   const allRows = useMemo(() => data?.items ?? [], [data?.items])
 
+  // 过滤逻辑
   const filteredRows = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     return allRows.filter((row) => {
@@ -54,180 +57,109 @@ export function PageContent() {
     })
   }, [allRows, searchQuery, statusFilter, superuserFilter])
 
-  const totalUsers = allRows.length
-  const activeUsers = allRows.filter((row) => row.is_active).length
-  const inactiveUsers = totalUsers - activeUsers
-  const superUsers = allRows.filter((row) => row.is_superuser).length
-
-  const stats: StatCardData[] = [
-    { label: "Total Users", value: totalUsers, icon: Users, color: "primary" },
-    { label: "Active", value: activeUsers, icon: Shield, color: "emerald" },
-    { label: "Inactive", value: inactiveUsers, icon: UserX, color: "rose" },
-    { label: "Superusers", value: superUsers, icon: Crown, color: "amber" },
-  ]
-
-  const handleCreateUser = async () => {
-    if (!email.trim() || !password.trim() || isSubmitting) return
-    setIsSubmitting(true)
-    setFeedback(null)
-    try {
-      const created = await createAdminUser({
-        email: email.trim(),
-        password,
-        username: username.trim() || undefined,
-      })
-      setEmail("")
-      setUsername("")
-      setPassword("")
-      setFeedback(`Created user: ${created.email}`)
-      await mutate()
-    } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : "Create failed"
-      setFeedback(message)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleToggleActive = async (row: AdminUserItem) => {
-    if (isSubmitting) return
-    setIsSubmitting(true)
-    setFeedback(null)
-    try {
-      await updateAdminUser(row.id, { is_active: !row.is_active })
-      setFeedback(`${row.email} ${row.is_active ? "deactivated" : "activated"}`)
-      await mutate()
-    } catch (updateError) {
-      const message = updateError instanceof Error ? updateError.message : "Update failed"
-      setFeedback(message)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
+  // 表格列定义
   const columns: ColumnDef<AdminUserItem>[] = [
     {
       key: "username",
-      header: "Username",
+      header: t("table.headers.username"),
       sortable: true,
       render: (row) => (
         <span className="font-medium text-[var(--foreground)]">{row.username || "—"}</span>
       ),
     },
-    { key: "email", header: "Email", sortable: true },
+    { key: "email", header: t("table.headers.email"), sortable: true },
     {
       key: "is_active",
-      header: "Status",
+      header: t("table.headers.status"),
       render: (row) => {
         const status = row.is_active ? "active" : "inactive"
-        return <AdminStatusBadge text={status} tone={getStatusTone(status)} />
+        const statusText = row.is_active ? t("status.active") : t("status.inactive")
+        return <AdminStatusBadge text={statusText} tone={getStatusTone(status)} />
       },
     },
     {
       key: "is_superuser",
-      header: "Superuser",
+      header: t("table.headers.superuser"),
       render: (row) =>
         row.is_superuser ? (
-          <AdminStatusBadge text="superuser" tone="amber" dot={false} />
+          <AdminStatusBadge text={t("status.superuser")} tone="amber" dot={false} />
         ) : (
           <span className="text-[var(--muted)]">—</span>
         ),
     },
     {
       key: "created_at",
-      header: "Registered",
+      header: t("table.headers.registered"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {new Date(row.created_at).toLocaleDateString()}
+          {formatDate(row.created_at, locale)}
         </span>
       ),
     },
     {
       key: "updated_at",
-      header: "Updated",
+      header: t("table.headers.updated"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {new Date(row.updated_at).toLocaleDateString()}
+          {formatDate(row.updated_at, locale)}
         </span>
       ),
     },
   ]
 
+  // 处理用户状态切换
+  const handleToggleActive = async (row: AdminUserItem) => {
+    try {
+      await fetch(`/api/v1/admin/users/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: !row.is_active }),
+      })
+      // 刷新数据
+      await mutate()
+    } catch (error) {
+      console.error("Failed to toggle user status:", error)
+    }
+  }
+
   return (
     <AdminPageShell
-      title="User Management"
-      description="Manage users and access status"
+      title={tAdmin("users.title")}
+      description={tAdmin("users.description")}
       icon={Users}
     >
-      <AdminStatCards stats={stats} columns={4} />
+      {/* 统计卡片 */}
+      <UserStats users={allRows} />
 
-      <GlassCard padding="default" hover="none">
-        <div className="grid gap-3 md:grid-cols-4">
-          <input
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="Email"
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
-          />
-          <input
-            type="text"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="Username (optional)"
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Temporary password"
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
-          />
-          <button
-            onClick={() => void handleCreateUser()}
-            disabled={!email.trim() || !password.trim() || isSubmitting}
-            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSubmitting ? "Submitting..." : "Create User"}
-          </button>
-        </div>
-        {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
-      </GlassCard>
+      {/* 创建表单 */}
+      <UserCreateForm
+        onSuccess={() => {
+          // 刷新数据
+          mutate()
+        }}
+      />
 
-      <AdminFilterBar
-        searchPlaceholder="Search users by name, email, or id..."
+      {/* 过滤栏 */}
+      <UserFilterBar
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "status") setStatusFilter(value)
           if (key === "superuser") setSuperuserFilter(value)
         }}
-        filters={[
-          {
-            key: "status",
-            label: "Status",
-            options: [
-              { label: "Active", value: "active" },
-              { label: "Inactive", value: "inactive" },
-            ],
-          },
-          {
-            key: "superuser",
-            label: "Superuser",
-            options: [
-              { label: "Yes", value: "true" },
-              { label: "No", value: "false" },
-            ],
-          },
-        ]}
       />
+
+      {/* 数据表格 */}
       <AdminDataTable
         columns={columns}
         data={filteredRows}
         emptyMessage={
-          isLoading ? "Loading users..." : error ? "Failed to load users" : "No users found"
+          isLoading
+            ? t("empty.loading")
+            : error
+              ? t("empty.failed")
+              : t("empty.noData")
         }
         rowActions={(row) => (
           <button
@@ -235,10 +167,10 @@ export function PageContent() {
               event.stopPropagation()
               void handleToggleActive(row)
             }}
-            disabled={isSubmitting}
+            disabled={isLoading}
             className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {row.is_active ? "Deactivate" : "Activate"}
+            {row.is_active ? t("actions.deactivate") : t("actions.activate")}
           </button>
         )}
       />

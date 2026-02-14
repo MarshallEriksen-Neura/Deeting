@@ -375,6 +375,10 @@ async def _append_stream_conversation(
 
     req = ctx.get("validation", "validated") or {}
     user_messages: list[dict[str, Any]] = req.get("messages", []) or []
+    # 重新生成时，用户消息已在历史中，跳过重复追加
+    is_regenerate = ctx.get("conversation", "regenerate", False)
+    if is_regenerate:
+        user_messages = []
     assistant_id = req.get("assistant_id")
     assistant_msg = (
         {
@@ -509,6 +513,42 @@ async def _append_stream_conversation(
             session_id,
             ctx.trace_id,
         )
+
+    # ===== 重新生成：LLM 成功后执行旧 assistant 消息的软删除 =====
+    if is_regenerate:
+        regenerate_turn_index = ctx.get(
+            "conversation", "regenerate_turn_index", None
+        )
+        if regenerate_turn_index is not None:
+            # Redis 侧软删除
+            if conv_service:
+                try:
+                    await conv_service.delete_message(session_id, regenerate_turn_index)
+                    logger.info(
+                        "conversation_regenerate_deleted session=%s turn=%s",
+                        session_id,
+                        regenerate_turn_index,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "conversation_regenerate_redis_delete_failed session=%s exc=%s",
+                        session_id,
+                        exc,
+                    )
+            # DB 侧软删除
+            if ctx.db_session is not None:
+                try:
+                    msg_repo = ConversationMessageRepository(ctx.db_session)
+                    await msg_repo.soft_delete_by_turn_index(
+                        session_id=UUID(session_id),
+                        turn_index=regenerate_turn_index,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "conversation_regenerate_db_delete_failed session=%s exc=%s",
+                        session_id,
+                        exc,
+                    )
 
     if conv_service:
         await _maybe_schedule_topic_naming(

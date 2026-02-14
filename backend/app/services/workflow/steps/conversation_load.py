@@ -97,6 +97,35 @@ class ConversationLoadStep(BaseStep):
         window_messages_raw = sorted(
             window_messages_raw, key=lambda m: m.get("turn_index", 0)
         )
+
+        # ===== 重新生成：仅从内存中过滤旧 assistant 消息 =====
+        # 实际的 Redis/DB 软删除延迟到 AppendStep（LLM 成功后），确保失败可回滚
+        is_regenerate = bool(request_data.get("regenerate"))
+        regenerate_turn_index: int | None = None
+        if is_regenerate and window_messages_raw:
+            # 从尾部找到最后一条未删除的 assistant 消息
+            for idx in range(len(window_messages_raw) - 1, -1, -1):
+                msg = window_messages_raw[idx]
+                if msg.get("role") == "assistant" and not msg.get("is_deleted"):
+                    regenerate_turn_index = msg.get("turn_index")
+                    break
+            if regenerate_turn_index is not None:
+                # 仅从内存窗口中过滤（供 LLM 上下文使用），不执行持久化删除
+                window_messages_raw = [
+                    m
+                    for m in window_messages_raw
+                    if m.get("turn_index") != regenerate_turn_index
+                ]
+                logger.info(
+                    "conversation_regenerate_filtered session=%s turn=%s",
+                    session_id,
+                    regenerate_turn_index,
+                )
+
+        # 透传 regenerate 标记和待删除 turn_index，供后续 append step 使用
+        ctx.set("conversation", "regenerate", is_regenerate)
+        ctx.set("conversation", "regenerate_turn_index", regenerate_turn_index)
+
         window_messages: list[dict[str, Any]] = [
             {
                 "role": m.get("role"),
@@ -117,7 +146,16 @@ class ConversationLoadStep(BaseStep):
                 }
             )
         merged_messages.extend(window_messages)
-        merged_messages.extend(request_data.get("messages", []))
+        if is_regenerate:
+            # regenerate 时 Redis 窗口已包含完整对话历史（user/assistant）
+            # 仅从请求中提取 system 消息（如 system prompt），避免重复
+            merged_messages.extend(
+                m
+                for m in request_data.get("messages", [])
+                if m.get("role") == "system"
+            )
+        else:
+            merged_messages.extend(request_data.get("messages", []))
 
         ctx.set("conversation", "window_messages", window_messages)
         ctx.set("conversation", "window_messages_raw", window_messages_raw)

@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { MessageSquare } from "lucide-react"
 import {
@@ -24,6 +25,14 @@ function shortId(value?: string | null) {
 }
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.conversationsPage")
+  const locale = useLocale()
+  const numberFormatter = new Intl.NumberFormat(locale)
+  const dateTimeFormatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [channelFilter, setChannelFilter] = useState("")
@@ -52,17 +61,28 @@ export function PageContent() {
   const closed = allRows.filter((item) => item.status === "closed").length
   const archived = allRows.filter((item) => item.status === "archived").length
 
+  const statusLabelMap: Record<string, string> = {
+    active: t("status.active"),
+    closed: t("status.closed"),
+    archived: t("status.archived"),
+  }
+
+  const channelLabelMap: Record<string, string> = {
+    internal: t("channel.internal"),
+    external: t("channel.external"),
+  }
+
   const stats: StatCardData[] = [
-    { label: "Total", value: total, color: "primary" },
-    { label: "Active", value: active, color: "emerald" },
-    { label: "Closed", value: closed, color: "amber" },
-    { label: "Archived", value: archived, color: "default" },
+    { label: t("stats.total"), value: numberFormatter.format(total), color: "primary" },
+    { label: t("stats.active"), value: numberFormatter.format(active), color: "emerald" },
+    { label: t("stats.closed"), value: numberFormatter.format(closed), color: "amber" },
+    { label: t("stats.archived"), value: numberFormatter.format(archived), color: "default" },
   ]
 
   const columns: ColumnDef<ConversationItem>[] = [
     {
       key: "title",
-      header: "Title",
+      header: t("table.headers.title"),
       sortable: true,
       render: (row) => (
         <span className="inline-block max-w-[220px] truncate font-medium text-[var(--foreground)]">
@@ -72,68 +92,100 @@ export function PageContent() {
     },
     {
       key: "user_id",
-      header: "User",
+      header: t("table.headers.user"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{shortId(row.user_id)}</span>,
     },
     {
       key: "assistant_id",
-      header: "Assistant",
+      header: t("table.headers.assistant"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{shortId(row.assistant_id)}</span>,
     },
     {
       key: "channel",
-      header: "Channel",
-      render: (row) => <AdminStatusBadge text={row.channel} tone={getStatusTone(row.channel)} dot={false} />,
+      header: t("table.headers.channel"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={channelLabelMap[row.channel] ?? row.channel}
+          tone={getStatusTone(row.channel)}
+          dot={false}
+        />
+      ),
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={statusLabelMap[row.status] ?? row.status}
+          tone={getStatusTone(row.status)}
+        />
+      ),
     },
     {
       key: "message_count",
-      header: "Messages",
+      header: t("table.headers.messages"),
       sortable: true,
       align: "right",
-      render: (row) => <span className="font-mono text-xs">{row.message_count}</span>,
+      render: (row) => <span className="font-mono text-xs">{numberFormatter.format(row.message_count)}</span>,
     },
     {
       key: "last_active_at",
-      header: "Last Active",
+      header: t("table.headers.lastActive"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {row.last_active_at ? new Date(row.last_active_at).toLocaleString() : "—"}
+          {row.last_active_at ? dateTimeFormatter.format(new Date(row.last_active_at)) : "—"}
         </span>
       ),
     },
     {
       key: "last_summary_version",
-      header: "Summary",
+      header: t("table.headers.summary"),
       render: (row) => <span className="text-xs text-[var(--muted)]">v{row.last_summary_version}</span>,
     },
   ]
 
   return (
-    <AdminPageShell title="Conversations" description="Monitor and manage user conversations" icon={MessageSquare}>
+    <AdminPageShell title={tAdmin("conversations.title")} description={tAdmin("conversations.description")} icon={MessageSquare}>
       <AdminStatCards stats={stats} columns={4} />
       <AdminFilterBar
-        searchPlaceholder="Search conversations..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "channel") setChannelFilter(value)
           if (key === "status") setStatusFilter(value)
         }}
         filters={[
-          { key: "channel", label: "Channel", options: [{ label: "Internal", value: "internal" }, { label: "External", value: "external" }] },
-          { key: "status", label: "Status", options: [{ label: "Active", value: "active" }, { label: "Closed", value: "closed" }, { label: "Archived", value: "archived" }] },
+          {
+            key: "channel",
+            label: t("filters.channel"),
+            options: [
+              { label: t("channel.internal"), value: "internal" },
+              { label: t("channel.external"), value: "external" },
+            ],
+          },
+          {
+            key: "status",
+            label: t("filters.status"),
+            options: [
+              { label: t("status.active"), value: "active" },
+              { label: t("status.closed"), value: "closed" },
+              { label: t("status.archived"), value: "archived" },
+            ],
+          },
         ]}
       />
       <AdminDataTable
         columns={columns}
         data={filteredRows}
-        emptyMessage={isLoading ? "Loading conversations..." : error ? "Failed to load conversations" : "No conversations found"}
+        emptyMessage={
+          isLoading
+            ? t("empty.loading")
+            : error
+              ? t("empty.failed")
+              : t("empty.noData")
+        }
       />
     </AdminPageShell>
   )

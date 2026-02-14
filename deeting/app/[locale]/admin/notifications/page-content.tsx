@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Bell, Send } from "lucide-react"
 import {
@@ -29,7 +30,22 @@ type NotificationType =
   | "maintenance"
 type NotificationLevel = "info" | "warn" | "error" | "critical"
 
+function formatDateTime(value: string, locale: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date)
+}
+
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.notificationsPage")
+  const locale = useLocale()
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [type, setType] = useState<NotificationType>("system")
@@ -62,21 +78,38 @@ export function PageContent() {
 
   const rows = data?.items ?? []
 
+  const typeTextMap: Record<string, string> = {
+    system: t("type.system"),
+    alert: t("type.alert"),
+    billing: t("type.billing"),
+    audit: t("type.audit"),
+    security: t("type.security"),
+    maintenance: t("type.maintenance"),
+  }
+  const levelTextMap: Record<string, string> = {
+    info: t("level.info"),
+    warn: t("level.warn"),
+    error: t("level.error"),
+    critical: t("level.critical"),
+  }
+
   const columns: ColumnDef<NotificationAdminItem>[] = [
     {
       key: "title",
-      header: "Title",
+      header: t("table.headers.title"),
       sortable: true,
       render: (row) => <span className="font-medium text-[var(--foreground)]">{row.title}</span>,
     },
     {
       key: "type",
-      header: "Type",
-      render: (row) => <AdminStatusBadge text={row.type} tone={getStatusTone(row.type)} dot={false} />,
+      header: t("table.headers.type"),
+      render: (row) => (
+        <AdminStatusBadge text={typeTextMap[row.type] ?? row.type} tone={getStatusTone(row.type)} dot={false} />
+      ),
     },
     {
       key: "level",
-      header: "Level",
+      header: t("table.headers.level"),
       render: (row) => {
         const tone =
           row.level === "critical"
@@ -86,25 +119,25 @@ export function PageContent() {
               : row.level === "warn"
                 ? "warn"
                 : "info"
-        return <AdminStatusBadge text={row.level} tone={tone} />
+        return <AdminStatusBadge text={levelTextMap[row.level] ?? row.level} tone={tone} />
       },
     },
     {
       key: "source",
-      header: "Source",
+      header: t("table.headers.source"),
       render: (row) => <span className="text-xs text-[var(--muted)]">{row.source || "—"}</span>,
     },
     {
       key: "created_at",
-      header: "Sent",
+      header: t("table.headers.sent"),
       sortable: true,
       render: (row) => (
-        <span className="text-xs text-[var(--muted)]">{new Date(row.created_at).toLocaleString()}</span>
+        <span className="text-xs text-[var(--muted)]">{formatDateTime(row.created_at, locale)}</span>
       ),
     },
     {
       key: "content",
-      header: "Content",
+      header: t("table.headers.content"),
       render: (row) => (
         <span className="inline-block max-w-[260px] truncate text-xs text-[var(--muted)]">{row.content}</span>
       ),
@@ -143,13 +176,13 @@ export function PageContent() {
               active_only: activeOnly,
             })
 
-      setFeedback(`Sent: ${response.message}`)
+      setFeedback(t("feedback.sent", { message: response.message }))
       setContent("")
       setDedupeKey("")
       setExpiresAt("")
       await mutate()
     } catch (sendError) {
-      const message = sendError instanceof Error ? sendError.message : "Send failed"
+      const message = sendError instanceof Error ? sendError.message : t("feedback.sendFailed")
       setFeedback(message)
     } finally {
       setIsSending(false)
@@ -157,65 +190,65 @@ export function PageContent() {
   }
 
   return (
-    <AdminPageShell title="Notifications" description="Send system notifications and alerts" icon={Bell}>
+    <AdminPageShell title={tAdmin("notifications.title")} description={t("description")} icon={Bell}>
       <GlassCard padding="default" hover="none">
-        <h3 className="mb-4 text-sm font-semibold text-[var(--foreground)]">Compose Notification</h3>
+        <h3 className="mb-4 text-sm font-semibold text-[var(--foreground)]">{t("compose.title")}</h3>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-xs font-medium text-[var(--muted)]">Title</label>
+            <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.title")}</label>
             <input
               type="text"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="Notification title"
+              placeholder={t("compose.placeholders.title")}
               className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-2">
-              <label className="text-xs font-medium text-[var(--muted)]">Type</label>
+              <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.type")}</label>
               <select
                 value={type}
                 onChange={(event) => setType(event.target.value as NotificationType)}
                 className="h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
               >
-                <option value="system">system</option>
-                <option value="alert">alert</option>
-                <option value="billing">billing</option>
-                <option value="audit">audit</option>
-                <option value="security">security</option>
-                <option value="maintenance">maintenance</option>
+                <option value="system">{t("type.system")}</option>
+                <option value="alert">{t("type.alert")}</option>
+                <option value="billing">{t("type.billing")}</option>
+                <option value="audit">{t("type.audit")}</option>
+                <option value="security">{t("type.security")}</option>
+                <option value="maintenance">{t("type.maintenance")}</option>
               </select>
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-medium text-[var(--muted)]">Level</label>
+              <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.level")}</label>
               <select
                 value={level}
                 onChange={(event) => setLevel(event.target.value as NotificationLevel)}
                 className="h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
               >
-                <option value="info">info</option>
-                <option value="warn">warn</option>
-                <option value="error">error</option>
-                <option value="critical">critical</option>
+                <option value="info">{t("level.info")}</option>
+                <option value="warn">{t("level.warn")}</option>
+                <option value="error">{t("level.error")}</option>
+                <option value="critical">{t("level.critical")}</option>
               </select>
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-medium text-[var(--muted)]">Target</label>
+              <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.target")}</label>
               <select
                 value={target}
                 onChange={(event) => setTarget(event.target.value as NotificationTarget)}
                 className="h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
               >
-                <option value="broadcast">broadcast</option>
-                <option value="user">specific user</option>
+                <option value="broadcast">{t("target.broadcast")}</option>
+                <option value="user">{t("target.user")}</option>
               </select>
             </div>
           </div>
 
           {target === "user" ? (
             <div className="space-y-2">
-              <label className="text-xs font-medium text-[var(--muted)]">User ID</label>
+              <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.userId")}</label>
               <input
                 type="text"
                 value={userId}
@@ -232,12 +265,12 @@ export function PageContent() {
                 onChange={(event) => setActiveOnly(event.target.checked)}
                 className="accent-[var(--primary)]"
               />
-              Broadcast to active users only
+              {t("compose.activeOnly")}
             </label>
           )}
 
           <div className="space-y-2">
-            <label className="text-xs font-medium text-[var(--muted)]">Source</label>
+            <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.source")}</label>
             <input
               type="text"
               value={source}
@@ -248,18 +281,18 @@ export function PageContent() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-medium text-[var(--muted)]">Dedupe Key</label>
+            <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.dedupeKey")}</label>
             <input
               type="text"
               value={dedupeKey}
               onChange={(event) => setDedupeKey(event.target.value)}
-              placeholder="optional"
+              placeholder={t("compose.placeholders.optional")}
               className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-medium text-[var(--muted)]">Expires At</label>
+            <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.expiresAt")}</label>
             <input
               type="datetime-local"
               value={expiresAt}
@@ -269,11 +302,11 @@ export function PageContent() {
           </div>
 
           <div className="space-y-2 md:col-span-2">
-            <label className="text-xs font-medium text-[var(--muted)]">Content</label>
+            <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.content")}</label>
             <textarea
               value={content}
               onChange={(event) => setContent(event.target.value)}
-              placeholder="Notification content..."
+              placeholder={t("compose.placeholders.content")}
               rows={3}
               className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
@@ -281,7 +314,7 @@ export function PageContent() {
 
           <div className="md:col-span-2 flex items-center justify-between">
             <span className="text-xs text-[var(--muted)]" role="status">
-              {feedback ?? "Compose and send notification"}
+              {feedback ?? t("compose.hint")}
             </span>
             <button
               onClick={() => void handleSend()}
@@ -289,14 +322,14 @@ export function PageContent() {
               className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Send className="size-3.5" />
-              {isSending ? "Sending..." : "Send"}
+              {isSending ? t("actions.sending") : t("actions.send")}
             </button>
           </div>
         </div>
       </GlassCard>
 
       <AdminFilterBar
-        searchPlaceholder="Search notifications..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "type") setTypeFilter(value)
@@ -305,22 +338,22 @@ export function PageContent() {
         filters={[
           {
             key: "type",
-            label: "Type",
+            label: t("filters.type"),
             options: [
-              { label: "System", value: "system" },
-              { label: "Alert", value: "alert" },
-              { label: "Billing", value: "billing" },
-              { label: "Security", value: "security" },
+              { label: t("type.system"), value: "system" },
+              { label: t("type.alert"), value: "alert" },
+              { label: t("type.billing"), value: "billing" },
+              { label: t("type.security"), value: "security" },
             ],
           },
           {
             key: "level",
-            label: "Level",
+            label: t("filters.level"),
             options: [
-              { label: "Info", value: "info" },
-              { label: "Warn", value: "warn" },
-              { label: "Error", value: "error" },
-              { label: "Critical", value: "critical" },
+              { label: t("level.info"), value: "info" },
+              { label: t("level.warn"), value: "warn" },
+              { label: t("level.error"), value: "error" },
+              { label: t("level.critical"), value: "critical" },
             ],
           },
         ]}
@@ -331,10 +364,10 @@ export function PageContent() {
         data={rows}
         emptyMessage={
           isLoading
-            ? "Loading notifications..."
+            ? t("empty.loading")
             : error
-              ? "Failed to load notifications"
-              : "No notifications found"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
       />
     </AdminPageShell>

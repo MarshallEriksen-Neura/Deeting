@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { setRequestLocale } from "next-intl/server"
+import { getTranslations, setRequestLocale } from "next-intl/server"
 
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar/sidebar-context"
 import { Sidebar, SidebarContent, SidebarFooter, SidebarTrigger } from "@/components/ui/sidebar/sidebar"
@@ -15,6 +15,7 @@ export default async function AdminLayout({
 }) {
   const { locale } = await params
   setRequestLocale(locale)
+  const t = await getTranslations("admin.common")
 
   return (
     <SidebarProvider defaultOpen={true}>
@@ -28,7 +29,7 @@ export default async function AdminLayout({
           <SidebarFooter>
             <div className="w-full flex items-center justify-start group-data-[collapsible=icon]:justify-center">
               <SidebarTrigger className="w-full justify-start gap-2 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center px-2">
-                <span className="group-data-[collapsible=icon]:hidden truncate">Collapse Sidebar</span>
+                <span className="group-data-[collapsible=icon]:hidden truncate">{t("collapseSidebar")}</span>
               </SidebarTrigger>
             </div>
           </SidebarFooter>

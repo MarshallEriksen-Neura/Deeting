@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { KeyRound } from "lucide-react"
 import {
@@ -25,7 +26,16 @@ function shortId(value?: string | null) {
   return `${value.slice(0, 8)}...`
 }
 
+function formatDate(value: string, locale: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale).format(date)
+}
+
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.apiKeysPage")
+  const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
@@ -64,9 +74,9 @@ export function PageContent() {
   const revoked = allRows.filter((row) => row.status === "revoked").length
 
   const stats: StatCardData[] = [
-    { label: "Total Keys", value: total, color: "primary" },
-    { label: "Active", value: active, color: "emerald" },
-    { label: "Revoked", value: revoked, color: "rose" },
+    { label: t("stats.totalKeys"), value: total, color: "primary" },
+    { label: t("stats.active"), value: active, color: "emerald" },
+    { label: t("stats.revoked"), value: revoked, color: "rose" },
   ]
 
   const canCreate =
@@ -90,20 +100,31 @@ export function PageContent() {
       setTenantId("")
       setExpiresAt("")
       setRawKey(created.raw_key)
-      setFeedback(`Created key: ${created.api_key.name}`)
+      setFeedback(t("feedback.created", { name: created.api_key.name }))
       await mutate()
     } catch (createError) {
-      const message = createError instanceof Error ? createError.message : "Create failed"
+      const message =
+        createError instanceof Error ? createError.message : t("feedback.createFailed")
       setFeedback(message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const typeTextMap: Record<string, string> = {
+    internal: t("types.internal"),
+    external: t("types.external"),
+  }
+  const statusTextMap: Record<string, string> = {
+    active: t("status.active"),
+    revoked: t("status.revoked"),
+    expired: t("status.expired"),
+  }
+
   const columns: ColumnDef<AdminApiKeyItem>[] = [
     {
       key: "name",
-      header: "Name",
+      header: t("table.headers.name"),
       sortable: true,
       render: (row) => (
         <div>
@@ -116,43 +137,49 @@ export function PageContent() {
     },
     {
       key: "type",
-      header: "Type",
+      header: t("table.headers.type"),
       render: (row) => (
-        <AdminStatusBadge text={row.type} tone={getStatusTone(row.type)} dot={false} />
+        <AdminStatusBadge
+          text={typeTextMap[row.type] ?? row.type}
+          tone={getStatusTone(row.type)}
+          dot={false}
+        />
       ),
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge text={statusTextMap[row.status] ?? row.status} tone={getStatusTone(row.status)} />
+      ),
     },
     {
       key: "user_id",
-      header: "User",
+      header: t("table.headers.user"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{shortId(row.user_id)}</span>,
     },
     {
       key: "tenant_id",
-      header: "Tenant",
+      header: t("table.headers.tenant"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{shortId(row.tenant_id)}</span>,
     },
     {
       key: "created_at",
-      header: "Created",
+      header: t("table.headers.created"),
       sortable: true,
       render: (row) => (
-        <span className="text-xs text-[var(--muted)]">{new Date(row.created_at).toLocaleDateString()}</span>
+        <span className="text-xs text-[var(--muted)]">{formatDate(row.created_at, locale)}</span>
       ),
     },
     {
       key: "last_used_at",
-      header: "Last Used",
+      header: t("table.headers.lastUsed"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {row.last_used_at ? new Date(row.last_used_at).toLocaleDateString() : "Never"}
+          {row.last_used_at ? formatDate(row.last_used_at, locale) : t("table.never")}
         </span>
       ),
     },
@@ -160,8 +187,8 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="API Key Management"
-      description="Manage API keys, ownership, and status"
+      title={tAdmin("apiKeys.title")}
+      description={tAdmin("apiKeys.description")}
       icon={KeyRound}
     >
       <AdminStatCards stats={stats} columns={3} />
@@ -171,7 +198,7 @@ export function PageContent() {
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Key name"
+            placeholder={t("form.keyName")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <select
@@ -179,21 +206,21 @@ export function PageContent() {
             onChange={(event) => setKeyType(event.target.value as "internal" | "external")}
             className="h-9 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
           >
-            <option value="internal">internal</option>
-            <option value="external">external</option>
+            <option value="internal">{t("types.internal")}</option>
+            <option value="external">{t("types.external")}</option>
           </select>
           {keyType === "internal" ? (
             <input
               value={userId}
               onChange={(event) => setUserId(event.target.value)}
-              placeholder="User ID (UUID)"
+              placeholder={t("form.userId")}
               className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           ) : (
             <input
               value={tenantId}
               onChange={(event) => setTenantId(event.target.value)}
-              placeholder="Tenant ID (UUID)"
+              placeholder={t("form.tenantId")}
               className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           )}
@@ -208,17 +235,19 @@ export function PageContent() {
             disabled={!canCreate || isSubmitting}
             className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Creating..." : "Create Key"}
+            {isSubmitting ? t("actions.creating") : t("actions.create")}
           </button>
         </div>
         {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
         {rawKey && (
-          <p className="mt-1 font-mono text-xs text-amber-300">Raw key (show once): {rawKey}</p>
+          <p className="mt-1 font-mono text-xs text-amber-300">
+            {t("feedback.rawKeyLabel")}: {rawKey}
+          </p>
         )}
       </GlassCard>
 
       <AdminFilterBar
-        searchPlaceholder="Search keys..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "type") setTypeFilter(value)
@@ -227,19 +256,19 @@ export function PageContent() {
         filters={[
           {
             key: "type",
-            label: "Type",
+            label: t("filters.type"),
             options: [
-              { label: "Internal", value: "internal" },
-              { label: "External", value: "external" },
+              { label: t("types.internal"), value: "internal" },
+              { label: t("types.external"), value: "external" },
             ],
           },
           {
             key: "status",
-            label: "Status",
+            label: t("filters.status"),
             options: [
-              { label: "Active", value: "active" },
-              { label: "Revoked", value: "revoked" },
-              { label: "Expired", value: "expired" },
+              { label: t("status.active"), value: "active" },
+              { label: t("status.revoked"), value: "revoked" },
+              { label: t("status.expired"), value: "expired" },
             ],
           },
         ]}
@@ -249,10 +278,10 @@ export function PageContent() {
         data={filteredRows}
         emptyMessage={
           isLoading
-            ? "Loading API keys..."
+            ? t("empty.loading")
             : error
-              ? "Failed to load API keys"
-              : "No API keys found"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
       />
     </AdminPageShell>

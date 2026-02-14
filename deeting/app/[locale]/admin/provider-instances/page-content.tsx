@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Cloud } from "lucide-react"
 import {
@@ -20,6 +21,9 @@ import {
 } from "@/lib/api/admin-dashboard"
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.providerInstancesPage")
+  const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
   const [healthFilter, setHealthFilter] = useState("")
   const [enabledFilter, setEnabledFilter] = useState("")
@@ -69,10 +73,11 @@ export function PageContent() {
       setName("")
       setBaseUrl("")
       setApiKey("")
-      setFeedback(`Created provider instance: ${created.name}`)
+      setFeedback(t("feedback.created", { name: created.name }))
       await mutate()
     } catch (createError) {
-      const message = createError instanceof Error ? createError.message : "Create failed"
+      const message =
+        createError instanceof Error ? createError.message : t("feedback.createFailed")
       setFeedback(message)
     } finally {
       setIsSubmitting(false)
@@ -87,10 +92,18 @@ export function PageContent() {
     unknown: "rgb(148,163,184)",
   }
 
+  const healthLabelMap: Record<string, string> = {
+    up: t("health.up"),
+    active: t("health.active"),
+    degraded: t("health.degraded"),
+    down: t("health.down"),
+    unknown: t("health.unknown"),
+  }
+
   const columns: ColumnDef<ProviderInstanceItem>[] = [
     {
       key: "name",
-      header: "Name",
+      header: t("table.headers.name"),
       sortable: true,
       render: (row) => {
         const health = row.health_status ?? "unknown"
@@ -107,12 +120,12 @@ export function PageContent() {
     },
     {
       key: "preset_slug",
-      header: "Provider",
+      header: t("table.headers.provider"),
       render: (row) => <AdminStatusBadge text={row.preset_slug} tone="info" dot={false} />,
     },
     {
       key: "base_url",
-      header: "Base URL",
+      header: t("table.headers.baseUrl"),
       render: (row) => (
         <span className="inline-block max-w-[220px] truncate font-mono text-xs text-[var(--muted)]">
           {row.base_url}
@@ -121,31 +134,36 @@ export function PageContent() {
     },
     {
       key: "priority",
-      header: "Priority",
+      header: t("table.headers.priority"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{row.priority}</span>,
     },
     {
       key: "is_enabled",
-      header: "Enabled",
+      header: t("table.headers.enabled"),
       render: (row) => (
         <AdminStatusBadge
-          text={row.is_enabled ? "enabled" : "disabled"}
+          text={row.is_enabled ? t("enabled.enabled") : t("enabled.disabled")}
           tone={row.is_enabled ? "success" : "error"}
         />
       ),
     },
     {
       key: "health_status",
-      header: "Health",
+      header: t("table.headers.health"),
       render: (row) => {
         const health = row.health_status ?? "unknown"
-        return <AdminStatusBadge text={health} tone={getStatusTone(health)} />
+        return (
+          <AdminStatusBadge
+            text={healthLabelMap[health] ?? health}
+            tone={getStatusTone(health)}
+          />
+        )
       },
     },
     {
       key: "latency_ms",
-      header: "Latency",
+      header: t("table.headers.latency"),
       sortable: true,
       render: (row) => {
         const latency = row.latency_ms ?? 0
@@ -159,19 +177,23 @@ export function PageContent() {
                   : "text-emerald-400"
             }
           >
-            {latency > 0 ? `${latency}ms` : "—"}
+            {latency > 0
+              ? t("table.latencyMs", {
+                  value: new Intl.NumberFormat(locale).format(latency),
+                })
+              : "—"}
           </span>
         )
       },
     },
     {
       key: "model_count",
-      header: "Models",
+      header: t("table.headers.models"),
       render: (row) => <span>{row.model_count}</span>,
     },
     {
       key: "sparkline",
-      header: "Trend",
+      header: t("table.headers.trend"),
       align: "right",
       render: (row) => {
         const health = row.health_status ?? "unknown"
@@ -189,8 +211,8 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Provider Instances"
-      description="Manage AI provider connections and health"
+      title={tAdmin("providerInstances.title")}
+      description={tAdmin("providerInstances.description")}
       icon={Cloud}
     >
       <GlassCard padding="default" hover="none">
@@ -198,25 +220,25 @@ export function PageContent() {
           <input
             value={presetSlug}
             onChange={(event) => setPresetSlug(event.target.value)}
-            placeholder="Preset slug"
+            placeholder={t("form.presetSlug")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Instance name"
+            placeholder={t("form.instanceName")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <input
             value={baseUrl}
             onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder="Base URL"
+            placeholder={t("form.baseUrl")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <input
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            placeholder="Provider API Key"
+            placeholder={t("form.providerApiKey")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <button
@@ -224,14 +246,14 @@ export function PageContent() {
             disabled={!presetSlug.trim() || !name.trim() || !baseUrl.trim() || !apiKey.trim() || isSubmitting}
             className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Creating..." : "Add Instance"}
+            {isSubmitting ? t("actions.creating") : t("actions.addInstance")}
           </button>
         </div>
         {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
       </GlassCard>
 
       <AdminFilterBar
-        searchPlaceholder="Search providers..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "health") setHealthFilter(value)
@@ -240,20 +262,20 @@ export function PageContent() {
         filters={[
           {
             key: "health",
-            label: "Health",
+            label: t("filters.health"),
             options: [
-              { label: "Up", value: "up" },
-              { label: "Degraded", value: "degraded" },
-              { label: "Down", value: "down" },
-              { label: "Unknown", value: "unknown" },
+              { label: t("health.up"), value: "up" },
+              { label: t("health.degraded"), value: "degraded" },
+              { label: t("health.down"), value: "down" },
+              { label: t("health.unknown"), value: "unknown" },
             ],
           },
           {
             key: "enabled",
-            label: "Enabled",
+            label: t("filters.enabled"),
             options: [
-              { label: "Yes", value: "true" },
-              { label: "No", value: "false" },
+              { label: t("enabled.yes"), value: "true" },
+              { label: t("enabled.no"), value: "false" },
             ],
           },
         ]}
@@ -263,10 +285,10 @@ export function PageContent() {
         data={filteredRows}
         emptyMessage={
           isLoading
-            ? "Loading provider instances..."
+            ? t("empty.loading")
             : error
-              ? "Failed to load provider instances"
-              : "No provider instances"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
       />
     </AdminPageShell>

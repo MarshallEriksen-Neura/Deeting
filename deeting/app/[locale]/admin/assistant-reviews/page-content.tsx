@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { CheckSquare, Check, X } from "lucide-react"
 import {
@@ -26,7 +27,17 @@ function shortId(value?: string | null) {
   return `${value.slice(0, 8)}...`
 }
 
+function formatDate(value: string | null | undefined, locale: string) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale).format(date)
+}
+
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.assistantReviewsPage")
+  const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [actioningId, setActioningId] = useState<string | null>(null)
@@ -75,10 +86,16 @@ export function PageContent() {
   const approved = allRows.filter((row) => row.status === "approved").length
   const rejected = allRows.filter((row) => row.status === "rejected").length
 
+  const statusTextMap: Record<string, string> = {
+    pending: t("status.pending"),
+    approved: t("status.approved"),
+    rejected: t("status.rejected"),
+  }
+
   const stats: StatCardData[] = [
-    { label: "Pending", value: pending, color: "amber" },
-    { label: "Approved", value: approved, color: "emerald" },
-    { label: "Rejected", value: rejected, color: "rose" },
+    { label: t("stats.pending"), value: pending, color: "amber" },
+    { label: t("stats.approved"), value: approved, color: "emerald" },
+    { label: t("stats.rejected"), value: rejected, color: "rose" },
   ]
 
   const handleDecision = async (row: AssistantReviewTask, action: "approve" | "reject") => {
@@ -88,14 +105,23 @@ export function PageContent() {
     try {
       if (action === "approve") {
         await approveAdminAssistantReview(row.entity_id)
-        setActionMessage(`Approved ${assistantNameMap.get(row.entity_id) ?? shortId(row.entity_id)}`)
+        setActionMessage(
+          t("feedback.approved", {
+            name: assistantNameMap.get(row.entity_id) ?? shortId(row.entity_id),
+          })
+        )
       } else {
         await rejectAdminAssistantReview(row.entity_id)
-        setActionMessage(`Rejected ${assistantNameMap.get(row.entity_id) ?? shortId(row.entity_id)}`)
+        setActionMessage(
+          t("feedback.rejected", {
+            name: assistantNameMap.get(row.entity_id) ?? shortId(row.entity_id),
+          })
+        )
       }
       await mutate()
     } catch (actionError) {
-      const message = actionError instanceof Error ? actionError.message : "Operation failed"
+      const message =
+        actionError instanceof Error ? actionError.message : t("feedback.operationFailed")
       setActionMessage(message)
     } finally {
       setActioningId(null)
@@ -105,7 +131,7 @@ export function PageContent() {
   const columns: ColumnDef<AssistantReviewTask>[] = [
     {
       key: "entity_id",
-      header: "Assistant",
+      header: t("table.headers.assistant"),
       sortable: true,
       render: (row) => (
         <div>
@@ -118,42 +144,44 @@ export function PageContent() {
     },
     {
       key: "submitter_user_id",
-      header: "Submitter",
+      header: t("table.headers.submitter"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{shortId(row.submitter_user_id)}</span>,
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge text={statusTextMap[row.status] ?? row.status} tone={getStatusTone(row.status)} />
+      ),
     },
     {
       key: "submitted_at",
-      header: "Submitted",
+      header: t("table.headers.submitted"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {row.submitted_at ? new Date(row.submitted_at).toLocaleDateString() : "—"}
+          {formatDate(row.submitted_at, locale)}
         </span>
       ),
     },
     {
       key: "reviewer_user_id",
-      header: "Reviewer",
+      header: t("table.headers.reviewer"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{shortId(row.reviewer_user_id)}</span>,
     },
     {
       key: "reviewed_at",
-      header: "Reviewed",
+      header: t("table.headers.reviewed"),
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {row.reviewed_at ? new Date(row.reviewed_at).toLocaleDateString() : "—"}
+          {formatDate(row.reviewed_at, locale)}
         </span>
       ),
     },
     {
       key: "reason",
-      header: "Reason",
+      header: t("table.headers.reason"),
       render: (row) => (
         <span className="inline-block max-w-[220px] truncate text-xs text-[var(--muted)]">
           {row.reason ?? "—"}
@@ -164,13 +192,13 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Assistant Reviews"
-      description="Review and approve assistant submissions"
+      title={tAdmin("assistantReviews.title")}
+      description={tAdmin("assistantReviews.description")}
       icon={CheckSquare}
     >
       <AdminStatCards stats={stats} columns={3} />
       <AdminFilterBar
-        searchPlaceholder="Search reviews..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "status") setStatusFilter(value)
@@ -178,11 +206,11 @@ export function PageContent() {
         filters={[
           {
             key: "status",
-            label: "Status",
+            label: t("filters.status"),
             options: [
-              { label: "Pending", value: "pending" },
-              { label: "Approved", value: "approved" },
-              { label: "Rejected", value: "rejected" },
+              { label: t("status.pending"), value: "pending" },
+              { label: t("status.approved"), value: "approved" },
+              { label: t("status.rejected"), value: "rejected" },
             ],
           },
         ]}
@@ -197,10 +225,10 @@ export function PageContent() {
         data={filteredRows}
         emptyMessage={
           isLoading
-            ? "Loading reviews..."
+            ? t("empty.loading")
             : error
-              ? "Failed to load reviews"
-              : "No reviews found"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
         rowActions={(row) =>
           row.status === "pending" ? (

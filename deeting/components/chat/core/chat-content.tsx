@@ -2,6 +2,7 @@
 
 import { ChatMessageList } from "../messages"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
+import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 
 /**
  * ChatContent - 聊天内容组件（重构版）
@@ -23,6 +24,7 @@ export function ChatContent({ agent }: ChatContentProps) {
   const statusCode = useChatStore((state) => state.statusCode)
   const statusMeta = useChatStore((state) => state.statusMeta)
   const sendFeedback = useChatStore((state) => state.sendFeedback)
+  const { regenerateMessage } = useChatMessagingService()
 
   return (
     <div className="flex flex-1 min-h-0 h-full w-full">
@@ -34,6 +36,7 @@ export function ChatContent({ agent }: ChatContentProps) {
         statusStage={statusStage}
         statusCode={statusCode}
         statusMeta={statusMeta}
+        onRegenerate={regenerateMessage}
         onLike={(id) => void sendFeedback(id, 1)}
         onDislike={(id) => void sendFeedback(id, -1)}
       />

@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Tags, Check, X } from "lucide-react"
 import {
@@ -18,7 +19,16 @@ import {
   type SpecKnowledgeCandidate,
 } from "@/lib/api/admin-dashboard"
 
+function formatDate(value: string, locale: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale).format(date)
+}
+
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.specKnowledgePage")
+  const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [actioningId, setActioningId] = useState<string | null>(null)
@@ -55,24 +65,41 @@ export function PageContent() {
     try {
       if (action === "approve") {
         await approveAdminSpecKnowledgeCandidate(row.id)
-        setFeedback(`Approved candidate: ${row.project_name || row.id}`)
+        setFeedback(
+          t("feedback.approved", {
+            name: row.project_name || row.id,
+          })
+        )
       } else {
         await rejectAdminSpecKnowledgeCandidate(row.id)
-        setFeedback(`Rejected candidate: ${row.project_name || row.id}`)
+        setFeedback(
+          t("feedback.rejected", {
+            name: row.project_name || row.id,
+          })
+        )
       }
       await mutate()
     } catch (decisionError) {
-      const message = decisionError instanceof Error ? decisionError.message : "Operation failed"
+      const message =
+        decisionError instanceof Error ? decisionError.message : t("feedback.operationFailed")
       setFeedback(message)
     } finally {
       setActioningId(null)
     }
   }
 
+  const statusLabelMap: Record<string, string> = {
+    pending_signal: t("status.pendingSignal"),
+    pending_eval: t("status.pendingEval"),
+    pending_review: t("status.pendingReview"),
+    approved: t("status.approved"),
+    rejected: t("status.rejected"),
+  }
+
   const columns: ColumnDef<SpecKnowledgeCandidate>[] = [
     {
       key: "project_name",
-      header: "Project",
+      header: t("table.headers.project"),
       sortable: true,
       render: (row) => (
         <span className="font-mono text-sm font-medium text-[var(--foreground)]">
@@ -82,17 +109,17 @@ export function PageContent() {
     },
     {
       key: "status",
-      header: "Status",
+      header: t("table.headers.status"),
       render: (row) => (
         <AdminStatusBadge
-          text={row.status.replace(/_/g, " ")}
+          text={statusLabelMap[row.status] ?? row.status.replace(/_/g, " ")}
           tone={getStatusTone(row.status)}
         />
       ),
     },
     {
       key: "feedback",
-      header: "+/-",
+      header: t("table.headers.feedback"),
       render: (row) => (
         <span className="text-xs">
           <span className="text-emerald-400">{row.usage_stats.positive_feedback}</span>
@@ -103,7 +130,7 @@ export function PageContent() {
     },
     {
       key: "apply_count",
-      header: "Apply/Revert",
+      header: t("table.headers.applyRevert"),
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
           {row.usage_stats.apply_count} / {row.usage_stats.revert_count}
@@ -112,7 +139,7 @@ export function PageContent() {
     },
     {
       key: "success_rate",
-      header: "Success",
+      header: t("table.headers.success"),
       sortable: true,
       render: (row) => {
         const rate = Math.round((row.usage_stats.success_rate || 0) * 100)
@@ -133,13 +160,13 @@ export function PageContent() {
     },
     {
       key: "unique_sessions",
-      header: "Sessions",
+      header: t("table.headers.sessions"),
       sortable: true,
       render: (row) => row.usage_stats.unique_sessions,
     },
     {
       key: "llm_score",
-      header: "LLM Score",
+      header: t("table.headers.llmScore"),
       sortable: true,
       render: (row) => {
         const score = row.eval_snapshot.llm_score
@@ -161,7 +188,7 @@ export function PageContent() {
     },
     {
       key: "static_pass",
-      header: "Static",
+      header: t("table.headers.static"),
       render: (row) =>
         row.eval_snapshot.static_pass ? (
           <Check className="size-4 text-emerald-400" />
@@ -171,21 +198,24 @@ export function PageContent() {
     },
     {
       key: "review_status",
-      header: "Review",
+      header: t("table.headers.review"),
       render: (row) =>
         row.review_status ? (
-          <AdminStatusBadge text={row.review_status} tone={getStatusTone(row.review_status)} />
+          <AdminStatusBadge
+            text={statusLabelMap[row.review_status] ?? row.review_status}
+            tone={getStatusTone(row.review_status)}
+          />
         ) : (
           <span className="text-[var(--muted)]">—</span>
         ),
     },
     {
       key: "created_at",
-      header: "Created",
+      header: t("table.headers.created"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {new Date(row.created_at).toLocaleDateString()}
+          {formatDate(row.created_at, locale)}
         </span>
       ),
     },
@@ -193,12 +223,12 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Spec Knowledge Review"
-      description="Review and approve knowledge candidates"
+      title={tAdmin("specKnowledge.title")}
+      description={tAdmin("specKnowledge.description")}
       icon={Tags}
     >
       <AdminFilterBar
-        searchPlaceholder="Search projects..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "status") setStatusFilter(value)
@@ -206,13 +236,13 @@ export function PageContent() {
         filters={[
           {
             key: "status",
-            label: "Status",
+            label: t("filters.status"),
             options: [
-              { label: "Pending Signal", value: "pending_signal" },
-              { label: "Pending Eval", value: "pending_eval" },
-              { label: "Pending Review", value: "pending_review" },
-              { label: "Approved", value: "approved" },
-              { label: "Rejected", value: "rejected" },
+              { label: t("status.pendingSignal"), value: "pending_signal" },
+              { label: t("status.pendingEval"), value: "pending_eval" },
+              { label: t("status.pendingReview"), value: "pending_review" },
+              { label: t("status.approved"), value: "approved" },
+              { label: t("status.rejected"), value: "rejected" },
             ],
           },
         ]}
@@ -223,10 +253,10 @@ export function PageContent() {
         data={filteredRows}
         emptyMessage={
           isLoading
-            ? "Loading candidates..."
+            ? t("empty.loading")
             : error
-              ? "Failed to load candidates"
-              : "No candidates found"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
         rowActions={(row) =>
           row.status === "pending_review" ? (

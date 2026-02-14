@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Sparkles, Star } from "lucide-react"
 import {
@@ -41,7 +42,17 @@ function getModelName(row: AdminAssistantItem) {
   return null
 }
 
+function formatDate(value: string, locale: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale).format(date)
+}
+
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.assistantsPage")
+  const locale = useLocale()
+  const numberFormatter = new Intl.NumberFormat(locale)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [visibilityFilter, setVisibilityFilter] = useState("")
@@ -100,20 +111,32 @@ export function PageContent() {
       setName("")
       setSystemPrompt("")
       setSummary("")
-      setFeedback(`Created assistant: ${created.id}`)
+      setFeedback(t("feedback.created", { id: created.id }))
       await mutate()
     } catch (createError) {
-      const message = createError instanceof Error ? createError.message : "Create failed"
+      const message =
+        createError instanceof Error ? createError.message : t("feedback.createFailed")
       setFeedback(message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const visibilityTextMap: Record<string, string> = {
+    private: t("visibility.private"),
+    unlisted: t("visibility.unlisted"),
+    public: t("visibility.public"),
+  }
+  const statusTextMap: Record<string, string> = {
+    draft: t("status.draft"),
+    published: t("status.published"),
+    archived: t("status.archived"),
+  }
+
   const columns: ColumnDef<AdminAssistantItem>[] = [
     {
       key: "name",
-      header: "Name",
+      header: t("table.headers.name"),
       sortable: true,
       render: (row) => {
         const current = getCurrentVersion(row)
@@ -140,36 +163,42 @@ export function PageContent() {
     },
     {
       key: "owner_user_id",
-      header: "Owner",
+      header: t("table.headers.owner"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{shortId(row.owner_user_id)}</span>,
     },
     {
       key: "visibility",
-      header: "Visibility",
+      header: t("table.headers.visibility"),
       render: (row) => (
-        <AdminStatusBadge text={row.visibility} tone={getStatusTone(row.visibility)} dot={false} />
+        <AdminStatusBadge
+          text={visibilityTextMap[row.visibility] ?? row.visibility}
+          tone={getStatusTone(row.visibility)}
+          dot={false}
+        />
       ),
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge text={statusTextMap[row.status] ?? row.status} tone={getStatusTone(row.status)} />
+      ),
     },
     {
       key: "version",
-      header: "Ver",
+      header: t("table.headers.version"),
       render: (row) => <span className="text-[var(--muted)]">{getCurrentVersion(row)?.version || "—"}</span>,
     },
     {
       key: "install_count",
-      header: "Installs",
+      header: t("table.headers.installs"),
       sortable: true,
-      render: (row) => <span>{row.install_count.toLocaleString()}</span>,
+      render: (row) => <span>{numberFormatter.format(row.install_count)}</span>,
     },
     {
       key: "rating_avg",
-      header: "Rating",
+      header: t("table.headers.rating"),
       sortable: true,
       render: (row) => (
         <div className="flex items-center gap-1">
@@ -181,18 +210,18 @@ export function PageContent() {
     },
     {
       key: "model",
-      header: "Model",
+      header: t("table.headers.model"),
       render: (row) => (
         <span className="font-mono text-xs text-[var(--muted)]">{getModelName(row) || "—"}</span>
       ),
     },
     {
       key: "published_at",
-      header: "Published",
+      header: t("table.headers.published"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {row.published_at ? new Date(row.published_at).toLocaleDateString() : "—"}
+          {row.published_at ? formatDate(row.published_at, locale) : "—"}
         </span>
       ),
     },
@@ -200,8 +229,8 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Assistant Management"
-      description="Manage AI assistants and their versions"
+      title={tAdmin("assistants.title")}
+      description={tAdmin("assistants.description")}
       icon={Sparkles}
     >
       <GlassCard padding="default" hover="none">
@@ -209,13 +238,13 @@ export function PageContent() {
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Assistant name"
+            placeholder={t("form.assistantName")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <input
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
-            placeholder="Summary"
+            placeholder={t("form.summary")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <select
@@ -223,22 +252,22 @@ export function PageContent() {
             onChange={(event) => setCreateVisibility(event.target.value as "private" | "unlisted" | "public")}
             className="h-9 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
           >
-            <option value="private">private</option>
-            <option value="unlisted">unlisted</option>
-            <option value="public">public</option>
+            <option value="private">{t("visibility.private")}</option>
+            <option value="unlisted">{t("visibility.unlisted")}</option>
+            <option value="public">{t("visibility.public")}</option>
           </select>
           <button
             onClick={() => void handleCreateAssistant()}
             disabled={!name.trim() || !systemPrompt.trim() || isSubmitting}
             className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Creating..." : "Create Assistant"}
+            {isSubmitting ? t("actions.creating") : t("actions.create")}
           </button>
         </div>
         <textarea
           value={systemPrompt}
           onChange={(event) => setSystemPrompt(event.target.value)}
-          placeholder="System prompt"
+          placeholder={t("form.systemPrompt")}
           rows={3}
           className="mt-3 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
         />
@@ -246,7 +275,7 @@ export function PageContent() {
       </GlassCard>
 
       <AdminFilterBar
-        searchPlaceholder="Search assistants..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "status") setStatusFilter(value)
@@ -255,20 +284,20 @@ export function PageContent() {
         filters={[
           {
             key: "status",
-            label: "Status",
+            label: t("filters.status"),
             options: [
-              { label: "Draft", value: "draft" },
-              { label: "Published", value: "published" },
-              { label: "Archived", value: "archived" },
+              { label: t("status.draft"), value: "draft" },
+              { label: t("status.published"), value: "published" },
+              { label: t("status.archived"), value: "archived" },
             ],
           },
           {
             key: "visibility",
-            label: "Visibility",
+            label: t("filters.visibility"),
             options: [
-              { label: "Private", value: "private" },
-              { label: "Unlisted", value: "unlisted" },
-              { label: "Public", value: "public" },
+              { label: t("visibility.private"), value: "private" },
+              { label: t("visibility.unlisted"), value: "unlisted" },
+              { label: t("visibility.public"), value: "public" },
             ],
           },
         ]}
@@ -278,10 +307,10 @@ export function PageContent() {
         data={filteredRows}
         emptyMessage={
           isLoading
-            ? "Loading assistants..."
+            ? t("empty.loading")
             : error
-              ? "Failed to load assistants"
-              : "No assistants found"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
       />
     </AdminPageShell>

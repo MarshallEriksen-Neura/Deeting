@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useCallback, useRef, memo } from "react";
+import { useEffect, useMemo, useCallback, useRef, useState, memo } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Sparkles, Clapperboard, Download } from "lucide-react";
+import { Loader2, Sparkles, Clapperboard, Download, RefreshCw } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/hooks/use-i18n";
 import { useImageGenerationStore } from "@/store/image-generation-store";
 import { useImageGenerationTasks } from "@/lib/swr/use-image-generation-tasks";
+import { createImageGenerationTask } from "@/lib/api/image-generation";
+import { openApiSSE } from "@/lib/http";
+import { createRequestId } from "@/lib/chat/request-id";
 import { normalizeSessionId } from "@/lib/chat/session-id";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -40,6 +43,8 @@ const ImageResultBubble = memo<{
   aspectRatio: string;
   imageAlt: string;
   shareEnabled: boolean;
+  onRegenerate?: () => void;
+  isRegenerating?: boolean;
 }>(
   ({
     taskId,
@@ -50,6 +55,8 @@ const ImageResultBubble = memo<{
     aspectRatio,
     imageAlt,
     shareEnabled,
+    onRegenerate,
+    isRegenerating,
   }) => {
   const showBadge = status !== "succeeded" && Boolean(statusLabel);
 
@@ -113,6 +120,18 @@ const ImageResultBubble = memo<{
         )}
         {shareEnabled ? (
           <div className="mt-2 flex justify-end gap-2">
+             {onRegenerate ? (
+               <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 rounded-full hover:bg-slate-100 dark:hover:bg-white/10"
+                  title="Regenerate"
+                  onClick={onRegenerate}
+                  disabled={isRegenerating}
+               >
+                  <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-slate-400 ${isRegenerating ? "animate-spin" : ""}`} />
+               </Button>
+             ) : null}
              <Button
                 asChild
                 variant="ghost"
@@ -159,6 +178,7 @@ export default function ImageDashboard() {
   const searchParams = useSearchParams();
   const { sessionId, setSessionId, ratio } = useImageGenerationStore();
   const containerRef = useRef<HTMLDivElement>(null);
+  const [regeneratingTaskId, setRegeneratingTaskId] = useState<string | null>(null);
 
   const querySessionId = useMemo(
     () => normalizeSessionId(searchParams?.get("session") ?? null),
@@ -172,7 +192,7 @@ export default function ImageDashboard() {
     }
   }, [querySessionId, sessionId, setSessionId]);
 
-  const { items: sessionTasks } = useImageGenerationTasks(
+  const { items: sessionTasks, mutate: mutateSessionTasks } = useImageGenerationTasks(
     {
       size: 12,
       include_outputs: true,
@@ -289,6 +309,60 @@ export default function ImageDashboard() {
     [resolveTaskTimestamp]
   );
 
+  const handleRegenerate = useCallback(
+    async (task: ImageGenerationTaskItem) => {
+      if (!sessionId || regeneratingTaskId) return;
+      setRegeneratingTaskId(task.task_id);
+      try {
+        const requestId = createRequestId();
+        const newTask = await createImageGenerationTask({
+          model: task.model,
+          prompt: task.prompt ?? "",
+          negative_prompt: task.negative_prompt,
+          aspect_ratio: task.aspect_ratio,
+          steps: task.steps,
+          cfg_scale: task.cfg_scale,
+          seed: undefined,
+          provider_model_id: task.provider_model_id ?? "",
+          session_id: sessionId,
+          request_id: requestId,
+          num_outputs: 1,
+        });
+        openApiSSE(`/api/v1/internal/images/generations/${newTask.task_id}/events`, {
+          onMessage: (msg) => {
+            const data = msg.data;
+            if (data === "[DONE]") {
+              setRegeneratingTaskId(null);
+              mutateSessionTasks();
+              return;
+            }
+            if (!data || typeof data !== "object") return;
+            const payload = data as Record<string, unknown>;
+            const type = typeof payload.type === "string" ? payload.type : "";
+            if (type === "status") {
+              const nextStatus = typeof payload.status === "string" ? payload.status : null;
+              if (nextStatus === "succeeded" || nextStatus === "failed") {
+                setRegeneratingTaskId(null);
+                mutateSessionTasks();
+              }
+            }
+            if (type === "timeout" || type === "error") {
+              setRegeneratingTaskId(null);
+              mutateSessionTasks();
+            }
+          },
+          onError: () => {
+            setRegeneratingTaskId(null);
+            mutateSessionTasks();
+          },
+        });
+      } catch {
+        setRegeneratingTaskId(null);
+      }
+    },
+    [sessionId, regeneratingTaskId, mutateSessionTasks]
+  );
+
   const conversationItems = useMemo(() => {
     const sortedTasks = [...sessionTasks].sort(
       (a, b) => resolveTaskTimestampValue(a) - resolveTaskTimestampValue(b)
@@ -308,6 +382,7 @@ export default function ImageDashboard() {
         statusTone,
         aspectRatio: resolveAspectRatio(task),
         shareEnabled,
+        task,
       };
     });
   }, [sessionTasks, resolveTaskTimestampValue, renderPrompt, statusMeta, resolveAspectRatio]);
@@ -354,6 +429,8 @@ export default function ImageDashboard() {
                   aspectRatio={item.aspectRatio}
                   imageAlt={imageAlt}
                   shareEnabled={item.shareEnabled}
+                  onRegenerate={() => handleRegenerate(item.task)}
+                  isRegenerating={regeneratingTaskId === item.taskId}
                 />
               </div>
             ))}

@@ -17,6 +17,7 @@ export type ChatCompletionRequest = {
   provider_model_id?: string
   assistant_id?: string
   session_id?: string
+  regenerate?: boolean
 }
 
 export type ChatCompletionResponse = {

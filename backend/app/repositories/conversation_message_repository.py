@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import insert as sa_insert
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -133,3 +133,23 @@ class ConversationMessageRepository(BaseRepository[ConversationMessage]):
             )
         )
         return result.scalars().first()
+
+    async def soft_delete_by_turn_index(
+        self,
+        *,
+        session_id: uuid.UUID,
+        turn_index: int,
+    ) -> bool:
+        """软删除指定 turn_index 的消息（标记 is_deleted=True）。"""
+        stmt = (
+            update(ConversationMessage)
+            .where(
+                ConversationMessage.session_id == session_id,
+                ConversationMessage.turn_index == int(turn_index),
+                ConversationMessage.is_deleted.is_(False),
+            )
+            .values(is_deleted=True)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return (result.rowcount or 0) > 0

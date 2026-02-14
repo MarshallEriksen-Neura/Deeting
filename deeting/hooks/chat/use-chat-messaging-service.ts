@@ -604,8 +604,236 @@ export function useChatMessagingService() {
     clearStatus,
   ])
 
+  const regenerateMessage = useCallback(async (targetMessageId: string) => {
+    // 并发保护：如果有正在进行的请求，先取消
+    if (useChatStore.getState().isLoading) {
+      await cancelActiveRequest()
+    }
+
+    // 找到目标 assistant 消息
+    const currentMessages = useChatStore.getState().messages
+    const targetIndex = currentMessages.findIndex(
+      (m) => m.id === targetMessageId && m.role === "assistant"
+    )
+    if (targetIndex < 0) return
+
+    const selectedModel =
+      models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
+      models[0]
+    const activeAssistant = agent
+    if (!selectedModel || (isTauriRuntime && !activeAssistant)) return
+
+    const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
+      isTauriRuntime,
+      activeAssistantId: agentId,
+    })
+
+    // 移除旧的 assistant 消息，插入新的空 assistant 占位
+    const messagesBeforeTarget = currentMessages.slice(0, targetIndex)
+    const assistantMessageId = createMessageId()
+    const newAssistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      createdAt: Date.now(),
+    }
+
+    setMessages([...messagesBeforeTarget, newAssistantMessage])
+    setIsLoading(true)
+    clearStatus()
+
+    // 构建请求消息（不含被删除的 assistant 消息）
+    const requestMessages = buildChatMessages(messagesBeforeTarget, activeAssistant?.systemPrompt)
+    let resolvedSessionId = sessionId
+    const storageKey = sessionStorageKey
+    if (!resolvedSessionId) {
+      const fallbackSessionId = resolveSessionIdFromBrowser(storageKey, { allowStorageFallback: false })
+      if (fallbackSessionId) {
+        resolvedSessionId = fallbackSessionId
+        setSessionId(resolvedSessionId)
+      }
+    }
+    const payload = {
+      model: selectedModel.id,
+      provider_model_id: selectedModel.provider_model_id ?? undefined,
+      messages: requestMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      request_id: createRequestId(),
+      assistant_id: assistantId,
+      session_id: resolvedSessionId ?? undefined,
+      regenerate: true,
+    }
+    requestIdRef.current = payload.request_id ?? null
+
+    try {
+      const streamedText = await streamChatCompletion(
+        { ...payload, stream: streamEnabled, status_stream: true },
+        {
+          onMessage: (data) => {
+            if (data && typeof data === "object" && "type" in data) {
+              const payload = data as {
+                type?: string
+                stage?: string | null
+                step?: string | null
+                state?: string | null
+                code?: string | null
+                meta?: unknown
+                blocks?: unknown
+                message?: string
+                error_code?: string
+              }
+              if (payload.type === "status") {
+                setStatus({
+                  stage: payload.stage ?? null,
+                  code: payload.code ?? null,
+                  meta: typeof payload.meta === "object" && payload.meta ? (payload.meta as Record<string, unknown>) : null,
+                })
+                const traceId = (payload as any).trace_id
+                if (traceId) {
+                  mergeMessageMeta(assistantMessageId, { trace_id: traceId })
+                }
+                return
+              }
+              if (payload.type === "error") {
+                const message = payload.message || "Request failed"
+                appendMessageBlocks(assistantMessageId, [
+                  {
+                    id: `${assistantMessageId}-error`,
+                    type: "error",
+                    message,
+                    streamState: "completed",
+                    displayMode: "bubble",
+                  },
+                ] as MessageBlock[])
+                setErrorMessage(payload.error_code ? `${payload.error_code}: ${message}` : message)
+                return
+              }
+              if (payload.type === "blocks") {
+                const blocks = (payload as any).blocks
+                if (Array.isArray(blocks)) {
+                  appendMessageBlocks(assistantMessageId, blocks as any)
+                }
+                return
+              }
+            }
+
+            let responseBody: Record<string, unknown> | null = null
+            if (typeof data === "string") {
+              try { responseBody = JSON.parse(data) } catch { /* ignore */ }
+            } else if (data && typeof data === "object") {
+              responseBody = data as Record<string, unknown>
+            }
+            if (!responseBody) return
+
+            if (typeof responseBody.session_id === "string") {
+              setSessionId(responseBody.session_id)
+            }
+            if (typeof responseBody.trace_id === "string") {
+              mergeMessageMeta(assistantMessageId, { trace_id: responseBody.trace_id })
+            }
+
+            const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
+            const firstChoice = choices[0]
+            const respMessage = firstChoice && typeof firstChoice === "object"
+              ? (firstChoice as Record<string, unknown>).message
+              : null
+            if (respMessage && typeof respMessage === "object") {
+              const msgObj = respMessage as Record<string, unknown>
+              const metaInfo = msgObj.meta_info && typeof msgObj.meta_info === "object"
+                ? (msgObj.meta_info as Record<string, unknown>)
+                : null
+              const metaBlocks = Array.isArray(metaInfo?.blocks)
+                ? ((metaInfo!.blocks as unknown[]).filter(isValidBlock) as MessageBlock[])
+                : []
+
+              const newBlocks: MessageBlock[] = metaBlocks.filter(
+                (b) => b.type !== "tool_call" && b.type !== "tool_result"
+              )
+
+              if (metaBlocks.length === 0) {
+                const reasoning = typeof msgObj.reasoning_content === "string" ? msgObj.reasoning_content : ""
+                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
+                if (reasoning.trim()) {
+                  newBlocks.push({ type: "thought", content: reasoning } as MessageBlock)
+                }
+                if (textContent.trim()) {
+                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
+                }
+              } else if (!newBlocks.some((b) => b.type === "text")) {
+                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
+                if (textContent.trim()) {
+                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
+                }
+              }
+
+              if (newBlocks.length > 0) {
+                appendMessageBlocks(assistantMessageId, newBlocks)
+              }
+            }
+          },
+        },
+        {
+          onCancel: (cancel) => {
+            cancelRef.current = cancel
+          },
+        }
+      )
+
+      const latest = useChatStore.getState().messages.find(
+        (m) => m.id === assistantMessageId
+      )
+      const latestBlocks = Array.isArray(latest?.blocks)
+        ? (latest.blocks as MessageBlock[])
+        : []
+      if (
+        streamedText.trim().length > 0 &&
+        !hasRenderableTextBlock(latestBlocks) &&
+        !hasRenderableNonToolBlocks(latestBlocks)
+      ) {
+        appendMessageBlocks(assistantMessageId, [
+          { type: "text", content: streamedText } as MessageBlock,
+        ])
+      }
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Request failed"
+      appendMessageBlocks(assistantMessageId, [
+        {
+          id: `${assistantMessageId}-error`,
+          type: "error",
+          message,
+          streamState: "completed",
+          displayMode: "bubble",
+        },
+      ] as MessageBlock[])
+      setErrorMessage(message)
+    } finally {
+      setIsLoading(false)
+      clearStatus()
+      cancelRef.current = null
+      requestIdRef.current = null
+    }
+  }, [
+    config,
+    models,
+    agent,
+    agentId,
+    streamEnabled,
+    sessionId,
+    cancelActiveRequest,
+    setMessages,
+    mergeMessageMeta,
+    appendMessageBlocks,
+    setSessionId,
+    setIsLoading,
+    setErrorMessage,
+    setStatus,
+    clearStatus,
+  ])
+
   return {
     sendMessage,
+    regenerateMessage,
     loadHistoryBySession,
     loadMoreHistory,
     resetSession,

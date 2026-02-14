@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Plug } from "lucide-react"
 import {
@@ -24,6 +25,10 @@ function toTags(skill: SkillItem): string[] {
 }
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.skillsPage")
+  const locale = useLocale()
+  const numberFormatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1, minimumFractionDigits: 1 })
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [riskFilter, setRiskFilter] = useState("")
@@ -58,31 +63,48 @@ export function PageContent() {
     return "default" as const
   }
 
+  const statusLabelMap: Record<string, string> = {
+    active: t("status.active"),
+    draft: t("status.draft"),
+    disabled: t("status.disabled"),
+  }
+
+  const riskLabelMap: Record<string, string> = {
+    low: t("risk.low"),
+    medium: t("risk.medium"),
+    high: t("risk.high"),
+  }
+
   const columns: ColumnDef<SkillRow>[] = [
     {
       key: "id",
-      header: "ID",
+      header: t("table.headers.id"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{row.id}</span>,
     },
     {
       key: "name",
-      header: "Name",
+      header: t("table.headers.name"),
       sortable: true,
       render: (row) => <span className="font-medium text-[var(--foreground)]">{row.name}</span>,
     },
     {
       key: "version",
-      header: "Version",
+      header: t("table.headers.version"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{row.version || "—"}</span>,
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={statusLabelMap[row.status] ?? row.status}
+          tone={getStatusTone(row.status)}
+        />
+      ),
     },
     {
       key: "runtime",
-      header: "Runtime",
+      header: t("table.headers.runtime"),
       render: (row) =>
         row.runtime ? (
           <AdminStatusBadge text={row.runtime} tone="info" dot={false} />
@@ -92,14 +114,17 @@ export function PageContent() {
     },
     {
       key: "risk_level",
-      header: "Risk",
+      header: t("table.headers.risk"),
       render: (row) => (
-        <AdminStatusBadge text={row.risk_level || "unknown"} tone={riskTone(row.risk_level)} />
+        <AdminStatusBadge
+          text={row.risk_level ? (riskLabelMap[row.risk_level] ?? row.risk_level) : t("risk.unknown")}
+          tone={riskTone(row.risk_level)}
+        />
       ),
     },
     {
       key: "complexity_score",
-      header: "Complexity",
+      header: t("table.headers.complexity"),
       sortable: true,
       render: (row) => {
         const complexity = row.complexity_score ?? 0
@@ -112,14 +137,14 @@ export function PageContent() {
                 style={{ width: `${Math.round(ratio * 100)}%` }}
               />
             </div>
-            <span className="text-xs text-[var(--muted)]">{complexity.toFixed(1)}/10</span>
+            <span className="text-xs text-[var(--muted)]">{t("table.complexityValue", { value: numberFormatter.format(complexity) })}</span>
           </div>
         )
       },
     },
     {
       key: "tags",
-      header: "Tags",
+      header: t("table.headers.tags"),
       render: (row) => (
         <div className="flex gap-1">
           {row.tags.length ? (
@@ -138,12 +163,12 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Skill Management"
-      description="Manage registered skills and capabilities"
+      title={tAdmin("skills.title")}
+      description={tAdmin("skills.description")}
       icon={Plug}
     >
       <AdminFilterBar
-        searchPlaceholder="Search skills..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "status") setStatusFilter(value)
@@ -152,20 +177,20 @@ export function PageContent() {
         filters={[
           {
             key: "status",
-            label: "Status",
+            label: t("filters.status"),
             options: [
-              { label: "Active", value: "active" },
-              { label: "Draft", value: "draft" },
-              { label: "Disabled", value: "disabled" },
+              { label: t("status.active"), value: "active" },
+              { label: t("status.draft"), value: "draft" },
+              { label: t("status.disabled"), value: "disabled" },
             ],
           },
           {
             key: "risk",
-            label: "Risk",
+            label: t("filters.risk"),
             options: [
-              { label: "Low", value: "low" },
-              { label: "Medium", value: "medium" },
-              { label: "High", value: "high" },
+              { label: t("risk.low"), value: "low" },
+              { label: t("risk.medium"), value: "medium" },
+              { label: t("risk.high"), value: "high" },
             ],
           },
         ]}
@@ -175,10 +200,10 @@ export function PageContent() {
         data={filteredRows}
         emptyMessage={
           isLoading
-            ? "Loading skills..."
+            ? t("empty.loading")
             : error
-              ? "Failed to load skills"
-              : "No skills found"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
       />
     </AdminPageShell>

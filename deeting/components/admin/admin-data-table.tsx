@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { GlassCard } from "@/components/ui/glass-card"
 import {
@@ -35,12 +36,14 @@ interface AdminDataTableProps<T> {
 export function AdminDataTable<T extends Record<string, any>>({
   columns,
   data,
-  emptyMessage = "No data available",
+  emptyMessage,
   pageSize = 10,
   className,
   onRowClick,
   rowActions,
 }: AdminDataTableProps<T>) {
+  const t = useTranslations("admin.common")
+  const resolvedEmptyMessage = emptyMessage ?? t("noData")
   const [currentPage, setCurrentPage] = React.useState(1)
   const [sortKey, setSortKey] = React.useState<string | null>(null)
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("asc")
@@ -108,7 +111,7 @@ export function AdminDataTable<T extends Record<string, any>>({
               ))}
               {rowActions && (
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
-                  Actions
+                  {t("actions")}
                 </th>
               )}
             </tr>
@@ -124,7 +127,7 @@ export function AdminDataTable<T extends Record<string, any>>({
                     <div className="size-12 rounded-full bg-white/5 flex items-center justify-center">
                       <MoreHorizontal className="size-5 text-[var(--muted)]" />
                     </div>
-                    <span>{emptyMessage}</span>
+                    <span>{resolvedEmptyMessage}</span>
                   </div>
                 </td>
               </tr>
@@ -170,8 +173,11 @@ export function AdminDataTable<T extends Record<string, any>>({
       {data.length > pageSize && (
         <div className="flex items-center justify-between border-t border-white/5 px-4 py-3">
           <span className="text-xs text-[var(--muted)]">
-            Showing {(currentPage - 1) * pageSize + 1}–
-            {Math.min(currentPage * pageSize, data.length)} of {data.length}
+            {t("pagination.showingOf", {
+              start: (currentPage - 1) * pageSize + 1,
+              end: Math.min(currentPage * pageSize, data.length),
+              total: data.length,
+            })}
           </span>
           <div className="flex items-center gap-1">
             <button

@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Activity, Check } from "lucide-react"
 import {
@@ -23,6 +24,17 @@ function shortId(value?: string | null) {
 }
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.gatewayLogsPage")
+  const locale = useLocale()
+  const numberFormatter = new Intl.NumberFormat(locale)
+  const percentageFormatter = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+  const currencyFormatter = new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  })
   const [searchQuery, setSearchQuery] = useState("")
   const [modelFilter, setModelFilter] = useState("")
   const [statusBucketFilter, setStatusBucketFilter] = useState("")
@@ -77,26 +89,26 @@ export function PageContent() {
   const localCacheHits = filteredRows.filter((item) => item.is_cached).length
 
   const stats: StatCardData[] = [
-    { label: "Total Logs", value: statsData?.total ?? localTotal, color: "primary" },
+    { label: t("stats.totalLogs"), value: numberFormatter.format(statsData?.total ?? localTotal), color: "primary" },
     {
-      label: "Error Rate",
+      label: t("stats.errorRate"),
       value:
         statsData != null
-          ? `${(100 - statsData.success_rate).toFixed(1)}%`
-          : `${localTotal > 0 ? ((localErrors / localTotal) * 100).toFixed(1) : 0}%`,
+          ? `${percentageFormatter.format(100 - statsData.success_rate)}%`
+          : `${percentageFormatter.format(localTotal > 0 ? (localErrors / localTotal) * 100 : 0)}%`,
       color: (statsData ? 100 - statsData.success_rate : localErrors) > 0 ? "rose" : "emerald",
     },
     {
-      label: "Avg Latency",
-      value: `${localAvgLatency}ms`,
+      label: t("stats.avgLatency"),
+      value: t("stats.ms", { value: numberFormatter.format(localAvgLatency) }),
       color: "teal",
     },
     {
-      label: "Cache Hits",
+      label: t("stats.cacheHits"),
       value:
         statsData != null
-          ? `${statsData.cache_hit_rate.toFixed(1)}%`
-          : `${localTotal > 0 ? ((localCacheHits / localTotal) * 100).toFixed(1) : 0}%`,
+          ? `${percentageFormatter.format(statsData.cache_hit_rate)}%`
+          : `${percentageFormatter.format(localTotal > 0 ? (localCacheHits / localTotal) * 100 : 0)}%`,
       color: "amber",
     },
   ]
@@ -111,7 +123,7 @@ export function PageContent() {
   const columns: ColumnDef<GatewayLogItem>[] = [
     {
       key: "trace_id",
-      header: "Trace ID",
+      header: t("table.headers.traceId"),
       render: (row) => (
         <span className="font-mono text-[10px] text-[var(--muted)]">
           {row.trace_id ? `${row.trace_id.slice(0, 16)}...` : "—"}
@@ -120,23 +132,23 @@ export function PageContent() {
     },
     {
       key: "user_id",
-      header: "User",
+      header: t("table.headers.user"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{shortId(row.user_id)}</span>,
     },
     {
       key: "api_key_id",
-      header: "API Key",
+      header: t("table.headers.apiKey"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{shortId(row.api_key_id)}</span>,
     },
     {
       key: "model",
-      header: "Model",
+      header: t("table.headers.model"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{row.model}</span>,
     },
     {
       key: "status_code",
-      header: "Status",
+      header: t("table.headers.status"),
       sortable: true,
       render: (row) => (
         <span className={`inline-flex rounded px-1.5 py-0.5 font-mono text-xs font-medium ${statusColor(row.status_code)}`}>
@@ -146,50 +158,54 @@ export function PageContent() {
     },
     {
       key: "duration_ms",
-      header: "Duration",
+      header: t("table.headers.duration"),
       sortable: true,
-      render: (row) => <span className="font-mono text-xs">{row.duration_ms}ms</span>,
+      render: (row) => <span className="font-mono text-xs">{t("stats.ms", { value: numberFormatter.format(row.duration_ms) })}</span>,
     },
     {
       key: "ttft_ms",
-      header: "TTFT",
-      render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{row.ttft_ms ? `${row.ttft_ms}ms` : "—"}</span>,
+      header: t("table.headers.ttft"),
+      render: (row) => (
+        <span className="font-mono text-xs text-[var(--muted)]">
+          {row.ttft_ms ? t("stats.ms", { value: numberFormatter.format(row.ttft_ms) }) : "—"}
+        </span>
+      ),
     },
     {
       key: "input_tokens",
-      header: "Tokens",
+      header: t("table.headers.tokens"),
       render: (row) => (
         <span className="font-mono text-[10px] text-[var(--muted)]">
-          {row.input_tokens.toLocaleString()} / {row.output_tokens.toLocaleString()}
+          {numberFormatter.format(row.input_tokens)} / {numberFormatter.format(row.output_tokens)}
         </span>
       ),
     },
     {
       key: "cost_user",
-      header: "Cost",
+      header: t("table.headers.cost"),
       align: "right",
       sortable: true,
-      render: (row) => <span className="font-mono text-xs">${row.cost_user.toFixed(4)}</span>,
+      render: (row) => <span className="font-mono text-xs">{currencyFormatter.format(row.cost_user)}</span>,
     },
     {
       key: "is_cached",
-      header: "Cache",
+      header: t("table.headers.cache"),
       render: (row) =>
         row.is_cached ? <Check className="size-4 text-emerald-400" /> : <span className="text-[var(--muted)]">—</span>,
     },
     {
       key: "error_code",
-      header: "Error",
+      header: t("table.headers.error"),
       render: (row) =>
         row.error_code ? <span className="font-mono text-xs text-rose-400">{row.error_code}</span> : <span className="text-[var(--muted)]">—</span>,
     },
   ]
 
   return (
-    <AdminPageShell title="Gateway Logs" description="API gateway request logs and analytics" icon={Activity}>
+    <AdminPageShell title={tAdmin("gatewayLogs.title")} description={tAdmin("gatewayLogs.description")} icon={Activity}>
       <AdminStatCards stats={stats} columns={4} />
       <AdminFilterBar
-        searchPlaceholder="Search by trace ID, user, model..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "model") setModelFilter(value)
@@ -197,15 +213,45 @@ export function PageContent() {
           if (key === "cached") setCachedFilter(value)
         }}
         filters={[
-          { key: "model", label: "Model", options: [{ label: "GPT-4o", value: "gpt-4o" }, { label: "Claude 3 Opus", value: "claude-3-opus" }, { label: "GPT-4o Mini", value: "gpt-4o-mini" }, { label: "DeepSeek V3", value: "deepseek-v3" }] },
-          { key: "status", label: "Status", options: [{ label: "2xx", value: "2xx" }, { label: "4xx", value: "4xx" }, { label: "5xx", value: "5xx" }] },
-          { key: "cached", label: "Cached", options: [{ label: "Yes", value: "true" }, { label: "No", value: "false" }] },
+          {
+            key: "model",
+            label: t("filters.model"),
+            options: [
+              { label: "GPT-4o", value: "gpt-4o" },
+              { label: "Claude 3 Opus", value: "claude-3-opus" },
+              { label: "GPT-4o Mini", value: "gpt-4o-mini" },
+              { label: "DeepSeek V3", value: "deepseek-v3" },
+            ],
+          },
+          {
+            key: "status",
+            label: t("filters.status"),
+            options: [
+              { label: t("statusBucket.2xx"), value: "2xx" },
+              { label: t("statusBucket.4xx"), value: "4xx" },
+              { label: t("statusBucket.5xx"), value: "5xx" },
+            ],
+          },
+          {
+            key: "cached",
+            label: t("filters.cached"),
+            options: [
+              { label: t("cached.yes"), value: "true" },
+              { label: t("cached.no"), value: "false" },
+            ],
+          },
         ]}
       />
       <AdminDataTable
         columns={columns}
         data={filteredRows}
-        emptyMessage={isLoading ? "Loading logs..." : error ? "Failed to load logs" : "No logs found"}
+        emptyMessage={
+          isLoading
+            ? t("empty.loading")
+            : error
+              ? t("empty.failed")
+              : t("empty.noData")
+        }
         pageSize={15}
       />
     </AdminPageShell>

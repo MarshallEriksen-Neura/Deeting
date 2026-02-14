@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Ticket } from "lucide-react"
 import {
@@ -21,7 +22,17 @@ import {
   type RegistrationInviteItem,
 } from "@/lib/api/admin-dashboard"
 
+function formatDate(value: string | null | undefined, locale: string) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale).format(date)
+}
+
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.registrationPage")
+  const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [startAt, setStartAt] = useState("")
@@ -75,11 +86,12 @@ export function PageContent() {
         max_registrations: maxRegistrations,
         auto_activate: autoActivate,
       })
-      setFeedback("Created registration window")
+      setFeedback(t("feedback.windowCreated"))
       await mutateWindow()
       await mutateInvites()
     } catch (createError) {
-      const message = createError instanceof Error ? createError.message : "Create window failed"
+      const message =
+        createError instanceof Error ? createError.message : t("feedback.windowCreateFailed")
       setFeedback(message)
     } finally {
       setIsSubmitting(false)
@@ -95,50 +107,63 @@ export function PageContent() {
         count: inviteCount,
         length: inviteLength,
       })
-      setFeedback(`Generated ${codes.length} invite codes`)
+      setFeedback(t("feedback.generatedInvites", { count: codes.length }))
       await mutateInvites()
     } catch (issueError) {
-      const message = issueError instanceof Error ? issueError.message : "Generate invites failed"
+      const message =
+        issueError instanceof Error ? issueError.message : t("feedback.generateFailed")
       setFeedback(message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const inviteStatusMap: Record<string, string> = {
+    unused: t("status.unused"),
+    reserved: t("status.reserved"),
+    used: t("status.used"),
+    revoked: t("status.revoked"),
+  }
+
   const columns: ColumnDef<RegistrationInviteItem>[] = [
     {
       key: "code",
-      header: "Code",
+      header: t("table.headers.code"),
       render: (row) => (
         <span className="font-mono text-sm font-medium text-[var(--foreground)]">{row.code}</span>
       ),
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={inviteStatusMap[row.status] ?? row.status}
+          tone={getStatusTone(row.status)}
+        />
+      ),
     },
     {
       key: "expires_at",
-      header: "Expires",
+      header: t("table.headers.expires"),
       sortable: true,
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {row.expires_at ? new Date(row.expires_at).toLocaleDateString() : "—"}
+          {formatDate(row.expires_at, locale)}
         </span>
       ),
     },
     {
       key: "used_by",
-      header: "Used By",
+      header: t("table.headers.usedBy"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{row.used_by ?? "—"}</span>,
     },
     {
       key: "used_at",
-      header: "Used At",
+      header: t("table.headers.usedAt"),
       render: (row) => (
         <span className="text-xs text-[var(--muted)]">
-          {row.used_at ? new Date(row.used_at).toLocaleDateString() : "—"}
+          {formatDate(row.used_at, locale)}
         </span>
       ),
     },
@@ -150,8 +175,8 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Registration Control"
-      description="Manage registration windows and invite codes"
+      title={t("title")}
+      description={tAdmin("registration.description")}
       icon={Ticket}
     >
       <GlassCard padding="default" hover="none">
@@ -182,34 +207,38 @@ export function PageContent() {
               onChange={(event) => setAutoActivate(event.target.checked)}
               className="accent-[var(--primary)]"
             />
-            Auto activate
+            {t("autoActivate")}
           </label>
           <button
             onClick={() => void handleCreateWindow()}
             disabled={!startAt || !endAt || isSubmitting}
             className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Submitting..." : "New Window"}
+            {isSubmitting ? t("actions.submitting") : t("actions.newWindow")}
           </button>
         </div>
       </GlassCard>
 
       {feedback && <p className="text-xs text-[var(--muted)]">{feedback}</p>}
-      {windowLoading && <p className="text-sm text-[var(--muted)]">Loading active window...</p>}
-      {windowError && <p className="text-sm text-rose-300">Failed to load registration window</p>}
+      {windowLoading && <p className="text-sm text-[var(--muted)]">{t("loading.activeWindow")}</p>}
+      {windowError && <p className="text-sm text-rose-300">{t("loading.failedWindow")}</p>}
 
       {activeWindow ? (
         <GlassCard padding="default" hover="none">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-[var(--foreground)]">Active Registration Window</h3>
+              <h3 className="text-sm font-semibold text-[var(--foreground)]">{t("activeWindow.title")}</h3>
               <p className="mt-1 text-xs text-[var(--muted)]">
-                {new Date(activeWindow.start_time).toLocaleDateString()} — {new Date(activeWindow.end_time).toLocaleDateString()}
+                {formatDate(activeWindow.start_time, locale)} — {formatDate(activeWindow.end_time, locale)}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <AdminStatusBadge text={activeWindow.status} tone={getStatusTone(activeWindow.status)} />
-              <AdminStatusBadge text={activeWindow.auto_activate ? "auto activate" : "manual"} tone="info" dot={false} />
+              <AdminStatusBadge
+                text={activeWindow.auto_activate ? t("activeWindow.autoActivate") : t("activeWindow.manual")}
+                tone="info"
+                dot={false}
+              />
             </div>
           </div>
           <div className="mt-4 flex items-center gap-6">
@@ -225,14 +254,14 @@ export function PageContent() {
                 {activeWindow.registered_count}
                 <span className="text-sm font-normal text-[var(--muted)]"> / {activeWindow.max_registrations}</span>
               </p>
-              <p className="text-xs text-[var(--muted)]">Registrations used</p>
+              <p className="text-xs text-[var(--muted)]">{t("activeWindow.registrationsUsed")}</p>
             </div>
           </div>
         </GlassCard>
       ) : (
         !windowLoading && (
           <GlassCard padding="default" hover="none">
-            <p className="text-sm text-[var(--muted)]">No active registration window</p>
+            <p className="text-sm text-[var(--muted)]">{t("activeWindow.none")}</p>
           </GlassCard>
         )
       )}
@@ -240,7 +269,7 @@ export function PageContent() {
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-4">
           <h3 className="col-span-1 self-center text-sm font-semibold text-[var(--foreground)]">
-            Invite Codes
+            {t("inviteCodes.title")}
           </h3>
           <input
             type="number"
@@ -263,13 +292,13 @@ export function PageContent() {
             disabled={!activeWindow || isSubmitting}
             className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)]/10 px-3 text-xs text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Generate Codes
+            {t("inviteCodes.generate")}
           </button>
         </div>
       </GlassCard>
 
       <AdminFilterBar
-        searchPlaceholder="Search invite codes..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "status") setStatusFilter(value)
@@ -277,12 +306,12 @@ export function PageContent() {
         filters={[
           {
             key: "status",
-            label: "Status",
+            label: t("filters.status"),
             options: [
-              { label: "Unused", value: "unused" },
-              { label: "Reserved", value: "reserved" },
-              { label: "Used", value: "used" },
-              { label: "Revoked", value: "revoked" },
+              { label: t("status.unused"), value: "unused" },
+              { label: t("status.reserved"), value: "reserved" },
+              { label: t("status.used"), value: "used" },
+              { label: t("status.revoked"), value: "revoked" },
             ],
           },
         ]}
@@ -293,12 +322,12 @@ export function PageContent() {
         data={filteredInvites}
         emptyMessage={
           !activeWindow
-            ? "No active window"
+            ? t("empty.noActiveWindow")
             : inviteLoading
-              ? "Loading invite codes..."
+              ? t("empty.loading")
               : inviteError
-                ? "Failed to load invite codes"
-                : "No invite codes"
+                ? t("empty.failed")
+                : t("empty.noData")
         }
       />
     </AdminPageShell>

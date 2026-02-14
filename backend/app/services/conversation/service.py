@@ -272,6 +272,34 @@ class ConversationService:
         )
         return {"deleted": True, "turn_index": turn_index}
 
+    async def delete_last_assistant_message(
+        self, session_id: str
+    ) -> dict[str, Any]:
+        """
+        软删除 Redis 窗口中最后一条 assistant 消息（用于重新生成场景）。
+        返回被删除消息的 turn_index，若未找到则返回 {"deleted": False}。
+        """
+        msgs_key = CacheKeys.conversation_messages(session_id)
+        messages = await self.redis.lrange(msgs_key, 0, -1)
+        if not messages:
+            return {"deleted": False}
+
+        decoded = [json.loads(m.decode()) for m in messages]
+        # 从尾部向头部查找最后一条未删除的 assistant 消息
+        target_idx = None
+        target_turn = None
+        for idx in range(len(decoded) - 1, -1, -1):
+            msg = decoded[idx]
+            if msg.get("role") == "assistant" and not msg.get("is_deleted"):
+                target_idx = idx
+                target_turn = msg.get("turn_index")
+                break
+
+        if target_idx is None:
+            return {"deleted": False}
+
+        return await self.delete_message(session_id, target_turn)
+
     async def clear_session(self, session_id: str) -> None:
         """
         一键清空上下文：删除窗口消息、摘要和 meta。

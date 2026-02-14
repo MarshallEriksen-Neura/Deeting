@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Package } from "lucide-react"
 import { AdminPageShell, AdminStatusBadge } from "@/components/admin"
@@ -7,6 +8,8 @@ import { GlassCard } from "@/components/ui/glass-card"
 import { fetchAdminProviderPresets } from "@/lib/api/admin-dashboard"
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.providerPresetsPage")
   const { data, error, isLoading } = useSWR(
     "/api/v1/admin/provider-presets",
     fetchAdminProviderPresets
@@ -16,14 +19,14 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Provider Presets"
-      description="Available provider templates and configurations"
+      title={tAdmin("providerPresets.title")}
+      description={tAdmin("providerPresets.description")}
       icon={Package}
     >
-      {isLoading && <p className="text-sm text-[var(--muted)]">Loading provider presets...</p>}
-      {error && <p className="text-sm text-rose-300">Failed to load provider presets</p>}
+      {isLoading && <p className="text-sm text-[var(--muted)]">{t("empty.loading")}</p>}
+      {error && <p className="text-sm text-rose-300">{t("empty.failed")}</p>}
       {!isLoading && !error && rows.length === 0 && (
-        <p className="text-sm text-[var(--muted)]">No provider presets found</p>
+        <p className="text-sm text-[var(--muted)]">{t("empty.noData")}</p>
       )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -37,14 +40,17 @@ export function PageContent() {
                     <Package className="size-5 text-[var(--primary)]" />
                   </div>
                   <div>
-                    <h4 className="font-semibold text-[var(--foreground)]">{preset.name || "Unnamed Preset"}</h4>
+                    <h4 className="font-semibold text-[var(--foreground)]">{preset.name || t("card.unnamedPreset")}</h4>
                     <span className="font-mono text-xs text-[var(--muted)]">{preset.slug || "—"}</span>
                   </div>
                 </div>
-                <AdminStatusBadge text={status} tone={preset.is_active ? "success" : "error"} />
+                <AdminStatusBadge
+                  text={status === "active" ? t("status.active") : t("status.inactive")}
+                  tone={preset.is_active ? "success" : "error"}
+                />
               </div>
               <p className="mt-3 text-sm text-[var(--muted)]">
-                {preset.provider || "Unknown provider"}
+                {preset.provider || t("card.unknownProvider")}
                 {preset.category ? ` · ${preset.category}` : ""}
               </p>
               {preset.base_url && (

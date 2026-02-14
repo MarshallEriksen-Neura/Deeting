@@ -357,6 +357,7 @@ class VideoGenerationService:
             items: list[VideoGenerationTaskListItem] = []
             for task in tasks:
                 prompt_value = None if task.prompt_encrypted else task.prompt_raw
+                ip = task.input_params or {}
                 items.append(
                     VideoGenerationTaskListItem(
                         task_id=task.id,
@@ -365,6 +366,16 @@ class VideoGenerationService:
                         session_id=task.session_id,
                         prompt=prompt_value,
                         prompt_encrypted=bool(task.prompt_encrypted),
+                        negative_prompt=task.negative_prompt,
+                        aspect_ratio=task.aspect_ratio,
+                        image_url=ip.get("image_url"),
+                        duration=ip.get("duration"),
+                        fps=ip.get("fps"),
+                        motion_bucket_id=ip.get("motion_bucket_id"),
+                        steps=task.steps,
+                        cfg_scale=task.cfg_scale,
+                        seed=task.seed,
+                        provider_model_id=task.provider_model_id,
                         created_at=task.created_at,
                         updated_at=task.updated_at,
                         completed_at=task.completed_at,

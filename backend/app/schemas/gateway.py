@@ -79,6 +79,10 @@ class ChatCompletionRequest(BaseModel):
     session_id: str | None = Field(
         default=None, description="会话 ID（可选，不传则自动生成）"
     )
+    regenerate: bool = Field(
+        default=False,
+        description="重新生成标记：为 true 时自动软删除最后一条 assistant 消息并生成新回复",
+    )
 
 
 # ===== 兼容性入口 Schema =====

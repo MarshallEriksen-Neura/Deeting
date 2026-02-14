@@ -2,11 +2,52 @@
   "admin": {
     "dashboard": {
       "title": "Admin Dashboard",
-      "description": "System operation status overview",
+      "description": "System overview and key metrics",
+      "loadingDescription": "Loading dashboard data",
       "quickActions": "Quick Actions",
       "reviewAssistants": "Review Assistants",
       "manageUsers": "Manage Users",
-      "viewMonitoring": "View Monitoring"
+      "viewMonitoring": "View Monitoring",
+      "stats": {
+        "activeAccounts": "{count} active accounts",
+        "publishedAssistants": "{count} published",
+        "revokedApiKeys": "{count} revoked",
+        "successRate": "{rate}% success rate"
+      },
+      "providerHealth": {
+        "title": "Provider Health",
+        "realtime": "Real-time",
+        "latencyMs": "{value}ms",
+        "status": {
+          "active": "Active",
+          "up": "Up",
+          "degraded": "Degraded",
+          "down": "Down"
+        }
+      },
+      "pendingActions": {
+        "title": "Pending Actions",
+        "assistantReviewsTitle": "Assistant Reviews",
+        "assistantReviewsSubtitle": "Awaiting approval",
+        "knowledgeReviewsTitle": "Knowledge Reviews",
+        "knowledgeReviewsSubtitle": "Pending processing",
+        "financialSummary": "Financial Summary",
+        "monthlySpend": "Monthly Spend",
+        "totalBalance": "Total Balance",
+        "quotaUsage": "Quota Usage"
+      },
+      "recentErrors": {
+        "title": "Recent Errors",
+        "viewAllLogs": "View all logs",
+        "empty": "No recent errors",
+        "columns": {
+          "time": "Time",
+          "status": "Status",
+          "model": "Model",
+          "error": "Error",
+          "message": "Message"
+        }
+      }
     },
     "stats": {
       "totalUsers": "Total Users",
@@ -22,13 +63,135 @@
       "title": "Assistant Management",
       "description": "Manage all assistant configurations"
     },
+    "assistantsPage": {
+      "feedback": {
+        "created": "Created assistant: {id}",
+        "createFailed": "Create failed"
+      },
+      "visibility": {
+        "private": "Private",
+        "unlisted": "Unlisted",
+        "public": "Public"
+      },
+      "status": {
+        "draft": "Draft",
+        "published": "Published",
+        "archived": "Archived"
+      },
+      "table": {
+        "headers": {
+          "name": "Name",
+          "owner": "Owner",
+          "visibility": "Visibility",
+          "status": "Status",
+          "version": "Ver",
+          "installs": "Installs",
+          "rating": "Rating",
+          "model": "Model",
+          "published": "Published"
+        }
+      },
+      "form": {
+        "assistantName": "Assistant name",
+        "summary": "Summary",
+        "systemPrompt": "System prompt"
+      },
+      "actions": {
+        "creating": "Creating...",
+        "create": "Create Assistant"
+      },
+      "filters": {
+        "searchPlaceholder": "Search assistants...",
+        "status": "Status",
+        "visibility": "Visibility"
+      },
+      "empty": {
+        "loading": "Loading assistants...",
+        "failed": "Failed to load assistants",
+        "noData": "No assistants found"
+      }
+    },
     "assistantReviews": {
       "title": "Assistant Reviews",
       "description": "Review pending assistants and tags"
     },
+    "assistantReviewsPage": {
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "stats": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "feedback": {
+        "approved": "Approved {name}",
+        "rejected": "Rejected {name}",
+        "operationFailed": "Operation failed"
+      },
+      "table": {
+        "headers": {
+          "assistant": "Assistant",
+          "submitter": "Submitter",
+          "status": "Status",
+          "submitted": "Submitted",
+          "reviewer": "Reviewer",
+          "reviewed": "Reviewed",
+          "reason": "Reason"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search reviews...",
+        "status": "Status"
+      },
+      "empty": {
+        "loading": "Loading reviews...",
+        "failed": "Failed to load reviews",
+        "noData": "No reviews found"
+      }
+    },
     "specKnowledge": {
       "title": "Spec Knowledge Review",
       "description": "Review knowledge candidate entries"
+    },
+    "specKnowledgePage": {
+      "status": {
+        "pendingSignal": "Pending Signal",
+        "pendingEval": "Pending Eval",
+        "pendingReview": "Pending Review",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "feedback": {
+        "approved": "Approved candidate: {name}",
+        "rejected": "Rejected candidate: {name}",
+        "operationFailed": "Operation failed"
+      },
+      "table": {
+        "headers": {
+          "project": "Project",
+          "status": "Status",
+          "feedback": "+/-",
+          "applyRevert": "Apply/Revert",
+          "success": "Success",
+          "sessions": "Sessions",
+          "llmScore": "LLM Score",
+          "static": "Static",
+          "review": "Review",
+          "created": "Created"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search projects...",
+        "status": "Status"
+      },
+      "empty": {
+        "loading": "Loading candidates...",
+        "failed": "Failed to load candidates",
+        "noData": "No candidates found"
+      }
     },
     "knowledgeReviews": {
       "title": "Knowledge Review Workbench",
@@ -38,21 +201,267 @@
       "title": "User Management",
       "description": "Manage system users and permissions"
     },
+    "usersPage": {
+      "loadingDescription": "Loading user data",
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "superuser": "Superuser"
+      },
+      "table": {
+        "headers": {
+          "username": "Username",
+          "email": "Email",
+          "status": "Status",
+          "superuser": "Superuser",
+          "registered": "Registered",
+          "updated": "Updated"
+        }
+      },
+      "actions": {
+        "activate": "Activate",
+        "deactivate": "Deactivate"
+      },
+      "empty": {
+        "loading": "Loading users...",
+        "failed": "Failed to load users",
+        "noData": "No users found"
+      },
+      "stats": {
+        "totalUsers": "Total Users",
+        "active": "Active",
+        "inactive": "Inactive",
+        "superusers": "Superusers"
+      },
+      "filters": {
+        "searchPlaceholder": "Search users by name, email, or id...",
+        "status": {
+          "label": "Status",
+          "active": "Active",
+          "inactive": "Inactive"
+        },
+        "superuser": {
+          "label": "Superuser",
+          "yes": "Yes",
+          "no": "No"
+        }
+      },
+      "createForm": {
+        "placeholders": {
+          "email": "Email",
+          "usernameOptional": "Username (optional)",
+          "temporaryPassword": "Temporary password"
+        },
+        "actions": {
+          "submitting": "Submitting...",
+          "createUser": "Create User"
+        },
+        "feedback": {
+          "created": "Created user: {email}",
+          "createFailed": "Create failed"
+        }
+      }
+    },
     "apiKeys": {
       "title": "API Key Management",
       "description": "Manage all API keys"
+    },
+    "apiKeysPage": {
+      "stats": {
+        "totalKeys": "Total Keys",
+        "active": "Active",
+        "revoked": "Revoked"
+      },
+      "feedback": {
+        "created": "Created key: {name}",
+        "createFailed": "Create failed",
+        "rawKeyLabel": "Raw key (show once)"
+      },
+      "types": {
+        "internal": "Internal",
+        "external": "External"
+      },
+      "status": {
+        "active": "Active",
+        "revoked": "Revoked",
+        "expired": "Expired"
+      },
+      "table": {
+        "headers": {
+          "name": "Name",
+          "type": "Type",
+          "status": "Status",
+          "user": "User",
+          "tenant": "Tenant",
+          "created": "Created",
+          "lastUsed": "Last Used"
+        },
+        "never": "Never"
+      },
+      "form": {
+        "keyName": "Key name",
+        "userId": "User ID (UUID)",
+        "tenantId": "Tenant ID (UUID)"
+      },
+      "actions": {
+        "creating": "Creating...",
+        "create": "Create Key"
+      },
+      "filters": {
+        "searchPlaceholder": "Search keys...",
+        "type": "Type",
+        "status": "Status"
+      },
+      "empty": {
+        "loading": "Loading API keys...",
+        "failed": "Failed to load API keys",
+        "noData": "No API keys found"
+      }
     },
     "rateLimit": {
       "title": "API Key Rate Limit",
       "description": "Configure API access rate limits"
     },
+    "rateLimitPage": {
+      "rateLimits": {
+        "rpm": "Requests per minute",
+        "tpm": "Tokens per minute",
+        "rpd": "Requests per day",
+        "tpd": "Tokens per day",
+        "concurrentLabel": "Concurrent",
+        "concurrent": "Concurrent requests",
+        "burstLabel": "Burst",
+        "burst": "Burst limit"
+      },
+      "ipWhitelist": {
+        "title": "IP Whitelist",
+        "addIp": "Add IP",
+        "officeNetwork": "Office network",
+        "vpnRange": "VPN range",
+        "ciServer": "CI server",
+        "columns": {
+          "pattern": "Pattern",
+          "description": "Description",
+          "action": "Action"
+        },
+        "remove": "Remove"
+      },
+      "saveChanges": "Save Changes"
+    },
     "registration": {
       "title": "Registration & Invite Codes",
       "description": "Manage user registration and invites"
     },
+    "registrationPage": {
+      "title": "Registration Control",
+      "autoActivate": "Auto activate",
+      "status": {
+        "unused": "Unused",
+        "reserved": "Reserved",
+        "used": "Used",
+        "revoked": "Revoked"
+      },
+      "feedback": {
+        "windowCreated": "Created registration window",
+        "windowCreateFailed": "Create window failed",
+        "generatedInvites": "Generated {count} invite codes",
+        "generateFailed": "Generate invites failed"
+      },
+      "actions": {
+        "submitting": "Submitting...",
+        "newWindow": "New Window"
+      },
+      "loading": {
+        "activeWindow": "Loading active window...",
+        "failedWindow": "Failed to load registration window"
+      },
+      "activeWindow": {
+        "title": "Active Registration Window",
+        "autoActivate": "auto activate",
+        "manual": "manual",
+        "registrationsUsed": "Registrations used",
+        "none": "No active registration window"
+      },
+      "inviteCodes": {
+        "title": "Invite Codes",
+        "generate": "Generate Codes"
+      },
+      "filters": {
+        "searchPlaceholder": "Search invite codes...",
+        "status": "Status"
+      },
+      "table": {
+        "headers": {
+          "code": "Code",
+          "status": "Status",
+          "expires": "Expires",
+          "usedBy": "Used By",
+          "usedAt": "Used At"
+        }
+      },
+      "empty": {
+        "noActiveWindow": "No active window",
+        "loading": "Loading invite codes...",
+        "failed": "Failed to load invite codes",
+        "noData": "No invite codes"
+      }
+    },
     "providerInstances": {
       "title": "Provider Instances",
       "description": "Manage BYOP instance configurations"
+    },
+    "providerInstancesPage": {
+      "health": {
+        "active": "Active",
+        "up": "Up",
+        "degraded": "Degraded",
+        "down": "Down",
+        "unknown": "Unknown"
+      },
+      "enabled": {
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "yes": "Yes",
+        "no": "No"
+      },
+      "feedback": {
+        "created": "Created provider instance: {name}",
+        "createFailed": "Create failed"
+      },
+      "table": {
+        "headers": {
+          "name": "Name",
+          "provider": "Provider",
+          "baseUrl": "Base URL",
+          "priority": "Priority",
+          "enabled": "Enabled",
+          "health": "Health",
+          "latency": "Latency",
+          "models": "Models",
+          "trend": "Trend"
+        },
+        "latencyMs": "{value}ms"
+      },
+      "form": {
+        "presetSlug": "Preset slug",
+        "instanceName": "Instance name",
+        "baseUrl": "Base URL",
+        "providerApiKey": "Provider API Key"
+      },
+      "actions": {
+        "creating": "Creating...",
+        "addInstance": "Add Instance"
+      },
+      "filters": {
+        "searchPlaceholder": "Search providers...",
+        "health": "Health",
+        "enabled": "Enabled"
+      },
+      "empty": {
+        "loading": "Loading provider instances...",
+        "failed": "Failed to load provider instances",
+        "noData": "No provider instances"
+      }
     },
     "providerPresets": {
       "title": "Provider Presets",
@@ -62,6 +471,48 @@
       "title": "Provider Credentials",
       "description": "Manage Provider authentication credentials"
     },
+    "providerCredentialsPage": {
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "yes": "Yes",
+        "no": "No"
+      },
+      "feedback": {
+        "created": "Created credential: {alias}",
+        "createFailed": "Create failed"
+      },
+      "table": {
+        "headers": {
+          "instance": "Instance",
+          "alias": "Alias",
+          "secretRef": "Secret Ref",
+          "weight": "Weight",
+          "priority": "Priority",
+          "active": "Active",
+          "updated": "Updated"
+        },
+        "hidden": "hidden"
+      },
+      "form": {
+        "selectInstance": "Select instance",
+        "credentialAlias": "Credential alias",
+        "providerApiKey": "Provider API key"
+      },
+      "actions": {
+        "creating": "Creating...",
+        "addCredential": "Add Credential"
+      },
+      "filters": {
+        "searchPlaceholder": "Search credentials...",
+        "active": "Active"
+      },
+      "empty": {
+        "loading": "Loading credentials...",
+        "failed": "Failed to load credentials",
+        "noData": "No credentials found"
+      }
+    },
     "embeddingSettings": {
       "title": "Embedding Settings",
       "description": "Configure vector embedding services"
@@ -70,11 +521,84 @@
       "title": "Notification Management",
       "description": "Manage system notifications and messages"
     },
+    "notificationsPage": {
+      "description": "Send system notifications and alerts",
+      "type": {
+        "system": "System",
+        "alert": "Alert",
+        "billing": "Billing",
+        "audit": "Audit",
+        "security": "Security",
+        "maintenance": "Maintenance"
+      },
+      "level": {
+        "info": "Info",
+        "warn": "Warn",
+        "error": "Error",
+        "critical": "Critical"
+      },
+      "target": {
+        "broadcast": "broadcast",
+        "user": "specific user"
+      },
+      "feedback": {
+        "sent": "Sent: {message}",
+        "sendFailed": "Send failed"
+      },
+      "compose": {
+        "title": "Compose Notification",
+        "hint": "Compose and send notification",
+        "activeOnly": "Broadcast to active users only",
+        "fields": {
+          "title": "Title",
+          "type": "Type",
+          "level": "Level",
+          "target": "Target",
+          "userId": "User ID",
+          "source": "Source",
+          "dedupeKey": "Dedupe Key",
+          "expiresAt": "Expires At",
+          "content": "Content"
+        },
+        "placeholders": {
+          "title": "Notification title",
+          "optional": "optional",
+          "content": "Notification content..."
+        }
+      },
+      "actions": {
+        "sending": "Sending...",
+        "send": "Send"
+      },
+      "filters": {
+        "searchPlaceholder": "Search notifications...",
+        "type": "Type",
+        "level": "Level"
+      },
+      "table": {
+        "headers": {
+          "title": "Title",
+          "type": "Type",
+          "level": "Level",
+          "source": "Source",
+          "sent": "Sent",
+          "content": "Content"
+        }
+      },
+      "empty": {
+        "loading": "Loading notifications...",
+        "failed": "Failed to load notifications",
+        "noData": "No notifications found"
+      }
+    },
     "common": {
       "noData": "No data available",
       "loading": "Loading...",
+      "searchPlaceholder": "Search...",
       "search": "Search",
       "filter": "Filter",
+      "all": "All",
+      "clear": "Clear",
       "actions": "Actions",
       "edit": "Edit",
       "delete": "Delete",
@@ -83,7 +607,475 @@
       "save": "Save",
       "cancel": "Cancel",
       "confirm": "Confirm",
-      "back": "Back"
+      "back": "Back",
+      "collapseSidebar": "Collapse Sidebar",
+      "pagination": {
+        "showingOf": "Showing {start}-{end} of {total}"
+      }
+    },
+    "agentTasks": {
+      "title": "Agent Tasks",
+      "description": "Monitor Spec Agent task execution"
+    },
+    "agentTasksPage": {
+      "stats": {
+        "totalTasks": "Total Tasks",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
+      "status": {
+        "draft": "Draft",
+        "running": "Running",
+        "paused": "Paused",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
+      "table": {
+        "headers": {
+          "project": "Project",
+          "user": "User",
+          "status": "Status",
+          "version": "Ver",
+          "priority": "Priority",
+          "session": "Session",
+          "updated": "Updated",
+          "created": "Created"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search tasks...",
+        "status": "Status"
+      },
+      "empty": {
+        "loading": "Loading agent tasks...",
+        "failed": "Failed to load agent tasks",
+        "noData": "No agent tasks found"
+      }
+    },
+    "conversations": {
+      "title": "Conversations",
+      "description": "Monitor and manage user conversations"
+    },
+    "conversationsPage": {
+      "stats": {
+        "total": "Total",
+        "active": "Active",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "channel": {
+        "internal": "Internal",
+        "external": "External"
+      },
+      "status": {
+        "active": "Active",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "table": {
+        "headers": {
+          "title": "Title",
+          "user": "User",
+          "assistant": "Assistant",
+          "channel": "Channel",
+          "status": "Status",
+          "messages": "Messages",
+          "lastActive": "Last Active",
+          "summary": "Summary"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search conversations...",
+        "channel": "Channel",
+        "status": "Status"
+      },
+      "empty": {
+        "loading": "Loading conversations...",
+        "failed": "Failed to load conversations",
+        "noData": "No conversations found"
+      }
+    },
+    "billing": {
+      "title": "Billing & Quotas",
+      "description": "Manage tenant quotas and billing transactions"
+    },
+    "billingPage": {
+      "tabs": {
+        "quotas": "Quotas",
+        "transactions": "Transactions"
+      },
+      "stats": {
+        "totalBalance": "Total Balance",
+        "monthlyProfit": "Monthly Profit",
+        "activeTenants": "Active Tenants",
+        "lowBalance": "Low Balance",
+        "transactions": "{count} transactions"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "type": {
+        "deduct": "Deduct",
+        "recharge": "Recharge",
+        "refund": "Refund",
+        "adjust": "Adjust"
+      },
+      "transactionStatus": {
+        "committed": "Committed",
+        "pending": "Pending",
+        "reversed": "Reversed"
+      },
+      "quotaTable": {
+        "headers": {
+          "tenant": "Tenant",
+          "balance": "Balance",
+          "creditLimit": "Credit Limit",
+          "daily": "Daily",
+          "monthly": "Monthly",
+          "rpm": "RPM",
+          "active": "Active"
+        }
+      },
+      "txTable": {
+        "headers": {
+          "traceId": "Trace ID",
+          "tenant": "Tenant",
+          "type": "Type",
+          "status": "Status",
+          "amount": "Amount",
+          "model": "Model",
+          "description": "Description",
+          "date": "Date"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search transactions...",
+        "type": "Type",
+        "status": "Status"
+      },
+      "empty": {
+        "quotasLoading": "Loading quotas...",
+        "quotasFailed": "Failed to load quotas",
+        "quotasNoData": "No tenants found",
+        "transactionsLoading": "Loading transactions...",
+        "transactionsFailed": "Failed to load transactions",
+        "transactionsNoData": "No transactions found"
+      }
+    },
+    "gatewayLogs": {
+      "title": "Gateway Logs",
+      "description": "API gateway request logs and analytics"
+    },
+    "gatewayLogsPage": {
+      "stats": {
+        "totalLogs": "Total Logs",
+        "errorRate": "Error Rate",
+        "avgLatency": "Avg Latency",
+        "cacheHits": "Cache Hits",
+        "ms": "{value}ms"
+      },
+      "table": {
+        "headers": {
+          "traceId": "Trace ID",
+          "user": "User",
+          "apiKey": "API Key",
+          "model": "Model",
+          "status": "Status",
+          "duration": "Duration",
+          "ttft": "TTFT",
+          "tokens": "Tokens",
+          "cost": "Cost",
+          "cache": "Cache",
+          "error": "Error"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search by trace ID, user, model...",
+        "model": "Model",
+        "status": "Status",
+        "cached": "Cached"
+      },
+      "statusBucket": {
+        "2xx": "2xx",
+        "4xx": "4xx",
+        "5xx": "5xx"
+      },
+      "cached": {
+        "yes": "Yes",
+        "no": "No"
+      },
+      "empty": {
+        "loading": "Loading logs...",
+        "failed": "Failed to load logs",
+        "noData": "No logs found"
+      }
+    },
+    "generationTasks": {
+      "title": "Generation Tasks",
+      "description": "Monitor image, audio, and video generation tasks"
+    },
+    "generationTasksPage": {
+      "duration": {
+        "seconds": "{value}s",
+        "minuteSeconds": "{minutes}m {seconds}s"
+      },
+      "type": {
+        "image": "Image",
+        "audio": "Audio",
+        "video": "Video",
+        "tts": "TTS",
+        "unknown": "Unknown"
+      },
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "canceled": "Canceled"
+      },
+      "drawer": {
+        "title": "Task Details",
+        "prompt": "Prompt",
+        "errorDetails": "Error Details",
+        "fields": {
+          "taskId": "Task ID",
+          "type": "Type",
+          "model": "Model",
+          "status": "Status",
+          "user": "User",
+          "resolution": "Resolution",
+          "cost": "Cost",
+          "duration": "Duration",
+          "errorCode": "Error Code",
+          "created": "Created",
+          "started": "Started",
+          "completed": "Completed"
+        }
+      },
+      "stats": {
+        "totalTasks": "Total Tasks",
+        "successRate": "Success Rate",
+        "successSubtitle": "{succeeded}/{total}",
+        "totalCost": "Total Cost",
+        "avgDuration": "Avg Duration",
+        "runningTasks": "{count} running"
+      },
+      "charts": {
+        "typeDistribution": "Type Distribution",
+        "statusBreakdown": "Status Breakdown"
+      },
+      "filters": {
+        "searchPlaceholder": "Search by ID, model, prompt, user, error...",
+        "type": "Type",
+        "status": "Status"
+      },
+      "refresh": {
+        "off": "Off",
+        "tenSeconds": "10s",
+        "thirtySeconds": "30s",
+        "sixtySeconds": "60s"
+      },
+      "actions": {
+        "lastRefreshed": "Last: {time}",
+        "refresh": "Refresh",
+        "export": "Export"
+      },
+      "table": {
+        "headers": {
+          "type": "Type",
+          "model": "Model",
+          "user": "User",
+          "status": "Status",
+          "prompt": "Prompt",
+          "resolution": "Resolution",
+          "cost": "Cost",
+          "duration": "Duration",
+          "error": "Error",
+          "created": "Created"
+        }
+      },
+      "empty": {
+        "loading": "Loading generation tasks...",
+        "failed": "Failed to load generation tasks",
+        "noData": "No generation tasks found"
+      },
+      "csv": {
+        "id": "id",
+        "taskType": "task_type",
+        "model": "model",
+        "user": "user_id",
+        "status": "status",
+        "prompt": "prompt_raw",
+        "width": "width",
+        "height": "height",
+        "cost": "cost_user",
+        "error": "error_code",
+        "created": "created_at",
+        "started": "started_at",
+        "completed": "completed_at"
+      }
+    },
+    "knowledgeReviewsPage": {
+      "type": {
+        "documentation": "Documentation",
+        "assistant": "Assistant",
+        "providerSpec": "Provider Spec"
+      },
+      "status": {
+        "pending": "Pending",
+        "processing": "Processing",
+        "indexed": "Indexed",
+        "failed": "Failed"
+      },
+      "table": {
+        "untitled": "Untitled",
+        "headers": {
+          "title": "Title",
+          "source": "Source",
+          "type": "Type",
+          "status": "Status",
+          "model": "Model",
+          "chunks": "Chunks",
+          "created": "Created"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search artifacts...",
+        "type": "Type",
+        "status": "Status"
+      },
+      "empty": {
+        "loading": "Loading artifacts...",
+        "failed": "Failed to load artifacts",
+        "noData": "No artifacts found"
+      }
+    },
+    "monitoringPage": {
+      "stats": {
+        "successRate": "Success Rate",
+        "last24Hours": "Last 24 hours",
+        "avgTtft": "Avg TTFT",
+        "ms": "{value}ms",
+        "timeToFirstToken": "Time to first token",
+        "todayRequests": "Today Requests",
+        "cacheHitRate": "Cache Hit Rate",
+        "saved": "Saved {value}%"
+      },
+      "tokenThroughput": {
+        "title": "Token Throughput (Last 12 buckets)",
+        "unit": "Input tokens (K)"
+      },
+      "smartRouter": {
+        "title": "Smart Router",
+        "cacheHit": "Cache Hit",
+        "costSavings": "Cost Savings",
+        "blocked": "Blocked",
+        "avgSpeedup": "Avg Speedup"
+      },
+      "status": {
+        "active": "Active",
+        "up": "Up",
+        "degraded": "Degraded",
+        "down": "Down"
+      },
+      "providerHealth": {
+        "title": "Provider Health",
+        "columns": {
+          "provider": "Provider",
+          "status": "Status",
+          "latency": "Latency",
+          "priority": "Priority",
+          "trend": "Trend"
+        }
+      },
+      "recentErrors": {
+        "title": "Recent Errors",
+        "columns": {
+          "time": "Time",
+          "status": "Status",
+          "model": "Model",
+          "errorCode": "Error Code",
+          "message": "Message"
+        }
+      }
+    },
+    "providerPresetsPage": {
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "card": {
+        "unnamedPreset": "Unnamed Preset",
+        "unknownProvider": "Unknown provider"
+      },
+      "empty": {
+        "loading": "Loading provider presets...",
+        "failed": "Failed to load provider presets",
+        "noData": "No provider presets found"
+      }
+    },
+    "embeddingSettingsPage": {
+      "section": {
+        "title": "Embedding Model",
+        "description": "Set the model used for generating embeddings across the knowledge base."
+      },
+      "fields": {
+        "current": "Current",
+        "newModelName": "New Model Name",
+        "placeholder": "text-embedding-3-large"
+      },
+      "feedback": {
+        "updated": "Embedding model updated",
+        "updateFailed": "Update failed",
+        "loadFailed": "Failed to load embedding setting"
+      },
+      "actions": {
+        "saving": "Saving...",
+        "save": "Save"
+      },
+      "loading": "Loading..."
+    },
+    "skills": {
+      "title": "Skill Management",
+      "description": "Manage registered skills and capabilities"
+    },
+    "skillsPage": {
+      "status": {
+        "active": "Active",
+        "draft": "Draft",
+        "disabled": "Disabled"
+      },
+      "risk": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "unknown": "Unknown"
+      },
+      "table": {
+        "complexityValue": "{value}/10",
+        "headers": {
+          "id": "ID",
+          "name": "Name",
+          "version": "Version",
+          "status": "Status",
+          "runtime": "Runtime",
+          "risk": "Risk",
+          "complexity": "Complexity",
+          "tags": "Tags"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search skills...",
+        "status": "Status",
+        "risk": "Risk"
+      },
+      "empty": {
+        "loading": "Loading skills...",
+        "failed": "Failed to load skills",
+        "noData": "No skills found"
+      }
     }
   }
 }

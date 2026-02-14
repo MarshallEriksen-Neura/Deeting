@@ -11,7 +11,7 @@ import {
   createVideoGenerationTask,
   fetchVideoGenerationTask,
 } from "@/lib/api/video-generation";
-import type { VideoGenerationTaskDetail } from "@/lib/api/video-generation";
+import type { VideoGenerationTaskDetail, VideoGenerationTaskListItem } from "@/lib/api/video-generation";
 import { Button } from "@/components/ui/button";
 import { InputSection } from "./input-section";
 import { ParameterSettings } from "./parameter-settings";
@@ -30,6 +30,7 @@ export default function VideoDashboard() {
   const [currentVideo, setCurrentVideo] = useState<string | null>(null);
   const [currentTaskDetail, setCurrentTaskDetail] = useState<VideoGenerationTaskDetail | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [regeneratingTaskId, setRegeneratingTaskId] = useState<string | null>(null);
 
   const {
     sessionId,
@@ -171,6 +172,53 @@ export default function VideoDashboard() {
     [sessionTasks]
   );
 
+  const handleRegenerate = useCallback(
+    async (task: VideoGenerationTaskListItem) => {
+      if (regeneratingTaskId) return;
+      setRegeneratingTaskId(task.task_id);
+      setGenerationPhase("submitting");
+      setErrorMessage(null);
+      setCurrentVideo(null);
+      setCurrentTaskDetail(null);
+
+      try {
+        const sid = sessionId || createSessionId();
+        if (!sessionId) {
+          setSessionId(sid);
+        }
+
+        const result = await createVideoGenerationTask({
+          model: task.model,
+          prompt: task.prompt ?? "",
+          negative_prompt: task.negative_prompt,
+          image_url: task.image_url,
+          aspect_ratio: task.aspect_ratio,
+          duration: task.duration,
+          fps: task.fps,
+          motion_bucket_id: task.motion_bucket_id,
+          steps: task.steps,
+          cfg_scale: task.cfg_scale,
+          provider_model_id: task.provider_model_id ?? undefined,
+          session_id: sid,
+        });
+
+        setGenerationPhase("queued");
+        setRegeneratingTaskId(null);
+        mutate();
+
+        await pollTaskStatus(result.task_id);
+      } catch (error) {
+        setGenerationPhase("failed");
+        setRegeneratingTaskId(null);
+        const message =
+          error instanceof Error ? error.message : t("errorGenerate");
+        setErrorMessage(message);
+        toast.error(message);
+      }
+    },
+    [regeneratingTaskId, sessionId, setSessionId, pollTaskStatus, mutate, t]
+  );
+
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 relative overflow-hidden">
       {/* Background noise texture */}
@@ -245,6 +293,8 @@ export default function VideoDashboard() {
             hasMore={hasMore}
             onLoadMore={loadMore}
             onSelectTask={handleSelectTask}
+            onRegenerate={handleRegenerate}
+            regeneratingTaskId={regeneratingTaskId}
           />
         </div>
       </main>

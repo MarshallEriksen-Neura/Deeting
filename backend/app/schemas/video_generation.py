@@ -78,6 +78,16 @@ class VideoGenerationTaskListItem(BaseSchema):
     session_id: UUID | None = None
     prompt: str | None = None
     prompt_encrypted: bool = False
+    negative_prompt: str | None = None
+    aspect_ratio: str | None = None
+    image_url: str | None = None
+    duration: int | None = None
+    fps: int | None = None
+    motion_bucket_id: int | None = None
+    steps: int | None = None
+    cfg_scale: float | None = None
+    seed: int | None = None
+    provider_model_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None

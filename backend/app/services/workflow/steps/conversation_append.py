@@ -62,6 +62,10 @@ class ConversationAppendStep(BaseStep):
 
         req = ctx.get("validation", "validated") or {}
         user_messages: list[dict[str, Any]] = req.get("messages", []) or []
+        # 重新生成时，用户消息已在历史中，跳过重复追加
+        is_regenerate = ctx.get("conversation", "regenerate", False)
+        if is_regenerate:
+            user_messages = []
         assistant_id = req.get("assistant_id") or ctx.get("assistant", "id")
         assistant_msg = self._extract_assistant_message(
             ctx.get("response_transform", "response") or {}
@@ -245,6 +249,19 @@ class ConversationAppendStep(BaseStep):
                 session_id,
                 ctx.trace_id,
             )
+
+        # ===== 重新生成：LLM 成功后执行旧 assistant 消息的软删除 =====
+        if is_regenerate:
+            regenerate_turn_index = ctx.get(
+                "conversation", "regenerate_turn_index", None
+            )
+            if regenerate_turn_index is not None:
+                await self._soft_delete_old_assistant(
+                    ctx=ctx,
+                    conv_service=conv_service,
+                    session_id=session_id,
+                    turn_index=regenerate_turn_index,
+                )
 
         if conv_service:
             await self._maybe_schedule_topic_naming(
@@ -484,6 +501,45 @@ class ConversationAppendStep(BaseStep):
         if isinstance(first, dict):
             return first.get("message")
         return None
+
+    @staticmethod
+    async def _soft_delete_old_assistant(
+        *,
+        ctx: WorkflowContext,
+        conv_service: ConversationService | None,
+        session_id: str,
+        turn_index: int,
+    ) -> None:
+        """重新生成成功后，软删除旧的 assistant 消息（Redis + DB）"""
+        # Redis 侧软删除
+        if conv_service:
+            try:
+                await conv_service.delete_message(session_id, turn_index)
+                logger.info(
+                    "conversation_regenerate_deleted session=%s turn=%s",
+                    session_id,
+                    turn_index,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "conversation_regenerate_redis_delete_failed session=%s exc=%s",
+                    session_id,
+                    exc,
+                )
+        # DB 侧软删除
+        if ctx.db_session is not None:
+            try:
+                msg_repo = ConversationMessageRepository(ctx.db_session)
+                await msg_repo.soft_delete_by_turn_index(
+                    session_id=uuid.UUID(session_id),
+                    turn_index=turn_index,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "conversation_regenerate_db_delete_failed session=%s exc=%s",
+                    session_id,
+                    exc,
+                )
 
     async def _maybe_schedule_topic_naming(
         self,

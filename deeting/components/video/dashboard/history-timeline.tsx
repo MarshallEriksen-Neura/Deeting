@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Play, Clock, Loader2, Film } from "lucide-react";
+import { Play, Clock, Loader2, Film, RefreshCw } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { GlassCard } from "@/components/ui/glass-card";
 import type { VideoGenerationTaskListItem } from "@/lib/api/video-generation";
@@ -13,6 +13,8 @@ interface HistoryTimelineProps {
   hasMore: boolean;
   onLoadMore: () => void;
   onSelectTask: (taskId: string) => void;
+  onRegenerate?: (task: VideoGenerationTaskListItem) => void;
+  regeneratingTaskId?: string | null;
 }
 
 function formatRelativeTime(dateString: string): string {
@@ -47,6 +49,8 @@ export function HistoryTimeline({
   hasMore,
   onLoadMore,
   onSelectTask,
+  onRegenerate,
+  regeneratingTaskId,
 }: HistoryTimelineProps) {
   const t = useI18n("video");
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
@@ -157,6 +161,20 @@ export function HistoryTimeline({
                     <span className="text-white text-xs font-bold">!</span>
                   </div>
                 )}
+
+                {onRegenerate && (task.status === "completed" || task.status === "failed") ? (
+                  <button
+                    className="absolute top-1 left-1 w-6 h-6 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center transition-colors z-10"
+                    title="Regenerate"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRegenerate(task);
+                    }}
+                    disabled={regeneratingTaskId === task.task_id}
+                  >
+                    <RefreshCw className={`w-3 h-3 text-white ${regeneratingTaskId === task.task_id ? "animate-spin" : ""}`} />
+                  </button>
+                ) : null}
               </GlassCard>
             );
           })}

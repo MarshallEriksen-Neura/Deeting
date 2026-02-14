@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Key } from "lucide-react"
 import {
@@ -23,7 +24,16 @@ type ProviderCredentialRow = ProviderCredentialItem & {
   preset_slug: string
 }
 
+function formatDate(value: string, locale: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale).format(date)
+}
+
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.providerCredentialsPage")
+  const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
   const [activeFilter, setActiveFilter] = useState("")
   const [selectedInstanceId, setSelectedInstanceId] = useState("")
@@ -88,10 +98,11 @@ export function PageContent() {
       })
       setAlias("")
       setApiKey("")
-      setFeedback(`Created credential: ${created.alias}`)
+      setFeedback(t("feedback.created", { alias: created.alias }))
       await mutate()
     } catch (createError) {
-      const message = createError instanceof Error ? createError.message : "Create failed"
+      const message =
+        createError instanceof Error ? createError.message : t("feedback.createFailed")
       setFeedback(message)
     } finally {
       setIsSubmitting(false)
@@ -101,7 +112,7 @@ export function PageContent() {
   const columns: ColumnDef<ProviderCredentialRow>[] = [
     {
       key: "instance_name",
-      header: "Instance",
+      header: t("table.headers.instance"),
       sortable: true,
       render: (row) => (
         <div>
@@ -112,40 +123,43 @@ export function PageContent() {
     },
     {
       key: "alias",
-      header: "Alias",
+      header: t("table.headers.alias"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs text-[var(--foreground)]">{row.alias}</span>,
     },
     {
       key: "secret_ref",
-      header: "Secret Ref",
-      render: () => <span className="font-mono text-xs text-[var(--muted)]">hidden</span>,
+      header: t("table.headers.secretRef"),
+      render: () => <span className="font-mono text-xs text-[var(--muted)]">{t("table.hidden")}</span>,
     },
     {
       key: "weight",
-      header: "Weight",
+      header: t("table.headers.weight"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{row.weight}</span>,
     },
     {
       key: "priority",
-      header: "Priority",
+      header: t("table.headers.priority"),
       sortable: true,
       render: (row) => <span className="font-mono text-xs">{row.priority}</span>,
     },
     {
       key: "is_active",
-      header: "Active",
+      header: t("table.headers.active"),
       render: (row) => (
-        <AdminStatusBadge text={row.is_active ? "active" : "inactive"} tone={row.is_active ? "success" : "error"} />
+        <AdminStatusBadge
+          text={row.is_active ? t("status.active") : t("status.inactive")}
+          tone={row.is_active ? "success" : "error"}
+        />
       ),
     },
     {
       key: "updated_at",
-      header: "Updated",
+      header: t("table.headers.updated"),
       sortable: true,
       render: (row) => (
-        <span className="text-xs text-[var(--muted)]">{new Date(row.updated_at).toLocaleDateString()}</span>
+        <span className="text-xs text-[var(--muted)]">{formatDate(row.updated_at, locale)}</span>
       ),
     },
   ]
@@ -155,8 +169,8 @@ export function PageContent() {
 
   return (
     <AdminPageShell
-      title="Provider Credentials"
-      description="Manage API keys and credentials for providers"
+      title={tAdmin("providerCredentials.title")}
+      description={tAdmin("providerCredentials.description")}
       icon={Key}
     >
       <GlassCard padding="default" hover="none">
@@ -166,7 +180,7 @@ export function PageContent() {
             onChange={(event) => setSelectedInstanceId(event.target.value)}
             className="h-9 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
           >
-            <option value="">Select instance</option>
+            <option value="">{t("form.selectInstance")}</option>
             {(instances ?? []).map((instance) => (
               <option key={instance.id} value={instance.id}>
                 {instance.name}
@@ -176,13 +190,13 @@ export function PageContent() {
           <input
             value={alias}
             onChange={(event) => setAlias(event.target.value)}
-            placeholder="Credential alias"
+            placeholder={t("form.credentialAlias")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <input
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            placeholder="Provider API key"
+            placeholder={t("form.providerApiKey")}
             className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <button
@@ -190,14 +204,14 @@ export function PageContent() {
             disabled={!selectedInstanceId || !alias.trim() || !apiKey.trim() || isSubmitting}
             className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Creating..." : "Add Credential"}
+            {isSubmitting ? t("actions.creating") : t("actions.addCredential")}
           </button>
         </div>
         {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
       </GlassCard>
 
       <AdminFilterBar
-        searchPlaceholder="Search credentials..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "active") setActiveFilter(value)
@@ -205,10 +219,10 @@ export function PageContent() {
         filters={[
           {
             key: "active",
-            label: "Active",
+            label: t("filters.active"),
             options: [
-              { label: "Yes", value: "true" },
-              { label: "No", value: "false" },
+              { label: t("status.yes"), value: "true" },
+              { label: t("status.no"), value: "false" },
             ],
           },
         ]}
@@ -218,10 +232,10 @@ export function PageContent() {
         data={filteredRows}
         emptyMessage={
           isLoading
-            ? "Loading credentials..."
+            ? t("empty.loading")
             : hasError
-              ? "Failed to load credentials"
-              : "No credentials found"
+              ? t("empty.failed")
+              : t("empty.noData")
         }
       />
     </AdminPageShell>

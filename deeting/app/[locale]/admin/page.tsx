@@ -1,5 +1,7 @@
+import { Suspense } from "react"
 import { setRequestLocale } from "next-intl/server"
 import { PageContent } from "./page-content"
+import { AdminPageSkeleton } from "./components/admin-page-skeleton"
 
 export default async function AdminDashboardPage({
   params,
@@ -8,5 +10,10 @@ export default async function AdminDashboardPage({
 }) {
   const { locale } = await params
   setRequestLocale(locale)
-  return <PageContent />
+
+  return (
+    <Suspense fallback={<AdminPageSkeleton />}>
+      <PageContent />
+    </Suspense>
+  )
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { BookOpen, ExternalLink } from "lucide-react"
 import {
@@ -17,6 +18,13 @@ import {
 } from "@/lib/api/admin-dashboard"
 
 export function PageContent() {
+  const tAdmin = useTranslations("admin")
+  const t = useTranslations("admin.knowledgeReviewsPage")
+  const locale = useLocale()
+  const dateFormatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+  })
+  const numberFormatter = new Intl.NumberFormat(locale)
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
@@ -34,16 +42,29 @@ export function PageContent() {
 
   const rows = data?.items ?? []
 
+  const typeLabelMap: Record<string, string> = {
+    documentation: t("type.documentation"),
+    assistant: t("type.assistant"),
+    provider_spec: t("type.providerSpec"),
+  }
+
+  const statusLabelMap: Record<string, string> = {
+    pending: t("status.pending"),
+    processing: t("status.processing"),
+    indexed: t("status.indexed"),
+    failed: t("status.failed"),
+  }
+
   const columns: ColumnDef<KnowledgeArtifactItem>[] = [
     {
       key: "title",
-      header: "Title",
+      header: t("table.headers.title"),
       sortable: true,
-      render: (row) => <span className="font-medium text-[var(--foreground)]">{row.title || "Untitled"}</span>,
+      render: (row) => <span className="font-medium text-[var(--foreground)]">{row.title || t("table.untitled")}</span>,
     },
     {
       key: "source_url",
-      header: "Source",
+      header: t("table.headers.source"),
       render: (row) => {
         if (!row.source_url) return <span className="text-[var(--muted)]">—</span>
         let host = row.source_url
@@ -62,51 +83,89 @@ export function PageContent() {
     },
     {
       key: "artifact_type",
-      header: "Type",
-      render: (row) => <AdminStatusBadge text={row.artifact_type.replace(/_/g, " ")} tone={getStatusTone(row.artifact_type)} dot={false} />,
+      header: t("table.headers.type"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={typeLabelMap[row.artifact_type] ?? row.artifact_type.replace(/_/g, " ")}
+          tone={getStatusTone(row.artifact_type)}
+          dot={false}
+        />
+      ),
     },
     {
       key: "status",
-      header: "Status",
-      render: (row) => <AdminStatusBadge text={row.status} tone={getStatusTone(row.status)} />,
+      header: t("table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={statusLabelMap[row.status] ?? row.status}
+          tone={getStatusTone(row.status)}
+        />
+      ),
     },
     {
       key: "embedding_model",
-      header: "Model",
+      header: t("table.headers.model"),
       render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{row.embedding_model || "—"}</span>,
     },
     {
       key: "chunk_count",
-      header: "Chunks",
+      header: t("table.headers.chunks"),
       sortable: true,
-      render: (row) => <span className={row.chunk_count > 0 ? "text-[var(--foreground)]" : "text-[var(--muted)]"}>{row.chunk_count || "—"}</span>,
+      render: (row) => (
+        <span className={row.chunk_count > 0 ? "text-[var(--foreground)]" : "text-[var(--muted)]"}>
+          {row.chunk_count > 0 ? numberFormatter.format(row.chunk_count) : "—"}
+        </span>
+      ),
     },
     {
       key: "created_at",
-      header: "Created",
+      header: t("table.headers.created"),
       sortable: true,
-      render: (row) => <span className="text-xs text-[var(--muted)]">{new Date(row.created_at).toLocaleDateString()}</span>,
+      render: (row) => <span className="text-xs text-[var(--muted)]">{dateFormatter.format(new Date(row.created_at))}</span>,
     },
   ]
 
   return (
-    <AdminPageShell title="Knowledge Reviews" description="Review knowledge artifacts and embeddings" icon={BookOpen}>
+    <AdminPageShell title={tAdmin("knowledgeReviews.title")} description={tAdmin("knowledgeReviews.description")} icon={BookOpen}>
       <AdminFilterBar
-        searchPlaceholder="Search artifacts..."
+        searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
         onFilterChange={(key, value) => {
           if (key === "type") setTypeFilter(value)
           if (key === "status") setStatusFilter(value)
         }}
         filters={[
-          { key: "type", label: "Type", options: [{ label: "Documentation", value: "documentation" }, { label: "Assistant", value: "assistant" }, { label: "Provider Spec", value: "provider_spec" }] },
-          { key: "status", label: "Status", options: [{ label: "Pending", value: "pending" }, { label: "Processing", value: "processing" }, { label: "Indexed", value: "indexed" }, { label: "Failed", value: "failed" }] },
+          {
+            key: "type",
+            label: t("filters.type"),
+            options: [
+              { label: t("type.documentation"), value: "documentation" },
+              { label: t("type.assistant"), value: "assistant" },
+              { label: t("type.providerSpec"), value: "provider_spec" },
+            ],
+          },
+          {
+            key: "status",
+            label: t("filters.status"),
+            options: [
+              { label: t("status.pending"), value: "pending" },
+              { label: t("status.processing"), value: "processing" },
+              { label: t("status.indexed"), value: "indexed" },
+              { label: t("status.failed"), value: "failed" },
+            ],
+          },
         ]}
       />
       <AdminDataTable
         columns={columns}
         data={rows}
-        emptyMessage={isLoading ? "Loading artifacts..." : error ? "Failed to load artifacts" : "No artifacts found"}
+        emptyMessage={
+          isLoading
+            ? t("empty.loading")
+            : error
+              ? t("empty.failed")
+              : t("empty.noData")
+        }
       />
     </AdminPageShell>
   )
