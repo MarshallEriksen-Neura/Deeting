@@ -127,6 +127,14 @@
       "providerCredentials": "Provider Credentials",
       "embeddingSettings": "Embedding Settings",
       "adminNotifications": "Notification Management",
+      "gatewayLogs": "Gateway Logs",
+      "skills": "Skill Management",
+      "aiOperations": "AI Operations",
+      "conversations": "Conversations",
+      "agentTasks": "Agent Tasks",
+      "generationTasks": "Generation Tasks",
+      "financial": "Financial",
+      "billing": "Billing & Quotas",
       "storage": "Storage",
       "knowledge": "Knowledge Base"
     }

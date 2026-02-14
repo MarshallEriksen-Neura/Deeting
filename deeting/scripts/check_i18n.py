@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 国际化实现检查脚本
-检查所有组件是否正确使用 useI18n Hook 和是否有硬编码字符串
+检查所有组件是否正确使用 i18n Hook（useTranslations/useI18n）和是否有硬编码字符串
 """
 
 import os
@@ -15,6 +15,8 @@ DIRS_TO_CHECK = [
     "components/chat",
     "components/image",
     "components/common",
+    "app/[locale]/admin",
+    "components/admin",
 ]
 
 # 国际化文件目录
@@ -189,20 +191,20 @@ def generate_report():
 
         print("📊 统计信息:")
         print(f"  - 总组件文件数: {len(tsx_files)}")
-        print(f"  - 使用 useI18n 的文件数: {len(files_with_i18n)}")
-        print(f"  - 未使用 useI18n 的文件数: {len(files_without_i18n)}")
+        print(f"  - 使用 i18n Hook 的文件数: {len(files_with_i18n)}")
+        print(f"  - 未使用 i18n Hook 的文件数: {len(files_without_i18n)}")
         if len(tsx_files) > 0:
             print(f"  - 使用率: {len(files_with_i18n) / len(tsx_files) * 100:.1f}%")
         else:
             print("  - 使用率: N/A (无文件)")
 
         if files_with_i18n:
-            print("\n✅ 使用 useI18n 的文件:")
+            print("\n✅ 使用 i18n Hook 的文件:")
             for file_path in files_with_i18n:
                 print(f"  - {file_path}")
 
         if files_without_i18n:
-            print("\n⚠️  未使用 useI18n 的文件:")
+            print("\n⚠️  未使用 i18n Hook 的文件:")
             for file_path in files_without_i18n:
                 print(f"  - {file_path}")
 

@@ -127,6 +127,14 @@
       "providerCredentials": "Provider 凭证",
       "embeddingSettings": "Embedding 设置",
       "adminNotifications": "通知管理",
+      "gatewayLogs": "网关日志",
+      "skills": "技能管理",
+      "aiOperations": "AI 运营",
+      "conversations": "会话管理",
+      "agentTasks": "Agent 任务",
+      "generationTasks": "生成任务",
+      "financial": "财务",
+      "billing": "计费与配额",
       "storage": "存储",
       "knowledge": "知识库"
     }

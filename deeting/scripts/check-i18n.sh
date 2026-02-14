@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 国际化检查脚本
-# 检查所有组件是否正确使用 useI18n Hook 和是否有硬编码字符串
+# 检查所有组件是否正确使用 i18n Hook（useTranslations/useI18n）和是否有硬编码字符串
 
 echo "=========================================="
 echo "国际化实现检查报告"
@@ -13,10 +13,12 @@ DIRS=(
   "components/chat"
   "components/image"
   "components/common"
+  "app/[locale]/admin"
+  "components/admin"
 )
 
-# 1. 检查 useI18n Hook 的使用情况
-echo "1. useI18n Hook 使用情况"
+# 1. 检查 i18n Hook 的使用情况
+echo "1. i18n Hook 使用情况"
 echo "----------------------------------------"
 for dir in "${DIRS[@]}"; do
   echo ""
@@ -26,22 +28,22 @@ for dir in "${DIRS[@]}"; do
   total_files=$(find "deeting/$dir" -name "*.tsx" -type f | wc -l)
   echo "  总组件文件数: $total_files"
   
-  # 统计使用 useI18n 的文件数
-  use_i18n_files=$(grep -r "useI18n" "deeting/$dir" --include="*.tsx" -l | wc -l)
-  echo "  使用 useI18n 的文件数: $use_i18n_files"
+  # 统计使用 i18n hook 的文件数
+  use_i18n_files=$(grep -rE "useI18n|useTranslations" "deeting/$dir" --include="*.tsx" -l | wc -l)
+  echo "  使用 i18n Hook 的文件数: $use_i18n_files"
   
-  # 列出使用 useI18n 的文件
+  # 列出使用 i18n Hook 的文件
   if [ $use_i18n_files -gt 0 ]; then
-    echo "  使用 useI18n 的文件:"
-    grep -r "useI18n" "deeting/$dir" --include="*.tsx" -l | sed 's/^/    - /'
+    echo "  使用 i18n Hook 的文件:"
+    grep -rE "useI18n|useTranslations" "deeting/$dir" --include="*.tsx" -l | sed 's/^/    - /'
   fi
   
-  # 列出未使用 useI18n 的文件
+  # 列出未使用 i18n Hook 的文件
   echo ""
-  echo "  未使用 useI18n 的文件:"
+  echo "  未使用 i18n Hook 的文件:"
   comm -23 \
     <(find "deeting/$dir" -name "*.tsx" -type f | sort) \
-    <(grep -r "useI18n" "deeting/$dir" --include="*.tsx" -l | sort) \
+    <(grep -rE "useI18n|useTranslations" "deeting/$dir" --include="*.tsx" -l | sort) \
     | sed 's/^/    - /'
 done
 
