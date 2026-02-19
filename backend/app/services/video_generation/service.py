@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.models.image_generation import (
+    GenerationTask,
     GenerationTaskType,
 )
 from app.models.image_generation import (
@@ -342,12 +343,24 @@ class VideoGenerationService:
         include_outputs: bool = True,
         base_url: str | None = None,
     ) -> CursorPage[VideoGenerationTaskListItem]:
-        stmt = self.task_repo.build_user_query(
-            user_id=user_id,
-            status=status,
-            session_id=session_id,
-            task_type=GenerationTaskType.VIDEO_GENERATION,
-        )
+        try:
+            stmt = self.task_repo.build_user_query(
+                user_id=user_id,
+                status=status,
+                session_id=session_id,
+                task_type=GenerationTaskType.VIDEO_GENERATION,
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument 'task_type'" not in str(exc):
+                raise
+            logger.warning(
+                "task_repo.build_user_query does not support task_type, fallback to explicit SQL filter"
+            )
+            stmt = self.task_repo.build_user_query(
+                user_id=user_id,
+                status=status,
+                session_id=session_id,
+            ).where(GenerationTask.task_type == GenerationTaskType.VIDEO_GENERATION)
 
         async def _transform(rows):
             tasks = list(rows)

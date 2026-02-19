@@ -132,6 +132,7 @@ export default function VideoDashboard() {
         duration,
         fps,
         motion_bucket_id: motionBucketId,
+        provider_model_id: selectedModelId,
         session_id: sid,
       });
 
