@@ -25,6 +25,22 @@ class SilentUndefined(Undefined):
         return ""
 
 
+class ModelRef(str):
+    """兼容 `model` 与 `model.uid` 两种模板写法。"""
+
+    @property
+    def uid(self) -> str:
+        return str(self)
+
+    @property
+    def id(self) -> str:
+        return str(self)
+
+    @property
+    def name(self) -> str:
+        return str(self)
+
+
 jinja_env = Environment(
     loader=BaseLoader(),
     autoescape=select_autoescape(),
@@ -69,6 +85,7 @@ class RequestRenderer:
 
         if extra_context:
             context.update(extra_context)
+        context = self._apply_context_aliases(context)
 
         # 2. 调度 Body 渲染
         try:
@@ -97,6 +114,27 @@ class RequestRenderer:
         except Exception as e:
             logger.error(f"Request render failed: engine={engine} error={e}")
             raise ValueError(f"Failed to render request: {e!s}")
+
+    @staticmethod
+    def _apply_context_aliases(context: dict[str, Any]) -> dict[str, Any]:
+        """补齐常见模板别名，兼容历史模板约定。"""
+        input_ctx = context.get("input")
+        if not isinstance(input_ctx, dict):
+            request_ctx = context.get("request")
+            if isinstance(request_ctx, dict):
+                context["input"] = dict(request_ctx)
+            else:
+                context["input"] = dict(context)
+
+        model_ctx = context.get("model")
+        if isinstance(model_ctx, str):
+            context["model"] = ModelRef(model_ctx)
+        elif model_ctx is None:
+            input_model = context.get("input", {}).get("model")
+            if isinstance(input_model, str):
+                context["model"] = ModelRef(input_model)
+
+        return context
 
     def _inject_tools(self, body: dict, tools: list[ToolDefinition], engine: str):
         """

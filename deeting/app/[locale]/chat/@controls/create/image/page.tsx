@@ -24,8 +24,7 @@ export default function ImageControlsPage() {
 
   const [prompt, setPrompt] = useState("");
   const [selectedNegatives, setSelectedNegatives] = useState<Set<string>>(new Set());
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const activeTaskIdRef = useRef<string | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
@@ -41,6 +40,9 @@ export default function ImageControlsPage() {
     setSteps,
     guidance,
     setGuidance,
+    isGenerating,
+    startGeneration,
+    finishGeneration,
   } = useImageGenerationStore();
 
   const querySessionId = useMemo(
@@ -59,15 +61,16 @@ export default function ImageControlsPage() {
   useEffect(() => {
     return () => {
       stopRef.current?.();
+      finishGeneration();
     };
-  }, []);
+  }, [finishGeneration]);
 
-  const ensureSessionId = () => {
+  const ensureSessionId = useCallback(() => {
     if (sessionId) return sessionId;
     const nextId = createSessionId();
     setSessionId(nextId);
     return nextId;
-  };
+  }, [sessionId, setSessionId]);
 
   const selectedModel = useMemo(
     () =>
@@ -107,7 +110,7 @@ export default function ImageControlsPage() {
     }
 
     const activeSessionId = ensureSessionId();
-    setIsGenerating(true);
+    startGeneration(trimmedPrompt);
     setError(null);
     stopRef.current?.();
     stopRef.current = null;
@@ -135,6 +138,7 @@ export default function ImageControlsPage() {
         request_id: requestId,
       });
 
+      mutateSessionTasks();
       activeTaskIdRef.current = task.task_id;
       stopRef.current = openApiSSE(`/api/v1/internal/images/generations/${task.task_id}/events`, {
         onMessage: (msg) => {
@@ -144,7 +148,8 @@ export default function ImageControlsPage() {
             stopRef.current = null;
             activeTaskIdRef.current = null;
             activeRequestIdRef.current = null;
-            setIsGenerating(false);
+            finishGeneration();
+            mutateSessionTasks();
             return;
           }
           if (!data || typeof data !== "object") return;
@@ -152,16 +157,20 @@ export default function ImageControlsPage() {
           const type = typeof payload.type === "string" ? payload.type : "";
           if (type === "status") {
             const nextStatus = typeof payload.status === "string" ? payload.status : null;
+            if (nextStatus === "queued" || nextStatus === "running") {
+              mutateSessionTasks();
+            }
             if (nextStatus === "failed") {
               setError((payload.error_message as string) || t("error.requestFailed"));
-              setIsGenerating(false);
+              finishGeneration();
+              mutateSessionTasks();
               stopRef.current?.();
               stopRef.current = null;
               activeTaskIdRef.current = null;
               activeRequestIdRef.current = null;
             }
             if (nextStatus === "succeeded") {
-              setIsGenerating(false);
+              finishGeneration();
               stopRef.current?.();
               stopRef.current = null;
               activeTaskIdRef.current = null;
@@ -171,7 +180,8 @@ export default function ImageControlsPage() {
           }
           if (type === "timeout" || type === "error") {
             setError(t("error.requestFailed"));
-            setIsGenerating(false);
+            finishGeneration();
+            mutateSessionTasks();
             stopRef.current?.();
             stopRef.current = null;
             activeTaskIdRef.current = null;
@@ -180,7 +190,8 @@ export default function ImageControlsPage() {
         },
         onError: () => {
           setError(t("error.requestFailed"));
-          setIsGenerating(false);
+          finishGeneration();
+          mutateSessionTasks();
           stopRef.current?.();
           stopRef.current = null;
           activeTaskIdRef.current = null;
@@ -189,11 +200,11 @@ export default function ImageControlsPage() {
       });
     } catch {
       setError(t("error.requestFailed"));
-      setIsGenerating(false);
+      finishGeneration();
       activeTaskIdRef.current = null;
       activeRequestIdRef.current = null;
     }
-  }, [prompt, selectedNegatives, selectedModelId, selectedModel, ratio, steps, guidance, t, mutateSessionTasks]);
+  }, [prompt, selectedNegatives, selectedModelId, selectedModel, ratio, steps, guidance, t, mutateSessionTasks, startGeneration, finishGeneration, ensureSessionId]);
 
   const handleNewSession = useCallback(async () => {
     const requestId = activeRequestIdRef.current;
@@ -212,12 +223,12 @@ export default function ImageControlsPage() {
     setPrompt("");
     setSelectedNegatives(new Set());
     setError(null);
-    setIsGenerating(false);
+    finishGeneration();
     const params = new URLSearchParams(searchParams?.toString());
     params.delete("session");
     const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
     router.replace(url || "/chat/create/image");
-  }, [pathname, resetSession, router, searchParams]);
+  }, [pathname, resetSession, router, searchParams, finishGeneration]);
 
   return (
     <div className="w-full">

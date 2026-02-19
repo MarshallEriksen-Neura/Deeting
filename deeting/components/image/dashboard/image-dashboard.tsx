@@ -176,7 +176,7 @@ ImageResultBubble.displayName = "ImageResultBubble";
 export default function ImageDashboard() {
   const t = useI18n("chat");
   const searchParams = useSearchParams();
-  const { sessionId, setSessionId, ratio } = useImageGenerationStore();
+  const { sessionId, setSessionId, ratio, isGenerating, pendingPrompt } = useImageGenerationStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [regeneratingTaskId, setRegeneratingTaskId] = useState<string | null>(null);
 
@@ -203,8 +203,17 @@ export default function ImageDashboard() {
 
   const hasConversation = sessionTasks.length > 0;
 
+  const hasActiveTask = useMemo(
+    () => sessionTasks.some((task) => task.status === "queued" || task.status === "running"),
+    [sessionTasks]
+  );
+
+  const pendingPromptText = pendingPrompt?.trim() ?? "";
+  const showPendingBubble = Boolean(isGenerating && pendingPromptText && !hasActiveTask);
+  const shouldRenderConversation = hasConversation || showPendingBubble;
+
   useEffect(() => {
-    if (!hasConversation) return;
+    if (!shouldRenderConversation) return;
     const container = containerRef.current;
     if (!container) return;
 
@@ -242,7 +251,7 @@ export default function ImageDashboard() {
       observers.forEach((observer) => observer.disconnect());
       window.removeEventListener("resize", updateOffsets);
     };
-  }, [hasConversation]);
+  }, [shouldRenderConversation]);
 
   const statusMeta = useMemo(() => {
     const labels = {
@@ -405,7 +414,7 @@ export default function ImageDashboard() {
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
       </div>
 
-      {hasConversation ? (
+      {shouldRenderConversation ? (
         <div
           ref={containerRef}
           className="absolute inset-0 overflow-y-auto px-4 scrollbar-hide"
@@ -434,6 +443,21 @@ export default function ImageDashboard() {
                 />
               </div>
             ))}
+            {showPendingBubble ? (
+              <div className="flex flex-col gap-4">
+                <PromptBubble content={pendingPromptText} />
+                <ImageResultBubble
+                  taskId="pending-task"
+                  previewUrl={null}
+                  status="running"
+                  statusLabel={statusMeta.labels.running}
+                  statusTone="secondary"
+                  aspectRatio={ratioFallback}
+                  imageAlt={imageAlt}
+                  shareEnabled={false}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       ) : (

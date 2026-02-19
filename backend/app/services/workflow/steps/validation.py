@@ -137,11 +137,11 @@ class ValidationStep(BaseStep):
             ):
                 await self._check_content_injection(serialized)
 
-        # 返回校验后的数据
+        # 返回校验后的数据（排除 None 值，避免 Jinja2 模板中 default() 过滤器失效）
         if hasattr(request, "model_dump"):
-            return request.model_dump()
+            return request.model_dump(exclude_none=True)
         elif hasattr(request, "dict"):
-            return request.dict()
+            return request.dict(exclude_none=True)
         else:
             return {"raw": request}
 

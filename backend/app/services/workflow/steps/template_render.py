@@ -239,13 +239,9 @@ class TemplateRenderStep(BaseStep):
         支持完整的 Jinja2 语法
         """
         try:
-            from jinja2 import BaseLoader, Environment, select_autoescape
+            from app.services.providers.request_renderer import jinja_env
 
-            env = Environment(
-                loader=BaseLoader(),
-                autoescape=select_autoescape(default=False),
-            )
-            tpl = env.from_string(template)
+            tpl = jinja_env.from_string(template)
             return tpl.render(**context)
         except ImportError:
             logger.warning("Jinja2 not installed, falling back to simple_replace")

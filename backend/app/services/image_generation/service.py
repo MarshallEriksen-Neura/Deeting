@@ -144,8 +144,26 @@ class ImageGenerationService:
         ctx.set("validation", "request", request)
         ctx.set("routing", "require_provider_model_id", True)
 
-        orchestrator = get_internal_orchestrator()
-        result = await orchestrator.execute(ctx)
+        try:
+            orchestrator = get_internal_orchestrator()
+            result = await orchestrator.execute(ctx)
+        except Exception as exc:
+            logger.exception(
+                "image_generation_orchestration_crashed task_id=%s error=%s",
+                task.id,
+                exc,
+            )
+            await self.task_repo.update_fields(
+                task.id,
+                {
+                    "status": ImageGenerationStatus.FAILED,
+                    "error_code": "ORCHESTRATION_CRASH",
+                    "error_message": str(exc)[:500],
+                    "completed_at": Datetime.now(),
+                },
+                commit=True,
+            )
+            return
 
         if await self._is_task_canceled(task.id):
             logger.info(

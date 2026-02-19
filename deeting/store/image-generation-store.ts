@@ -9,6 +9,8 @@ interface ImageGenerationState {
   ratio: "1:1" | "16:9" | "9:16"
   steps: number
   guidance: number
+  isGenerating: boolean
+  pendingPrompt: string | null
 }
 
 interface ImageGenerationActions {
@@ -17,6 +19,8 @@ interface ImageGenerationActions {
   setRatio: (ratio: "1:1" | "16:9" | "9:16") => void
   setSteps: (steps: number) => void
   setGuidance: (guidance: number) => void
+  startGeneration: (prompt: string) => void
+  finishGeneration: () => void
   resetSession: () => void
 }
 
@@ -28,6 +32,8 @@ const DEFAULT_STATE: ImageGenerationState = {
   ratio: "1:1",
   steps: 30,
   guidance: 7.5,
+  isGenerating: false,
+  pendingPrompt: null,
 }
 
 export const useImageGenerationStore = create<ImageGenerationStore>()(
@@ -39,12 +45,27 @@ export const useImageGenerationStore = create<ImageGenerationStore>()(
       setRatio: (ratio) => set({ ratio }),
       setSteps: (steps) => set({ steps }),
       setGuidance: (guidance) => set({ guidance }),
-      resetSession: () => set({ sessionId: null }),
+      startGeneration: (prompt) =>
+        set({
+          isGenerating: true,
+          pendingPrompt: prompt,
+        }),
+      finishGeneration: () =>
+        set({
+          isGenerating: false,
+          pendingPrompt: null,
+        }),
+      resetSession: () =>
+        set({
+          sessionId: null,
+          isGenerating: false,
+          pendingPrompt: null,
+        }),
     }),
     {
       name: "deeting-image-generation-store",
       storage: createJSONStorage(() => sessionStorage),
-      version: 2,
+      version: 3,
       partialize: (state) => ({
         selectedModelId: state.selectedModelId,
         sessionId: state.sessionId,
@@ -56,13 +77,16 @@ export const useImageGenerationStore = create<ImageGenerationStore>()(
         if (!state || version < 1) {
           return DEFAULT_STATE
         }
-        if (version < 2) {
+        if (version < 3) {
           return {
             ...DEFAULT_STATE,
             ...(state as Partial<ImageGenerationState>),
           }
         }
-        return state as ImageGenerationState
+        return {
+          ...DEFAULT_STATE,
+          ...(state as Partial<ImageGenerationState>),
+        }
       },
     }
   )

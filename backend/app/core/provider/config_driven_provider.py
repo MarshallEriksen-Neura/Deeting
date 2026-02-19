@@ -3,6 +3,8 @@ from typing import Any
 import httpx
 from jinja2 import BaseLoader, Environment
 
+from app.services.providers.request_renderer import SilentUndefined
+
 from .async_poller import AsyncPoller, get_by_path
 
 
@@ -22,7 +24,10 @@ class ConfigDrivenProvider:
                - http_method: str
         """
         self.config = config
-        self.jinja_env = Environment(loader=BaseLoader())
+        self.jinja_env = Environment(
+            loader=BaseLoader(),
+            undefined=SilentUndefined,
+        )
 
     def _render_template(self, template: Any, context: dict) -> Any:
         if isinstance(template, str):
