@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.image_generation import GenerationTask, ImageGenerationStatus
+from app.models.image_generation import GenerationTask, GenerationTaskType, ImageGenerationStatus
 
 
 class GenerationTaskRepository:
@@ -35,6 +35,7 @@ class GenerationTaskRepository:
         user_id,
         status: ImageGenerationStatus | None = None,
         session_id=None,
+        task_type: GenerationTaskType | None = None,
     ):
         stmt = (
             select(GenerationTask)
@@ -45,6 +46,8 @@ class GenerationTaskRepository:
             stmt = stmt.where(GenerationTask.status == status)
         if session_id:
             stmt = stmt.where(GenerationTask.session_id == session_id)
+        if task_type:
+            stmt = stmt.where(GenerationTask.task_type == task_type)
         return stmt
 
     async def create(
