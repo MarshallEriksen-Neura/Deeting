@@ -354,6 +354,47 @@ async def test_provider_model_alias_match():
 
 
 @pytest.mark.asyncio
+async def test_provider_model_candidates_support_capability_alias():
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-video-alias",
+            base_url="https://api.example.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        payload = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capabilities=["video"],
+            model_id="wanx-v1",
+            unified_model_id=None,
+            display_name="Wanx",
+            upstream_path="/v1/videos/generations",
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        await svc.upsert_models(inst.id, None, [payload])
+
+        model_repo = ProviderModelRepository(session)
+        candidates = await model_repo.get_candidates(
+            "video_generation", "wanx-v1", user_id=None, include_public=True
+        )
+        assert len(candidates) == 1
+        assert candidates[0].capabilities == ["video_generation"]
+
+
+@pytest.mark.asyncio
 async def test_provider_model_list_cache_and_update_invalidate():
     async with AsyncSessionLocal() as session:
         svc = ProviderInstanceService(session)
@@ -396,6 +437,47 @@ async def test_provider_model_list_cache_and_update_invalidate():
 
         models = await svc.list_models(inst.id, None)
         assert models[0].is_active is False
+
+
+@pytest.mark.asyncio
+async def test_update_model_normalizes_capabilities_from_routing_config():
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-cap-normalize",
+            base_url="https://api.example.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        model = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capabilities=["chat"],
+            model_id="wanx-v1",
+            display_name="wanx-v1",
+            upstream_path="chat/completions",
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        await svc.upsert_models(inst.id, None, [model])
+
+        updated = await svc.update_model(
+            model.id,
+            None,
+            routing_config={"capabilities": ["video"]},
+        )
+        assert updated.capabilities == ["video_generation"]
+        assert updated.routing_config["capabilities"] == ["video_generation"]
 
 
 @pytest.mark.asyncio

@@ -228,8 +228,8 @@ export default function VideoDashboard() {
       </div>
 
       {/* Left Input Dock */}
-      <aside className="w-full lg:w-80 m-2 lg:m-4 bg-black/5 dark:bg-white/5 backdrop-blur-xl rounded-2xl border border-black/10 dark:border-white/10 p-4 lg:p-6 flex flex-col gap-4 lg:gap-6 shadow-2xl shadow-cyan-500/5 dark:shadow-cyan-500/10 relative overflow-hidden">
-        <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 via-transparent to-teal-500/10 dark:from-cyan-500/20 dark:via-transparent dark:to-teal-500/20 rounded-2xl blur-xl" />
+      <aside className="w-full lg:w-80 m-2 lg:m-4 bg-white/70 dark:bg-white/5 backdrop-blur-xl rounded-2xl border border-black/10 dark:border-white/10 p-4 lg:p-6 flex flex-col gap-4 lg:gap-6 shadow-2xl shadow-cyan-500/5 dark:shadow-cyan-500/10 relative overflow-hidden">
+        <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/5 via-transparent to-teal-500/5 dark:from-cyan-500/20 dark:via-transparent dark:to-teal-500/20 rounded-2xl blur-xl" />
 
         <div className="relative z-10 flex flex-col h-full">
           <h2 className="text-lg lg:text-xl font-medium text-foreground mb-4 lg:mb-6 flex items-center gap-2">
@@ -263,12 +263,12 @@ export default function VideoDashboard() {
 
           {generationPhase === "failed" && errorMessage && (
             <div className="mt-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-              <p className="text-xs text-red-400">{errorMessage}</p>
+              <p className="text-xs text-red-600 dark:text-red-400">{errorMessage}</p>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={handleGenerate}
-                className="mt-1 text-xs text-red-300 hover:text-red-200 hover:bg-red-500/10 p-0 h-auto"
+                className="mt-1 text-xs text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200 hover:bg-red-500/10 p-0 h-auto"
               >
                 {t("errorRetry")}
               </Button>

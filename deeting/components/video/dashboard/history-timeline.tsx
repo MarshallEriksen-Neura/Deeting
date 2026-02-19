@@ -39,7 +39,7 @@ function StatusBadge({ status, t }: { status: string; t: (key: string) => string
     queued: { color: "text-yellow-400", label: t("queued") },
     failed: { color: "text-red-400", label: t("failed") },
   };
-  const { color, label } = config[status] || { color: "text-white/60", label: status };
+  const { color, label } = config[status] || { color: "text-muted-foreground", label: status };
   return <span className={`text-xs ${color}`}>{label}</span>;
 }
 
@@ -62,24 +62,24 @@ export function HistoryTimeline({
 
   if (!isLoading && tasks.length === 0) {
     return (
-      <div className="h-full bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-3 lg:p-4 flex items-center justify-center">
+      <div className="h-full bg-foreground/5 backdrop-blur-xl rounded-2xl border border-foreground/10 p-3 lg:p-4 flex items-center justify-center">
         <div className="text-center space-y-2">
-          <Film className="w-8 h-8 text-white/30 mx-auto" />
-          <p className="text-sm text-white/50">{t("noHistory")}</p>
-          <p className="text-xs text-white/30">{t("noHistoryDesc")}</p>
+          <Film className="w-8 h-8 text-muted-foreground/50 mx-auto" />
+          <p className="text-sm text-muted-foreground">{t("noHistory")}</p>
+          <p className="text-xs text-muted-foreground/70">{t("noHistoryDesc")}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-3 lg:p-4 overflow-hidden">
+    <div className="h-full bg-foreground/5 backdrop-blur-xl rounded-2xl border border-foreground/10 p-3 lg:p-4 overflow-hidden">
       <div className="flex items-center justify-between mb-3 lg:mb-4">
-        <h3 className="text-base lg:text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-base lg:text-lg font-medium text-foreground flex items-center gap-2">
           <Clock className="w-4 lg:w-5 h-4 lg:h-5 text-cyan-400" />
           {t("history")}
         </h3>
-        <span className="text-xs text-white/60">
+        <span className="text-xs text-muted-foreground">
           {t("historyCount").replace("{count}", String(tasks.length))}
         </span>
       </div>
@@ -91,7 +91,7 @@ export function HistoryTimeline({
             Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={`skeleton-${i}`}
-                className="animate-pulse bg-white/5 rounded-xl aspect-video"
+                className="animate-pulse bg-foreground/5 rounded-xl aspect-video"
               />
             ))}
 
@@ -121,7 +121,7 @@ export function HistoryTimeline({
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-cyan-500/10 to-teal-500/10">
-                      <Film className="w-6 h-6 text-white/30" />
+                      <Film className="w-6 h-6 text-muted-foreground/50" />
                     </div>
                   )}
 
@@ -145,11 +145,11 @@ export function HistoryTimeline({
                 </div>
 
                 <div className="space-y-1">
-                  <h4 className="text-sm font-medium text-white line-clamp-2">
+                  <h4 className="text-sm font-medium text-foreground line-clamp-2">
                     {task.prompt || task.model}
                   </h4>
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-white/60">
+                    <p className="text-xs text-muted-foreground">
                       {formatRelativeTime(task.created_at)}
                     </p>
                     <StatusBadge status={task.status} t={t} />
@@ -182,9 +182,9 @@ export function HistoryTimeline({
           {hasMore && (
             <button
               onClick={onLoadMore}
-              className="aspect-video bg-white/5 rounded-xl border border-dashed border-white/20 flex items-center justify-center hover:bg-white/10 transition-colors"
+              className="aspect-video bg-foreground/5 rounded-xl border border-dashed border-foreground/20 flex items-center justify-center hover:bg-foreground/10 transition-colors"
             >
-              <span className="text-xs text-white/50">Load more</span>
+              <span className="text-xs text-muted-foreground">Load more</span>
             </button>
           )}
         </div>

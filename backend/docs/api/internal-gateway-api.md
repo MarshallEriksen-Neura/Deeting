@@ -320,7 +320,7 @@ Authorization: Bearer <access_token>
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `capability` | string | 否 | 能力过滤（如 `chat` / `image_generation` / `embedding` / `text_to_speech` / `speech_to_text` / `video_generation`） |
+| `capability` | string | 否 | 能力过滤（如 `chat` / `image_generation` / `embedding` / `text_to_speech` / `speech_to_text` / `video_generation`）。服务端会做别名归一化：例如 `video` / `text_to_video` 视为 `video_generation`。 |
 
 #### 响应体
 

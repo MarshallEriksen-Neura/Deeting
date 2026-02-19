@@ -172,3 +172,81 @@ async def test_internal_models_filter_by_capability(
     ids = {item["id"] for inst in instances for item in inst.get("models", [])}
     assert "sdxl-user" in ids
     assert "gpt-4-user" not in ids
+
+
+@pytest.mark.asyncio
+async def test_internal_models_filter_by_capability_supports_video_alias(
+    client, auth_tokens, AsyncSessionLocal, test_user
+):
+    user_id = uuid.UUID(test_user["id"])
+    async with AsyncSessionLocal() as session:
+        base_model = await _seed_user_internal_provider(session, user_id)
+        video_model = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=base_model.instance_id,
+            capabilities=["video"],
+            model_id="wanx-user",
+            unified_model_id=None,
+            display_name="Wanx User",
+            upstream_path="/v1/videos/generations",
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        session.add(video_model)
+        await session.commit()
+
+    resp = await client.get(
+        "/api/v1/internal/models?capability=video_generation",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    instances = data.get("instances", [])
+    ids = {item["id"] for inst in instances for item in inst.get("models", [])}
+    assert "wanx-user" in ids
+
+
+@pytest.mark.asyncio
+async def test_internal_models_filter_by_capability_fallback_routing_config(
+    client, auth_tokens, AsyncSessionLocal, test_user
+):
+    user_id = uuid.UUID(test_user["id"])
+    async with AsyncSessionLocal() as session:
+        base_model = await _seed_user_internal_provider(session, user_id)
+        video_model = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=base_model.instance_id,
+            capabilities=[],
+            model_id="wanx-routing-only",
+            unified_model_id=None,
+            display_name="Wanx Routing Only",
+            upstream_path="/v1/videos/generations",
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={"capabilities": ["video_generation"]},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        session.add(video_model)
+        await session.commit()
+
+    resp = await client.get(
+        "/api/v1/internal/models?capability=video_generation",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    instances = data.get("instances", [])
+    ids = {item["id"] for inst in instances for item in inst.get("models", [])}
+    assert "wanx-routing-only" in ids

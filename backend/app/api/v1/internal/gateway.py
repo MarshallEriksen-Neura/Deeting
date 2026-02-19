@@ -50,7 +50,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.external.gateway import _stream_billing_callback
-from app.constants.model_capability_map import expand_capabilities
+from app.constants.model_capability_map import (
+    expand_capabilities,
+    normalize_capabilities,
+)
 from app.core.cache_keys import CacheKeys
 from app.core.database import get_db
 from app.core.distributed_lock import distributed_lock
@@ -929,15 +932,36 @@ async def list_models(
     skipped_inactive_model = 0
     skipped_preset_missing = 0
     skipped_preset_inactive = 0
+    skipped_capability_mismatch = 0
     added_models = 0
     logged_missing_preset_slugs: set[str] = set()
     grouped: dict[str, dict[str, Any]] = {}
     capability_filter = set(expand_capabilities(capability)) if capability else set()
     for m in models:
         # Check if model has any of the requested capabilities
-        if capability_filter and not set(m.capabilities).intersection(
+        routing_config = m.routing_config if isinstance(m.routing_config, dict) else {}
+        routing_caps = (
+            routing_config.get("capabilities")
+            if isinstance(routing_config.get("capabilities"), list)
+            else []
+        )
+        extra_meta = m.extra_meta if isinstance(m.extra_meta, dict) else {}
+        upstream_caps = (
+            extra_meta.get("upstream_capabilities")
+            if isinstance(extra_meta.get("upstream_capabilities"), list)
+            else []
+        )
+        effective_capabilities = normalize_capabilities(
+            [*(m.capabilities or []), *routing_caps, *upstream_caps],
+            default=None,
+        )
+        model_capability_candidates: set[str] = set()
+        for cap in effective_capabilities:
+            model_capability_candidates.update(expand_capabilities(cap))
+        if capability_filter and not model_capability_candidates.intersection(
             capability_filter
         ):
+            skipped_capability_mismatch += 1
             continue
         inst = inst_map.get(str(m.instance_id))
         if not inst:
@@ -994,6 +1018,8 @@ async def list_models(
         logger.warning(
             f"internal_models_list result_empty user_id={user.id} "
             f"instances={len(inst_list)} models={len(models)} "
+            f"capability={capability} "
+            f"skipped_capability_mismatch={skipped_capability_mismatch} "
             f"skipped_missing_instance={skipped_missing_instance} "
             f"skipped_inactive_model={skipped_inactive_model} "
             f"skipped_preset_missing={skipped_preset_missing} "

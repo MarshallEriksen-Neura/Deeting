@@ -10,7 +10,10 @@ import httpx
 from google.oauth2 import service_account
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.model_capability_map import guess_capabilities
+from app.constants.model_capability_map import (
+    guess_capabilities,
+    normalize_capabilities,
+)
 from app.core.cache_invalidation import CacheInvalidator
 from app.core.config import settings
 from app.models.provider_instance import (
@@ -392,9 +395,11 @@ class ProviderInstanceService:
             model_id = f"{model_prefix}{raw_model_id}"
 
             if forced_capability:
-                caps = [forced_capability]
+                caps = normalize_capabilities([forced_capability], default="chat")
             else:
-                caps = guess_capabilities(model_id)
+                caps = normalize_capabilities(
+                    guess_capabilities(model_id), default="chat"
+                )
 
             # For upstream_path, we still need a 'primary' one if we only have one record.
             # Usually the first capability defines the path.
@@ -706,6 +711,10 @@ class ProviderInstanceService:
             # Clean up SQLAlchemy internal state
             d.pop("_sa_instance_state", None)
             d.pop("synced_at", None)
+            if "capabilities" in d and isinstance(d["capabilities"], list):
+                d["capabilities"] = normalize_capabilities(
+                    d["capabilities"], default="chat"
+                )
             models_data.append(d)
 
         results = await self.model_repo.upsert_for_instance(instance_id, models_data)
@@ -763,20 +772,29 @@ class ProviderInstanceService:
         if not updates:
             return model
 
+        raw_caps = updates.get("capabilities")
+        if isinstance(raw_caps, list) and raw_caps:
+            updates["capabilities"] = normalize_capabilities(raw_caps, default="chat")
+
         # Sync: when routing_config contains capabilities, mirror to the
         # dedicated capabilities column so that list/filter queries work.
         rc = updates.get("routing_config")
         if isinstance(rc, dict) and "capabilities" in rc:
             caps = rc["capabilities"]
             if isinstance(caps, list) and caps:
-                updates["capabilities"] = caps
+                normalized_caps = normalize_capabilities(caps, default="chat")
+                updates["capabilities"] = normalized_caps
+                updates["routing_config"] = {
+                    **rc,
+                    "capabilities": normalized_caps,
+                }
 
         updated = await self.model_repo.update_fields(model, updates)
-        capability = model.capabilities[0] if model.capabilities else None
+        capability = updated.capabilities[0] if updated.capabilities else None
         await self._invalidator.on_provider_model_changed(
-            str(model.instance_id),
+            str(updated.instance_id),
             capability=capability,
-            model_id=model.model_id,
+            model_id=updated.model_id,
         )
         return updated
 

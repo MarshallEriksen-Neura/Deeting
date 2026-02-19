@@ -47,7 +47,7 @@ export function VideoModelSelector() {
 
   if (isLoadingModels) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/60">
+      <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
         <Loader2 className="w-3 h-3 animate-spin" />
         {t("modelLoading")}
       </div>
@@ -56,7 +56,7 @@ export function VideoModelSelector() {
 
   if (models.length === 0) {
     return (
-      <div className="px-3 py-2 text-xs text-white/50">
+      <div className="px-3 py-2 text-xs text-muted-foreground">
         {t("modelEmpty")}
       </div>
     );
@@ -64,7 +64,7 @@ export function VideoModelSelector() {
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-white/90 flex items-center gap-2">
+      <label className="text-sm font-medium text-foreground/90 flex items-center gap-2">
         <Film className="w-4 h-4 text-cyan-400" />
         {t("model")}
       </label>
@@ -72,7 +72,7 @@ export function VideoModelSelector() {
         value={selectedModelId ?? ""}
         onValueChange={setSelectedModelId}
       >
-        <SelectTrigger className="w-full bg-white/5 border-white/10 text-white text-xs hover:bg-white/10 focus:ring-cyan-400/30">
+        <SelectTrigger className="w-full bg-foreground/5 border-foreground/10 text-foreground text-xs hover:bg-foreground/10 focus:ring-cyan-400/30">
           <SelectValue placeholder={t("modelPlaceholder")}>
             <span className="truncate">{displayName}</span>
           </SelectValue>

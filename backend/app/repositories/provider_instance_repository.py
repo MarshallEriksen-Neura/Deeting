@@ -178,7 +178,11 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
                 models = [
                     m
                     for m in models
-                    if any(c in candidate_set for c in (m.capabilities or []))
+                    if any(
+                        expanded_cap in candidate_set
+                        for cap in (m.capabilities or [])
+                        for expanded_cap in expand_capabilities(cap)
+                    )
                 ]
             return models
 

@@ -112,7 +112,7 @@ export function VideoPreviewCanvas({
 
   if (isGenerating) {
     return (
-      <div className="flex-1 bg-black/40 rounded-3xl relative overflow-hidden flex items-center justify-center shadow-2xl shadow-cyan-500/10">
+      <div className="flex-1 bg-foreground/5 dark:bg-black/40 rounded-3xl relative overflow-hidden flex items-center justify-center shadow-2xl shadow-cyan-500/10">
         <div className="relative w-full h-full">
           <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-teal-500/10 animate-pulse" />
           <div className="absolute inset-0 flex items-center justify-center">
@@ -134,15 +134,15 @@ export function VideoPreviewCanvas({
                 </div>
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-medium text-white">
+                <h3 className="text-xl font-medium text-foreground">
                   {t("generatingTitle")}
                 </h3>
-                <p className="text-white/70">{getPhaseMessage()}</p>
+                <p className="text-muted-foreground">{getPhaseMessage()}</p>
                 <div className="w-64 mx-auto">
-                  <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-2 bg-foreground/10 rounded-full overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-cyan-400 to-teal-400 rounded-full animate-[indeterminate_1.5s_ease-in-out_infinite] w-1/3" />
                   </div>
-                  <p className="text-xs text-white/60 mt-2">
+                  <p className="text-xs text-muted-foreground mt-2">
                     {generationPhase === "submitting" && t("generating")}
                     {generationPhase === "queued" && t("queued")}
                     {generationPhase === "processing" && t("processing")}
@@ -157,7 +157,7 @@ export function VideoPreviewCanvas({
   }
 
   return (
-    <div className="flex-1 bg-black/40 rounded-2xl lg:rounded-3xl relative overflow-hidden shadow-2xl shadow-cyan-500/10">
+    <div className="flex-1 bg-foreground/5 dark:bg-black/40 rounded-2xl lg:rounded-3xl relative overflow-hidden shadow-2xl shadow-cyan-500/10">
       <div className="w-full h-full flex items-center justify-center p-4 lg:p-8">
         {videoUrl ? (
           <div className="relative w-full max-w-4xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl">
@@ -171,6 +171,7 @@ export function VideoPreviewCanvas({
               onPause={() => setIsPlaying(false)}
             />
 
+            {/* Video player overlay - keep white text on dark gradient */}
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
               <div className="mb-4">
                 <div
@@ -258,14 +259,14 @@ export function VideoPreviewCanvas({
           </div>
         ) : (
           <div className="text-center space-y-4">
-            <div className="w-24 h-24 mx-auto bg-white/5 rounded-full flex items-center justify-center">
-              <Play className="w-8 h-8 text-white/40" />
+            <div className="w-24 h-24 mx-auto bg-foreground/5 rounded-full flex items-center justify-center">
+              <Play className="w-8 h-8 text-muted-foreground/60" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-xl font-medium text-white">
+              <h3 className="text-xl font-medium text-foreground">
                 {t("readyTitle")}
               </h3>
-              <p className="text-white/70">{t("readyDesc")}</p>
+              <p className="text-muted-foreground">{t("readyDesc")}</p>
             </div>
           </div>
         )}
