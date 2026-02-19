@@ -3,12 +3,9 @@ import time
 from typing import Any
 
 import httpx
+from jinja2 import BaseLoader, Environment
 
-# from backend.app.core.provider.config_driven_provider import get_by_path # Circular import risk.
-# I will define get_by_path here or in a utils file?
-# The user provided get_by_path in the snippet. I'll put it in a common place or duplicate/include in utils.
-# Let's put utils in the same file for now or create generic_utils.
-# I'll put it in this file as a static method or helper function.
+from app.services.providers.request_renderer import SilentUndefined
 
 
 def get_by_path(data: dict | list, path: str) -> Any:
@@ -33,10 +30,23 @@ class AsyncPoller:
     def __init__(self, config: dict, api_key: str):
         self.config = config
         self.api_key = api_key
+        self.jinja_env = Environment(
+            loader=BaseLoader(), undefined=SilentUndefined
+        )
+
+    def _render_headers(self, raw_headers: dict[str, str]) -> dict[str, str]:
+        """对 poll headers 做 Jinja2 模板渲染，注入 credentials.api_key"""
+        render_ctx = {"credentials": {"api_key": self.api_key}}
+        rendered = {}
+        for k, v in raw_headers.items():
+            if isinstance(v, str) and "{{" in v:
+                rendered[k] = self.jinja_env.from_string(v).render(**render_ctx)
+            else:
+                rendered[k] = v
+        return rendered
 
     async def wait_for_result(self, task_id: str, client: httpx.AsyncClient) -> dict:
         poll_conf = self.config["poll"]
-        # 简单替换，实际可用 Jinja2，这里先按 User Code 实现
         url = poll_conf["url_template"].replace("{{ task_id }}", str(task_id))
 
         start_time = time.time()
@@ -44,15 +54,8 @@ class AsyncPoller:
         interval = poll_conf.get("interval", 5)
 
         while time.time() - start_time < timeout:
-            # 1. 发起轮询
-            headers = poll_conf.get("headers", {}).copy()
-            # TODO: 注入认证头 (Inject Auth Headers)
-            # Assuming headers might need Authorization injection if not already in config template
-            # The config template in user example has "Authorization": "Bearer {{ credentials.api_key }}"
-            # But here we are in the poller. The user code snippet didn't explicitly show Jinja rendering for headers here,
-            # just `self.api_key` in init.
-            # In the user's snippet: `headers = poll_conf.get('headers', {})`.
-            # I'll stick to the snippet logic but ensure I copy the dict.
+            # 1. 渲染并发起轮询
+            headers = self._render_headers(poll_conf.get("headers", {}))
 
             try:
                 resp = await client.request(

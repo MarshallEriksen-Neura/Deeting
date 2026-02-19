@@ -185,6 +185,8 @@ class RoutingStep(BaseStep):
                 "config_override",
                 routing_result.get("config_override") or {},
             )
+            ctx.set("routing", "output_mapping", routing_result.get("output_mapping") or {})
+            ctx.set("routing", "request_builder", routing_result.get("request_builder") or {})
             ctx.set("routing", "limit_config", routing_result["limit_config"])
             ctx.set("routing", "pricing_config", routing_result["pricing_config"])
             ctx.set("routing", "auth_type", routing_result["auth_type"])
@@ -309,6 +311,8 @@ class RoutingStep(BaseStep):
         ctx.set("routing", "http_method", fallback["http_method"])
         ctx.set("routing", "routing_config", fallback["routing_config"])
         ctx.set("routing", "config_override", fallback["config_override"])
+        ctx.set("routing", "output_mapping", fallback.get("output_mapping") or {})
+        ctx.set("routing", "request_builder", fallback.get("request_builder") or {})
         ctx.set("routing", "limit_config", fallback["limit_config"])
         ctx.set("routing", "pricing_config", fallback["pricing_config"])
         ctx.set("routing", "auth_type", fallback["auth_type"])
@@ -400,6 +404,8 @@ class RoutingStep(BaseStep):
                 "default_params": c.default_params,
                 "routing_config": c.routing_config,
                 "config_override": c.config_override,
+                "output_mapping": c.output_mapping,
+                "request_builder": c.request_builder,
                 "weight": c.weight,
                 "priority": c.priority,
                 "credential_id": c.credential_id,

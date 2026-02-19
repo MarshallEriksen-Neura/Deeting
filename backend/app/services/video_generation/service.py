@@ -176,7 +176,10 @@ class VideoGenerationService:
             or {}
         )
 
-        outputs = await self._persist_outputs(task, response)
+        output_mapping = ctx.get("routing", "output_mapping") or {}
+        outputs = await self._persist_outputs(
+            task, response, output_mapping=output_mapping or None
+        )
         if not outputs:
             await self.task_repo.update_fields(
                 task.id,
@@ -471,9 +474,12 @@ class VideoGenerationService:
         return preview_map
 
     async def _persist_outputs(
-        self, task, response: dict[str, Any]
+        self,
+        task,
+        response: dict[str, Any],
+        output_mapping: dict[str, Any] | None = None,
     ) -> list[VideoGenerationOutput]:
-        items = _extract_items(response)
+        items = _extract_items(response, output_mapping=output_mapping)
         outputs: list[VideoGenerationOutput] = []
         for index, item in enumerate(items):
             asset = await self._store_item(item, uploader_user_id=task.user_id)
@@ -643,14 +649,69 @@ def _build_request_from_task(task) -> Any:
     )
 
 
-def _extract_items(response: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_items(
+    response: dict[str, Any],
+    output_mapping: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    从上游响应中提取视频输出项列表。
+
+    :param response: 上游原始响应
+    :param output_mapping: 可选的配置驱动映射规则，支持 single_mode 和 items_path
+    """
+    from app.core.provider.async_poller import get_by_path
+
     if not isinstance(response, dict):
         return []
-    for key in ("data", "videos", "outputs"):
-        items = response.get(key)
-        if isinstance(items, list):
-            return [item for item in items if isinstance(item, dict)]
-    return []
+
+    if not output_mapping:
+        # 向后兼容：原有硬编码逻辑
+        for key in ("data", "videos", "outputs"):
+            items = response.get(key)
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+        return []
+
+    # 配置驱动：单对象模式（如 Seedance 的 content.video_url）
+    single = output_mapping.get("single_mode") or {}
+    if single.get("enabled"):
+        url_path = single.get("url_path", "")
+        url = get_by_path(response, url_path) if url_path else None
+        if url:
+            item: dict[str, Any] = {"url": url}
+            for field, path in (single.get("fields") or {}).items():
+                val = get_by_path(response, path)
+                if val is not None:
+                    item[field] = val
+            return [item]
+        return []
+
+    # 配置驱动：数组模式
+    items_path = output_mapping.get("items_path", "")
+    raw = get_by_path(response, items_path) if items_path else response
+    if not isinstance(raw, list):
+        return []
+
+    schema = output_mapping.get("item_schema") or {}
+    if not schema:
+        return [item for item in raw if isinstance(item, dict)]
+
+    mapped: list[dict[str, Any]] = []
+    for raw_item in raw:
+        if not isinstance(raw_item, dict):
+            continue
+        mapped_item: dict[str, Any] = {}
+        for target_field, source_expr in schema.items():
+            if isinstance(source_expr, str) and source_expr.startswith("$."):
+                val = get_by_path(raw_item, source_expr[2:])
+            elif isinstance(source_expr, str):
+                val = source_expr  # 常量回填
+            else:
+                val = source_expr
+            if val is not None:
+                mapped_item[target_field] = val
+        mapped.append(mapped_item)
+    return mapped
 
 
 def _decode_base64(raw: str) -> bytes | None:

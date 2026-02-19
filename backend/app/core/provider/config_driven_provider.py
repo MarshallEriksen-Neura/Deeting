@@ -97,6 +97,15 @@ class ConfigDrivenProvider:
         req_headers = self._render_template(headers_template, context)
         req_body = self._render_template(body_template, context)
 
+        # 2.5 Request Builder (optional structural transform)
+        request_builder_config = self.config.get("request_builder") or {}
+        if request_builder_config.get("type"):
+            from app.core.provider.request_builders import apply_request_builder
+
+            req_body = apply_request_builder(
+                request_builder_config, context.get("input") or {}
+            )
+
         # 3. Get URL & Method
         url = self.config.get("upstream_url")
         if not url:

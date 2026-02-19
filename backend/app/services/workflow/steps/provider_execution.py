@@ -72,6 +72,7 @@ class ProviderExecutionStep(BaseStep):
             "headers": routing_info.get("default_headers") or {},
             "async_config": routing_info.get("async_config") or {},
             "http_method": routing_info.get("http_method") or "POST",
+            "request_builder": routing_info.get("request_builder") or {},
         }
 
         # 2. Prepare Context (Secrets, Input)

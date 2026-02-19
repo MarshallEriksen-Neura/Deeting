@@ -73,6 +73,8 @@ class RoutingCandidate:
     config_override: dict
     weight: int
     priority: int
+    output_mapping: dict = field(default_factory=dict)
+    request_builder: dict = field(default_factory=dict)
     credential_id: str | None = None
     credential_alias: str | None = None
     bandit_state: BanditArmState | None = None
@@ -223,6 +225,8 @@ class RoutingSelector:
                     or effective_config.get("method")
                     or "POST"
                 )
+                output_mapping = effective_config.get("output_mapping") or {}
+                request_builder = effective_config.get("request_builder") or {}
 
                 base_url = instance.base_url or ""
                 meta = instance.meta or {}
@@ -275,6 +279,8 @@ class RoutingSelector:
                             response_transform=response_transform,
                             async_config=async_config,
                             http_method=http_method,
+                            output_mapping=output_mapping,
+                            request_builder=request_builder,
                             pricing_config=m.pricing_config or {},
                             limit_config=m.limit_config or {},
                             auth_type=resolved_auth_type,
@@ -397,6 +403,8 @@ class RoutingSelector:
             or effective_config.get("method")
             or "POST"
         )
+        output_mapping = effective_config.get("output_mapping") or {}
+        request_builder = effective_config.get("request_builder") or {}
 
         credentials_map = await self.credential_repo.get_by_instance_ids(
             [str(instance.id)]
@@ -485,6 +493,8 @@ class RoutingSelector:
                     response_transform=response_transform,
                     async_config=async_config,
                     http_method=http_method,
+                    output_mapping=output_mapping,
+                    request_builder=request_builder,
                     pricing_config=model.pricing_config or {},
                     limit_config=model.limit_config or {},
                     auth_type=resolved_auth_type,
