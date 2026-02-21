@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Sparkles, Play } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/use-i18n";
 import { useVideoGenerationStore } from "@/store/video-generation-store";
 import { useVideoGenerationTasks } from "@/lib/swr/use-video-generation-tasks";
+import { useChatService } from "@/hooks/use-chat-service";
 import { createSessionId } from "@/lib/chat/session-id";
 import {
   createVideoGenerationTask,
@@ -37,12 +38,28 @@ export default function VideoDashboard() {
     setSessionId,
     prompt,
     imageUrl,
+    audioUrl,
+    videoUrl,
+    endImageUrl,
     selectedModelId,
     ratio,
     duration,
     fps,
     motionBucketId,
   } = useVideoGenerationStore();
+
+  const { models } = useChatService({
+    enabled: true,
+    modelCapability: "video_generation",
+  });
+
+  const selectedModelInputTypes = useMemo(() => {
+    if (!selectedModelId || models.length === 0) return null;
+    const model = models.find(
+      (m) => m.provider_model_id === selectedModelId || m.id === selectedModelId
+    );
+    return model?.input_types ?? null;
+  }, [selectedModelId, models]);
 
   const {
     items: sessionTasks,
@@ -128,6 +145,9 @@ export default function VideoDashboard() {
         model: selectedModelId,
         prompt: prompt.trim(),
         image_url: imageUrl,
+        audio_url: audioUrl,
+        video_url: videoUrl,
+        end_image_url: endImageUrl,
         aspect_ratio: ratio,
         duration,
         fps,
@@ -153,6 +173,9 @@ export default function VideoDashboard() {
     setSessionId,
     selectedModelId,
     imageUrl,
+    audioUrl,
+    videoUrl,
+    endImageUrl,
     ratio,
     duration,
     fps,
@@ -240,7 +263,7 @@ export default function VideoDashboard() {
 
           <div className="flex-1 overflow-y-auto space-y-4">
             <VideoModelSelector />
-            <InputSection />
+            <InputSection inputTypes={selectedModelInputTypes} />
             <ParameterSettings />
           </div>
 

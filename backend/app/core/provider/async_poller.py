@@ -8,20 +8,9 @@ from jinja2 import BaseLoader, Environment
 from app.services.providers.request_renderer import SilentUndefined
 
 
-def get_by_path(data: dict | list, path: str) -> Any:
-    keys = path.split(".")
-    curr = data
-    for key in keys:
-        if isinstance(curr, list) and key.isdigit():
-            key = int(key)
-        if isinstance(curr, dict) or isinstance(curr, list):
-            try:
-                curr = curr[key]
-            except (IndexError, KeyError, TypeError):
-                return None
-        else:
-            return None
-    return curr
+from app.core.provider.utils import get_by_path  # noqa: E402 – re-export for compat
+
+__all__ = ["AsyncPoller", "get_by_path"]
 
 
 class AsyncPoller:

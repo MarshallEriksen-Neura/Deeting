@@ -14,6 +14,9 @@ class VideoGenerationTaskCreateRequest(BaseSchema):
     prompt: str = Field(..., description="提示词")
     negative_prompt: str | None = Field(None, description="反向提示词")
     image_url: str | None = Field(None, description="参考图 URL (img2vid)")
+    audio_url: str | None = Field(None, description="音频 URL (audio2vid)")
+    video_url: str | None = Field(None, description="参考视频 URL (vid2vid)")
+    end_image_url: str | None = Field(None, description="尾帧图 URL (首尾帧模式)")
 
     width: int | None = Field(None, ge=1, description="输出宽度")
     height: int | None = Field(None, ge=1, description="输出高度")

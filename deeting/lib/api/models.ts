@@ -12,6 +12,7 @@ export const ModelInfoSchema = z.object({
   icon: z.string().nullable().optional(),
   upstream_model_id: z.string().nullable().optional(),
   provider_model_id: z.string().nullable().optional(),
+  input_types: z.array(z.string()).nullable().optional(),
 })
 
 export const ModelListResponseSchema = z.object({

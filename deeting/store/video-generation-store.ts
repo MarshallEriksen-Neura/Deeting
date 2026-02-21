@@ -25,6 +25,9 @@ interface VideoGenerationState {
   motionBucketId: number
   prompt: string
   imageUrl: string | null
+  audioUrl: string | null
+  videoUrl: string | null
+  endImageUrl: string | null
   cameraDirection: CameraDirection
 }
 
@@ -37,6 +40,9 @@ interface VideoGenerationActions {
   setMotionBucketId: (id: number) => void
   setPrompt: (prompt: string) => void
   setImageUrl: (url: string | null) => void
+  setAudioUrl: (url: string | null) => void
+  setVideoUrl: (url: string | null) => void
+  setEndImageUrl: (url: string | null) => void
   setCameraDirection: (direction: CameraDirection) => void
   resetSession: () => void
   resetGeneration: () => void
@@ -53,6 +59,9 @@ const DEFAULT_STATE: VideoGenerationState = {
   motionBucketId: 127,
   prompt: "",
   imageUrl: null,
+  audioUrl: null,
+  videoUrl: null,
+  endImageUrl: null,
   cameraDirection: "center",
 }
 
@@ -68,12 +77,18 @@ export const useVideoGenerationStore = create<VideoGenerationStore>()(
       setMotionBucketId: (id) => set({ motionBucketId: id }),
       setPrompt: (prompt) => set({ prompt }),
       setImageUrl: (url) => set({ imageUrl: url }),
+      setAudioUrl: (url) => set({ audioUrl: url }),
+      setVideoUrl: (url) => set({ videoUrl: url }),
+      setEndImageUrl: (url) => set({ endImageUrl: url }),
       setCameraDirection: (direction) => set({ cameraDirection: direction }),
       resetSession: () => set({ sessionId: null }),
       resetGeneration: () =>
         set({
           prompt: "",
           imageUrl: null,
+          audioUrl: null,
+          videoUrl: null,
+          endImageUrl: null,
           cameraDirection: "center",
           motionBucketId: 127,
         }),
@@ -81,7 +96,7 @@ export const useVideoGenerationStore = create<VideoGenerationStore>()(
     {
       name: "deeting-video-generation-store",
       storage: createJSONStorage(() => sessionStorage),
-      version: 2,
+      version: 3,
       partialize: (state) => ({
         selectedModelId: state.selectedModelId,
         sessionId: state.sessionId,
@@ -91,6 +106,9 @@ export const useVideoGenerationStore = create<VideoGenerationStore>()(
         motionBucketId: state.motionBucketId,
         prompt: state.prompt,
         imageUrl: state.imageUrl,
+        audioUrl: state.audioUrl,
+        videoUrl: state.videoUrl,
+        endImageUrl: state.endImageUrl,
         cameraDirection: state.cameraDirection,
       }),
     }

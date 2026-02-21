@@ -65,6 +65,13 @@ PREFIX_RULES: list[tuple[str, list[str]]] = [
     ("flux", ["image_generation"]),
     ("glm-image", ["image_generation"]),
     ("qwen-image", ["image_generation"]),
+    # Video generation
+    ("doubao-seedance", ["video_generation"]),
+    ("doubao-video", ["video_generation"]),
+    ("kling", ["video_generation"]),
+    ("cogvideox", ["video_generation"]),
+    ("wan-x", ["video_generation"]),
+    ("gen-", ["video_generation"]),  # Runway gen-3 etc.
     ("claude", ["chat"]),  # 默认仍视作 chat
 ]
 
@@ -76,6 +83,13 @@ REGEX_RULES: list[tuple[re.Pattern[str], list[str]]] = [
     (
         re.compile(r"(dall[-_]?e|sdxl?|flux|image|img|pixart|kolors|kandinsky)", re.I),
         ["image_generation"],
+    ),
+    (
+        re.compile(
+            r"(seedance|video[-_]?gen|runway|kling|cogvideo|wan[-_]?x|hunyuan[-_]?video)",
+            re.I,
+        ),
+        ["video_generation"],
     ),
 ]
 

@@ -127,6 +127,14 @@ class ProviderRegistryPlugin(AgentPlugin):
                                 "type": "object",
                                 "description": "Configuration for asynchronous polling (FSM), if applicable.",
                             },
+                            "output_mapping": {
+                                "type": "object",
+                                "description": "Configuration for extracting results from upstream response. Supports 'single_mode' (single URL extraction, e.g. Seedance) and 'items_path'+'item_schema' (array extraction with field mapping).",
+                            },
+                            "request_builder": {
+                                "type": "object",
+                                "description": "Structural request transformation config. 'type' selects a registered builder (e.g. 'ark_content_array' for Volcengine Seedance). Additional keys are builder-specific params.",
+                            },
                         },
                         "required": ["provider_slug", "capability", "request_template"],
                     },
@@ -229,6 +237,8 @@ class ProviderRegistryPlugin(AgentPlugin):
         default_headers: dict[str, Any] | None = None,
         default_params: dict[str, Any] | None = None,
         async_config: dict[str, Any] | None = None,
+        output_mapping: dict[str, Any] | None = None,
+        request_builder: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Handler for saving provider mapping to ProviderPreset.capability_configs.
@@ -275,6 +285,10 @@ class ProviderRegistryPlugin(AgentPlugin):
                 cap_config["default_params"] = default_params
             if async_config is not None:
                 cap_config["async_config"] = async_config
+            if output_mapping is not None:
+                cap_config["output_mapping"] = output_mapping
+            if request_builder is not None:
+                cap_config["request_builder"] = request_builder
 
             current_configs[capability] = cap_config
 

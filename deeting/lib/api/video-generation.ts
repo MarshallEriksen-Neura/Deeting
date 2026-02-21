@@ -81,6 +81,9 @@ export type VideoGenerationTaskCreateRequest = {
   prompt: string
   negative_prompt?: string | null
   image_url?: string | null
+  audio_url?: string | null
+  video_url?: string | null
+  end_image_url?: string | null
   width?: number | null
   height?: number | null
   aspect_ratio?: string | null

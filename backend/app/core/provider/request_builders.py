@@ -96,4 +96,31 @@ def ark_content_array_builder(
             {"type": content_type, "image_url": {"url": image_url}}
         )
 
+    # 条件追加 audio_url 内容项
+    audio_field = config.get("audio_field", "audio_url")
+    audio_url = request_data.get(audio_field)
+    if audio_url:
+        audio_content_type = config.get("audio_content_type", "audio_url")
+        content.append(
+            {"type": audio_content_type, "audio_url": {"url": audio_url}}
+        )
+
+    # 条件追加 video_url 内容项 (vid2vid)
+    video_field = config.get("video_field", "video_url")
+    video_url = request_data.get(video_field)
+    if video_url:
+        video_content_type = config.get("video_content_type", "video_url")
+        content.append(
+            {"type": video_content_type, "video_url": {"url": video_url}}
+        )
+
+    # 条件追加 end_image_url 内容项 (首尾帧模式)
+    end_image_field = config.get("end_image_field", "end_image_url")
+    end_image_url = request_data.get(end_image_field)
+    if end_image_url:
+        end_image_content_type = config.get("end_image_content_type", "end_image_url")
+        content.append(
+            {"type": end_image_content_type, "image_url": {"url": end_image_url}}
+        )
+
     return {"model": request_data.get("model"), "content": content}

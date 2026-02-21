@@ -207,6 +207,7 @@ class ModelInfo(BaseModel):
     icon: str | None = None
     upstream_model_id: str | None = None
     provider_model_id: str | None = None
+    input_types: list[str] | None = None
 
 
 class ModelListResponse(BaseModel):

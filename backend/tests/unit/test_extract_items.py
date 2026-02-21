@@ -1,6 +1,6 @@
 """Tests for _extract_items with output_mapping support."""
 
-from app.services.video_generation.service import _extract_items
+from app.core.provider.utils import extract_items as _extract_items
 
 
 class TestExtractItemsBackwardCompat:

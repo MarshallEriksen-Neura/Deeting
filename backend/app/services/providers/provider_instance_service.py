@@ -310,6 +310,11 @@ class ProviderInstanceService:
             url = "https://generativelanguage.googleapis.com/v1beta/models"
             if secret:
                 headers["x-goog-api-key"] = secret
+        elif "ark" in proto_lower or "volcengine" in provider_lower:
+            # Volcengine Ark: GET /api/v3/models (OpenAI-compatible format)
+            url = f"{base_url.rstrip('/')}/api/v3/models"
+            if secret:
+                headers["Authorization"] = f"Bearer {secret}"
         else:
             url = build_upstream_url(
                 base_url=base_url,
@@ -375,6 +380,10 @@ class ProviderInstanceService:
                 if cap == "embedding":
                     return f"v1beta/models/{model_id}:embedContent"
                 return f"v1beta/models/{model_id}:generateContent"
+            if "ark" in proto or "volcengine" in proto:
+                if cap == "video_generation":
+                    return "api/v3/contents/generations/tasks"
+                return "api/v3/chat/completions"
             if cap == "embedding":
                 return "embeddings"
             if cap == "text_to_speech":

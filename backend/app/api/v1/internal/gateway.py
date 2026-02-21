@@ -1007,6 +1007,7 @@ async def list_models(
                 "icon": icon,
                 "upstream_model_id": m.model_id,
                 "provider_model_id": str(m.id),
+                "input_types": extra_meta.get("input_types"),
             }
         )
         added_models += 1
