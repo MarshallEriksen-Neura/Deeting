@@ -1,0 +1,34 @@
+{
+  "title": "记忆管理",
+  "subtitle": "管理 AI 为你存储的长期记忆、偏好和事实。",
+  "empty": {
+    "title": "暂无记忆",
+    "description": "随着你与 AI 的深入交流，它会自动提取并记住一些关于你的事实。"
+  },
+  "actions": {
+    "clearAll": "清空全部",
+    "edit": "编辑",
+    "delete": "删除",
+    "save": "保存",
+    "cancel": "取消"
+  },
+  "confirm": {
+    "clearAll": {
+      "title": "清空全部记忆？",
+      "description": "此操作不可逆，AI 将忘记所有关于你的个性化事实。"
+    },
+    "delete": {
+      "title": "删除此项记忆？",
+      "description": "删除后 AI 将不再记得这条信息。"
+    }
+  },
+  "fields": {
+    "content": "记忆内容",
+    "createdAt": "创建时间"
+  },
+  "success": {
+    "updated": "记忆已更新",
+    "deleted": "记忆已删除",
+    "cleared": "记忆库已清空"
+  }
+}

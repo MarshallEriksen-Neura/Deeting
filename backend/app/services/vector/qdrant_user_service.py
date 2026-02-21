@@ -11,6 +11,7 @@ from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import (
     QDRANT_DEFAULT_VECTOR_NAME,
     delete_points,
+    scroll_points,
     search_points,
     upsert_point,
 )
@@ -34,6 +35,14 @@ class VectorStoreClient(ABC):
 
     @abstractmethod
     async def delete(self, ids: list[str]) -> None: ...
+
+    @abstractmethod
+    async def list_points(
+        self, limit: int = 20, cursor: Any | None = None
+    ) -> tuple[list[dict[str, Any]], Any | None]: ...
+
+    @abstractmethod
+    async def clear_all(self) -> None: ...
 
 
 class QdrantUserVectorService(VectorStoreClient):
@@ -215,6 +224,82 @@ class QdrantUserVectorService(VectorStoreClient):
                     extra={"collection": collection},
                     exc_info=exc,
                 )
+                return
+            raise
+
+    async def list_points(
+        self, limit: int = 20, cursor: Any | None = None
+    ) -> tuple[list[dict[str, Any]], Any | None]:
+        collection = self._collection_name or ""
+        if not collection:
+            # For read-only ops, we just need the collection name. 
+            # ensure_user_collection will return it if it exists.
+            # We use a placeholder size; if it exists, it won't care about the size 
+            # UNLESS it's being created. But the current implementation of 
+            # ensure_collection_vector_size raises if it exists and size mismatches.
+            # So we better try to find the name without strictly ensuring size, 
+            # or use the size from settings/embedding_service.
+            vector_size = 1536 # Default for many models
+            if self._embedding_service:
+                try:
+                    # Try to get actual size if possible
+                    test_vec = await self._embedding_service.embed_text("test")
+                    vector_size = len(test_vec)
+                except Exception:
+                    pass
+
+            collection, degraded = await self._ensure_collection(vector_size=vector_size)
+            if degraded:
+                return [], None
+
+        try:
+            points, next_cursor = await scroll_points(
+                self._client,
+                collection_name=collection,
+                limit=limit,
+                query_filter=self._base_filter(),
+                with_payload=True,
+                offset=cursor,
+            )
+            results = [
+                {
+                    "id": item.get("id"),
+                    "content": (item.get("payload") or {}).get("content", ""),
+                    "payload": item.get("payload") or {},
+                }
+                for item in points
+            ]
+            return results, next_cursor
+        except Exception as exc:
+            if self._fail_open:
+                self._log.warning("list_points failed", exc_info=exc)
+                return [], None
+            raise
+
+    async def clear_all(self) -> None:
+        collection = self._collection_name or ""
+        if not collection:
+            vector_size = 1536
+            if self._embedding_service:
+                try:
+                    test_vec = await self._embedding_service.embed_text("test")
+                    vector_size = len(test_vec)
+                except Exception:
+                    pass
+            collection, degraded = await self._ensure_collection(vector_size=vector_size)
+            if degraded:
+                return
+
+        try:
+            await delete_points(
+                self._client,
+                collection_name=collection,
+                query_filter=self._base_filter(),
+                wait=True,
+            )
+        except Exception as exc:
+            if self._fail_open:
+                self._log.warning("clear_all failed", exc_info=exc)
                 return
             raise
 

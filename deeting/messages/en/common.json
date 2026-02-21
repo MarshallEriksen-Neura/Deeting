@@ -129,6 +129,7 @@
       "adminNotifications": "Notification Management",
       "gatewayLogs": "Gateway Logs",
       "skills": "Skill Management",
+      "adminMemory": "System Knowledge",
       "aiOperations": "AI Operations",
       "conversations": "Conversations",
       "agentTasks": "Agent Tasks",
@@ -136,7 +137,8 @@
       "financial": "Financial",
       "billing": "Billing & Quotas",
       "storage": "Storage",
-      "knowledge": "Knowledge Base"
+      "knowledge": "Knowledge Base",
+      "memory": "Personal Memory"
     }
   }
 }

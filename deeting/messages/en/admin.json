@@ -517,6 +517,10 @@
       "title": "Embedding Settings",
       "description": "Configure vector embedding services"
     },
+    "systemMemory": {
+      "title": "System Knowledge Management",
+      "description": "Maintain platform-level public knowledge shared by all users and AI assistants."
+    },
     "notifications": {
       "title": "Notification Management",
       "description": "Manage system notifications and messages"

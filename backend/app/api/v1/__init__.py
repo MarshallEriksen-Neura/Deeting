@@ -63,6 +63,7 @@ from app.api.v1.users_route import router as users_router
 
 from .knowledge_route import router as knowledge_router
 from app.api.operations.user_document_router import router as user_documents_router
+from .memory_route import router as memory_router
 from .mcp_route import router as mcp_router
 from .settings_route import router as settings_router
 
@@ -105,6 +106,7 @@ __all__ = [
     "knowledge_router",
     "mcp_router",
     "media_router",
+    "memory_router",
     "monitoring_router",
     "notification_ws_router",
     "provider_router",

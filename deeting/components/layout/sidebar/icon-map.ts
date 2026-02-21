@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  BrainCircuit,
   BookOpen,
   CheckSquare,
   Cloud,
@@ -66,6 +67,7 @@ export const navIconMap = {
   // Storage navigation icons
   folderOpen: FolderOpen,
   hardDrive: HardDrive,
+  brainCircuit: BrainCircuit,
   // Admin navigation icons
   eye: Eye,
   sparkles: Sparkles,

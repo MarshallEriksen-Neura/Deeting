@@ -25,6 +25,7 @@ from app.api.v1.admin.spec_knowledge_review_route import (
     router as spec_knowledge_reviews_router,
 )
 from app.api.v1.admin.spec_plan_route import router as spec_plans_router
+from app.api.v1.admin.memory_route import router as memory_router
 from app.api.v1.admin.users_route import router as users_router
 
 from .agent_route import router as agent_router
@@ -36,6 +37,7 @@ __all__ = [
     "gateway_logs_router",
     "generation_tasks_router",
     "knowledge_router",
+    "memory_router",
     "plugins_router",
     "spec_plans_router",
     "agent_router",

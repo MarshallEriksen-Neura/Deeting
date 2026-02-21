@@ -129,6 +129,7 @@
       "adminNotifications": "通知管理",
       "gatewayLogs": "网关日志",
       "skills": "技能管理",
+      "adminMemory": "系统知识管理",
       "aiOperations": "AI 运营",
       "conversations": "会话管理",
       "agentTasks": "Agent 任务",
@@ -136,7 +137,8 @@
       "financial": "财务",
       "billing": "计费与配额",
       "storage": "存储",
-      "knowledge": "知识库"
+      "knowledge": "知识库",
+      "memory": "用户记忆"
     }
   }
 }

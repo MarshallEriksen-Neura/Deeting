@@ -109,6 +109,12 @@ export const userNavigation: NavGroup[] = [
         href: "/dashboard/knowledge",
         icon: "folderOpen",
       },
+      {
+        id: "memory",
+        label: "nav.memory",
+        href: "/dashboard/memory",
+        icon: "brainCircuit",
+      },
     ],
   },
   {
@@ -196,6 +202,12 @@ export const adminNavigation: NavGroup[] = [
         label: "nav.skills",
         href: "/admin/skills",
         icon: "workflow",
+      },
+      {
+        id: "admin-memory",
+        label: "nav.adminMemory",
+        href: "/admin/memory",
+        icon: "brainCircuit",
       },
     ],
   },

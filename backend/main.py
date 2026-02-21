@@ -148,6 +148,7 @@ def register_routes(app: FastAPI) -> None:
         admin_gateway_logs_router,
         admin_generation_tasks_router,
         admin_knowledge_router,
+        admin_memory_router,
         admin_notification_router,
         admin_plugins_router,
         admin_provider_credential_router,
@@ -177,6 +178,7 @@ def register_routes(app: FastAPI) -> None:
         knowledge_router,
         mcp_router,
         media_router,
+        memory_router,
         monitoring_router,
         notification_ws_router,
         provider_router,
@@ -276,6 +278,11 @@ def register_routes(app: FastAPI) -> None:
         tags=["Admin - Knowledge"],
     )
     app.include_router(
+        admin_memory_router,
+        prefix=api_prefix,
+        tags=["Admin - System Memory"],
+    )
+    app.include_router(
         admin_plugins_router,
         prefix=api_prefix,
         tags=["Admin - Plugins"],
@@ -323,6 +330,7 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])
+    app.include_router(memory_router, prefix=api_prefix, tags=["User Memory"])
     app.include_router(gateway_logs_router, prefix=api_prefix, tags=["Logs"])
     app.include_router(dashboard_router, prefix=api_prefix, tags=["Dashboard"])
     app.include_router(monitoring_router, prefix=api_prefix, tags=["Monitoring"])

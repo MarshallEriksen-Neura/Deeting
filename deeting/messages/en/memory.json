@@ -1,0 +1,34 @@
+{
+  "title": "Memory Management",
+  "subtitle": "Manage long-term memories, preferences, and facts stored by your AI.",
+  "empty": {
+    "title": "No memories yet",
+    "description": "As you interact with AI, it will automatically extract and remember facts about you."
+  },
+  "actions": {
+    "clearAll": "Clear All",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "confirm": {
+    "clearAll": {
+      "title": "Clear all memories?",
+      "description": "This action is irreversible. AI will forget all personalized facts about you."
+    },
+    "delete": {
+      "title": "Delete this memory?",
+      "description": "AI will no longer remember this information after deletion."
+    }
+  },
+  "fields": {
+    "content": "Memory Content",
+    "createdAt": "Created At"
+  },
+  "success": {
+    "updated": "Memory updated",
+    "deleted": "Memory deleted",
+    "cleared": "Memory cleared"
+  }
+}

@@ -517,6 +517,10 @@
       "title": "Embedding 设置",
       "description": "配置向量嵌入服务"
     },
+    "systemMemory": {
+      "title": "系统知识管理",
+      "description": "维护平台级公共知识库，供所有用户和 AI 助手共享。"
+    },
     "notifications": {
       "title": "通知管理",
       "description": "管理系统通知与消息"
