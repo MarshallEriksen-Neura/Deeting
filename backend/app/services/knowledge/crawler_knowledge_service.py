@@ -2,10 +2,10 @@ import hashlib
 import uuid
 from typing import Any
 
-import httpx
 from loguru import logger
 
 from app.core.config import settings
+from app.core.http_client import create_async_http_client
 from app.models.knowledge import KnowledgeArtifact
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.tasks.knowledge_tasks import index_knowledge_artifact_task
@@ -34,7 +34,7 @@ class CrawlerKnowledgeService:
         logger.info(f"Triggering Deep Dive for: {seed_url}")
 
         scout_url = f"{settings.SCOUT_SERVICE_URL}/v1/scout/deep-dive"
-        async with httpx.AsyncClient() as client:
+        async with create_async_http_client() as client:
             try:
                 # High timeout for deep dives
                 resp = await client.post(

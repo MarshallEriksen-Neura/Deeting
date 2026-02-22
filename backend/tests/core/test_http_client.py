@@ -53,3 +53,52 @@ async def test_create_async_http_client_keeps_proxies_when_supported(monkeypatch
 
     assert "proxies" in captured
     assert "proxy" not in captured
+
+
+@pytest.mark.asyncio
+async def test_create_async_http_client_defaults_trust_env_false(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class CapturingClient(DummyAsyncClient):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            captured.update(kwargs)
+
+    monkeypatch.setattr(hc, "_build_curl_transport", lambda **_: None)
+    monkeypatch.setattr(hc.httpx, "AsyncClient", CapturingClient)
+
+    client = hc.create_async_http_client()
+    await client.aclose()
+
+    assert captured["trust_env"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_async_http_client_allows_overriding_trust_env(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class CapturingClient(DummyAsyncClient):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            captured.update(kwargs)
+
+    monkeypatch.setattr(hc, "_build_curl_transport", lambda **_: None)
+    monkeypatch.setattr(hc.httpx, "AsyncClient", CapturingClient)
+
+    client = hc.create_async_http_client(trust_env=True)
+    await client.aclose()
+
+    assert captured["trust_env"] is True
+
+
+def test_create_sync_http_client_defaults_trust_env_false(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class DummySyncClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(hc.httpx, "Client", DummySyncClient)
+
+    hc.create_sync_http_client(timeout=1.0)
+    assert captured["trust_env"] is False

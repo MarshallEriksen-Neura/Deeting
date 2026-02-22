@@ -6,7 +6,6 @@ from collections.abc import Iterable
 from typing import Any
 
 import google.auth.transport.requests
-import httpx
 from google.oauth2 import service_account
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +15,7 @@ from app.constants.model_capability_map import (
 )
 from app.core.cache_invalidation import CacheInvalidator
 from app.core.config import settings
+from app.core.http_client import create_async_http_client
 from app.models.provider_instance import (
     ProviderCredential,
     ProviderInstance,
@@ -113,7 +113,7 @@ class ProviderInstanceService:
 
         start = time.time()
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with create_async_http_client(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers)
                 latency = int((time.time() - start) * 1000)
 
@@ -177,7 +177,7 @@ class ProviderInstanceService:
             "generationConfig": {"maxOutputTokens": 1},
         }
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with create_async_http_client(timeout=10.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 latency = int((time.time() - start) * 1000)
 
@@ -207,7 +207,7 @@ class ProviderInstanceService:
         start = time.time()
         payload = {"messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with create_async_http_client(timeout=10.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 latency = int((time.time() - start) * 1000)
 
@@ -325,7 +325,7 @@ class ProviderInstanceService:
             if secret:
                 headers["Authorization"] = f"Bearer {secret}"
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with create_async_http_client(timeout=10.0) as client:
             resp = await client.get(url, headers=headers, params=params)
             resp.raise_for_status()
             data = resp.json()
@@ -889,7 +889,7 @@ class ProviderInstanceService:
         status_code = 0
         body = None
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with create_async_http_client(timeout=10.0) as client:
                 resp = await client.post(
                     url, headers=headers, params=params, json=payload
                 )

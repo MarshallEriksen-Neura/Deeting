@@ -74,6 +74,12 @@ curl -X POST "http://localhost:8001/v1/scout/deep-dive" \
 | :--- | :--- | :--- |
 | `MAX_CONCURRENT_CRAWLS` | 5 | 最大并发任务数 |
 | `DEFAULT_USER_AGENT` | DeetingScout/1.0 | 默认 UA |
+| `SCOUT_BROWSER_PROXY` | （空） | 浏览器代理地址（如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`） |
+| `SCOUT_PAGE_TIMEOUT_MS` | 60000 | 页面导航超时（毫秒） |
+| `SCOUT_WAIT_UNTIL` | domcontentloaded | Playwright 等待条件（`load` / `domcontentloaded` / `networkidle` / `commit`） |
+| `SCOUT_DEEP_DIVE_ENFORCE_PATH_SCOPE` | true | Deep Dive 自动收敛到种子链接的“内容路径范围”，避免漂移到首页/登录页等噪声页面 |
+| `SCOUT_DEEP_DIVE_SCOPE_MIN_MATCHES` | 3 | 自动推断路径范围时，候选前缀至少命中的链接数阈值 |
+| `SCOUT_DEEP_DIVE_FILTER_NOISE_URLS` | true | 过滤常见噪声链接（登录/鉴权页、重定向参数、静态资源文件等） |
 
 ## 📦 独立部署指南
 

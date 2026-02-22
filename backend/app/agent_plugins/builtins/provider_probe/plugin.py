@@ -1,8 +1,7 @@
 from typing import Any
 
-import httpx
-
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
+from app.core.http_client import create_async_http_client
 
 
 class ProviderProbePlugin(AgentPlugin):
@@ -85,7 +84,7 @@ class ProviderProbePlugin(AgentPlugin):
             return f"Unsupported provider type: {provider_type}"
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with create_async_http_client() as client:
                 resp = await client.post(
                     url, json=provider_req, headers=headers, timeout=30.0
                 )

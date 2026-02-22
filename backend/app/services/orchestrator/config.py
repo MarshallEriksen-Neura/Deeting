@@ -7,6 +7,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
+from app.core.config import settings
 from app.services.orchestrator.context import Channel
 from app.services.workflow.steps.base import StepConfig
 
@@ -60,7 +61,10 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "rate_limit": StepConfig(timeout=2.0),
         "routing": StepConfig(timeout=10.0, max_retries=1),
         "agent_executor": StepConfig(
-            timeout=120.0, max_retries=2, retry_delay=1.0, max_turns=12
+            timeout=settings.AGENT_EXECUTOR_TIMEOUT_EXTERNAL_SECONDS,
+            max_retries=2,
+            retry_delay=1.0,
+            max_turns=12,
         ),
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },
@@ -121,7 +125,11 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "quota_check": StepConfig(timeout=5.0),
         "rate_limit": StepConfig(timeout=2.0),
         "routing": StepConfig(timeout=10.0),
-        "agent_executor": StepConfig(timeout=180.0, max_retries=2, max_turns=15),  # 内部超时更长，轮数更多
+        "agent_executor": StepConfig(
+            timeout=settings.AGENT_EXECUTOR_TIMEOUT_INTERNAL_SECONDS,
+            max_retries=2,
+            max_turns=15,
+        ),  # 内部超时更长，轮数更多
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },
 )

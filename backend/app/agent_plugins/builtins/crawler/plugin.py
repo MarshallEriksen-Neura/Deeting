@@ -1,11 +1,10 @@
 import uuid
 from typing import Any
 
-import httpx
-
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
+from app.core.http_client import create_async_http_client
 
 
 class CrawlerPlugin(AgentPlugin):
@@ -52,18 +51,18 @@ class CrawlerPlugin(AgentPlugin):
                 "type": "function",
                 "function": {
                     "name": "crawl_website",
-                    "description": "Recursively crawl a website (Deep Dive) and ingest knowledge into the system memory. Use this when asked to 'learn' or 'read' a documentation site.",
+                    "description": "Recursively crawl a website. CRITICAL: If the user intent is to 'learn', 'clone' or 'register' a new assistant/skill from a URL, you MUST follow up by calling 'convert_artifact_to_assistant' with the returned IDs.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "url": {
                                 "type": "string",
-                                "description": "The root URL to start crawling from (e.g. documentation homepage).",
+                                "description": "The root URL to start crawling from.",
                             },
                             "max_depth": {
                                 "type": "integer",
                                 "default": 2,
-                                "description": "How deep to follow links (1=root only, 2=root+children).",
+                                "description": "How deep to follow links.",
                             },
                             "max_pages": {
                                 "type": "integer",
@@ -109,16 +108,20 @@ class CrawlerPlugin(AgentPlugin):
                 "type": "function",
                 "function": {
                     "name": "convert_artifact_to_assistant",
-                    "description": "Convert a crawled Knowledge Artifact into a structured AI Assistant. Use this when the user wants to 'clone' or 'create' a persona from a webpage.",
+                    "description": "Convert a crawled Knowledge Artifact into a structured AI Assistant. This is the mandatory final step to register new prompts/skills into the system registry.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "artifact_id": {
                                 "type": "string",
                                 "description": "The UUID of the ingested Knowledge Artifact.",
+                            },
+                            "user_id": {
+                                "type": "string",
+                                "description": "The current user UUID. Use the ID from your context.",
                             }
                         },
-                        "required": ["artifact_id"],
+                        "required": ["artifact_id", "user_id"],
                     },
                 },
             },
@@ -137,7 +140,7 @@ class CrawlerPlugin(AgentPlugin):
         logger.info(f"Dispatching Scout to: {url}")
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with create_async_http_client() as client:
                 response = await client.post(
                     scout_url, json={"url": url, "js_mode": js_mode}, timeout=60.0
                 )
@@ -182,19 +185,21 @@ class CrawlerPlugin(AgentPlugin):
                     max_pages=max_pages,
                     artifact_type="assistant",  # Default to assistant type if intention is cloning
                 )
+                await session.commit() # Commit the changes to persist artifacts
+                artifact_ids = result.get("review_ids") or result.get("ingested_ids") or []
 
                 # We return the list of artifact IDs so the Agent can pick one to convert
                 return {
                     "status": "success",
-                    "message": f"Successfully ingested {len(result.get('ingested_ids', []))} pages. You can now use 'convert_artifact_to_assistant' with these IDs.",
-                    "artifact_ids": result.get("ingested_ids", []),
+                    "message": f"Successfully ingested {len(artifact_ids)} pages. You can now use 'convert_artifact_to_assistant' with these IDs.",
+                    "artifact_ids": artifact_ids,
                 }
             except Exception as e:
                 logger.error(f"Deep Dive failed: {e}")
                 return {"status": "error", "error": str(e)}
 
     async def handle_convert_artifact_to_assistant(
-        self, artifact_id: str
+        self, artifact_id: str, user_id: uuid.UUID
     ) -> dict[str, Any]:
         """
         Tool Handler: Refine Artifact -> Create Assistant -> Sync Qdrant.
@@ -221,7 +226,7 @@ class CrawlerPlugin(AgentPlugin):
             try:
                 # Validate UUID format
                 uuid_obj = uuid.UUID(artifact_id)
-                result = await ingestion_service.refine_and_create_assistant(uuid_obj)
+                result = await ingestion_service.refine_and_create_assistant(uuid_obj, user_id=user_id)
                 await session.commit()
                 return result
             except ValueError:

@@ -1,11 +1,11 @@
 import time
 from typing import Any
 
-import httpx
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.http_client import create_async_http_client
 from app.models.provider_instance import ProviderInstance
 
 
@@ -59,7 +59,7 @@ class HealthMonitorService:
         status = "healthy"
         latency = 0
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with create_async_http_client(timeout=5.0) as client:
                 # We expect 401 (Auth required) or 200 (OK). Both mean it's reachable.
                 # If 404, the path is wrong, but server is up.
                 resp = await client.get(url)

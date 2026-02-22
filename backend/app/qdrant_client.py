@@ -18,6 +18,7 @@ from weakref import WeakKeyDictionary
 import httpx
 
 from app.core.config import settings
+from app.core.http_client import create_async_http_client
 
 _qdrant_clients_by_loop: WeakKeyDictionary[
     asyncio.AbstractEventLoop, httpx.AsyncClient
@@ -60,7 +61,7 @@ def _create_client() -> httpx.AsyncClient:
 
     url = str(getattr(settings, "QDRANT_URL", "") or "").strip()
     timeout = float(getattr(settings, "QDRANT_TIMEOUT_SECONDS", 10.0) or 10.0)
-    return httpx.AsyncClient(base_url=url, timeout=timeout, headers=_build_headers())
+    return create_async_http_client(base_url=url, timeout=timeout, headers=_build_headers())
 
 
 def get_qdrant_client() -> httpx.AsyncClient:

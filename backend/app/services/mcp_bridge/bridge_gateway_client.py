@@ -10,9 +10,8 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
-
 from app.core import settings
+from app.core.http_client import create_async_http_client
 
 
 class BridgeGatewayClient:
@@ -42,7 +41,7 @@ class BridgeGatewayClient:
         return headers
 
     async def list_agents(self) -> dict[str, Any]:
-        async with httpx.AsyncClient(
+        async with create_async_http_client(
             base_url=self._base_url, timeout=self._timeout
         ) as client:
             resp = await client.get("/internal/bridge/agents", headers=self._headers())
@@ -50,7 +49,7 @@ class BridgeGatewayClient:
             return resp.json()
 
     async def list_tools(self, agent_id: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(
+        async with create_async_http_client(
             base_url=self._base_url, timeout=self._timeout
         ) as client:
             resp = await client.get(
@@ -78,7 +77,7 @@ class BridgeGatewayClient:
             "timeout_ms": int(timeout_ms),
             "stream": bool(stream),
         }
-        async with httpx.AsyncClient(
+        async with create_async_http_client(
             base_url=self._base_url, timeout=self._timeout
         ) as client:
             resp = await client.post(
@@ -93,7 +92,7 @@ class BridgeGatewayClient:
         self, *, req_id: str, agent_id: str, reason: str = "user_cancel"
     ) -> dict[str, Any]:
         payload = {"req_id": req_id, "agent_id": agent_id, "reason": reason}
-        async with httpx.AsyncClient(
+        async with create_async_http_client(
             base_url=self._base_url, timeout=self._timeout
         ) as client:
             resp = await client.post(
@@ -108,7 +107,9 @@ class BridgeGatewayClient:
         """
         代理 Tunnel Gateway 的 SSE 事件流（原样 bytes 透传）。
         """
-        async with httpx.AsyncClient(base_url=self._base_url, timeout=None) as client:
+        async with create_async_http_client(
+            base_url=self._base_url, timeout=None
+        ) as client:
             async with client.stream(
                 "GET",
                 settings.BRIDGE_GATEWAY_EVENTS_PATH,

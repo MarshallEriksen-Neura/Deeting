@@ -584,7 +584,8 @@ async def test_provider_model_test_ping(monkeypatch):
             return FakeResp()
 
     monkeypatch.setattr(
-        "app.services.providers.provider_instance_service.httpx.AsyncClient", FakeClient
+        "app.services.providers.provider_instance_service.create_async_http_client",
+        lambda *args, **kwargs: FakeClient(),
     )
 
     async with AsyncSessionLocal() as session:

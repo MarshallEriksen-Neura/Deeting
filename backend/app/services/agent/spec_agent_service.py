@@ -30,7 +30,7 @@ from app.schemas.spec_agent import SpecManifest, SpecNode
 from app.schemas.tool import ToolCall, ToolDefinition
 from app.services.conversation.service import ConversationService
 from app.services.conversation.turn_index_sync import sync_redis_last_turn
-from app.services.knowledge import SpecKnowledgeService
+from app.services.knowledge.spec_knowledge_service import SpecKnowledgeService
 from app.services.mcp.client import mcp_client
 from app.services.mcp.discovery import mcp_discovery_service
 from app.services.providers.llm import llm_service

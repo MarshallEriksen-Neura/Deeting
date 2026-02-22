@@ -4,6 +4,7 @@ import logging
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
+from app.core.config import settings
 from app.schemas.tool import ToolCall
 from app.services.mcp.client import mcp_client
 from app.services.orchestrator.registry import step_registry
@@ -20,10 +21,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Per-tool-call hard timeout (seconds).  Individual tools may define shorter
-# timeouts (e.g. httpx 60 s), but this acts as an upper bound so that a single
-# slow tool cannot consume the entire step budget.
-TOOL_CALL_TIMEOUT: float = 120.0
+_MIN_TOOL_RESULT_LIMIT_CHARS = 512
+_DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 300.0
 
 
 @step_registry.register
@@ -286,7 +285,7 @@ class AgentExecutorStep(BaseStep):
 
                 # Find and execute tool
                 result = await self._dispatch_tool(ctx, tc, user_mcp_tool_map)
-                
+
                 tool_error = None
                 tool_success = True
                 if isinstance(result, dict) and "error" in result:
@@ -295,7 +294,10 @@ class AgentExecutorStep(BaseStep):
 
                 # Format result once for both persistence and UI streaming
                 formatted_result = self._format_tool_result(result)
-                
+                history_result, history_truncated = self._trim_tool_result_for_history(
+                    formatted_result
+                )
+
                 tool_calls_log = ctx.get("execution", "tool_calls") or []
                 if isinstance(tool_calls_log, list):
                     tool_calls_log.append(
@@ -304,13 +306,14 @@ class AgentExecutorStep(BaseStep):
                             "tool_call_id": tc.id,
                             "success": tool_success,
                             "error": tool_error,
-                            "output": formatted_result,
+                            "output": history_result,
+                            "truncated": history_truncated,
                         }
                     )
                     ctx.set("execution", "tool_calls", tool_calls_log)
 
                 # Emit Tool Result (Persistent UI)
-                result_preview = formatted_result
+                result_preview = history_result
                 if len(result_preview) > 2000:
                     result_preview = result_preview[:2000] + "... (truncated)"
                 self._emit_blocks(
@@ -334,7 +337,7 @@ class AgentExecutorStep(BaseStep):
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "name": tc.name,
-                        "content": formatted_result,
+                        "content": history_result,
                     }
                 )
 
@@ -470,23 +473,23 @@ class AgentExecutorStep(BaseStep):
         for server in servers:
             if not server.sse_url:
                 continue
-            
+
             # Resolve headers once per server
             headers = await mcp_discovery_service._get_auth_headers(ctx.db_session, server)
             disabled = set(server.disabled_tools or [])
-            
+
             for cached_tool in server.tools_cache or []:
                 name = cached_tool.get("name")
                 if not name or name in disabled:
                     continue
-                
+
                 if name not in tool_map:
                     tool_map[name] = {
                         "sse_url": server.sse_url,
                         "headers": headers,
                         "server_name": server.name
                     }
-        
+
         return tool_map
 
     def _format_tool_result(self, result: Any) -> str:
@@ -496,7 +499,7 @@ class AgentExecutorStep(BaseStep):
         """
         if result is None:
             return "null"
-        
+
         # Handle MCP Content Blocks
         if isinstance(result, list):
             texts = []
@@ -508,36 +511,92 @@ class AgentExecutorStep(BaseStep):
                         texts.append("[Image Content]")
                 elif hasattr(item, "type") and getattr(item, "type") == "text":
                     texts.append(getattr(item, "text", ""))
-            
+
             if texts:
                 return "\n".join(texts)
-        
+
         if isinstance(result, (dict, list)):
             return json.dumps(result, ensure_ascii=False)
-        
+
         return str(result)
+
+    def _trim_tool_result_for_history(self, result: str) -> tuple[str, bool]:
+        """
+        Keep tool payload bounded before injecting it back into LLM messages.
+        This avoids context-window failures when tools return very large outputs.
+        """
+        limit = getattr(settings, "AGENT_TOOL_RESULT_MAX_CHARS", 12000)
+        try:
+            limit = int(limit)
+        except Exception:
+            limit = 12000
+
+        limit = max(_MIN_TOOL_RESULT_LIMIT_CHARS, limit)
+        if len(result) <= limit:
+            return result, False
+
+        omitted = len(result) - limit
+        suffix = (
+            "\n\n"
+            f"[tool_result_truncated omitted_chars={omitted} "
+            f"original_chars={len(result)}]"
+        )
+        return result[:limit] + suffix, True
+
+    def _resolve_tool_call_timeout_seconds(self) -> float:
+        """
+        Resolve per-tool timeout with config fallback.
+
+        The effective timeout is bounded by current step timeout so tool calls
+        do not outlive the agent_executor step budget.
+        """
+        configured = getattr(
+            settings,
+            "AGENT_TOOL_CALL_TIMEOUT_SECONDS",
+            _DEFAULT_TOOL_CALL_TIMEOUT_SECONDS,
+        )
+        try:
+            tool_timeout = float(configured)
+        except Exception:
+            tool_timeout = _DEFAULT_TOOL_CALL_TIMEOUT_SECONDS
+
+        if tool_timeout <= 0:
+            tool_timeout = _DEFAULT_TOOL_CALL_TIMEOUT_SECONDS
+
+        step_timeout = getattr(self.config, "timeout", None)
+        try:
+            step_timeout_value = float(step_timeout) if step_timeout is not None else None
+        except Exception:
+            step_timeout_value = None
+
+        if step_timeout_value and step_timeout_value > 0:
+            return min(tool_timeout, step_timeout_value)
+
+        return tool_timeout
 
     async def _dispatch_tool(self, ctx: "WorkflowContext", tool_call: ToolCall, user_mcp_tool_map: dict[str, Any]) -> Any:
         """
         Dispatches the tool call to either a local plugin or a remote MCP server.
 
-        Each invocation is wrapped with a hard timeout (TOOL_CALL_TIMEOUT) so
-        that a single slow tool cannot consume the entire step budget.
+        Each invocation is wrapped with a hard timeout so that a single slow
+        tool cannot consume the entire step budget.
         """
+        timeout_seconds = self._resolve_tool_call_timeout_seconds()
+        timeout_display = f"{timeout_seconds:g}"
         try:
             return await asyncio.wait_for(
                 self._dispatch_tool_inner(ctx, tool_call, user_mcp_tool_map),
-                timeout=TOOL_CALL_TIMEOUT,
+                timeout=timeout_seconds,
             )
         except TimeoutError:
             logger.warning(
-                f"Tool '{tool_call.name}' timed out after {TOOL_CALL_TIMEOUT}s "
+                f"Tool '{tool_call.name}' timed out after {timeout_display}s "
                 f"trace_id={ctx.trace_id}"
             )
             return {
                 "error": (
                     f"Tool '{tool_call.name}' timed out after "
-                    f"{int(TOOL_CALL_TIMEOUT)}s. The external service may be "
+                    f"{timeout_display}s. The external service may be "
                     f"slow or unreachable."
                 )
             }

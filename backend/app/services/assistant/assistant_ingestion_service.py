@@ -26,23 +26,45 @@ class AssistantIngestionService:
         self.knowledge_repo = knowledge_repo
 
     async def refine_and_create_assistant(
-        self, artifact_id: uuid.UUID
+        self, artifact_id: uuid.UUID, user_id: uuid.UUID
     ) -> dict[str, Any]:
         """
         1. Fetch the raw artifact.
-        2. Use LLM to extract Assistant details.
-        3. Create the Assistant in DB.
-        4. Trigger Qdrant sync.
+        2. Resolve preferred model (User Secretary > System Default).
+        3. Use LLM to extract Assistant details.
+        4. Create the Assistant in DB.
+        5. Trigger Qdrant sync.
         """
         artifact = await self.knowledge_repo.get(artifact_id)
         if not artifact:
             raise ValueError(f"Artifact {artifact_id} not found")
 
-        # 1. LLM Extraction
-        refinement_data = await self._extract_assistant_data(artifact.raw_content)
+        # 1. Resolve Refinement Model
+        refine_model = None
+        
+        # Try to use User Secretary Model
+        from app.core.database import AsyncSessionLocal
+        from app.models.secretary import UserSecretary
+        from sqlalchemy import select
 
-        # 2. Prepare Payload
-        # We create a 'System' assistant (owner_user_id=None)
+        async with AsyncSessionLocal() as session:
+            stmt = select(UserSecretary.model_name).where(UserSecretary.user_id == user_id)
+            result = await session.execute(stmt)
+            refine_model = result.scalar_one_or_none()
+            
+        if not refine_model:
+            refine_model = getattr(settings, "INTERNAL_LLM_MODEL_ID", None)
+            
+        logger.info(f"Refining assistant using model: {refine_model or 'default'} for user: {user_id}")
+
+        # 2. LLM Extraction
+        refinement_data = await self._extract_assistant_data(
+            artifact.raw_content, 
+            user_id=user_id,
+            model=refine_model
+        )
+
+        # 3. Prepare Payload
         payload = AssistantCreate(
             visibility=AssistantVisibility.PUBLIC,
             status=AssistantStatus.PUBLISHED,
@@ -54,13 +76,16 @@ class AssistantIngestionService:
                 description=refinement_data.get("description", ""),
                 system_prompt=refinement_data.get("system_prompt", ""),
                 tags=refinement_data.get("tags", []),
-                model_config={"model": "gpt-4o", "temperature": 0.7},
+                model_config={
+                    "model": refine_model or "gpt-4o", 
+                    "temperature": 0.7
+                },
             ),
         )
 
-        # 3. Create in DB (Bypassing review because it's system-level)
+        # 4. Create in DB
         assistant = await self.assistant_service.create_assistant(
-            payload, owner_user_id=None
+            payload, owner_user_id=user_id
         )
 
         # 4. CRITICAL: Trigger Qdrant Sync (The missing link!)
@@ -75,10 +100,17 @@ class AssistantIngestionService:
             "name": refinement_data.get("name"),
         }
 
-    async def _extract_assistant_data(self, markdown: str) -> dict[str, Any]:
+    async def _extract_assistant_data(
+        self, 
+        markdown: str, 
+        user_id: uuid.UUID,
+        model: str | None = None
+    ) -> dict[str, Any]:
         """
         The 'Refinery' logic using LLM.
         """
+        # ... (prompt content omitted for brevity in instruction, but keep it in implementation)
+        # (AI note: I will include the full prompt during implementation to be safe)
         prompt = f"""
         You are an AI Persona Architect. I will provide you with a Markdown document describing an AI character or a set of prompts.
         Your job is to refine this into a structured JSON for Deeting OS.
@@ -110,7 +142,10 @@ class AssistantIngestionService:
         try:
             # Note: Using the internal llm_service which already handles API Keys/BaseURLs from config
             response = await llm_service.chat_completion(
-                messages=[{"role": "user", "content": prompt}], temperature=0.1
+                messages=[{"role": "user", "content": prompt}],
+                model=model,  # Use passed model or let service decide
+                temperature=0.1,
+                user_id=str(user_id), # Pass user_id
             )
 
             # Basic cleanup of LLM response

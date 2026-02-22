@@ -11,6 +11,7 @@ from app.api.v1.admin import conversations_router as admin_conversations_router
 from app.api.v1.admin import gateway_logs_router as admin_gateway_logs_router
 from app.api.v1.admin import generation_tasks_router as admin_generation_tasks_router
 from app.api.v1.admin import knowledge_router as admin_knowledge_router
+from app.api.v1.admin import memory_router as admin_memory_router
 from app.api.v1.admin import notification_router as admin_notification_router
 from app.api.v1.admin import plugins_router as admin_plugins_router
 from app.api.v1.admin import (
@@ -77,6 +78,7 @@ __all__ = [
     "admin_gateway_logs_router",
     "admin_generation_tasks_router",
     "admin_knowledge_router",
+    "admin_memory_router",
     "admin_notification_router",
     "admin_plugins_router",
     "admin_provider_credential_router",

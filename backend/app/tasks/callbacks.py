@@ -1,8 +1,7 @@
 from typing import Any
 
-import httpx
-
 from app.core.celery_app import celery_app
+from app.core.http_client import create_sync_http_client
 from app.core.logging import logger
 
 
@@ -13,7 +12,7 @@ def push_callback_task(self, url: str, payload: dict[str, Any]):
     """
     logger.info(f"Pushing callback to {url}")
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with create_sync_http_client(timeout=10.0) as client:
             resp = client.post(url, json=payload)
             resp.raise_for_status()
         logger.info(f"Callback pushed successfully to {url}")

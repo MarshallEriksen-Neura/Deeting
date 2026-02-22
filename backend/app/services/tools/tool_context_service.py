@@ -88,10 +88,13 @@ class ToolContextService:
         )
         allowed_tool_names = set()
         core_tool_names = set()
+        skill_runner_enabled = False
         for plugin in enabled_plugins:
             allowed_tool_names.update(plugin.tools or [])
             if plugin.is_always_on:
                 core_tool_names.update(plugin.tools or [])
+            if plugin.id == "core.execution.skill_runner":
+                skill_runner_enabled = True
 
         system_tools = [
             tool for tool in agent_service.tools if tool.name in allowed_tool_names
@@ -115,9 +118,10 @@ class ToolContextService:
 
         total_tool_count = len(system_tools) + len(user_tool_payloads)
         threshold = int(getattr(settings, "MCP_TOOL_JIT_THRESHOLD", 15) or 15)
+        # 强制开启 JIT 的条件：Qdrant 已配置 + 有查询 + (工具多 OR 启用了动态技能运行器)
         use_jit = (
             bool(qdrant_is_configured())
-            and total_tool_count > threshold
+            and (total_tool_count > threshold or skill_runner_enabled)
             and bool(query)
         )
         logger.info(
@@ -141,18 +145,29 @@ class ToolContextService:
                 (time.perf_counter() - jit_start) * 1000,
                 len(dynamic_hits),
             )
+            # 1. 添加核心工具 (Always On)
             for tool in core_tools:
                 if tool.name in existing_names:
                     continue
                 final_tools.append(tool)
                 existing_names.add(tool.name)
+            
+            # 2. 添加 JIT 命中的动态技能
             for tool in dynamic_hits:
                 if tool.name in existing_names:
                     continue
-                if tool.name not in allowed_tool_names:
+                # 如果是 skill__ 开头的，或者是已经在白名单里的系统工具（防止重复，虽然前面已过滤）
+                if tool.name.startswith("skill__") or tool.name in allowed_tool_names:
+                    final_tools.append(tool)
+                    existing_names.add(tool.name)
+
+            # 3. 补充添加所有已启用的内置系统工具 (确保爬虫等基础能力不丢失)
+            for tool in non_core_system_tools:
+                if tool.name in existing_names:
                     continue
                 final_tools.append(tool)
                 existing_names.add(tool.name)
+
             logger.info(
                 "ToolContextService: done duration_ms=%.2f final_tools=%s",
                 (time.perf_counter() - start_time) * 1000,

@@ -459,8 +459,45 @@ class ConversationAppendStep(BaseStep):
                 tool_calls=assistant_message.get("tool_calls"),
             ) or []
 
-        meta_info["blocks"] = [*base_blocks, *result_blocks]
+        meta_info["blocks"] = cls._interleave_blocks(base_blocks, result_blocks)
         assistant_message["meta_info"] = meta_info
+
+    @staticmethod
+    def _interleave_blocks(
+        base_blocks: list[dict[str, Any]],
+        result_blocks: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Place each tool_result immediately after its matching tool_call (by callId)."""
+        if not result_blocks:
+            return list(base_blocks)
+
+        # Index result blocks by callId
+        call_id_set = {
+            b.get("callId")
+            for b in base_blocks
+            if b.get("type") == "tool_call" and b.get("callId")
+        }
+        results_by_call_id: dict[str, dict[str, Any]] = {}
+        unmatched: list[dict[str, Any]] = []
+        for rb in result_blocks:
+            cid = rb.get("callId")
+            if cid and cid in call_id_set:
+                results_by_call_id[cid] = rb
+            else:
+                unmatched.append(rb)
+
+        if not results_by_call_id:
+            return [*base_blocks, *result_blocks]
+
+        ordered: list[dict[str, Any]] = []
+        for block in base_blocks:
+            ordered.append(block)
+            if block.get("type") == "tool_call":
+                cid = block.get("callId")
+                if cid and cid in results_by_call_id:
+                    ordered.append(results_by_call_id.pop(cid))
+        ordered.extend(unmatched)
+        return ordered
 
     @staticmethod
     def _build_tool_result_blocks(tool_calls_log: Any) -> list[dict[str, Any]]:

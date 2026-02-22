@@ -247,8 +247,8 @@ async def test_fetch_models_respects_versioned_base_url(monkeypatch):
                 return FakeResp()
 
         monkeypatch.setattr(
-            "app.services.providers.provider_instance_service.httpx.AsyncClient",
-            FakeClient,
+            "app.services.providers.provider_instance_service.create_async_http_client",
+            lambda *args, **kwargs: FakeClient(),
         )
 
         models = await svc._fetch_models_from_upstream(preset, inst, secret="sk-test")

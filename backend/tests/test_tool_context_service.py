@@ -1,6 +1,10 @@
 import importlib
 
+import pytest
+
+from app.core.config import settings
 from app.core.plugin_config import PluginConfigItem, PluginConfigLoader
+from app.schemas.tool import ToolDefinition
 
 
 def test_extract_last_user_message_empty():
@@ -126,3 +130,137 @@ def test_get_enabled_plugins_unchanged():
     result = loader.get_enabled_plugins()
     ids = [p.id for p in result]
     assert ids == ["pub"]
+
+
+@pytest.mark.asyncio
+async def test_build_tools_jit_allows_dynamic_skill_tools_when_skill_runner_enabled(
+    monkeypatch,
+):
+    from app.services.agent.agent_service import agent_service
+    from app.services.tools.tool_context_service import ToolContextService
+
+    async def _fake_initialize(**_kwargs):
+        return None
+
+    async def _fake_search_tools(*_args, **_kwargs):
+        return [ToolDefinition(name="skill__demo", description="demo", input_schema={})]
+
+    async def _fake_get_user_tools(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(agent_service, "initialize", _fake_initialize)
+    monkeypatch.setattr(
+        agent_service,
+        "tools",
+        [
+            ToolDefinition(
+                name="consult_expert_network",
+                description="expert",
+                input_schema={},
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.plugin_config_loader.get_plugins_for_user",
+        lambda *_args, **_kwargs: [
+            _make_plugin(
+                "system.expert_network",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=["consult_expert_network"],
+            ),
+            _make_plugin(
+                "core.execution.skill_runner",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=[],
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.tool_sync_service.search_tools",
+        _fake_search_tools,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.mcp_discovery_service.get_active_tool_payloads",
+        _fake_get_user_tools,
+    )
+    monkeypatch.setattr(settings, "MCP_TOOL_JIT_THRESHOLD", -1)
+
+    tools = await ToolContextService().build_tools(
+        session=None,
+        user_id="5eec3ecf-9bf2-4e27-b245-4c9695f5d4d2",
+        query="run demo skill",
+    )
+
+    names = [tool.name for tool in tools]
+    assert "consult_expert_network" in names
+    assert "skill__demo" in names
+
+
+@pytest.mark.asyncio
+async def test_build_tools_jit_blocks_dynamic_skill_tools_without_skill_runner(
+    monkeypatch,
+):
+    from app.services.agent.agent_service import agent_service
+    from app.services.tools.tool_context_service import ToolContextService
+
+    async def _fake_initialize(**_kwargs):
+        return None
+
+    async def _fake_search_tools(*_args, **_kwargs):
+        return [ToolDefinition(name="skill__demo", description="demo", input_schema={})]
+
+    async def _fake_get_user_tools(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(agent_service, "initialize", _fake_initialize)
+    monkeypatch.setattr(
+        agent_service,
+        "tools",
+        [
+            ToolDefinition(
+                name="consult_expert_network",
+                description="expert",
+                input_schema={},
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.plugin_config_loader.get_plugins_for_user",
+        lambda *_args, **_kwargs: [
+            _make_plugin(
+                "system.expert_network",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=["consult_expert_network"],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.tool_sync_service.search_tools",
+        _fake_search_tools,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.mcp_discovery_service.get_active_tool_payloads",
+        _fake_get_user_tools,
+    )
+    monkeypatch.setattr(settings, "MCP_TOOL_JIT_THRESHOLD", -1)
+
+    tools = await ToolContextService().build_tools(
+        session=None,
+        user_id="5eec3ecf-9bf2-4e27-b245-4c9695f5d4d2",
+        query="run demo skill",
+    )
+
+    names = [tool.name for tool in tools]
+    assert "consult_expert_network" in names
+    assert "skill__demo" not in names

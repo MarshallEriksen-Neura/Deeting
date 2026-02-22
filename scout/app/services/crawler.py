@@ -1,7 +1,9 @@
 import asyncio
 import random
 import traceback
-from crawl4ai import AsyncWebCrawler
+from urllib.parse import urlsplit
+
+from crawl4ai import AsyncWebCrawler, BrowserConfig
 from loguru import logger
 from typing import Optional, Dict, Any
 
@@ -29,6 +31,22 @@ class CrawlerService:
             self._semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_CRAWLS)
         return self._semaphore
 
+    @staticmethod
+    def _masked_proxy(proxy_url: str) -> str:
+        parsed = urlsplit(proxy_url)
+        if not parsed.hostname:
+            return "***"
+        scheme = parsed.scheme or "http"
+        host = parsed.hostname
+        port = f":{parsed.port}" if parsed.port else ""
+        return f"{scheme}://{host}{port}"
+
+    @staticmethod
+    def _build_proxy_config(proxy_url: str | None) -> dict[str, str] | None:
+        if not proxy_url:
+            return None
+        return {"server": proxy_url}
+
     async def _get_crawler(self) -> AsyncWebCrawler:
         """Return a shared, long-lived browser instance (lazy-init, thread-safe)."""
         if self._crawler is not None and self._crawler.ready:
@@ -40,7 +58,17 @@ class CrawlerService:
                 return self._crawler
 
             logger.info("Initializing persistent browser instance...")
-            crawler = AsyncWebCrawler(verbose=True)
+
+            proxy = (settings.SCOUT_BROWSER_PROXY or "").strip() or None
+            if proxy:
+                logger.info(f"Scout browser proxy enabled: {self._masked_proxy(proxy)}")
+
+            browser_config = BrowserConfig(
+                verbose=True,
+                user_agent=settings.DEFAULT_USER_AGENT,
+                proxy_config=self._build_proxy_config(proxy),
+            )
+            crawler = AsyncWebCrawler(config=browser_config, verbose=True)
             await crawler.start()
             self._crawler = crawler
             logger.info("Persistent browser instance ready.")
@@ -83,6 +111,8 @@ class CrawlerService:
                 url=url,
                 bypass_cache=True,
                 magic=True,
+                wait_until=settings.SCOUT_WAIT_UNTIL,
+                page_timeout=settings.SCOUT_PAGE_TIMEOUT_MS,
             )
 
             if not result.success:

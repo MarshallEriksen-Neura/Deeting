@@ -106,6 +106,7 @@ def create_async_http_client(
         transport = _build_curl_transport(http2=http2, **transport_kwargs)
 
     _normalize_proxy_kwargs(client_kwargs)
+    client_kwargs.setdefault("trust_env", False)
 
     return httpx.AsyncClient(
         timeout=timeout,
@@ -113,3 +114,15 @@ def create_async_http_client(
         transport=transport,
         **client_kwargs,
     )
+
+
+def create_sync_http_client(
+    *,
+    timeout: float | httpx.Timeout | None = None,
+    **client_kwargs: Any,
+) -> httpx.Client:
+    """
+    创建 httpx.Client（同步），默认不读取环境代理变量。
+    """
+    client_kwargs.setdefault("trust_env", False)
+    return httpx.Client(timeout=timeout, **client_kwargs)

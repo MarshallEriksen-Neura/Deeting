@@ -13,6 +13,8 @@ plugins:
     tools:
       - "fetch_web_content"
       - "crawl_website"
+      - "submit_repo_ingestion"
+      - "convert_artifact_to_assistant"
 
   # === Core Memory (Qdrant) ===
   - id: "system/vector_store"

@@ -563,6 +563,7 @@ const ToolResultBlock = memo<{
   status?: "success" | "error";
   result?: unknown;
 }>(function ToolResultBlock({ name, callId, status, result }) {
+  const [isOpen, setIsOpen] = useState(false);
   const title = name || callId || "tool_result";
   const isError = status === "error";
 
@@ -595,28 +596,54 @@ const ToolResultBlock = memo<{
   }, [result]);
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border p-3 text-sm overflow-hidden",
-        isError
-          ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-          : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
-      )}
-    >
-      <div className="mb-2 flex items-center justify-between">
-        <div className="font-mono text-xs font-semibold truncate">{title}</div>
-        <Badge variant="outline" className="h-5 text-[10px] font-normal shrink-0">
-          {isError ? "ERROR" : "OUTPUT"}
-        </Badge>
-      </div>
-      {content ? (
-        <div className="overflow-x-auto">
-          <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+      <CollapsibleTrigger asChild>
+        <div className={cn(
+          "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all cursor-pointer select-none hover:bg-muted/50",
+          isError
+            ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+            : "border-border bg-card"
+        )}>
+          <div className={cn(
+            "w-8 h-8 rounded flex items-center justify-center shrink-0",
+            isError
+              ? "bg-red-100 text-red-500 dark:bg-red-900 dark:text-red-300"
+              : "bg-muted text-muted-foreground"
+          )}>
+            <Terminal size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold font-mono truncate">{title}</span>
+              <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground shrink-0">
+                {isError ? "ERROR" : "OUTPUT"}
+              </Badge>
+            </div>
+          </div>
+          <div className="text-muted-foreground">
+            <ChevronDown size={16} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
+          </div>
         </div>
-      ) : (
-        <div className="text-xs text-muted-foreground">No output</div>
-      )}
-    </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2">
+          <div className={cn(
+            "rounded-lg border p-3 text-sm overflow-hidden",
+            isError
+              ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+              : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
+          )}>
+            {content ? (
+              <div className="overflow-x-auto">
+                <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">No output</div>
+            )}
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 });
 
