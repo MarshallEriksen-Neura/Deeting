@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Plug } from "lucide-react"
+import { Plug, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 import {
   AdminPageShell,
   AdminDataTable,
@@ -12,7 +13,17 @@ import {
   getStatusTone,
   type ColumnDef,
 } from "@/components/admin"
-import { fetchAdminSkills, type SkillItem } from "@/lib/api/admin-dashboard"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { deleteAdminSkill, fetchAdminSkills, type SkillItem } from "@/lib/api/admin-dashboard"
 
 type SkillRow = SkillItem & {
   tags: string[]
@@ -32,8 +43,10 @@ export function PageContent() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [riskFilter, setRiskFilter] = useState("")
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
-  const { data, error, isLoading } = useSWR("/api/v1/admin/skills?limit=100", () =>
+  const { data, error, isLoading, mutate } = useSWR("/api/v1/admin/skills?limit=100", () =>
     fetchAdminSkills({ limit: 100 })
   )
 
@@ -74,6 +87,20 @@ export function PageContent() {
     medium: t("risk.medium"),
     high: t("risk.high"),
   }
+
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      setIsDeleting(true)
+      await deleteAdminSkill(id)
+      toast.success(t("feedback.deleted"))
+      await mutate()
+    } catch {
+      toast.error(t("feedback.deleteFailed"))
+    } finally {
+      setIsDeleting(false)
+      setDeleteId(null)
+    }
+  }, [mutate, t])
 
   const columns: ColumnDef<SkillRow>[] = [
     {
@@ -205,7 +232,35 @@ export function PageContent() {
               ? t("empty.failed")
               : t("empty.noData")
         }
+        rowActions={(row) => (
+          <button
+            className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-red-500/10 hover:text-red-500 transition-colors cursor-pointer"
+            onClick={() => setDeleteId(row.id)}
+            title={t("actions.delete")}
+          >
+            <Trash2 className="size-4" />
+          </button>
+        )}
       />
+
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("deleteConfirm.title")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteConfirm.description")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("deleteConfirm.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={() => deleteId && handleDelete(deleteId)}
+              disabled={isDeleting}
+            >
+              {isDeleting ? t("actions.deleting") : t("deleteConfirm.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminPageShell>
   )
 }

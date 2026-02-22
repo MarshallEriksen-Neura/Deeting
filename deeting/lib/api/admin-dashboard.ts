@@ -642,6 +642,13 @@ export async function createAdminAssistant(payload: AdminAssistantCreatePayload)
   return AdminAssistantItemSchema.parse(data)
 }
 
+export async function deleteAdminAssistant(assistantId: string): Promise<void> {
+  await request<void>({
+    url: `${ADMIN_BASE}/assistants/${assistantId}`,
+    method: "DELETE",
+  })
+}
+
 const CursorPageSchema = z.object({
   items: z.array(z.unknown()).default([]),
   next_page: z.string().nullable().optional(),
@@ -1098,6 +1105,13 @@ export async function fetchAdminSkills(params?: { skip?: number; limit?: number 
     },
   })
   return z.array(SkillItemSchema).parse(data)
+}
+
+export async function deleteAdminSkill(skillId: string): Promise<void> {
+  await request<void>({
+    url: `${ADMIN_BASE}/skills/${skillId}`,
+    method: "DELETE",
+  })
 }
 
 const EmbeddingSettingSchema = z.object({

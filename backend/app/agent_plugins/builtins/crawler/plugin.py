@@ -115,13 +115,9 @@ class CrawlerPlugin(AgentPlugin):
                             "artifact_id": {
                                 "type": "string",
                                 "description": "The UUID of the ingested Knowledge Artifact.",
-                            },
-                            "user_id": {
-                                "type": "string",
-                                "description": "The current user UUID. Use the ID from your context.",
                             }
                         },
-                        "required": ["artifact_id", "user_id"],
+                        "required": ["artifact_id"],
                     },
                 },
             },
@@ -199,11 +195,12 @@ class CrawlerPlugin(AgentPlugin):
                 return {"status": "error", "error": str(e)}
 
     async def handle_convert_artifact_to_assistant(
-        self, artifact_id: str, user_id: uuid.UUID
+        self, artifact_id: str, **kwargs
     ) -> dict[str, Any]:
         """
         Tool Handler: Refine Artifact -> Create Assistant -> Sync Qdrant.
         """
+        user_id = self.context.user_id
         from app.repositories.assistant_repository import (
             AssistantRepository,
             AssistantVersionRepository,

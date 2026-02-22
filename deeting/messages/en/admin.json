@@ -64,10 +64,6 @@
       "description": "Manage all assistant configurations"
     },
     "assistantsPage": {
-      "feedback": {
-        "created": "Created assistant: {id}",
-        "createFailed": "Create failed"
-      },
       "visibility": {
         "private": "Private",
         "unlisted": "Unlisted",
@@ -98,7 +94,21 @@
       },
       "actions": {
         "creating": "Creating...",
-        "create": "Create Assistant"
+        "create": "Create Assistant",
+        "delete": "Delete",
+        "deleting": "Deleting..."
+      },
+      "deleteConfirm": {
+        "title": "Delete Assistant",
+        "description": "Are you sure you want to delete this assistant? This action cannot be undone.",
+        "cancel": "Cancel",
+        "confirm": "Delete"
+      },
+      "feedback": {
+        "created": "Created assistant: {id}",
+        "createFailed": "Create failed",
+        "deleted": "Assistant deleted",
+        "deleteFailed": "Failed to delete assistant"
       },
       "filters": {
         "searchPlaceholder": "Search assistants...",
@@ -1079,6 +1089,20 @@
         "loading": "Loading skills...",
         "failed": "Failed to load skills",
         "noData": "No skills found"
+      },
+      "actions": {
+        "delete": "Delete",
+        "deleting": "Deleting..."
+      },
+      "deleteConfirm": {
+        "title": "Delete Skill",
+        "description": "Are you sure you want to delete this skill? This action cannot be undone.",
+        "cancel": "Cancel",
+        "confirm": "Delete"
+      },
+      "feedback": {
+        "deleted": "Skill deleted",
+        "deleteFailed": "Failed to delete skill"
       }
     }
   }

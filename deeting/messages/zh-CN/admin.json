@@ -64,10 +64,6 @@
       "description": "管理所有助手配置"
     },
     "assistantsPage": {
-      "feedback": {
-        "created": "已创建助手：{id}",
-        "createFailed": "创建失败"
-      },
       "visibility": {
         "private": "私有",
         "unlisted": "不公开",
@@ -98,7 +94,21 @@
       },
       "actions": {
         "creating": "创建中...",
-        "create": "创建助手"
+        "create": "创建助手",
+        "delete": "删除",
+        "deleting": "删除中..."
+      },
+      "deleteConfirm": {
+        "title": "删除助手",
+        "description": "确定要删除该助手吗？此操作无法撤销。",
+        "cancel": "取消",
+        "confirm": "删除"
+      },
+      "feedback": {
+        "created": "已创建助手：{id}",
+        "createFailed": "创建失败",
+        "deleted": "助手已删除",
+        "deleteFailed": "删除助手失败"
       },
       "filters": {
         "searchPlaceholder": "搜索助手...",
@@ -1079,6 +1089,20 @@
         "loading": "正在加载技能...",
         "failed": "加载技能失败",
         "noData": "暂无技能"
+      },
+      "actions": {
+        "delete": "删除",
+        "deleting": "删除中..."
+      },
+      "deleteConfirm": {
+        "title": "删除技能",
+        "description": "确定要删除该技能吗？此操作无法撤销。",
+        "cancel": "取消",
+        "confirm": "删除"
+      },
+      "feedback": {
+        "deleted": "技能已删除",
+        "deleteFailed": "删除技能失败"
       }
     }
   }

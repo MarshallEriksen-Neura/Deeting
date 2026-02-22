@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 KEY_PREFIX = "sandbox"
 KEY_ACTIVE_SET = f"{KEY_PREFIX}:active_ids"
 
+_ERROR_CODE_TIMEOUT = "SANDBOX_TIMEOUT"
+_ERROR_CODE_NETWORK_DISCONNECT = "SANDBOX_NETWORK_DISCONNECT"
+_ERROR_CODE_NETWORK = "SANDBOX_NETWORK_ERROR"
+_ERROR_CODE_INTERNAL = "SANDBOX_INTERNAL_ERROR"
+_ERROR_CODE_RESOURCE_LIMIT = "SANDBOX_RESOURCE_LIMIT"
+_ERROR_CODE_UNKNOWN = "SANDBOX_EXECUTION_ERROR"
+
 
 def key_session(session_id: str) -> str:
     return f"{KEY_PREFIX}:sess:{session_id}"
@@ -208,10 +215,21 @@ class SandboxManager:
                 "exit_code": 0,
             }
         except ResourceWarning as exc:
-            return {"error": str(exc)}
+            detail = str(exc)
+            return {
+                "error": f"[{_ERROR_CODE_RESOURCE_LIMIT}] {detail}",
+                "error_code": _ERROR_CODE_RESOURCE_LIMIT,
+                "error_detail": detail,
+            }
         except Exception as exc:
-            logger.error("Sandbox run error: %s", exc, exc_info=True)
-            return {"error": "Sandbox execution failed"}
+            error_payload = self._build_error_payload(exc)
+            logger.error(
+                "Sandbox run error [%s]: %s",
+                error_payload["error_code"],
+                error_payload["error_detail"],
+                exc_info=True,
+            )
+            return error_payload
         finally:
             if sandbox:
                 await sandbox.close()
@@ -296,6 +314,84 @@ class SandboxManager:
             if internal_host != public_host:
                 return original_endpoint.replace(internal_host, public_host, 1)
         return original_endpoint
+
+    def _build_error_payload(self, exc: Exception) -> dict[str, str]:
+        error_code, summary = self._classify_exception(exc)
+        detail = self._format_exception_chain(exc)
+        return {
+            "error": f"[{error_code}] {summary} detail={detail}",
+            "error_code": error_code,
+            "error_detail": detail,
+        }
+
+    def _classify_exception(self, exc: Exception) -> tuple[str, str]:
+        chain = list(self._iter_exception_chain(exc))
+
+        for item in chain:
+            msg = str(item).lower()
+            name = item.__class__.__name__.lower()
+            if isinstance(item, TimeoutError) or "timeout" in name or "timed out" in msg:
+                return _ERROR_CODE_TIMEOUT, "沙箱请求超时"
+
+        for item in chain:
+            msg = str(item).lower()
+            name = item.__class__.__name__.lower()
+            if (
+                "remoteprotocolerror" in name
+                or "peer closed connection" in msg
+                or "incomplete chunked read" in msg
+                or "server disconnected" in msg
+            ):
+                return _ERROR_CODE_NETWORK_DISCONNECT, "沙箱连接在响应传输过程中中断"
+
+        for item in chain:
+            msg = str(item).lower()
+            name = item.__class__.__name__.lower()
+            if (
+                "connecterror" in name
+                or "readerror" in name
+                or "writeerror" in name
+                or "connection reset" in msg
+                or "connection aborted" in msg
+                or "connection refused" in msg
+                or "broken pipe" in msg
+                or "network is unreachable" in msg
+                or "temporary failure in name resolution" in msg
+            ):
+                return _ERROR_CODE_NETWORK, "访问沙箱服务时发生网络错误"
+
+        for item in chain:
+            module = item.__class__.__module__.lower()
+            name = item.__class__.__name__.lower()
+            if name == "sandboxinternalexception" or module.startswith(
+                "opensandbox.exceptions"
+            ):
+                return _ERROR_CODE_INTERNAL, "沙箱服务内部异常"
+
+        return _ERROR_CODE_UNKNOWN, "沙箱执行失败"
+
+    def _iter_exception_chain(self, exc: BaseException):
+        seen: set[int] = set()
+        current: BaseException | None = exc
+        while current and id(current) not in seen:
+            seen.add(id(current))
+            yield current
+            current = current.__cause__ or current.__context__
+
+    def _format_exception_chain(
+        self, exc: BaseException, max_len: int = 400
+    ) -> str:
+        parts: list[str] = []
+        for item in self._iter_exception_chain(exc):
+            text = str(item).strip().replace("\n", " ")
+            if text:
+                parts.append(f"{item.__class__.__name__}: {text}")
+            else:
+                parts.append(item.__class__.__name__)
+        detail = " <- ".join(parts)
+        if len(detail) > max_len:
+            return f"{detail[: max_len - 3]}..."
+        return detail
 
 
 sandbox_manager = SandboxManager.get_instance()
