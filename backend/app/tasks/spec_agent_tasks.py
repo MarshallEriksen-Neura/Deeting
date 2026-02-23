@@ -5,6 +5,7 @@ import uuid
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.repositories.spec_agent_repository import SpecAgentRepository
+from app.tasks.async_runner import run_async
 from app.services.agent import spec_agent_service
 
 logger = logging.getLogger(__name__)
@@ -55,4 +56,4 @@ def execute_plan_task(plan_id: str, user_id: str):
     Celery task to run the Spec Agent execution loop.
     Typically triggered after Plan creation or User Approval.
     """
-    asyncio.run(_run_spec_execution(plan_id, user_id))
+    run_async(_run_spec_execution(plan_id, user_id))

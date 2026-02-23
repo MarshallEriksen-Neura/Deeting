@@ -5,7 +5,7 @@ Routing & MAB 管理员监控 API
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,9 @@ from app.models.bandit import BanditArmState
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
 from app.repositories.bandit_repository import BanditRepository
+from app.services.assistant.assistant_routing_service import AssistantRoutingService
 from app.schemas.routing_mab import (
+    AssistantMabResponse,
     ArmPerformanceItem,
     ArmPerformanceResponse,
     RoutingOverviewResponse,
@@ -204,6 +206,65 @@ async def routing_skills(
                 "selectionRatio": round(r.get("selection_ratio", 0.0), 4),
                 "avgLatencyMs": round(r.get("avg_latency_ms", 0.0), 1),
                 "isExploring": r.get("total_trials", 0) < 10,
+            }
+            for r in reports
+        ]
+    )
+
+
+@router.get("/assistants", response_model=AssistantMabResponse)
+async def routing_assistants(
+    min_trials: int | None = Query(default=None, ge=0, description="最小试用次数"),
+    min_rating: float | None = Query(
+        default=None, ge=0.0, le=1.0, description="最小评分"
+    ),
+    limit: int | None = Query(default=50, ge=1, le=500, description="返回条数上限"),
+    sort: str | None = Query(
+        default="score_desc",
+        description="排序方式：score_desc/rating_desc/trials_desc/recent_desc",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """助手路由 MAB 报表"""
+    allowed_sorts = {"score_desc", "rating_desc", "trials_desc", "recent_desc"}
+    if sort is not None and sort.lower() not in allowed_sorts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid sort option",
+        )
+
+    service = AssistantRoutingService(db)
+    reports = await service.list_routing_report(
+        min_trials=min_trials,
+        min_rating=min_rating,
+        limit=limit,
+        sort=sort,
+    )
+    total_trials = sum(int(item.get("total_trials") or 0) for item in reports)
+
+    return AssistantMabResponse(
+        assistants=[
+            {
+                "assistantId": str(r.get("assistant_id")),
+                "name": r.get("name"),
+                "summary": r.get("summary"),
+                "totalTrials": int(r.get("total_trials") or 0),
+                "positiveFeedback": int(r.get("positive_feedback") or 0),
+                "negativeFeedback": int(r.get("negative_feedback") or 0),
+                "ratingScore": round(float(r.get("rating_score") or 0.0), 4),
+                "mabScore": round(float(r.get("mab_score") or 0.0), 4),
+                "routingScore": round(float(r.get("routing_score") or 0.0), 4),
+                "selectionRatio": round(
+                    (int(r.get("total_trials") or 0) / total_trials)
+                    if total_trials > 0
+                    else 0.0,
+                    4,
+                ),
+                "explorationBonus": round(float(r.get("exploration_bonus") or 0.0), 4),
+                "lastUsedAt": r.get("last_used_at"),
+                "lastFeedbackAt": r.get("last_feedback_at"),
+                "isExploring": int(r.get("total_trials") or 0) < 10,
             }
             for r in reports
         ]

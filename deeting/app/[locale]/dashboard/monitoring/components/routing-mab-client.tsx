@@ -6,6 +6,7 @@ import { RoutingMabStrategy } from "./routing-mab-strategy"
 import { RoutingMabArmsTable } from "./routing-mab-arms-table"
 import { RoutingMabDistribution } from "./routing-mab-distribution"
 import { RoutingMabSkillReport } from "./routing-mab-skill-report"
+import { RoutingMabAssistantReport } from "./routing-mab-assistant-report"
 
 export const RoutingMabClient = memo(function RoutingMabClient() {
   return (
@@ -26,6 +27,9 @@ export const RoutingMabClient = memo(function RoutingMabClient() {
 
       {/* Skill MAB Report */}
       <RoutingMabSkillReport />
+
+      {/* Assistant MAB Report */}
+      <RoutingMabAssistantReport />
     </div>
   )
 })

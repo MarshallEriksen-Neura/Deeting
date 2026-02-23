@@ -14,6 +14,7 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from app.core.config import settings
 from app.repositories.billing_repository import (
     BillingRepository,
     InsufficientBalanceError,
@@ -117,6 +118,7 @@ class BillingStep(BaseStep):
         ctx.billing.total_cost = total_cost
         ctx.billing.currency = currency
         ctx.set("billing", "total_cost", total_cost)
+        self._sync_affinity_savings(ctx)
 
         if not pricing or not ctx.tenant_id:
             ctx.set("billing", "skip_reason", "no_pricing_or_tenant")
@@ -281,3 +283,39 @@ class BillingStep(BaseStep):
         price_dec = Decimal(str(price_per_1k))
         cost = (tokens_dec / 1000) * price_dec
         return float(cost.quantize(Decimal("0.000001")))
+
+    def _sync_affinity_savings(self, ctx: WorkflowContext) -> None:
+        """
+        在 billing 阶段补齐路由亲和节省估算。
+
+        upstream_call 阶段时 token/cost 尚未回填，可能导致估算恒为 0。
+        """
+        affinity_hit = bool(ctx.get("routing", "affinity_hit", False))
+        if not affinity_hit:
+            return
+
+        discount = max(0.0, min(1.0, float(settings.AFFINITY_ROUTING_DISCOUNT_RATE)))
+
+        existing_tokens = ctx.get("routing", "affinity_saved_tokens_est", 0) or 0
+        if (
+            isinstance(existing_tokens, (int, float))
+            and existing_tokens <= 0
+            and ctx.billing.total_tokens > 0
+        ):
+            ctx.set(
+                "routing",
+                "affinity_saved_tokens_est",
+                int(ctx.billing.total_tokens * discount),
+            )
+
+        existing_cost = ctx.get("routing", "affinity_saved_cost_est", 0.0) or 0.0
+        if (
+            isinstance(existing_cost, (int, float))
+            and existing_cost <= 0
+            and ctx.billing.total_cost > 0
+        ):
+            ctx.set(
+                "routing",
+                "affinity_saved_cost_est",
+                float(ctx.billing.total_cost) * discount,
+            )

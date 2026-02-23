@@ -102,3 +102,39 @@ async def test_audit_log_status_code_inferred_from_error_code():
 
         call_args = mock_task.delay.call_args[0][0]
         assert call_args["status_code"] == 429
+
+
+@pytest.mark.asyncio
+async def test_audit_log_includes_smart_router_metrics():
+    step = AuditLogStep()
+    ctx = WorkflowContext(
+        channel=Channel.EXTERNAL,
+        tenant_id="test_tenant",
+        trace_id="test_trace",
+        requested_model="gpt-4",
+        is_success=True,
+    )
+    ctx.billing = BillingInfo(
+        input_tokens=1000,
+        output_tokens=1000,
+        total_tokens=2000,
+        total_cost=0.09,
+    )
+    ctx.upstream_result = UpstreamResult(status_code=200, latency_ms=120.0)
+    ctx.step_timings = {"upstream_call": 120.0}
+    ctx.set("routing", "affinity_hit", True)
+    ctx.set("routing", "affinity_saved_tokens_est", 0)
+    ctx.set("routing", "affinity_saved_cost_est", 0.0)
+
+    with patch("app.tasks.audit.record_audit_log_task") as mock_task:
+        result = await step.execute(ctx)
+
+    assert result.status.value == "success"
+    assert mock_task.delay.called
+
+    call_args = mock_task.delay.call_args[0][0]
+    assert call_args["is_cached"] is True
+    assert call_args["cost_user"] == 0.09
+    assert call_args["cost_upstream"] < call_args["cost_user"]
+    assert call_args["meta"]["routing"]["affinity_saved_tokens_est"] > 0
+    assert call_args["meta"]["routing"]["affinity_saved_cost_est"] > 0

@@ -11,6 +11,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from app.core.config import settings
 from app.core.transaction_celery import celery_is_available
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
@@ -118,6 +119,16 @@ class AuditLogStep(BaseStep):
             if duration_ms <= 0 and normalized_latency_ms is not None:
                 duration_ms = normalized_latency_ms
 
+            smart_router = self._resolve_smart_router_metrics(ctx)
+
+            routing_meta = {
+                "affinity_hit": smart_router["is_cached"],
+                "affinity_saved_tokens_est": smart_router["saved_tokens"],
+                "affinity_saved_cost_est": smart_router["saved_cost"],
+            }
+            if isinstance(meta, dict):
+                meta["routing"] = routing_meta
+
             # 映射字段到 GatewayLog 模型
             log_payload = {
                 "model": ctx.requested_model or "unknown",
@@ -129,6 +140,8 @@ class AuditLogStep(BaseStep):
                 "output_tokens": ctx.billing.output_tokens,
                 "total_tokens": ctx.billing.total_tokens,
                 "cost_user": ctx.billing.total_cost,
+                "cost_upstream": smart_router["cost_upstream"],
+                "is_cached": smart_router["is_cached"],
                 "preset_id": (
                     str(ctx.selected_preset_id) if ctx.selected_preset_id else None
                 ),
@@ -177,6 +190,50 @@ class AuditLogStep(BaseStep):
 
         return 200 if ctx.is_success else 400
 
+    def _resolve_smart_router_metrics(
+        self, ctx: "WorkflowContext"
+    ) -> dict[str, float | bool]:
+        """
+        解析用于 Dashboard 智能路由价值的落库字段。
+
+        - is_cached: 暂以路由亲和命中表示
+        - saved_tokens/saved_cost: 优先读取上下文，缺失时按 discount 回填
+        - cost_upstream: 由 user cost 减去节省成本估算
+        """
+        is_cached = bool(ctx.get("routing", "affinity_hit", False))
+        discount = max(
+            0.0,
+            min(1.0, float(settings.AFFINITY_ROUTING_DISCOUNT_RATE)),
+        )
+
+        saved_tokens = self._as_non_negative_float(
+            ctx.get("routing", "affinity_saved_tokens_est")
+        )
+        if not is_cached:
+            saved_tokens = 0.0
+        if is_cached and saved_tokens <= 0 and ctx.billing.total_tokens > 0:
+            saved_tokens = float(int(ctx.billing.total_tokens * discount))
+
+        saved_cost = self._as_non_negative_float(
+            ctx.get("routing", "affinity_saved_cost_est")
+        )
+        if not is_cached:
+            saved_cost = 0.0
+        total_cost = self._as_non_negative_float(ctx.billing.total_cost)
+        if is_cached and saved_cost <= 0 and total_cost > 0:
+            saved_cost = total_cost * discount
+
+        if saved_cost > total_cost:
+            saved_cost = total_cost
+
+        cost_upstream = max(total_cost - saved_cost, 0.0)
+        return {
+            "is_cached": is_cached,
+            "saved_tokens": saved_tokens,
+            "saved_cost": saved_cost,
+            "cost_upstream": cost_upstream,
+        }
+
     @staticmethod
     def _as_positive_int(value: object) -> int | None:
         try:
@@ -184,6 +241,14 @@ class AuditLogStep(BaseStep):
         except (TypeError, ValueError):
             return None
         return parsed if parsed > 0 else None
+
+    @staticmethod
+    def _as_non_negative_float(value: object) -> float:
+        try:
+            parsed = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 0.0
+        return parsed if parsed > 0 else 0.0
 
     def _infer_status_from_error(
         self, error_code: str | None, failed_step: str | None

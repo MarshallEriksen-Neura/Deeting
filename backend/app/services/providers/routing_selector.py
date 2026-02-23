@@ -269,7 +269,8 @@ class RoutingSelector:
                             preset_id=str(preset.id) if preset else None,
                             preset_slug=instance.preset_slug,
                             instance_id=str(instance.id),
-                            preset_item_id=None,
+                            # 兼容历史字段：在 BYOP 架构下复用 provider_model.id 作为 arm_id
+                            preset_item_id=str(m.id),
                             model_id=str(m.id),
                             provider=preset.provider if preset else "custom",
                             upstream_url=upstream_url,
@@ -483,7 +484,8 @@ class RoutingSelector:
                     preset_id=str(preset.id) if preset else None,
                     preset_slug=instance.preset_slug,
                     instance_id=str(instance.id),
-                    preset_item_id=None,
+                    # 兼容历史字段：在 BYOP 架构下复用 provider_model.id 作为 arm_id
+                    preset_item_id=str(model.id),
                     model_id=str(model.id),
                     provider=preset.provider if preset else "custom",
                     upstream_url=upstream_url,

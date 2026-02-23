@@ -70,3 +70,24 @@ class SkillArmItem(BaseSchema):
 
 class SkillMabResponse(BaseSchema):
     skills: list[SkillArmItem]
+
+
+class AssistantArmItem(BaseSchema):
+    assistant_id: str = Field(..., alias="assistantId")
+    name: str | None = None
+    summary: str | None = None
+    total_trials: int = Field(0, alias="totalTrials")
+    positive_feedback: int = Field(0, alias="positiveFeedback")
+    negative_feedback: int = Field(0, alias="negativeFeedback")
+    rating_score: float = Field(0.0, alias="ratingScore")
+    mab_score: float = Field(0.0, alias="mabScore")
+    routing_score: float = Field(0.0, alias="routingScore")
+    selection_ratio: float = Field(0.0, alias="selectionRatio")
+    exploration_bonus: float = Field(0.0, alias="explorationBonus")
+    last_used_at: datetime | None = Field(None, alias="lastUsedAt")
+    last_feedback_at: datetime | None = Field(None, alias="lastFeedbackAt")
+    is_exploring: bool = Field(False, alias="isExploring")
+
+
+class AssistantMabResponse(BaseSchema):
+    assistants: list[AssistantArmItem]

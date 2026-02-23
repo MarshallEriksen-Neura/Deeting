@@ -8,6 +8,7 @@ import { RoutingMabStrategy } from "@/app/[locale]/dashboard/monitoring/componen
 import { RoutingMabArmsTable } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-arms-table"
 import { RoutingMabDistribution } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-distribution"
 import { RoutingMabSkillReport } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-skill-report"
+import { RoutingMabAssistantReport } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-assistant-report"
 
 export function PageContent() {
   const t = useTranslations("monitoring.routing")
@@ -34,6 +35,9 @@ export function PageContent() {
 
       {/* Skill MAB Report */}
       <RoutingMabSkillReport />
+
+      {/* Assistant MAB Report */}
+      <RoutingMabAssistantReport />
     </AdminPageShell>
   )
 }

@@ -36,7 +36,7 @@ Gateway 自动记录所有 API 请求的审计日志，用于：
 | `total_tokens` | int | 总 Token 数 |
 | `cost_upstream` | float | 上游成本 |
 | `cost_user` | float | 用户扣费 |
-| `is_cached` | bool | 是否命中缓存 |
+| `is_cached` | bool | 是否命中路由亲和缓存（affinity hit） |
 | `error_code` | string | 统一错误码 |
 | `meta` | JSON | 扩展元数据 |
 | `created_at` | datetime | 创建时间 |
@@ -65,6 +65,11 @@ Gateway 自动记录所有 API 请求的审计日志，用于：
     "preset_item_id": "uuid",
     "template_engine": "simple_replace",
     "upstream_url": "https://api.openai.com/v1/chat/completions"
+  },
+  "routing": {
+    "affinity_hit": true,
+    "affinity_saved_tokens_est": 75,
+    "affinity_saved_cost_est": 0.003
   },
   "upstream": {
     "provider": "openai",

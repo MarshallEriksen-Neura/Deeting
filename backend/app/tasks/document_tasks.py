@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import re
@@ -26,6 +25,7 @@ from app.services.oss.asset_storage_service import load_asset_bytes
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_collections import get_kb_user_collection_name
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
+from app.tasks.async_runner import run_async
 
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
@@ -35,7 +35,7 @@ CHUNK_OVERLAP = 50
 def index_user_document_task(doc_id: str):
     """异步处理用户文档：解析、切片、向量化、写入 Qdrant。"""
 
-    return asyncio.run(_index_user_document_async(doc_id))
+    return run_async(_index_user_document_async(doc_id))
 
 
 async def _index_user_document_async(doc_id: str):

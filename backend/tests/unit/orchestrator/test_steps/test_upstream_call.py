@@ -1,5 +1,6 @@
 import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -220,3 +221,56 @@ async def test_update_provider_health_skips_without_instance(monkeypatch):
         cache._redis = original_redis
 
     assert DummyHealthMonitorService.calls == []
+
+
+@pytest.mark.asyncio
+async def test_record_bandit_feedback_fallbacks_to_provider_model_id(monkeypatch):
+    calls: list[dict] = []
+
+    class DummyBanditRepository:
+        def __init__(self, _session):
+            pass
+
+        async def record_feedback(self, **kwargs):
+            calls.append(kwargs)
+
+    step = UpstreamCallStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.db_session = SimpleNamespace()
+    ctx.selected_provider_model_id = "59968e6d-10f5-4967-aefc-d68f85ce7d35"
+    ctx.selected_preset_item_id = None
+    ctx.billing.total_cost = 1.25
+    ctx.set("routing", "routing_config", {"strategy": "bandit"})
+
+    monkeypatch.setattr(upstream_call_module, "BanditRepository", DummyBanditRepository)
+
+    await step._record_bandit_feedback(ctx, success=True, latency_ms=123.0)
+
+    assert len(calls) == 1
+    assert calls[0]["arm_id"] == "59968e6d-10f5-4967-aefc-d68f85ce7d35"
+    assert calls[0]["success"] is True
+    assert calls[0]["latency_ms"] == 123.0
+
+
+@pytest.mark.asyncio
+async def test_record_bandit_feedback_skips_without_any_arm_id(monkeypatch):
+    calls: list[dict] = []
+
+    class DummyBanditRepository:
+        def __init__(self, _session):
+            pass
+
+        async def record_feedback(self, **kwargs):
+            calls.append(kwargs)
+
+    step = UpstreamCallStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.db_session = SimpleNamespace()
+    ctx.selected_preset_item_id = None
+    ctx.selected_provider_model_id = None
+
+    monkeypatch.setattr(upstream_call_module, "BanditRepository", DummyBanditRepository)
+
+    await step._record_bandit_feedback(ctx, success=True, latency_ms=100.0)
+
+    assert calls == []

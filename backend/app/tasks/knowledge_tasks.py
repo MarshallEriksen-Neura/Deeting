@@ -1,4 +1,3 @@
-import asyncio
 import re
 import uuid
 from typing import Any
@@ -16,6 +15,7 @@ from app.qdrant_client import (
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
+from app.tasks.async_runner import run_async
 
 
 # --- Light Markdown Chunker (Sync/Util) ---
@@ -65,7 +65,7 @@ def index_knowledge_artifact_task(
     Accepts optional embedding_config to override system defaults (passed from API).
     """
     # Celery tasks are sync by default, but we need async for DB/Qdrant
-    return asyncio.run(_index_knowledge_artifact_async(artifact_id, embedding_config))
+    return run_async(_index_knowledge_artifact_async(artifact_id, embedding_config))
 
 
 async def _index_knowledge_artifact_async(

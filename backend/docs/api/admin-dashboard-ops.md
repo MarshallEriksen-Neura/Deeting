@@ -92,3 +92,43 @@
 - `POST /admin/notifications/broadcast`
 
 `GET /admin/notifications` 支持过滤：`type`、`level`、`source`、`q`、`is_active`，并返回 offset 分页结构（`items/total/skip/limit`）。
+
+## 智能路由分析（Routing MAB）
+
+- `GET /admin/routing-mab/overview`
+- `GET /admin/routing-mab/strategy`
+- `GET /admin/routing-mab/arms`
+- `GET /admin/routing-mab/skills`
+- `GET /admin/routing-mab/assistants`
+
+`GET /admin/routing-mab/assistants` 支持查询参数：
+
+- `min_trials`：最小试用次数（可选）
+- `min_rating`：最小评分 0~1（可选）
+- `limit`：返回条数上限，默认 50（可选）
+- `sort`：`score_desc` / `rating_desc` / `trials_desc` / `recent_desc`（可选）
+
+响应示例：
+
+```json
+{
+  "assistants": [
+    {
+      "assistantId": "2b0f6a7a-8c0e-4c35-9a63-7a2d0a4b3b9d",
+      "name": "Expert A",
+      "summary": "summary",
+      "totalTrials": 20,
+      "positiveFeedback": 16,
+      "negativeFeedback": 4,
+      "ratingScore": 0.7727,
+      "mabScore": 0.7727,
+      "routingScore": 0.5795,
+      "selectionRatio": 0.8,
+      "explorationBonus": 0.0,
+      "lastUsedAt": "2026-01-16T09:42:01+08:00",
+      "lastFeedbackAt": "2026-01-16T09:45:01+08:00",
+      "isExploring": false
+    }
+  ]
+}
+```

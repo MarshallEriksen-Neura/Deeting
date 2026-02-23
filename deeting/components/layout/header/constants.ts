@@ -8,7 +8,6 @@ export const defaultNavItems: NavItem[] = [
   { label: "assistants", href: "/assistants" },
   { label: "images", href: "/gallery" },
   { label: "mcp", href: "/mcp" },
-  { label: "videos", href: "/videos" },
   { label: "dashboard", href: "/dashboard" },
   { label: "admin", href: "/admin" },
 ]

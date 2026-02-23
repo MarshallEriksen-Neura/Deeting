@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import time
 import uuid
 
@@ -9,20 +8,20 @@ from loguru import logger
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.celery_app import celery_app
+from app.core.database import AsyncSessionLocal
+from app.tasks.async_runner import run_async
 from app.services.memory.extractor import memory_extractor
 
 
 @celery_app.task(name="memory.process_extraction", bind=True)
 def process_memory_extraction(self, session_id: str, user_id: str | None) -> str:
     """
-    延迟执行的记忆提取任务：
-    - 检查活跃时间，仍活跃则自动延期（Reschedule）
+    延迟执行的记忆提取任务:
+    - 检查活跃时间, 仍活跃则自动延期 (Reschedule)
     - 否则读取窗口并提取记忆入库
     """
 
     async def _async_process() -> str:
-        from app.deps.db import get_db_context
-
         redis = getattr(cache, "_redis", None)
         if not redis:
             logger.warning("memory extraction skipped: redis unavailable")
@@ -80,7 +79,7 @@ def process_memory_extraction(self, session_id: str, user_id: str | None) -> str
                 else None
             )
 
-            async with get_db_context() as db_session:
+            async with AsyncSessionLocal() as db_session:
                 await memory_extractor.extract_and_save(
                     uuid.UUID(user_id),
                     messages,
@@ -90,12 +89,39 @@ def process_memory_extraction(self, session_id: str, user_id: str | None) -> str
             return "ok"
 
         except Exception as exc:  # pragma: no cover
+            if "Event loop is closed" in str(exc):
+                raise
             logger.error(f"memory extraction failed session={session_id} exc={exc}")
             try:
                 if redis:
                     await redis.delete(pending_key)
-            except:
-                pass
+            except Exception as cleanup_exc:
+                logger.debug(
+                    f"memory extraction cleanup failed session={session_id} exc={cleanup_exc}"
+                )
             return "failed"
 
-    return asyncio.run(_async_process())
+    try:
+        return run_async(_async_process())
+    except RuntimeError as exc:
+        if "Event loop is closed" not in str(exc):
+            raise
+
+        logger.warning(
+            f"memory extraction loop closed detected session={session_id}, reinitializing redis and retrying once"
+        )
+        try:
+            cache.init()
+        except Exception as init_exc:
+            logger.warning(
+                f"memory extraction redis reinit failed session={session_id} exc={init_exc}"
+            )
+            return "failed"
+
+        try:
+            return run_async(_async_process())
+        except Exception as retry_exc:  # pragma: no cover
+            logger.error(
+                f"memory extraction retry failed session={session_id} exc={retry_exc}"
+            )
+            return "failed"

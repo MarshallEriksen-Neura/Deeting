@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Iterable
 from typing import Any
@@ -29,6 +28,7 @@ from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.services.search.indexers import MeilisearchIndexService
+from app.tasks.async_runner import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -377,7 +377,7 @@ async def _run_delete_assistant(assistant_id: str) -> str:
 @celery_app.task(name="search_index.rebuild_all")
 def rebuild_all_task() -> str:
     try:
-        return asyncio.run(_run_rebuild_all())
+        return run_async(_run_rebuild_all())
     except Exception as exc:
         logger.exception("search_index_rebuild_all_failed: %s", exc)
         return "failed"
@@ -386,7 +386,7 @@ def rebuild_all_task() -> str:
 @celery_app.task(name="search_index.upsert_mcp_tool")
 def upsert_mcp_tool_task(tool_id: str) -> str:
     try:
-        return asyncio.run(_run_upsert_mcp_tool(tool_id))
+        return run_async(_run_upsert_mcp_tool(tool_id))
     except Exception as exc:
         logger.exception("search_index_upsert_mcp_tool_failed: %s", exc)
         return "failed"
@@ -395,7 +395,7 @@ def upsert_mcp_tool_task(tool_id: str) -> str:
 @celery_app.task(name="search_index.delete_mcp_tool")
 def delete_mcp_tool_task(tool_id: str) -> str:
     try:
-        return asyncio.run(_run_delete_mcp_tool(tool_id))
+        return run_async(_run_delete_mcp_tool(tool_id))
     except Exception as exc:
         logger.exception("search_index_delete_mcp_tool_failed: %s", exc)
         return "failed"
@@ -404,7 +404,7 @@ def delete_mcp_tool_task(tool_id: str) -> str:
 @celery_app.task(name="search_index.upsert_provider_preset")
 def upsert_provider_preset_task(slug: str) -> str:
     try:
-        return asyncio.run(_run_upsert_provider_preset(slug))
+        return run_async(_run_upsert_provider_preset(slug))
     except Exception as exc:
         logger.exception("search_index_upsert_provider_preset_failed: %s", exc)
         return "failed"
@@ -413,7 +413,7 @@ def upsert_provider_preset_task(slug: str) -> str:
 @celery_app.task(name="search_index.delete_provider_preset")
 def delete_provider_preset_task(slug: str) -> str:
     try:
-        return asyncio.run(_run_delete_provider_preset(slug))
+        return run_async(_run_delete_provider_preset(slug))
     except Exception as exc:
         logger.exception("search_index_delete_provider_preset_failed: %s", exc)
         return "failed"
@@ -422,7 +422,7 @@ def delete_provider_preset_task(slug: str) -> str:
 @celery_app.task(name="search_index.upsert_assistant")
 def upsert_assistant_task(assistant_id: str) -> str:
     try:
-        return asyncio.run(_run_upsert_assistant(assistant_id))
+        return run_async(_run_upsert_assistant(assistant_id))
     except Exception as exc:
         logger.exception("search_index_upsert_assistant_failed: %s", exc)
         return "failed"
@@ -431,7 +431,7 @@ def upsert_assistant_task(assistant_id: str) -> str:
 @celery_app.task(name="search_index.delete_assistant")
 def delete_assistant_task(assistant_id: str) -> str:
     try:
-        return asyncio.run(_run_delete_assistant(assistant_id))
+        return run_async(_run_delete_assistant(assistant_id))
     except Exception as exc:
         logger.exception("search_index_delete_assistant_failed: %s", exc)
         return "failed"

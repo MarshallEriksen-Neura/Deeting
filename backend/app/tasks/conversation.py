@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 import uuid
@@ -25,6 +24,7 @@ from app.models import (
 from app.services.conversation.service import get_conversation_service
 from app.services.conversation.summarizer import SummarizerService
 from app.services.conversation.topic_namer import generate_conversation_title
+from app.tasks.async_runner import run_async
 from app.utils.time_utils import Datetime
 
 
@@ -39,7 +39,7 @@ def conversation_summarize(session_id: str) -> str:
     """
 
     setup_logging()
-    return asyncio.run(_run_summarize(session_id))
+    return run_async(_run_summarize(session_id))
 
 
 @celery_app.task(name="conversation.summary_idle_check")
@@ -50,7 +50,7 @@ def conversation_summary_idle_check(session_id: str) -> str:
     - 确认有新消息且未在摘要中，触发异步摘要
     """
     setup_logging()
-    return asyncio.run(_run_summary_idle_check(session_id))
+    return run_async(_run_summary_idle_check(session_id))
 
 
 def _decode_str(val: Any | None) -> str | None:
@@ -349,7 +349,7 @@ def conversation_topic_naming(session_id: str, user_id: str, first_message: str)
     """
 
     setup_logging()
-    return asyncio.run(_run_topic_naming(session_id, user_id, first_message))
+    return run_async(_run_topic_naming(session_id, user_id, first_message))
 
 
 async def _run_topic_naming(session_id: str, user_id: str, first_message: str) -> str:

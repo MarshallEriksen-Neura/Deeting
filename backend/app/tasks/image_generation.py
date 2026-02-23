@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.core.logging import logger
+from app.tasks.async_runner import run_async
 from app.services.image_generation.service import ImageGenerationService
 
 
@@ -23,7 +22,7 @@ def process_image_generation_task(self, task_id: str) -> str:
             await service.process_task(task_id)
 
     try:
-        asyncio.run(_run())
+        run_async(_run())
         return f"processed:{task_id}"
     except Exception as exc:  # pragma: no cover - 由 Celery 重试
         logger.error("image_generation_task_failed task_id=%s err=%s", task_id, exc)

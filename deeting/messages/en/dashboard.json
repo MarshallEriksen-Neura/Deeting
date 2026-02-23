@@ -33,7 +33,7 @@
       "description": "Performance and cost optimization metrics",
       "cacheHitRate": "Cache Hit Rate",
       "costSavings": "Cost Savings",
-      "thisMonth": "This month",
+      "thisMonth": "Last 24h",
       "industry": "Industry Avg",
       "outperforming": "Outperforming!",
       "protection": "Protected",

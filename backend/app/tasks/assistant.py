@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 
@@ -18,6 +17,7 @@ from app.storage.qdrant_kb_store import (
     ensure_collection_vector_size,
     upsert_points,
 )
+from app.tasks.async_runner import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ async def _run_remove_assistant(assistant_id: uuid.UUID) -> str:
 @celery_app.task(name="assistant.sync_to_qdrant")
 def sync_assistant_to_qdrant(assistant_id: str) -> str:
     try:
-        return asyncio.run(_run_sync_assistant(uuid.UUID(assistant_id)))
+        return run_async(_run_sync_assistant(uuid.UUID(assistant_id)))
     except Exception as exc:
         logger.exception("assistant_sync_to_qdrant_failed: %s", exc)
         return "failed"
@@ -139,7 +139,7 @@ def sync_assistant_to_qdrant(assistant_id: str) -> str:
 @celery_app.task(name="assistant.remove_from_qdrant")
 def remove_assistant_from_qdrant(assistant_id: str) -> str:
     try:
-        return asyncio.run(_run_remove_assistant(uuid.UUID(assistant_id)))
+        return run_async(_run_remove_assistant(uuid.UUID(assistant_id)))
     except Exception as exc:
         logger.exception("assistant_remove_from_qdrant_failed: %s", exc)
         return "failed"
@@ -209,7 +209,7 @@ async def _run_assistant_onboarding(url: str, user_id: str | None = None) -> dic
 @celery_app.task(name="assistant.run_onboarding")
 def run_assistant_onboarding(url: str, user_id: str | None = None) -> dict | str:
     try:
-        return asyncio.run(_run_assistant_onboarding(url, user_id=user_id))
+        return run_async(_run_assistant_onboarding(url, user_id=user_id))
     except Exception as exc:
         logger.exception("assistant_run_onboarding_failed: %s", exc)
         return "failed"

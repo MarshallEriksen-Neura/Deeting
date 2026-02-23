@@ -82,3 +82,47 @@ async def test_semantic_kernel_logs_memory_and_assistant(monkeypatch, caplog):
     assert "memory_count=2" in usage_logs[-1]
     assert "semantic_assistant_used=True" in usage_logs[-1]
     assert "semantic_assistant_id=assistant-42" in usage_logs[-1]
+    assert ctx.get("assistant", "id") == "assistant-42"
+    assert ctx.get("assistant", "name") == "contract-review-assistant"
+    assert ctx.get("assistant", "candidates")[0]["assistant_id"] == "assistant-42"
+
+
+@pytest.mark.asyncio
+async def test_semantic_kernel_does_not_override_locked_assistant(monkeypatch):
+    step = SemanticKernelStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL, user_id="user-1")
+    ctx.set("assistant", "id", "locked-assistant")
+    ctx.set("assistant", "name", "locked-name")
+    ctx.set(
+        "validation",
+        "request",
+        SimpleNamespace(
+            messages=[SimpleNamespace(role="user", content="check contract risks")]
+        ),
+    )
+
+    monkeypatch.setattr(
+        "app.services.workflow.steps.semantic_kernel.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(step, "_search_memories", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        step,
+        "_search_active_persona",
+        AsyncMock(
+            return_value={
+                "assistant_id": "assistant-42",
+                "name": "contract-review-assistant",
+                "summary": "semantic assistant",
+                "score": 0.93,
+                "prompt": "system",
+                "skill_tools": [],
+            }
+        ),
+    )
+
+    result = await step.execute(ctx)
+
+    assert result.status.value == "success"
+    assert ctx.get("assistant", "id") == "locked-assistant"
+    assert ctx.get("assistant", "name") == "locked-name"

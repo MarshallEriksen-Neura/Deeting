@@ -95,6 +95,8 @@ class SemanticKernelStep(BaseStep):
                 logger.info(
                     f"SemanticKernel: Activated persona '{persona.get('name')}' (Score: {persona.get('score')})"
                 )
+                if self._bind_persona_to_assistant_context(ctx, persona):
+                    data["assistant_bound"] = True
 
                 # Inject skill_refs tools into mcp_discovery.tools
                 skill_tools = persona.get("skill_tools", [])
@@ -225,6 +227,7 @@ class SemanticKernelStep(BaseStep):
 
             return {
                 "name": top.get("name"),
+                "summary": top.get("summary"),
                 "prompt": prompt,
                 "score": top.get("score"),
                 "assistant_id": assistant_id,
@@ -233,6 +236,45 @@ class SemanticKernelStep(BaseStep):
         except Exception as e:
             logger.warning(f"SemanticKernel: Persona search failed: {e}")
             return None
+
+    def _bind_persona_to_assistant_context(
+        self, ctx: "WorkflowContext", persona: dict[str, Any]
+    ) -> bool:
+        """
+        将语义命中的 persona 回填到 assistant 上下文，打通后续 trial/audit 落库链路。
+
+        仅在 assistant 未被显式锁定时回填，避免覆盖用户或会话已选择的 assistant。
+        """
+        existing_id = str(ctx.get("assistant", "id") or "").strip()
+        if existing_id:
+            return False
+
+        assistant_id = str(persona.get("assistant_id") or "").strip()
+        if not assistant_id:
+            return False
+
+        name = persona.get("name")
+        summary = persona.get("summary")
+        score = persona.get("score")
+
+        ctx.set("assistant", "id", assistant_id)
+        if name:
+            ctx.set("assistant", "name", name)
+        if summary:
+            ctx.set("assistant", "summary", summary)
+        ctx.set(
+            "assistant",
+            "candidates",
+            [
+                {
+                    "assistant_id": assistant_id,
+                    "name": name,
+                    "summary": summary,
+                    "score": score,
+                }
+            ],
+        )
+        return True
 
     async def _fetch_assistant_data(
         self, session: Any, assistant_id: str

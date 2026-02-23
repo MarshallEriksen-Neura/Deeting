@@ -65,6 +65,27 @@ export const SkillMabResponseSchema = z.object({
   skills: z.array(SkillArmItemSchema),
 })
 
+export const AssistantArmItemSchema = z.object({
+  assistantId: z.string(),
+  name: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  totalTrials: z.number(),
+  positiveFeedback: z.number(),
+  negativeFeedback: z.number(),
+  ratingScore: z.number(),
+  mabScore: z.number(),
+  routingScore: z.number(),
+  selectionRatio: z.number(),
+  explorationBonus: z.number(),
+  lastUsedAt: z.string().nullable().optional(),
+  lastFeedbackAt: z.string().nullable().optional(),
+  isExploring: z.boolean(),
+})
+
+export const AssistantMabResponseSchema = z.object({
+  assistants: z.array(AssistantArmItemSchema),
+})
+
 // Types
 export type RoutingOverview = z.infer<typeof RoutingOverviewSchema>
 export type StrategyConfig = z.infer<typeof StrategyConfigSchema>
@@ -72,6 +93,8 @@ export type ArmPerformanceItem = z.infer<typeof ArmPerformanceItemSchema>
 export type ArmPerformanceResponse = z.infer<typeof ArmPerformanceResponseSchema>
 export type SkillArmItem = z.infer<typeof SkillArmItemSchema>
 export type SkillMabResponse = z.infer<typeof SkillMabResponseSchema>
+export type AssistantArmItem = z.infer<typeof AssistantArmItemSchema>
+export type AssistantMabResponse = z.infer<typeof AssistantMabResponseSchema>
 
 // =====================
 // API Functions
@@ -115,4 +138,12 @@ export async function fetchSkillMab(): Promise<SkillMabResponse> {
     method: "GET",
   })
   return SkillMabResponseSchema.parse(data)
+}
+
+export async function fetchAssistantMab(): Promise<AssistantMabResponse> {
+  const data = await request<AssistantMabResponse>({
+    url: `${BASE}/assistants`,
+    method: "GET",
+  })
+  return AssistantMabResponseSchema.parse(data)
 }

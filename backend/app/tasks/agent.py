@@ -1,4 +1,3 @@
-import asyncio
 import inspect
 import json
 import logging
@@ -12,6 +11,7 @@ from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistry
 from app.agent_plugins.core.manager import PluginManager
 from app.core.celery_app import celery_app
 from app.schemas.tool import ToolDefinition
+from app.tasks.async_runner import run_async
 from app.services.notifications.task_notification import push_task_progress
 
 logger = logging.getLogger(__name__)
@@ -290,7 +290,7 @@ def run_auto_ingestion_job(target_url: str, instruction: str, user_id: str | Non
     2. Uses LLM to extract data based on 'instruction'.
     3. Writes data to DB using DatabasePlugin.
     """
-    return asyncio.run(
+    return run_async(
         _run_ingestion_workflow(
             target_url,
             instruction,
@@ -312,7 +312,7 @@ def run_discovery_task(
     instruction = _build_discovery_instruction(
         capability=capability, provider_name_hint=provider_name_hint
     )
-    return asyncio.run(
+    return run_async(
         _run_ingestion_workflow(
             target_url,
             instruction,

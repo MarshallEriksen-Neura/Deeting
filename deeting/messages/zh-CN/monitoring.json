@@ -161,6 +161,20 @@
         },
         "exploring": "新",
         "noSkills": "暂无技能路由数据"
+      },
+      "assistants": {
+        "title": "助手路由 (Persona)",
+        "description": "助手选择决策的反馈评分与流量占比",
+        "columns": {
+          "assistant": "助手",
+          "ratingScore": "评分",
+          "selectionRatio": "选择比例",
+          "feedback": "赞 / 踩",
+          "trials": "尝试次数",
+          "exploring": "探索中"
+        },
+        "exploring": "新",
+        "noAssistants": "暂无助手路由数据"
       }
     }
   }

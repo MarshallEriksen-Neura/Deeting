@@ -1,5 +1,3 @@
-import asyncio
-
 from loguru import logger
 
 from app.core.cache import cache
@@ -8,6 +6,7 @@ from app.core.database import AsyncSessionLocal
 from app.repositories.media_asset_repository import MediaAssetRepository
 from app.services.oss.asset_storage_service import get_effective_asset_storage_mode
 from app.services.providers.health_monitor import HealthMonitorService
+from app.tasks.async_runner import run_async
 from app.utils.time_utils import Datetime
 
 
@@ -30,7 +29,7 @@ def daily_cleanup_task():
             await session.commit()
 
     try:
-        asyncio.run(_run())
+        run_async(_run())
         return "Cleanup completed"
     except Exception as exc:
         logger.error(f"Cleanup failed: {exc}")
@@ -63,7 +62,7 @@ def check_providers_health_task():
             await svc.check_all_instances(session)
 
     try:
-        asyncio.run(_run())
+        run_async(_run())
         return "Health check completed"
     except Exception as e:
         logger.error(f"Health check failed: {e}")

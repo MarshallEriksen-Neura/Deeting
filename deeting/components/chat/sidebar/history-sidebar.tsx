@@ -392,14 +392,14 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                 t('history.untitled');
                               const isActive = sessionId === session.session_id;
                               return (
-                                <div key={session.session_id} className="group/session flex items-center gap-1">
+                                <div key={session.session_id} className="group/session flex items-center gap-1 w-full overflow-hidden">
                                   <Button
                                     type="button"
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleSelectSession(session.session_id)}
                                     className={cn(
-                                      "min-w-0 flex-1 justify-start gap-3 rounded-lg px-2 py-2 text-left transition-all",
+                                      "min-w-0 flex-1 justify-start gap-3 rounded-lg px-2 py-2 text-left transition-all overflow-hidden",
                                       "hover:bg-slate-100/80 dark:hover:bg-white/5",
                                       isActive && "bg-slate-100/80 dark:bg-white/5"
                                     )}
@@ -411,14 +411,12 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                   </Button>
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                      <Button
+                                      <button
                                         type="button"
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        className="shrink-0 text-slate-300 dark:text-white/20 hover:text-slate-700 dark:hover:text-white/60 data-[state=open]:text-slate-700 dark:data-[state=open]:text-white/60 transition-colors"
+                                        className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-white/40 dark:hover:text-white/70 dark:hover:bg-white/10 transition-colors"
                                       >
                                         <MoreHorizontal className="w-4 h-4" />
-                                      </Button>
+                                      </button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-36">
                                       <DropdownMenuItem

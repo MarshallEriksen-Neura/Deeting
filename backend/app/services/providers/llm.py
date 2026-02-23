@@ -62,7 +62,7 @@ class LLMService:
 
             # Fallback only if still empty (system default or panic)
             if not target_model:
-                target_model = getattr(settings, "INTERNAL_LLM_MODEL_ID", "gpt-4o")
+                target_model = getattr(settings, "INTERNAL_LLM_MODEL_ID", "kimi-k2")
 
             # 2. Build Request Object
             internal_req = ChatCompletionRequest(

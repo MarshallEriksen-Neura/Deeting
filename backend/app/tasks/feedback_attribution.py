@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.core.logging import logger
+from app.tasks.async_runner import run_async
 from app.services.feedback.trace_feedback_service import FeedbackAttributionService
 
 
@@ -16,7 +15,7 @@ def process_trace_feedback(self, feedback_id: str) -> str:
             await service.process_feedback(feedback_id)
 
     try:
-        asyncio.run(_run())
+        run_async(_run())
         return f"processed:{feedback_id}"
     except Exception as exc:  # pragma: no cover - 交给 Celery 重试策略
         logger.error("trace_feedback_process_failed id=%s err=%s", feedback_id, exc)

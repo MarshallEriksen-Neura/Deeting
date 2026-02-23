@@ -24,6 +24,13 @@
 ### GET `/dashboard/smart-router-stats`
 
 - 返回智能路由价值指标。
+- 口径说明（近 24 小时）：
+  - 时间窗口：`gateway_log.created_at >= now() - 24h`
+  - `cacheHitRate`：`gateway_log.is_cached = true` 占比
+  - `costSavings`：`SUM(gateway_log.cost_user - gateway_log.cost_upstream)`（最小为 0）
+  - `requestsBlocked`：`error_code in (RATE_LIMITED, BLOCKED, SECURITY_DENY)` 计数
+  - `avgSpeedup`：`meta.routing.affinity_saved_tokens_est` 的平均值乘以 3ms/token 估算
+  - 当前实现中，`is_cached` 由路由亲和命中（`affinity_hit`）落库。
 
 ### GET `/dashboard/provider-health`
 

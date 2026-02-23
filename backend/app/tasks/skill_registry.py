@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 
@@ -17,6 +16,7 @@ from app.services.skill_registry.skill_metrics_service import SkillMetricsServic
 from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 from app.services.skill_registry.skill_self_heal_service import SkillSelfHealService
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, upsert_points
+from app.tasks.async_runner import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ async def _run_sync_all_active_skills() -> int:
 @celery_app.task(name="skill_registry.sync_all_active")
 def sync_all_active_skills_task() -> int:
     try:
-        return asyncio.run(_run_sync_all_active_skills())
+        return run_async(_run_sync_all_active_skills())
     except Exception as exc:
         logger.exception("skill_registry_sync_all_active_failed: %s", exc)
         return 0
@@ -197,7 +197,7 @@ def sync_all_active_skills_task() -> int:
 @celery_app.task(name="skill_registry.sync_to_qdrant")
 def sync_skill_to_qdrant(skill_id: str) -> str:
     try:
-        return asyncio.run(_run_sync_skill(skill_id))
+        return run_async(_run_sync_skill(skill_id))
     except Exception as exc:
         logger.exception("skill_registry_sync_to_qdrant_failed: %s", exc)
         return "failed"
@@ -253,7 +253,7 @@ def ingest_skill_repo(
     user_id: str | None = None,
 ) -> dict | str:
     try:
-        result = asyncio.run(
+        result = run_async(
             _run_repo_ingestion(
                 repo_url=repo_url,
                 revision=revision,
@@ -293,7 +293,7 @@ async def _run_skill_dry_run(skill_id: str) -> dict:
 @celery_app.task(queue="skill_registry", name="skill_registry.dry_run_skill")
 def dry_run_skill(skill_id: str) -> dict | str:
     try:
-        return asyncio.run(_run_skill_dry_run(skill_id))
+        return run_async(_run_skill_dry_run(skill_id))
     except Exception as exc:
         logger.exception("skill_registry_dry_run_failed: %s", exc)
         return "failed"

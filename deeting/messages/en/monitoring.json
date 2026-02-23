@@ -161,6 +161,20 @@
         },
         "exploring": "New",
         "noSkills": "No skill routing data yet"
+      },
+      "assistants": {
+        "title": "Assistant Routing (Persona)",
+        "description": "Feedback scores and traffic share for assistant selection",
+        "columns": {
+          "assistant": "Assistant",
+          "ratingScore": "Rating",
+          "selectionRatio": "Selection Ratio",
+          "feedback": "Up / Down",
+          "trials": "Trials",
+          "exploring": "Exploring"
+        },
+        "exploring": "New",
+        "noAssistants": "No assistant routing data yet"
       }
     }
   }

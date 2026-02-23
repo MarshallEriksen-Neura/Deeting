@@ -86,7 +86,7 @@ export function InfiniteList({
   const isEmpty = !isLoading && !isError && React.Children.count(children) === 0
 
   const ContentWrapper = useScrollArea ? ScrollArea : "div"
-  const wrapperProps = useScrollArea ? { className: cn("h-full", className) } : { className }
+  const wrapperProps = useScrollArea ? { className: cn("h-full [&_[data-slot=scroll-area-viewport]>div]:!block", className) } : { className }
 
   return (
     <ContentWrapper {...wrapperProps}>

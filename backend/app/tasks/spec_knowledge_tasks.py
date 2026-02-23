@@ -1,9 +1,9 @@
-import asyncio
 import logging
 import uuid
 
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
+from app.tasks.async_runner import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ async def _run_evaluation(candidate_id: uuid.UUID) -> str:
 )
 def evaluate_candidate(candidate_id: str) -> str:
     try:
-        return asyncio.run(_run_evaluation(uuid.UUID(candidate_id)))
+        return run_async(_run_evaluation(uuid.UUID(candidate_id)))
     except Exception as exc:
         logger.exception("spec_kb_evaluate_failed: %s", exc)
         return "failed"
@@ -41,7 +41,7 @@ async def _run_auto_promote(candidate_id: uuid.UUID) -> bool:
 )
 def auto_promote_candidate(candidate_id: str) -> str:
     try:
-        promoted = asyncio.run(_run_auto_promote(uuid.UUID(candidate_id)))
+        promoted = run_async(_run_auto_promote(uuid.UUID(candidate_id)))
         return "promoted" if promoted else "skipped"
     except Exception as exc:
         logger.exception("spec_kb_auto_promote_failed: %s", exc)

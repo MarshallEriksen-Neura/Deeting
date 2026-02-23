@@ -33,7 +33,7 @@
       "description": "性能和成本优化指标",
       "cacheHitRate": "缓存命中率",
       "costSavings": "节省成本",
-      "thisMonth": "本月",
+      "thisMonth": "近24小时",
       "industry": "行业平均",
       "outperforming": "表现优异!",
       "protection": "已保护",

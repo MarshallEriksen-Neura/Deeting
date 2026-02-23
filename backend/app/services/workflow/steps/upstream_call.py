@@ -1307,10 +1307,13 @@ class UpstreamCallStep(BaseStep):
         """
         if not ctx.db_session:
             return
-        preset_item_id = ctx.selected_preset_item_id or ctx.get(
-            "routing", "preset_item_id"
-        )
-        if not preset_item_id:
+        arm_id = ctx.selected_preset_item_id or ctx.get("routing", "preset_item_id")
+        if not arm_id:
+            # BYOP 路由下可能没有 preset_item_id，回退到 provider_model_id。
+            arm_id = ctx.selected_provider_model_id or ctx.get(
+                "routing", "provider_model_id"
+            )
+        if not arm_id:
             return
 
         repo = BanditRepository(ctx.db_session)
@@ -1319,7 +1322,7 @@ class UpstreamCallStep(BaseStep):
         try:
             await repo.record_feedback(
                 scene="router:llm",
-                arm_id=str(preset_item_id),
+                arm_id=str(arm_id),
                 success=success,
                 latency_ms=latency_ms,
                 cost=cost,

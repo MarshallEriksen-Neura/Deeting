@@ -101,3 +101,32 @@ async def test_billing_without_pricing_is_free():
         assert ctx.billing.output_cost == 0.0
         mock_deduct.assert_not_called()
         mock_usage.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_billing_affinity_savings_backfill():
+    step = BillingStep()
+    ctx = WorkflowContext(channel=Channel.EXTERNAL, tenant_id="t-1")
+    ctx.billing = BillingInfo(
+        input_tokens=1000,
+        output_tokens=1000,
+        total_tokens=2000,
+    )
+    ctx.set("routing", "affinity_hit", True)
+    ctx.set("routing", "affinity_saved_tokens_est", 0)
+    ctx.set("routing", "affinity_saved_cost_est", 0.0)
+    ctx.set(
+        "routing",
+        "pricing_config",
+        {"input_per_1k": 0.03, "output_per_1k": 0.06},
+    )
+
+    with patch.object(
+        BillingStep, "_deduct_balance", AsyncMock(return_value=10.0)
+    ), patch.object(BillingStep, "_record_usage", AsyncMock()):
+        result = await step.execute(ctx)
+
+    assert result.status == StepStatus.SUCCESS
+    assert ctx.billing.total_cost > 0
+    assert ctx.get("routing", "affinity_saved_tokens_est", 0) > 0
+    assert ctx.get("routing", "affinity_saved_cost_est", 0.0) > 0

@@ -4,10 +4,12 @@ import {
   fetchStrategyConfig,
   fetchArmPerformance,
   fetchSkillMab,
+  fetchAssistantMab,
   type RoutingOverview,
   type StrategyConfig,
   type ArmPerformanceResponse,
   type SkillMabResponse,
+  type AssistantMabResponse,
 } from "@/lib/api/routing-mab"
 
 const SWR_OPTIONS = {
@@ -44,6 +46,14 @@ export function useSkillMab() {
   return useSWR<SkillMabResponse>(
     "routing-mab-skills",
     fetchSkillMab,
+    SWR_OPTIONS
+  )
+}
+
+export function useAssistantMab() {
+  return useSWR<AssistantMabResponse>(
+    "routing-mab-assistants",
+    fetchAssistantMab,
     SWR_OPTIONS
   )
 }
