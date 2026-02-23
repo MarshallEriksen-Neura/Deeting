@@ -138,6 +138,19 @@ def test_get_execution_layers_topology():
     assert layers[2] == ["d"]
 
 
+def test_get_execution_layers_audit_after_billing():
+    validation = SuccessfulStep("validation")
+    billing = SuccessfulStep("billing", depends_on=["validation"])
+    audit = SuccessfulStep("audit_log", depends_on=["billing"])
+
+    engine = OrchestrationEngine([validation, billing, audit])
+    layers = engine._get_execution_layers()
+
+    assert layers[0] == ["validation"]
+    assert layers[1] == ["billing"]
+    assert layers[2] == ["audit_log"]
+
+
 @pytest.mark.asyncio
 async def test_execute_success_and_skip():
     ctx = WorkflowContext(channel=Channel.EXTERNAL)

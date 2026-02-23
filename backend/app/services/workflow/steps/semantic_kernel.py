@@ -39,10 +39,12 @@ class SemanticKernelStep(BaseStep):
         """Execute semantic kernel perception loop."""
         # 1. Check Prerequisites
         if not qdrant_is_configured():
+            self._log_usage_summary(ctx, reason="qdrant_disabled")
             return StepResult(status=StepStatus.SUCCESS, message="qdrant_disabled")
 
         user_id = ctx.user_id
         if not user_id:
+            self._log_usage_summary(ctx, reason="no_user_id")
             return StepResult(status=StepStatus.SUCCESS, message="no_user_id")
 
         # 2. Extract Query
@@ -63,6 +65,7 @@ class SemanticKernelStep(BaseStep):
                         break
 
         if not query:
+            self._log_usage_summary(ctx, reason="no_query")
             return StepResult(status=StepStatus.SUCCESS, message="no_query")
 
         # 3. Active Perception (Parallel Execution)
@@ -115,13 +118,58 @@ class SemanticKernelStep(BaseStep):
                     meta=data,
                 )
 
+            memory_count = len(memories) if isinstance(memories, list) else 0
+            persona_info = persona if isinstance(persona, dict) else {}
+            self._log_usage_summary(
+                ctx,
+                reason="perception_done",
+                memory_count=memory_count,
+                assistant_id=persona_info.get("assistant_id"),
+                assistant_name=persona_info.get("name"),
+                assistant_score=persona_info.get("score"),
+            )
+
             return StepResult(status=StepStatus.SUCCESS, data=data)
 
         except Exception as e:
             logger.exception("SemanticKernel: Perception failed")
+            self._log_usage_summary(ctx, reason=f"perception_failed:{e}")
             return StepResult(
                 status=StepStatus.SUCCESS, message=f"perception_failed: {e}"
             )
+
+    def _log_usage_summary(
+        self,
+        ctx: "WorkflowContext",
+        *,
+        reason: str,
+        memory_count: int = 0,
+        assistant_id: str | None = None,
+        assistant_name: str | None = None,
+        assistant_score: float | None = None,
+    ) -> None:
+        memory_used = memory_count > 0
+        semantic_assistant_used = bool(assistant_id)
+        score_text = (
+            f"{assistant_score:.4f}"
+            if isinstance(assistant_score, (int, float))
+            else ""
+        )
+        logger.info(
+            "semantic_kernel_usage trace_id=%s user_id=%s reason=%s "
+            "memory_used=%s memory_count=%s "
+            "semantic_assistant_used=%s semantic_assistant_id=%s "
+            "semantic_assistant_name=%s semantic_assistant_score=%s",
+            ctx.trace_id,
+            ctx.user_id or "",
+            reason,
+            memory_used,
+            memory_count,
+            semantic_assistant_used,
+            assistant_id or "",
+            assistant_name or "",
+            score_text,
+        )
 
     async def _search_memories(self, user_id: Any, query: str) -> list[dict] | None:
         """Search contextual memories."""

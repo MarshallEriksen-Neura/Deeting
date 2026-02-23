@@ -227,6 +227,7 @@ export function normalizeConversationMessages(
       metaInfo,
       toolCalls,
       toolCallId,
+      fromHistory: true,
       ...(resolvedBlocks !== undefined ? { blocks: resolvedBlocks } : {}),
     }
   })

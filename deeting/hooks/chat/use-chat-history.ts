@@ -118,7 +118,8 @@ export function useChatHistory({
               role: (record.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
               content: parsedContent.text,
               attachments: parsedContent.attachments.length ? parsedContent.attachments : undefined,
-              createdAt: Number.isNaN(parsed) ? Date.now() : parsed
+              createdAt: Number.isNaN(parsed) ? Date.now() : parsed,
+              fromHistory: true,
             }
           })
         )

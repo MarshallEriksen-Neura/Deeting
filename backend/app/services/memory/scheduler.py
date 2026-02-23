@@ -18,10 +18,10 @@ class MemoryScheduler:
     """
 
     def __init__(self, delay_seconds: int | None = None):
-        self.redis = cache._redis  # 复用现有 redis 连接
+        self.redis = cache._redis  # 复用现有 redis连接
         if not self.redis:
             raise RuntimeError("Redis 未初始化，无法使用 MemoryScheduler")
-        self.delay_seconds = delay_seconds or 15 * 60  # 默认 15 分钟
+        self.delay_seconds = delay_seconds or 3 * 60  # 默认 3 分钟
 
     async def touch_session(
         self, session_id: str, user_id: str | None = None

@@ -2,6 +2,7 @@ import json
 import uuid
 
 from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.prompts.memory_extraction import MEMORY_EXTRACTION_SYSTEM_PROMPT
@@ -33,13 +34,19 @@ class MemoryExtractorService:
         )
 
     async def extract_and_save(
-        self, user_id: uuid.UUID, messages: list[dict], secretary_id: uuid.UUID = None
+        self,
+        user_id: uuid.UUID,
+        messages: list[dict],
+        secretary_id: uuid.UUID = None,
+        db_session: AsyncSession | None = None,
     ):
         """
         主入口：执行 提取 -> 去重 -> 入库
         """
         # 1. 提取 (Extraction)
-        facts = await self._llm_extract_facts(messages)
+        facts = await self._llm_extract_facts(
+            messages, user_id=user_id, db_session=db_session
+        )
         if not facts:
             return
 
@@ -58,10 +65,17 @@ class MemoryExtractorService:
                 f"Memory: Extracted {new_facts_count} new facts for User {user_id}"
             )
 
-    async def _llm_extract_facts(self, messages: list[dict]) -> list[str]:
+    async def _llm_extract_facts(
+        self,
+        messages: list[dict],
+        *,
+        user_id: uuid.UUID | None = None,
+        db_session: AsyncSession | None = None,
+    ) -> list[str]:
         """
         调用 LLM 提取事实。
         """
+        from app.services.memory.external_memory import _resolve_secretary_model
         from app.services.providers.llm import llm_service
 
         # 构造对话文本
@@ -81,11 +95,17 @@ class MemoryExtractorService:
         ]
 
         try:
+            # 解析该用户对应的秘书模型
+            model = await _resolve_secretary_model(
+                db_session=db_session, user_id=user_id
+            )
+
             # 使用 LLMService 进行请求
-            # 预留设置: MEMORY_EXTRACTOR_PRESET_ID (可在 .env 配置)
-            preset_id = getattr(settings, "MEMORY_EXTRACTOR_PRESET_ID", None)
+            # 若 model 为空，llm_service 会回退到默认逻辑（虽然在你的场景下这通常意味着失败）
             response_text = await llm_service.chat_completion(
-                messages=llm_messages, preset_id=preset_id, temperature=0.0
+                messages=llm_messages,
+                model=model,
+                temperature=0.0,
             )
 
             # 解析 JSON 结果

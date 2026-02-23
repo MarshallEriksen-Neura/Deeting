@@ -41,4 +41,6 @@ export interface Message {
   toolCallId?: string
   toolOutputs?: ToolOutput[]
   blocks?: MessageBlock[]
+  /** 标记该消息是否来自历史记录加载（非实时对话） */
+  fromHistory?: boolean
 }

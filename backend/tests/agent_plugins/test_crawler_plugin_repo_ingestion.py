@@ -14,6 +14,10 @@ def test_crawler_plugin_tools_include_repo_ingestion():
         tool.get("function", {}).get("name") == "submit_repo_ingestion"
         for tool in tools
     )
+    assert any(
+        tool.get("function", {}).get("name") == "batch_convert_artifact_to_assistants"
+        for tool in tools
+    )
 
 
 class _DummyContext:
@@ -23,10 +27,13 @@ class _DummyContext:
 
 class _DummyAsyncSession:
     async def __aenter__(self):
-        return object()
+        return self
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+    async def commit(self):
+        return None
 
 
 class _DummyRepo:

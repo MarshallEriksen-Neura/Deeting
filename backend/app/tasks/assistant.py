@@ -188,7 +188,16 @@ async def _run_assistant_onboarding(url: str, user_id: str | None = None) -> dic
             user_id, job_id, "refining", "正在解析网页中的性格特征与指令...", percentage=60
         )
         artifact_id = uuid.UUID(review_ids[0])
-        result = await ingestion_service.refine_and_create_assistant(artifact_id)
+        resolved_user_id = None
+        if user_id:
+            try:
+                resolved_user_id = uuid.UUID(user_id)
+            except ValueError:
+                logger.warning("Invalid user_id for assistant onboarding: %s", user_id)
+        result = await ingestion_service.refine_and_create_assistant(
+            artifact_id,
+            user_id=resolved_user_id,
+        )
         await session.commit()
 
         await push_task_progress(

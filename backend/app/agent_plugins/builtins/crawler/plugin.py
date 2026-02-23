@@ -18,7 +18,7 @@ class CrawlerPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.tools.crawler",
-            version="2.2.0",  # Added Assistant Conversion
+            version="2.3.0",  # Added batch assistant conversion
             description="Provides web crawling capabilities via Deeting Scout Service.",
             author="Gemini CLI",
         )
@@ -108,7 +108,7 @@ class CrawlerPlugin(AgentPlugin):
                 "type": "function",
                 "function": {
                     "name": "convert_artifact_to_assistant",
-                    "description": "Convert a crawled Knowledge Artifact into a structured AI Assistant. This is the mandatory final step to register new prompts/skills into the system registry.",
+                    "description": "Convert one crawled Knowledge Artifact into a single structured AI Assistant.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -116,6 +116,28 @@ class CrawlerPlugin(AgentPlugin):
                                 "type": "string",
                                 "description": "The UUID of the ingested Knowledge Artifact.",
                             }
+                        },
+                        "required": ["artifact_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "batch_convert_artifact_to_assistants",
+                    "description": "Split one crawled Knowledge Artifact into multiple structured AI Assistants.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "artifact_id": {
+                                "type": "string",
+                                "description": "The UUID of the ingested Knowledge Artifact.",
+                            },
+                            "max_assistants": {
+                                "type": "integer",
+                                "default": 20,
+                                "description": "Maximum number of assistants to create in this batch run.",
+                            },
                         },
                         "required": ["artifact_id"],
                     },
@@ -187,7 +209,11 @@ class CrawlerPlugin(AgentPlugin):
                 # We return the list of artifact IDs so the Agent can pick one to convert
                 return {
                     "status": "success",
-                    "message": f"Successfully ingested {len(artifact_ids)} pages. You can now use 'convert_artifact_to_assistant' with these IDs.",
+                    "message": (
+                        f"Successfully ingested {len(artifact_ids)} pages. "
+                        "Use 'convert_artifact_to_assistant' for one-by-one conversion "
+                        "or 'batch_convert_artifact_to_assistants' for split conversion."
+                    ),
                     "artifact_ids": artifact_ids,
                 }
             except Exception as e:
@@ -221,15 +247,67 @@ class CrawlerPlugin(AgentPlugin):
             )
 
             try:
-                # Validate UUID format
                 uuid_obj = uuid.UUID(artifact_id)
-                result = await ingestion_service.refine_and_create_assistant(uuid_obj, user_id=user_id)
-                await session.commit()
-                return result
             except ValueError:
                 return {"status": "error", "message": "Invalid Artifact ID format"}
+
+            try:
+                result = await ingestion_service.refine_and_create_assistant(
+                    uuid_obj, user_id=user_id
+                )
+                await session.commit()
+                return result
+            except ValueError as e:
+                return {"status": "error", "message": str(e)}
             except Exception as e:
                 self.context.get_logger().error(f"Assistant conversion failed: {e}")
+                return {"status": "error", "message": str(e)}
+
+    async def handle_batch_convert_artifact_to_assistants(
+        self, artifact_id: str, max_assistants: int = 20, **kwargs
+    ) -> dict[str, Any]:
+        """
+        Tool Handler: Refine Artifact -> Create Multiple Assistants -> Sync Qdrant.
+        """
+        user_id = self.context.user_id
+        from app.repositories.assistant_repository import (
+            AssistantRepository,
+            AssistantVersionRepository,
+        )
+        from app.repositories.knowledge_repository import KnowledgeRepository
+        from app.services.assistant.assistant_ingestion_service import (
+            AssistantIngestionService,
+        )
+        from app.services.assistant.assistant_service import AssistantService
+
+        async with AsyncSessionLocal() as session:
+            knowledge_repo = KnowledgeRepository(session)
+            assistant_service = AssistantService(
+                AssistantRepository(session), AssistantVersionRepository(session)
+            )
+            ingestion_service = AssistantIngestionService(
+                assistant_service, knowledge_repo
+            )
+
+            try:
+                uuid_obj = uuid.UUID(artifact_id)
+            except ValueError:
+                return {"status": "error", "message": "Invalid Artifact ID format"}
+
+            try:
+                result = await ingestion_service.batch_refine_and_create_assistants(
+                    uuid_obj,
+                    user_id=user_id,
+                    max_items=max_assistants,
+                )
+                await session.commit()
+                return result
+            except ValueError as e:
+                return {"status": "error", "message": str(e)}
+            except Exception as e:
+                self.context.get_logger().error(
+                    f"Batch assistant conversion failed: {e}"
+                )
                 return {"status": "error", "message": str(e)}
 
     async def handle_submit_repo_ingestion(

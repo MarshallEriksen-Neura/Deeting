@@ -1,5 +1,5 @@
 name: core.tools.crawler
-version: "1.0.0"
+version: "1.1.0"
 description: "Provides web crawling capabilities using Playwright."
 author: "Gemini CLI"
 tools:
@@ -55,3 +55,25 @@ tools:
           type: string
           description: "Optional runtime hint (e.g. python_library, node_library)."
       required: ["repo_url"]
+  - name: convert_artifact_to_assistant
+    description: "Convert one crawled knowledge artifact into a single assistant."
+    parameters:
+      type: object
+      properties:
+        artifact_id:
+          type: string
+          description: "The UUID of the ingested knowledge artifact."
+      required: ["artifact_id"]
+  - name: batch_convert_artifact_to_assistants
+    description: "Split one crawled knowledge artifact into multiple assistants."
+    parameters:
+      type: object
+      properties:
+        artifact_id:
+          type: string
+          description: "The UUID of the ingested knowledge artifact."
+        max_assistants:
+          type: integer
+          default: 20
+          description: "Maximum number of assistants to create."
+      required: ["artifact_id"]

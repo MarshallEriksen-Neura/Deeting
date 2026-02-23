@@ -33,7 +33,8 @@ class AuditLogStep(BaseStep):
     """
 
     name = "audit_log"
-    depends_on = []  # 放在最后，但不强制依赖特定步骤
+    # 审计必须在计费后执行，否则会记录到未回填的上下文（status/tokens/cost 全为默认值）
+    depends_on = ["billing"]
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """记录审计日志"""

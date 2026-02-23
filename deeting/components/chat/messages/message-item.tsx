@@ -58,7 +58,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     // 判断是否为最后一条助手消息（用于 reveal 动画）
     const isLastAssistantMessage = message.role === "assistant" && message.id === lastAssistantId
     const shouldReveal = !isTyping && !streamEnabled && isLastAssistantMessage
-    const typingEnabled = isLastAssistantMessage && (streamEnabled || shouldReveal)
+    const typingEnabled = isLastAssistantMessage && !message.fromHistory && (streamEnabled || shouldReveal)
     const assistantParts = React.useMemo<MessageBlock[]>(() => {
       if (message.role !== "assistant") return []
       return message.blocks ?? []

@@ -248,6 +248,21 @@ body {
   font-weight: 500;
 }
 
+/* Override github-markdown-css table row backgrounds to prevent
+   text being hidden by opaque row colors inside chat bubbles.
+   Use high-specificity selectors to beat .markdown-body[data-theme] rules. */
+.markdown-body.chat-markdown table tr,
+.markdown-body.chat-markdown[data-theme="light"] table tr,
+.markdown-body.chat-markdown[data-theme="dark"] table tr {
+  background-color: transparent;
+}
+
+.markdown-body.chat-markdown table tr:nth-child(2n),
+.markdown-body.chat-markdown[data-theme="light"] table tr:nth-child(2n),
+.markdown-body.chat-markdown[data-theme="dark"] table tr:nth-child(2n) {
+  background-color: color-mix(in oklch, var(--fgColor-default, currentColor) 4%, transparent);
+}
+
 /* Prism token mapping to GitHub variables */
 .markdown-body .token.comment,
 .markdown-body .token.prolog,
