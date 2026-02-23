@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.cache import cache
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
@@ -24,7 +25,7 @@ from app.models import (
 from app.services.conversation.service import get_conversation_service
 from app.services.conversation.summarizer import SummarizerService
 from app.services.conversation.topic_namer import generate_conversation_title
-from app.tasks.async_runner import run_async
+from app.tasks.async_runner import is_loop_error, reset_loop, run_async
 from app.utils.time_utils import Datetime
 
 
@@ -39,7 +40,24 @@ def conversation_summarize(session_id: str) -> str:
     """
 
     setup_logging()
-    return run_async(_run_summarize(session_id))
+    try:
+        return run_async(_run_summarize(session_id))
+    except Exception as exc:
+        if not is_loop_error(exc):
+            raise
+
+        logger.warning(
+            f"conversation_summarize_loop_mismatch session={session_id}, resetting loop and retrying once"
+        )
+        try:
+            reset_loop()
+            cache.init()
+            return run_async(_run_summarize(session_id))
+        except Exception as retry_exc:  # pragma: no cover
+            logger.error(
+                f"conversation_summarize_retry_failed session={session_id} exc={retry_exc}"
+            )
+            return "failed"
 
 
 @celery_app.task(name="conversation.summary_idle_check")
@@ -50,7 +68,24 @@ def conversation_summary_idle_check(session_id: str) -> str:
     - 确认有新消息且未在摘要中，触发异步摘要
     """
     setup_logging()
-    return run_async(_run_summary_idle_check(session_id))
+    try:
+        return run_async(_run_summary_idle_check(session_id))
+    except Exception as exc:
+        if not is_loop_error(exc):
+            raise
+
+        logger.warning(
+            f"conversation_summary_idle_loop_mismatch session={session_id}, resetting loop and retrying once"
+        )
+        try:
+            reset_loop()
+            cache.init()
+            return run_async(_run_summary_idle_check(session_id))
+        except Exception as retry_exc:  # pragma: no cover
+            logger.error(
+                f"conversation_summary_idle_retry_failed session={session_id} exc={retry_exc}"
+            )
+            return "failed"
 
 
 def _decode_str(val: Any | None) -> str | None:
@@ -97,6 +132,8 @@ async def _run_summary_idle_check(session_id: str) -> str:
     try:
         svc = get_conversation_service()
     except Exception as exc:
+        if is_loop_error(exc):
+            raise
         logger.error(
             f"conversation_summary_idle_redis_unavailable session={session_id} exc={exc}"
         )
@@ -156,6 +193,8 @@ async def _run_summary_idle_check(session_id: str) -> str:
         )
         return "queued"
     except Exception as exc:
+        if is_loop_error(exc):
+            raise
         logger.error(f"conversation_summary_idle_failed session={session_id} exc={exc}")
         return "failed"
 
@@ -164,6 +203,8 @@ async def _run_summarize(session_id: str) -> str:
     try:
         svc = get_conversation_service()
     except Exception as exc:
+        if is_loop_error(exc):
+            raise
         logger.error(
             f"conversation_summarize_redis_unavailable session={session_id} exc={exc}"
         )
@@ -226,6 +267,8 @@ async def _run_summarize(session_id: str) -> str:
         )
         return "ok"
     except Exception as exc:
+        if is_loop_error(exc):
+            raise
         await svc.clear_summarizing(session_id)
         logger.error(f"conversation_summarize_failed session={session_id} exc={exc}")
         return "failed"

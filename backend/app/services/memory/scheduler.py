@@ -18,10 +18,14 @@ class MemoryScheduler:
     """
 
     def __init__(self, delay_seconds: int | None = None):
-        self.redis = cache._redis  # 复用现有 redis连接
-        if not self.redis:
-            raise RuntimeError("Redis 未初始化，无法使用 MemoryScheduler")
         self.delay_seconds = delay_seconds or 3 * 60  # 默认 3 分钟
+
+    @staticmethod
+    def _get_redis():
+        redis = getattr(cache, "_redis", None)
+        if not redis:
+            raise RuntimeError("Redis 未初始化，无法使用 MemoryScheduler")
+        return redis
 
     async def touch_session(
         self, session_id: str, user_id: str | None = None
@@ -30,17 +34,18 @@ class MemoryScheduler:
         防抖入口：每条消息后调用。轻量，不抛异常。
         """
         try:
+            redis = self._get_redis()
             now = time.time()
             last_active_key = CacheKeys.memory_last_active(session_id)
             pending_key = CacheKeys.memory_pending_task(session_id)
 
             # 记录最后活跃时间
-            await self.redis.set(
+            await redis.set(
                 last_active_key, now, ex=settings.CONVERSATION_REDIS_TTL_SECONDS
             )
 
             # 若已有 pending 任务，直接返回，由任务自己检查 last_active
-            if await self.redis.exists(pending_key):
+            if await redis.exists(pending_key):
                 return
 
             # 投递延迟任务，执行时二次校验
@@ -48,7 +53,7 @@ class MemoryScheduler:
                 args=[session_id, user_id],
                 countdown=self.delay_seconds,
             )
-            await self.redis.set(pending_key, task.id, ex=self.delay_seconds)
+            await redis.set(pending_key, task.id, ex=self.delay_seconds)
         except Exception as exc:  # pragma: no cover - 防御
             logger.warning(f"memory scheduler touch failed session={session_id}: {exc}")
 

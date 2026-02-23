@@ -18,33 +18,38 @@ class SummaryScheduler:
     """
 
     def __init__(self, delay_seconds: int | None = None):
-        self.redis = cache._redis
-        if not self.redis:
-            raise RuntimeError("Redis 未初始化，无法使用 SummaryScheduler")
         self.delay_seconds = delay_seconds or settings.CONVERSATION_SUMMARY_IDLE_SECONDS
+
+    @staticmethod
+    def _get_redis():
+        redis = getattr(cache, "_redis", None)
+        if not redis:
+            raise RuntimeError("Redis 未初始化，无法使用 SummaryScheduler")
+        return redis
 
     async def touch_session(self, session_id: str) -> None:
         try:
+            redis = self._get_redis()
             now = time.time()
             last_active_key = CacheKeys.conversation_summary_last_active(session_id)
             pending_key = CacheKeys.conversation_summary_pending_task(session_id)
 
             # 记录最后活跃时间
-            await self.redis.set(
+            await redis.set(
                 last_active_key,
                 now,
                 ex=settings.CONVERSATION_REDIS_TTL_SECONDS,
             )
 
             # 已有 pending 任务则不重复投递
-            if await self.redis.exists(pending_key):
+            if await redis.exists(pending_key):
                 return
 
             task = conversation_summary_idle_check.apply_async(
                 args=[session_id],
                 countdown=self.delay_seconds,
             )
-            await self.redis.set(pending_key, task.id, ex=self.delay_seconds)
+            await redis.set(pending_key, task.id, ex=self.delay_seconds)
         except Exception as exc:  # pragma: no cover - 防御
             logger.warning(
                 f"summary scheduler touch failed session={session_id}: {exc}"

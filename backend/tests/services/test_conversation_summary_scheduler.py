@@ -146,3 +146,45 @@ async def test_run_summary_idle_check_respects_min_interval(monkeypatch):
     monkeypatch.setattr(settings, "CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS", 600)
     result = await _run_summary_idle_check(session_id)
     assert result == "min_interval"
+
+
+@pytest.mark.asyncio
+async def test_summary_scheduler_reads_latest_redis_instance(monkeypatch):
+    scheduled: list[tuple[list[str], int]] = []
+
+    class _FakeRedis:
+        def __init__(self) -> None:
+            self._store: dict[str, str] = {}
+
+        async def set(self, key: str, value, ex: int | None = None):
+            self._store[key] = str(value)
+            return True
+
+        async def exists(self, key: str):
+            return key in self._store
+
+    def fake_apply_async(args, countdown):
+        scheduled.append((args, countdown))
+        return SimpleNamespace(id=f"task-{len(scheduled)}")
+
+    monkeypatch.setattr(
+        "app.services.conversation.summary_scheduler.conversation_summary_idle_check",
+        SimpleNamespace(apply_async=fake_apply_async),
+    )
+
+    redis_first = _FakeRedis()
+    redis_second = _FakeRedis()
+    monkeypatch.setattr(cache, "_redis", redis_first)
+
+    scheduler = SummaryScheduler(delay_seconds=5)
+    await scheduler.touch_session("session-switch")
+
+    monkeypatch.setattr(cache, "_redis", redis_second)
+    await scheduler.touch_session("session-switch-2")
+
+    pending_first = CacheKeys.conversation_summary_pending_task("session-switch")
+    pending_second = CacheKeys.conversation_summary_pending_task("session-switch-2")
+
+    assert redis_first._store[pending_first] == "task-1"
+    assert redis_second._store[pending_second] == "task-2"
+    assert len(scheduled) == 2

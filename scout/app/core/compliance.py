@@ -1,8 +1,7 @@
-import re
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 from loguru import logger
-import asyncio
+import httpx
 
 class ComplianceManager:
     """
@@ -48,7 +47,7 @@ class ComplianceManager:
 
     def __init__(self, user_agent: str = "*"):
         self.user_agent = user_agent
-        self._robots_cache = {} # 简单内存缓存
+        self._robots_cache: dict[str, RobotFileParser | None] = {}  # 简单内存缓存
 
     async def is_safe_to_crawl(self, url: str) -> bool:
         """
@@ -124,19 +123,48 @@ class ComplianceManager:
             if robots_url in self._robots_cache:
                 rp = self._robots_cache[robots_url]
             else:
+                robots_txt = await self._fetch_robots_txt(robots_url)
+                if not robots_txt:
+                    # robots 拉取失败时按“宽松模式”放行，避免误伤正常站点
+                    self._robots_cache[robots_url] = None
+                    return True
                 rp = RobotFileParser()
-                # 使用 run_in_executor 避免阻塞异步循环
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, rp.set_url, robots_url)
-                # 设置超时，防止 robots.txt 加载卡死
-                await asyncio.wait_for(loop.run_in_executor(None, rp.read), timeout=5.0)
+                rp.set_url(robots_url)
+                rp.parse(robots_txt.splitlines())
                 self._robots_cache[robots_url] = rp
             
+            if rp is None:
+                return True
+
             return rp.can_fetch(self.user_agent, url)
         except Exception:
             # 获取 robots.txt 失败或超时，默认允许 (宽松模式)
             # 或者为了极致合规，这里可以 return False
             return True
+
+    async def _fetch_robots_txt(self, robots_url: str) -> str | None:
+        """
+        使用当前 UA 拉取 robots.txt，避免默认 urllib UA 被目标站封禁导致误判 disallow_all。
+        """
+        headers = {"User-Agent": self.user_agent}
+        try:
+            async with httpx.AsyncClient(
+                timeout=5.0,
+                follow_redirects=True,
+                headers=headers,
+            ) as client:
+                response = await client.get(robots_url)
+        except Exception as exc:
+            logger.warning(f"robots fetch failed for {robots_url}: {exc}")
+            return None
+
+        if response.status_code >= 400:
+            logger.warning(
+                f"robots fetch returned {response.status_code} for {robots_url}; fallback to allow in relaxed mode."
+            )
+            return None
+
+        return response.text
 
 # 全局合规实例
 compliance_manager = ComplianceManager(user_agent="DeetingScout/1.0")

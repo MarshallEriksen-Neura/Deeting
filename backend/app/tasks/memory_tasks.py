@@ -9,7 +9,7 @@ from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
-from app.tasks.async_runner import run_async
+from app.tasks.async_runner import is_loop_error, reset_loop, run_async
 from app.services.memory.extractor import memory_extractor
 
 
@@ -89,7 +89,7 @@ def process_memory_extraction(self, session_id: str, user_id: str | None) -> str
             return "ok"
 
         except Exception as exc:  # pragma: no cover
-            if "Event loop is closed" in str(exc):
+            if is_loop_error(exc):
                 raise
             logger.error(f"memory extraction failed session={session_id} exc={exc}")
             try:
@@ -103,18 +103,19 @@ def process_memory_extraction(self, session_id: str, user_id: str | None) -> str
 
     try:
         return run_async(_async_process())
-    except RuntimeError as exc:
-        if "Event loop is closed" not in str(exc):
+    except Exception as exc:
+        if not is_loop_error(exc):
             raise
 
         logger.warning(
-            f"memory extraction loop closed detected session={session_id}, reinitializing redis and retrying once"
+            f"memory extraction loop mismatch detected session={session_id}, resetting loop and retrying once"
         )
         try:
+            reset_loop()
             cache.init()
         except Exception as init_exc:
             logger.warning(
-                f"memory extraction redis reinit failed session={session_id} exc={init_exc}"
+                f"memory extraction loop recovery failed session={session_id} exc={init_exc}"
             )
             return "failed"
 
