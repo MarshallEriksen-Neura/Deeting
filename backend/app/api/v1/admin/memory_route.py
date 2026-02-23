@@ -15,7 +15,7 @@ from app.storage.qdrant_kb_store import (
 )
 from app.services.providers.embedding import EmbeddingService
 
-router = APIRouter(prefix="/memory", tags=["Admin - System Memory"])
+router = APIRouter(prefix="/admin/memory", tags=["Admin - System Memory"])
 
 # 系统集合名称
 SYSTEM_COLLECTION = get_kb_system_collection_name()

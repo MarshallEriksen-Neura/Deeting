@@ -95,9 +95,12 @@ parameters:
 
 **Workflow**:
 1.  LLM generates Python code.
-2.  Skill calls `SandboxService.run_code(session_id, code)`.
-3.  Service spawns/reuses sandbox, executes code, returns output.
-4.  Skill formats output (truncating long logs) and returns to LLM.
+2.  Skill calls `SandboxService.run_code(session_id, code)`，并在提交代码前注入运行时上下文：
+   - `RUNTIME_CONTEXT`（user/session/tenant、trace、auth scopes、路由摘要、execution meta）
+   - `TOOL_PLAN_RESULTS`（如使用了声明式 `tool_plan` 预取）
+3.  若代码内调用 `deeting.call_tool(...)`，运行时会输出 host 工具调用请求；服务端执行真实工具后将结果写入 `RUNTIME_TOOL_RESULTS` 并重跑脚本（循环直到无新请求或达到上限）。
+4.  Service spawns/reuses sandbox, executes code, returns output.
+5.  Skill formats output (truncating long logs) and returns to LLM.
 
 ## 4. Phase 1 Implementation Plan
 

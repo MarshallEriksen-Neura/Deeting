@@ -149,12 +149,19 @@ graph TD
 
 为降低多工具链路的上下文开销，系统新增两个核心工具：
 
-- `search_sdk`：按意图检索可用工具签名（参数名/类型/必填）
+- `search_sdk`：按意图检索可用工具签名，并返回结构化参数文档
+  - `signature`：紧凑签名（含可选参数与默认值）
+  - `parameters`：参数名、类型、必填、description、enum/default/example
+  - `python_stub`：可直接参考的 Python 函数声明（用于提升代码生成准确率）
+  - `example_arguments`：建议参数示例
 - `execute_code_plan`：在 OpenSandbox 中一次性执行 Python 计划
   - 支持可选 `tool_plan`：先串行调用真实工具（本地插件/MCP），再把结果注入 `TOOL_PLAN_RESULTS` 供代码读取
+  - 运行前注入 `RUNTIME_CONTEXT`：包含 user/session/tenant、auth scopes、外部限额信息、路由摘要和 execution 元数据
+  - 支持运行时 `deeting.call_tool(name, **kwargs)`：代码执行中可动态请求 host 调用真实工具，结果自动回填并重跑脚本
+    - 当前限制：最多 8 次运行时工具调用；禁止递归调用 `search_sdk/execute_code_plan`
 
 推荐执行路径：
-1. 先用 `search_sdk` 缩小能力面，拿到精确签名
+1. 先用 `search_sdk` 缩小能力面，拿到精确签名 + 参数文档 + stub
 2. 再用 `execute_code_plan` 执行单次代码计划，减少碎片化 Tool Call
 
 实现入口：

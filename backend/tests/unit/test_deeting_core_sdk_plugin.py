@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import json
 import uuid
 
 import pytest
@@ -8,6 +9,7 @@ import yaml
 import app.agent_plugins.builtins.deeting_core_sdk.plugin as sdk_module
 from app.agent_plugins.builtins.deeting_core_sdk.plugin import DeetingCoreSdkPlugin
 from app.schemas.tool import ToolDefinition
+from app.services.orchestrator.context import Channel, WorkflowContext
 
 
 class _AsyncSessionCtx:
@@ -64,6 +66,59 @@ async def test_search_sdk_returns_typed_signatures(monkeypatch):
     assert result["count"] == 1
     assert result["tools"][0]["name"] == "fetch_web_content"
     assert result["tools"][0]["signature"] == "fetch_web_content(url:string)"
+    assert result["tools"][0]["python_stub"] == "def fetch_web_content(url: str) -> dict: ..."
+    assert result["tools"][0]["parameters"][0]["name"] == "url"
+
+
+@pytest.mark.asyncio
+async def test_search_sdk_returns_parameter_docs_and_examples(monkeypatch):
+    plugin = _make_plugin()
+
+    async def _fake_build_tools(*, session, user_id, query):
+        return [
+            ToolDefinition(
+                name="search_web",
+                description="Search website content",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "搜索关键词",
+                            "example": "Cloudflare MCP",
+                        },
+                        "top_k": {
+                            "type": "integer",
+                            "description": "返回条数",
+                            "default": 5,
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["fast", "deep"],
+                            "description": "检索模式",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            )
+        ]
+
+    monkeypatch.setattr(
+        sdk_module.tool_context_service, "build_tools", _fake_build_tools
+    )
+
+    result = await plugin.handle_search_sdk("找网页搜索工具", limit=1)
+    tool = result["tools"][0]
+
+    assert result["format_version"] == "sdk_toolcard.v2"
+    assert tool["signature"] == "search_web(query:string, top_k?:integer=5, mode?:string)"
+    assert "def search_web(query: str, top_k: int = 5, mode: str | None = None)" in tool["python_stub"]
+    assert tool["required_parameters"] == ["query"]
+    assert tool["example_arguments"] == {
+        "query": "Cloudflare MCP",
+        "top_k": 5,
+        "mode": "fast",
+    }
 
 
 @pytest.mark.asyncio
@@ -107,6 +162,9 @@ async def test_execute_code_plan_executes_in_sandbox(monkeypatch):
     assert captured["language"] == "python"
     assert captured["execution_timeout"] == "15"
     assert "class DeetingRuntime" in captured["code"]
+    assert "RUNTIME_CONTEXT = json.loads" in captured["code"]
+    assert "RUNTIME_TOOL_RESULTS = json.loads" in captured["code"]
+    assert "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)" in captured["code"]
 
 
 @pytest.mark.asyncio
@@ -173,6 +231,119 @@ async def test_execute_code_plan_runs_tool_plan_and_injects_results(monkeypatch)
     assert captured["called_args"][1][1]["title"] == "Doc"
     assert "TOOL_PLAN_RESULTS = json.loads" in captured["code"]
     assert '"page"' in captured["code"]
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_injects_workflow_runtime_context(monkeypatch):
+    plugin = _make_plugin()
+    captured = {"code": ""}
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        captured["code"] = code
+        return {"stdout": ["ok"], "stderr": [], "result": [], "exit_code": 0}
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    wf_ctx = WorkflowContext(
+        channel=Channel.EXTERNAL,
+        user_id=str(plugin.context.user_id),
+        tenant_id="tenant-001",
+        api_key_id="ak-001",
+        requested_model="gpt-4o-mini",
+        capability="chat",
+        trace_id="trace-001",
+        client_ip="127.0.0.1",
+    )
+    wf_ctx.set("auth", "scopes", ["provider:openai", "preset:default"])
+    wf_ctx.set("external_auth", "allowed_models", ["gpt-4o-mini"])
+    wf_ctx.set("external_auth", "rate_limit_rpm", 60)
+    wf_ctx.set("routing", "provider", "openai")
+    wf_ctx.set("routing", "preset_item_id", "pi-001")
+
+    result = await plugin.handle_execute_code_plan(
+        code="deeting.log(RUNTIME_CONTEXT.get('permissions'))",
+        __context__=wf_ctx,
+    )
+
+    assert result["status"] == "success"
+    assert '"permissions"' in captured["code"]
+    assert '"provider:openai"' in captured["code"]
+    assert '"allowed_models": ["gpt-4o-mini"]' in captured["code"]
+    assert '"provider": "openai"' in captured["code"]
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_runtime_call_tool_roundtrip(monkeypatch):
+    plugin = _make_plugin()
+    captured = {"codes": [], "dispatch_calls": []}
+
+    async def _fake_dispatch_real_tool(*, tool_name, arguments, workflow_context):
+        captured["dispatch_calls"].append((tool_name, arguments))
+        return {"title": "Demo Doc", "url": arguments.get("url")}
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        captured["codes"].append(code)
+        if len(captured["codes"]) == 1:
+            marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
+                {
+                    "index": 0,
+                    "tool_name": "fetch_web_content",
+                    "arguments": {"url": "https://example.com"},
+                },
+                ensure_ascii=False,
+            )
+            return {
+                "stdout": [marker],
+                "stderr": ["runtime interrupted for host tool call"],
+                "result": [],
+                "exit_code": 1,
+            }
+        return {"stdout": ["done"], "stderr": [], "result": [], "exit_code": 0}
+
+    monkeypatch.setattr(plugin, "_dispatch_real_tool", _fake_dispatch_real_tool)
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    result = await plugin.handle_execute_code_plan(
+        code=(
+            "page = deeting.call_tool('fetch_web_content', url='https://example.com')\n"
+            "deeting.log(page.get('title'))"
+        )
+    )
+
+    assert result["status"] == "success"
+    assert len(captured["codes"]) == 2
+    assert len(captured["dispatch_calls"]) == 1
+    assert captured["dispatch_calls"][0][0] == "fetch_web_content"
+    assert "RUNTIME_TOOL_RESULTS = json.loads" in captured["codes"][0]
+    assert "Demo Doc" in captured["codes"][1]
+    assert result["runtime"]["runtime_tool_calls"]["count"] == 1
+    assert result["runtime"]["runtime_tool_calls"]["calls"][0]["tool_name"] == "fetch_web_content"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_runtime_call_tool_blocks_recursive_tools(monkeypatch):
+    plugin = _make_plugin()
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
+            {"index": 0, "tool_name": "search_sdk", "arguments": {"query": "x"}},
+            ensure_ascii=False,
+        )
+        return {
+            "stdout": [marker],
+            "stderr": ["runtime interrupted for host tool call"],
+            "result": [],
+            "exit_code": 1,
+        }
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    result = await plugin.handle_execute_code_plan(
+        code="deeting.call_tool('search_sdk', query='x')"
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_code"] == "CODE_MODE_RUNTIME_TOOL_CALL_INVALID"
 
 
 @pytest.mark.asyncio

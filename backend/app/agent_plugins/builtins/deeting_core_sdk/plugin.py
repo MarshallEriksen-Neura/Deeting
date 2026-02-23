@@ -19,6 +19,8 @@ _MAX_SEARCH_LIMIT = 20
 _MAX_CODE_CHARS = 12000
 _MAX_RESULT_CHARS = 4000
 _MAX_TOOL_PLAN_STEPS = 20
+_MAX_RUNTIME_TOOL_CALLS = 8
+_RUNTIME_TOOL_CALL_MARKER = "__DEETING_TOOL_CALL_REQUEST__"
 _FORBIDDEN_IMPORT_ROOTS = {
     "aiohttp",
     "ftplib",
@@ -45,9 +47,16 @@ _FORBIDDEN_CALL_ATTRIBUTES = {
 
 _RUNTIME_PREAMBLE = textwrap.dedent(
     """
+    class _DeetingHostToolCallSignal(BaseException):
+        pass
+
     class DeetingRuntime:
-        def __init__(self):
-            self.version = "1.0.0"
+        def __init__(self, context=None, tool_results=None, max_tool_calls=__MAX_RUNTIME_TOOL_CALLS__):
+            self.version = "1.1.0"
+            self.context = context or {}
+            self._tool_results = list(tool_results or [])
+            self._call_index = 0
+            self._max_tool_calls = int(max_tool_calls or 0)
 
         def log(self, *args):
             print("[deeting.log]", *args)
@@ -55,8 +64,29 @@ _RUNTIME_PREAMBLE = textwrap.dedent(
         def section(self, title):
             print(f"\\n[deeting.section] {title}")
 
-    deeting = DeetingRuntime()
+        def get_context(self):
+            return self.context
+
+        def call_tool(self, tool_name, **arguments):
+            idx = self._call_index
+            self._call_index += 1
+
+            if idx < len(self._tool_results):
+                return self._tool_results[idx]
+
+            if idx >= self._max_tool_calls:
+                raise RuntimeError("runtime tool call limit exceeded")
+
+            payload = {
+                "index": idx,
+                "tool_name": str(tool_name or "").strip(),
+                "arguments": arguments or {},
+            }
+            print("__RUNTIME_TOOL_CALL_MARKER__" + json.dumps(payload, ensure_ascii=False))
+            raise _DeetingHostToolCallSignal(f"pending runtime tool call #{idx}")
     """
+).replace("__MAX_RUNTIME_TOOL_CALLS__", str(_MAX_RUNTIME_TOOL_CALLS)).replace(
+    "__RUNTIME_TOOL_CALL_MARKER__", _RUNTIME_TOOL_CALL_MARKER
 )
 
 
@@ -65,7 +95,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="system.deeting_core_sdk",
-            version="1.0.0",
+            version="1.1.0",
             description=(
                 "Code Mode core tools. Search SDK signatures and execute code plans "
                 "in OpenSandbox."
@@ -81,7 +111,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "name": "search_sdk",
                     "description": (
                         "Search Deeting SDK capabilities by intent and return typed "
-                        "signatures. Use before execute_code_plan."
+                        "signatures, parameter docs, and python stubs. Use before "
+                        "execute_code_plan."
                     ),
                     "parameters": {
                         "type": "object",
@@ -111,7 +142,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "name": "execute_code_plan",
                     "description": (
                         "Execute a Python code plan in sandbox. Runtime exposes "
-                        "`deeting.log()` and `deeting.section()` helpers."
+                        "`deeting.log()`, `deeting.section()`, and `deeting.call_tool()`."
                     ),
                     "parameters": {
                         "type": "object",
@@ -219,11 +250,20 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         for tool in tools:
             if tool.name in {"search_sdk", "execute_code_plan"}:
                 continue
+            parameter_docs = self._build_parameter_docs(tool)
             item = {
                 "name": tool.name,
                 "description": tool.description or "",
-                "signature": self._build_signature(tool),
+                "signature": self._build_signature(tool, parameter_docs),
+                "python_stub": self._build_python_stub(tool, parameter_docs),
+                "parameters": parameter_docs,
+                "required_parameters": [
+                    p["name"] for p in parameter_docs if p.get("required")
+                ],
             }
+            example_arguments = self._build_example_arguments(parameter_docs)
+            if example_arguments:
+                item["example_arguments"] = example_arguments
             if include_schema:
                 item["input_schema"] = tool.input_schema
             items.append(item)
@@ -232,11 +272,12 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         return {
             "mode": "code_mode",
+            "format_version": "sdk_toolcard.v2",
             "query": q,
             "count": len(items),
             "tools": items,
             "usage_hint": (
-                "先根据签名规划步骤，再调用 execute_code_plan 一次性执行。"
+                "先根据参数文档和 python_stub 规划步骤，再调用 execute_code_plan 一次性执行。"
             ),
         }
 
@@ -323,22 +364,106 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 }
             tool_plan_results = plan_execution.get("results", {})
 
-        wrapped_code = self._build_wrapped_code(
-            source,
-            tool_plan_results=tool_plan_results,
-        )
         try:
             timeout_value = int(execution_timeout or 30)
         except (TypeError, ValueError):
             timeout_value = 30
 
-        result = await sandbox_manager.run_code(
-            final_session_id,
-            wrapped_code,
-            language=normalized_language,
-            execution_timeout=timeout_value,
+        runtime_context = self._build_runtime_context(
+            workflow_context=__context__,
+            runtime_meta=runtime_meta,
+            final_session_id=final_session_id,
         )
-        return self._format_execution_result(result, final_session_id, runtime_meta)
+
+        runtime_tool_results: list[Any] = []
+        runtime_tool_trace: list[dict[str, Any]] = []
+
+        for _ in range(_MAX_RUNTIME_TOOL_CALLS + 1):
+            wrapped_code = self._build_wrapped_code(
+                source,
+                tool_plan_results=tool_plan_results,
+                runtime_context=runtime_context,
+                runtime_tool_results=runtime_tool_results,
+            )
+
+            result = await sandbox_manager.run_code(
+                final_session_id,
+                wrapped_code,
+                language=normalized_language,
+                execution_timeout=timeout_value,
+            )
+
+            runtime_tool_request = self._extract_runtime_tool_request(result)
+            if not runtime_tool_request:
+                if runtime_tool_trace:
+                    runtime_meta["runtime_tool_calls"] = {
+                        "count": len(runtime_tool_trace),
+                        "calls": runtime_tool_trace,
+                    }
+                return self._format_execution_result(result, final_session_id, runtime_meta)
+
+            if len(runtime_tool_results) >= _MAX_RUNTIME_TOOL_CALLS:
+                runtime_meta["runtime_tool_calls"] = {
+                    "count": len(runtime_tool_trace),
+                    "calls": runtime_tool_trace,
+                }
+                return {
+                    "status": "failed",
+                    "runtime": runtime_meta,
+                    "error": "runtime tool call limit exceeded",
+                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_LIMIT",
+                    "request": runtime_tool_request,
+                }
+
+            tool_name = str(runtime_tool_request.get("tool_name") or "").strip()
+            if not tool_name:
+                return {
+                    "status": "failed",
+                    "runtime": runtime_meta,
+                    "error": "runtime tool call request missing tool_name",
+                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
+                    "request": runtime_tool_request,
+                }
+            if tool_name in {"search_sdk", "execute_code_plan"}:
+                return {
+                    "status": "failed",
+                    "runtime": runtime_meta,
+                    "error": f"runtime tool call '{tool_name}' is not allowed",
+                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
+                    "request": runtime_tool_request,
+                }
+
+            call_arguments = runtime_tool_request.get("arguments") or {}
+            if not isinstance(call_arguments, dict):
+                call_arguments = {}
+
+            runtime_tool_result = await self._dispatch_real_tool(
+                tool_name=tool_name,
+                arguments=call_arguments,
+                workflow_context=__context__,
+            )
+            normalized_tool_result = self._to_jsonable(runtime_tool_result)
+            runtime_tool_results.append(normalized_tool_result)
+
+            runtime_tool_trace.append(
+                {
+                    "index": int(runtime_tool_request.get("index", len(runtime_tool_results) - 1)),
+                    "tool_name": tool_name,
+                    "status": (
+                        "failed"
+                        if isinstance(normalized_tool_result, dict)
+                        and bool(normalized_tool_result.get("error"))
+                        else "success"
+                    ),
+                }
+            )
+
+        return {
+            "status": "failed",
+            "runtime": runtime_meta,
+            "error": "runtime tool call loop exceeded",
+            "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_LIMIT",
+        }
 
     async def _build_tool_candidates(
         self, *, user_id: uuid.UUID, query: str
@@ -359,7 +484,9 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         )
 
     def _resolve_user_id(self, workflow_context: Any | None) -> uuid.UUID:
-        raw_user_id = getattr(workflow_context, "user_id", None) or self.context.user_id
+        raw_user_id = self._context_attr(
+            workflow_context, "user_id", self.context.user_id
+        )
         if isinstance(raw_user_id, uuid.UUID):
             return raw_user_id
         return uuid.UUID(str(raw_user_id))
@@ -370,7 +497,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if explicit_session_id:
             return explicit_session_id
 
-        context_session_id = getattr(workflow_context, "session_id", None)
+        context_session_id = self._context_attr(workflow_context, "session_id")
         if context_session_id:
             return str(context_session_id)
 
@@ -379,18 +506,154 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         return f"user:{self.context.user_id}"
 
-    def _build_signature(self, tool: ToolDefinition) -> str:
+    def _build_signature(
+        self,
+        tool: ToolDefinition,
+        parameter_docs: list[dict[str, Any]] | None = None,
+    ) -> str:
+        docs = parameter_docs if parameter_docs is not None else self._build_parameter_docs(tool)
+        parts: list[str] = []
+        for param in docs:
+            name = str(param.get("name") or "")
+            tp = str(param.get("type") or "any")
+            if not name:
+                continue
+            is_required = bool(param.get("required"))
+            fragment = f"{name}{'' if is_required else '?'}:{tp}"
+            if (not is_required) and ("default" in param):
+                fragment += f"={self._format_literal(param.get('default'))}"
+            parts.append(fragment)
+        return f"{tool.name}({', '.join(parts)})"
+
+    def _build_parameter_docs(self, tool: ToolDefinition) -> list[dict[str, Any]]:
         schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
         properties = schema.get("properties") or {}
         required = set(schema.get("required") or [])
 
-        parts: list[str] = []
+        docs: list[dict[str, Any]] = []
         for name, prop in properties.items():
             prop_schema = prop if isinstance(prop, dict) else {}
-            tp = prop_schema.get("type", "any")
-            req_mark = "" if name in required else "?"
-            parts.append(f"{name}{req_mark}:{tp}")
-        return f"{tool.name}({', '.join(parts)})"
+            doc: dict[str, Any] = {
+                "name": name,
+                "type": str(prop_schema.get("type", "any")),
+                "python_type": self._json_schema_to_python_type(prop_schema),
+                "required": name in required,
+                "description": str(prop_schema.get("description") or ""),
+            }
+            if "default" in prop_schema:
+                doc["default"] = self._to_jsonable(prop_schema.get("default"))
+            enum_values = prop_schema.get("enum")
+            if isinstance(enum_values, list) and enum_values:
+                doc["enum"] = [self._to_jsonable(v) for v in enum_values]
+            if "example" in prop_schema:
+                doc["example"] = self._to_jsonable(prop_schema.get("example"))
+            docs.append(doc)
+        return docs
+
+    def _json_schema_to_python_type(self, schema: dict[str, Any]) -> str:
+        schema_type = schema.get("type")
+        if isinstance(schema_type, list) and schema_type:
+            mapped = [
+                self._json_schema_to_python_type({"type": part})
+                for part in schema_type
+                if isinstance(part, str)
+            ]
+            merged = " | ".join(part for part in mapped if part)
+            return merged or "Any"
+        if schema_type == "string":
+            return "str"
+        if schema_type == "integer":
+            return "int"
+        if schema_type == "number":
+            return "float"
+        if schema_type == "boolean":
+            return "bool"
+        if schema_type == "array":
+            items = schema.get("items")
+            if isinstance(items, dict):
+                return f"list[{self._json_schema_to_python_type(items)}]"
+            return "list[Any]"
+        if schema_type == "object":
+            return "dict[str, Any]"
+        return "Any"
+
+    def _build_python_stub(
+        self,
+        tool: ToolDefinition,
+        parameter_docs: list[dict[str, Any]],
+    ) -> str:
+        args: list[str] = []
+        for param in parameter_docs:
+            name = str(param.get("name") or "")
+            if not name:
+                continue
+            python_type = str(param.get("python_type") or "Any")
+            is_required = bool(param.get("required"))
+            if is_required:
+                args.append(f"{name}: {python_type}")
+                continue
+
+            if "default" in param:
+                default_literal = self._format_literal(param.get("default"))
+                args.append(f"{name}: {python_type} = {default_literal}")
+            else:
+                args.append(f"{name}: {python_type} | None = None")
+
+        params = ", ".join(args)
+        return f"def {tool.name}({params}) -> dict: ..."
+
+    def _build_example_arguments(
+        self,
+        parameter_docs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        example: dict[str, Any] = {}
+        for param in parameter_docs:
+            name = str(param.get("name") or "")
+            if not name:
+                continue
+            should_include = (
+                bool(param.get("required"))
+                or "default" in param
+                or "example" in param
+                or "enum" in param
+            )
+            if not should_include:
+                continue
+            example[name] = self._example_value_for_parameter(param)
+        return example
+
+    def _example_value_for_parameter(self, param: dict[str, Any]) -> Any:
+        if "example" in param:
+            return self._to_jsonable(param.get("example"))
+        if "default" in param:
+            return self._to_jsonable(param.get("default"))
+        enum_values = param.get("enum")
+        if isinstance(enum_values, list) and enum_values:
+            return self._to_jsonable(enum_values[0])
+
+        param_type = str(param.get("type") or "any")
+        if param_type == "string":
+            return "<string>"
+        if param_type == "integer":
+            return 0
+        if param_type == "number":
+            return 0.0
+        if param_type == "boolean":
+            return False
+        if param_type == "array":
+            return []
+        if param_type == "object":
+            return {}
+        return None
+
+    def _format_literal(self, value: Any) -> str:
+        normalized = self._to_jsonable(value)
+        if normalized is None:
+            return "None"
+        try:
+            return json.dumps(normalized, ensure_ascii=False)
+        except Exception:
+            return repr(normalized)
 
     def _validate_python_code(self, code: str) -> list[str]:
         violations: list[str] = []
@@ -692,21 +955,199 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 return str(value)
         return str(value)
 
+    def _extract_runtime_tool_request(self, result: dict[str, Any]) -> dict[str, Any] | None:
+        for key in ("stdout", "stderr", "result"):
+            payload = self._extract_runtime_tool_request_from_text(
+                self._join_chunks(result.get(key))
+            )
+            if payload is not None:
+                return payload
+        return None
+
+    def _extract_runtime_tool_request_from_text(
+        self,
+        text: str | None,
+    ) -> dict[str, Any] | None:
+        if not text:
+            return None
+        for line in reversed(str(text).splitlines()):
+            raw = line.strip()
+            if not raw.startswith(_RUNTIME_TOOL_CALL_MARKER):
+                continue
+            payload_str = raw[len(_RUNTIME_TOOL_CALL_MARKER) :].strip()
+            if not payload_str:
+                return {}
+            try:
+                payload = json.loads(payload_str)
+            except Exception:
+                return {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        return None
+
+    def _context_attr(
+        self,
+        workflow_context: Any | None,
+        key: str,
+        default: Any = None,
+    ) -> Any:
+        if workflow_context is None:
+            return default
+        if isinstance(workflow_context, dict):
+            if key in workflow_context:
+                return workflow_context.get(key, default)
+            nested = workflow_context.get("context")
+            if isinstance(nested, dict):
+                return nested.get(key, default)
+            if nested is not None:
+                return getattr(nested, key, default)
+            return default
+        return getattr(workflow_context, key, default)
+
+    def _context_ns_value(
+        self,
+        workflow_context: Any | None,
+        namespace: str,
+        key: str,
+        default: Any = None,
+    ) -> Any:
+        if workflow_context is None:
+            return default
+        if hasattr(workflow_context, "get"):
+            try:
+                return workflow_context.get(namespace, key, default)
+            except TypeError:
+                pass
+            except Exception:
+                return default
+        if isinstance(workflow_context, dict):
+            namespace_obj = workflow_context.get(namespace)
+            if isinstance(namespace_obj, dict):
+                return namespace_obj.get(key, default)
+            nested = workflow_context.get("context")
+            if hasattr(nested, "get"):
+                try:
+                    return nested.get(namespace, key, default)
+                except Exception:
+                    return default
+        return default
+
+    def _build_runtime_context(
+        self,
+        *,
+        workflow_context: Any | None,
+        runtime_meta: dict[str, Any],
+        final_session_id: str,
+    ) -> dict[str, Any]:
+        channel = self._context_attr(workflow_context, "channel")
+        channel_value = getattr(channel, "value", channel)
+        raw_scopes = self._context_ns_value(workflow_context, "auth", "scopes")
+        if raw_scopes is None:
+            raw_scopes = self._context_ns_value(workflow_context, "external_auth", "scopes")
+
+        scopes = (
+            [str(item) for item in raw_scopes if item is not None]
+            if isinstance(raw_scopes, list)
+            else []
+        )
+
+        payload = {
+            "runtime": runtime_meta,
+            "identity": {
+                "user_id": str(
+                    self._context_attr(workflow_context, "user_id", self.context.user_id)
+                ),
+                "tenant_id": self._context_attr(workflow_context, "tenant_id"),
+                "api_key_id": self._context_attr(workflow_context, "api_key_id"),
+                "session_id": final_session_id,
+            },
+            "request": {
+                "trace_id": self._context_attr(workflow_context, "trace_id"),
+                "channel": channel_value,
+                "capability": self._context_attr(workflow_context, "capability"),
+                "requested_model": self._context_attr(workflow_context, "requested_model"),
+                "client_ip": self._context_attr(workflow_context, "client_ip"),
+                "user_agent": self._context_attr(workflow_context, "user_agent"),
+            },
+            "permissions": {
+                "scopes": scopes,
+                "allowed_models": self._context_ns_value(
+                    workflow_context, "external_auth", "allowed_models"
+                ),
+            },
+            "limits": {
+                "rate_limit_rpm": self._context_ns_value(
+                    workflow_context, "external_auth", "rate_limit_rpm"
+                ),
+                "budget_limit": self._context_ns_value(
+                    workflow_context, "external_auth", "budget_limit"
+                ),
+                "budget_used": self._context_ns_value(
+                    workflow_context, "external_auth", "budget_used"
+                ),
+            },
+            "routing": {
+                "provider": self._context_ns_value(workflow_context, "routing", "provider"),
+                "preset_id": self._context_ns_value(workflow_context, "routing", "preset_id"),
+                "preset_item_id": self._context_ns_value(
+                    workflow_context, "routing", "preset_item_id"
+                ),
+                "provider_model_id": self._context_ns_value(
+                    workflow_context, "routing", "provider_model_id"
+                ),
+            },
+        }
+        return self._prune_none(self._to_jsonable(payload))
+
+    def _prune_none(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            pruned = {
+                str(k): self._prune_none(v)
+                for k, v in value.items()
+                if v is not None
+            }
+            return {
+                k: v
+                for k, v in pruned.items()
+                if not (
+                    v is None
+                    or v == {}
+                    or v == []
+                )
+            }
+        if isinstance(value, list):
+            return [self._prune_none(v) for v in value if v is not None]
+        return value
+
     def _build_wrapped_code(
         self,
         user_code: str,
         *,
         tool_plan_results: dict[str, Any] | None = None,
+        runtime_context: dict[str, Any] | None = None,
+        runtime_tool_results: list[Any] | None = None,
     ) -> str:
+        context_json = json.dumps(
+            runtime_context or {},
+            ensure_ascii=False,
+        )
         results_json = json.dumps(
             tool_plan_results or {},
             ensure_ascii=False,
         )
-        tool_results_block = (
-            "import json\n"
-            f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
+        runtime_tool_results_json = json.dumps(
+            runtime_tool_results or [],
+            ensure_ascii=False,
         )
-        return f"{_RUNTIME_PREAMBLE}\n{tool_results_block}\n{user_code}\n"
+        runtime_block = (
+            "import json\n"
+            f"RUNTIME_CONTEXT = json.loads({context_json!r})\n"
+            f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
+            f"RUNTIME_TOOL_RESULTS = json.loads({runtime_tool_results_json!r})\n"
+            "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)\n"
+        )
+        return f"{_RUNTIME_PREAMBLE}\n{runtime_block}\n{user_code}\n"
 
     def _format_execution_result(
         self,
