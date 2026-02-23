@@ -3,6 +3,7 @@
 import * as React from "react"
 import Cropper, { ReactCropperElement } from "react-cropper"
 import "cropperjs/dist/cropper.css"
+import { useTranslations } from "next-intl"
 import {
   Dialog,
   DialogContent,
@@ -114,10 +115,11 @@ export function ImageCropDialog({
   aspectRatio,
   outputType = "image/png",
   outputQuality = 0.92,
-  title = "裁剪图片",
+  title,
   showAspectRatioToolbar = true,
   onCropComplete,
 }: ImageCropDialogProps) {
+  const t = useTranslations("chat")
   const cropperRef = React.useRef<ReactCropperElement>(null)
   const [currentAspectRatio, setCurrentAspectRatio] = React.useState<
     number | undefined
@@ -220,9 +222,9 @@ export function ImageCropDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-4 py-3 border-b">
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>{title ?? t("input.image.cropDialog.title")}</DialogTitle>
           <VisuallyHidden>
-            <p>图片裁剪工具，支持旋转、翻转、缩放和比例调整</p>
+            <p>{t("input.image.cropDialog.description")}</p>
           </VisuallyHidden>
         </DialogHeader>
 
@@ -252,7 +254,7 @@ export function ImageCropDialog({
               variant="ghost"
               size="icon"
               onClick={() => handleRotate(-90)}
-              title="逆时针旋转"
+              title={t("input.image.cropDialog.tools.rotateCounterclockwise")}
             >
               <RotateCcw className="h-4 w-4" />
             </Button>
@@ -260,7 +262,7 @@ export function ImageCropDialog({
               variant="ghost"
               size="icon"
               onClick={() => handleRotate(90)}
-              title="顺时针旋转"
+              title={t("input.image.cropDialog.tools.rotateClockwise")}
             >
               <RotateCw className="h-4 w-4" />
             </Button>
@@ -269,7 +271,7 @@ export function ImageCropDialog({
               variant="ghost"
               size="icon"
               onClick={() => handleFlip("horizontal")}
-              title="水平翻转"
+              title={t("input.image.cropDialog.tools.flipHorizontal")}
             >
               <FlipHorizontal className="h-4 w-4" />
             </Button>
@@ -277,7 +279,7 @@ export function ImageCropDialog({
               variant="ghost"
               size="icon"
               onClick={() => handleFlip("vertical")}
-              title="垂直翻转"
+              title={t("input.image.cropDialog.tools.flipVertical")}
             >
               <FlipVertical className="h-4 w-4" />
             </Button>
@@ -286,7 +288,7 @@ export function ImageCropDialog({
               variant="ghost"
               size="icon"
               onClick={() => handleZoom(0.1)}
-              title="放大"
+              title={t("input.image.cropDialog.tools.zoomIn")}
             >
               <ZoomIn className="h-4 w-4" />
             </Button>
@@ -294,7 +296,7 @@ export function ImageCropDialog({
               variant="ghost"
               size="icon"
               onClick={() => handleZoom(-0.1)}
-              title="缩小"
+              title={t("input.image.cropDialog.tools.zoomOut")}
             >
               <ZoomOut className="h-4 w-4" />
             </Button>
@@ -314,10 +316,20 @@ export function ImageCropDialog({
                       "gap-1 px-2",
                       getCurrentPreset() === preset && "bg-secondary"
                     )}
-                    title={preset === "free" ? "自由裁剪" : `${preset} 比例`}
+                    title={
+                      preset === "free"
+                        ? t("input.image.cropDialog.ratio.freeTooltip")
+                        : t("input.image.cropDialog.ratio.presetTooltip", {
+                            ratio: preset,
+                          })
+                    }
                   >
                     {ASPECT_RATIO_ICONS[preset]}
-                    <span className="text-xs">{preset === "free" ? "自由" : preset}</span>
+                    <span className="text-xs">
+                      {preset === "free"
+                        ? t("input.image.cropDialog.ratio.freeLabel")
+                        : preset}
+                    </span>
                   </Button>
                 )
               )}
@@ -329,7 +341,7 @@ export function ImageCropDialog({
         <DialogFooter className="px-4 py-3 border-t">
           <Button variant="outline" onClick={handleCancel} disabled={isProcessing}>
             <X className="h-4 w-4 mr-1" />
-            取消
+            {t("input.image.cropDialog.cancel")}
           </Button>
           <Button onClick={handleConfirm} disabled={isProcessing}>
             {isProcessing ? (
@@ -337,7 +349,7 @@ export function ImageCropDialog({
             ) : (
               <Check className="h-4 w-4 mr-1" />
             )}
-            确认裁剪
+            {t("input.image.cropDialog.confirm")}
           </Button>
         </DialogFooter>
       </DialogContent>

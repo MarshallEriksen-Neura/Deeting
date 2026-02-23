@@ -9,7 +9,11 @@
       "viewPublic": "View Public Profile",
       "regenerateAvatar": "Re-generate with AI",
       "uploadAvatar": "Upload Avatar",
-      "cropAvatar": "Crop Avatar"
+      "cropAvatar": "Crop Avatar",
+      "invalidImageType": "Only image files are supported",
+      "imageTooLarge": "Image size must be 2MB or less",
+      "avatarUpdated": "Avatar updated successfully",
+      "avatarUploadFailed": "Failed to upload avatar. Please try again later"
     },
     "basicInfo": {
       "title": "Basic Information",

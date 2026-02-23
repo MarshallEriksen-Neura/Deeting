@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input"
 import { useAdminSystemMemories } from "@/lib/swr/use-admin-memory"
 import { addAdminSystemMemory, updateAdminSystemMemory, deleteAdminSystemMemory } from "@/lib/api/admin-memory"
 import type { MemoryItem } from "@/types/memory"
-import { MemoryCard } from "../../dashboard/memory/components/memory-card"
+import { MemoryCard } from "../../../dashboard/memory/components/memory-card"
 
 export function AdminMemoryClient() {
   const t = useTranslations("memory")

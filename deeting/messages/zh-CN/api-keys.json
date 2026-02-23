@@ -1,5 +1,5 @@
 {
-  "apiKeys": {
+  "api-keys": {
     "title": "API 密钥",
     "subtitle": "管理您的网关访问密钥",
     "mintNew": "铸造新密钥",

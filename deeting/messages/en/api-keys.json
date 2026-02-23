@@ -1,5 +1,5 @@
 {
-  "apiKeys": {
+  "api-keys": {
     "title": "API Keys",
     "subtitle": "Manage your API keys for accessing the gateway",
     "mintNew": "Mint New Key",

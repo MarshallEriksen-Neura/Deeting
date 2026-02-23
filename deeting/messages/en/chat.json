@@ -76,7 +76,26 @@
         "errorRead": "Failed to read image. Please try again.",
         "errorUpload": "Image upload failed. Please check your network and try again.",
         "errorSign": "Failed to sign image. Please refresh or try again later.",
-        "errorLoad": "Failed to load image"
+        "errorLoad": "Failed to load image",
+        "cropDialog": {
+          "title": "Crop Image",
+          "description": "Image cropping tool with rotate, flip, zoom, and aspect ratio controls",
+          "tools": {
+            "rotateCounterclockwise": "Rotate counterclockwise",
+            "rotateClockwise": "Rotate clockwise",
+            "flipHorizontal": "Flip horizontally",
+            "flipVertical": "Flip vertically",
+            "zoomIn": "Zoom in",
+            "zoomOut": "Zoom out"
+          },
+          "ratio": {
+            "freeLabel": "Free",
+            "freeTooltip": "Free crop",
+            "presetTooltip": "{ratio} ratio"
+          },
+          "cancel": "Cancel",
+          "confirm": "Confirm Crop"
+        }
       }
     },
     "history": {

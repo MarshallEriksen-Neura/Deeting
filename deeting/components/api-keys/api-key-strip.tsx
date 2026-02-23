@@ -48,7 +48,7 @@ export function ApiKeyStrip({
   className,
   ...props
 }: ApiKeyStripProps) {
-  const t = useTranslations("apiKeys")
+  const t = useTranslations("api-keys")
   const [copied, setCopied] = React.useState(false)
   const menuId = React.useMemo(() => `apikey-${apiKey.id}-menu`, [apiKey.id])
   const statusColors = getStatusColor(apiKey.status)
@@ -211,7 +211,7 @@ export function ApiKeyStrip({
 }
 
 function StatusBadge({ status }: { status: ApiKeyStatus }) {
-  const t = useTranslations("apiKeys.status")
+  const t = useTranslations("api-keys.status")
   const colors = getStatusColor(status)
 
   return (

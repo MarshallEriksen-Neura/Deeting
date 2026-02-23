@@ -54,7 +54,7 @@ export function MintKeyDrawer({
   availableModels = [],
   modelsLoading = false,
 }: MintKeyDrawerProps) {
-  const t = useTranslations("apiKeys.create")
+  const t = useTranslations("api-keys.create")
   const router = useRouter()
   const [currentStep, setCurrentStep] = React.useState<Step>("basic")
   const [isSubmitting, setIsSubmitting] = React.useState(false)
@@ -101,7 +101,7 @@ export function MintKeyDrawer({
         enable_logging: false,
       })
       setCurrentStep("basic")
-    } catch (error) {
+    } catch {
       // 交由调用方处理错误提示，仅保证抽屉状态恢复
     } finally {
       setIsSubmitting(false)
@@ -224,7 +224,7 @@ function StepIndicator({
   currentStep: Step
   steps: Step[]
 }) {
-  const t = useTranslations("apiKeys.create.steps")
+  const t = useTranslations("api-keys.create.steps")
   const currentIndex = steps.indexOf(currentStep)
 
   return (
@@ -279,7 +279,7 @@ function BasicStep({
   formData: CreateApiKeyRequest
   onChange: (data: Partial<CreateApiKeyRequest>) => void
 }) {
-  const t = useTranslations("apiKeys.create.basic")
+  const t = useTranslations("api-keys.create.basic")
 
   return (
     <div className="space-y-6">
@@ -332,7 +332,7 @@ function ConstraintsStep({
   modelsLoading: boolean
   onNavigateProvider: () => void
 }) {
-  const t = useTranslations("apiKeys.create.constraints")
+  const t = useTranslations("api-keys.create.constraints")
 
   const handleModelToggle = (model: string) => {
     const currentModels = formData.allowed_models || []
@@ -455,7 +455,7 @@ function SecurityStep({
   formData: CreateApiKeyRequest
   onChange: (data: Partial<CreateApiKeyRequest>) => void
 }) {
-  const t = useTranslations("apiKeys.create.security")
+  const t = useTranslations("api-keys.create.security")
 
   return (
     <div className="space-y-6">

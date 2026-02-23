@@ -16,14 +16,8 @@ import { GlassCard, GlassCardContent } from "@/components/ui/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiKeyStrip, MintKeyDrawer, KeyRevealModal } from "@/components/api-keys"
 
-// Define the interface for the parent to pass the "Trigger" button if needed
-// Or we can just render the list here
-interface ApiKeysManagerProps {
-  // Empty for now, but good for extensibility
-}
-
-export function ApiKeysManager({}: ApiKeysManagerProps) {
-  const t = useTranslations("apiKeys")
+export function ApiKeysManager() {
+  const t = useTranslations("api-keys")
 
   // Global UI State
   const { open, setOpen, openDrawer, closeDrawer } = useApiKeyDrawerStore()
@@ -34,7 +28,7 @@ export function ApiKeysManager({}: ApiKeysManagerProps) {
   const [newKeyName, setNewKeyName] = React.useState<string>("")
 
   // Data & Mutations
-  const { apiKeys, isLoading, error, createKey, rollKey, revokeKey, refresh, mutations } =
+  const { apiKeys, isLoading, error, createKey, rollKey, revokeKey, refresh } =
     useApiKeyService()
   const { models: availableModels, isLoading: modelsLoading } = useAvailableModels()
 
@@ -177,7 +171,7 @@ export function ApiKeysManager({}: ApiKeysManagerProps) {
 
 // Sub-components can stay in the same file for now as they are tightly coupled
 function EmptyState({ onMint }: { onMint: () => void }) {
-  const t = useTranslations("apiKeys.empty")
+  const t = useTranslations("api-keys.empty")
 
   return (
     <GlassCard className="py-16 text-center">
@@ -222,7 +216,7 @@ function ApiKeysSkeleton() {
 }
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
-  const t = useTranslations("apiKeys")
+  const t = useTranslations("api-keys")
 
   return (
     <GlassCard className="py-12 text-center">

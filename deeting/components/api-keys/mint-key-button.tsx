@@ -6,7 +6,7 @@ import { GlassButton } from "@/components/ui/glass-button"
 import { useApiKeyDrawerStore } from "@/store/api-key-drawer-store"
 
 export function MintKeyButton() {
-  const t = useTranslations("apiKeys")
+  const t = useTranslations("api-keys")
   const { openDrawer } = useApiKeyDrawerStore()
 
   return (

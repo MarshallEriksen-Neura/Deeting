@@ -213,6 +213,7 @@ export default function AssistantsPage() {
     <div className="min-h-screen bg-muted/20 p-8 space-y-8 animate-in fade-in duration-700">
       <CreateAgentModal
         mode="cloud"
+        trigger={null}
         open={modalOpen}
         onOpenChange={setModalOpen}
         assistant={editing}

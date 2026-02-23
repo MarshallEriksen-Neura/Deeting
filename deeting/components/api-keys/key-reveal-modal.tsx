@@ -39,7 +39,7 @@ export function KeyRevealModal({
   secret,
   keyName,
 }: KeyRevealModalProps) {
-  const t = useTranslations("apiKeys.reveal")
+  const t = useTranslations("api-keys.reveal")
   const [copied, setCopied] = React.useState(false)
   const [showConfetti, setShowConfetti] = React.useState(open)
 

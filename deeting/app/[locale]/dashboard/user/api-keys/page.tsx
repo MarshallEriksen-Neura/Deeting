@@ -26,7 +26,7 @@ function ApiKeysPageContent() {
   // Using useTranslations here works because this component will be rendered as part of the page tree,
   // but wait, standard practice for Server Components is to use `getTranslations`.
   // Let's refactor this to be proper Server Component style.
-  const t = useTranslations("apiKeys")
+  const t = useTranslations("api-keys")
 
   return (
     <Container as="main" className="py-6 md:py-8" gutter="md">

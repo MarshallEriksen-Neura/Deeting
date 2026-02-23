@@ -76,7 +76,26 @@
         "errorRead": "读取图片失败，请重试。",
         "errorUpload": "上传图片失败，请检查网络后重试。",
         "errorSign": "图片签名失败，请刷新或稍后重试。",
-        "errorLoad": "图片加载失败"
+        "errorLoad": "图片加载失败",
+        "cropDialog": {
+          "title": "裁剪图片",
+          "description": "图片裁剪工具，支持旋转、翻转、缩放和比例调整",
+          "tools": {
+            "rotateCounterclockwise": "逆时针旋转",
+            "rotateClockwise": "顺时针旋转",
+            "flipHorizontal": "水平翻转",
+            "flipVertical": "垂直翻转",
+            "zoomIn": "放大",
+            "zoomOut": "缩小"
+          },
+          "ratio": {
+            "freeLabel": "自由",
+            "freeTooltip": "自由裁剪",
+            "presetTooltip": "{ratio} 比例"
+          },
+          "cancel": "取消",
+          "confirm": "确认裁剪"
+        }
       }
     },
     "history": {
