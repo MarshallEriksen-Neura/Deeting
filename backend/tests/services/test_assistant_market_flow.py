@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import Mock
 
 import pytest
 import pytest_asyncio
@@ -126,6 +127,130 @@ async def test_market_install_flow_marks_installed():
             install_item.assistant.version.system_prompt
             == "You are a helpful assistant."
         )
+
+
+@pytest.mark.asyncio
+async def test_approve_review_enqueues_sync_and_search_upsert(monkeypatch):
+    sync_enqueue = Mock()
+    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", sync_enqueue)
+    search_enqueue = Mock()
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay",
+        search_enqueue,
+    )
+
+    async with AsyncSessionLocal() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email="market_review_approve@example.com",
+            hashed_password="hash",
+        )
+        session.add(user)
+        await session.commit()
+
+        assistant_service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session),
+        )
+
+        assistant = await assistant_service.create_assistant(
+            payload=AssistantCreate(
+                visibility=AssistantVisibility.PUBLIC,
+                status=AssistantStatus.PUBLISHED,
+                version=AssistantVersionCreate(
+                    name="Review Assistant",
+                    system_prompt="You are a helpful assistant.",
+                ),
+            ),
+            owner_user_id=user.id,
+        )
+
+        review_service = ReviewService(ReviewTaskRepository(session))
+        await review_service.submit(
+            entity_type=ASSISTANT_MARKET_ENTITY,
+            entity_id=assistant.id,
+            submitter_user_id=user.id,
+        )
+        sync_enqueue.reset_mock()
+        search_enqueue.reset_mock()
+
+        market_service = AssistantMarketService(
+            AssistantRepository(session),
+            AssistantInstallRepository(session),
+            ReviewTaskRepository(session),
+            AssistantMarketRepository(session),
+        )
+        await market_service.approve_review(
+            assistant_id=assistant.id,
+            reviewer_user_id=user.id,
+        )
+
+    sync_enqueue.assert_called_once_with(str(assistant.id))
+    search_enqueue.assert_called_once_with(str(assistant.id))
+
+
+@pytest.mark.asyncio
+async def test_reject_review_enqueues_remove_and_search_upsert(monkeypatch):
+    remove_enqueue = Mock()
+    monkeypatch.setattr(
+        "app.tasks.assistant.remove_assistant_from_qdrant.delay",
+        remove_enqueue,
+    )
+    search_enqueue = Mock()
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay",
+        search_enqueue,
+    )
+
+    async with AsyncSessionLocal() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email="market_review_reject@example.com",
+            hashed_password="hash",
+        )
+        session.add(user)
+        await session.commit()
+
+        assistant_service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session),
+        )
+
+        assistant = await assistant_service.create_assistant(
+            payload=AssistantCreate(
+                visibility=AssistantVisibility.PUBLIC,
+                status=AssistantStatus.PUBLISHED,
+                version=AssistantVersionCreate(
+                    name="Review Assistant",
+                    system_prompt="You are a helpful assistant.",
+                ),
+            ),
+            owner_user_id=user.id,
+        )
+
+        review_service = ReviewService(ReviewTaskRepository(session))
+        await review_service.submit(
+            entity_type=ASSISTANT_MARKET_ENTITY,
+            entity_id=assistant.id,
+            submitter_user_id=user.id,
+        )
+        remove_enqueue.reset_mock()
+        search_enqueue.reset_mock()
+
+        market_service = AssistantMarketService(
+            AssistantRepository(session),
+            AssistantInstallRepository(session),
+            ReviewTaskRepository(session),
+            AssistantMarketRepository(session),
+        )
+        await market_service.reject_review(
+            assistant_id=assistant.id,
+            reviewer_user_id=user.id,
+            reason="not good enough",
+        )
+
+    remove_enqueue.assert_called_once_with(str(assistant.id))
+    search_enqueue.assert_called_once_with(str(assistant.id))
 
 
 @pytest.mark.asyncio

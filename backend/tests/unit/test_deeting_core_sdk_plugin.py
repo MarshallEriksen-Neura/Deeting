@@ -162,6 +162,8 @@ async def test_execute_code_plan_executes_in_sandbox(monkeypatch):
     assert captured["language"] == "python"
     assert captured["execution_timeout"] == "15"
     assert "class DeetingRuntime" in captured["code"]
+    assert "import urllib.request" in captured["code"]
+    assert "X-Code-Mode-Execution-Token" in captured["code"]
     assert "RUNTIME_CONTEXT = json.loads" in captured["code"]
     assert "RUNTIME_TOOL_RESULTS = json.loads" in captured["code"]
     assert "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)" in captured["code"]
@@ -270,6 +272,34 @@ async def test_execute_code_plan_injects_workflow_runtime_context(monkeypatch):
     assert '"provider:openai"' in captured["code"]
     assert '"allowed_models": ["gpt-4o-mini"]' in captured["code"]
     assert '"provider": "openai"' in captured["code"]
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_injects_runtime_bridge_context(monkeypatch):
+    plugin = _make_plugin()
+    captured = {"code": "", "claims": None}
+
+    async def _fake_issue_token(*, claims, ttl_seconds):
+        captured["claims"] = claims
+        return SimpleNamespace(token="bridge-token-123", expires_at="2026-01-01T00:00:00+00:00")
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        captured["code"] = code
+        return {"stdout": ["ok"], "stderr": [], "result": [], "exit_code": 0}
+
+    monkeypatch.setattr(sdk_module.settings, "CODE_MODE_BRIDGE_ENDPOINT", "http://bridge.local/api/v1/internal/bridge/call")
+    monkeypatch.setattr(sdk_module.settings, "CODE_MODE_BRIDGE_TOKEN_TTL_SECONDS", 300)
+    monkeypatch.setattr(sdk_module.runtime_bridge_token_service, "issue_token", _fake_issue_token)
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    result = await plugin.handle_execute_code_plan(code="deeting.log('x')")
+
+    assert result["status"] == "success"
+    assert captured["claims"] is not None
+    assert captured["claims"].user_id == str(plugin.context.user_id)
+    assert '"bridge"' in captured["code"]
+    assert '"endpoint": "http://bridge.local/api/v1/internal/bridge/call"' in captured["code"]
+    assert '"execution_token": "bridge-token-123"' in captured["code"]
 
 
 @pytest.mark.asyncio

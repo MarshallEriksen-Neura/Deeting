@@ -157,8 +157,12 @@ graph TD
 - `execute_code_plan`：在 OpenSandbox 中一次性执行 Python 计划
   - 支持可选 `tool_plan`：先串行调用真实工具（本地插件/MCP），再把结果注入 `TOOL_PLAN_RESULTS` 供代码读取
   - 运行前注入 `RUNTIME_CONTEXT`：包含 user/session/tenant、auth scopes、外部限额信息、路由摘要和 execution 元数据
-  - 支持运行时 `deeting.call_tool(name, **kwargs)`：代码执行中可动态请求 host 调用真实工具，结果自动回填并重跑脚本
+  - 支持运行时 `deeting.call_tool(name, **kwargs)`：
+    - 优先通过内部 Bridge HTTP（`/api/v1/internal/bridge/call` + execution token）实时调用宿主工具
+    - 若 HTTP 不可达，自动回退到 marker 模式（主进程解析请求并重跑脚本）
     - 当前限制：最多 8 次运行时工具调用；禁止递归调用 `search_sdk/execute_code_plan`
+    - execution token 调用次数通过 Redis Lua 原子扣减（Redis 不可用时回退内存模式）
+    - Bridge 记录审计字段（trace/session/tool/status/error）并输出 Prometheus 指标
 
 推荐执行路径：
 1. 先用 `search_sdk` 缩小能力面，拿到精确签名 + 参数文档 + stub
@@ -169,4 +173,4 @@ graph TD
 - `backend/app/core/plugins.yaml`（`system.deeting_core_sdk`）
 
 关键配置：
-- `CODE_MODE_MINIMAL_TOOLSET`：启用后，当检测到 Code Mode 工具可用时，JIT 不再补齐全部非核心系统工具，进一步压缩上下文。
+- `CODE_MODE_MINIMAL_TOOLSET`：默认开启。当检测到 Code Mode 工具可用时，JIT 不再补齐全部非核心系统工具，直接采用“核心 + 命中工具”策略以压缩上下文。

@@ -165,3 +165,4 @@ async def invoke(tool_name: str, args: dict, ctx: PluginContext):
 *   **Security**: 不要尝试绕过沙箱。所有网络请求必须走 `ctx.http_client`。
 *   **UI Performance**: 渲染器应轻量化。尽量使用 CDN 资源，避免打包过大的依赖。
 *   **Error Handling**: 遇到错误时，返回友好的错误信息，而不是抛出异常。
+*   **Scope Safety**: 涉及“生成系统级资源”的工具参数（如 `target_scope=system`）必须在后端做管理员校验，禁止仅依赖前端或提示词约束。

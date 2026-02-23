@@ -212,7 +212,54 @@ data: [DONE]
 
 ---
 
-### 3. Skill Execution
+### 3. Code Mode Bridge Call（Sandbox -> Host）
+
+供沙箱内 `deeting.call_tool(...)` 回调宿主工具，使用 execution token 鉴权。  
+路径：`/api/v1/internal/bridge/call`
+
+请求头（二选一）：
+```http
+X-Code-Mode-Execution-Token: <execution_token>
+Content-Type: application/json
+```
+
+请求体：
+```json
+{
+  "tool_name": "fetch_web_content",
+  "arguments": {
+    "url": "https://example.com"
+  },
+  "execution_token": "optional-if-header-provided"
+}
+```
+
+响应体：
+```json
+{
+  "ok": true,
+  "result": {
+    "title": "Example",
+    "url": "https://example.com"
+  },
+  "meta": {
+    "call_index": 0,
+    "max_calls": 8,
+    "trace_id": "trace-001",
+    "session_id": "sess-001"
+  }
+}
+```
+
+说明：
+- `search_sdk` 与 `execute_code_plan` 在该接口上被禁止调用（防止递归）。
+- execution token 有 TTL 和最大调用次数限制，超过上限返回 `429`。
+- execution token 的 `allowed_models/scopes` 会在服务端做二次校验，不满足返回 `403`。
+- 可通过配置开启来源 IP 白名单校验（`CODE_MODE_BRIDGE_ENFORCE_TRUSTED_IPS`）。
+
+---
+
+### 4. Skill Execution
 
 执行单个技能的端到端运行（克隆仓库、安装依赖、脚本拼接、执行并回传产物）。  
 路径：`/api/v1/internal/skills/{skill_id}/execute`
@@ -253,7 +300,7 @@ data: [DONE]
 
 ---
 
-### 4. Skill Dry Run & Self‑Heal（内部流程）
+### 5. Skill Dry Run & Self‑Heal（内部流程）
 
 当技能入库成功后，会自动触发一次 Dry Run，用于验证 Manifest 与产物契约是否一致。  
 流程为**内部异步任务**，不提供外部 API 直接调用。

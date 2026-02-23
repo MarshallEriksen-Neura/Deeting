@@ -53,6 +53,7 @@ class CacheService:
             "quota_deduct": scripts_dir / "quota_deduct.lua",
             "apikey_quota_check": scripts_dir / "apikey_quota_check.lua",
             "apikey_budget_deduct": scripts_dir / "apikey_budget_deduct.lua",
+            "code_mode_bridge_consume": scripts_dir / "code_mode_bridge_consume.lua",
         }
 
         for name, path in script_map.items():

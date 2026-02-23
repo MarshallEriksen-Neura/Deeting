@@ -9,8 +9,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
+from app.core.config import settings
 from app.core.sandbox.manager import sandbox_manager
 from app.schemas.tool import ToolDefinition
+from app.services.code_mode.runtime_bridge_token_service import (
+    RuntimeBridgeClaims,
+    runtime_bridge_token_service,
+)
 from app.services.tools.tool_context_service import tool_context_service
 
 logger = logging.getLogger(__name__)
@@ -21,6 +26,7 @@ _MAX_RESULT_CHARS = 4000
 _MAX_TOOL_PLAN_STEPS = 20
 _MAX_RUNTIME_TOOL_CALLS = 8
 _RUNTIME_TOOL_CALL_MARKER = "__DEETING_TOOL_CALL_REQUEST__"
+_BRIDGE_EXECUTION_TOKEN_HEADER = "X-Code-Mode-Execution-Token"
 _FORBIDDEN_IMPORT_ROOTS = {
     "aiohttp",
     "ftplib",
@@ -77,6 +83,43 @@ _RUNTIME_PREAMBLE = textwrap.dedent(
             if idx >= self._max_tool_calls:
                 raise RuntimeError("runtime tool call limit exceeded")
 
+            bridge = self.context.get("bridge") if isinstance(self.context, dict) else {}
+            endpoint = str((bridge or {}).get("endpoint") or "").strip()
+            execution_token = str((bridge or {}).get("execution_token") or "").strip()
+            timeout_seconds = float((bridge or {}).get("timeout_seconds") or 15)
+            if endpoint and execution_token:
+                try:
+                    import urllib.request
+
+                    request_payload = {
+                        "tool_name": str(tool_name or "").strip(),
+                        "arguments": arguments or {},
+                        "execution_token": execution_token,
+                    }
+                    req = urllib.request.Request(
+                        endpoint,
+                        data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/json",
+                            "__BRIDGE_EXECUTION_TOKEN_HEADER__": execution_token,
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                        body = response.read().decode("utf-8")
+                    parsed = json.loads(body) if body else {}
+                    if isinstance(parsed, dict):
+                        if parsed.get("ok") is False:
+                            return {
+                                "error": str(parsed.get("error") or "bridge call failed"),
+                                "error_code": parsed.get("error_code"),
+                            }
+                        if "result" in parsed:
+                            return parsed.get("result")
+                        return parsed
+                except Exception as exc:
+                    self.log("bridge call failed, fallback marker mode:", exc)
+
             payload = {
                 "index": idx,
                 "tool_name": str(tool_name or "").strip(),
@@ -87,6 +130,8 @@ _RUNTIME_PREAMBLE = textwrap.dedent(
     """
 ).replace("__MAX_RUNTIME_TOOL_CALLS__", str(_MAX_RUNTIME_TOOL_CALLS)).replace(
     "__RUNTIME_TOOL_CALL_MARKER__", _RUNTIME_TOOL_CALL_MARKER
+).replace(
+    "__BRIDGE_EXECUTION_TOKEN_HEADER__", _BRIDGE_EXECUTION_TOKEN_HEADER
 )
 
 
@@ -374,6 +419,13 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             runtime_meta=runtime_meta,
             final_session_id=final_session_id,
         )
+        bridge_context = await self._issue_runtime_bridge_context(
+            workflow_context=__context__,
+            runtime_meta=runtime_meta,
+            final_session_id=final_session_id,
+        )
+        if bridge_context:
+            runtime_context["bridge"] = bridge_context
 
         runtime_tool_results: list[Any] = []
         runtime_tool_trace: list[dict[str, Any]] = []
@@ -985,6 +1037,84 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 return payload
             return {}
         return None
+
+    async def _issue_runtime_bridge_context(
+        self,
+        *,
+        workflow_context: Any | None,
+        runtime_meta: dict[str, Any],
+        final_session_id: str,
+    ) -> dict[str, Any] | None:
+        bridge_endpoint = str(
+            getattr(settings, "CODE_MODE_BRIDGE_ENDPOINT", "") or ""
+        ).strip()
+        if not bridge_endpoint:
+            return None
+
+        bridge_timeout = int(
+            getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 15) or 15
+        )
+        bridge_ttl = int(
+            getattr(settings, "CODE_MODE_BRIDGE_TOKEN_TTL_SECONDS", 600) or 600
+        )
+        if bridge_ttl <= 0:
+            bridge_ttl = 600
+
+        raw_scopes = self._context_ns_value(workflow_context, "auth", "scopes")
+        if raw_scopes is None:
+            raw_scopes = self._context_ns_value(
+                workflow_context, "external_auth", "scopes"
+            )
+
+        claims = RuntimeBridgeClaims(
+            user_id=str(
+                self._context_attr(workflow_context, "user_id", self.context.user_id)
+            ),
+            session_id=final_session_id,
+            trace_id=self._context_attr(workflow_context, "trace_id"),
+            tenant_id=self._context_attr(workflow_context, "tenant_id"),
+            api_key_id=self._context_attr(workflow_context, "api_key_id"),
+            capability=self._context_attr(workflow_context, "capability"),
+            requested_model=self._context_attr(workflow_context, "requested_model"),
+            scopes=[
+                str(item)
+                for item in (raw_scopes or [])
+                if item is not None
+            ]
+            if isinstance(raw_scopes, list)
+            else [],
+            allowed_models=[
+                str(item)
+                for item in (
+                    self._context_ns_value(
+                        workflow_context, "external_auth", "allowed_models"
+                    )
+                    or []
+                )
+                if item is not None
+            ],
+            max_calls=_MAX_RUNTIME_TOOL_CALLS,
+        )
+        try:
+            issue = await runtime_bridge_token_service.issue_token(
+                claims=claims,
+                ttl_seconds=max(bridge_ttl, 60),
+            )
+        except Exception as exc:
+            logger.warning(
+                "issue runtime bridge token failed execution_id=%s error=%s",
+                runtime_meta.get("execution_id"),
+                exc,
+            )
+            return None
+
+        return {
+            "endpoint": bridge_endpoint,
+            "execution_token": issue.token,
+            "timeout_seconds": bridge_timeout,
+            "expires_at": issue.expires_at,
+            "mode": "http_with_marker_fallback",
+        }
 
     def _context_attr(
         self,

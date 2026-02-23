@@ -63,6 +63,11 @@ tools:
         artifact_id:
           type: string
           description: "The UUID of the ingested knowledge artifact."
+        target_scope:
+          type: string
+          enum: ["user", "system"]
+          default: "user"
+          description: "Storage scope for the generated assistant. 'system' requires superuser."
       required: ["artifact_id"]
   - name: batch_convert_artifact_to_assistants
     description: "Split one crawled knowledge artifact into multiple assistants."
@@ -76,4 +81,9 @@ tools:
           type: integer
           default: 20
           description: "Maximum number of assistants to create."
+        target_scope:
+          type: string
+          enum: ["user", "system"]
+          default: "user"
+          description: "Storage scope for generated assistants. 'system' requires superuser."
       required: ["artifact_id"]

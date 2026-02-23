@@ -1,6 +1,8 @@
 import logging
 import sys
 import types
+import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,9 +20,19 @@ def test_crawler_plugin_tools_include_repo_ingestion():
         tool.get("function", {}).get("name") == "batch_convert_artifact_to_assistants"
         for tool in tools
     )
+    convert_tool = next(
+        tool for tool in tools if tool.get("function", {}).get("name") == "convert_artifact_to_assistant"
+    )
+    assert (
+        convert_tool["function"]["parameters"]["properties"]["target_scope"]["default"]
+        == "user"
+    )
 
 
 class _DummyContext:
+    def __init__(self, user_id=None):
+        self.user_id = user_id
+
     def get_logger(self, name=None):
         return logging.getLogger(name or "crawler-test")
 
@@ -116,3 +128,60 @@ async def test_handle_crawl_website_fallback_to_ingested_ids(monkeypatch):
 
     assert result["status"] == "success"
     assert result["artifact_ids"] == ["legacy-id"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_owner_user_id_user_scope_returns_actor():
+    plugin = CrawlerPlugin()
+    actor_id = uuid.uuid4()
+    plugin._context = _DummyContext(user_id=actor_id)
+
+    owner_user_id = await plugin._resolve_owner_user_id(
+        target_scope="user",
+        session=object(),
+    )
+
+    assert owner_user_id == actor_id
+
+
+@pytest.mark.asyncio
+async def test_resolve_owner_user_id_system_scope_requires_superuser(monkeypatch):
+    plugin = CrawlerPlugin()
+    plugin._context = _DummyContext(user_id=uuid.uuid4())
+
+    class _FakeUserRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_by_id(self, _user_id):
+            return SimpleNamespace(is_superuser=False)
+
+    monkeypatch.setattr("app.repositories.user_repository.UserRepository", _FakeUserRepo)
+
+    with pytest.raises(PermissionError):
+        await plugin._resolve_owner_user_id(
+            target_scope="system",
+            session=object(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_owner_user_id_system_scope_returns_none_for_superuser(monkeypatch):
+    plugin = CrawlerPlugin()
+    plugin._context = _DummyContext(user_id=uuid.uuid4())
+
+    class _FakeUserRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_by_id(self, _user_id):
+            return SimpleNamespace(is_superuser=True)
+
+    monkeypatch.setattr("app.repositories.user_repository.UserRepository", _FakeUserRepo)
+
+    owner_user_id = await plugin._resolve_owner_user_id(
+        target_scope="system",
+        session=object(),
+    )
+
+    assert owner_user_id is None

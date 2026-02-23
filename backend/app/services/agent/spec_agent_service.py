@@ -811,6 +811,7 @@ class SpecAgentService:
                         session_id=str(session_id),
                         messages=redis_messages,
                         channel=ConversationChannel.INTERNAL,
+                        user_id=str(user_id),
                     ),
                     timeout=1.0,
                 )
@@ -907,6 +908,7 @@ class SpecAgentService:
                         session_id=str(session_id),
                         messages=redis_messages,
                         channel=ConversationChannel.INTERNAL,
+                        user_id=str(user_id),
                     ),
                     timeout=1.0,
                 )

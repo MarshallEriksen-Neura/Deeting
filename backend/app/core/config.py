@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     MCP_TOOL_SYSTEM_TOPK: int = 3
     MCP_TOOL_SCORE_THRESHOLD: float = 0.75
     MCP_TOOL_SYSTEM_INDEX_HASH_TTL_SECONDS: int = 86400
-    CODE_MODE_MINIMAL_TOOLSET: bool = False
+    CODE_MODE_MINIMAL_TOOLSET: bool = True
 
     # Spec Knowledge 三层漏斗配置
     SPEC_KB_OBSERVATION_WINDOW_SECONDS: int = 900
@@ -311,6 +311,13 @@ class Settings(BaseSettings):
     OPENSANDBOX_RESOURCE_CPU: str = "1"
     OPENSANDBOX_RESOURCE_MEMORY: str = "512Mi"
     OPENSANDBOX_NETWORK_POLICY_JSON: str | None = None
+    CODE_MODE_BRIDGE_ENDPOINT: str = (
+        "http://host.docker.internal:8000/api/v1/internal/bridge/call"
+    )
+    CODE_MODE_BRIDGE_TOKEN_TTL_SECONDS: int = 600
+    CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS: int = 15
+    CODE_MODE_BRIDGE_ENFORCE_TRUSTED_IPS: bool = False
+    CODE_MODE_BRIDGE_TRUSTED_IPS: str = ""
 
     # Repo ingestion (skill registry)
     REPO_INGESTION_WORKDIR: str = "backend/.data/repo_ingestion"

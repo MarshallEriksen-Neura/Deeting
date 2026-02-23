@@ -302,8 +302,9 @@ When clicking **[Preview]**, open a side drawer showing the raw Markdown.
 *   **UI Feedback**: Show a "Refining..." spinner (may take 5-10s).
 *   **Behavior**:
     1.  Backend calls LLM to extract Persona/Prompt from Markdown.
-    2.  Creates a new `Assistant` (published, public).
-    3.  Auto-indexes to `expert_network` collection.
+    2.  Creates a new `Assistant` (published, public), default scope is `user`.
+    3.  If admin explicitly selects `target_scope=system`, assistant is stored as system-level (`owner_user_id = null`).
+    4.  Expert index sync follows market rules: system assistants sync directly; user assistants sync only after review approved.
 *   **Result**: "New Assistant 'Python Guru' created! [View in Market]"
 *   **Use Case**: "Awesome ChatGPT Prompts" pages, Character descriptions.
 

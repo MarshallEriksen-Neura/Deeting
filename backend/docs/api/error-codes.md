@@ -119,6 +119,14 @@
 | `MISSING_AGENT_ID` | 缺少 Agent ID | 提供 Agent ID 参数 |
 | `MISSING_TOOL_NAME` | 缺少工具名称 | 提供 tool_name 参数 |
 | `MISSING_REQ_OR_AGENT` | 缺少请求或 Agent ID | 提供 req_id 和 agent_id |
+| `CODE_MODE_BRIDGE_MISSING_TOKEN` | 缺少 Code Mode execution token | 在 Header 或 body 传入 execution_token |
+| `CODE_MODE_BRIDGE_INVALID_TOKEN` | execution token 无效 | 重新发起 `execute_code_plan` 获取新 token |
+| `CODE_MODE_BRIDGE_TOKEN_EXPIRED` | execution token 已过期 | 重新执行 `execute_code_plan` |
+| `CODE_MODE_BRIDGE_CALL_LIMIT` | bridge 调用次数超限 | 降低单次脚本内动态调用次数 |
+| `CODE_MODE_BRIDGE_TOOL_NOT_ALLOWED` | 禁止调用递归工具 | 不要在 bridge 上调用 `search_sdk/execute_code_plan` |
+| `CODE_MODE_BRIDGE_IP_FORBIDDEN` | 调用来源 IP 不在白名单 | 调整 `CODE_MODE_BRIDGE_TRUSTED_IPS` 或关闭强制校验 |
+| `CODE_MODE_BRIDGE_SCOPE_DENIED` | execution token scope/model 不允许当前调用 | 检查 API Key scopes、allowed_models 与请求模型/能力 |
+| `CODE_MODE_BRIDGE_DISPATCH_FAILED` | bridge 分发工具调用失败 | 查看 trace_id 与日志后重试 |
 
 ---
 

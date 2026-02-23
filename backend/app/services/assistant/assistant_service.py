@@ -4,6 +4,7 @@ import re
 from uuid import UUID
 
 from app.models.assistant import Assistant, AssistantStatus, AssistantVisibility
+from app.models.review import ReviewStatus
 from app.repositories.assistant_repository import (
     AssistantRepository,
     AssistantVersionRepository,
@@ -12,6 +13,7 @@ from app.repositories.assistant_tag_repository import (
     AssistantTagLinkRepository,
     AssistantTagRepository,
 )
+from app.repositories.review_repository import ReviewTaskRepository
 from app.schemas.assistant import (
     AssistantCreate,
     AssistantListResponse,
@@ -21,6 +23,7 @@ from app.schemas.assistant import (
 )
 from app.services.assistant.assistant_state import AssistantStateMachine
 from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.search import get_search_backend
 from app.tasks.search_index import delete_assistant_task, upsert_assistant_task
 from app.utils.time_utils import Datetime
@@ -132,10 +135,9 @@ class AssistantService:
             },
         )
         if self._is_indexable(assistant.visibility, assistant.status):
-            from app.tasks.assistant import sync_assistant_to_qdrant
-
-            sync_assistant_to_qdrant.delay(str(assistant.id))
-            upsert_assistant_task.delay(str(assistant.id))
+            self._enqueue_search_upsert(assistant.id)
+            if await self._should_sync_expert_network(assistant):
+                self._enqueue_qdrant_sync(assistant.id)
         return assistant
 
     async def update_assistant(
@@ -178,7 +180,7 @@ class AssistantService:
             update_data["current_version_id"] = version.id
 
         assistant = await self.assistant_repo.update(assistant, update_data)
-        self._sync_index_if_needed(
+        await self._sync_index_if_needed(
             assistant=assistant,
             was_indexable=was_indexable,
             payload=payload,
@@ -215,10 +217,9 @@ class AssistantService:
             },
         )
         if self._is_indexable(assistant.visibility, assistant.status):
-            from app.tasks.assistant import sync_assistant_to_qdrant
-
-            sync_assistant_to_qdrant.delay(str(assistant.id))
-            upsert_assistant_task.delay(str(assistant.id))
+            self._enqueue_search_upsert(assistant.id)
+            if await self._should_sync_expert_network(assistant):
+                self._enqueue_qdrant_sync(assistant.id)
         return assistant
 
     # ===== 版本 =====
@@ -265,10 +266,9 @@ class AssistantService:
             and assistant.current_version_id == version_id
             and self._is_indexable(assistant.visibility, assistant.status)
         ):
-            from app.tasks.assistant import sync_assistant_to_qdrant
-
-            sync_assistant_to_qdrant.delay(str(assistant.id))
-            upsert_assistant_task.delay(str(assistant.id))
+            self._enqueue_search_upsert(assistant.id)
+            if await self._should_sync_expert_network(assistant):
+                self._enqueue_qdrant_sync(assistant.id)
         return version
 
     async def delete_assistant(self, assistant_id: UUID) -> None:
@@ -352,7 +352,7 @@ class AssistantService:
             and status_value == AssistantStatus.PUBLISHED.value
         )
 
-    def _sync_index_if_needed(
+    async def _sync_index_if_needed(
         self,
         *,
         assistant: Assistant,
@@ -374,7 +374,28 @@ class AssistantService:
             or payload.summary is not None
             or payload.current_version_id is not None
         ):
-            from app.tasks.assistant import sync_assistant_to_qdrant
+            self._enqueue_search_upsert(assistant.id)
+            if await self._should_sync_expert_network(assistant):
+                self._enqueue_qdrant_sync(assistant.id)
 
-            sync_assistant_to_qdrant.delay(str(assistant.id))
-            upsert_assistant_task.delay(str(assistant.id))
+    async def _should_sync_expert_network(self, assistant: Assistant) -> bool:
+        if assistant.owner_user_id is None:
+            return True
+        review_repo = ReviewTaskRepository(self.assistant_repo.session)
+        review = await review_repo.get_by_entity(ASSISTANT_MARKET_ENTITY, assistant.id)
+        if not review:
+            return False
+        status_value = (
+            review.status.value if hasattr(review.status, "value") else review.status
+        )
+        return status_value == ReviewStatus.APPROVED.value
+
+    @staticmethod
+    def _enqueue_qdrant_sync(assistant_id: UUID) -> None:
+        from app.tasks.assistant import sync_assistant_to_qdrant
+
+        sync_assistant_to_qdrant.delay(str(assistant_id))
+
+    @staticmethod
+    def _enqueue_search_upsert(assistant_id: UUID) -> None:
+        upsert_assistant_task.delay(str(assistant_id))

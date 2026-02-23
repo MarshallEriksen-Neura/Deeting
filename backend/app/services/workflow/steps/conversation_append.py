@@ -173,6 +173,7 @@ class ConversationAppendStep(BaseStep):
                             session_id=session_id,
                             messages=redis_messages,
                             channel=channel,
+                            user_id=ctx.user_id,
                         )
                     except Exception as exc:
                         redis_available = False

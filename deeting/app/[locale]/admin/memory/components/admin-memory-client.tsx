@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Trash2, Edit2, Loader2, Plus, Search, Brain } from "lucide-react"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { InfiniteList } from "@/components/ui/infinite-list"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -136,12 +137,18 @@ export function AdminMemoryClient() {
           </div>
         </div>
       ) : (
-        <>
+        <InfiniteList
+          hasMore={!isReachedEnd}
+          isLoading={!!isLoadingMore}
+          onLoadMore={loadMore}
+          useScrollArea={false}
+          noMoreDisplay="— 没有更多了 —"
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {memories.map((item) => (
-              <MemoryCard 
-                key={item.id} 
-                item={item} 
+              <MemoryCard
+                key={item.id}
+                item={item}
                 onEdit={(item) => {
                   setEditingItem(item)
                   setEditContent(item.content)
@@ -150,24 +157,7 @@ export function AdminMemoryClient() {
               />
             ))}
           </div>
-          
-          <div className="flex justify-center pt-10">
-            {!isReachedEnd && (
-              <GlassButton 
-                onClick={() => loadMore()} 
-                disabled={isLoadingMore}
-                variant="ghost"
-                className="px-10 h-12"
-              >
-                {isLoadingMore ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  "Load More"
-                )}
-              </GlassButton>
-            )}
-          </div>
-        </>
+        </InfiniteList>
       )}
 
       {/* Add Dialog */}

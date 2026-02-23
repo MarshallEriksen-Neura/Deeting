@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.models import Base
 from app.models.assistant import AssistantStatus, AssistantVisibility
+from app.models.review import ReviewStatus, ReviewTask
 from app.repositories.assistant_repository import (
     AssistantRepository,
     AssistantVersionRepository,
@@ -19,6 +20,7 @@ from app.schemas.assistant import (
     AssistantVersionUpdate,
 )
 from app.services.assistant.assistant_service import AssistantService
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 
 engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",
@@ -69,8 +71,86 @@ async def test_publish_assistant_enqueues_sync(monkeypatch: pytest.MonkeyPatch) 
                     system_prompt="You are a helpful assistant.",
                 ),
             ),
+            owner_user_id=None,
+        )
+
+        await service.publish_assistant(assistant.id)
+
+    enqueue.assert_called_once_with(str(assistant.id))
+    meili_enqueue.assert_called_once_with(str(assistant.id))
+
+
+@pytest.mark.asyncio
+async def test_publish_user_owned_without_review_skips_qdrant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueue = Mock()
+    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
+    meili_enqueue = Mock()
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue
+    )
+
+    async with AsyncSessionLocal() as session:
+        service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session),
+        )
+        assistant = await service.create_assistant(
+            payload=AssistantCreate(
+                visibility=AssistantVisibility.PUBLIC,
+                status=AssistantStatus.DRAFT,
+                version=AssistantVersionCreate(
+                    name="User Public Assistant",
+                    system_prompt="You are a helpful assistant.",
+                ),
+            ),
             owner_user_id=uuid.uuid4(),
         )
+
+        await service.publish_assistant(assistant.id)
+
+    enqueue.assert_not_called()
+    meili_enqueue.assert_called_once_with(str(assistant.id))
+
+
+@pytest.mark.asyncio
+async def test_publish_user_owned_with_approved_review_enqueues_qdrant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueue = Mock()
+    monkeypatch.setattr("app.tasks.assistant.sync_assistant_to_qdrant.delay", enqueue)
+    meili_enqueue = Mock()
+    monkeypatch.setattr(
+        "app.tasks.search_index.upsert_assistant_task.delay", meili_enqueue
+    )
+
+    async with AsyncSessionLocal() as session:
+        service = AssistantService(
+            AssistantRepository(session),
+            AssistantVersionRepository(session),
+        )
+        owner_user_id = uuid.uuid4()
+        assistant = await service.create_assistant(
+            payload=AssistantCreate(
+                visibility=AssistantVisibility.PUBLIC,
+                status=AssistantStatus.DRAFT,
+                version=AssistantVersionCreate(
+                    name="Reviewed User Assistant",
+                    system_prompt="You are a helpful assistant.",
+                ),
+            ),
+            owner_user_id=owner_user_id,
+        )
+        session.add(
+            ReviewTask(
+                entity_type=ASSISTANT_MARKET_ENTITY,
+                entity_id=assistant.id,
+                status=ReviewStatus.APPROVED.value,
+                submitter_user_id=owner_user_id,
+            )
+        )
+        await session.flush()
 
         await service.publish_assistant(assistant.id)
 
@@ -113,7 +193,7 @@ async def test_update_assistant_unpublish_enqueues_remove(
                     system_prompt="You are a helpful assistant.",
                 ),
             ),
-            owner_user_id=uuid.uuid4(),
+            owner_user_id=None,
         )
         enqueue.reset_mock()
         meili_enqueue.reset_mock()
@@ -152,7 +232,7 @@ async def test_update_assistant_version_enqueues_sync(
                     system_prompt="You are a helpful assistant.",
                 ),
             ),
-            owner_user_id=uuid.uuid4(),
+            owner_user_id=None,
         )
         enqueue.reset_mock()
         meili_enqueue.reset_mock()
@@ -206,7 +286,7 @@ async def test_delete_assistant_enqueues_remove(
                     system_prompt="You are a helpful assistant.",
                 ),
             ),
-            owner_user_id=uuid.uuid4(),
+            owner_user_id=None,
         )
 
         await service.delete_assistant(assistant.id)
@@ -241,7 +321,7 @@ async def test_update_version_enqueues_sync(monkeypatch: pytest.MonkeyPatch) -> 
                     system_prompt="You are a helpful assistant.",
                 ),
             ),
-            owner_user_id=uuid.uuid4(),
+            owner_user_id=None,
         )
         enqueue.reset_mock()
         meili_enqueue.reset_mock()

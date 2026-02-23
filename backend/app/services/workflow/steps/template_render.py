@@ -163,11 +163,11 @@ class TemplateRenderStep(BaseStep):
             if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
                 lines.append(
                     "\n# Code Mode\n"
-                    "For multi-step tasks, prefer this flow:\n"
+                    "For multi-step tasks, default to this flow:\n"
                     "1) call `search_sdk` to discover exact signatures\n"
                     "2) write one coherent Python plan\n"
                     "3) execute once with `execute_code_plan`\n"
-                    "Avoid fragmented tool chains when a single code plan can complete the task."
+                    "Use fragmented direct tool chains only when a single code plan is clearly unsuitable."
                 )
 
             lines.append(
@@ -360,11 +360,11 @@ class TemplateRenderStep(BaseStep):
             if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
                 code_mode_reminder = (
                     "\n\n**Code Mode Capability**:\n"
-                    "For multi-step tasks, prefer code mode:\n"
+                    "For multi-step tasks, default to code mode:\n"
                     "1) Use `search_sdk` to discover precise signatures.\n"
                     "2) Produce one coherent Python execution plan.\n"
                     "3) Execute once with `execute_code_plan`.\n"
-                    "Avoid fragmented chains when one code plan can finish the task."
+                    "Use fragmented direct tool chains only when one code plan is clearly unsuitable."
                 )
                 enhanced_prompt += code_mode_reminder
 

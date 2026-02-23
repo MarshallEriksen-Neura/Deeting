@@ -94,6 +94,7 @@ class ConversationService:
         session_id: str,
         messages: Sequence[dict[str, Any]],
         channel: ConversationChannel = ConversationChannel.INTERNAL,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
         """
         将消息追加到滑动窗口，并在超阈值时触发异步摘要。
@@ -157,7 +158,7 @@ class ConversationService:
         try:
             from app.services.memory.scheduler import memory_scheduler
 
-            await memory_scheduler.touch_session(session_id)
+            await memory_scheduler.touch_session(session_id, user_id)
         except Exception:
             pass
 

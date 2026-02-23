@@ -39,6 +39,18 @@ UPSTREAM_FAILURES = Counter(
     ["provider", "model", "error"],
     registry=registry,
 )
+CODE_MODE_BRIDGE_CALL_TOTAL = Counter(
+    "code_mode_bridge_call_total",
+    "Code Mode Bridge 调用总数",
+    ["tool_name", "status", "error_code"],
+    registry=registry,
+)
+CODE_MODE_BRIDGE_CALL_LATENCY = Histogram(
+    "code_mode_bridge_call_latency_seconds",
+    "Code Mode Bridge 调用耗时",
+    ["tool_name", "status"],
+    registry=registry,
+)
 
 
 def record_request(
@@ -66,6 +78,26 @@ def record_upstream_call(
             model=model,
             error=error_code or "unknown",
         ).inc()
+
+
+def record_code_mode_bridge_call(
+    *,
+    tool_name: str,
+    success: bool,
+    duration_seconds: float,
+    error_code: str | None = None,
+) -> None:
+    status = "success" if success else "failed"
+    normalized_error = "none" if success else (error_code or "unknown")
+    CODE_MODE_BRIDGE_CALL_TOTAL.labels(
+        tool_name=tool_name or "unknown",
+        status=status,
+        error_code=normalized_error,
+    ).inc()
+    CODE_MODE_BRIDGE_CALL_LATENCY.labels(
+        tool_name=tool_name or "unknown",
+        status=status,
+    ).observe(max(0.0, float(duration_seconds or 0.0)))
 
 
 def metrics_content() -> bytes:

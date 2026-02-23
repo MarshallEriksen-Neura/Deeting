@@ -18,7 +18,7 @@ class CrawlerPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.tools.crawler",
-            version="2.3.0",  # Added batch assistant conversion
+            version="2.4.0",  # Added assistant conversion scope control
             description="Provides web crawling capabilities via Deeting Scout Service.",
             author="Gemini CLI",
         )
@@ -115,7 +115,13 @@ class CrawlerPlugin(AgentPlugin):
                             "artifact_id": {
                                 "type": "string",
                                 "description": "The UUID of the ingested Knowledge Artifact.",
-                            }
+                            },
+                            "target_scope": {
+                                "type": "string",
+                                "enum": ["user", "system"],
+                                "default": "user",
+                                "description": "Storage scope for the generated assistant. 'system' requires superuser.",
+                            },
                         },
                         "required": ["artifact_id"],
                     },
@@ -138,12 +144,42 @@ class CrawlerPlugin(AgentPlugin):
                                 "default": 20,
                                 "description": "Maximum number of assistants to create in this batch run.",
                             },
+                            "target_scope": {
+                                "type": "string",
+                                "enum": ["user", "system"],
+                                "default": "user",
+                                "description": "Storage scope for generated assistants. 'system' requires superuser.",
+                            },
                         },
                         "required": ["artifact_id"],
                     },
                 },
             },
         ]
+
+    async def _resolve_owner_user_id(
+        self,
+        *,
+        target_scope: str,
+        session,
+    ) -> uuid.UUID | None:
+        scope = (target_scope or "user").strip().lower()
+        if scope not in {"user", "system"}:
+            raise ValueError("target_scope must be 'user' or 'system'")
+        if scope == "user":
+            return self.context.user_id
+
+        actor_user_id = self.context.user_id
+        if not actor_user_id:
+            raise PermissionError("system scope requires authenticated user context")
+
+        from app.repositories.user_repository import UserRepository
+
+        user_repo = UserRepository(session)
+        actor = await user_repo.get_by_id(actor_user_id)
+        if not actor or not actor.is_superuser:
+            raise PermissionError("Only superuser can write assistants to system scope")
+        return None
 
     async def handle_fetch_web_content(
         self, url: str, js_mode: bool = True, **kwargs
@@ -221,12 +257,14 @@ class CrawlerPlugin(AgentPlugin):
                 return {"status": "error", "error": str(e)}
 
     async def handle_convert_artifact_to_assistant(
-        self, artifact_id: str, **kwargs
+        self,
+        artifact_id: str,
+        target_scope: str = "user",
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Tool Handler: Refine Artifact -> Create Assistant -> Sync Qdrant.
         """
-        user_id = self.context.user_id
         from app.repositories.assistant_repository import (
             AssistantRepository,
             AssistantVersionRepository,
@@ -252,11 +290,20 @@ class CrawlerPlugin(AgentPlugin):
                 return {"status": "error", "message": "Invalid Artifact ID format"}
 
             try:
+                owner_user_id = await self._resolve_owner_user_id(
+                    target_scope=target_scope,
+                    session=session,
+                )
                 result = await ingestion_service.refine_and_create_assistant(
-                    uuid_obj, user_id=user_id
+                    uuid_obj, user_id=owner_user_id
+                )
+                result["target_scope"] = (
+                    "system" if owner_user_id is None else "user"
                 )
                 await session.commit()
                 return result
+            except PermissionError as e:
+                return {"status": "error", "message": str(e)}
             except ValueError as e:
                 return {"status": "error", "message": str(e)}
             except Exception as e:
@@ -264,12 +311,15 @@ class CrawlerPlugin(AgentPlugin):
                 return {"status": "error", "message": str(e)}
 
     async def handle_batch_convert_artifact_to_assistants(
-        self, artifact_id: str, max_assistants: int = 20, **kwargs
+        self,
+        artifact_id: str,
+        max_assistants: int = 20,
+        target_scope: str = "user",
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Tool Handler: Refine Artifact -> Create Multiple Assistants -> Sync Qdrant.
         """
-        user_id = self.context.user_id
         from app.repositories.assistant_repository import (
             AssistantRepository,
             AssistantVersionRepository,
@@ -295,13 +345,22 @@ class CrawlerPlugin(AgentPlugin):
                 return {"status": "error", "message": "Invalid Artifact ID format"}
 
             try:
+                owner_user_id = await self._resolve_owner_user_id(
+                    target_scope=target_scope,
+                    session=session,
+                )
                 result = await ingestion_service.batch_refine_and_create_assistants(
                     uuid_obj,
-                    user_id=user_id,
+                    user_id=owner_user_id,
                     max_items=max_assistants,
+                )
+                result["target_scope"] = (
+                    "system" if owner_user_id is None else "user"
                 )
                 await session.commit()
                 return result
+            except PermissionError as e:
+                return {"status": "error", "message": str(e)}
             except ValueError as e:
                 return {"status": "error", "message": str(e)}
             except Exception as e:

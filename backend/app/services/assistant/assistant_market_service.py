@@ -31,11 +31,12 @@ from app.services.assistant.assistant_auto_review_service import (
     AssistantAutoReviewService,
     AutoReviewResult,
 )
-from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.assistant.assistant_tag_service import AssistantTagService
+from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
 from app.services.notifications.notification_service import NotificationService
 from app.services.review.review_service import ReviewService
 from app.services.search import get_search_backend
+from app.tasks.search_index import upsert_assistant_task
 
 
 async def ensure_assistant_access(
@@ -367,6 +368,10 @@ class AssistantMarketService:
                 reviewer_user_id=result.reviewer_user_id,
                 reason=result.reason,
             )
+            self._on_review_status_changed(
+                assistant_id=assistant_id,
+                status=ReviewStatus.APPROVED,
+            )
             await self._notify_review_result(
                 assistant_id=assistant_id,
                 user_id=user_id,
@@ -379,6 +384,10 @@ class AssistantMarketService:
                 entity_id=assistant_id,
                 reviewer_user_id=result.reviewer_user_id,
                 reason=result.reason,
+            )
+            self._on_review_status_changed(
+                assistant_id=assistant_id,
+                status=ReviewStatus.REJECTED,
             )
             await self._notify_review_result(
                 assistant_id=assistant_id,
@@ -407,6 +416,10 @@ class AssistantMarketService:
             status=ReviewStatus.APPROVED,
             reason=reason,
         )
+        self._on_review_status_changed(
+            assistant_id=assistant_id,
+            status=ReviewStatus.APPROVED,
+        )
         return task
 
     async def reject_review(
@@ -427,6 +440,10 @@ class AssistantMarketService:
             user_id=task.submitter_user_id,
             status=ReviewStatus.REJECTED,
             reason=reason,
+        )
+        self._on_review_status_changed(
+            assistant_id=assistant_id,
+            status=ReviewStatus.REJECTED,
         )
         return task
 
@@ -476,6 +493,25 @@ class AssistantMarketService:
             },
             source="assistant_review",
         )
+
+    @staticmethod
+    def _enqueue_qdrant_sync(assistant_id: UUID) -> None:
+        from app.tasks.assistant import sync_assistant_to_qdrant
+
+        sync_assistant_to_qdrant.delay(str(assistant_id))
+
+    @staticmethod
+    def _enqueue_qdrant_remove(assistant_id: UUID) -> None:
+        from app.tasks.assistant import remove_assistant_from_qdrant
+
+        remove_assistant_from_qdrant.delay(str(assistant_id))
+
+    def _on_review_status_changed(self, *, assistant_id: UUID, status: ReviewStatus) -> None:
+        if status == ReviewStatus.APPROVED:
+            self._enqueue_qdrant_sync(assistant_id)
+        elif status in {ReviewStatus.REJECTED, ReviewStatus.SUSPENDED}:
+            self._enqueue_qdrant_remove(assistant_id)
+        upsert_assistant_task.delay(str(assistant_id))
 
     async def _ensure_installable(self, assistant: Assistant, user_id: UUID) -> None:
         await ensure_assistant_access(
