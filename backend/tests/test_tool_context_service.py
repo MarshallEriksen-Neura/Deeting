@@ -264,3 +264,227 @@ async def test_build_tools_jit_blocks_dynamic_skill_tools_without_skill_runner(
     names = [tool.name for tool in tools]
     assert "consult_expert_network" in names
     assert "skill__demo" not in names
+
+
+@pytest.mark.asyncio
+async def test_build_tools_jit_code_mode_minimal_toolset_skips_non_core(monkeypatch):
+    from app.services.agent.agent_service import agent_service
+    from app.services.tools.tool_context_service import ToolContextService
+
+    async def _fake_initialize(**_kwargs):
+        return None
+
+    async def _fake_search_tools(*_args, **_kwargs):
+        return []
+
+    async def _fake_get_user_tools(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(agent_service, "initialize", _fake_initialize)
+    monkeypatch.setattr(
+        agent_service,
+        "tools",
+        [
+            ToolDefinition(name="search_sdk", description="search", input_schema={}),
+            ToolDefinition(
+                name="execute_code_plan", description="exec", input_schema={}
+            ),
+            ToolDefinition(
+                name="consult_expert_network", description="expert", input_schema={}
+            ),
+            ToolDefinition(name="fetch_web_content", description="crawl", input_schema={}),
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.plugin_config_loader.get_plugins_for_user",
+        lambda *_args, **_kwargs: [
+            _make_plugin(
+                "system.deeting_core_sdk",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=["search_sdk", "execute_code_plan"],
+            ),
+            _make_plugin(
+                "system.expert_network",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=["consult_expert_network"],
+            ),
+            _make_plugin(
+                "core.tools.crawler",
+                enabled_by_default=True,
+                is_always_on=False,
+                tools=["fetch_web_content"],
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.tool_sync_service.search_tools",
+        _fake_search_tools,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.mcp_discovery_service.get_active_tool_payloads",
+        _fake_get_user_tools,
+    )
+    monkeypatch.setattr(settings, "MCP_TOOL_JIT_THRESHOLD", -1)
+    monkeypatch.setattr(settings, "CODE_MODE_MINIMAL_TOOLSET", True, raising=False)
+
+    tools = await ToolContextService().build_tools(
+        session=None,
+        user_id="5eec3ecf-9bf2-4e27-b245-4c9695f5d4d2",
+        query="plan task",
+    )
+
+    names = [tool.name for tool in tools]
+    assert "search_sdk" in names
+    assert "execute_code_plan" in names
+    assert "consult_expert_network" in names
+    assert "fetch_web_content" not in names
+
+
+@pytest.mark.asyncio
+async def test_build_tools_jit_code_mode_minimal_toolset_disabled_keeps_non_core(
+    monkeypatch,
+):
+    from app.services.agent.agent_service import agent_service
+    from app.services.tools.tool_context_service import ToolContextService
+
+    async def _fake_initialize(**_kwargs):
+        return None
+
+    async def _fake_search_tools(*_args, **_kwargs):
+        return []
+
+    async def _fake_get_user_tools(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(agent_service, "initialize", _fake_initialize)
+    monkeypatch.setattr(
+        agent_service,
+        "tools",
+        [
+            ToolDefinition(name="search_sdk", description="search", input_schema={}),
+            ToolDefinition(
+                name="execute_code_plan", description="exec", input_schema={}
+            ),
+            ToolDefinition(name="fetch_web_content", description="crawl", input_schema={}),
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.plugin_config_loader.get_plugins_for_user",
+        lambda *_args, **_kwargs: [
+            _make_plugin(
+                "system.deeting_core_sdk",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=["search_sdk", "execute_code_plan"],
+            ),
+            _make_plugin(
+                "core.tools.crawler",
+                enabled_by_default=True,
+                is_always_on=False,
+                tools=["fetch_web_content"],
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.tool_sync_service.search_tools",
+        _fake_search_tools,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.mcp_discovery_service.get_active_tool_payloads",
+        _fake_get_user_tools,
+    )
+    monkeypatch.setattr(settings, "MCP_TOOL_JIT_THRESHOLD", -1)
+    monkeypatch.setattr(settings, "CODE_MODE_MINIMAL_TOOLSET", False, raising=False)
+
+    tools = await ToolContextService().build_tools(
+        session=None,
+        user_id="5eec3ecf-9bf2-4e27-b245-4c9695f5d4d2",
+        query="plan task",
+    )
+
+    names = [tool.name for tool in tools]
+    assert "fetch_web_content" in names
+
+
+@pytest.mark.asyncio
+async def test_build_tools_jit_allows_user_mcp_hits(monkeypatch):
+    from app.services.agent.agent_service import agent_service
+    from app.services.tools.tool_context_service import ToolContextService
+
+    async def _fake_initialize(**_kwargs):
+        return None
+
+    async def _fake_search_tools(*_args, **_kwargs):
+        return [
+            ToolDefinition(
+                name="user_calc",
+                description="user mcp tool",
+                input_schema={},
+            )
+        ]
+
+    async def _fake_get_user_tools(*_args, **_kwargs):
+        return [
+            {
+                "name": "user_calc",
+                "description": "user mcp tool",
+                "input_schema": {"type": "object", "properties": {}},
+            }
+        ]
+
+    monkeypatch.setattr(agent_service, "initialize", _fake_initialize)
+    monkeypatch.setattr(
+        agent_service,
+        "tools",
+        [
+            ToolDefinition(
+                name="consult_expert_network",
+                description="expert",
+                input_schema={},
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.plugin_config_loader.get_plugins_for_user",
+        lambda *_args, **_kwargs: [
+            _make_plugin(
+                "system.expert_network",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=["consult_expert_network"],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.tool_sync_service.search_tools",
+        _fake_search_tools,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.mcp_discovery_service.get_active_tool_payloads",
+        _fake_get_user_tools,
+    )
+    monkeypatch.setattr(settings, "MCP_TOOL_JIT_THRESHOLD", -1)
+
+    tools = await ToolContextService().build_tools(
+        session=object(),
+        user_id="5eec3ecf-9bf2-4e27-b245-4c9695f5d4d2",
+        query="call my private calc tool",
+    )
+
+    names = [tool.name for tool in tools]
+    assert "consult_expert_network" in names
+    assert "user_calc" in names

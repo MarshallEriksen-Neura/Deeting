@@ -40,6 +40,15 @@ graph TD
 *   **Package**: `opensandbox`
 *   **System**: Docker Engine (local development) or Kubernetes (production).
 
+### 3.1.1 Runtime Configuration（已支持）
+- `OPENSANDBOX_URL`
+- `OPENSANDBOX_IMAGE`
+- `OPENSANDBOX_ENTRYPOINT`
+- `OPENSANDBOX_PYTHON_VERSION`
+- `OPENSANDBOX_RESOURCE_CPU`
+- `OPENSANDBOX_RESOURCE_MEMORY`
+- `OPENSANDBOX_NETWORK_POLICY_JSON`（可选，原样透传 SDK）
+
 ### 3.2 Service Design (`backend/app/core/sandbox/service.py`)
 
 The service will implement a Singleton pattern to manage active sandboxes mapped to user sessions.

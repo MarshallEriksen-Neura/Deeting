@@ -51,7 +51,7 @@ export function LatencyHeatmap({
   const formatMs = (value: number) => tUnits("msValue", { value })
   const formatRequests = (count: number) => t("requests", { count })
   const chartConfig = {
-    intensity: { label: t("legend.label"), color: "hsl(var(--primary))" },
+    intensity: { label: t("legend.label"), color: "var(--primary)" },
   }
 
   const heatmapPoints = useMemo(
@@ -83,7 +83,7 @@ export function LatencyHeatmap({
             <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
+                stroke="var(--border)"
                 opacity={0.3}
                 vertical={false}
               />
@@ -97,7 +97,7 @@ export function LatencyHeatmap({
                 axisLine={false}
                 tickMargin={8}
                 allowDecimals={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
               />
               <YAxis
                 type="number"
@@ -109,7 +109,7 @@ export function LatencyHeatmap({
                 axisLine={false}
                 tickMargin={8}
                 allowDecimals={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
               />
               <ChartTooltip
                 cursor={false}
@@ -140,7 +140,8 @@ export function LatencyHeatmap({
                 key={intensity}
                 className="h-4 w-8 rounded"
                 style={{
-                  backgroundColor: `hsl(var(--primary) / ${intensity})`,
+                  backgroundColor: "var(--primary)",
+                  opacity: intensity,
                 }}
               />
             ))}
@@ -192,8 +193,9 @@ function HeatmapCellShape({
       height={size}
       rx={2}
       ry={2}
-      fill={`hsl(var(--primary) / ${intensity})`}
-      stroke="hsl(var(--border))"
+      fill="var(--primary)"
+      fillOpacity={intensity}
+      stroke="var(--border)"
       strokeOpacity={0.25}
     />
   )

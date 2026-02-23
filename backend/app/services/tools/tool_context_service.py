@@ -103,13 +103,25 @@ class ToolContextService:
         non_core_system_tools = [
             tool for tool in system_tools if tool.name not in core_tool_names
         ]
+        code_mode_enabled = {"search_sdk", "execute_code_plan"}.issubset(
+            allowed_tool_names
+        )
+        code_mode_minimal_toolset = bool(
+            getattr(settings, "CODE_MODE_MINIMAL_TOOLSET", False)
+        )
 
         user_tool_payloads: list[dict] = []
+        user_mcp_tool_names: set[str] = set()
         if uid and session:
             payload_start = time.perf_counter()
             user_tool_payloads = await mcp_discovery_service.get_active_tool_payloads(
                 session, uid
             )
+            user_mcp_tool_names = {
+                str(payload.get("name") or "").strip()
+                for payload in user_tool_payloads
+                if payload.get("name")
+            }
             logger.info(
                 "ToolContextService: loaded user tools duration_ms=%.2f count=%s",
                 (time.perf_counter() - payload_start) * 1000,
@@ -156,17 +168,26 @@ class ToolContextService:
             for tool in dynamic_hits:
                 if tool.name in existing_names:
                     continue
-                # 如果是 skill__ 开头的，或者是已经在白名单里的系统工具（防止重复，虽然前面已过滤）
-                if tool.name.startswith("skill__") or tool.name in allowed_tool_names:
+                # skill__ 动态技能必须依赖 skill_runner；否则只允许白名单系统工具
+                if (
+                    (tool.name.startswith("skill__") and skill_runner_enabled)
+                    or tool.name in allowed_tool_names
+                    or tool.name in user_mcp_tool_names
+                ):
                     final_tools.append(tool)
                     existing_names.add(tool.name)
 
             # 3. 补充添加所有已启用的内置系统工具 (确保爬虫等基础能力不丢失)
-            for tool in non_core_system_tools:
-                if tool.name in existing_names:
-                    continue
-                final_tools.append(tool)
-                existing_names.add(tool.name)
+            if not (code_mode_enabled and code_mode_minimal_toolset):
+                for tool in non_core_system_tools:
+                    if tool.name in existing_names:
+                        continue
+                    final_tools.append(tool)
+                    existing_names.add(tool.name)
+            else:
+                logger.info(
+                    "ToolContextService: code mode minimal toolset enabled, skip non-core system tools"
+                )
 
             logger.info(
                 "ToolContextService: done duration_ms=%.2f final_tools=%s",

@@ -31,11 +31,11 @@ export function PercentileTrends({ filters }: { filters: MonitoringFilters }) {
   const chartConfig = {
     p50: {
       label: t("legend.p50"),
-      color: "hsl(var(--chart-2))",
+      color: "var(--chart-2)",
     },
     p99: {
       label: t("legend.p99"),
-      color: "hsl(var(--chart-1))",
+      color: "var(--chart-1)",
     },
   }
 
@@ -54,7 +54,7 @@ export function PercentileTrends({ filters }: { filters: MonitoringFilters }) {
       <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
         <CartesianGrid
           strokeDasharray="3 3"
-          stroke="hsl(var(--border))"
+          stroke="var(--border)"
           opacity={0.3}
           vertical={false}
         />
@@ -63,13 +63,13 @@ export function PercentileTrends({ filters }: { filters: MonitoringFilters }) {
           tickLine={false}
           axisLine={false}
           tickMargin={8}
-          tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
         />
         <YAxis
           tickLine={false}
           axisLine={false}
           tickMargin={8}
-          tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
           tickFormatter={(value) => tUnits("msValue", { value })}
         />
         <ChartTooltip content={<ChartTooltipContent />} />
@@ -77,7 +77,7 @@ export function PercentileTrends({ filters }: { filters: MonitoringFilters }) {
         <Line
           type="monotone"
           dataKey="p50"
-          stroke="hsl(var(--chart-2))"
+          stroke="var(--chart-2)"
           strokeWidth={2}
           strokeDasharray="5 5"
           dot={false}
@@ -86,7 +86,7 @@ export function PercentileTrends({ filters }: { filters: MonitoringFilters }) {
         <Line
           type="monotone"
           dataKey="p99"
-          stroke="hsl(var(--chart-1))"
+          stroke="var(--chart-1)"
           strokeWidth={3}
           dot={false}
         />

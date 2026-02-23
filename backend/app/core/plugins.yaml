@@ -101,3 +101,15 @@ plugins:
     is_always_on: true
     description: "Executes JIT-retrieved skills via OpenSandbox."
     tools: [] # Dynamic skills
+
+  # === Code Mode Core SDK ===
+  - id: "system.deeting_core_sdk"
+    name: "Deeting Core SDK"
+    module: "app.agent_plugins.builtins.deeting_core_sdk.plugin"
+    class_name: "DeetingCoreSdkPlugin"
+    enabled_by_default: true
+    is_always_on: true
+    description: "Code-first execution mode: SDK search + sandbox code plan execution."
+    tools:
+      - "search_sdk"
+      - "execute_code_plan"

@@ -147,3 +147,38 @@ async def test_run_code_classifies_resource_limit(monkeypatch):
 
     assert result["error_code"] == _ERROR_CODE_RESOURCE_LIMIT
     assert "[SANDBOX_RESOURCE_LIMIT]" in result["error"]
+
+
+def test_build_network_policy_returns_none_when_empty(monkeypatch):
+    manager = SandboxManager()
+    monkeypatch.setattr(
+        sandbox_manager_module.settings,
+        "OPENSANDBOX_NETWORK_POLICY_JSON",
+        "",
+        raising=False,
+    )
+    assert manager._build_network_policy() is None
+
+
+def test_build_network_policy_returns_none_on_invalid_json(monkeypatch):
+    manager = SandboxManager()
+    monkeypatch.setattr(
+        sandbox_manager_module.settings,
+        "OPENSANDBOX_NETWORK_POLICY_JSON",
+        "{bad json",
+        raising=False,
+    )
+    assert manager._build_network_policy() is None
+
+
+def test_build_network_policy_returns_dict_when_valid(monkeypatch):
+    manager = SandboxManager()
+    monkeypatch.setattr(
+        sandbox_manager_module.settings,
+        "OPENSANDBOX_NETWORK_POLICY_JSON",
+        '{"egress":{"mode":"allowlist","hosts":["api.openai.com"]}}',
+        raising=False,
+    )
+    assert manager._build_network_policy() == {
+        "egress": {"mode": "allowlist", "hosts": ["api.openai.com"]}
+    }

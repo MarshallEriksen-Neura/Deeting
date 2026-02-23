@@ -245,12 +245,15 @@ class QdrantUserVectorService(VectorStoreClient):
                     # Try to get actual size if possible
                     test_vec = await self._embedding_service.embed_text("test")
                     vector_size = len(test_vec)
+                    self._refresh_embedding_model()
                 except Exception:
                     pass
 
             collection, degraded = await self._ensure_collection(vector_size=vector_size)
             if degraded:
                 return [], None
+
+        self._refresh_embedding_model()
 
         try:
             points, next_cursor = await scroll_points(

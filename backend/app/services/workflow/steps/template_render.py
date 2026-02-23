@@ -152,8 +152,24 @@ class TemplateRenderStep(BaseStep):
             lines = [
                 "\n\n# Available Tools\nYou have access to the following tools. Use them when necessary:\n"
             ]
+            tool_names: set[str] = set()
             for t in mcp_tools:
-                lines.append(f"- {t.name}: {t.description}")
+                tool_name = getattr(t, "name", None)
+                if not tool_name:
+                    continue
+                tool_names.add(tool_name)
+                lines.append(f"- {tool_name}: {getattr(t, 'description', '')}")
+
+            if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
+                lines.append(
+                    "\n# Code Mode\n"
+                    "For multi-step tasks, prefer this flow:\n"
+                    "1) call `search_sdk` to discover exact signatures\n"
+                    "2) write one coherent Python plan\n"
+                    "3) execute once with `execute_code_plan`\n"
+                    "Avoid fragmented tool chains when a single code plan can complete the task."
+                )
+
             lines.append(
                 "\nNote: Only the most relevant tools are shown above. "
                 "If a necessary tool is missing, ask the user to clarify or rephrase."
@@ -337,6 +353,20 @@ class TemplateRenderStep(BaseStep):
             )
             # 这里使用 += 因为上面已经初始化过 enhanced_prompt (至少包含时间)
             enhanced_prompt += memory_reminder
+
+        # 2.1 注入 Code Mode 提醒（P1/P2）
+        if tools:
+            tool_names = {t.name for t in tools}
+            if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
+                code_mode_reminder = (
+                    "\n\n**Code Mode Capability**:\n"
+                    "For multi-step tasks, prefer code mode:\n"
+                    "1) Use `search_sdk` to discover precise signatures.\n"
+                    "2) Produce one coherent Python execution plan.\n"
+                    "3) Execute once with `execute_code_plan`.\n"
+                    "Avoid fragmented chains when one code plan can finish the task."
+                )
+                enhanced_prompt += code_mode_reminder
 
         # 3. 注入到消息列表
         if (

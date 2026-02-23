@@ -10,16 +10,16 @@ export const DashboardStatsSchema = z.object({
     monthlySpent: z.number(),
     balance: z.number(),
     quotaUsedPercent: z.number(),
-    estimatedMonthEnd: z.number().optional(),
+    estimatedMonthEnd: z.number().nullish(),
   }),
   traffic: z.object({
     todayRequests: z.number(),
     hourlyTrend: z.array(z.number()),
-    trendPercent: z.number().optional(),
+    trendPercent: z.number().nullish(),
   }),
   speed: z.object({
     avgTTFT: z.number(),
-    trendPercent: z.number().optional(),
+    trendPercent: z.number().nullish(),
   }),
   health: z.object({
     successRate: z.number(),

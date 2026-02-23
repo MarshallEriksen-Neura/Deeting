@@ -81,7 +81,7 @@ export function KPIMetricsRow() {
       iconColor: "text-amber-400",
       label: t("speed.label"),
       value: stats?.speed.avgTTFT
-        ? `${stats.speed.avgTTFT}ms`
+        ? `${Math.round(stats.speed.avgTTFT)}ms`
         : "0ms",
       trend: stats?.speed.trendPercent,
       trendInverse: true, // Lower is better for TTFT

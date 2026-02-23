@@ -1,5 +1,6 @@
 import pytest
 
+from app.schemas.tool import ToolDefinition
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.workflow.steps.base import StepStatus
 from app.services.workflow.steps.template_render import TemplateRenderStep
@@ -91,3 +92,40 @@ async def test_template_render_injects_router_base_prompt():
     rendered = ctx.get("template_render", "request_body")
     assert rendered["messages"][0]["role"] == "system"
     assert "Meta Rules" in rendered["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_template_render_injects_code_mode_reminder():
+    step = TemplateRenderStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set("routing", "upstream_url", "https://example.com/v1/chat/completions")
+    ctx.set("routing", "template_engine", "simple_replace")
+    ctx.set("routing", "request_template", {"messages": []})
+    ctx.set(
+        "validation", "validated", {"messages": [{"role": "user", "content": "帮我执行复杂任务"}]}
+    )
+    ctx.set(
+        "mcp_discovery",
+        "tools",
+        [
+            ToolDefinition(
+                name="search_sdk",
+                description="search core sdk",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            ToolDefinition(
+                name="execute_code_plan",
+                description="execute python code plan",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ],
+    )
+
+    result = await step.execute(ctx)
+
+    assert result.status == StepStatus.SUCCESS
+    rendered = ctx.get("template_render", "request_body")
+    system_prompt = rendered["messages"][0]["content"]
+    assert "Code Mode Capability" in system_prompt
+    assert "search_sdk" in system_prompt
+    assert "execute_code_plan" in system_prompt

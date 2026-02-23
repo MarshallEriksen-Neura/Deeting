@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import timedelta
 from typing import Any, Optional
@@ -249,13 +250,16 @@ class SandboxManager:
         service = factory.create_sandbox_service()
 
         response = await service.create_sandbox(
-            spec=SandboxImageSpec(image="opensandbox/code-interpreter:v1.0.1"),
-            entrypoint=["/opt/opensandbox/code-interpreter.sh"],
-            env={"PYTHON_VERSION": "3.11"},
+            spec=SandboxImageSpec(image=settings.OPENSANDBOX_IMAGE),
+            entrypoint=[settings.OPENSANDBOX_ENTRYPOINT],
+            env={"PYTHON_VERSION": settings.OPENSANDBOX_PYTHON_VERSION},
             metadata={"session_id": session_id},
             timeout=self.default_timeout,
-            resource={"cpu": "1", "memory": "512Mi"},
-            network_policy=None,
+            resource={
+                "cpu": settings.OPENSANDBOX_RESOURCE_CPU,
+                "memory": settings.OPENSANDBOX_RESOURCE_MEMORY,
+            },
+            network_policy=self._build_network_policy(),
             extensions={},
         )
 
@@ -265,6 +269,31 @@ class SandboxManager:
         return await self._connect_sandbox(
             response.id, factory, service, wait_ready=True
         )
+
+    def _build_network_policy(self) -> dict[str, Any] | None:
+        raw = settings.OPENSANDBOX_NETWORK_POLICY_JSON
+        if raw is None:
+            return None
+        raw = str(raw).strip()
+        if not raw:
+            return None
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Invalid OPENSANDBOX_NETWORK_POLICY_JSON, fallback to None: %s",
+                raw,
+            )
+            return None
+
+        if not isinstance(parsed, dict):
+            logger.warning(
+                "OPENSANDBOX_NETWORK_POLICY_JSON must decode to object, got %s; fallback to None",
+                type(parsed).__name__,
+            )
+            return None
+        return parsed
 
     async def _connect_sandbox(
         self,

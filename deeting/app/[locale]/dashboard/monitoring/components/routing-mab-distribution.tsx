@@ -23,11 +23,11 @@ import {
 import { useArmPerformance } from "@/lib/swr/use-routing-mab"
 
 const DONUT_COLORS = [
-  "hsl(var(--primary))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
+  "var(--primary)",
+  "var(--chart-2))",
+  "var(--chart-3))",
+  "var(--chart-4))",
+  "var(--chart-5))",
   "#818cf8",
   "#34d399",
   "#fbbf24",
@@ -158,7 +158,7 @@ export const RoutingMabDistribution = memo(function RoutingMabDistribution() {
             <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
+                stroke="var(--border)"
                 opacity={0.3}
               />
               <XAxis
@@ -168,7 +168,7 @@ export const RoutingMabDistribution = memo(function RoutingMabDistribution() {
                 tickFormatter={(v: number) => `${Math.round(v)}ms`}
                 tickLine={false}
                 axisLine={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               />
               <YAxis
                 type="number"
@@ -178,7 +178,7 @@ export const RoutingMabDistribution = memo(function RoutingMabDistribution() {
                 tickFormatter={(v: number) => `${v}%`}
                 tickLine={false}
                 axisLine={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               />
               <ChartTooltip
                 cursor={false}
@@ -200,7 +200,7 @@ export const RoutingMabDistribution = memo(function RoutingMabDistribution() {
               />
               <Scatter
                 data={scatterData}
-                fill="hsl(var(--primary))"
+                fill="var(--primary)"
                 fillOpacity={0.7}
                 isAnimationActive={false}
               />

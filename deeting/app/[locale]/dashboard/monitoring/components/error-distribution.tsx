@@ -47,9 +47,9 @@ export function ErrorDistribution({
   const totalErrors = errorData.reduce((sum, e) => sum + e.count, 0)
 
   const chartConfig = {
-    "429": { label: errorLabelMap["429"], color: "hsl(var(--chart-3))" },
-    "5xx": { label: errorLabelMap["5xx"], color: "hsl(var(--chart-1))" },
-    "4xx": { label: errorLabelMap["4xx"], color: "hsl(var(--chart-4))" },
+    "429": { label: errorLabelMap["429"], color: "var(--chart-3))" },
+    "5xx": { label: errorLabelMap["5xx"], color: "var(--chart-1))" },
+    "4xx": { label: errorLabelMap["4xx"], color: "var(--chart-4))" },
   }
 
   return (

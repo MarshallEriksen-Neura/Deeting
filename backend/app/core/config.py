@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     MCP_TOOL_SYSTEM_TOPK: int = 3
     MCP_TOOL_SCORE_THRESHOLD: float = 0.75
     MCP_TOOL_SYSTEM_INDEX_HASH_TTL_SECONDS: int = 86400
+    CODE_MODE_MINIMAL_TOOLSET: bool = False
 
     # Spec Knowledge 三层漏斗配置
     SPEC_KB_OBSERVATION_WINDOW_SECONDS: int = 900
@@ -304,6 +305,12 @@ class Settings(BaseSettings):
 
     # OpenSandbox Configuration
     OPENSANDBOX_URL: str = "http://localhost:8080"
+    OPENSANDBOX_IMAGE: str = "opensandbox/code-interpreter:v1.0.1"
+    OPENSANDBOX_ENTRYPOINT: str = "/opt/opensandbox/code-interpreter.sh"
+    OPENSANDBOX_PYTHON_VERSION: str = "3.11"
+    OPENSANDBOX_RESOURCE_CPU: str = "1"
+    OPENSANDBOX_RESOURCE_MEMORY: str = "512Mi"
+    OPENSANDBOX_NETWORK_POLICY_JSON: str | None = None
 
     # Repo ingestion (skill registry)
     REPO_INGESTION_WORKDIR: str = "backend/.data/repo_ingestion"

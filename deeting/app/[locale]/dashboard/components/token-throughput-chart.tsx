@@ -33,11 +33,11 @@ export function TokenThroughputChart() {
   const chartConfig = {
     inputTokens: {
       label: t("inputTokens"),
-      color: "hsl(var(--chart-1))",
+      color: "var(--chart-1))",
     },
     outputTokens: {
       label: t("outputTokens"),
-      color: "hsl(var(--chart-2))",
+      color: "var(--chart-2))",
     },
   }
 
@@ -87,31 +87,31 @@ export function TokenThroughputChart() {
                 <linearGradient id="inputGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="5%"
-                    stopColor="hsl(var(--chart-1))"
+                    stopColor="var(--chart-1))"
                     stopOpacity={0.8}
                   />
                   <stop
                     offset="95%"
-                    stopColor="hsl(var(--chart-1))"
+                    stopColor="var(--chart-1))"
                     stopOpacity={0.1}
                   />
                 </linearGradient>
                 <linearGradient id="outputGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="5%"
-                    stopColor="hsl(var(--chart-2))"
+                    stopColor="var(--chart-2))"
                     stopOpacity={0.8}
                   />
                   <stop
                     offset="95%"
-                    stopColor="hsl(var(--chart-2))"
+                    stopColor="var(--chart-2))"
                     stopOpacity={0.1}
                   />
                 </linearGradient>
               </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
+                stroke="var(--border)"
                 opacity={0.3}
                 vertical={false}
               />
@@ -120,13 +120,13 @@ export function TokenThroughputChart() {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
               />
               <YAxis
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                 tickFormatter={(value) => formatTokens(value)}
               />
               <ChartTooltip
@@ -147,7 +147,7 @@ export function TokenThroughputChart() {
                 type="monotone"
                 dataKey="inputTokens"
                 stackId="1"
-                stroke="hsl(var(--chart-1))"
+                stroke="var(--chart-1))"
                 fill="url(#inputGradient)"
                 strokeWidth={2}
               />
@@ -155,7 +155,7 @@ export function TokenThroughputChart() {
                 type="monotone"
                 dataKey="outputTokens"
                 stackId="1"
-                stroke="hsl(var(--chart-2))"
+                stroke="var(--chart-2))"
                 fill="url(#outputGradient)"
                 strokeWidth={2}
               />

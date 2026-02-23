@@ -144,3 +144,22 @@ graph TD
 - [x] **M2**: 改造 `McpDiscoveryStep` 支持向量检索 (Retrieval)。
 - [x] **M3**: 更新 System Prompt，支持 "Tools truncated" 提示。
 - [ ] **M4**: (Optional) 实现“关联工具”自动加载逻辑。
+
+## 7. Code Mode（P1/P2，已接入）
+
+为降低多工具链路的上下文开销，系统新增两个核心工具：
+
+- `search_sdk`：按意图检索可用工具签名（参数名/类型/必填）
+- `execute_code_plan`：在 OpenSandbox 中一次性执行 Python 计划
+  - 支持可选 `tool_plan`：先串行调用真实工具（本地插件/MCP），再把结果注入 `TOOL_PLAN_RESULTS` 供代码读取
+
+推荐执行路径：
+1. 先用 `search_sdk` 缩小能力面，拿到精确签名
+2. 再用 `execute_code_plan` 执行单次代码计划，减少碎片化 Tool Call
+
+实现入口：
+- `backend/app/agent_plugins/builtins/deeting_core_sdk/plugin.py`
+- `backend/app/core/plugins.yaml`（`system.deeting_core_sdk`）
+
+关键配置：
+- `CODE_MODE_MINIMAL_TOOLSET`：启用后，当检测到 Code Mode 工具可用时，JIT 不再补齐全部非核心系统工具，进一步压缩上下文。
