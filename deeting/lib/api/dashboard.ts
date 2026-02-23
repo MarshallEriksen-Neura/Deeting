@@ -51,10 +51,10 @@ export const SmartRouterStatsSchema = z.object({
 export const ProviderHealthSchema = z.object({
   id: z.string(),
   name: z.string(),
-  status: z.enum(["active", "down", "degraded"]),
+  status: z.enum(["active", "down", "degraded", "unknown"]),
   priority: z.number(),
   latency: z.number(),
-  sparkline: z.array(z.number()).optional(),
+  sparkline: z.array(z.number()).nullish().transform((value) => value ?? undefined),
 })
 
 export const RecentErrorSchema = z.object({

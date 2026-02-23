@@ -66,6 +66,12 @@
 
 `stats` 返回：`success_rate`、`cache_hit_rate`、`error_distribution`、`model_ranking`、`latency_histogram`。
 
+口径说明（`/admin/gateway-logs/stats`）：
+
+- `success_rate` 仅统计 `2xx/3xx` 为成功。
+- `status_code <= 0`（如历史异常日志）不计入成功，避免错误请求被算成成功。
+- `error_distribution` 优先按 `error_code` 聚合；无 `error_code` 时回退到 `status_code` 分桶。
+
 ## 知识库审核
 
 - `GET /admin/knowledge/artifacts`

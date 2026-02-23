@@ -160,6 +160,7 @@ def register_routes(app: FastAPI) -> None:
         admin_spec_plans_router,
         admin_spec_knowledge_reviews_router,
         admin_users_router,
+        admin_routing_mab_router,
         assistants_router,
         auth_router,
         available_models_router,
@@ -286,6 +287,11 @@ def register_routes(app: FastAPI) -> None:
         admin_plugins_router,
         prefix=api_prefix,
         tags=["Admin - Plugins"],
+    )
+    app.include_router(
+        admin_routing_mab_router,
+        prefix=api_prefix,
+        tags=["Admin - Routing MAB"],
     )
 
     # Gateway 路由

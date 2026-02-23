@@ -61,7 +61,7 @@ export function LogsTable({ items, isLoading, selectedId, onSelect }: LogsTableP
         )}
 
         {items.map((item) => {
-          const statusTone = getStatusTone(item.status_code)
+          const statusTone = getStatusTone(item.status_code, item.error_code)
           const isSelected = selectedId === item.id
 
           return (
@@ -164,7 +164,19 @@ function shortId(value: string) {
   return `${value.slice(0, 8)}…${value.slice(-4)}`
 }
 
-function getStatusTone(statusCode: number) {
+function getStatusTone(statusCode: number, errorCode?: string | null) {
+  if (statusCode <= 0 && errorCode) {
+    return {
+      badgeClass: "bg-red-500/15 text-red-300",
+    }
+  }
+
+  if (statusCode <= 0) {
+    return {
+      badgeClass: "bg-slate-500/15 text-slate-300",
+    }
+  }
+
   if (statusCode >= 500) {
     return {
       badgeClass: "bg-red-500/15 text-red-300",

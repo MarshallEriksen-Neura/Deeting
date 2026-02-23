@@ -15,11 +15,13 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from app.core.cache import cache
 from app.core.http_client import create_async_http_client
 from app.core.metrics import record_upstream_call
 from app.core.provider.config_driven_provider import ConfigDrivenProvider
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
+from app.services.providers.health_monitor import HealthMonitorService
 from app.services.secrets.manager import SecretManager
 from app.services.workflow.steps.base import (
     BaseStep,
@@ -136,6 +138,11 @@ class ProviderExecutionStep(BaseStep):
                 success=True,
                 latency_ms=latency_ms,
             )
+            await self._update_provider_health(
+                ctx,
+                status_code=200,
+                latency_ms=latency_ms,
+            )
 
             ctx.emit_status(
                 stage="evolve",
@@ -167,6 +174,12 @@ class ProviderExecutionStep(BaseStep):
                 latency_ms=latency_ms,
                 error_code="timeout",
             )
+            await self._update_provider_health(
+                ctx,
+                status_code=None,
+                latency_ms=latency_ms,
+                error_code="UPSTREAM_TIMEOUT",
+            )
             raise
 
         except Exception as e:
@@ -179,4 +192,42 @@ class ProviderExecutionStep(BaseStep):
                 latency_ms=latency_ms,
                 error_code="error",
             )
+            await self._update_provider_health(
+                ctx,
+                status_code=None,
+                latency_ms=latency_ms,
+                error_code="UPSTREAM_ERROR",
+            )
             raise
+
+    async def _update_provider_health(
+        self,
+        ctx: "WorkflowContext",
+        *,
+        status_code: int | None,
+        latency_ms: float | int | None,
+        error_code: str | None = None,
+    ) -> None:
+        instance_id = ctx.selected_instance_id or ctx.get("routing", "instance_id")
+        if not instance_id:
+            return
+
+        redis_client = getattr(cache, "_redis", None)
+        if not redis_client:
+            return
+
+        try:
+            health_svc = HealthMonitorService(redis_client)
+            await health_svc.record_request_result(
+                str(instance_id),
+                status_code=status_code,
+                latency_ms=latency_ms,
+                error_code=error_code,
+            )
+        except Exception as exc:
+            logger.debug(
+                "provider_health_update_failed trace_id=%s instance_id=%s err=%s",
+                ctx.trace_id,
+                instance_id,
+                exc,
+            )

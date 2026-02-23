@@ -33,6 +33,7 @@ from app.services.providers.config_utils import (
     extract_by_path,
     render_value,
 )
+from app.services.providers.health_monitor import HealthMonitorService
 from app.services.proxy.proxy_pool import get_proxy_pool, mask_proxy_url
 from app.services.secrets.manager import SecretManager
 from app.services.system import CancelService
@@ -545,11 +546,20 @@ class UpstreamCallStep(BaseStep):
                     # 响应大小限制
                     if response.get("raw_bytes"):
                         if len(response["raw_bytes"]) > settings.MAX_RESPONSE_BYTES:
+                            oversize_latency_ms = (
+                                time.perf_counter() - start_time
+                            ) * 1000
                             ctx.mark_error(
                                 ErrorSource.UPSTREAM,
                                 "UPSTREAM_RESPONSE_TOO_LARGE",
                                 "Upstream response exceeds size limit",
                                 upstream_status=response.get("status_code"),
+                            )
+                            await self._update_provider_health(
+                                ctx,
+                                status_code=response.get("status_code"),
+                                latency_ms=oversize_latency_ms,
+                                error_code="UPSTREAM_RESPONSE_TOO_LARGE",
                             )
                             await self._mark_failure(cb_key)
                             return StepResult(
@@ -576,6 +586,11 @@ class UpstreamCallStep(BaseStep):
                 provider=ctx.get("routing", "provider") or "unknown",
                 model=ctx.requested_model or "unknown",
                 success=True,
+                latency_ms=latency_ms,
+            )
+            await self._update_provider_health(
+                ctx,
+                status_code=ctx.upstream_result.status_code,
                 latency_ms=latency_ms,
             )
             await self._record_bandit_feedback(
@@ -670,6 +685,12 @@ class UpstreamCallStep(BaseStep):
                 latency_ms=latency_ms,
                 error_code="timeout",
             )
+            await self._update_provider_health(
+                ctx,
+                status_code=None,
+                latency_ms=latency_ms,
+                error_code="UPSTREAM_TIMEOUT",
+            )
             await self._record_bandit_feedback(
                 ctx=ctx,
                 success=False,
@@ -709,6 +730,12 @@ class UpstreamCallStep(BaseStep):
                 latency_ms=latency_ms,
                 error_code=f"http_{e.response.status_code}",
             )
+            await self._update_provider_health(
+                ctx,
+                status_code=e.response.status_code,
+                latency_ms=latency_ms,
+                error_code=f"HTTP_{e.response.status_code}",
+            )
             await self._record_bandit_feedback(
                 ctx=ctx,
                 success=False,
@@ -718,15 +745,54 @@ class UpstreamCallStep(BaseStep):
             raise UpstreamError(e.response.status_code, str(e))
 
         except Exception as e:
+            latency_ms = (time.perf_counter() - start_time) * 1000
             ctx.mark_error(ErrorSource.UPSTREAM, "UPSTREAM_ERROR", str(e))
             await self._mark_failure(cb_key)
+            await self._update_provider_health(
+                ctx,
+                status_code=None,
+                latency_ms=latency_ms,
+                error_code="UPSTREAM_ERROR",
+            )
             await self._record_bandit_feedback(
                 ctx=ctx,
                 success=False,
-                latency_ms=None,
+                latency_ms=latency_ms,
             )
             await self._record_affinity_failure(ctx)
             raise
+
+    async def _update_provider_health(
+        self,
+        ctx: "WorkflowContext",
+        *,
+        status_code: int | None,
+        latency_ms: float | int | None,
+        error_code: str | None = None,
+    ) -> None:
+        instance_id = ctx.selected_instance_id or ctx.get("routing", "instance_id")
+        if not instance_id:
+            return
+
+        redis_client = getattr(cache, "_redis", None)
+        if not redis_client:
+            return
+
+        try:
+            health_svc = HealthMonitorService(redis_client)
+            await health_svc.record_request_result(
+                str(instance_id),
+                status_code=status_code,
+                latency_ms=latency_ms,
+                error_code=error_code,
+            )
+        except Exception as exc:
+            logger.debug(
+                "provider_health_update_failed trace_id=%s instance_id=%s err=%s",
+                ctx.trace_id,
+                instance_id,
+                exc,
+            )
 
     async def _get_auth_headers(self, ctx: "WorkflowContext") -> dict[str, str]:
         """

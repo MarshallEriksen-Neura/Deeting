@@ -16,6 +16,7 @@ import {
   FileText,
   FolderOpen,
   Gauge,
+  GitBranch,
   HardDrive,
   Image,
   Key,
@@ -85,6 +86,7 @@ export const navIconMap = {
   workflow: Workflow,
   image: Image,
   creditCard: CreditCard,
+  gitBranch: GitBranch,
 } satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof navIconMap

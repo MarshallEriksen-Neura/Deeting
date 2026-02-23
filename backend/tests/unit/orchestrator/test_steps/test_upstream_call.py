@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 
+from app.core.cache import cache
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.providers.blocks_transformer import extract_stream_blocks
 from app.services.workflow.steps import upstream_call as upstream_call_module
@@ -131,3 +132,91 @@ async def test_stream_with_billing_updates_context_and_invokes_callback():
     assert ctx.billing.output_tokens == 2
     assert called["tokens"] == (3, 2)
     assert called["trace_id"] == ctx.trace_id
+
+
+@pytest.mark.asyncio
+async def test_update_provider_health_records_when_instance_available(monkeypatch):
+    class DummyHealthMonitorService:
+        calls = []
+
+        def __init__(self, redis_client):
+            self.redis_client = redis_client
+
+        async def record_request_result(
+            self,
+            instance_id: str | None,
+            *,
+            status_code: int | None,
+            latency_ms: float | int | None,
+            error_code: str | None = None,
+        ) -> None:
+            self.calls.append(
+                {
+                    "instance_id": instance_id,
+                    "status_code": status_code,
+                    "latency_ms": latency_ms,
+                    "error_code": error_code,
+                }
+            )
+
+    step = UpstreamCallStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.selected_instance_id = "inst-health-1"
+
+    original_redis = getattr(cache, "_redis", None)
+    cache._redis = object()
+    monkeypatch.setattr(
+        upstream_call_module, "HealthMonitorService", DummyHealthMonitorService
+    )
+    try:
+        await step._update_provider_health(
+            ctx,
+            status_code=200,
+            latency_ms=88.0,
+            error_code=None,
+        )
+    finally:
+        cache._redis = original_redis
+
+    assert len(DummyHealthMonitorService.calls) == 1
+    assert DummyHealthMonitorService.calls[0]["instance_id"] == "inst-health-1"
+    assert DummyHealthMonitorService.calls[0]["status_code"] == 200
+
+
+@pytest.mark.asyncio
+async def test_update_provider_health_skips_without_instance(monkeypatch):
+    class DummyHealthMonitorService:
+        calls = []
+
+        def __init__(self, redis_client):
+            self.redis_client = redis_client
+
+        async def record_request_result(
+            self,
+            instance_id: str | None,
+            *,
+            status_code: int | None,
+            latency_ms: float | int | None,
+            error_code: str | None = None,
+        ) -> None:
+            self.calls.append(instance_id)
+
+    step = UpstreamCallStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+
+    original_redis = getattr(cache, "_redis", None)
+    cache._redis = object()
+    monkeypatch.setattr(
+        upstream_call_module, "HealthMonitorService", DummyHealthMonitorService
+    )
+    try:
+        await step._update_provider_health(
+            ctx,
+            status_code=500,
+            latency_ms=120.0,
+            error_code="UPSTREAM_500",
+        )
+    finally:
+        cache._redis = original_redis
+
+    assert DummyHealthMonitorService.calls == []

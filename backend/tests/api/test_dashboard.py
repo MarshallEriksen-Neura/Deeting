@@ -4,8 +4,10 @@ from uuid import uuid4
 import pytest
 
 from app.core.cache import cache
+from app.models.api_key import ApiKey, ApiKeyType
 from app.models.gateway_log import GatewayLog
 from app.models.provider_instance import ProviderInstance
+from app.models.user import User
 from app.services.dashboard.dashboard_service import DashboardService
 from app.utils.time_utils import Datetime
 
@@ -50,6 +52,75 @@ async def test_dashboard_stats(client, auth_tokens, AsyncSessionLocal):
         resp = await svc.get_stats(None)
         assert resp.traffic.today_requests >= 2
         assert resp.health.total_requests >= 2
+
+
+@pytest.mark.asyncio
+async def test_dashboard_stats_include_logs_owned_by_api_key(AsyncSessionLocal):
+    async with AsyncSessionLocal() as session:
+        now = Datetime.now()
+        user_id = uuid4()
+        api_key_id = uuid4()
+
+        user = User(
+            id=user_id,
+            email=f"dashboard-{user_id.hex[:8]}@example.com",
+            username="dashboard-user",
+            hashed_password="test-hash",
+        )
+        api_key = ApiKey(
+            id=api_key_id,
+            key_prefix="sk-int-",
+            key_hash=(uuid4().hex * 2)[:64],
+            key_hint="abcd",
+            type=ApiKeyType.INTERNAL,
+            name="dashboard-key",
+            user_id=user_id,
+            created_by=user_id,
+        )
+        logs = [
+            GatewayLog(
+                user_id=None,
+                api_key_id=api_key_id,
+                model="gpt-4o",
+                status_code=200,
+                duration_ms=500,
+                ttft_ms=None,
+                input_tokens=10,
+                output_tokens=5,
+                total_tokens=15,
+                cost_user=0.01,
+                cost_upstream=0.005,
+                created_at=now - timedelta(minutes=5),
+            ),
+            GatewayLog(
+                user_id=None,
+                api_key_id=api_key_id,
+                model="gpt-4o",
+                status_code=500,
+                duration_ms=1500,
+                ttft_ms=None,
+                input_tokens=12,
+                output_tokens=0,
+                total_tokens=12,
+                cost_user=0.02,
+                cost_upstream=0.01,
+                created_at=now - timedelta(minutes=2),
+            ),
+        ]
+
+        session.add(user)
+        session.add(api_key)
+        session.add_all(logs)
+        await session.commit()
+
+        svc = DashboardService(session)
+        resp = await svc.get_stats(str(user_id))
+
+        assert resp.traffic.today_requests == 2
+        assert resp.speed.avg_ttft == 1000
+        assert resp.health.total_requests == 2
+        assert resp.health.successful_requests == 1
+        assert resp.health.success_rate == 50.0
 
 
 @pytest.mark.asyncio
@@ -119,7 +190,7 @@ async def test_provider_health_uses_redis(client, auth_tokens, AsyncSessionLocal
         await session.commit()
 
         # 写入伪造健康数据到 redis mock
-        await cache._redis.hset(f"provider:health:{inst.id}", mapping={"status": b"active", "latency": 123})  # type: ignore[attr-defined]
+        await cache._redis.hset(f"provider:health:{inst.id}", mapping={"status": b"healthy", "latency": 123})  # type: ignore[attr-defined]
         await cache._redis.rpush(f"provider:health:{inst.id}:history", 10, 20, 30)  # type: ignore[attr-defined]
 
         svc = DashboardService(session)
@@ -127,6 +198,58 @@ async def test_provider_health_uses_redis(client, auth_tokens, AsyncSessionLocal
         assert len(res) == 1
         assert res[0].status == "active"
         assert res[0].sparkline == [10, 20, 30]
+
+
+@pytest.mark.asyncio
+async def test_provider_health_unknown_status_fallback(AsyncSessionLocal):
+    async with AsyncSessionLocal() as session:
+        inst = ProviderInstance(
+            id=uuid4(),
+            preset_slug="openai",
+            name="unknown-health",
+            base_url="https://api.example.com",
+            credentials_ref="REF",
+            priority=2,
+        )
+        session.add(inst)
+        await session.commit()
+
+        svc = DashboardService(session)
+        res = await svc.get_provider_health(None)
+        target = next((item for item in res if item.id == str(inst.id)), None)
+        assert target is not None
+        assert target.status == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_provider_health_stale_status_fallback(AsyncSessionLocal):
+    async with AsyncSessionLocal() as session:
+        inst = ProviderInstance(
+            id=uuid4(),
+            preset_slug="openai",
+            name="stale-health",
+            base_url="https://api.example.com",
+            credentials_ref="REF",
+            priority=2,
+        )
+        session.add(inst)
+        await session.commit()
+
+        await cache._redis.hset(  # type: ignore[attr-defined]
+            f"provider:health:{inst.id}",
+            mapping={
+                "status": b"healthy",
+                "latency": 123,
+                "last_check": int(Datetime.utcnow().timestamp()) - 600,
+            },
+        )
+
+        svc = DashboardService(session)
+        res = await svc.get_provider_health(None)
+        target = next((item for item in res if item.id == str(inst.id)), None)
+        assert target is not None
+        assert target.status == "unknown"
+        assert target.latency == 0
 
 
 @pytest.mark.asyncio

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import timedelta
+from uuid import UUID
 
-from sqlalchemy import Float, String, case, cast, func, select
+from sqlalchemy import Float, String, and_, case, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.logging import logger
+from app.models.api_key import ApiKey
 from app.models.gateway_log import GatewayLog
 from app.repositories.gateway_log_repository import GatewayLogRepository
 from app.repositories.provider_instance_repository import ProviderInstanceRepository
@@ -116,8 +118,7 @@ class DashboardService:
         stmt = select(func.sum(GatewayLog.cost_user)).where(
             GatewayLog.created_at >= start, GatewayLog.created_at <= end
         )
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        stmt = self._apply_owner_scope(stmt, tenant_id)
         result = await self.session.execute(stmt)
         val = result.scalar() or 0
         return float(val)
@@ -143,8 +144,7 @@ class DashboardService:
         stmt = stmt.where(
             GatewayLog.created_at >= start_day, GatewayLog.created_at <= now
         )
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        stmt = self._apply_owner_scope(stmt, tenant_id)
         stmt = stmt.group_by(bucket)
         result = await self.session.execute(stmt)
         rows = result.all()
@@ -174,13 +174,21 @@ class DashboardService:
 
     async def _speed_and_health(self, now, tenant_id: str | None):
         since = now - timedelta(hours=24)
+        latency_expr = self._effective_latency_expr()
         stmt = select(
-            func.avg(GatewayLog.ttft_ms),
-            func.count(),
-            func.sum(case((GatewayLog.status_code < 400, 1), else_=0)),
+            func.avg(latency_expr),
+            func.sum(case((GatewayLog.status_code > 0, 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        and_(GatewayLog.status_code >= 200, GatewayLog.status_code < 400),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
         ).where(GatewayLog.created_at >= since)
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        stmt = self._apply_owner_scope(stmt, tenant_id)
         result = await self.session.execute(stmt)
         avg_ttft, total_req, success_req = result.one()
         avg_ttft = float(avg_ttft or 0)
@@ -218,8 +226,7 @@ class DashboardService:
             func.sum(GatewayLog.input_tokens),
             func.sum(GatewayLog.output_tokens),
         ).where(GatewayLog.created_at >= since)
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        stmt = self._apply_owner_scope(stmt, tenant_id)
         stmt = stmt.group_by(bucket_expr).order_by(bucket_expr)
         rows = await self.session.execute(stmt)
         rows = rows.all()
@@ -273,8 +280,7 @@ class DashboardService:
         now = Datetime.now()
         since = now - timedelta(hours=24)
         base_stmt = select(GatewayLog)
-        if tenant_id:
-            base_stmt = base_stmt.where(GatewayLog.user_id == tenant_id)
+        base_stmt = self._apply_owner_scope(base_stmt, tenant_id)
         base_stmt = base_stmt.where(GatewayLog.created_at >= since)
 
         base_subq = base_stmt.subquery()
@@ -363,10 +369,12 @@ class DashboardService:
                 ProviderHealthItem(
                     id=str(inst.id),
                     name=inst.name,
-                    status=health.get("status", "unknown"),
+                    status=self._normalize_provider_status(
+                        str(health.get("status", "unknown") or "unknown")
+                    ),
                     priority=inst.priority,
                     latency=int(health.get("latency", 0) or 0),
-                    sparkline=spark or None,
+                    sparkline=spark,
                 )
             )
         return items
@@ -382,8 +390,7 @@ class DashboardService:
 
         since = Datetime.now() - timedelta(hours=24)
         stmt = select(GatewayLog).where(GatewayLog.created_at >= since)
-        if tenant_id:
-            stmt = stmt.where(GatewayLog.user_id == tenant_id)
+        stmt = self._apply_owner_scope(stmt, tenant_id)
         stmt = stmt.where(
             (GatewayLog.status_code >= 400) | (GatewayLog.error_code.isnot(None))
         )
@@ -405,3 +412,62 @@ class DashboardService:
         ]
         await cache.set(cache_key, items, ttl=20)
         return items
+
+    @staticmethod
+    def _effective_latency_expr():
+        """
+        Dashboard 与 Monitoring 使用一致延迟口径：
+        优先 ttft_ms；为空/0 时回退 duration_ms；0 视为无效值。
+        """
+        return func.coalesce(
+            func.nullif(GatewayLog.ttft_ms, 0),
+            func.nullif(GatewayLog.duration_ms, 0),
+        )
+
+    @staticmethod
+    def _parse_uuid(value: str | None) -> UUID | None:
+        if not value:
+            return None
+        try:
+            return UUID(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _apply_owner_scope(self, stmt, tenant_id: str | None):
+        """
+        Dashboard 归属过滤：
+        1) gateway_log.user_id 命中当前用户
+        2) 或 gateway_log.api_key_id 对应 api_key.user_id / api_key.tenant_id 命中
+        兼容历史日志 user_id 缺失但 api_key_id 可追溯归属的场景。
+        """
+        tenant_uuid = self._parse_uuid(tenant_id)
+        if tenant_id and tenant_uuid is None:
+            return stmt.where(False)
+        if tenant_uuid is None:
+            return stmt
+
+        key_owner_exists = exists(
+            select(1).where(
+                ApiKey.id == GatewayLog.api_key_id,
+                or_(ApiKey.user_id == tenant_uuid, ApiKey.tenant_id == tenant_uuid),
+            )
+        )
+        return stmt.where(or_(GatewayLog.user_id == tenant_uuid, key_owner_exists))
+
+    @staticmethod
+    def _normalize_provider_status(status: str) -> str:
+        """
+        统一 provider health 状态值，避免前端枚举漂移:
+        - healthy/up -> active
+        - down/offline -> down
+        - degraded -> degraded
+        - 其他 -> unknown
+        """
+        normalized = (status or "").strip().lower()
+        if normalized in {"healthy", "up", "active"}:
+            return "active"
+        if normalized in {"degraded"}:
+            return "degraded"
+        if normalized in {"down", "offline"}:
+            return "down"
+        return "unknown"

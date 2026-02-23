@@ -27,6 +27,7 @@ from app.api.v1.admin import (
     spec_knowledge_reviews_router as admin_spec_knowledge_reviews_router,
 )
 from app.api.v1.admin import users_router as admin_users_router
+from app.api.v1.admin import routing_mab_router as admin_routing_mab_router
 from app.api.v1.assistants_route import router as assistants_router
 from app.api.v1.auth_route import router as auth_router
 from app.api.v1.credits_route import router as credits_router
@@ -90,6 +91,7 @@ __all__ = [
     "admin_spec_plans_router",
     "admin_spec_knowledge_reviews_router",
     "admin_users_router",
+    "admin_routing_mab_router",
     "assistants_router",
     "auth_router",
     "available_models_router",

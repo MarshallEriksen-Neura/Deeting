@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.models.assistant import Assistant, AssistantVersion
@@ -50,7 +50,7 @@ class AssistantRepository(BaseRepository[Assistant]):
                 cursor_created_at = None
                 cursor_id = None
 
-        stmt = select(Assistant)
+        stmt = select(Assistant).options(selectinload(Assistant.versions))
         conditions = []
         if visibility:
             conditions.append(Assistant.visibility == visibility)

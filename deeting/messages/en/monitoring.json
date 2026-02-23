@@ -2,6 +2,10 @@
   "monitoring": {
     "title": "Monitoring",
     "description": "Tool-oriented, high-density information for troubleshooting",
+    "tabs": {
+      "performance": "Performance",
+      "routing": "Routing & MAB"
+    },
     "controlBar": {
       "timeRange": "Time Range",
       "models": "Models",
@@ -39,6 +43,7 @@
         "title": "Latency Distribution Heatmap",
         "description": "Request latency patterns over time - color intensity indicates request volume",
         "loading": "Loading heatmap data...",
+        "empty": "No valid latency data yet",
         "legend": {
           "label": "Request Volume",
           "more": "More"
@@ -85,6 +90,78 @@
     "units": {
       "ms": "ms",
       "msValue": "{value}ms"
+    },
+    "routing": {
+      "pageTitle": "Routing & MAB",
+      "pageDescription": "Platform-wide intelligent routing analysis for multi-tenant monitoring",
+      "title": "Routing & MAB",
+      "description": "Platform-wide intelligent routing analysis for multi-tenant monitoring",
+      "loading": "Loading routing data...",
+      "noData": "No routing data available",
+      "overview": {
+        "totalTrials": "Total Trials",
+        "successRate": "Overall Success Rate",
+        "activeArms": "Active Providers",
+        "cooldownArms": "In Cooldown",
+        "totalArms": "Total Arms"
+      },
+      "strategy": {
+        "title": "Current Routing Strategy",
+        "description": "Active MAB algorithm configuration",
+        "thompson": "Thompson Sampling",
+        "thompsonDesc": "Bayesian approach: samples from Beta distribution, naturally balances exploration and exploitation.",
+        "epsilonGreedy": "Epsilon-Greedy",
+        "epsilonGreedyDesc": "Exploits best performer {ratio} of the time, randomly explores {epsilon} for discovery.",
+        "ucb": "UCB1",
+        "ucbDesc": "Upper Confidence Bound: prioritizes under-tested providers with a confidence bonus.",
+        "params": {
+          "epsilon": "Exploration Rate",
+          "alpha": "Prior Alpha",
+          "beta": "Prior Beta",
+          "vectorWeight": "Vector Weight",
+          "banditWeight": "Bandit Weight",
+          "explorationBonus": "Exploration Bonus"
+        }
+      },
+      "arms": {
+        "title": "Provider Performance",
+        "description": "Real-time performance comparison across all routing candidates",
+        "columns": {
+          "provider": "Provider / Model",
+          "status": "Status",
+          "selectionRatio": "Selection Ratio",
+          "successRate": "Success Rate",
+          "p95Latency": "P95 Latency",
+          "trials": "Trials / Failures",
+          "cost": "Total Cost"
+        },
+        "status": {
+          "active": "Active",
+          "cooldown": "Cooldown"
+        },
+        "expandDetail": "Click to expand error history"
+      },
+      "distribution": {
+        "title": "Decision Distribution",
+        "trafficTitle": "Traffic Allocation",
+        "trafficDesc": "Real-time traffic distribution across providers",
+        "scatterTitle": "Latency vs Success Rate",
+        "scatterDesc": "Top-left quadrant = optimal (low latency, high success)"
+      },
+      "skills": {
+        "title": "Skill Routing (JIT)",
+        "description": "MAB scores for skill selection in just-in-time routing",
+        "columns": {
+          "skill": "Skill Name",
+          "status": "Status",
+          "successRate": "Success Rate",
+          "selectionRatio": "Selection Ratio",
+          "latency": "Avg Latency",
+          "exploring": "Exploring"
+        },
+        "exploring": "New",
+        "noSkills": "No skill routing data yet"
+      }
     }
   }
 }

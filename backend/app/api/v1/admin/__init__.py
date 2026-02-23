@@ -30,6 +30,7 @@ from app.api.v1.admin.users_route import router as users_router
 
 from .agent_route import router as agent_router
 from .api_keys_route import router as api_keys_router
+from .routing_mab_route import router as routing_mab_router
 
 __all__ = [
     "billing_router",
@@ -53,4 +54,5 @@ __all__ = [
     "skill_registry_router",
     "spec_knowledge_reviews_router",
     "users_router",
+    "routing_mab_router",
 ]

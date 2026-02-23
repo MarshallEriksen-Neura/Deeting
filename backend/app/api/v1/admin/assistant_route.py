@@ -69,7 +69,7 @@ async def create_assistant(
 async def list_assistants(
     cursor: str | None = None,
     size: int = 20,
-    status: str | None = None,
+    status_filter: str | None = Query(None, alias="status"),
     visibility: str | None = None,
     service: AssistantService = Depends(get_assistant_service),
 ) -> AssistantListResponse:
@@ -84,7 +84,7 @@ async def list_assistants(
         return await service.list_assistants(
             size=size,
             cursor=cursor,
-            status=status,
+            status=status_filter,
             visibility=visibility,
         )
     except ValueError as e:

@@ -8,6 +8,7 @@ AuditLogStep: 审计日志步骤
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from app.core.transaction_celery import celery_is_available
@@ -35,6 +36,12 @@ class AuditLogStep(BaseStep):
     name = "audit_log"
     # 审计必须在计费后执行，否则会记录到未回填的上下文（status/tokens/cost 全为默认值）
     depends_on = ["billing"]
+
+    _SIGNATURE_ERROR_CODES = {
+        "SIGNATURE_INVALID",
+        "SIGNATURE_MISSING",
+        "SIGNATURE_VERIFY_FAILED",
+    }
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """记录审计日志"""
@@ -98,12 +105,26 @@ class AuditLogStep(BaseStep):
             except Exception as e:
                 logger.warning(f"Failed to sanitize audit log data: {e}")
 
+            status_code = self._resolve_status_code(ctx)
+            latency_ms = ctx.upstream_result.latency_ms or ctx.get(
+                "upstream_call", "latency_ms"
+            )
+            normalized_latency_ms = (
+                int(round(float(latency_ms)))
+                if latency_ms is not None and float(latency_ms) > 0
+                else None
+            )
+            duration_ms = int(sum(ctx.step_timings.values()))
+            if duration_ms <= 0 and normalized_latency_ms is not None:
+                duration_ms = normalized_latency_ms
+
             # 映射字段到 GatewayLog 模型
             log_payload = {
                 "model": ctx.requested_model or "unknown",
                 "trace_id": ctx.trace_id,
-                "status_code": ctx.upstream_result.status_code or 0,
-                "duration_ms": int(sum(ctx.step_timings.values())),
+                "status_code": int(status_code),
+                "duration_ms": duration_ms,
+                "ttft_ms": normalized_latency_ms,
                 "input_tokens": ctx.billing.input_tokens,
                 "output_tokens": ctx.billing.output_tokens,
                 "total_tokens": ctx.billing.total_tokens,
@@ -134,6 +155,66 @@ class AuditLogStep(BaseStep):
             status=StepStatus.SUCCESS,
             data={"trace_id": ctx.trace_id},
         )
+
+    def _resolve_status_code(self, ctx: "WorkflowContext") -> int:
+        """解析用于审计落库的 HTTP 状态码，避免错误请求被记录为 0。"""
+        direct_candidates = (
+            ctx.upstream_result.status_code,
+            ctx.get("upstream_call", "status_code"),
+            ctx.get("billing", "http_status"),
+        )
+        for candidate in direct_candidates:
+            parsed = self._as_positive_int(candidate)
+            if parsed is not None:
+                return parsed
+
+        inferred = self._infer_status_from_error(
+            error_code=ctx.error_code,
+            failed_step=getattr(ctx, "failed_step", None),
+        )
+        if inferred is not None:
+            return inferred
+
+        return 200 if ctx.is_success else 400
+
+    @staticmethod
+    def _as_positive_int(value: object) -> int | None:
+        try:
+            parsed = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
+    def _infer_status_from_error(
+        self, error_code: str | None, failed_step: str | None
+    ) -> int | None:
+        if failed_step == "signature_verify":
+            return 401
+
+        normalized = (error_code or "").strip().upper()
+        if not normalized:
+            return None
+
+        if normalized in self._SIGNATURE_ERROR_CODES or normalized.startswith(
+            "SIGNATURE_"
+        ):
+            return 401
+        if normalized.startswith("RATE_LIMIT"):
+            return 429
+        if normalized == "INSUFFICIENT_BALANCE":
+            return 402
+        if normalized == "INSUFFICIENT_QUOTA" or normalized.startswith("QUOTA_"):
+            return 403
+        if normalized == "UPSTREAM_TIMEOUT":
+            return 504
+
+        match = re.match(r"^UPSTREAM_(\d{3})$", normalized)
+        if match:
+            parsed = int(match.group(1))
+            if 100 <= parsed <= 599:
+                return parsed
+
+        return None
 
     def _get_request_summary(self, ctx: "WorkflowContext") -> dict:
         """获取请求摘要（已脱敏）"""

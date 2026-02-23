@@ -52,12 +52,6 @@ export const userNavigation: NavGroup[] = [
         icon: "route",
       },
       {
-        id: "services",
-        label: "nav.services",
-        href: "/dashboard/services",
-        icon: "server",
-      },
-      {
         id: "plugins",
         label: "nav.plugins",
         href: "/dashboard/plugins",
@@ -117,18 +111,6 @@ export const userNavigation: NavGroup[] = [
       },
     ],
   },
-  {
-    title: "nav.account",
-    items: [
-      {
-        id: "notifications",
-        label: "nav.notifications",
-        href: "/notifications",
-        icon: "bell",
-        badge: 3,
-      },
-    ],
-  },
 ]
 
 /**
@@ -166,6 +148,12 @@ export const adminNavigation: NavGroup[] = [
         label: "nav.gatewayLogs",
         href: "/admin/gateway-logs",
         icon: "activity",
+      },
+      {
+        id: "routing-mab",
+        label: "nav.routingMab",
+        href: "/admin/routing-mab",
+        icon: "gitBranch",
       },
     ],
   },

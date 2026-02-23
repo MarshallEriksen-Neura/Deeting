@@ -81,7 +81,7 @@ export function PageContent() {
   }, [allRows, searchQuery, statusBucketFilter])
 
   const localTotal = filteredRows.length
-  const localErrors = filteredRows.filter((item) => item.status_code >= 400).length
+  const localErrors = filteredRows.filter(isFailedRequest).length
   const localAvgLatency =
     localTotal > 0
       ? Math.round(filteredRows.reduce((sum, item) => sum + item.duration_ms, 0) / localTotal)
@@ -113,8 +113,12 @@ export function PageContent() {
     },
   ]
 
-  const statusColor = (code: number) =>
-    code < 300
+  const statusColor = (code: number, errorCode?: string | null) =>
+    code <= 0 && errorCode
+      ? "text-rose-400 bg-rose-500/10"
+      : code <= 0
+        ? "text-slate-300 bg-slate-500/10"
+      : code < 300
       ? "text-emerald-400 bg-emerald-500/10"
       : code < 500
         ? "text-amber-400 bg-amber-500/10"
@@ -151,7 +155,12 @@ export function PageContent() {
       header: t("table.headers.status"),
       sortable: true,
       render: (row) => (
-        <span className={`inline-flex rounded px-1.5 py-0.5 font-mono text-xs font-medium ${statusColor(row.status_code)}`}>
+        <span
+          className={`inline-flex rounded px-1.5 py-0.5 font-mono text-xs font-medium ${statusColor(
+            row.status_code,
+            row.error_code
+          )}`}
+        >
           {row.status_code}
         </span>
       ),
@@ -256,4 +265,8 @@ export function PageContent() {
       />
     </AdminPageShell>
   )
+}
+
+function isFailedRequest(item: GatewayLogItem) {
+  return item.status_code >= 400 || (item.status_code <= 0 && Boolean(item.error_code))
 }

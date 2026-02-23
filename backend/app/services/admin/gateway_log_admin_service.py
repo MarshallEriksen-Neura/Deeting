@@ -130,7 +130,8 @@ class GatewayLogAdminService:
 
         total_stmt = select(func.count()).select_from(GatewayLog)
         success_stmt = select(func.count()).select_from(GatewayLog).where(
-            GatewayLog.status_code < 400
+            GatewayLog.status_code >= 200,
+            GatewayLog.status_code < 400,
         )
         cached_stmt = select(func.count()).select_from(GatewayLog).where(
             GatewayLog.is_cached.is_(True)

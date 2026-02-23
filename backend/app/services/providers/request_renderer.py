@@ -252,9 +252,22 @@ class RequestRenderer:
         if not template:
             return context
         body = template.copy()
-        for k, v in context.items():
-            if v is not None:
-                body[k] = v
+
+        input_ctx = context.get("input")
+        request_ctx = context.get("request")
+
+        for key, template_value in template.items():
+            if template_value is not None:
+                continue
+
+            value = context.get(key)
+            if value is None and isinstance(input_ctx, dict):
+                value = input_ctx.get(key)
+            if value is None and isinstance(request_ctx, dict):
+                value = request_ctx.get(key)
+
+            if value is not None:
+                body[key] = value
         return body
 
 

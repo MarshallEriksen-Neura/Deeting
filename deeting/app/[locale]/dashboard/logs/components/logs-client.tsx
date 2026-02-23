@@ -84,7 +84,9 @@ export function LogsClient() {
 
   const summary = useMemo(() => {
     const total = items.length
-    const failed = items.filter((item) => item.status_code >= 400).length
+    const failed = items.filter((item) =>
+      isFailedRequest(item.status_code, item.error_code)
+    ).length
     const cacheHits = items.filter((item) => item.is_cached).length
     const totalCost = items.reduce((acc, item) => acc + item.cost_user, 0)
     const avgDuration =
@@ -208,4 +210,8 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 4,
     maximumFractionDigits: 6,
   })
+}
+
+function isFailedRequest(statusCode: number, errorCode?: string | null) {
+  return statusCode >= 400 || (statusCode <= 0 && Boolean(errorCode))
 }

@@ -392,12 +392,13 @@ async def test_admin_gateway_logs_endpoints(
     AsyncSessionLocal,
 ):
     log_id = uuid.uuid4()
+    model_name = f"admin-log-model-{uuid.uuid4().hex[:8]}"
     async with AsyncSessionLocal() as session:
         session.add_all(
             [
                 GatewayLog(
                     id=log_id,
-                    model="gpt-4o-mini",
+                    model=model_name,
                     status_code=500,
                     duration_ms=800,
                     error_code="UPSTREAM_ERROR",
@@ -408,12 +409,23 @@ async def test_admin_gateway_logs_endpoints(
                 ),
                 GatewayLog(
                     id=uuid.uuid4(),
-                    model="gpt-4o-mini",
+                    model=model_name,
                     status_code=200,
                     duration_ms=100,
                     is_cached=True,
                     cost_upstream=0.1,
                     cost_user=0.2,
+                    created_at=Datetime.now(),
+                ),
+                GatewayLog(
+                    id=uuid.uuid4(),
+                    model=model_name,
+                    status_code=0,
+                    duration_ms=320,
+                    error_code="UPSTREAM_TIMEOUT",
+                    is_cached=False,
+                    cost_upstream=0.15,
+                    cost_user=0.16,
                     created_at=Datetime.now(),
                 ),
             ]
@@ -423,12 +435,23 @@ async def test_admin_gateway_logs_endpoints(
     headers = {"Authorization": f"Bearer {admin_tokens['access_token']}"}
     resp = await client.get("/api/v1/admin/gateway-logs", headers=headers)
     assert resp.status_code == 200
-    assert resp.json()["total"] >= 2
+    assert resp.json()["total"] >= 3
 
     resp = await client.get("/api/v1/admin/gateway-logs/stats", headers=headers)
     assert resp.status_code == 200
-    assert resp.json()["total"] >= 2
+    assert resp.json()["total"] >= 3
     assert isinstance(resp.json()["error_distribution"], list)
+
+    resp = await client.get(
+        "/api/v1/admin/gateway-logs/stats",
+        headers=headers,
+        params={"model": model_name},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 3
+    assert data["success_rate"] == pytest.approx(33.33, abs=0.01)
+    assert any(bucket["key"] == "UPSTREAM_TIMEOUT" for bucket in data["error_distribution"])
 
     resp = await client.get(f"/api/v1/admin/gateway-logs/{log_id}", headers=headers)
     assert resp.status_code == 200

@@ -64,7 +64,7 @@ export function ProviderHealthStatus() {
 interface Provider {
   id: string
   name: string
-  status: "active" | "down" | "degraded"
+  status: "active" | "down" | "degraded" | "unknown"
   priority: number
   latency: number
   sparkline?: number[]
@@ -133,6 +133,12 @@ function StatusBadge({ status }: { status: Provider["status"] }) {
       color: "text-amber-400",
       bg: "bg-amber-500/10",
     },
+    unknown: {
+      icon: "⚪",
+      label: "Unknown",
+      color: "text-slate-400",
+      bg: "bg-slate-500/10",
+    },
   }
 
   const config = statusConfig[status]
@@ -175,7 +181,9 @@ function MiniSparkline({
       ? "text-emerald-400"
       : status === "degraded"
         ? "text-amber-400"
-        : "text-red-400"
+        : status === "down"
+          ? "text-red-400"
+          : "text-slate-400"
 
   return (
     <svg

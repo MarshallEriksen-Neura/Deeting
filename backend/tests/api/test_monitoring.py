@@ -73,6 +73,69 @@ async def test_latency_heatmap_and_percentile(AsyncSessionLocal):
 
 
 @pytest.mark.asyncio
+async def test_monitoring_latency_uses_ttft_fallback_and_ignores_zero(AsyncSessionLocal):
+    async with AsyncSessionLocal() as session:
+        now = Datetime.now()
+        model_name = "latency-fallback-test-model"
+        session.add_all(
+            [
+                GatewayLog(
+                    user_id=None,
+                    model=model_name,
+                    status_code=200,
+                    duration_ms=0,
+                    ttft_ms=None,
+                    input_tokens=5,
+                    output_tokens=5,
+                    total_tokens=10,
+                    cost_user=0.0,
+                    cost_upstream=0.0,
+                    created_at=now,
+                ),
+                GatewayLog(
+                    user_id=None,
+                    model=model_name,
+                    status_code=200,
+                    duration_ms=1200,
+                    ttft_ms=None,
+                    input_tokens=5,
+                    output_tokens=5,
+                    total_tokens=10,
+                    cost_user=0.0,
+                    cost_upstream=0.0,
+                    created_at=now - timedelta(minutes=2),
+                ),
+                GatewayLog(
+                    user_id=None,
+                    model=model_name,
+                    status_code=200,
+                    duration_ms=2000,
+                    ttft_ms=400,
+                    input_tokens=5,
+                    output_tokens=5,
+                    total_tokens=10,
+                    cost_user=0.0,
+                    cost_upstream=0.0,
+                    created_at=now - timedelta(minutes=1),
+                ),
+            ]
+        )
+        await session.commit()
+
+        svc = MonitoringService(session)
+        await cache.clear_prefix("mon:")
+
+        heatmap = await svc.get_latency_heatmap(None, "24h", model=model_name)
+        assert len(heatmap.grid) == 24
+        assert heatmap.peak_latency == 1200
+        assert heatmap.median_latency == 800
+
+        percentiles = await svc.get_percentile_trends(None, "24h", model=model_name)
+        assert len(percentiles.timeline) == 24
+        assert any(p.p99 > 1000 for p in percentiles.timeline)
+
+
+@pytest.mark.asyncio
 async def test_model_cost_and_error_distribution(AsyncSessionLocal):
     async with AsyncSessionLocal() as session:
         now = Datetime.now()

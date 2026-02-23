@@ -100,8 +100,11 @@ class MemoryExtractorService:
                 db_session=db_session, user_id=user_id
             )
 
+            if not model:
+                logger.warning(f"Memory extraction skipped: no secretary model resolved for user {user_id}")
+                return []
+
             # 使用 LLMService 进行请求
-            # 若 model 为空，llm_service 会回退到默认逻辑（虽然在你的场景下这通常意味着失败）
             response_text = await llm_service.chat_completion(
                 messages=llm_messages,
                 model=model,

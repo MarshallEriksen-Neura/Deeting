@@ -67,6 +67,14 @@ export function LatencyHeatmap({
     )
   }
 
+  if (!heatmapPoints.length) {
+    return (
+      <div className="flex h-[400px] items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--background)]">
+        <div className="text-sm text-[var(--muted)]">{t("empty")}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
@@ -231,14 +239,20 @@ function buildHeatmapPoints(grid: HeatmapCellData[][], cellSize: number): Heatma
   const latencyStep = rows > 1 ? LATENCY_MAX_MS / (rows - 1) : LATENCY_MAX_MS
 
   return grid.flatMap((column, colIndex) =>
-    column.map((cell, rowIndex) => ({
-      hour: colIndex,
-      latency: Math.round(rowIndex * latencyStep),
-      intensity: cell.intensity,
-      count: cell.count,
-      timeLabel: formatHourLabel(colIndex),
-      size: cellSize,
-    }))
+    column.flatMap((cell, rowIndex) =>
+      cell.count > 0
+        ? [
+            {
+              hour: colIndex,
+              latency: Math.round(rowIndex * latencyStep),
+              intensity: cell.intensity,
+              count: cell.count,
+              timeLabel: formatHourLabel(colIndex),
+              size: cellSize,
+            },
+          ]
+        : []
+    )
   )
 }
 

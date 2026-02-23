@@ -55,12 +55,12 @@ class MonitoringService:
         window_seconds = (now - since).total_seconds()
         bucket_count = 24  # 与前端 24 列布局保持一致
         row_count = 20
+        latency_expr = self._effective_latency_expr()
 
-        stmt = select(
-            GatewayLog.created_at, GatewayLog.ttft_ms, GatewayLog.duration_ms
-        ).where(
+        stmt = select(GatewayLog.created_at, latency_expr.label("latency_ms")).where(
             GatewayLog.created_at >= since,
             GatewayLog.created_at <= now,
+            latency_expr.is_not(None),
         )
         stmt = self._apply_common_filters(
             stmt,
@@ -83,10 +83,10 @@ class MonitoringService:
         latencies: list[float] = []
         if rows:
             bucket_width = window_seconds / bucket_count
-            for created_at, ttft_ms, duration_ms in rows:
+            for created_at, latency_ms in rows:
                 if created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=UTC)
-                latency = float(ttft_ms or duration_ms or 0)
+                latency = float(latency_ms or 0)
                 latencies.append(latency)
                 delta = (created_at - since).total_seconds()
                 col = int(
@@ -148,6 +148,7 @@ class MonitoringService:
         now = Datetime.now()
         since = self._window_start(now, time_range)
         bucket_fmt, bucket_count, bucket_label = self._bucket_params(time_range)
+        latency_expr = self._effective_latency_expr()
 
         # 优先使用数据库分位数（PostgreSQL 支持 percentile_cont），否则回退 Python 计算
         if self._dialect and self._dialect.name == "postgresql":
@@ -156,13 +157,17 @@ class MonitoringService:
                 select(
                     bucket_expr.label("bucket"),
                     func.percentile_cont(0.5)
-                    .within_group(GatewayLog.ttft_ms)
+                    .within_group(latency_expr)
                     .label("p50"),
                     func.percentile_cont(0.99)
-                    .within_group(GatewayLog.ttft_ms)
+                    .within_group(latency_expr)
                     .label("p99"),
                 )
-                .where(GatewayLog.created_at >= since, GatewayLog.created_at <= now)
+                .where(
+                    GatewayLog.created_at >= since,
+                    GatewayLog.created_at <= now,
+                    latency_expr.is_not(None),
+                )
                 .group_by(bucket_expr)
                 .order_by(bucket_expr)
             )
@@ -188,9 +193,10 @@ class MonitoringService:
         else:
             window_seconds = (now - since).total_seconds()
             bucket_width = window_seconds / bucket_count
-            stmt = select(GatewayLog.created_at, GatewayLog.ttft_ms).where(
+            stmt = select(GatewayLog.created_at, latency_expr.label("latency_ms")).where(
                 GatewayLog.created_at >= since,
                 GatewayLog.created_at <= now,
+                latency_expr.is_not(None),
             )
             stmt = self._apply_common_filters(
                 stmt,
@@ -201,10 +207,10 @@ class MonitoringService:
             )
             rows = (await self.session.execute(stmt)).all()
             buckets: list[list[float]] = [[] for _ in range(bucket_count)]
-            for created_at, ttft_ms in rows:
+            for created_at, latency_ms in rows:
                 if created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=UTC)
-                latency = float(ttft_ms or 0)
+                latency = float(latency_ms or 0)
                 delta = (created_at - since).total_seconds()
                 idx = int(
                     min(bucket_count - 1, max(0, math.floor(delta / bucket_width)))
@@ -457,6 +463,19 @@ class MonitoringService:
             if bucket_format == "%Y-%m-%d":
                 return func.to_char(GatewayLog.created_at, "YYYY-MM-DD")
         return func.strftime(bucket_format, GatewayLog.created_at)
+
+    @staticmethod
+    def _effective_latency_expr():
+        """
+        监控口径统一使用有效延迟:
+        1) 优先 ttft_ms
+        2) ttft 缺失时回退 duration_ms
+        3) 0 视为无效值并过滤，避免把占位日志拉低分位数到 0
+        """
+        return func.coalesce(
+            func.nullif(GatewayLog.ttft_ms, 0),
+            func.nullif(GatewayLog.duration_ms, 0),
+        )
 
     @staticmethod
     def _parse_uuid(value: str | None) -> UUID | None:
