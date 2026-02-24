@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 import tempfile
@@ -21,6 +22,8 @@ from app.services.plugin_ui_bundle_storage import (
 from app.services.skill_registry.manifest_generator import SkillManifestGenerator
 from app.services.skill_registry.parsers.base import RepoContext, RepoParserPlugin
 from app.services.skill_registry.repo_ingestion_utils import build_file_index
+
+logger = logging.getLogger(__name__)
 
 
 class RepoIngestionService:
@@ -88,7 +91,19 @@ class RepoIngestionService:
             parser = self.select_parser(repo_context)
             evidence = parser.collect_evidence(repo_context)
             runtime = runtime_hint or "python_library"
-            manifest = await self.manifest_generator.generate(evidence, runtime=runtime)
+
+            if parser.is_authoritative:
+                manifest = parser.extract_manifest(evidence)
+                logger.info(f"Using authoritative manifest from parser: {parser.__class__.__name__}")
+            else:
+                manifest = await self.manifest_generator.generate(evidence, runtime=runtime)
+                # Merge parser evidence if needed
+                parser_manifest = parser.extract_manifest(evidence)
+                if parser_manifest:
+                    for k, v in parser_manifest.items():
+                        if v and not manifest.get(k):
+                            manifest[k] = v
+
             resolved_skill_id = (
                 skill_id
                 or str(manifest.get("id") or "").strip()

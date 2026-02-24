@@ -1,5 +1,5 @@
-from types import SimpleNamespace
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -8,6 +8,7 @@ from app.services.plugin_ui_bundle_storage import (
     get_bundle_ready_marker,
     get_plugin_ui_bundle_dir,
 )
+from app.services.skill_registry.parsers.generic_parser import GenericRepoParser
 from app.services.skill_registry.parsers.node_parser import NodeRepoParser
 from app.services.skill_registry.parsers.python_parser import PythonRepoParser
 from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
@@ -247,3 +248,28 @@ async def test_repo_ingestion_skips_ui_bundle_copy_when_ready(monkeypatch, tmp_p
     )
 
     assert (bundle_dir / "index.html").read_text(encoding="utf-8") == "<html>old</html>"
+
+
+@pytest.mark.asyncio
+async def test_repo_ingestion_with_generic_parser_fallback(monkeypatch, tmp_path):
+    (tmp_path / "README.md").write_text("generic repo", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "app.services.skill_registry.repo_ingestion_service.clone_repo",
+        lambda *_args, **_kwargs: (tmp_path, tmp_path),
+    )
+
+    service = RepoIngestionService(
+        repo=FakeRepo(),
+        manifest_generator=FakeManifestGenerator(),
+        parsers=[PythonRepoParser(), NodeRepoParser(), GenericRepoParser()],
+    )
+
+    result = await service.ingest_repo(
+        "https://example.com/repo.git",
+        "main",
+        skill_id="generic_skill",
+        runtime_hint="python_library",
+    )
+
+    assert result["skill_id"] == "generic_skill"

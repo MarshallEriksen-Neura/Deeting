@@ -211,6 +211,8 @@ async def _run_repo_ingestion(
     user_id: str | None = None,
 ) -> dict:
     from app.services.skill_registry.manifest_generator import SkillManifestGenerator
+    from app.services.skill_registry.parsers.deeting_plugin import DeetingPluginParser
+    from app.services.skill_registry.parsers.generic_parser import GenericRepoParser
     from app.services.skill_registry.parsers.node_parser import NodeRepoParser
     from app.services.skill_registry.parsers.python_parser import PythonRepoParser
     from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
@@ -225,7 +227,12 @@ async def _run_repo_ingestion(
         service = RepoIngestionService(
             repo=repo,
             manifest_generator=SkillManifestGenerator(),
-            parsers=[PythonRepoParser(), NodeRepoParser()],
+            parsers=[
+                DeetingPluginParser(),
+                PythonRepoParser(),
+                NodeRepoParser(),
+                GenericRepoParser(),
+            ],
         )
 
         await push_task_progress(

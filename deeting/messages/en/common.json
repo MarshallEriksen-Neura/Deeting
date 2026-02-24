@@ -82,6 +82,7 @@
       "mcp": "MCP Hub",
       "videos": "Videos",
       "dashboard": "Dashboard",
+      "pluginMarket": "Plugins",
       "admin": "Admin"
     },
     "nav": {
@@ -89,7 +90,8 @@
       "dashboard": "Overview",
       "routes": "Routes",
       "services": "Services",
-      "plugins": "Plugin Market",
+      "plugins": "My Plugins",
+      "pluginMarket": "Plugin Market",
       "configuration": "Configuration",
       "providers": "Providers",
       "apiKeys": "API Keys",

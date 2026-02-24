@@ -16,6 +16,11 @@ class RepoContext:
 
 
 class RepoParserPlugin(ABC):
+    @property
+    def is_authoritative(self) -> bool:
+        """If True, the manifest from this parser is considered complete and reliable."""
+        return False
+
     @abstractmethod
     def can_handle(self, repo_context: RepoContext) -> bool:
         raise NotImplementedError

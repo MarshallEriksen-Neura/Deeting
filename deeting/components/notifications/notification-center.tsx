@@ -59,10 +59,10 @@ interface NotificationCenterProps {
 }
 
 const iconMap = {
-  success: <CheckCircle2 size={18} className="text-green-600" />,
-  error: <XCircle size={18} className="text-red-600" />,
-  warning: <AlertTriangle size={18} className="text-orange-600" />,
-  info: <Info size={18} className="text-blue-600" />,
+  success: <CheckCircle2 size={14} className="text-green-600" />,
+  error: <XCircle size={14} className="text-red-600" />,
+  warning: <AlertTriangle size={14} className="text-orange-600" />,
+  info: <Info size={14} className="text-blue-600" />,
 }
 
 const iconBgMap = {
@@ -130,17 +130,17 @@ export function NotificationCenter({
 
   function renderNotification(notification: NotificationItem) {
     return (
-      <div key={notification.id} className="relative flex gap-4 group">
+      <div key={notification.id} className="relative flex gap-3 group">
         {/* 图标 */}
         <div
           className={cn(
-            "z-10 w-10 h-10 rounded-full flex items-center justify-center",
-            "border-4 border-white shadow-sm shrink-0",
+            "z-10 w-8 h-8 rounded-full flex items-center justify-center",
+            "border-[3px] border-white shadow-sm shrink-0",
             iconBgMap[notification.type]
           )}
         >
           {notification.type === "success" && notification.title.includes("图片") ? (
-            <Sparkles size={18} className="text-purple-600" />
+            <Sparkles size={14} className="text-purple-600" />
           ) : (
             iconMap[notification.type]
           )}
@@ -149,9 +149,9 @@ export function NotificationCenter({
         {/* 内容卡片 */}
         <div
           className={cn(
-            "bg-white p-4 rounded-xl border shadow-sm flex-1",
+            "bg-white p-3.5 rounded-xl border shadow-sm flex-1 min-w-0",
             "cursor-pointer transition-all duration-200",
-            "hover:shadow-md hover:scale-[1.02]",
+            "hover:shadow-md hover:scale-[1.01]",
             notification.read ? "opacity-60 border-gray-100" : "border-gray-200"
           )}
           onClick={() => handleNotificationClick(notification)}
@@ -205,55 +205,55 @@ export function NotificationCenter({
 
   return (
     <Sheet open={isOpen} onOpenChange={setOpen}>
-      <SheetContent className="w-[400px] sm:w-[540px] bg-white/90 backdrop-blur-2xl border-l border-white/20">
-        <SheetHeader className="mb-6">
+      <SheetContent className="w-[420px] sm:w-[480px] sm:max-w-[480px] bg-white/90 backdrop-blur-2xl border-l border-white/20 px-5">
+        <SheetHeader className="mb-4">
           <div className="flex items-center justify-between">
-            <SheetTitle className="text-xl font-bold flex items-center gap-2">
+            <SheetTitle className="text-lg font-bold flex items-center gap-2">
               {unreadCount > 0 && (
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               )}
               {t("title")}
             </SheetTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {unreadCount > 0 && (
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon"
                   onClick={() => {
                     markAllAsRead()
                     onMarkAllRead?.()
                   }}
-                  className="text-xs text-gray-600 hover:text-gray-900"
+                  className="h-8 w-8 text-gray-500 hover:text-gray-900"
+                  title={t("markAllRead")}
                 >
-                  <CheckCheck size={14} className="mr-1" />
-                  {t("markAllRead")}
+                  <CheckCheck size={15} />
                 </Button>
               )}
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon"
                 onClick={() => {
                   clear()
                   onClear?.()
                 }}
-                className="text-xs text-gray-600 hover:text-gray-900"
+                className="h-8 w-8 text-gray-500 hover:text-gray-900"
+                title={t("clear")}
               >
-                <Trash2 size={14} className="mr-1" />
-                {t("clear")}
+                <Trash2 size={15} />
               </Button>
               <Button
                 variant="ghost"
-                size="sm"
-                className="text-xs text-gray-600 hover:text-gray-900"
+                size="icon"
+                className="h-8 w-8 text-gray-500 hover:text-gray-900"
+                title={t("settings")}
               >
-                <Settings size={14} className="mr-1" />
-                {t("settings")}
+                <Settings size={15} />
               </Button>
             </div>
           </div>
         </SheetHeader>
 
-        <ScrollArea className="h-full pr-4">
+        <ScrollArea className="h-full px-1">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -265,12 +265,12 @@ export function NotificationCenter({
             <div className="space-y-8 relative">
               
               {/* 时间轴线条 */}
-              <div className="absolute left-[19px] top-2 bottom-0 w-[1px] bg-gray-200" />
+              <div className="absolute left-[15px] top-2 bottom-0 w-[1px] bg-gray-200" />
 
               {/* Today */}
               {groupedNotifications.today.length > 0 && (
                 <div className="space-y-4">
-                  <h3 className="text-xs font-mono text-gray-400 uppercase tracking-wider bg-white/50 backdrop-blur inline-block px-2 rounded ml-8">
+                  <h3 className="text-xs font-mono text-gray-400 uppercase tracking-wider bg-white/50 backdrop-blur inline-block px-2 rounded ml-7">
                     {t("today")}
                   </h3>
                   {groupedNotifications.today.map(renderNotification)}
@@ -280,7 +280,7 @@ export function NotificationCenter({
               {/* Yesterday */}
               {groupedNotifications.yesterday.length > 0 && (
                 <div className="space-y-4">
-                  <h3 className="text-xs font-mono text-gray-400 uppercase tracking-wider bg-white/50 backdrop-blur inline-block px-2 rounded ml-8">
+                  <h3 className="text-xs font-mono text-gray-400 uppercase tracking-wider bg-white/50 backdrop-blur inline-block px-2 rounded ml-7">
                     {t("yesterday")}
                   </h3>
                   {groupedNotifications.yesterday.map(renderNotification)}
@@ -290,7 +290,7 @@ export function NotificationCenter({
               {/* Older */}
               {groupedNotifications.older.length > 0 && (
                 <div className="space-y-4">
-                  <h3 className="text-xs font-mono text-gray-400 uppercase tracking-wider bg-white/50 backdrop-blur inline-block px-2 rounded ml-8">
+                  <h3 className="text-xs font-mono text-gray-400 uppercase tracking-wider bg-white/50 backdrop-blur inline-block px-2 rounded ml-7">
                     {t("older")}
                   </h3>
                   {groupedNotifications.older.map(renderNotification)}

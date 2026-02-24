@@ -11,17 +11,8 @@ export default async function PluginsPage({
   const { locale } = await params
   setRequestLocale(locale)
 
-  return <PluginsPageContent />
-}
-
-function PluginsPageContent() {
   return (
-    <Container
-      as="main"
-      gutter="md"
-      size="full"
-      className="py-6 md:py-8 !mx-0 !max-w-none"
-    >
+    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
       <PluginsClient mode="installed" />
     </Container>
   )

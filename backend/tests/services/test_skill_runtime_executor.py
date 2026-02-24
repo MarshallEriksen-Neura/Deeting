@@ -38,6 +38,49 @@ async def test_executor_returns_artifacts_and_logs():
     assert result["stdout"]
 
 
+@pytest.mark.asyncio
+async def test_executor_accepts_python_library_runtime_without_unknown_warning(caplog):
+    manifest = {
+        "usage_spec": {"example_code": "print('ok')"},
+        "installation": {"dependencies": []},
+    }
+    skill = type(
+        "Skill",
+        (),
+        {
+            "id": "docx.python.runtime",
+            "runtime": "python_library",
+            "source_repo": "https://example.com/repo.git",
+            "source_revision": "main",
+            "source_subdir": None,
+            "manifest_json": manifest,
+        },
+    )()
+    sandbox = _FakeSandbox()
+    executor = SkillRuntimeExecutor(
+        _FakeRepo(skill),
+        sandbox_manager=_FakeSandboxManager(sandbox),
+    )
+
+    with caplog.at_level(
+        "WARNING",
+        logger="app.services.skill_registry.skill_runtime_executor",
+    ):
+        result = await executor.execute(
+            "docx.python.runtime",
+            session_id="u1",
+            user_id="00000000-0000-0000-0000-000000000001",
+            inputs={},
+            intent="edit",
+        )
+
+    assert result["status"] == "ok"
+    assert not any(
+        "Unknown runtime" in record.message
+        for record in caplog.records
+    )
+
+
 class _FakeExecutionLogs:
     def __init__(self, stdout_text: str = "ok") -> None:
         self.stdout = [type("Msg", (), {"text": stdout_text})()]

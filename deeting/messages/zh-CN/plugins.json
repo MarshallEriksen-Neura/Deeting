@@ -1,8 +1,15 @@
 {
   "plugins": {
     "page": {
-      "title": "插件市场",
-      "description": "发现并安装社区插件，扩展你的 Agent 能力。",
+      "installed": {
+        "title": "我的插件",
+        "description": "管理当前用户已安装的插件。"
+      },
+      "market": {
+        "title": "插件市场",
+        "description": "发现并安装社区插件，扩展你的 Agent 能力。"
+      },
+      "marketEntry": "前往插件市场",
       "hero": {
         "titlePrefix": "探索",
         "titleHighlight": "插件生态",
@@ -14,6 +21,10 @@
       "empty": {
         "title": "暂无插件",
         "description": "目前市场还没有可用插件，敬请期待。"
+      },
+      "emptyInstalled": {
+        "title": "暂无已安装插件",
+        "description": "可前往插件市场安装后再回来管理。"
       },
       "error": {
         "loadFailed": "加载失败：{message}"

@@ -1,8 +1,15 @@
 {
   "plugins": {
     "page": {
-      "title": "Plugin Market",
-      "description": "Discover and install community plugins to extend your Agent capabilities.",
+      "installed": {
+        "title": "My Plugins",
+        "description": "Manage plugins currently installed for this user."
+      },
+      "market": {
+        "title": "Plugin Market",
+        "description": "Discover and install community plugins to extend your Agent capabilities."
+      },
+      "marketEntry": "Go To Plugin Market",
       "hero": {
         "titlePrefix": "Explore",
         "titleHighlight": "Plugin Ecosystem",
@@ -14,6 +21,10 @@
       "empty": {
         "title": "No plugins available",
         "description": "There are no plugins in the market yet. Stay tuned."
+      },
+      "emptyInstalled": {
+        "title": "No installed plugins",
+        "description": "Go to Plugin Market to install one first."
       },
       "error": {
         "loadFailed": "Failed to load: {message}"

@@ -34,6 +34,11 @@ class SkillRuntimeExecutor:
             # Future extensions can be added here
             # "crawler": CrawlerRuntimeStrategy(),
         }
+        # Backward-compatible aliases persisted by ingestion/API.
+        self.runtime_aliases: dict[str, str] = {
+            "python_library": "opensandbox",
+            "node_library": "opensandbox",
+        }
 
     async def execute(
         self,
@@ -50,7 +55,10 @@ class SkillRuntimeExecutor:
             raise ValueError("Skill not found")
         await self._ensure_user_skill_access(skill, user_id=user_id, intent=intent)
 
-        runtime_type = skill.runtime or "opensandbox"  # Default to sandbox
+        runtime_type = (
+            str(skill.runtime or "opensandbox").strip().lower() or "opensandbox"
+        )
+        runtime_type = self.runtime_aliases.get(runtime_type, runtime_type)
         strategy = self.strategies.get(runtime_type)
 
         if not strategy:

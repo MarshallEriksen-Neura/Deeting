@@ -182,3 +182,25 @@ def test_build_network_policy_returns_dict_when_valid(monkeypatch):
     assert manager._build_network_policy() == {
         "egress": {"mode": "allowlist", "hosts": ["api.openai.com"]}
     }
+
+
+def test_build_sandbox_entrypoint_includes_bash_compat():
+    entrypoint = sandbox_manager_module._build_sandbox_entrypoint(
+        "/opt/opensandbox/code-interpreter.sh"
+    )
+    assert entrypoint[0] == "/bin/sh"
+    assert entrypoint[1] == "-lc"
+    assert "/usr/bin/bash" in entrypoint[2]
+    assert "exec /opt/opensandbox/code-interpreter.sh" in entrypoint[2]
+
+
+def test_is_sandbox_not_found_detects_not_found_message():
+    manager = SandboxManager()
+    exc = RuntimeError("Sandbox 1234 not found.")
+    assert manager._is_sandbox_not_found(exc) is True
+
+
+def test_is_sandbox_not_found_returns_false_for_other_errors():
+    manager = SandboxManager()
+    exc = RuntimeError("connection reset by peer")
+    assert manager._is_sandbox_not_found(exc) is False

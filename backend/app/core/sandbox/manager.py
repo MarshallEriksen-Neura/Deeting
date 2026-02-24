@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import shlex
 from datetime import timedelta
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -144,12 +145,20 @@ class SandboxManager:
                     pass
                 return sandbox
             except Exception as exc:
-                logger.warning(
-                    "Failed to reuse sandbox %s for session %s: %s",
-                    sandbox_id,
-                    session_id,
-                    exc,
-                )
+                if self._is_sandbox_not_found(exc):
+                    logger.info(
+                        "Sandbox %s not found for session %s, clearing stale cache mapping.",
+                        sandbox_id,
+                        session_id,
+                    )
+                    await self._clear_stale_sandbox_mapping(session_id, sandbox_id)
+                else:
+                    logger.warning(
+                        "Failed to reuse sandbox %s for session %s: %s",
+                        sandbox_id,
+                        session_id,
+                        exc,
+                    )
 
         # Create new if none exists or connection failed
         sandbox = await self._create_sandbox(session_id)
@@ -162,6 +171,15 @@ class SandboxManager:
             await cache.set(key_ref(sandbox_id), "1", ttl=ttl)
 
         return sandbox
+
+    async def _clear_stale_sandbox_mapping(
+        self, session_id: str, sandbox_id: str
+    ) -> None:
+        await cache.delete(key_session(session_id))
+        await cache.delete(key_ref(sandbox_id))
+        redis = self._get_redis()
+        if redis:
+            await redis.srem(KEY_ACTIVE_SET, sandbox_id)
 
     async def stop_sandbox(self, sandbox_id: str, session_id: str | None = None):
         """Explicitly kill and remove a sandbox from management."""
@@ -251,7 +269,7 @@ class SandboxManager:
 
         response = await service.create_sandbox(
             spec=SandboxImageSpec(image=settings.OPENSANDBOX_IMAGE),
-            entrypoint=[settings.OPENSANDBOX_ENTRYPOINT],
+            entrypoint=_build_sandbox_entrypoint(settings.OPENSANDBOX_ENTRYPOINT),
             env={"PYTHON_VERSION": settings.OPENSANDBOX_PYTHON_VERSION},
             metadata={"session_id": session_id},
             timeout=self.default_timeout,
@@ -399,6 +417,13 @@ class SandboxManager:
 
         return _ERROR_CODE_UNKNOWN, "沙箱执行失败"
 
+    def _is_sandbox_not_found(self, exc: BaseException) -> bool:
+        for item in self._iter_exception_chain(exc):
+            message = str(item).lower()
+            if "sandbox" in message and "not found" in message:
+                return True
+        return False
+
     def _iter_exception_chain(self, exc: BaseException):
         seen: set[int] = set()
         current: BaseException | None = exc
@@ -421,6 +446,34 @@ class SandboxManager:
         if len(detail) > max_len:
             return f"{detail[: max_len - 3]}..."
         return detail
+
+
+def _build_sandbox_entrypoint(configured_entrypoint: str) -> list[str]:
+    """
+    Normalize shell path before launching sandbox entrypoint.
+
+    Some runtime images only provide `/bin/bash` or `/bin/sh`, while execd
+    may invoke `/usr/bin/bash`. We best-effort create `/usr/bin/bash` symlink
+    to improve compatibility.
+    """
+    entrypoint = str(configured_entrypoint or "").strip()
+    if not entrypoint:
+        entrypoint = "/opt/opensandbox/code-interpreter.sh"
+
+    quoted_entrypoint = shlex.quote(entrypoint)
+    script = (
+        'if [ ! -x /usr/bin/bash ]; then '
+        'BASH_TARGET=""; '
+        'if [ -x /bin/bash ]; then BASH_TARGET="/bin/bash"; '
+        'elif [ -x /bin/sh ]; then BASH_TARGET="/bin/sh"; fi; '
+        'if [ -n "$BASH_TARGET" ]; then '
+        "mkdir -p /usr/bin >/dev/null 2>&1 || true; "
+        'ln -sf "$BASH_TARGET" /usr/bin/bash >/dev/null 2>&1 || true; '
+        "fi; "
+        "fi; "
+        f"exec {quoted_entrypoint}"
+    )
+    return ["/bin/sh", "-lc", script]
 
 
 sandbox_manager = SandboxManager.get_instance()

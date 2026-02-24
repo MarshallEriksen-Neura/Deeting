@@ -1,46 +1,65 @@
-"""
-集成测试专用 fixture
-
-- 复用 API 测试的内存 SQLite/Redis，避免依赖真实数据库
-- 强制路由步骤使用兜底逻辑，避免因缺少预置上游导致流程中断
-"""
-
-
+import pytest
 import pytest_asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+from app.models import Base, User
 
-from app.core.database import get_db
-from app.services.workflow.steps.base import StepResult, StepStatus
-from app.services.workflow.steps.quota_check import QuotaCheckStep
-from app.services.workflow.steps.routing import RoutingStep
-from main import app
-from tests.api.conftest import (
-    _init_db,
-    _override_get_db,
-    _seed_users,
+# 1. 建立集成测试专用引擎
+engine = create_async_engine(
+    "sqlite+aiosqlite:///:memory:",
+    future=True,
+    poolclass=StaticPool,
+    connect_args={"check_same_thread": False},
+)
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    expire_on_commit=False,
 )
 
+@pytest_asyncio.fixture(scope="module", autouse=True)
+async def setup_integration_db(monkeypatch_session):
+    # 强制将全局 database 工厂替换为测试用的
+    import app.core.database
+    import app.services.tools.tool_sync_service
+    
+    # 注意：这里需要替换 service 内部可能引用的地方
+    monkeypatch_session.setattr("app.core.database.AsyncSessionLocal", AsyncSessionLocal)
+    # tool_sync_service 内部直接 import 了 AsyncSessionLocal
+    monkeypatch_session.setattr("app.services.tools.tool_sync_service.AsyncSessionLocal", AsyncSessionLocal)
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def _init_integration_db():
-    await _init_db()
-    await _seed_users()
-    app.dependency_overrides[get_db] = _override_get_db
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _force_routing_fallback(monkeypatch):
-    """
-    集成测试不关心真实上游路由，强制走 fallback，避免 NoAvailableUpstream。
-    """
-
-    async def fake_execute(self: RoutingStep, ctx) -> StepResult:
-        ctx.set("routing", "allow_fallback", True)
-        return self._fallback(ctx)
-
-    monkeypatch.setattr(RoutingStep, "execute", fake_execute)
-
-    async def quota_skip(self: QuotaCheckStep, ctx):
-        return StepResult(status=StepStatus.SUCCESS)
-
-    monkeypatch.setattr(QuotaCheckStep, "execute", quota_skip)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Seed
+    async with AsyncSessionLocal() as session:
+        user = User(
+            email="testuser@example.com",
+            username="testuser",
+            hashed_password="...",
+            is_active=True
+        )
+        session.add(user)
+        await session.commit()
     yield
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+@pytest.fixture(scope="module")
+def monkeypatch_session():
+    from _pytest.monkeypatch import MonkeyPatch
+    m = MonkeyPatch()
+    yield m
+    m.undo()
+
+@pytest_asyncio.fixture
+async def db_session():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+@pytest_asyncio.fixture
+async def current_user_obj(db_session):
+    res = await db_session.execute(
+        select(User).where(User.email == "testuser@example.com")
+    )
+    return res.scalar_one()

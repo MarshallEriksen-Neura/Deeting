@@ -82,6 +82,7 @@
       "mcp": "MCP 枢纽",
       "videos": "视频",
       "dashboard": "仪表盘",
+      "pluginMarket": "插件市场",
       "admin": "管理后台"
     },
     "nav": {
@@ -89,7 +90,8 @@
       "dashboard": "概览",
       "routes": "路由",
       "services": "服务",
-      "plugins": "插件市场",
+      "plugins": "我的插件",
+      "pluginMarket": "插件市场",
       "configuration": "配置",
       "providers": "模型服务",
       "apiKeys": "API 密钥",

@@ -5,7 +5,8 @@
   - `id`: 技能唯一标识（如 `core.tools.crawler`）
   - `name`: 技能名称
   - `type`: 资源类型（固定为 `SKILL`，建议只读）
-  - `runtime`: 运行时类型（`python_library` / `node_library` / `cli` / `mcp`）
+  - `runtime`: 运行时类型（`python_library` / `node_library` / `opensandbox` / `backend_task`）
+    - 兼容说明：`python_library`、`node_library` 当前会由后端统一映射到 `opensandbox` 执行。
   - `version`: 语义化版本号
   - `description`: 技能描述
   - `source_repo`: 源码仓库地址
