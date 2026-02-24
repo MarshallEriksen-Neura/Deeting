@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
+
+from sqlalchemy import select
 
 from app.core.sandbox.manager import sandbox_manager
 from app.repositories.skill_registry_repository import SkillRegistryRepository
@@ -37,7 +40,7 @@ class SkillRuntimeExecutor:
         skill_id: str,
         *,
         session_id: str | None,
-        user_id: str | None = None,
+        user_id: str | uuid.UUID | None = None,
         intent: str | None = None,
         inputs: dict[str, Any],
         kill_on_exit: bool = False,
@@ -45,6 +48,7 @@ class SkillRuntimeExecutor:
         skill = await self.repo.get_by_id(skill_id)
         if not skill:
             raise ValueError("Skill not found")
+        await self._ensure_user_skill_access(skill, user_id=user_id, intent=intent)
 
         runtime_type = skill.runtime or "opensandbox"  # Default to sandbox
         strategy = self.strategies.get(runtime_type)
@@ -65,3 +69,40 @@ class SkillRuntimeExecutor:
         )
 
         return await strategy.execute(skill, inputs, context)
+
+    async def _ensure_user_skill_access(
+        self,
+        skill,
+        *,
+        user_id: str | uuid.UUID | None,
+        intent: str | None = None,
+    ) -> None:
+        if intent == "dry_run":
+            return
+        # System/local seeded skills keep existing behavior.
+        if not getattr(skill, "source_repo", None):
+            return
+
+        if not user_id:
+            raise ValueError("Skill requires authenticated user installation")
+        try:
+            uid = user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(str(user_id))
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Skill requires valid user_id") from exc
+
+        session = getattr(self.repo, "session", None)
+        if session is None:
+            logger.warning("SkillRuntimeExecutor: missing repo session, skip install check")
+            return
+
+        from app.models.user_skill_installation import UserSkillInstallation
+
+        stmt = select(UserSkillInstallation.id).where(
+            UserSkillInstallation.user_id == uid,
+            UserSkillInstallation.skill_id == str(skill.id),
+            UserSkillInstallation.is_enabled == True,
+        )
+        result = await session.execute(stmt)
+        installed_id = result.scalar_one_or_none()
+        if installed_id is None:
+            raise ValueError("Skill not installed for current user")

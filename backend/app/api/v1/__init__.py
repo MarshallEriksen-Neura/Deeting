@@ -53,6 +53,7 @@ from app.api.v1.internal.sandbox_route import router as internal_sandbox_router
 from app.api.v1.media_routes import router as media_router
 from app.api.v1.monitoring_route import router as monitoring_router
 from app.api.v1.notification_ws_route import router as notification_ws_router
+from app.api.v1.plugin_market_route import router as plugin_market_router
 from app.api.v1.providers_route import router as provider_router
 from app.api.v1.public import image_generation_share_router as public_image_share_router
 from app.api.v1.spec_agent_route import router as spec_agent_router
@@ -115,6 +116,7 @@ __all__ = [
     "memory_router",
     "monitoring_router",
     "notification_ws_router",
+    "plugin_market_router",
     "provider_router",
     "public_image_share_router",
     "settings_router",

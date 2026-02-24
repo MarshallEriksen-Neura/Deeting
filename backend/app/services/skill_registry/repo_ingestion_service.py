@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
+import time
+import uuid
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -11,6 +14,10 @@ from app.repositories.skill_artifact_repository import SkillArtifactRepository
 from app.repositories.skill_capability_repository import SkillCapabilityRepository
 from app.repositories.skill_dependency_repository import SkillDependencyRepository
 from app.repositories.skill_registry_repository import SkillRegistryRepository
+from app.services.plugin_ui_bundle_storage import (
+    get_bundle_ready_marker,
+    get_plugin_ui_bundle_dir,
+)
 from app.services.skill_registry.manifest_generator import SkillManifestGenerator
 from app.services.skill_registry.parsers.base import RepoContext, RepoParserPlugin
 from app.services.skill_registry.repo_ingestion_utils import build_file_index
@@ -89,6 +96,12 @@ class RepoIngestionService:
             )
             if not resolved_skill_id:
                 raise ValueError("skill_id is required for ingestion")
+            ui_bundle_meta = _extract_ui_bundle(
+                repo_root=effective_root,
+                skill_id=resolved_skill_id,
+                revision=revision,
+            )
+            manifest = _enrich_manifest_with_ui_bundle(manifest, ui_bundle_meta)
             payload = _build_skill_payload(
                 resolved_skill_id,
                 manifest,
@@ -167,6 +180,102 @@ def _build_skill_payload(
         "manifest_json": manifest,
         "env_requirements": env_requirements,
     }
+
+
+def _extract_ui_bundle(
+    *,
+    repo_root: Path,
+    skill_id: str,
+    revision: str,
+) -> dict | None:
+    deeting_manifest = _read_deeting_manifest(repo_root)
+    if not isinstance(deeting_manifest, dict):
+        return None
+    entry = deeting_manifest.get("entry")
+    if not isinstance(entry, dict):
+        return None
+    renderer_raw = entry.get("renderer")
+    renderer_entry = str(renderer_raw or "").strip().lstrip("/")
+    if not renderer_entry:
+        return None
+
+    renderer_path = _safe_resolve_in_root(repo_root, renderer_entry)
+    if renderer_path is None or not renderer_path.exists():
+        return None
+
+    if renderer_path.is_dir():
+        source_dir = renderer_path
+        renderer_asset_path = "index.html"
+    else:
+        source_dir = renderer_path.parent
+        renderer_asset_path = renderer_path.name
+
+    bundle_dir = get_plugin_ui_bundle_dir(skill_id=skill_id, revision=revision)
+    ready_marker = get_bundle_ready_marker(bundle_dir)
+    if ready_marker.exists():
+        return {
+            "renderer_entry": renderer_entry,
+            "renderer_asset_path": renderer_asset_path,
+            "bundle_ready": True,
+            "copied": False,
+        }
+
+    if bundle_dir.exists():
+        shutil.rmtree(bundle_dir, ignore_errors=True)
+    bundle_dir.parent.mkdir(parents=True, exist_ok=True)
+    temp_bundle_dir = bundle_dir.parent / f".{bundle_dir.name}.tmp-{uuid.uuid4().hex[:8]}"
+    shutil.copytree(source_dir, temp_bundle_dir, symlinks=True)
+    metadata = {
+        "renderer_entry": renderer_entry,
+        "renderer_asset_path": renderer_asset_path,
+        "copied_at": int(time.time()),
+        "skill_id": str(skill_id),
+        "revision": str(revision),
+    }
+    get_bundle_ready_marker(temp_bundle_dir).write_text(
+        json.dumps(metadata, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    temp_bundle_dir.replace(bundle_dir)
+    return {
+        "renderer_entry": renderer_entry,
+        "renderer_asset_path": renderer_asset_path,
+        "bundle_ready": True,
+        "copied": True,
+    }
+
+
+def _read_deeting_manifest(repo_root: Path) -> dict | None:
+    path = repo_root / "deeting.json"
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    return None
+
+
+def _safe_resolve_in_root(root: Path, relative_path: str) -> Path | None:
+    root_resolved = root.resolve()
+    target = (root_resolved / relative_path).resolve()
+    if target == root_resolved or target.is_relative_to(root_resolved):
+        return target
+    return None
+
+
+def _enrich_manifest_with_ui_bundle(manifest: dict, ui_bundle_meta: dict | None) -> dict:
+    payload = dict(manifest or {})
+    if not ui_bundle_meta:
+        return payload
+    payload["ui_bundle"] = {
+        "renderer_entry": str(ui_bundle_meta.get("renderer_entry") or ""),
+        "renderer_asset_path": str(ui_bundle_meta.get("renderer_asset_path") or ""),
+        "bundle_ready": bool(ui_bundle_meta.get("bundle_ready")),
+    }
+    return payload
 
 
 def _extract_complexity_score(manifest: dict) -> float | None:

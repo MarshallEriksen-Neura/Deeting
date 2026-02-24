@@ -28,6 +28,7 @@ async def execute_skill(
         result = await executor.execute(
             skill_id,
             session_id=session_id,
+            user_id=user.id,
             inputs=payload.inputs,
             intent=payload.intent,
         )

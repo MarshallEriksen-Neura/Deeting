@@ -40,6 +40,7 @@ from .system_setting_repository import SystemSettingRepository
 from .trace_feedback_repository import TraceFeedbackRepository
 from .usage_repository import UsageRepository
 from .user_document_repository import UserDocumentRepository
+from .user_skill_installation_repository import UserSkillInstallationRepository
 from .user_repository import UserRepository
 
 __all__ = [
@@ -81,6 +82,7 @@ __all__ = [
     "TraceFeedbackRepository",
     "UsageRepository",
     "UserDocumentRepository",
+    "UserSkillInstallationRepository",
     "UserRepository",
     "UserSecretaryRepository",
 ]

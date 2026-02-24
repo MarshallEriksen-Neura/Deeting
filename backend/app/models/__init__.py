@@ -81,6 +81,7 @@ from .upstream_secret import UpstreamSecret
 from .user import Permission, Role, RolePermission, User, UserRole
 from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
+from .user_skill_installation import UserSkillInstallation
 from .user_document import UserDocument
 
 __all__ = [
@@ -161,6 +162,7 @@ __all__ = [
     "UserMcpSubscription",
     "UserMcpServer",
     "UserMcpSource",
+    "UserSkillInstallation",
     "UserDocument",
     "SkillRegistry",
     "SkillCapability",

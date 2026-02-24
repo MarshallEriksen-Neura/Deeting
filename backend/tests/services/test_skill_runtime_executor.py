@@ -15,6 +15,7 @@ async def test_executor_returns_artifacts_and_logs():
         (),
         {
             "id": "docx",
+            "runtime": "opensandbox",
             "source_repo": "https://example.com/repo.git",
             "source_revision": "main",
             "source_subdir": None,
@@ -26,30 +27,40 @@ async def test_executor_returns_artifacts_and_logs():
         _FakeRepo(skill),
         sandbox_manager=_FakeSandboxManager(sandbox),
     )
-    result = await executor.execute("docx", session_id="u1", inputs={}, intent="edit")
+    result = await executor.execute(
+        "docx",
+        session_id="u1",
+        user_id="00000000-0000-0000-0000-000000000001",
+        inputs={},
+        intent="edit",
+    )
     assert result["artifacts"][0]["name"] == "output_docx"
     assert result["stdout"]
 
 
 class _FakeExecutionLogs:
-    def __init__(self) -> None:
-        self.stdout = [type("Msg", (), {"text": "ok"})()]
+    def __init__(self, stdout_text: str = "ok") -> None:
+        self.stdout = [type("Msg", (), {"text": stdout_text})()]
         self.stderr = []
 
 
 class _FakeExecution:
-    def __init__(self) -> None:
-        self.logs = _FakeExecutionLogs()
+    def __init__(self, stdout_text: str = "ok") -> None:
+        self.logs = _FakeExecutionLogs(stdout_text=stdout_text)
         self.result = []
 
 
 class _FakeCommands:
-    def __init__(self) -> None:
+    def __init__(self, has_requirements: bool = False) -> None:
         self.commands_ran: list[str] = []
+        self.has_requirements = has_requirements
 
     async def run(self, command: str, *, opts=None, handlers=None):
         self.commands_ran.append(command)
-        return _FakeExecution()
+        if command == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi":
+            signal = "1" if self.has_requirements else "0"
+            return _FakeExecution(stdout_text=signal)
+        return _FakeExecution(stdout_text="ok")
 
 
 class _FakeFiles:
@@ -64,8 +75,9 @@ class _FakeFiles:
 
 
 class _FakeSandbox:
-    def __init__(self) -> None:
-        self.commands = _FakeCommands()
+    def __init__(self, *, has_requirements: bool = False) -> None:
+        self.id = "fake_sandbox"
+        self.commands = _FakeCommands(has_requirements=has_requirements)
         self.files = _FakeFiles()
 
     async def close(self) -> None:
@@ -77,6 +89,9 @@ class _FakeSandboxManager:
         self.sandbox = sandbox
 
     async def _create_sandbox(self, _session_id: str):
+        return self.sandbox
+
+    async def get_or_create_sandbox(self, _session_id: str):
         return self.sandbox
 
 
@@ -100,6 +115,7 @@ async def test_executor_builds_script_and_reads_artifacts():
         (),
         {
             "id": "docx",
+            "runtime": "opensandbox",
             "source_repo": "https://example.com/repo.git",
             "source_revision": "main",
             "source_subdir": None,
@@ -113,11 +129,132 @@ async def test_executor_builds_script_and_reads_artifacts():
     )
 
     result = await executor.execute(
-        "docx", session_id="u1", inputs={"docx_path": "a.docx"}, intent="edit"
+        "docx",
+        session_id="u1",
+        user_id="00000000-0000-0000-0000-000000000001",
+        inputs={"docx_path": "a.docx"},
+        intent="edit",
     )
 
-    assert sandbox.commands.commands_ran[0].startswith("mkdir -p")
+    run_script = sandbox.files.writes.get("/workspace/skills/docx/run.py", "")
+    assert "class DeetingRuntime" in run_script
+    assert "plugin backend must define async def invoke" in run_script
+    assert "__DEETING_PLUGIN_INVOKE_RESULT__" in run_script
+    assert sandbox.commands.commands_ran[0].startswith("rm -rf ")
+    assert "mkdir -p" in sandbox.commands.commands_ran[0]
     assert "git clone" in sandbox.commands.commands_ran[1]
     assert sandbox.commands.commands_ran[2] == "pip install lxml"
-    assert sandbox.commands.commands_ran[3].startswith("python ")
+    assert (
+        sandbox.commands.commands_ran[3]
+        == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+    )
+    assert sandbox.commands.commands_ran[4].startswith("python ")
     assert result["artifacts"][0]["content_base64"]
+
+
+@pytest.mark.asyncio
+async def test_executor_installs_requirements_txt_when_present():
+    manifest = {
+        "usage_spec": {"example_code": "print('ok')"},
+        "installation": {"dependencies": []},
+    }
+    skill = type(
+        "Skill",
+        (),
+        {
+            "id": "repo.with.requirements",
+            "runtime": "opensandbox",
+            "source_repo": "https://example.com/repo.git",
+            "source_revision": "main",
+            "source_subdir": None,
+            "manifest_json": manifest,
+        },
+    )()
+    sandbox = _FakeSandbox(has_requirements=True)
+    executor = SkillRuntimeExecutor(
+        _FakeRepo(skill),
+        sandbox_manager=_FakeSandboxManager(sandbox),
+    )
+
+    await executor.execute(
+        "repo.with.requirements",
+        session_id="u1",
+        user_id="00000000-0000-0000-0000-000000000001",
+        inputs={},
+        intent="edit",
+    )
+
+    assert sandbox.commands.commands_ran[2] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+    assert sandbox.commands.commands_ran[3] == "pip install -r requirements.txt"
+    assert sandbox.commands.commands_ran[4].startswith("python ")
+
+
+@pytest.mark.asyncio
+async def test_executor_logs_skip_when_no_dependencies_and_no_requirements(caplog):
+    manifest = {
+        "usage_spec": {"example_code": "print('ok')"},
+        "installation": {"dependencies": []},
+    }
+    skill = type(
+        "Skill",
+        (),
+        {
+            "id": "repo.no.dependencies",
+            "runtime": "opensandbox",
+            "source_repo": "https://example.com/repo.git",
+            "source_revision": "main",
+            "source_subdir": None,
+            "manifest_json": manifest,
+        },
+    )()
+    sandbox = _FakeSandbox(has_requirements=False)
+    executor = SkillRuntimeExecutor(
+        _FakeRepo(skill),
+        sandbox_manager=_FakeSandboxManager(sandbox),
+    )
+
+    with caplog.at_level("INFO", logger="app.services.skill_registry.runtimes.sandbox"):
+        await executor.execute(
+            "repo.no.dependencies",
+            session_id="u1",
+            user_id="00000000-0000-0000-0000-000000000001",
+            inputs={},
+            intent="edit",
+        )
+
+    assert sandbox.commands.commands_ran[2] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+    assert sandbox.commands.commands_ran[3].startswith("python ")
+    assert not any(cmd.startswith("pip install") for cmd in sandbox.commands.commands_ran)
+    assert any(
+        "event=plugin_dependency_install_skipped" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_executor_requires_user_id_for_repo_skill():
+    manifest = {"usage_spec": {"example_code": "print('ok')"}}
+    skill = type(
+        "Skill",
+        (),
+        {
+            "id": "plugin.repo.skill",
+            "source_repo": "https://example.com/repo.git",
+            "source_revision": "main",
+            "source_subdir": None,
+            "manifest_json": manifest,
+        },
+    )()
+    executor = SkillRuntimeExecutor(
+        _FakeRepo(skill),
+        sandbox_manager=_FakeSandboxManager(_FakeSandbox()),
+    )
+
+    with pytest.raises(ValueError, match="authenticated user installation"):
+        await executor.execute(
+            "plugin.repo.skill",
+            session_id="u1",
+            user_id=None,
+            inputs={},
+            intent="edit",
+        )

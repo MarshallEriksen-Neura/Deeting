@@ -199,3 +199,58 @@ async def test_search_tools_rerank_uses_decision_config(monkeypatch):
     assert captured["ucb_min_trials"] == 3
     assert captured["thompson_prior_alpha"] == 2.0
     assert captured["thompson_prior_beta"] == 3.0
+
+
+@pytest.mark.asyncio
+async def test_search_tools_filters_repo_skills_by_installation(monkeypatch):
+    service = ToolSyncService(embedding_service=FakeEmbeddingService())
+
+    async def fake_search_system(*_args, **_kwargs):
+        return []
+
+    async def fake_search_user(*_args, **_kwargs):
+        return []
+
+    async def fake_search_skills(*_args, **_kwargs):
+        return [
+            {
+                "payload": {
+                    "skill_id": "core.tools.crawler",
+                    "description": "system skill",
+                }
+            },
+            {
+                "payload": {
+                    "skill_id": "plugin.a",
+                    "description": "installed repo skill",
+                    "source_repo": "https://github.com/org/a",
+                }
+            },
+            {
+                "payload": {
+                    "skill_id": "plugin.b",
+                    "description": "uninstalled repo skill",
+                    "source_repo": "https://github.com/org/b",
+                }
+            },
+        ]
+
+    async def fake_rerank(skill_hits):
+        return skill_hits
+
+    async def fake_installed(_user_id):
+        return {"plugin.a"}
+
+    monkeypatch.setattr(
+        "app.services.tools.tool_sync_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(service, "_search_system", fake_search_system)
+    monkeypatch.setattr(service, "_search_user", fake_search_user)
+    monkeypatch.setattr(service, "_search_skills", fake_search_skills)
+    monkeypatch.setattr(service, "_rerank_skill_hits", fake_rerank)
+    monkeypatch.setattr(service, "_list_user_installed_skill_ids", fake_installed)
+
+    result = await service.search_tools("find plugin", user_id=uuid.uuid4())
+    names = [tool.name for tool in result]
+    assert names == ["skill__core.tools.crawler", "skill__plugin.a"]

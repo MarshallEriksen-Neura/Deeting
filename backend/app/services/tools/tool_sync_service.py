@@ -6,6 +6,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import select
+
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
@@ -364,9 +366,16 @@ class ToolSyncService:
         )
 
         skill_start = time.perf_counter()
+        installed_skill_ids: set[str] | None = None
+        if user_id:
+            installed_skill_ids = await self._list_user_installed_skill_ids(user_id)
         skill_hits = await self._search_skills(
             vector, limit=skill_limit, threshold=threshold
         )
+        if user_id:
+            skill_hits = self._filter_skill_hits_for_user(
+                skill_hits, installed_skill_ids or set()
+            )
         logger.info(
             "ToolSyncService: skill search duration_ms=%.2f hits=%s",
             (time.perf_counter() - skill_start) * 1000,
@@ -623,6 +632,41 @@ class ToolSyncService:
             description=payload.get("description"),
             input_schema=_safe_schema(payload.get("schema_json")),
         )
+
+    def _filter_skill_hits_for_user(
+        self, skill_hits: list[dict[str, Any]], installed_skill_ids: set[str]
+    ) -> list[dict[str, Any]]:
+        filtered: list[dict[str, Any]] = []
+        for hit in skill_hits:
+            payload = hit.get("payload") or {}
+            skill_id = str(payload.get("skill_id") or "").strip()
+            if not skill_id:
+                continue
+            source_repo = str(payload.get("source_repo") or "").strip()
+            # Repo-based marketplace plugins require user installation.
+            if source_repo and skill_id not in installed_skill_ids:
+                continue
+            filtered.append(hit)
+        return filtered
+
+    async def _list_user_installed_skill_ids(self, user_id: uuid.UUID) -> set[str]:
+        from app.models.user_skill_installation import UserSkillInstallation
+
+        try:
+            async with AsyncSessionLocal() as session:
+                stmt = select(UserSkillInstallation.skill_id).where(
+                    UserSkillInstallation.user_id == user_id,
+                    UserSkillInstallation.is_enabled == True,
+                )
+                result = await session.execute(stmt)
+                return {str(row[0]) for row in result.all() if row and row[0]}
+        except Exception as exc:  # pragma: no cover - fail-open
+            logger.warning(
+                "ToolSyncService: failed to load installed skills user_id=%s",
+                user_id,
+                exc_info=exc,
+            )
+            return set()
 
 
 tool_sync_service = ToolSyncService()

@@ -33,6 +33,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Store,
   Tags,
   Ticket,
   UserCheck,
@@ -72,6 +73,7 @@ export const navIconMap = {
   // Admin navigation icons
   eye: Eye,
   sparkles: Sparkles,
+  store: Store,
   checkSquare: CheckSquare,
   tags: Tags,
   bookOpen: BookOpen,

@@ -55,7 +55,7 @@ export const userNavigation: NavGroup[] = [
         id: "plugins",
         label: "nav.plugins",
         href: "/dashboard/plugins",
-        icon: "plug",
+        icon: "store",
       },
     ],
   },

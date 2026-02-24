@@ -1,0 +1,62 @@
+{
+  "plugins": {
+    "page": {
+      "title": "插件市场",
+      "description": "发现并安装社区插件，扩展你的 Agent 能力。",
+      "hero": {
+        "titlePrefix": "探索",
+        "titleHighlight": "插件生态",
+        "subtitle": "从社区发现强大插件，一键安装，让你的 AI Agent 如虎添翼。"
+      },
+      "search": {
+        "placeholder": "搜索插件名称或描述..."
+      },
+      "empty": {
+        "title": "暂无插件",
+        "description": "目前市场还没有可用插件，敬请期待。"
+      },
+      "error": {
+        "loadFailed": "加载失败：{message}"
+      }
+    },
+    "card": {
+      "install": "安装",
+      "installing": "安装中...",
+      "installed": "已安装",
+      "uninstall": "卸载",
+      "noDescription": "暂无描述",
+      "permissions": "需要权限"
+    },
+    "status": {
+      "active": "可用",
+      "pending": "审核中",
+      "disabled": "已禁用",
+      "draft": "草稿"
+    },
+    "dialog": {
+      "title": "权限确认",
+      "description": "安装插件 「{name}」 前，请确认以下权限授权：",
+      "permissionsLabel": "该插件将获得以下权限：",
+      "confirm": "确认安装",
+      "cancel": "取消",
+      "installing": "安装中...",
+      "aliasLabel": "自定义别名（可选）",
+      "aliasPlaceholder": "为插件设置一个别名"
+    },
+    "permissions": {
+      "toolExecution": "执行工具调用和代码",
+      "dataAccess": "读取会话上下文数据",
+      "network": "发送网络请求"
+    },
+    "toast": {
+      "installedTitle": "插件「{name}」安装成功",
+      "installedDesc": "插件已启用，可在 Agent 中使用。",
+      "installFailedTitle": "安装失败",
+      "installFailedDesc": "请稍后重试。",
+      "uninstalledTitle": "插件已卸载",
+      "uninstalledDesc": "该插件已从你的环境中移除。",
+      "uninstallFailedTitle": "卸载失败",
+      "uninstallFailedDesc": "请稍后重试。"
+    }
+  }
+}

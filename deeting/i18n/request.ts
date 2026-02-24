@@ -23,6 +23,7 @@ const namespaces = [
   "knowledge",
   "video",
   "memory",
+  "plugins",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

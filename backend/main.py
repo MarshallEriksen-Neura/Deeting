@@ -183,6 +183,7 @@ def register_routes(app: FastAPI) -> None:
         memory_router,
         monitoring_router,
         notification_ws_router,
+        plugin_market_router,
         provider_router,
         public_image_share_router,
         settings_router,
@@ -346,6 +347,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(monitoring_router, prefix=api_prefix, tags=["Monitoring"])
     app.include_router(credits_router, prefix=api_prefix, tags=["Credits"])
     app.include_router(spec_agent_router, prefix=api_prefix, tags=["Spec Agent"])
+    app.include_router(plugin_market_router, prefix=api_prefix, tags=["Plugin Market"])
     app.include_router(mcp_router, prefix=api_prefix, tags=["MCP Market"])
     app.include_router(
         user_mcp_router, prefix=f"{api_prefix}/mcp", tags=["User MCP Servers"]

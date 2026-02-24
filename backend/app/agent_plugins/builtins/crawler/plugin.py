@@ -381,6 +381,6 @@ class CrawlerPlugin(AgentPlugin):
 
         task = celery_app.send_task(
             "skill_registry.ingest_repo",
-            args=[repo_url, revision, skill_id, runtime_hint],
+            args=[repo_url, revision, skill_id, runtime_hint, str(self.context.user_id)],
         )
         return {"status": "queued", "task_id": task.id}

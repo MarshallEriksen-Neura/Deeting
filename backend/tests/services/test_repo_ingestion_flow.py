@@ -1,7 +1,13 @@
 from types import SimpleNamespace
+import json
 
 import pytest
 
+from app.core.config import settings
+from app.services.plugin_ui_bundle_storage import (
+    get_bundle_ready_marker,
+    get_plugin_ui_bundle_dir,
+)
 from app.services.skill_registry.parsers.node_parser import NodeRepoParser
 from app.services.skill_registry.parsers.python_parser import PythonRepoParser
 from app.services.skill_registry.repo_ingestion_service import RepoIngestionService
@@ -158,3 +164,86 @@ async def test_repo_ingestion_triggers_qdrant_sync(monkeypatch, tmp_path):
 
     assert result["skill_id"] == "docx_skill"
     assert called["skill_id"] == "docx_skill"
+
+
+@pytest.mark.asyncio
+async def test_repo_ingestion_extracts_ui_bundle(monkeypatch, tmp_path):
+    workdir = tmp_path / "workdir"
+    repo_root = tmp_path / "repo_root"
+    temp_root = tmp_path / "temp_root"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    temp_root.mkdir(parents=True, exist_ok=True)
+    (repo_root / "requirements.txt").write_text("lxml", encoding="utf-8")
+    (repo_root / "README.md").write_text("plugin", encoding="utf-8")
+    (repo_root / "ui").mkdir(parents=True, exist_ok=True)
+    (repo_root / "ui" / "index.html").write_text("<html>ok</html>", encoding="utf-8")
+    (repo_root / "ui" / "app.js").write_text("console.log('ok')", encoding="utf-8")
+    (repo_root / "deeting.json").write_text(
+        json.dumps({"entry": {"renderer": "ui/index.html"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "REPO_INGESTION_WORKDIR", str(workdir))
+    monkeypatch.setattr(
+        "app.services.skill_registry.repo_ingestion_service.clone_repo",
+        lambda *_args, **_kwargs: (repo_root, temp_root),
+    )
+
+    service = RepoIngestionService(
+        repo=FakeRepo(),
+        manifest_generator=FakeManifestGenerator(),
+        parsers=[PythonRepoParser(), NodeRepoParser()],
+    )
+    result = await service.ingest_repo(
+        "https://example.com/repo.git",
+        "main",
+        skill_id="com.example.stock",
+        runtime_hint="python_library",
+    )
+
+    assert result["skill_id"] == "com.example.stock"
+    bundle_dir = get_plugin_ui_bundle_dir("com.example.stock", "main")
+    assert (bundle_dir / "index.html").exists()
+    assert (bundle_dir / "app.js").exists()
+    assert get_bundle_ready_marker(bundle_dir).exists()
+    saved = await service.repo.get_by_id("com.example.stock")
+    assert saved.manifest_json["ui_bundle"]["renderer_asset_path"] == "index.html"
+
+
+@pytest.mark.asyncio
+async def test_repo_ingestion_skips_ui_bundle_copy_when_ready(monkeypatch, tmp_path):
+    workdir = tmp_path / "workdir"
+    repo_root = tmp_path / "repo_root"
+    temp_root = tmp_path / "temp_root"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    temp_root.mkdir(parents=True, exist_ok=True)
+    (repo_root / "requirements.txt").write_text("lxml", encoding="utf-8")
+    (repo_root / "README.md").write_text("plugin", encoding="utf-8")
+    (repo_root / "ui").mkdir(parents=True, exist_ok=True)
+    (repo_root / "ui" / "index.html").write_text("<html>new</html>", encoding="utf-8")
+    (repo_root / "deeting.json").write_text(
+        json.dumps({"entry": {"renderer": "ui/index.html"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "REPO_INGESTION_WORKDIR", str(workdir))
+    bundle_dir = get_plugin_ui_bundle_dir("com.example.stock", "main")
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    (bundle_dir / "index.html").write_text("<html>old</html>", encoding="utf-8")
+    get_bundle_ready_marker(bundle_dir).write_text("ready", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.skill_registry.repo_ingestion_service.clone_repo",
+        lambda *_args, **_kwargs: (repo_root, temp_root),
+    )
+
+    service = RepoIngestionService(
+        repo=FakeRepo(),
+        manifest_generator=FakeManifestGenerator(),
+        parsers=[PythonRepoParser(), NodeRepoParser()],
+    )
+    await service.ingest_repo(
+        "https://example.com/repo.git",
+        "main",
+        skill_id="com.example.stock",
+        runtime_hint="python_library",
+    )
+
+    assert (bundle_dir / "index.html").read_text(encoding="utf-8") == "<html>old</html>"

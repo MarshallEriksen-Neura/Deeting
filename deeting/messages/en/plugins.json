@@ -1,0 +1,62 @@
+{
+  "plugins": {
+    "page": {
+      "title": "Plugin Market",
+      "description": "Discover and install community plugins to extend your Agent capabilities.",
+      "hero": {
+        "titlePrefix": "Explore",
+        "titleHighlight": "Plugin Ecosystem",
+        "subtitle": "Discover powerful plugins from the community. Install with one click to supercharge your AI Agent."
+      },
+      "search": {
+        "placeholder": "Search plugins by name or description..."
+      },
+      "empty": {
+        "title": "No plugins available",
+        "description": "There are no plugins in the market yet. Stay tuned."
+      },
+      "error": {
+        "loadFailed": "Failed to load: {message}"
+      }
+    },
+    "card": {
+      "install": "Install",
+      "installing": "Installing...",
+      "installed": "Installed",
+      "uninstall": "Uninstall",
+      "noDescription": "No description",
+      "permissions": "Permissions required"
+    },
+    "status": {
+      "active": "Active",
+      "pending": "Pending",
+      "disabled": "Disabled",
+      "draft": "Draft"
+    },
+    "dialog": {
+      "title": "Permission Confirmation",
+      "description": "Before installing \"{name}\", please review and confirm the following permissions:",
+      "permissionsLabel": "This plugin will be granted the following permissions:",
+      "confirm": "Confirm & Install",
+      "cancel": "Cancel",
+      "installing": "Installing...",
+      "aliasLabel": "Custom alias (optional)",
+      "aliasPlaceholder": "Set an alias for this plugin"
+    },
+    "permissions": {
+      "toolExecution": "Execute tool calls and code",
+      "dataAccess": "Read session context data",
+      "network": "Make network requests"
+    },
+    "toast": {
+      "installedTitle": "Plugin \"{name}\" installed successfully",
+      "installedDesc": "The plugin is now enabled and available in your Agents.",
+      "installFailedTitle": "Installation failed",
+      "installFailedDesc": "Please try again later.",
+      "uninstalledTitle": "Plugin uninstalled",
+      "uninstalledDesc": "The plugin has been removed from your environment.",
+      "uninstallFailedTitle": "Uninstall failed",
+      "uninstallFailedDesc": "Please try again later."
+    }
+  }
+}

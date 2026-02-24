@@ -49,6 +49,9 @@ stock-analysis/
   },
   "capabilities": {
     "llm_tool": "llm-tool.yaml" // 注册给 LLM 的工具定义
+  },
+  "installation": {
+    "dependencies": ["httpx>=0.27.0"] // [可选] 运行前 pip install 的依赖列表
   }
 }
 ```
@@ -73,23 +76,17 @@ parameters:
 ```
 
 ### 3.3 后端逻辑 (`main.py`)
-核心业务逻辑。插件必须实现 `invoke` 方法。
+核心业务逻辑。插件入口必须实现 `async def invoke(tool_name, args, deeting)`。
 
 ```python
-from deeting.sdk import PluginContext, stream_result
-
-# 激活钩子 (可选)
-def on_activate(ctx: PluginContext):
-    print(f"Stock plugin activated for user {ctx.user_id}")
-
-# 核心调用入口
-async def invoke(tool_name: str, args: dict, ctx: PluginContext):
+async def invoke(tool_name: str, args: dict, deeting):
     if tool_name == "get_stock_trend":
         symbol = args["symbol"]
         
         # 1. 执行业务逻辑 (调用外部 API)
-        # 注意：需使用 ctx.http_client 以遵循系统代理/审计规则
-        data = await ctx.http_client.get(f"https://api.stock.com/v1/{symbol}")
+        # 推荐通过 deeting.call_tool 调用系统已注册工具
+        # （例如：搜索、数据库、工作流工具等）
+        data = deeting.call_tool("fetch_web_content", url=f"https://api.stock.com/v1/{symbol}")
         
         # 2. 返回渲染指令 (Data Envelope)
         # 这会触发前端加载 ui/index.html 并渲染数据
@@ -99,7 +96,7 @@ async def invoke(tool_name: str, args: dict, ctx: PluginContext):
                 "title": f"Analysis: {symbol}",
                 "payload": {
                     "symbol": symbol,
-                    "prices": data.json()
+                    "prices": data
                 }
             }
         }
@@ -162,10 +159,13 @@ async def invoke(tool_name: str, args: dict, ctx: PluginContext):
 ## 5. 最佳实践 (Best Practices)
 
 *   **Stateless**: 插件后端应尽量无状态。如需存储数据，请使用 `ctx.storage` (KV Store) 或 `ctx.memory` (Vector Store)。
-*   **Security**: 不要尝试绕过沙箱。所有网络请求必须走 `ctx.http_client`。
+*   **Runtime SDK**: 运行时会注入 `deeting` 对象，支持 `deeting.log()`、`deeting.section()`、`deeting.call_tool()`、`deeting.render()`。
+*   **Security**: 不要尝试绕过沙箱。优先通过 `deeting.call_tool` 调用平台能力，而不是自行直连内部服务。
 *   **UI Performance**: 渲染器应轻量化。尽量使用 CDN 资源，避免打包过大的依赖。
 *   **Error Handling**: 遇到错误时，返回友好的错误信息，而不是抛出异常。
 *   **Scope Safety**: 涉及“生成系统级资源”的工具参数（如 `target_scope=system`）必须在后端做管理员校验，禁止仅依赖前端或提示词约束。
 *   **Render Contract**: 推荐通过 `{"__render__": {"view_type": "...", "payload": {...}}}` 返回 UI 渲染块。Code Mode 下 `deeting.render(...)` 会自动转换为同类 `ui.blocks` 协议并透传到前端。
 *   **Typed SDK**: Code Mode 运行时会动态注入 `deeting_sdk.pyi/.py`，可直接 `from deeting_sdk import <tool_name>` 并获得更稳定的参数签名提示。
 *   **Observability Contract**: 如需调试回放，建议在 `tool_result.debug` 查看运行时摘要（`runtime_tool_calls` / `render_blocks` / `sdk_stub`）；其中 `runtime_tool_calls.calls[]` 提供步骤级 `duration_ms` 与错误信息字段，便于定位慢调用和失败点。
+*   **Compatibility**: 若仓库不存在 `deeting.json`，运行时会回退到 `usage_spec.example_code` 的 legacy 路径；新插件建议全部按 `deeting.json + main.py::invoke` 规范开发。
+*   **Dependency Install Order**: 运行时会先安装 `deeting.json.installation.dependencies`，再检测并执行 `pip install -r requirements.txt`（若文件存在）。
