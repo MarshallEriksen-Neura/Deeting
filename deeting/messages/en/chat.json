@@ -337,6 +337,17 @@
       "dislike": "Dislike",
       "copy": "Copy",
       "copied": "Copied"
+    },
+    "views": {
+      "invalidPayload": "Invalid data format",
+      "noData": "No data",
+      "table": {
+        "search": "Search...",
+        "noResults": "No matching results",
+        "empty": "Empty table",
+        "rowCount": "{count} rows",
+        "filteredRowCount": "{filtered} / {total} rows"
+      }
     }
   }
 }

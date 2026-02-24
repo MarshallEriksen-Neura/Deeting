@@ -19,6 +19,9 @@ import {
 } from "@/components/chat/visuals/status-visuals";
 import { useTypewriter } from "@/hooks/chat/use-typewriter";
 import { TaskLiveBlock } from "@/components/chat/messages/task-live-block";
+import dynamic from "next/dynamic";
+
+const ViewBlock = dynamic(() => import("@/components/views/view-block"), { ssr: false });
 
 /** When a non-active message has more than this many tool calls, group them into a collapsible summary. */
 const TOOL_GROUP_THRESHOLD = 2;
@@ -456,6 +459,25 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     );
                   }
 
+                  // --- D. UI 视图块（插件渲染） ---
+                  if (part.type === 'ui') {
+                    return (
+                      <motion.div
+                        key={`ui-${index}`}
+                        initial={{ y: 8, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                      >
+                        <ViewBlock
+                          viewType={part.viewType}
+                          payload={part.payload}
+                          title={part.title}
+                          metadata={part.metadata}
+                        />
+                      </motion.div>
+                    );
+                  }
+
                   if (part.type === 'error') {
                     return (
                       <motion.div
@@ -522,7 +544,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         JSON.stringify((prevPart as any).debug) !== JSON.stringify((nextPart as any).debug) ||
         prevPart.message !== nextPart.message ||
         prevPart.status !== nextPart.status ||
-        prevPart.cost !== nextPart.cost
+        prevPart.cost !== nextPart.cost ||
+        (prevPart as any).viewType !== (nextPart as any).viewType ||
+        (prevPart as any).payload !== (nextPart as any).payload
       );
     });
     

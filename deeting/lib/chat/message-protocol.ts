@@ -6,6 +6,7 @@ export type BlockType =
   | 'flight_offer'
   | 'file_preview'
   | 'error'
+  | 'ui'
 
 export type BlockStreamState = 'streaming' | 'completed'
 
@@ -64,6 +65,14 @@ export interface ErrorBlock extends BaseBlock {
   message: string
 }
 
+export interface UIBlock extends BaseBlock {
+  type: 'ui'
+  viewType: string
+  payload: unknown
+  title?: string
+  metadata?: Record<string, unknown>
+}
+
 export type MessageBlock =
   | TextBlock
   | ThoughtBlock
@@ -72,6 +81,7 @@ export type MessageBlock =
   | FlightOfferBlock
   | FilePreviewBlock
   | ErrorBlock
+  | UIBlock
 
 export interface PersistedMessage {
   id: string

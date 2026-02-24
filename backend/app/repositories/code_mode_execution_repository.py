@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.models.code_mode_execution import CodeModeExecution
 
@@ -50,6 +50,70 @@ class CodeModeExecutionRepository(BaseRepository[CodeModeExecution]):
 
         result = await self.session.execute(stmt)
         return result.scalars().first()
+
+    async def list_by_user(
+        self,
+        user_id: UUID,
+        *,
+        status: str | None = None,
+        session_id: str | None = None,
+        cursor: str | None = None,
+        size: int = 20,
+    ) -> tuple[list[CodeModeExecution], str | None]:
+        """Return executions for *user_id* ordered by created_at DESC.
+
+        Uses cursor-based pagination (cursor = ISO timestamp of last item).
+        Returns ``(items, next_cursor)``.
+        """
+        stmt = (
+            select(CodeModeExecution)
+            .where(CodeModeExecution.user_id == user_id)
+            .order_by(CodeModeExecution.created_at.desc())
+        )
+        if status:
+            stmt = stmt.where(CodeModeExecution.status == status)
+        if session_id:
+            stmt = stmt.where(CodeModeExecution.session_id == session_id)
+        if cursor:
+            from datetime import datetime, timezone
+
+            try:
+                cursor_dt = datetime.fromisoformat(cursor)
+            except (ValueError, TypeError):
+                cursor_dt = None
+            if cursor_dt is not None:
+                stmt = stmt.where(CodeModeExecution.created_at < cursor_dt)
+
+        stmt = stmt.limit(size + 1)
+        result = await self.session.execute(stmt)
+        rows = list(result.scalars().all())
+
+        next_cursor: str | None = None
+        if len(rows) > size:
+            rows = rows[:size]
+            last = rows[-1]
+            next_cursor = last.created_at.isoformat()
+
+        return rows, next_cursor
+
+    async def count_by_user(
+        self,
+        user_id: UUID,
+        *,
+        status: str | None = None,
+        session_id: str | None = None,
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(CodeModeExecution)
+            .where(CodeModeExecution.user_id == user_id)
+        )
+        if status:
+            stmt = stmt.where(CodeModeExecution.status == status)
+        if session_id:
+            stmt = stmt.where(CodeModeExecution.session_id == session_id)
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
 
 
 __all__ = ["CodeModeExecutionRepository"]

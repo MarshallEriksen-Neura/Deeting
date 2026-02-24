@@ -212,6 +212,41 @@
       "allTasks": "所有任务",
       "empty": "暂无历史任务",
       "noResults": "未找到匹配任务"
+    },
+    "codeMode": {
+      "title": "执行记录",
+      "subtitle": "查看代码模式执行历史与工具调用轨迹",
+      "loading": "加载中...",
+      "empty": "暂无执行记录",
+      "loadMore": "加载更多",
+      "noMore": "没有更多了",
+      "loadFailed": "加载失败，请重试。",
+      "status": {
+        "success": "成功",
+        "failed": "失败",
+        "dry_run": "试运行"
+      },
+      "duration": "{ms}ms",
+      "toolCalls": "{count} 次工具调用",
+      "noToolCalls": "无工具调用",
+      "detail": {
+        "title": "执行详情",
+        "code": "执行代码",
+        "toolTrace": "工具调用轨迹",
+        "toolName": "工具",
+        "toolArgs": "参数",
+        "toolResult": "返回值",
+        "toolError": "错误",
+        "toolDuration": "耗时",
+        "renderBlocks": "渲染块",
+        "runtimeContext": "运行时上下文",
+        "noTrace": "无工具调用记录",
+        "back": "返回列表",
+        "replay": "重放",
+        "replaying": "重放中...",
+        "replaySuccess": "重放成功",
+        "replayFailed": "重放失败"
+      }
     }
   }
 }

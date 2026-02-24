@@ -212,6 +212,41 @@
       "allTasks": "All Tasks",
       "empty": "No history yet",
       "noResults": "No matching tasks"
+    },
+    "codeMode": {
+      "title": "Executions",
+      "subtitle": "View code mode execution history and tool call traces",
+      "loading": "Loading...",
+      "empty": "No executions yet",
+      "loadMore": "Load more",
+      "noMore": "No more records",
+      "loadFailed": "Failed to load. Please retry.",
+      "status": {
+        "success": "Success",
+        "failed": "Failed",
+        "dry_run": "Dry Run"
+      },
+      "duration": "{ms}ms",
+      "toolCalls": "{count} tool calls",
+      "noToolCalls": "No tool calls",
+      "detail": {
+        "title": "Execution Detail",
+        "code": "Executed Code",
+        "toolTrace": "Tool Call Trace",
+        "toolName": "Tool",
+        "toolArgs": "Arguments",
+        "toolResult": "Result",
+        "toolError": "Error",
+        "toolDuration": "Duration",
+        "renderBlocks": "Render Blocks",
+        "runtimeContext": "Runtime Context",
+        "noTrace": "No tool call records",
+        "back": "Back to list",
+        "replay": "Replay",
+        "replaying": "Replaying...",
+        "replaySuccess": "Replay succeeded",
+        "replayFailed": "Replay failed"
+      }
     }
   }
 }

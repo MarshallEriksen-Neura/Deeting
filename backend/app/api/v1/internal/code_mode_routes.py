@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +54,29 @@ def _serialize_execution(record: CodeModeExecution) -> dict[str, Any]:
         "error_code": record.error_code,
         "duration_ms": record.duration_ms,
         "request_meta": record.request_meta,
+        "created_at": _to_iso(record.created_at),
+    }
+
+
+def _serialize_execution_item(record: CodeModeExecution) -> dict[str, Any]:
+    """Lightweight serializer for list views — omits large JSON blobs."""
+    tool_call_count = 0
+    rtc = record.runtime_tool_calls
+    if isinstance(rtc, dict):
+        calls = rtc.get("calls")
+        if isinstance(calls, list):
+            tool_call_count = len(calls)
+
+    return {
+        "id": str(record.id),
+        "execution_id": record.execution_id,
+        "session_id": record.session_id,
+        "language": record.language,
+        "status": record.status,
+        "error": record.error,
+        "error_code": record.error_code,
+        "duration_ms": record.duration_ms,
+        "tool_call_count": tool_call_count,
         "created_at": _to_iso(record.created_at),
     }
 
@@ -116,6 +139,31 @@ def _build_replay_context(
                 [str(item) for item in allowed_models],
             )
     return workflow_context
+
+
+@router.get("/executions")
+async def list_code_mode_executions(
+    cursor: str | None = Query(default=None, description="分页游标（上一页最后一条的 created_at ISO）"),
+    size: int = Query(default=20, ge=1, le=100, description="每页条数"),
+    status: str | None = Query(default=None, description="按状态过滤: success/failed/dry_run"),
+    session_id: str | None = Query(default=None, description="按会话 ID 过滤"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    repo = CodeModeExecutionRepository(db)
+    user_id = uuid.UUID(str(user.id))
+    rows, next_cursor = await repo.list_by_user(
+        user_id,
+        status=status,
+        session_id=session_id,
+        cursor=cursor,
+        size=size,
+    )
+    return {
+        "items": [_serialize_execution_item(r) for r in rows],
+        "next_page": next_cursor,
+        "previous_page": None,
+    }
 
 
 @router.get("/executions/{execution_identifier}")
