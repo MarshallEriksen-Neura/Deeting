@@ -397,12 +397,44 @@ class ToolSyncService:
 
         final_hits = self._merge_hits(user_hits, sys_hits, skill_hits, total_limit)
         result = [self._hit_to_def(hit) for hit in final_hits]
+        
+        # 强制确保核心系统工具可见，解决 AI "无头"问题
+        result = await self._ensure_core_tools_visibility(result, user_id)
+
         logger.info(
             "ToolSyncService: search_tools done duration_ms=%.2f final_hits=%s",
             (time.perf_counter() - start_time) * 1000,
             len(result),
         )
         return result
+
+    async def _ensure_core_tools_visibility(
+        self, 
+        current_tools: list[ToolDefinition], 
+        user_id: uuid.UUID | None
+    ) -> list[ToolDefinition]:
+        """确保核心系统工具始终可见"""
+        core_tool_names = {"search_knowledge", "add_knowledge_chunk", "crawl_website"}
+        existing_names = {t.name for t in current_tools}
+        missing_names = core_tool_names - existing_names
+        
+        if not missing_names:
+            return current_tools
+
+        from app.services.agent.agent_service import agent_service
+        if not agent_service.tools:
+            await agent_service.initialize(user_id=user_id)
+
+        added_count = 0
+        for tool in agent_service.tools:
+            if tool.name in missing_names:
+                current_tools.insert(0, tool)
+                added_count += 1
+        
+        if added_count > 0:
+            logger.info("Injected %s missing core tools into search results", added_count)
+            
+        return current_tools[:20]
 
     async def _search_system(
         self,
@@ -423,7 +455,7 @@ class ToolSyncService:
                 score_threshold=threshold,
             )
         except Exception as exc:  # pragma: no cover - fail-open
-            logger.warning("system tool search failed", exc_info=exc)
+            logger.warning("system tool search failed col=%s err=%s", collection, exc)
             return []
 
     async def _search_skills(
@@ -448,7 +480,7 @@ class ToolSyncService:
                 },
             )
         except Exception as exc:  # pragma: no cover - fail-open
-            logger.warning("skill search failed", exc_info=exc)
+            logger.warning("skill search failed col=%s err=%s", collection, exc)
             return []
 
     async def _search_user(
@@ -471,8 +503,32 @@ class ToolSyncService:
                 score_threshold=threshold,
             )
         except Exception as exc:  # pragma: no cover - fail-open
-            logger.warning("user tool search failed", exc_info=exc)
+            error_msg = str(exc).lower()
+            if "404" in error_msg or "not found" in error_msg:
+                logger.info("User tool collection %s not found, triggering background sync", collection)
+                self._trigger_background_user_sync(user_id)
+            else:
+                logger.warning("user tool search failed col=%s err=%s", collection, exc)
             return []
+
+    def _trigger_background_user_sync(self, user_id: uuid.UUID):
+        """异步触发用户工具同步任务"""
+        from app.services.mcp.discovery import mcp_discovery_service
+        
+        async def _sync():
+            try:
+                # 重新获取 session 进行同步
+                from app.core.database import AsyncSessionLocal
+                async with AsyncSessionLocal() as session:
+                    await mcp_discovery_service.sync_user_tools(session, user_id)
+            except Exception as e:
+                logger.error("Background tool sync failed for user %s: %s", user_id, e)
+
+        try:
+            import asyncio
+            asyncio.create_task(_sync())
+        except Exception as e:
+            logger.error("Failed to create background sync task: %s", e)
 
     async def _rerank_skill_hits(
         self, skill_hits: list[dict[str, Any]]

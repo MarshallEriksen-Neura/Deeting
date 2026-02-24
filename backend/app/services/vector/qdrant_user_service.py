@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from app.core.config import settings
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import (
     QDRANT_DEFAULT_VECTOR_NAME,
@@ -73,6 +74,11 @@ class QdrantUserVectorService(VectorStoreClient):
         )
         self._fail_open = fail_open
         self._vector_name = str(vector_name or "").strip() or QDRANT_DEFAULT_VECTOR_NAME
+        configured_vector_size = getattr(settings, "EMBEDDING_VECTOR_SIZE", None)
+        if isinstance(configured_vector_size, int) and configured_vector_size > 0:
+            self._default_vector_size: int | None = configured_vector_size
+        else:
+            self._default_vector_size = None
         self._collection_name: str | None = None
         self._log = logger.getChild("QdrantUserVectorService")
 
@@ -80,6 +86,38 @@ class QdrantUserVectorService(VectorStoreClient):
         current_model = getattr(self._embedding_service, "model", None)
         if current_model:
             self._embedding_model = current_model
+
+    async def _resolve_vector_size(self, *, default: int | None = None) -> int:
+        fallback: int | None = None
+        if isinstance(default, int) and default > 0:
+            fallback = default
+        elif self._default_vector_size and self._default_vector_size > 0:
+            fallback = self._default_vector_size
+
+        if self._embedding_service:
+            resolver = getattr(self._embedding_service, "get_vector_size", None)
+            if callable(resolver):
+                try:
+                    resolved = int(await resolver())
+                    if resolved > 0:
+                        self._refresh_embedding_model()
+                        return resolved
+                except Exception as exc:
+                    self._log.debug("resolve vector size via resolver failed", exc_info=exc)
+            try:
+                probe_vector = await self._embedding_service.embed_text("test")
+                if isinstance(probe_vector, list) and probe_vector:
+                    self._refresh_embedding_model()
+                    return len(probe_vector)
+            except Exception as exc:
+                self._log.debug("resolve vector size via embed probe failed", exc_info=exc)
+
+        if fallback:
+            return fallback
+        raise RuntimeError(
+            "unable to resolve embedding vector size; configure /admin/settings/embedding "
+            "or set EMBEDDING_VECTOR_SIZE explicitly"
+        )
 
     async def _ensure_collection(self, vector_size: int) -> tuple[str, bool]:
         collection, degraded = await ensure_user_collection(
@@ -199,7 +237,10 @@ class QdrantUserVectorService(VectorStoreClient):
         collection = self._collection_name or ""
         try:
             if not collection:
-                collection, degraded = await self._ensure_collection(vector_size=1)
+                vector_size = await self._resolve_vector_size()
+                collection, degraded = await self._ensure_collection(
+                    vector_size=vector_size
+                )
                 if degraded:
                     self._log.warning(
                         "delete degraded; skip", extra={"collection": collection}
@@ -232,24 +273,10 @@ class QdrantUserVectorService(VectorStoreClient):
     ) -> tuple[list[dict[str, Any]], Any | None]:
         collection = self._collection_name or ""
         if not collection:
-            # For read-only ops, we just need the collection name. 
-            # ensure_user_collection will return it if it exists.
-            # We use a placeholder size; if it exists, it won't care about the size 
-            # UNLESS it's being created. But the current implementation of 
-            # ensure_collection_vector_size raises if it exists and size mismatches.
-            # So we better try to find the name without strictly ensuring size, 
-            # or use the size from settings/embedding_service.
-            vector_size = 1536 # Default for many models
-            if self._embedding_service:
-                try:
-                    # Try to get actual size if possible
-                    test_vec = await self._embedding_service.embed_text("test")
-                    vector_size = len(test_vec)
-                    self._refresh_embedding_model()
-                except Exception:
-                    pass
-
-            collection, degraded = await self._ensure_collection(vector_size=vector_size)
+            vector_size = await self._resolve_vector_size()
+            collection, degraded = await self._ensure_collection(
+                vector_size=vector_size
+            )
             if degraded:
                 return [], None
 
@@ -282,14 +309,10 @@ class QdrantUserVectorService(VectorStoreClient):
     async def clear_all(self) -> None:
         collection = self._collection_name or ""
         if not collection:
-            vector_size = 1536
-            if self._embedding_service:
-                try:
-                    test_vec = await self._embedding_service.embed_text("test")
-                    vector_size = len(test_vec)
-                except Exception:
-                    pass
-            collection, degraded = await self._ensure_collection(vector_size=vector_size)
+            vector_size = await self._resolve_vector_size()
+            collection, degraded = await self._ensure_collection(
+                vector_size=vector_size
+            )
             if degraded:
                 return
 

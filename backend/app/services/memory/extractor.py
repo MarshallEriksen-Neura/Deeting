@@ -109,6 +109,9 @@ class MemoryExtractorService:
                 messages=llm_messages,
                 model=model,
                 temperature=0.0,
+                user_id=str(user_id) if user_id else None,
+                tenant_id=str(user_id) if user_id else None,
+                api_key_id=str(user_id) if user_id else None,
             )
 
             # 解析 JSON 结果

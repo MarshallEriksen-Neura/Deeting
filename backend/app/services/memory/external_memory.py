@@ -136,7 +136,10 @@ async def _resolve_secretary_model(
 
 
 async def _classify_with_llm(
-    text: str, *, model: str | None
+    text: str,
+    *,
+    model: str | None,
+    user_id: uuid.UUID | None = None,
 ) -> tuple[bool | None, float | None]:
     from app.services.providers.llm import llm_service
 
@@ -150,6 +153,9 @@ async def _classify_with_llm(
             model=model,
             temperature=0.0,
             max_tokens=128,
+            user_id=str(user_id) if user_id else None,
+            tenant_id=str(user_id) if user_id else None,
+            api_key_id=str(user_id) if user_id else None,
         )
     except Exception as exc:
         logger.warning(f"external memory classify failed: {exc}")
@@ -190,9 +196,14 @@ async def should_persist_text(
         return False
 
     model = await _resolve_secretary_model(db_session=db_session, user_id=user_id)
-    decision, _confidence = await _classify_with_llm(content, model=model)
-    if decision is None and model:
-        decision, _confidence = await _classify_with_llm(content, model=None)
+    if not model:
+        return False
+
+    decision, _confidence = await _classify_with_llm(
+        content,
+        model=model,
+        user_id=user_id,
+    )
     if decision is None:
         return False
     if record_sample:

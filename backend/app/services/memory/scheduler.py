@@ -33,6 +33,12 @@ class MemoryScheduler:
         """
         防抖入口：每条消息后调用。轻量，不抛异常。
         """
+        if not user_id:
+            logger.debug(
+                f"memory scheduler skip session={session_id}: missing user_id"
+            )
+            return
+
         try:
             redis = self._get_redis()
             now = time.time()

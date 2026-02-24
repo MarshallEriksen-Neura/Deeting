@@ -18,11 +18,8 @@ class SystemSettingsService:
         self.settings_repo = settings_repo
         self.model_repo = model_repo
 
-    async def get_embedding_model(self) -> str:
-        model_name = await self._load_embedding_model()
-        return model_name or getattr(
-            settings, "EMBEDDING_MODEL", "text-embedding-3-small"
-        )
+    async def get_embedding_model(self) -> str | None:
+        return await self._load_embedding_model()
 
     async def set_embedding_model(self, model_name: str) -> str:
         if not model_name:
@@ -59,7 +56,7 @@ class SystemSettingsService:
         return None
 
 
-async def get_cached_embedding_model() -> str:
+async def get_cached_embedding_model() -> str | None:
     cached = await cache.get(CacheKeys.system_embedding_model())
     if isinstance(cached, str) and cached.strip():
         return cached.strip()
@@ -77,6 +74,6 @@ async def get_cached_embedding_model() -> str:
                 )
                 return model_name
     except Exception:
-        pass
+        return None
 
-    return getattr(settings, "EMBEDDING_MODEL", "text-embedding-3-small")
+    return None

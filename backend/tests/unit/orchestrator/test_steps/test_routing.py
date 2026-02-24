@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,37 @@ def _fake_routing_result():
         },
         [],
         False,
+    )
+
+
+def _fake_candidate() -> SimpleNamespace:
+    return SimpleNamespace(
+        preset_id=1,
+        preset_slug="fake",
+        preset_item_id=11,
+        instance_id="inst-1",
+        model_id="model-1",
+        upstream_url="https://api.fake.com",
+        provider="fake",
+        template_engine="simple_replace",
+        request_template={"model": None},
+        response_transform={},
+        async_config={},
+        http_method="POST",
+        pricing_config={"input_per_1k": 0.1, "output_per_1k": 0.2},
+        limit_config={"rpm": 10, "tpm": 1000},
+        auth_type="api_key",
+        auth_config={"header": "Authorization"},
+        default_headers={"User-Agent": "test"},
+        default_params={},
+        routing_config={},
+        config_override={},
+        output_mapping={},
+        request_builder={},
+        weight=1,
+        priority=1,
+        credential_id="cred-1",
+        credential_alias="main",
     )
 
 
@@ -100,3 +132,84 @@ def test_routing_on_failure_retries_once():
     step = RoutingStep()
     assert step.on_failure(None, RuntimeError(), attempt=1) == FailureAction.RETRY
     assert step.on_failure(None, RuntimeError(), attempt=2) == FailureAction.ABORT
+
+
+@pytest.mark.asyncio
+async def test_select_upstream_passes_none_user_id_when_ctx_user_missing(monkeypatch):
+    captured: dict = {}
+    candidate = _fake_candidate()
+
+    class FakeRoutingSelector:
+        def __init__(self, _session):
+            pass
+
+        async def load_candidates(self, **kwargs):
+            captured.update(kwargs)
+            return [candidate]
+
+        async def choose(self, candidates, messages=None):
+            return candidates[0], [], False
+
+    monkeypatch.setattr(
+        "app.services.providers.routing_selector.RoutingSelector",
+        FakeRoutingSelector,
+    )
+
+    step = RoutingStep()
+    ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        requested_model="gpt-4",
+        db_session=AsyncMock(spec=AsyncSession),
+    )
+
+    result, _, _ = await step._select_upstream(
+        session=ctx.db_session,
+        capability="chat",
+        model="gpt-4",
+        channel=ctx.channel.value,
+        ctx=ctx,
+    )
+
+    assert captured["user_id"] is None
+    assert result["provider"] == "fake"
+
+
+@pytest.mark.asyncio
+async def test_select_by_provider_model_id_passes_none_user_id_when_ctx_user_missing(
+    monkeypatch,
+):
+    captured: dict = {}
+    candidate = _fake_candidate()
+
+    class FakeRoutingSelector:
+        def __init__(self, _session):
+            pass
+
+        async def load_candidates_by_provider_model_id(self, **kwargs):
+            captured.update(kwargs)
+            return [candidate]
+
+        async def choose(self, candidates, messages=None):
+            return candidates[0], [], False
+
+    monkeypatch.setattr(
+        "app.services.providers.routing_selector.RoutingSelector",
+        FakeRoutingSelector,
+    )
+
+    step = RoutingStep()
+    ctx = WorkflowContext(
+        channel=Channel.EXTERNAL,
+        requested_model="gpt-4",
+        db_session=AsyncMock(spec=AsyncSession),
+    )
+
+    result, _, _ = await step._select_by_provider_model_id(
+        session=ctx.db_session,
+        provider_model_id="11111111-1111-1111-1111-111111111111",
+        channel=ctx.channel.value,
+        ctx=ctx,
+    )
+
+    assert captured["user_id"] is None
+    assert result["provider"] == "fake"

@@ -690,6 +690,8 @@ async def test_chunks_download_and_search(
     AsyncSessionLocal,
     monkeypatch,
 ):
+    collection_calls: list[tuple[str | None, str]] = []
+
     async def fake_store_asset_bytes(data: bytes, **kwargs) -> StoredAsset:
         digest = hashlib.sha256(data).hexdigest()[:12]
         return StoredAsset(
@@ -698,6 +700,11 @@ async def test_chunks_download_and_search(
             size_bytes=len(data),
         )
 
+    def fake_get_kb_user_collection_name(user_id, *, embedding_model=None):
+        model = str(embedding_model).strip() if embedding_model else None
+        collection_calls.append((model, str(user_id)))
+        return f"kb::{model or 'none'}"
+
     monkeypatch.setattr(
         "app.services.knowledge.user_document_service.store_asset_bytes",
         fake_store_asset_bytes,
@@ -705,6 +712,10 @@ async def test_chunks_download_and_search(
     monkeypatch.setattr(
         "app.services.knowledge.user_document_service.celery_app.send_task",
         lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.knowledge.user_document_service.get_kb_user_collection_name",
+        fake_get_kb_user_collection_name,
     )
 
     headers = {"Authorization": f"Bearer {auth_tokens['access_token']}"}
@@ -721,9 +732,11 @@ async def test_chunks_download_and_search(
         doc = result.scalar_one()
         doc.status = "indexed"
         doc.chunk_count = 2
+        doc.embedding_model = "doc-embed-v1"
         await session.commit()
 
     async def fake_scroll_points(*args, **kwargs):
+        assert kwargs["collection_name"] == "kb::doc-embed-v1"
         return (
             [
                 {
@@ -751,6 +764,15 @@ async def test_chunks_download_and_search(
         fake_scroll_points,
     )
 
+    async def fake_embed_text(self, _query: str):
+        self.model = "query-embed-v2"
+        return [0.1, 0.2, 0.3]
+
+    monkeypatch.setattr(
+        "app.services.knowledge.user_document_service.EmbeddingService.embed_text",
+        fake_embed_text,
+    )
+
     chunks_resp = await client.get(
         f"/api/v1/documents/files/{file_id}/chunks",
         params={"offset": 0, "limit": 20},
@@ -770,6 +792,7 @@ async def test_chunks_download_and_search(
     assert "download_url" in download_resp.json()
 
     async def fake_search_points(*args, **kwargs):
+        assert kwargs["collection_name"] == "kb::query-embed-v2"
         return [
             {
                 "score": 0.91,
@@ -787,6 +810,16 @@ async def test_chunks_download_and_search(
         fake_search_points,
     )
 
+    async def fake_delete_points(*args, **kwargs):
+        assert kwargs["collection_name"] == "kb::doc-embed-v1"
+        must_filters = kwargs["query_filter"]["must"]
+        assert {"key": "doc_id", "match": {"value": file_id}} in must_filters
+
+    monkeypatch.setattr(
+        "app.services.knowledge.user_document_service.delete_points",
+        fake_delete_points,
+    )
+
     search_resp = await client.post(
         "/api/v1/documents/search",
         json={"query": "matched", "limit": 5},
@@ -796,3 +829,12 @@ async def test_chunks_download_and_search(
     search_data = search_resp.json()
     assert len(search_data) == 1
     assert search_data[0]["filename"] == "kb.txt"
+
+    delete_resp = await client.delete(
+        f"/api/v1/documents/files/{file_id}",
+        headers=headers,
+    )
+    assert delete_resp.status_code == 204
+    called_models = {item[0] for item in collection_calls}
+    assert "doc-embed-v1" in called_models
+    assert "query-embed-v2" in called_models

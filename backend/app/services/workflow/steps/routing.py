@@ -350,11 +350,12 @@ class RoutingStep(BaseStep):
 
         selector = RoutingSelector(session)
         include_public = ctx.get("routing", "include_public", True)
+        user_id = str(ctx.user_id) if getattr(ctx, "user_id", None) else None
         candidates = await selector.load_candidates_by_provider_model_id(
             provider_model_id=provider_model_id,
             capability=ctx.capability or "chat",
             channel=channel,
-            user_id=str(ctx.user_id) if hasattr(ctx, "user_id") else None,
+            user_id=user_id,
             include_public=include_public,
             allowed_providers=allowed_providers,
         )
@@ -472,11 +473,12 @@ class RoutingStep(BaseStep):
 
         selector = RoutingSelector(session)
         include_public = ctx.get("routing", "include_public", True)
+        user_id = str(ctx.user_id) if getattr(ctx, "user_id", None) else None
         candidates = await selector.load_candidates(
             capability=capability,
             model=model,
             channel=channel,
-            user_id=str(ctx.user_id) if hasattr(ctx, "user_id") else None,
+            user_id=user_id,
             include_public=include_public,
             allowed_providers=allowed_providers,
         )

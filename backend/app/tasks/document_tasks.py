@@ -92,7 +92,11 @@ async def _index_user_document_async(doc_id: str):
                 return
 
             qdrant_client = get_qdrant_client()
-            collection_name = get_kb_user_collection_name(document.user_id)
+            embedding_model = getattr(embedding_service, "model", None)
+            collection_name = get_kb_user_collection_name(
+                document.user_id,
+                embedding_model=embedding_model,
+            )
             await ensure_collection_vector_size(
                 qdrant_client,
                 collection_name=collection_name,
@@ -111,6 +115,7 @@ async def _index_user_document_async(doc_id: str):
                             "doc_id": str(document.id),
                             "file_id": str(document.id),
                             "user_id": str(document.user_id),
+                            "embedding_model": embedding_model,
                             "filename": document.filename,
                             "chunk_index": index,
                             "page": 0,
@@ -129,7 +134,7 @@ async def _index_user_document_async(doc_id: str):
             document.chunk_count = len(points)
             document.status = "indexed"
             document.error_message = None
-            document.embedding_model = getattr(embedding_service, "model", None)
+            document.embedding_model = embedding_model
             await session.commit()
             logger.info(
                 "user_document_index_success",

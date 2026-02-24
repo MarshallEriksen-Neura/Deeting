@@ -1,11 +1,14 @@
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import delete
 
 from app.models import Base
 from app.models.provider_instance import ProviderInstance, ProviderModel
+from app.models.system_setting import SystemSetting
 from app.repositories import ProviderModelRepository, SystemSettingRepository
 from app.services.system import SystemSettingsService
+from app.services.system.system_settings_service import EMBEDDING_SETTING_KEY
 from tests.api.conftest import AsyncSessionLocal, engine
 
 
@@ -47,3 +50,18 @@ async def test_set_and_get_system_embedding_model():
 
         loaded = await service.get_embedding_model()
         assert loaded == "text-embedding-3-small"
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_model_returns_none_when_not_configured():
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(SystemSetting).where(SystemSetting.key == EMBEDDING_SETTING_KEY)
+        )
+        await session.commit()
+        service = SystemSettingsService(
+            SystemSettingRepository(session),
+            ProviderModelRepository(session),
+        )
+        loaded = await service.get_embedding_model()
+        assert loaded is None

@@ -103,7 +103,7 @@ class ConcretePluginContext(PluginContext):
             client=raw_client,
             plugin_id=self._plugin_id,
             user_id=self._user_id,
-            embedding_model=getattr(settings, "EMBEDDING_MODEL", None),
+            embedding_model=None,
             fail_open=False,
         )
         return self._memory_client

@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.http_client import create_async_http_client
 from app.models.knowledge import KnowledgeArtifact
 from app.repositories.knowledge_repository import KnowledgeRepository
+from app.services.system import get_cached_embedding_model
 from app.tasks.knowledge_tasks import index_knowledge_artifact_task
 
 
@@ -104,8 +105,8 @@ class CrawlerKnowledgeService:
         """
         content_hash = hashlib.md5(markdown.encode()).hexdigest()
 
-        # We record the intended model but don't use it yet
-        model_name = getattr(settings, "EMBEDDING_MODEL", "text-embedding-3-small")
+        # Record configured embedding model for audit; no env fallback.
+        model_name = await get_cached_embedding_model()
 
         existing = await self.repo.get_artifact_by_url(url)
         if existing:

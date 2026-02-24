@@ -1,8 +1,5 @@
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.config import settings
 from app.deps.auth import get_current_active_user
 from app.models import User
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
@@ -29,7 +26,7 @@ async def get_memory_service(
         client=client,
         user_id=current_user.id,
         plugin_id=None,  # Access all user memories regardless of plugin
-        embedding_model=getattr(settings, "EMBEDDING_MODEL", None),
+        embedding_model=None,
         fail_open=False,  # We want errors in the management API
     )
 

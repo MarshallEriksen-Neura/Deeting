@@ -27,6 +27,29 @@ class SwitchingEmbeddingService(FakeEmbeddingService):
         return await super().embed_text(text)
 
 
+class DimensionOnlyEmbeddingService:
+    def __init__(self, dim: int, model: str = "test-embed"):
+        self.dim = dim
+        self.model = model
+
+    async def get_vector_size(self) -> int:
+        return self.dim
+
+    async def embed_text(self, text: str):  # pragma: no cover - should not be called
+        raise AssertionError("embed_text should not be called when resolving vector size")
+
+
+class BrokenEmbeddingService:
+    def __init__(self, model: str = "broken-embed"):
+        self.model = model
+
+    async def get_vector_size(self) -> int:
+        raise RuntimeError("resolver failed")
+
+    async def embed_text(self, text: str):
+        raise RuntimeError("embed failed")
+
+
 @pytest.mark.asyncio
 async def test_upsert_creates_user_collection_and_writes_points():
     user_id = uuid.uuid4()
@@ -283,3 +306,108 @@ async def test_list_points_uses_refreshed_embedding_model_in_filter():
     await client.aclose()
 
     assert captured_filter_models == ["resolved-embed"]
+
+
+@pytest.mark.asyncio
+async def test_delete_uses_resolved_vector_size_when_collection_not_cached():
+    user_id = uuid.uuid4()
+    plugin_id = "plugin-test"
+    collection_name = get_kb_user_collection_name(user_id, embedding_model="test-embed")
+    delete_bodies: list[dict] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == f"/collections/{collection_name}" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "config": {"params": {"vectors": {"text": {"size": 2}}}}
+                    }
+                },
+            )
+        if path == f"/collections/{collection_name}/points/delete":
+            delete_bodies.append(json.loads(request.content.decode()))
+            return httpx.Response(200, json={"result": {"status": "ok"}})
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://qdrant.test"
+    )
+    vs_client = QdrantUserVectorService(
+        client=client,
+        plugin_id=plugin_id,
+        user_id=user_id,
+        embedding_model="test-embed",
+        fail_open=False,
+        embedding_service=FakeEmbeddingService(dim=2),  # type: ignore[arg-type]
+    )
+
+    await vs_client.delete(ids=["pid-1"])
+    await client.aclose()
+
+    assert len(delete_bodies) == 1
+    must_filters = ((delete_bodies[0].get("filter") or {}).get("must") or [])
+    assert {"has_id": ["pid-1"]} in must_filters
+    assert {"key": "user_id", "match": {"value": str(user_id)}} in must_filters
+    assert {"key": "plugin_id", "match": {"value": plugin_id}} in must_filters
+
+
+@pytest.mark.asyncio
+async def test_delete_prefers_embedding_vector_size_resolver():
+    user_id = uuid.uuid4()
+    collection_name = get_kb_user_collection_name(user_id, embedding_model="test-embed")
+    delete_requests = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal delete_requests
+        path = request.url.path
+        if path == f"/collections/{collection_name}" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "config": {"params": {"vectors": {"text": {"size": 2}}}}
+                    }
+                },
+            )
+        if path == f"/collections/{collection_name}/points/delete":
+            delete_requests += 1
+            return httpx.Response(200, json={"result": {"status": "ok"}})
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://qdrant.test"
+    )
+    vs_client = QdrantUserVectorService(
+        client=client,
+        user_id=user_id,
+        embedding_model="test-embed",
+        fail_open=False,
+        embedding_service=DimensionOnlyEmbeddingService(dim=2),  # type: ignore[arg-type]
+    )
+
+    await vs_client.delete(ids=["pid-1"])
+    await client.aclose()
+
+    assert delete_requests == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_raises_when_vector_size_unavailable_and_no_fallback():
+    user_id = uuid.uuid4()
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(404)),
+        base_url="http://qdrant.test",
+    )
+    vs_client = QdrantUserVectorService(
+        client=client,
+        user_id=user_id,
+        embedding_model=None,
+        fail_open=False,
+        embedding_service=BrokenEmbeddingService(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(RuntimeError, match="unable to resolve embedding vector size"):
+        await vs_client.delete(ids=["pid-1"])
+    await client.aclose()

@@ -9,7 +9,14 @@
     "model_name": "text-embedding-3-small"
   }
   ```
-- 说明：登录后可访问；返回管理员统一配置的云端 embedding 模型（未配置时回退系统默认值）。
+- 说明：登录后可访问；返回管理员统一配置的云端 embedding 模型。
+- 未配置时响应：
+  ```json
+  {
+    "model_name": null
+  }
+  ```
+- 行为：当 `model_name=null` 时，依赖 Embedding 的写入/检索流程将失败并返回错误，不再回退到环境变量默认模型。
 
 ---
 
@@ -22,7 +29,7 @@
     "model_name": "text-embedding-3-small"
   }
   ```
-- 说明：仅管理员可访问。
+- 说明：仅管理员可访问；未配置时同样返回 `{"model_name": null}`。
 
 ---
 
@@ -42,3 +49,4 @@
 
 变更记录
 - 2026-01-17：新增云端 embedding 设置接口。
+- 2026-02-24：移除环境变量 `EMBEDDING_MODEL` 回退；未配置时 `model_name=null`，需先通过管理端设置。

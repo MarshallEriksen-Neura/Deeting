@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     QDRANT_KB_USER_COLLECTION_SHARDS: int = 16
     QDRANT_TOOL_SYSTEM_COLLECTION: str = "sys_tool_index"
     QDRANT_TOOL_USER_COLLECTION_PREFIX: str = "kb_user"
+    EMBEDDING_VECTOR_SIZE: int | None = None
     KB_GLOBAL_EMBEDDING_LOGICAL_MODEL: str | None = None
     EMBEDDING_MODELS_REQUIRE_INPUT_TYPE: str = (
         "embed-english-v3,embed-multilingual-v3,cohere-embed,nemoretriever,"

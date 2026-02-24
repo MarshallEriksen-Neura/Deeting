@@ -3,6 +3,7 @@ import uuid
 import httpx
 from loguru import logger
 
+from app.core.config import settings
 from app.models.agent_plugin import AgentPlugin
 from app.qdrant_client import get_qdrant_client, qdrant_is_configured
 from app.services.providers.embedding import EmbeddingService
@@ -47,6 +48,23 @@ class SystemQdrantService:
     def client(self) -> httpx.AsyncClient:
         return get_qdrant_client()
 
+    async def _resolve_vector_size(self) -> int:
+        resolver = getattr(self._embedding_service, "get_vector_size", None)
+        if callable(resolver):
+            try:
+                size = int(await resolver())
+                if size > 0:
+                    return size
+            except Exception as exc:
+                logger.debug("resolve system vector size failed: {}", exc)
+        configured = getattr(settings, "EMBEDDING_VECTOR_SIZE", None)
+        if isinstance(configured, int) and configured > 0:
+            return configured
+        raise RuntimeError(
+            "unable to resolve system embedding vector size; configure /admin/settings/embedding "
+            "or set EMBEDDING_VECTOR_SIZE explicitly"
+        )
+
     async def initialize_collections(self) -> None:
         """
         Idempotent initialization of required collections.
@@ -56,21 +74,23 @@ class SystemQdrantService:
             logger.warning("Qdrant not configured, skipping collection initialization.")
             return
 
+        vector_size = await self._resolve_vector_size()
+
         # We use the raw Qdrant REST API via httpx for full control
         # 1. Plugin Marketplace
-        await self._ensure_collection(COLLECTION_PLUGIN_MARKETPLACE, vector_size=1536)
+        await self._ensure_collection(COLLECTION_PLUGIN_MARKETPLACE, vector_size=vector_size)
 
         # 2. Semantic Cache
-        await self._ensure_collection(COLLECTION_SEMANTIC_CACHE, vector_size=1536)
+        await self._ensure_collection(COLLECTION_SEMANTIC_CACHE, vector_size=vector_size)
 
         # 3. System KB（平台维护，用户不可写）
-        await self._ensure_collection(COLLECTION_KB_SYSTEM, vector_size=1536)
+        await self._ensure_collection(COLLECTION_KB_SYSTEM, vector_size=vector_size)
 
         # 4. Candidate KB（候选知识暂存）
-        await self._ensure_collection(COLLECTION_KB_CANDIDATES, vector_size=1536)
+        await self._ensure_collection(COLLECTION_KB_CANDIDATES, vector_size=vector_size)
 
         # 5. System Tool Index (Shared, ReadOnly for users)
-        await self._ensure_collection(COLLECTION_SYS_TOOL_INDEX, vector_size=1536)
+        await self._ensure_collection(COLLECTION_SYS_TOOL_INDEX, vector_size=vector_size)
 
     async def _ensure_collection(self, name: str, vector_size: int) -> None:
         """Create collection if not exists."""
@@ -89,7 +109,11 @@ class SystemQdrantService:
             return
 
         # Construct text for embedding: "Name: weather. Description: Get weather info..."
-        text_to_embed = f"Name: {plugin.display_name or plugin.name}. Description: {plugin.description or ''}. Capabilities: {plugin.capabilities or []}"
+        text_to_embed = (
+            f"Name: {plugin.display_name or plugin.name}. "
+            f"Description: {plugin.description or ''}. "
+            f"Capabilities: {plugin.capabilities or []}"
+        )
         vector = await self._embedding_service.embed_text(text_to_embed)
 
         payload = {

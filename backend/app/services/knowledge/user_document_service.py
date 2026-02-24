@@ -261,7 +261,11 @@ class UserDocumentService:
             )
 
         for doc in docs:
-            await self._delete_document_vectors(user_id=user_id, doc_id=doc.id)
+            await self._delete_document_vectors(
+                user_id=user_id,
+                doc_id=doc.id,
+                embedding_model=doc.embedding_model,
+            )
             await self.document_repo.delete(doc)
 
         await self.folder_repo.delete(folder)
@@ -385,7 +389,11 @@ class UserDocumentService:
         if doc is None:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        await self._delete_document_vectors(user_id=user_id, doc_id=doc.id)
+        await self._delete_document_vectors(
+            user_id=user_id,
+            doc_id=doc.id,
+            embedding_model=doc.embedding_model,
+        )
         await self.document_repo.delete(doc)
         await self.session.commit()
 
@@ -401,7 +409,11 @@ class UserDocumentService:
         )
 
         for doc in docs:
-            await self._delete_document_vectors(user_id=user_id, doc_id=doc.id)
+            await self._delete_document_vectors(
+                user_id=user_id,
+                doc_id=doc.id,
+                embedding_model=doc.embedding_model,
+            )
             await self.document_repo.delete(doc)
         if docs:
             await self.session.commit()
@@ -705,7 +717,18 @@ class UserDocumentService:
                 limit=limit,
             )
 
-        collection_name = get_kb_user_collection_name(user_id)
+        collection_name = self._resolve_user_collection_name(
+            user_id=user_id,
+            embedding_model=doc.embedding_model,
+            fallback_to_current_model=False,
+        )
+        if not collection_name:
+            return KnowledgeChunkListResponse(
+                items=[],
+                total=int(doc.chunk_count or 0),
+                offset=offset,
+                limit=limit,
+            )
         expected = offset + limit
         gathered: list[dict[str, Any]] = []
         cursor: Any | None = None
@@ -768,6 +791,13 @@ class UserDocumentService:
             return []
 
         vector = await self.embedding_service.embed_text(query)
+        collection_name = self._resolve_user_collection_name(
+            user_id=user_id,
+            embedding_model=getattr(self.embedding_service, "model", None),
+            fallback_to_current_model=True,
+        )
+        if not collection_name:
+            return []
         must_filters: list[dict[str, Any]] = [
             {"key": "user_id", "match": {"value": str(user_id)}}
         ]
@@ -781,7 +811,7 @@ class UserDocumentService:
 
         results = await search_points(
             get_qdrant_client(),
-            collection_name=get_kb_user_collection_name(user_id),
+            collection_name=collection_name,
             vector=vector,
             limit=limit,
             query_filter={"must": must_filters},
@@ -896,13 +926,26 @@ class UserDocumentService:
             frontier = child_ids
         return collected
 
-    async def _delete_document_vectors(self, *, user_id: UUID, doc_id: UUID) -> None:
+    async def _delete_document_vectors(
+        self,
+        *,
+        user_id: UUID,
+        doc_id: UUID,
+        embedding_model: str | None,
+    ) -> None:
         if not qdrant_is_configured():
+            return
+        collection_name = self._resolve_user_collection_name(
+            user_id=user_id,
+            embedding_model=embedding_model,
+            fallback_to_current_model=False,
+        )
+        if not collection_name:
             return
         try:
             await delete_points(
                 get_qdrant_client(),
-                collection_name=get_kb_user_collection_name(user_id),
+                collection_name=collection_name,
                 query_filter={
                     "must": [
                         {"key": "user_id", "match": {"value": str(user_id)}},
@@ -915,6 +958,30 @@ class UserDocumentService:
                 "user_document_delete_points_failed",
                 extra={"user_id": str(user_id), "doc_id": str(doc_id), "error": str(exc)},
             )
+
+    def _resolve_user_collection_name(
+        self,
+        *,
+        user_id: UUID,
+        embedding_model: str | None,
+        fallback_to_current_model: bool,
+    ) -> str | None:
+        model = str(embedding_model or "").strip() or None
+        if not model and fallback_to_current_model:
+            current_model = str(getattr(self.embedding_service, "model", "") or "").strip()
+            model = current_model or None
+        try:
+            return get_kb_user_collection_name(user_id, embedding_model=model)
+        except ValueError as exc:
+            logger.warning(
+                "user_document_collection_name_resolve_failed",
+                extra={
+                    "user_id": str(user_id),
+                    "embedding_model": model,
+                    "error": str(exc),
+                },
+            )
+            return None
 
     @staticmethod
     def _extract_extension(filename: str) -> str:
