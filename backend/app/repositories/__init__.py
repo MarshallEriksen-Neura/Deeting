@@ -13,6 +13,7 @@ from .billing_repository import (
     DuplicateTransactionError,
     InsufficientBalanceError,
 )
+from .code_mode_execution_repository import CodeModeExecutionRepository
 from .gateway_log_repository import GatewayLogRepository
 from .generation_task_repository import GenerationTaskRepository
 from .image_generation_output_repository import ImageGenerationOutputRepository
@@ -55,6 +56,7 @@ __all__ = [
     "BanditRepository",
     "BaseRepository",
     "BillingRepository",
+    "CodeModeExecutionRepository",
     "DuplicateTransactionError",
     "GatewayLogRepository",
     "GenerationTaskRepository",

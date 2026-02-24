@@ -13,12 +13,16 @@ from typing import Any
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.config import settings
+from app.core.metrics import record_code_mode_execution, record_code_mode_tool_call
 from app.core.sandbox.manager import sandbox_manager
+from app.repositories.code_mode_execution_repository import CodeModeExecutionRepository
 from app.schemas.tool import ToolDefinition
 from app.services.code_mode.runtime_bridge_token_service import (
     RuntimeBridgeClaims,
     runtime_bridge_token_service,
 )
+from app.services.code_mode import protocol as code_mode_protocol
+from app.services.code_mode import tracing as code_mode_tracing
 from app.services.tools.tool_context_service import tool_context_service
 
 logger = logging.getLogger(__name__)
@@ -31,8 +35,11 @@ _MAX_RUNTIME_TOOL_CALLS = 8
 _MAX_RUNTIME_SDK_STUB_TOOLS = 80
 _MAX_RUNTIME_SDK_STUB_CHARS = 40000
 _MAX_RUNTIME_TOOL_TRACE_ERROR_CHARS = 240
-_RUNTIME_TOOL_CALL_MARKER = "__DEETING_TOOL_CALL_REQUEST__"
-_RUNTIME_RENDER_BLOCK_MARKER = "__DEETING_RENDER_BLOCK__"
+_RUNTIME_PROTOCOL_VERSION = code_mode_protocol.RUNTIME_PROTOCOL_VERSION
+_SDK_TOOLCARD_FORMAT_VERSION = code_mode_protocol.SDK_TOOLCARD_FORMAT_VERSION
+_EXECUTION_FORMAT_VERSION = code_mode_protocol.EXECUTION_FORMAT_VERSION
+_RUNTIME_TOOL_CALL_MARKER = code_mode_protocol.RUNTIME_TOOL_CALL_MARKER
+_RUNTIME_RENDER_BLOCK_MARKER = code_mode_protocol.RUNTIME_RENDER_BLOCK_MARKER
 _BRIDGE_EXECUTION_TOKEN_HEADER = "X-Code-Mode-Execution-Token"
 _FORBIDDEN_IMPORT_ROOTS = {
     "aiohttp",
@@ -342,7 +349,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         return {
             "mode": "code_mode",
-            "format_version": "sdk_toolcard.v2",
+            "format_version": _SDK_TOOLCARD_FORMAT_VERSION,
+            "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
             "query": q,
             "count": len(items),
             "tools": items,
@@ -362,39 +370,108 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         __context__: Any | None = None,
     ) -> dict[str, Any]:
         source = (code or "").strip()
+        request_language = (language or "python").strip().lower() or "python"
+        safe_tool_plan = tool_plan if isinstance(tool_plan, list) else []
+        request_started_monotonic = perf_counter()
+        request_trace_id = str(self._context_attr(__context__, "trace_id", "") or "").strip()
+        execution_span = code_mode_tracing.begin_span(
+            "code_mode.execution",
+            trace_id=request_trace_id or None,
+            attributes={
+                "code_mode.code_chars": len(source),
+                "code_mode.tool_plan_steps": len(safe_tool_plan),
+            },
+        )
+
+        async def _finalize_response(
+            payload: dict[str, Any],
+            *,
+            runtime_meta_override: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            result_payload = self._finalize_code_mode_response(
+                payload,
+                workflow_context=__context__,
+                request_started_monotonic=request_started_monotonic,
+                runtime_meta_override=runtime_meta_override,
+                code_chars=len(source),
+                tool_plan_steps=len(safe_tool_plan),
+            )
+            await self._persist_execution_record(
+                response=result_payload,
+                source_code=source,
+                language=request_language,
+                tool_plan=safe_tool_plan,
+                workflow_context=__context__,
+                code_chars=len(source),
+                tool_plan_steps=len(safe_tool_plan),
+            )
+            if execution_span.duration_ms is None:
+                span_status = "ok" if result_payload.get("status") == "success" else "error"
+                if span_status != "ok":
+                    error_text = result_payload.get("error")
+                    if isinstance(error_text, str) and error_text:
+                        execution_span.error = error_text
+                execution_span.finish(status=span_status)
+            return result_payload
+
         if not source:
-            return {"error": "code is required", "error_code": "CODE_MODE_EMPTY_CODE"}
+            return await _finalize_response({
+                "status": "failed",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
+                "error": "code is required",
+                "error_code": "CODE_MODE_EMPTY_CODE",
+            })
         if len(source) > _MAX_CODE_CHARS:
-            return {
+            return await _finalize_response({
+                "status": "failed",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                 "error": f"code is too long (> {_MAX_CODE_CHARS} chars)",
                 "error_code": "CODE_MODE_CODE_TOO_LONG",
-            }
+            })
 
-        normalized_language = (language or "python").strip().lower()
+        normalized_language = request_language
         if normalized_language != "python":
-            return {
+            return await _finalize_response({
+                "status": "failed",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                 "error": f"unsupported language: {language}",
                 "error_code": "CODE_MODE_UNSUPPORTED_LANGUAGE",
-            }
+            })
 
         violations = self._validate_python_code(source)
         if violations:
-            return {
+            return await _finalize_response({
+                "status": "failed",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                 "error": "code validation failed",
                 "error_code": "CODE_MODE_VALIDATION_FAILED",
                 "violations": violations,
-            }
+            })
 
         final_session_id = self._resolve_session_id(
             explicit_session_id=session_id, workflow_context=__context__
         )
-        runtime_meta = self._build_runtime_meta(source, final_session_id)
-        safe_tool_plan = tool_plan if isinstance(tool_plan, list) else []
+        runtime_meta = self._build_runtime_meta(
+            source,
+            final_session_id,
+            workflow_context=__context__,
+        )
+        runtime_meta["trace_id"] = execution_span.trace_id
+        runtime_meta["execution_span_id"] = execution_span.span_id
+        started_monotonic = perf_counter()
 
         if dry_run:
             plan_validation = self._validate_tool_plan(safe_tool_plan)
-            return {
+            self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+            return await _finalize_response(
+                {
                 "status": "dry_run",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                 "runtime": runtime_meta,
                 "language": normalized_language,
                 "validation": {
@@ -406,32 +483,54 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "steps": len(safe_tool_plan),
                     "executed": False,
                 },
-            }
+                },
+                runtime_meta_override=runtime_meta,
+            )
 
         plan_validation = self._validate_tool_plan(safe_tool_plan)
         if plan_validation:
-            return {
+            self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+            return await _finalize_response(
+                {
                 "status": "failed",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                 "runtime": runtime_meta,
                 "error": "tool_plan validation failed",
                 "error_code": "CODE_MODE_TOOL_PLAN_INVALID",
                 "violations": plan_validation,
-            }
+                },
+                runtime_meta_override=runtime_meta,
+            )
 
         tool_plan_results: dict[str, Any] = {}
         if safe_tool_plan:
-            plan_execution = await self._execute_tool_plan(
-                safe_tool_plan, workflow_context=__context__
-            )
+            with execution_span.child(
+                "code_mode.tool_plan",
+                attributes={"code_mode.tool_plan_steps": len(safe_tool_plan)},
+            ) as tool_plan_span:
+                plan_execution = await self._execute_tool_plan(
+                    safe_tool_plan, workflow_context=__context__
+                )
+                tool_plan_span.set_attribute(
+                    "code_mode.tool_plan_status",
+                    str(plan_execution.get("status") or "unknown"),
+                )
             runtime_meta["tool_plan"] = plan_execution.get("summary", {})
             if plan_execution.get("status") == "failed":
-                return {
+                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+                return await _finalize_response(
+                    {
                     "status": "failed",
+                    "format_version": _EXECUTION_FORMAT_VERSION,
+                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                     "runtime": runtime_meta,
                     "error": plan_execution.get("error"),
                     "error_code": "CODE_MODE_TOOL_PLAN_FAILED",
                     "steps": plan_execution.get("steps", []),
-                }
+                    },
+                    runtime_meta_override=runtime_meta,
+                )
             tool_plan_results = plan_execution.get("results", {})
 
         try:
@@ -466,7 +565,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         runtime_tool_trace: list[dict[str, Any]] = []
         runtime_render_blocks: list[dict[str, Any]] = []
 
-        for _ in range(_MAX_RUNTIME_TOOL_CALLS + 1):
+        for attempt in range(_MAX_RUNTIME_TOOL_CALLS + 1):
             wrapped_code = self._build_wrapped_code(
                 source,
                 tool_plan_results=tool_plan_results,
@@ -475,12 +574,23 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 runtime_sdk_bundle=runtime_sdk_bundle,
             )
 
-            result = await sandbox_manager.run_code(
-                final_session_id,
-                wrapped_code,
-                language=normalized_language,
-                execution_timeout=timeout_value,
-            )
+            with execution_span.child(
+                "code_mode.sandbox.run",
+                attributes={
+                    "code_mode.sandbox_attempt": attempt + 1,
+                    "code_mode.execution_timeout": timeout_value,
+                },
+            ) as sandbox_span:
+                result = await sandbox_manager.run_code(
+                    final_session_id,
+                    wrapped_code,
+                    language=normalized_language,
+                    execution_timeout=timeout_value,
+                )
+                sandbox_span.set_attribute(
+                    "code_mode.sandbox_exit_code",
+                    int(result.get("exit_code", 0) or 0),
+                )
             runtime_render_blocks.extend(self._extract_runtime_render_blocks(result))
 
             runtime_tool_request = self._extract_runtime_tool_request(result)
@@ -495,11 +605,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                         "count": len(runtime_render_blocks),
                         "blocks": runtime_render_blocks,
                     }
-                return self._format_execution_result(
-                    result,
-                    final_session_id,
-                    runtime_meta,
-                    render_blocks=runtime_render_blocks,
+                return await _finalize_response(
+                    self._format_execution_result(
+                        result,
+                        final_session_id,
+                        runtime_meta,
+                        started_monotonic=started_monotonic,
+                        render_blocks=runtime_render_blocks,
+                    ),
+                    runtime_meta_override=runtime_meta,
                 )
 
             if len(runtime_tool_results) >= _MAX_RUNTIME_TOOL_CALLS:
@@ -507,42 +621,64 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "count": len(runtime_tool_trace),
                     "calls": runtime_tool_trace,
                 }
-                return {
+                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+                return await _finalize_response(
+                    {
                     "status": "failed",
+                    "format_version": _EXECUTION_FORMAT_VERSION,
+                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                     "runtime": runtime_meta,
                     "error": "runtime tool call limit exceeded",
                     "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_LIMIT",
                     "request": runtime_tool_request,
-                }
+                    },
+                    runtime_meta_override=runtime_meta,
+                )
 
             tool_name = str(runtime_tool_request.get("tool_name") or "").strip()
             if not tool_name:
-                return {
+                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+                return await _finalize_response(
+                    {
                     "status": "failed",
+                    "format_version": _EXECUTION_FORMAT_VERSION,
+                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                     "runtime": runtime_meta,
                     "error": "runtime tool call request missing tool_name",
                     "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
                     "request": runtime_tool_request,
-                }
+                    },
+                    runtime_meta_override=runtime_meta,
+                )
             if tool_name in {"search_sdk", "execute_code_plan"}:
-                return {
+                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+                return await _finalize_response(
+                    {
                     "status": "failed",
+                    "format_version": _EXECUTION_FORMAT_VERSION,
+                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                     "runtime": runtime_meta,
                     "error": f"runtime tool call '{tool_name}' is not allowed",
                     "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
                     "request": runtime_tool_request,
-                }
+                    },
+                    runtime_meta_override=runtime_meta,
+                )
 
             call_arguments = runtime_tool_request.get("arguments") or {}
             if not isinstance(call_arguments, dict):
                 call_arguments = {}
 
             dispatch_started = perf_counter()
-            runtime_tool_result = await self._dispatch_real_tool(
-                tool_name=tool_name,
-                arguments=call_arguments,
-                workflow_context=__context__,
-            )
+            with execution_span.child(
+                "code_mode.runtime_tool_call",
+                attributes={"code_mode.tool_name": tool_name},
+            ) as runtime_tool_span:
+                runtime_tool_result = await self._dispatch_real_tool(
+                    tool_name=tool_name,
+                    arguments=call_arguments,
+                    workflow_context=__context__,
+                )
             dispatch_duration_ms = max(0, int((perf_counter() - dispatch_started) * 1000))
             normalized_tool_result = self._to_jsonable(runtime_tool_result)
             runtime_tool_results.append(normalized_tool_result)
@@ -562,6 +698,10 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 raw_error_code = normalized_tool_result.get("error_code")
                 if isinstance(raw_error_code, str) and raw_error_code.strip():
                     trace_error_code = raw_error_code.strip()
+            runtime_tool_span.set_attribute("code_mode.tool_status", trace_status)
+            runtime_tool_span.set_attribute("code_mode.tool_duration_ms", dispatch_duration_ms)
+            if trace_error_code:
+                runtime_tool_span.set_attribute("code_mode.tool_error_code", trace_error_code)
 
             trace_entry: dict[str, Any] = {
                 "index": int(runtime_tool_request.get("index", len(runtime_tool_results) - 1)),
@@ -575,13 +715,27 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 trace_entry["error_code"] = trace_error_code
 
             runtime_tool_trace.append(trace_entry)
+            try:
+                record_code_mode_tool_call(
+                    tool_name=tool_name,
+                    status=trace_status,
+                    error_code=trace_error_code,
+                )
+            except Exception:
+                pass
 
-        return {
+        self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+        return await _finalize_response(
+            {
             "status": "failed",
+            "format_version": _EXECUTION_FORMAT_VERSION,
+            "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
             "runtime": runtime_meta,
             "error": "runtime tool call loop exceeded",
             "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_LIMIT",
-        }
+            },
+            runtime_meta_override=runtime_meta,
+        )
 
     async def _build_tool_candidates(
         self, *, user_id: uuid.UUID, query: str
@@ -1248,65 +1402,30 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         return str(value)
 
     def _extract_runtime_tool_request(self, result: dict[str, Any]) -> dict[str, Any] | None:
-        for key in ("stdout", "stderr", "result"):
-            payload = self._extract_runtime_tool_request_from_text(
-                self._join_chunks(result.get(key))
-            )
-            if payload is not None:
-                return payload
-        return None
+        return code_mode_protocol.extract_runtime_tool_request(result)
 
     def _extract_runtime_tool_request_from_text(
         self,
         text: str | None,
     ) -> dict[str, Any] | None:
-        if not text:
-            return None
-        for line in reversed(str(text).splitlines()):
-            raw = line.strip()
-            if not raw.startswith(_RUNTIME_TOOL_CALL_MARKER):
-                continue
-            payload_str = raw[len(_RUNTIME_TOOL_CALL_MARKER) :].strip()
-            if not payload_str:
-                return {}
-            try:
-                payload = json.loads(payload_str)
-            except Exception:
-                return {}
-            if isinstance(payload, dict):
-                return payload
-            return {}
-        return None
+        return code_mode_protocol.extract_runtime_tool_request_from_text(text)
 
     def _extract_runtime_render_blocks(self, result: dict[str, Any]) -> list[dict[str, Any]]:
+        payloads = code_mode_protocol.extract_runtime_render_payloads(result)
         blocks: list[dict[str, Any]] = []
-        for key in ("stdout", "stderr", "result"):
-            blocks.extend(
-                self._extract_runtime_render_blocks_from_text(
-                    self._join_chunks(result.get(key))
-                )
-            )
+        for payload in payloads:
+            normalized = self._normalize_render_block(payload)
+            if normalized:
+                blocks.append(normalized)
         return blocks
 
     def _extract_runtime_render_blocks_from_text(
         self,
         text: str | None,
     ) -> list[dict[str, Any]]:
-        if not text:
-            return []
-
+        payloads = code_mode_protocol.extract_runtime_render_payloads_from_text(text)
         blocks: list[dict[str, Any]] = []
-        for line in str(text).splitlines():
-            raw = line.strip()
-            if not raw.startswith(_RUNTIME_RENDER_BLOCK_MARKER):
-                continue
-            payload_str = raw[len(_RUNTIME_RENDER_BLOCK_MARKER) :].strip()
-            if not payload_str:
-                continue
-            try:
-                payload = json.loads(payload_str)
-            except Exception:
-                continue
+        for payload in payloads:
             normalized = self._normalize_render_block(payload)
             if normalized:
                 blocks.append(normalized)
@@ -1491,7 +1610,9 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 "session_id": final_session_id,
             },
             "request": {
-                "trace_id": self._context_attr(workflow_context, "trace_id"),
+                "trace_id": self._context_attr(
+                    workflow_context, "trace_id", runtime_meta.get("trace_id")
+                ),
                 "channel": channel_value,
                 "capability": self._context_attr(workflow_context, "capability"),
                 "requested_model": self._context_attr(workflow_context, "requested_model"),
@@ -1547,6 +1668,214 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if isinstance(value, list):
             return [self._prune_none(v) for v in value if v is not None]
         return value
+
+    def _finalize_code_mode_response(
+        self,
+        payload: dict[str, Any],
+        *,
+        workflow_context: Any | None,
+        request_started_monotonic: float,
+        runtime_meta_override: dict[str, Any] | None,
+        code_chars: int,
+        tool_plan_steps: int,
+    ) -> dict[str, Any]:
+        response = dict(payload or {})
+        response.setdefault("format_version", _EXECUTION_FORMAT_VERSION)
+        response.setdefault("runtime_protocol_version", _RUNTIME_PROTOCOL_VERSION)
+
+        status = str(response.get("status") or "failed").strip().lower() or "failed"
+        error_code_raw = response.get("error_code")
+        error_code = (
+            str(error_code_raw).strip()
+            if isinstance(error_code_raw, str) and error_code_raw.strip()
+            else None
+        )
+
+        runtime_meta: dict[str, Any] | None = None
+        if isinstance(response.get("runtime"), dict):
+            runtime_meta = response.get("runtime")
+        elif isinstance(runtime_meta_override, dict):
+            runtime_meta = runtime_meta_override
+            response["runtime"] = runtime_meta
+
+        if runtime_meta is not None:
+            self._finalize_runtime_meta(
+                runtime_meta, started_monotonic=request_started_monotonic
+            )
+            duration_ms = int(runtime_meta.get("duration_ms") or 0)
+            trace_id = (
+                str(runtime_meta.get("trace_id") or "").strip()
+                or str(self._context_attr(workflow_context, "trace_id", "") or "").strip()
+            )
+            session_id = str(runtime_meta.get("session_id") or "").strip()
+            user_id = str(runtime_meta.get("user_id") or "").strip()
+            execution_id = str(runtime_meta.get("execution_id") or "").strip()
+            runtime_tool_calls = runtime_meta.get("runtime_tool_calls")
+            runtime_tool_call_count = (
+                int(runtime_tool_calls.get("count") or 0)
+                if isinstance(runtime_tool_calls, dict)
+                else 0
+            )
+        else:
+            duration_ms = max(0, int((perf_counter() - request_started_monotonic) * 1000))
+            trace_id = str(self._context_attr(workflow_context, "trace_id", "") or "").strip()
+            session_id = str(self._context_attr(workflow_context, "session_id", "") or "").strip()
+            user_id = str(self._context_attr(workflow_context, "user_id", self.context.user_id))
+            execution_id = ""
+            runtime_tool_call_count = 0
+
+        try:
+            record_code_mode_execution(
+                status=status,
+                duration_seconds=max(0.0, duration_ms / 1000.0),
+                error_code=error_code,
+            )
+        except Exception:
+            pass
+
+        logger.info(
+            "code_mode_execution",
+            extra={
+                "trace_id": trace_id,
+                "session_id": session_id,
+                "user_id": user_id,
+                "execution_id": execution_id,
+                "status": status,
+                "error_code": error_code,
+                "duration_ms": duration_ms,
+                "code_chars": code_chars,
+                "tool_plan_steps": tool_plan_steps,
+                "runtime_tool_calls": runtime_tool_call_count,
+            },
+        )
+        return response
+
+    async def _persist_execution_record(
+        self,
+        *,
+        response: dict[str, Any],
+        source_code: str,
+        language: str,
+        tool_plan: list[dict[str, Any]],
+        workflow_context: Any | None,
+        code_chars: int,
+        tool_plan_steps: int,
+    ) -> None:
+        runtime_meta = response.get("runtime")
+        runtime_dict = runtime_meta if isinstance(runtime_meta, dict) else {}
+
+        raw_user_id = runtime_dict.get("user_id") or self._context_attr(
+            workflow_context, "user_id", self.context.user_id
+        )
+        try:
+            user_id = uuid.UUID(str(raw_user_id))
+        except Exception:
+            return
+
+        execution_id = str(runtime_dict.get("execution_id") or "").strip() or uuid.uuid4().hex
+        session_id = str(runtime_dict.get("session_id") or "").strip() or self._resolve_session_id(
+            explicit_session_id=None,
+            workflow_context=workflow_context,
+        )
+        trace_id = str(
+            runtime_dict.get("trace_id")
+            or self._context_attr(workflow_context, "trace_id", "")
+            or ""
+        ).strip() or None
+
+        runtime_tool_calls = runtime_dict.get("runtime_tool_calls")
+        if not isinstance(runtime_tool_calls, dict):
+            runtime_tool_calls = {}
+        persisted_code = (
+            source_code
+            if len(source_code) <= _MAX_CODE_CHARS
+            else source_code[:_MAX_CODE_CHARS] + "... (truncated)"
+        )
+
+        render_blocks = runtime_dict.get("render_blocks")
+        if not isinstance(render_blocks, dict):
+            ui = response.get("ui") if isinstance(response.get("ui"), dict) else {}
+            blocks = ui.get("blocks") if isinstance(ui, dict) else []
+            if isinstance(blocks, list) and blocks:
+                render_blocks = {"count": len(blocks), "blocks": self._to_jsonable(blocks)}
+            else:
+                render_blocks = {}
+
+        tool_plan_results: dict[str, Any] = {
+            "request": self._to_jsonable(tool_plan),
+            "summary": self._to_jsonable(runtime_dict.get("tool_plan")),
+        }
+        if isinstance(response.get("steps"), list):
+            tool_plan_results["steps"] = self._to_jsonable(response.get("steps"))
+        if isinstance(response.get("tool_plan"), dict):
+            tool_plan_results["execution"] = self._to_jsonable(response.get("tool_plan"))
+
+        duration_ms = int(runtime_dict.get("duration_ms") or 0)
+        payload = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "execution_id": execution_id,
+            "trace_id": trace_id,
+            "language": str(language or "python").strip() or "python",
+            "code": persisted_code,
+            "status": str(response.get("status") or "failed").strip() or "failed",
+            "format_version": (
+                str(response.get("format_version")).strip()
+                if response.get("format_version") is not None
+                else None
+            ),
+            "runtime_protocol_version": (
+                str(response.get("runtime_protocol_version")).strip()
+                if response.get("runtime_protocol_version") is not None
+                else None
+            ),
+            "runtime_context": self._to_jsonable(runtime_dict),
+            "tool_plan_results": self._to_jsonable(tool_plan_results),
+            "runtime_tool_calls": self._to_jsonable(runtime_tool_calls),
+            "render_blocks": self._to_jsonable(render_blocks),
+            "error": (
+                str(response.get("error"))
+                if response.get("error") is not None
+                else None
+            ),
+            "error_code": (
+                str(response.get("error_code")).strip()
+                if response.get("error_code") is not None
+                else None
+            ),
+            "duration_ms": max(0, duration_ms),
+            "request_meta": {
+                "code_chars": int(code_chars),
+                "tool_plan_steps": int(tool_plan_steps),
+            },
+        }
+
+        session_factory = getattr(self.context, "get_db_session", None)
+        if not callable(session_factory):
+            return
+
+        session_or_ctx = session_factory()
+        if session_or_ctx is None:
+            return
+
+        async def _write(db_session) -> None:
+            if db_session is None:
+                return
+            repository = CodeModeExecutionRepository(db_session)
+            await repository.create_execution(payload)
+
+        try:
+            if hasattr(session_or_ctx, "__aenter__") and hasattr(session_or_ctx, "__aexit__"):
+                async with session_or_ctx as db_session:
+                    await _write(db_session)
+            else:
+                await _write(session_or_ctx)
+        except Exception as exc:
+            logger.warning(
+                "persist_code_mode_execution_failed execution_id=%s error=%s",
+                execution_id,
+                exc,
+            )
 
     def _build_wrapped_code(
         self,
@@ -1614,11 +1943,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         session_id: str,
         runtime_meta: dict[str, Any],
         *,
+        started_monotonic: float | None = None,
         render_blocks: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
         if "error" in result:
             return {
                 "status": "failed",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                 "session_id": session_id,
                 "runtime": runtime_meta,
                 "error": result.get("error"),
@@ -1639,6 +1972,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         response = {
             "status": "success" if exit_code == 0 else "failed",
+            "format_version": _EXECUTION_FORMAT_VERSION,
+            "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
             "session_id": session_id,
             "runtime": runtime_meta,
             "exit_code": exit_code,
@@ -1653,33 +1988,49 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             response["ui"] = {"blocks": render_blocks}
         return response
 
-    def _build_runtime_meta(self, source: str, session_id: str) -> dict[str, Any]:
+    def _build_runtime_meta(
+        self,
+        source: str,
+        session_id: str,
+        *,
+        workflow_context: Any | None = None,
+    ) -> dict[str, Any]:
+        started_at = datetime.now(UTC).isoformat()
         return {
             "execution_id": uuid.uuid4().hex,
             "session_id": session_id,
+            "user_id": self._resolve_runtime_user_id(workflow_context),
+            "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
+            "started_at": started_at,
             "code_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
-            "submitted_at": datetime.now(UTC).isoformat(),
+            "submitted_at": started_at,
         }
 
+    def _resolve_runtime_user_id(self, workflow_context: Any | None) -> str:
+        raw_user_id = self._context_attr(workflow_context, "user_id", self.context.user_id)
+        if raw_user_id is None:
+            return str(self.context.user_id)
+        return str(raw_user_id)
+
+    def _finalize_runtime_meta(
+        self,
+        runtime_meta: dict[str, Any],
+        *,
+        started_monotonic: float | None,
+    ) -> None:
+        if not isinstance(runtime_meta, dict):
+            return
+        runtime_meta["runtime_protocol_version"] = _RUNTIME_PROTOCOL_VERSION
+        if runtime_meta.get("duration_ms") is None and started_monotonic is not None:
+            runtime_meta["duration_ms"] = max(
+                0, int((perf_counter() - started_monotonic) * 1000)
+            )
+
     def _join_chunks(self, value: Any) -> str:
-        if isinstance(value, list):
-            return "\n".join(str(item) for item in value)
-        if value is None:
-            return ""
-        return str(value)
+        return code_mode_protocol.join_chunks(value)
 
     def _strip_runtime_signal_lines(self, text: str) -> str:
-        if not text:
-            return ""
-        lines = []
-        for raw in str(text).splitlines():
-            line = raw.strip()
-            if line.startswith(_RUNTIME_TOOL_CALL_MARKER):
-                continue
-            if line.startswith(_RUNTIME_RENDER_BLOCK_MARKER):
-                continue
-            lines.append(raw)
-        return "\n".join(lines)
+        return code_mode_protocol.strip_runtime_signal_lines(text)
 
     def _truncate(self, text: str) -> tuple[str, bool]:
         if len(text) <= _MAX_RESULT_CHARS:

@@ -15,6 +15,11 @@ class CodeInterpreterArgs(BaseModel):
     session_id: str | None = Field(
         default=None, description="Optional session ID for state persistence."
     )
+    execution_timeout: int = Field(
+        default=30,
+        description="Execution timeout in seconds (max 120).",
+        le=120,
+    )
 
 
 async def run_python(ctx: Any, args: CodeInterpreterArgs) -> str:
@@ -39,7 +44,12 @@ async def run_python(ctx: Any, args: CodeInterpreterArgs) -> str:
 
     logger.info(f"Executing code for session {session_id}")
 
-    result = await sandbox_manager.run_code(session_id, args.code)
+    result = await sandbox_manager.run_code(
+        session_id,
+        args.code,
+        language="python",
+        execution_timeout=args.execution_timeout,
+    )
 
     # Format the output for the LLM
     output_parts = []

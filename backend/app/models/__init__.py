@@ -43,6 +43,7 @@ from .conversation import (
     ConversationStatus,
     ConversationSummary,
 )
+from .code_mode_execution import CodeModeExecution
 from .gateway_log import GatewayLog
 from .identity import Identity
 from .image_generation import (
@@ -126,6 +127,7 @@ __all__ = [
     "ConversationChannel",
     "ConversationStatus",
     "ConversationRole",
+    "CodeModeExecution",
     "UserSecretary",
     "SystemSetting",
     "User",

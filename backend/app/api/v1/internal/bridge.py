@@ -25,6 +25,7 @@ from app.core.database import get_db
 from app.core.logging import logger
 from app.core.metrics import RequestTimer, record_code_mode_bridge_call
 from app.deps.auth import get_current_user
+from app.services.code_mode.audit_service import code_mode_audit_service
 from app.services.code_mode.runtime_bridge_token_service import (
     RuntimeBridgeClaims,
     runtime_bridge_token_service,
@@ -321,7 +322,11 @@ async def code_mode_call_tool(
 ) -> dict[str, Any]:
     timer = RequestTimer()
     tool_name = str(payload.tool_name or "").strip()
+    arguments = payload.arguments if isinstance(payload.arguments, dict) else {}
     client_ip = request.client.host if request and request.client else ""
+    claims: RuntimeBridgeClaims | None = None
+    call_index: int | None = None
+    max_calls: int | None = None
     audit_fields = {
         "tool_name": tool_name,
         "client_ip": client_ip,
@@ -360,8 +365,9 @@ async def code_mode_call_tool(
                 },
             )
 
-        arguments = payload.arguments if isinstance(payload.arguments, dict) else {}
         claims = consumed["claims"]
+        call_index = int(consumed.get("call_index") or 0)
+        max_calls = int(consumed.get("max_calls") or 0)
         _enforce_claim_permissions(claims, tool_name)
 
         result = await _dispatch_code_mode_tool(
@@ -390,18 +396,31 @@ async def code_mode_call_tool(
                 "duration_ms": round(duration_seconds * 1000, 2),
                 "trace_id": claims.trace_id,
                 "session_id": claims.session_id,
-                "call_index": int(consumed.get("call_index") or 0),
-                "max_calls": int(consumed.get("max_calls") or 0),
+                "call_index": call_index,
+                "max_calls": max_calls,
                 "error_code": error_code,
             },
+        )
+        code_mode_audit_service.record_bridge_call(
+            tool_name=tool_name,
+            arguments=arguments,
+            status="success" if success else "tool_error",
+            duration_ms=duration_seconds * 1000,
+            trace_id=claims.trace_id,
+            session_id=claims.session_id,
+            user_id=claims.user_id,
+            call_index=call_index,
+            max_calls=max_calls,
+            error_code=error_code,
+            client_ip=client_ip,
         )
 
         return {
             "ok": success,
             "result": result,
             "meta": {
-                "call_index": int(consumed.get("call_index") or 0),
-                "max_calls": int(consumed.get("max_calls") or 0),
+                "call_index": call_index,
+                "max_calls": max_calls,
                 "trace_id": claims.trace_id,
                 "session_id": claims.session_id,
             },
@@ -425,6 +444,21 @@ async def code_mode_call_tool(
                 "error_code": error_code,
             },
         )
+        code_mode_audit_service.record_bridge_call(
+            tool_name=tool_name,
+            arguments=arguments,
+            status="rejected",
+            duration_ms=duration_seconds * 1000,
+            trace_id=claims.trace_id if claims else None,
+            session_id=claims.session_id if claims else None,
+            user_id=claims.user_id if claims else None,
+            call_index=call_index,
+            max_calls=max_calls,
+            error_code=error_code,
+            http_status=exc.status_code,
+            error=str(exc.detail),
+            client_ip=client_ip,
+        )
         raise
     except Exception as exc:
         duration_seconds = timer.seconds()
@@ -442,6 +476,21 @@ async def code_mode_call_tool(
                 "duration_ms": round(duration_seconds * 1000, 2),
                 "error": str(exc),
             },
+        )
+        code_mode_audit_service.record_bridge_call(
+            tool_name=tool_name,
+            arguments=arguments,
+            status="failed",
+            duration_ms=duration_seconds * 1000,
+            trace_id=claims.trace_id if claims else None,
+            session_id=claims.session_id if claims else None,
+            user_id=claims.user_id if claims else None,
+            call_index=call_index,
+            max_calls=max_calls,
+            error_code="CODE_MODE_BRIDGE_DISPATCH_FAILED",
+            http_status=500,
+            error=str(exc),
+            client_ip=client_ip,
         )
         raise HTTPException(
             status_code=500,

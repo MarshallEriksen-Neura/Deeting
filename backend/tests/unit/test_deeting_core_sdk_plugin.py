@@ -155,9 +155,15 @@ async def test_execute_code_plan_executes_in_sandbox(monkeypatch):
     )
 
     assert result["status"] == "success"
+    assert result["format_version"] == sdk_module._EXECUTION_FORMAT_VERSION
+    assert result["runtime_protocol_version"] == sdk_module._RUNTIME_PROTOCOL_VERSION
     assert result["stdout"] == "hello"
     assert "runtime" in result
     assert result["runtime"]["session_id"] == "sess-1"
+    assert result["runtime"]["user_id"] == str(plugin.context.user_id)
+    assert result["runtime"]["runtime_protocol_version"] == sdk_module._RUNTIME_PROTOCOL_VERSION
+    assert "started_at" in result["runtime"]
+    assert isinstance(result["runtime"]["duration_ms"], int)
     assert captured["session_id"] == "sess-1"
     assert captured["language"] == "python"
     assert captured["execution_timeout"] == "15"
@@ -167,6 +173,35 @@ async def test_execute_code_plan_executes_in_sandbox(monkeypatch):
     assert "RUNTIME_CONTEXT = json.loads" in captured["code"]
     assert "RUNTIME_TOOL_RESULTS = json.loads" in captured["code"]
     assert "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)" in captured["code"]
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_calls_persist_execution_record(monkeypatch):
+    plugin = _make_plugin()
+    captured = {"persisted": False}
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        return {
+            "stdout": ["ok"],
+            "stderr": [],
+            "result": [],
+            "exit_code": 0,
+        }
+
+    async def _fake_persist(**kwargs):
+        captured["persisted"] = True
+        captured["status"] = kwargs["response"]["status"]
+        captured["language"] = kwargs["language"]
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+    monkeypatch.setattr(plugin, "_persist_execution_record", _fake_persist)
+
+    result = await plugin.handle_execute_code_plan(code="print('ok')")
+
+    assert result["status"] == "success"
+    assert captured["persisted"] is True
+    assert captured["status"] == "success"
+    assert captured["language"] == "python"
 
 
 @pytest.mark.asyncio
@@ -232,8 +267,11 @@ async def test_execute_code_plan_dry_run_does_not_call_sandbox(monkeypatch):
     )
 
     assert result["status"] == "dry_run"
+    assert result["format_version"] == sdk_module._EXECUTION_FORMAT_VERSION
+    assert result["runtime_protocol_version"] == sdk_module._RUNTIME_PROTOCOL_VERSION
     assert result["validation"]["ok"] is True
     assert "runtime" in result
+    assert isinstance(result["runtime"]["duration_ms"], int)
     assert called["value"] is False
 
 

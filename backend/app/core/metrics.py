@@ -51,6 +51,30 @@ CODE_MODE_BRIDGE_CALL_LATENCY = Histogram(
     ["tool_name", "status"],
     registry=registry,
 )
+CODE_MODE_EXECUTIONS_TOTAL = Counter(
+    "code_mode_executions_total",
+    "Code Mode 执行总数",
+    ["status", "error_code"],
+    registry=registry,
+)
+CODE_MODE_EXECUTION_DURATION_SECONDS = Histogram(
+    "code_mode_execution_duration_seconds",
+    "Code Mode 执行耗时",
+    ["status"],
+    registry=registry,
+)
+CODE_MODE_TOOL_CALLS_TOTAL = Counter(
+    "code_mode_tool_calls_total",
+    "Code Mode 运行时工具调用总数",
+    ["tool_name", "status", "error_code"],
+    registry=registry,
+)
+CODE_MODE_ERRORS_TOTAL = Counter(
+    "code_mode_errors_total",
+    "Code Mode 错误总数",
+    ["error_code"],
+    registry=registry,
+)
 
 
 def record_request(
@@ -98,6 +122,50 @@ def record_code_mode_bridge_call(
         tool_name=tool_name or "unknown",
         status=status,
     ).observe(max(0.0, float(duration_seconds or 0.0)))
+
+
+def record_code_mode_execution(
+    *,
+    status: str,
+    duration_seconds: float,
+    error_code: str | None = None,
+) -> None:
+    normalized_status = str(status or "unknown").strip().lower() or "unknown"
+    normalized_error = (
+        "none"
+        if not error_code
+        else str(error_code).strip() or "unknown"
+    )
+    CODE_MODE_EXECUTIONS_TOTAL.labels(
+        status=normalized_status,
+        error_code=normalized_error,
+    ).inc()
+    CODE_MODE_EXECUTION_DURATION_SECONDS.labels(status=normalized_status).observe(
+        max(0.0, float(duration_seconds or 0.0))
+    )
+    if normalized_status != "success" or normalized_error != "none":
+        CODE_MODE_ERRORS_TOTAL.labels(error_code=normalized_error).inc()
+
+
+def record_code_mode_tool_call(
+    *,
+    tool_name: str,
+    status: str,
+    error_code: str | None = None,
+) -> None:
+    normalized_status = str(status or "unknown").strip().lower() or "unknown"
+    normalized_error = (
+        "none"
+        if not error_code
+        else str(error_code).strip() or "unknown"
+    )
+    CODE_MODE_TOOL_CALLS_TOTAL.labels(
+        tool_name=tool_name or "unknown",
+        status=normalized_status,
+        error_code=normalized_error,
+    ).inc()
+    if normalized_status != "success":
+        CODE_MODE_ERRORS_TOTAL.labels(error_code=normalized_error).inc()
 
 
 def metrics_content() -> bytes:

@@ -37,6 +37,7 @@ from app.api.v1.external.gateway import router as external_gateway_router
 from app.api.v1.feedback_route import router as feedback_router
 from app.api.v1.gateway_logs_route import router as gateway_logs_router
 from app.api.v1.internal import bridge_router as internal_bridge_router
+from app.api.v1.internal import code_mode_router as internal_code_mode_router
 from app.api.v1.internal import conversation_router as internal_conversation_router
 from app.api.v1.internal import gateway_router as internal_gateway_router
 from app.api.v1.internal import (
@@ -101,6 +102,7 @@ __all__ = [
     "feedback_router",
     "gateway_logs_router",
     "internal_bridge_router",
+    "internal_code_mode_router",
     "internal_conversation_router",
     "internal_gateway_router",
     "internal_image_generation_router",

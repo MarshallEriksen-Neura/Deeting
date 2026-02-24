@@ -127,6 +127,7 @@
 | `CODE_MODE_BRIDGE_IP_FORBIDDEN` | 调用来源 IP 不在白名单 | 调整 `CODE_MODE_BRIDGE_TRUSTED_IPS` 或关闭强制校验 |
 | `CODE_MODE_BRIDGE_SCOPE_DENIED` | execution token scope/model 不允许当前调用 | 检查 API Key scopes、allowed_models 与请求模型/能力 |
 | `CODE_MODE_BRIDGE_DISPATCH_FAILED` | bridge 分发工具调用失败 | 查看 trace_id 与日志后重试 |
+| `CODE_MODE_EXECUTION_NOT_FOUND` | 指定 Code Mode 执行记录不存在 | 检查 execution id 是否属于当前用户，或重新执行生成记录 |
 
 ---
 

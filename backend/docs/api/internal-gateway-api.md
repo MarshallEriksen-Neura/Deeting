@@ -261,7 +261,77 @@ Content-Type: application/json
 
 ---
 
-### 4. Skill Execution
+### 4. Code Mode Executions（查询与回放）
+
+用于查询历史代码执行记录，并在必要时按原参数或覆盖参数重放执行。  
+路径：
+- `GET /api/v1/internal/code-mode/executions/{execution_identifier}`
+- `POST /api/v1/internal/code-mode/executions/{execution_identifier}/replay`
+
+`execution_identifier` 支持两种值：
+- 数据库主键 UUID（`id`）
+- 运行时执行 ID（`execution_id`）
+
+请求头：
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+查询响应示例：
+```json
+{
+  "id": "8ca1d2ce-4f8d-4ac7-9a37-6764f2e7b16c",
+  "execution_id": "f8f68f2a4ba9488d8505ca5a67d3d2cb",
+  "session_id": "sess-001",
+  "language": "python",
+  "status": "success",
+  "runtime_context": {},
+  "tool_plan_results": {},
+  "runtime_tool_calls": {},
+  "render_blocks": {},
+  "duration_ms": 1240,
+  "created_at": "2026-02-24T09:00:00+00:00"
+}
+```
+
+回放请求示例：
+```json
+{
+  "code": "print('replay')",
+  "session_id": "sess-replay",
+  "language": "python",
+  "execution_timeout": 30,
+  "dry_run": false,
+  "tool_plan": [
+    {
+      "tool_name": "fetch_web_content",
+      "arguments": {"url": "https://example.com"}
+    }
+  ]
+}
+```
+
+回放响应示例：
+```json
+{
+  "replay_of": "8ca1d2ce-4f8d-4ac7-9a37-6764f2e7b16c",
+  "source_execution_id": "f8f68f2a4ba9488d8505ca5a67d3d2cb",
+  "result": {
+    "status": "success",
+    "runtime": {"execution_id": "9f0c9e6d2bf542de9a6e70df4fd2a2e1"}
+  }
+}
+```
+
+说明：
+- 仅允许当前登录用户访问自己的执行记录。
+- 回放会复用历史 `runtime_context` 中的能力/权限线索，并可通过请求体覆盖 `code/tool_plan/session_id`。
+- 回放本身也会写入新的执行记录。
+
+---
+
+### 5. Skill Execution
 
 执行单个技能的端到端运行（克隆仓库、安装依赖、脚本拼接、执行并回传产物）。  
 路径：`/api/v1/internal/skills/{skill_id}/execute`
@@ -302,7 +372,7 @@ Content-Type: application/json
 
 ---
 
-### 5. Skill Dry Run & Self‑Heal（内部流程）
+### 6. Skill Dry Run & Self‑Heal（内部流程）
 
 当技能入库成功后，会自动触发一次 Dry Run，用于验证 Manifest 与产物契约是否一致。  
 流程为**内部异步任务**，不提供外部 API 直接调用。
