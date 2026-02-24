@@ -169,7 +169,9 @@ data: {"type":"blocks","blocks":[{"type":"thought","content":"我正在思考...
 data: {"type":"blocks","blocks":[{"type":"text","content":"你好！我是谛听。"}]}
 ```
 
-`blocks` 列表支持 `text` / `thought` / `tool_call` 类型，前端可直接渲染。
+`blocks` 列表支持 `text` / `thought` / `tool_call` / `tool_result` / `ui` 类型，前端可直接渲染。  
+其中 `ui` block 可包含 `viewType`、`payload`、`title`，用于图表/表格等结构化展示。  
+`tool_result` block 还可携带 `debug` 字段（如 `runtime_tool_calls`、`render_blocks`、`sdk_stub` 摘要），用于调试与回放展示。
 
 若 `stream=false` 且 `status_stream=true`，会在状态事件之后返回一次完整结果：
 
@@ -534,7 +536,11 @@ print(response.json())
 **消息字段补充说明**：
 
 - `messages[].meta_info`：可选，结构化元数据（如 `blocks` / `tool_calls` / 多模态内容）。
-- `messages[].meta_info.blocks`：结构化块列表，支持 `text` / `thought` / `tool_call` 等类型，前端可直接按 block 渲染。
+- `messages[].meta_info.blocks`：结构化块列表，支持 `text` / `thought` / `tool_call` / `tool_result` / `ui` 等类型，前端可直接按 block 渲染。
+- `messages[].meta_info.blocks[].type == "tool_result"` 时，可能包含：
+  - `ui`：工具返回的渲染块数组。
+  - `debug`：Code Mode 运行时调试摘要（例如 `runtime_tool_calls`、`render_blocks`、`sdk_stub`）。
+    - `runtime_tool_calls.calls[]` 可包含 `tool_name` / `status` / `duration_ms` / `error` / `error_code`，用于前端调试时间线。
 
 ---
 

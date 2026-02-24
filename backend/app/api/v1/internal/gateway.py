@@ -280,6 +280,12 @@ def _build_tool_result_blocks(tool_calls_log: Any) -> list[dict[str, Any]]:
         name = call.get("name")
         if isinstance(name, str) and name:
             block["toolName"] = name
+        ui_blocks = call.get("ui_blocks")
+        if isinstance(ui_blocks, list) and ui_blocks:
+            block["ui"] = ui_blocks
+        debug_payload = call.get("debug")
+        if isinstance(debug_payload, dict) and debug_payload:
+            block["debug"] = debug_payload
         blocks.append(block)
     return blocks
 

@@ -45,6 +45,8 @@ export interface ToolResultBlock extends BaseBlock {
   toolName?: string
   status?: 'success' | 'error'
   result?: unknown
+  ui?: unknown
+  debug?: Record<string, unknown>
 }
 
 export interface FlightOfferBlock extends BaseBlock {

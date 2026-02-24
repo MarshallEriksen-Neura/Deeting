@@ -23,6 +23,235 @@ import { TaskLiveBlock } from "@/components/chat/messages/task-live-block";
 /** When a non-active message has more than this many tool calls, group them into a collapsible summary. */
 const TOOL_GROUP_THRESHOLD = 2;
 
+type RuntimeToolTraceItem = {
+  index: number;
+  toolName: string;
+  status: string;
+  durationMs: number | null;
+  error: string | null;
+  errorCode: string | null;
+};
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+}
+
+function toNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function extractRuntimeToolTrace(debug?: Record<string, unknown>): RuntimeToolTraceItem[] {
+  if (!debug) return [];
+  const runtimeToolCalls = toRecord(debug.runtime_tool_calls);
+  if (!runtimeToolCalls) return [];
+  const rawCalls = runtimeToolCalls.calls;
+  if (!Array.isArray(rawCalls)) return [];
+
+  const normalized: RuntimeToolTraceItem[] = [];
+  for (let i = 0; i < rawCalls.length; i += 1) {
+    const entry = toRecord(rawCalls[i]);
+    if (!entry) continue;
+    const toolName = typeof entry.tool_name === "string" ? entry.tool_name.trim() : "";
+    if (!toolName) continue;
+    const index = toNumber(entry.index);
+    const status = typeof entry.status === "string" ? entry.status.trim() : "";
+    const durationMs = toNumber(entry.duration_ms);
+    const error = typeof entry.error === "string" ? entry.error.trim() : "";
+    const errorCode = typeof entry.error_code === "string" ? entry.error_code.trim() : "";
+    normalized.push({
+      index: index ?? i,
+      toolName,
+      status: status || "unknown",
+      durationMs,
+      error: error || null,
+      errorCode: errorCode || null,
+    });
+  }
+  return normalized;
+}
+
+function extractDebugSummary(debug?: Record<string, unknown>) {
+  if (!debug) {
+    return {
+      callCount: null as number | null,
+      renderCount: null as number | null,
+      sdkModule: null as string | null,
+      sdkToolCount: null as number | null,
+      executionId: null as string | null,
+    };
+  }
+
+  const runtimeToolCalls = toRecord(debug.runtime_tool_calls);
+  const renderBlocks = toRecord(debug.render_blocks);
+  const sdkStub = toRecord(debug.sdk_stub);
+
+  return {
+    callCount: toNumber(runtimeToolCalls?.count),
+    renderCount: toNumber(renderBlocks?.count),
+    sdkModule: typeof sdkStub?.module === "string" ? sdkStub.module : null,
+    sdkToolCount: toNumber(sdkStub?.tool_count),
+    executionId: typeof debug.execution_id === "string" ? debug.execution_id : null,
+  };
+}
+
+function formatObjectAsMarkdown(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
+  } catch {
+    return String(value);
+  }
+}
+
+function ToolDebugPanel({ debug }: { debug?: Record<string, unknown> }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const rawContent = useMemo(() => formatObjectAsMarkdown(debug), [debug]);
+  const runtimeTrace = useMemo(() => extractRuntimeToolTrace(debug), [debug]);
+  const summary = useMemo(() => extractDebugSummary(debug), [debug]);
+  if (!rawContent) return null;
+
+  const handleCopySnapshot = async () => {
+    try {
+      const payload = JSON.stringify(debug ?? {}, null, 2);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload);
+      } else {
+        throw new Error("clipboard unavailable");
+      }
+      setCopyState("copied");
+      setTimeout(() => setCopyState("idle"), 1200);
+    } catch {
+      setCopyState("error");
+      setTimeout(() => setCopyState("idle"), 1200);
+    }
+  };
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
+      <CollapsibleTrigger asChild>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-amber-300/80 bg-amber-50/60 px-2 py-1 cursor-pointer hover:bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
+          <div className="text-[11px] font-mono text-amber-700 dark:text-amber-300">
+            Debug
+          </div>
+          <ChevronDown
+            size={14}
+            className={cn("text-amber-700 transition-transform duration-200 dark:text-amber-300", !isOpen && "-rotate-90")}
+          />
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/40 p-2 dark:border-amber-900 dark:bg-amber-950/20">
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <div className="flex flex-wrap gap-1">
+              {summary.executionId ? (
+                <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                  exec:{summary.executionId.slice(0, 8)}
+                </Badge>
+              ) : null}
+              {summary.callCount !== null ? (
+                <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                  calls:{summary.callCount}
+                </Badge>
+              ) : null}
+              {summary.renderCount !== null ? (
+                <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                  render:{summary.renderCount}
+                </Badge>
+              ) : null}
+              {summary.sdkModule ? (
+                <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                  sdk:{summary.sdkModule}
+                  {summary.sdkToolCount !== null ? `(${summary.sdkToolCount})` : ""}
+                </Badge>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={handleCopySnapshot}
+              className={cn(
+                "rounded border px-2 py-0.5 text-[10px] font-mono transition-colors",
+                copyState === "error"
+                  ? "border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/20"
+                  : "border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/20"
+              )}
+            >
+              {copyState === "copied"
+                ? "Copied"
+                : copyState === "error"
+                  ? "Copy Failed"
+                  : "Copy JSON"}
+            </button>
+          </div>
+
+          {runtimeTrace.length > 0 ? (
+            <div className="mb-2 rounded-md border border-amber-200/80 bg-amber-50/70 p-2 dark:border-amber-900 dark:bg-amber-950/10">
+              <div className="mb-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                Runtime Tool Timeline
+              </div>
+              <ol className="space-y-1">
+                {runtimeTrace.map((item) => (
+                  <li
+                    key={`${item.index}-${item.toolName}`}
+                    className="rounded border border-amber-200/70 bg-white/70 px-2 py-1 text-[11px] dark:border-amber-900 dark:bg-amber-950/20"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 truncate font-mono text-amber-800 dark:text-amber-200">
+                        #{item.index} {item.toolName}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {item.durationMs !== null ? (
+                          <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                            {item.durationMs}ms
+                          </Badge>
+                        ) : null}
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "h-5 text-[10px] font-normal shrink-0",
+                            item.status === "success"
+                              ? "border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
+                              : item.status === "failed" || item.status === "error"
+                                ? "border-red-300 text-red-700 dark:border-red-800 dark:text-red-300"
+                                : "border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-300"
+                          )}
+                        >
+                          {item.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    {item.error ? (
+                      <div className="mt-1 text-[10px] text-red-700 dark:text-red-300">
+                        {item.errorCode ? `[${item.errorCode}] ` : ""}
+                        {item.error}
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+
+          <details className="group">
+            <summary className="cursor-pointer select-none text-[11px] font-mono text-amber-700 underline decoration-dotted underline-offset-2 dark:text-amber-300">
+              Raw JSON
+            </summary>
+            <div className="mt-2 overflow-x-auto rounded-md border border-amber-200/80 bg-amber-50/70 p-2 dark:border-amber-900 dark:bg-amber-950/10">
+              <MarkdownViewer content={rawContent} className="chat-markdown chat-markdown-assistant text-xs" />
+            </div>
+          </details>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 interface AIResponseBubbleProps {
   parts: MessageBlock[];
   isActive?: boolean;
@@ -221,6 +450,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                           callId={part.callId}
                           status={part.status}
                           result={part.result}
+                          debug={part.debug}
                         />
                       </motion.div>
                     );
@@ -289,6 +519,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         prevPart.toolArgs !== nextPart.toolArgs ||
         prevPart.callId !== nextPart.callId ||
         prevPart.result !== nextPart.result ||
+        JSON.stringify((prevPart as any).debug) !== JSON.stringify((nextPart as any).debug) ||
         prevPart.message !== nextPart.message ||
         prevPart.status !== nextPart.status ||
         prevPart.cost !== nextPart.cost
@@ -396,15 +627,7 @@ const ToolCallBlock = memo<{
     }, [resultBlock]);
 
     const resultContent = useMemo(() => {
-      if (!resultBlock?.result) return "";
-      const r = resultBlock.result;
-      if (typeof r === "string") return r;
-      if (r === null || r === undefined) return "";
-      try {
-        return `\`\`\`json\n${JSON.stringify(r, null, 2)}\n\`\`\``;
-      } catch {
-        return String(r);
-      }
+      return formatObjectAsMarkdown(resultBlock?.result);
     }, [resultBlock?.result]);
 
     const isResultError = resultBlock?.status === "error";
@@ -484,6 +707,7 @@ const ToolCallBlock = memo<{
                 ) : (
                   <div className="text-xs text-muted-foreground">No output</div>
                 )}
+                <ToolDebugPanel debug={resultBlock?.debug} />
               </div>
             )}
           </div>
@@ -562,7 +786,8 @@ const ToolResultBlock = memo<{
   callId?: string;
   status?: "success" | "error";
   result?: unknown;
-}>(function ToolResultBlock({ name, callId, status, result }) {
+  debug?: Record<string, unknown>;
+}>(function ToolResultBlock({ name, callId, status, result, debug }) {
   const [isOpen, setIsOpen] = useState(false);
   const title = name || callId || "tool_result";
   const isError = status === "error";
@@ -582,17 +807,7 @@ const ToolResultBlock = memo<{
   }
 
   const content = useMemo(() => {
-    if (typeof result === "string") {
-      return result;
-    }
-    if (result === null || result === undefined) {
-      return "";
-    }
-    try {
-      return `\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``;
-    } catch {
-      return String(result);
-    }
+    return formatObjectAsMarkdown(result);
   }, [result]);
 
   return (
@@ -640,6 +855,7 @@ const ToolResultBlock = memo<{
             ) : (
               <div className="text-xs text-muted-foreground">No output</div>
             )}
+            <ToolDebugPanel debug={debug} />
           </div>
         </div>
       </CollapsibleContent>

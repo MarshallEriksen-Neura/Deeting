@@ -170,6 +170,52 @@ async def test_execute_code_plan_executes_in_sandbox(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_execute_code_plan_injects_runtime_sdk_stub(monkeypatch):
+    plugin = _make_plugin()
+    captured: dict[str, str] = {}
+
+    async def _fake_build_tool_candidates(*, user_id, query):
+        assert user_id == plugin.context.user_id
+        assert query
+        return [
+            ToolDefinition(
+                name="fetch_web_content",
+                description="Fetch web content",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            )
+        ]
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        captured["code"] = code
+        return {
+            "stdout": ["ok"],
+            "stderr": [],
+            "result": [],
+            "exit_code": 0,
+        }
+
+    monkeypatch.setattr(plugin, "_build_tool_candidates", _fake_build_tool_candidates)
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    result = await plugin.handle_execute_code_plan(
+        code="from deeting_sdk import fetch_web_content\nprint('ok')"
+    )
+
+    assert result["status"] == "success"
+    assert result["runtime"]["sdk_stub"]["module"] == "deeting_sdk"
+    assert result["runtime"]["sdk_stub"]["tool_count"] == 1
+    assert "DEETING_SDK_PYI = json.loads" in captured["code"]
+    assert "DEETING_SDK_PY = json.loads" in captured["code"]
+    assert "deeting_runtime_sdk" in captured["code"]
+    assert "builtins.__DEETING_RUNTIME__ = deeting" in captured["code"]
+    assert "def fetch_web_content(url: str) -> dict[str, Any]:" in captured["code"]
+
+
+@pytest.mark.asyncio
 async def test_execute_code_plan_dry_run_does_not_call_sandbox(monkeypatch):
     plugin = _make_plugin()
     called = {"value": False}
@@ -347,7 +393,97 @@ async def test_execute_code_plan_runtime_call_tool_roundtrip(monkeypatch):
     assert "RUNTIME_TOOL_RESULTS = json.loads" in captured["codes"][0]
     assert "Demo Doc" in captured["codes"][1]
     assert result["runtime"]["runtime_tool_calls"]["count"] == 1
-    assert result["runtime"]["runtime_tool_calls"]["calls"][0]["tool_name"] == "fetch_web_content"
+    trace_call = result["runtime"]["runtime_tool_calls"]["calls"][0]
+    assert trace_call["tool_name"] == "fetch_web_content"
+    assert trace_call["status"] == "success"
+    assert isinstance(trace_call["duration_ms"], int)
+    assert trace_call["duration_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_runtime_call_tool_trace_contains_error_details(monkeypatch):
+    plugin = _make_plugin()
+
+    async def _fake_dispatch_real_tool(*, tool_name, arguments, workflow_context):
+        return {
+            "error": f"{tool_name} failed for {arguments.get('url')}",
+            "error_code": "UPSTREAM_TIMEOUT",
+        }
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
+            {
+                "index": 0,
+                "tool_name": "fetch_web_content",
+                "arguments": {"url": "https://example.com"},
+            },
+            ensure_ascii=False,
+        )
+        if "RUNTIME_TOOL_RESULTS = json.loads('[]')" in code:
+            return {
+                "stdout": [marker],
+                "stderr": ["runtime interrupted for host tool call"],
+                "result": [],
+                "exit_code": 1,
+            }
+        return {"stdout": ["done"], "stderr": [], "result": [], "exit_code": 0}
+
+    monkeypatch.setattr(plugin, "_dispatch_real_tool", _fake_dispatch_real_tool)
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    result = await plugin.handle_execute_code_plan(
+        code=(
+            "resp = deeting.call_tool('fetch_web_content', url='https://example.com')\n"
+            "deeting.log(resp)"
+        )
+    )
+
+    assert result["status"] == "success"
+    trace_call = result["runtime"]["runtime_tool_calls"]["calls"][0]
+    assert trace_call["tool_name"] == "fetch_web_content"
+    assert trace_call["status"] == "failed"
+    assert trace_call["error_code"] == "UPSTREAM_TIMEOUT"
+    assert "fetch_web_content failed" in trace_call["error"]
+    assert isinstance(trace_call["duration_ms"], int)
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_collects_runtime_render_blocks(monkeypatch):
+    plugin = _make_plugin()
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        marker = sdk_module._RUNTIME_RENDER_BLOCK_MARKER + json.dumps(
+            {
+                "view_type": "table.simple",
+                "title": "Top Items",
+                "payload": {"rows": [{"name": "alpha", "score": 98}]},
+            },
+            ensure_ascii=False,
+        )
+        return {
+            "stdout": [marker, "done"],
+            "stderr": [],
+            "result": [],
+            "exit_code": 0,
+        }
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    result = await plugin.handle_execute_code_plan(
+        code=(
+            "deeting.render('table.simple', payload={'rows':[{'name':'alpha','score':98}]}, "
+            "title='Top Items')\n"
+            "print('done')"
+        )
+    )
+
+    assert result["status"] == "success"
+    assert result["stdout"] == "done"
+    assert "ui" in result
+    assert result["ui"]["blocks"][0]["type"] == "ui"
+    assert result["ui"]["blocks"][0]["viewType"] == "table.simple"
+    assert result["ui"]["blocks"][0]["title"] == "Top Items"
+    assert result["runtime"]["render_blocks"]["count"] == 1
 
 
 @pytest.mark.asyncio

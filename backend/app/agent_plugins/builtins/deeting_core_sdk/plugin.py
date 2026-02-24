@@ -2,10 +2,13 @@ import ast
 import hashlib
 import inspect
 import json
+import keyword
 import logging
+import re
 import textwrap
 import uuid
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
@@ -25,7 +28,11 @@ _MAX_CODE_CHARS = 12000
 _MAX_RESULT_CHARS = 4000
 _MAX_TOOL_PLAN_STEPS = 20
 _MAX_RUNTIME_TOOL_CALLS = 8
+_MAX_RUNTIME_SDK_STUB_TOOLS = 80
+_MAX_RUNTIME_SDK_STUB_CHARS = 40000
+_MAX_RUNTIME_TOOL_TRACE_ERROR_CHARS = 240
 _RUNTIME_TOOL_CALL_MARKER = "__DEETING_TOOL_CALL_REQUEST__"
+_RUNTIME_RENDER_BLOCK_MARKER = "__DEETING_RENDER_BLOCK__"
 _BRIDGE_EXECUTION_TOKEN_HEADER = "X-Code-Mode-Execution-Token"
 _FORBIDDEN_IMPORT_ROOTS = {
     "aiohttp",
@@ -72,6 +79,22 @@ _RUNTIME_PREAMBLE = textwrap.dedent(
 
         def get_context(self):
             return self.context
+
+        def render(self, view_type, payload=None, title=None, metadata=None):
+            vt = str(view_type or "").strip()
+            if not vt:
+                raise ValueError("view_type is required")
+
+            block = {
+                "view_type": vt,
+                "payload": payload if payload is not None else {},
+            }
+            if title is not None:
+                block["title"] = title
+            if metadata is not None:
+                block["metadata"] = metadata
+            print("__RUNTIME_RENDER_BLOCK_MARKER__" + json.dumps(block, ensure_ascii=False, default=str))
+            return block
 
         def call_tool(self, tool_name, **arguments):
             idx = self._call_index
@@ -130,6 +153,8 @@ _RUNTIME_PREAMBLE = textwrap.dedent(
     """
 ).replace("__MAX_RUNTIME_TOOL_CALLS__", str(_MAX_RUNTIME_TOOL_CALLS)).replace(
     "__RUNTIME_TOOL_CALL_MARKER__", _RUNTIME_TOOL_CALL_MARKER
+).replace(
+    "__RUNTIME_RENDER_BLOCK_MARKER__", _RUNTIME_RENDER_BLOCK_MARKER
 ).replace(
     "__BRIDGE_EXECUTION_TOKEN_HEADER__", _BRIDGE_EXECUTION_TOKEN_HEADER
 )
@@ -419,6 +444,16 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             runtime_meta=runtime_meta,
             final_session_id=final_session_id,
         )
+        runtime_sdk_bundle = await self._build_runtime_sdk_bundle(
+            workflow_context=__context__,
+            source_code=source,
+        )
+        if runtime_sdk_bundle:
+            runtime_meta["sdk_stub"] = {
+                "module": runtime_sdk_bundle.get("module_name"),
+                "tool_count": int(runtime_sdk_bundle.get("tool_count") or 0),
+                "pyi_chars": len(str(runtime_sdk_bundle.get("pyi") or "")),
+            }
         bridge_context = await self._issue_runtime_bridge_context(
             workflow_context=__context__,
             runtime_meta=runtime_meta,
@@ -429,6 +464,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         runtime_tool_results: list[Any] = []
         runtime_tool_trace: list[dict[str, Any]] = []
+        runtime_render_blocks: list[dict[str, Any]] = []
 
         for _ in range(_MAX_RUNTIME_TOOL_CALLS + 1):
             wrapped_code = self._build_wrapped_code(
@@ -436,6 +472,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 tool_plan_results=tool_plan_results,
                 runtime_context=runtime_context,
                 runtime_tool_results=runtime_tool_results,
+                runtime_sdk_bundle=runtime_sdk_bundle,
             )
 
             result = await sandbox_manager.run_code(
@@ -444,6 +481,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 language=normalized_language,
                 execution_timeout=timeout_value,
             )
+            runtime_render_blocks.extend(self._extract_runtime_render_blocks(result))
 
             runtime_tool_request = self._extract_runtime_tool_request(result)
             if not runtime_tool_request:
@@ -452,7 +490,17 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                         "count": len(runtime_tool_trace),
                         "calls": runtime_tool_trace,
                     }
-                return self._format_execution_result(result, final_session_id, runtime_meta)
+                if runtime_render_blocks:
+                    runtime_meta["render_blocks"] = {
+                        "count": len(runtime_render_blocks),
+                        "blocks": runtime_render_blocks,
+                    }
+                return self._format_execution_result(
+                    result,
+                    final_session_id,
+                    runtime_meta,
+                    render_blocks=runtime_render_blocks,
+                )
 
             if len(runtime_tool_results) >= _MAX_RUNTIME_TOOL_CALLS:
                 runtime_meta["runtime_tool_calls"] = {
@@ -489,26 +537,44 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             if not isinstance(call_arguments, dict):
                 call_arguments = {}
 
+            dispatch_started = perf_counter()
             runtime_tool_result = await self._dispatch_real_tool(
                 tool_name=tool_name,
                 arguments=call_arguments,
                 workflow_context=__context__,
             )
+            dispatch_duration_ms = max(0, int((perf_counter() - dispatch_started) * 1000))
             normalized_tool_result = self._to_jsonable(runtime_tool_result)
             runtime_tool_results.append(normalized_tool_result)
 
-            runtime_tool_trace.append(
-                {
-                    "index": int(runtime_tool_request.get("index", len(runtime_tool_results) - 1)),
-                    "tool_name": tool_name,
-                    "status": (
-                        "failed"
-                        if isinstance(normalized_tool_result, dict)
-                        and bool(normalized_tool_result.get("error"))
-                        else "success"
-                    ),
-                }
-            )
+            trace_status = "success"
+            trace_error = None
+            trace_error_code = None
+            if isinstance(normalized_tool_result, dict) and bool(
+                normalized_tool_result.get("error")
+            ):
+                trace_status = "failed"
+                trace_error = str(normalized_tool_result.get("error") or "").strip()
+                if len(trace_error) > _MAX_RUNTIME_TOOL_TRACE_ERROR_CHARS:
+                    trace_error = (
+                        trace_error[:_MAX_RUNTIME_TOOL_TRACE_ERROR_CHARS] + "... (truncated)"
+                    )
+                raw_error_code = normalized_tool_result.get("error_code")
+                if isinstance(raw_error_code, str) and raw_error_code.strip():
+                    trace_error_code = raw_error_code.strip()
+
+            trace_entry: dict[str, Any] = {
+                "index": int(runtime_tool_request.get("index", len(runtime_tool_results) - 1)),
+                "tool_name": tool_name,
+                "status": trace_status,
+                "duration_ms": dispatch_duration_ms,
+            }
+            if trace_error:
+                trace_entry["error"] = trace_error
+            if trace_error_code:
+                trace_entry["error_code"] = trace_error_code
+
+            runtime_tool_trace.append(trace_entry)
 
         return {
             "status": "failed",
@@ -653,6 +719,180 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         params = ", ".join(args)
         return f"def {tool.name}({params}) -> dict: ..."
+
+    async def _build_runtime_sdk_bundle(
+        self,
+        *,
+        workflow_context: Any | None,
+        source_code: str,
+    ) -> dict[str, Any] | None:
+        try:
+            user_id = self._resolve_user_id(workflow_context)
+        except Exception:
+            return None
+
+        query = (source_code or "").strip()
+        if not query:
+            query = "code mode execution"
+        query = query[:2000]
+
+        try:
+            tools = await self._build_tool_candidates(user_id=user_id, query=query)
+        except Exception as exc:
+            logger.debug("build runtime sdk bundle skipped: %s", exc)
+            return None
+
+        filtered_tools: list[ToolDefinition] = []
+        seen_names: set[str] = set()
+        for tool in tools:
+            name = str(getattr(tool, "name", "") or "").strip()
+            if not name or name in {"search_sdk", "execute_code_plan"}:
+                continue
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            filtered_tools.append(tool)
+
+        if not filtered_tools:
+            return None
+
+        pyi_content, py_content, tool_count = self._render_runtime_sdk_module(
+            filtered_tools
+        )
+        if not pyi_content or not py_content or tool_count <= 0:
+            return None
+
+        return {
+            "module_name": "deeting_sdk",
+            "tool_count": tool_count,
+            "pyi": pyi_content,
+            "py": py_content,
+        }
+
+    def _render_runtime_sdk_module(
+        self,
+        tools: list[ToolDefinition],
+    ) -> tuple[str, str, int]:
+        selected = list(tools[:_MAX_RUNTIME_SDK_STUB_TOOLS])
+        if not selected:
+            return "", "", 0
+
+        while selected:
+            pyi_content, py_content = self._build_runtime_sdk_module_content(selected)
+            if (
+                len(pyi_content) <= _MAX_RUNTIME_SDK_STUB_CHARS
+                and len(py_content) <= _MAX_RUNTIME_SDK_STUB_CHARS
+            ):
+                return pyi_content, py_content, len(selected)
+            selected = selected[:-1]
+
+        return "", "", 0
+
+    def _build_runtime_sdk_module_content(
+        self,
+        tools: list[ToolDefinition],
+    ) -> tuple[str, str]:
+        pyi_lines = [
+            "from typing import Any",
+            "",
+            "def call_tool(name: str, **kwargs: Any) -> dict[str, Any]: ...",
+            "def available_tools() -> list[str]: ...",
+            "",
+        ]
+        py_lines = [
+            "from __future__ import annotations",
+            "from typing import Any",
+            "",
+            "def _runtime():",
+            "    import builtins",
+            "    runtime = getattr(builtins, '__DEETING_RUNTIME__', None)",
+            "    if runtime is None:",
+            "        raise RuntimeError('deeting runtime is not available')",
+            "    return runtime",
+            "",
+            "def call_tool(name: str, **kwargs: Any) -> dict[str, Any]:",
+            "    result = _runtime().call_tool(name, **kwargs)",
+            "    if isinstance(result, dict):",
+            "        return result",
+            "    return {'result': result}",
+            "",
+        ]
+
+        declared_tools: list[str] = []
+        for tool in tools:
+            tool_name = str(tool.name or "").strip()
+            if not tool_name:
+                continue
+            parameter_docs = self._build_parameter_docs(tool)
+            signature, call_kwargs = self._build_runtime_wrapper_signature(parameter_docs)
+            py_func_name = self._safe_python_identifier(tool_name)
+
+            if not py_func_name:
+                continue
+
+            declared_tools.append(tool_name)
+            return_type = "dict[str, Any]"
+            pyi_lines.append(f"def {py_func_name}({signature}) -> {return_type}: ...")
+
+            py_lines.append(f"def {py_func_name}({signature}) -> {return_type}:")
+            if call_kwargs:
+                py_lines.append(f"    return call_tool({tool_name!r}, {call_kwargs})")
+            else:
+                py_lines.append(f"    return call_tool({tool_name!r})")
+            py_lines.append("")
+
+        tool_list_literal = json.dumps(declared_tools, ensure_ascii=False)
+        pyi_lines.append(f"_AVAILABLE_TOOLS: list[str] = {tool_list_literal}")
+        py_lines.extend(
+            [
+                f"_AVAILABLE_TOOLS: list[str] = {tool_list_literal}",
+                "",
+                "def available_tools() -> list[str]:",
+                "    return list(_AVAILABLE_TOOLS)",
+                "",
+            ]
+        )
+        return "\n".join(pyi_lines) + "\n", "\n".join(py_lines) + "\n"
+
+    def _build_runtime_wrapper_signature(
+        self,
+        parameter_docs: list[dict[str, Any]],
+    ) -> tuple[str, str]:
+        args: list[str] = []
+        call_pairs: list[str] = []
+
+        for param in parameter_docs:
+            name = str(param.get("name") or "").strip()
+            if not self._safe_python_identifier(name):
+                return "**kwargs: Any", "**kwargs"
+
+            python_type = str(param.get("python_type") or "Any")
+            is_required = bool(param.get("required"))
+            if is_required:
+                args.append(f"{name}: {python_type}")
+            elif "default" in param:
+                default_literal = self._format_literal(param.get("default"))
+                args.append(f"{name}: {python_type} = {default_literal}")
+            else:
+                args.append(f"{name}: {python_type} | None = None")
+            call_pairs.append(f"{name}={name}")
+
+        return ", ".join(args), ", ".join(call_pairs)
+
+    def _safe_python_identifier(self, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = re.sub(r"\W+", "_", text)
+        if not text:
+            return ""
+        if text[0].isdigit():
+            text = f"tool_{text}"
+        if keyword.iskeyword(text):
+            text = f"{text}_tool"
+        if not text.isidentifier():
+            return ""
+        return text
 
     def _build_example_arguments(
         self,
@@ -1038,6 +1278,64 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             return {}
         return None
 
+    def _extract_runtime_render_blocks(self, result: dict[str, Any]) -> list[dict[str, Any]]:
+        blocks: list[dict[str, Any]] = []
+        for key in ("stdout", "stderr", "result"):
+            blocks.extend(
+                self._extract_runtime_render_blocks_from_text(
+                    self._join_chunks(result.get(key))
+                )
+            )
+        return blocks
+
+    def _extract_runtime_render_blocks_from_text(
+        self,
+        text: str | None,
+    ) -> list[dict[str, Any]]:
+        if not text:
+            return []
+
+        blocks: list[dict[str, Any]] = []
+        for line in str(text).splitlines():
+            raw = line.strip()
+            if not raw.startswith(_RUNTIME_RENDER_BLOCK_MARKER):
+                continue
+            payload_str = raw[len(_RUNTIME_RENDER_BLOCK_MARKER) :].strip()
+            if not payload_str:
+                continue
+            try:
+                payload = json.loads(payload_str)
+            except Exception:
+                continue
+            normalized = self._normalize_render_block(payload)
+            if normalized:
+                blocks.append(normalized)
+        return blocks
+
+    def _normalize_render_block(self, payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+
+        view_type = str(payload.get("view_type") or payload.get("viewType") or "").strip()
+        if not view_type:
+            return None
+
+        block: dict[str, Any] = {
+            "type": "ui",
+            "viewType": view_type,
+            "view_type": view_type,
+            "payload": self._to_jsonable(payload.get("payload") or {}),
+        }
+        title = payload.get("title")
+        if title is not None:
+            block["title"] = str(title)
+        metadata = payload.get("metadata")
+        if metadata is None:
+            metadata = payload.get("meta")
+        if metadata is not None:
+            block["metadata"] = self._to_jsonable(metadata)
+        return block
+
     async def _issue_runtime_bridge_context(
         self,
         *,
@@ -1257,6 +1555,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         tool_plan_results: dict[str, Any] | None = None,
         runtime_context: dict[str, Any] | None = None,
         runtime_tool_results: list[Any] | None = None,
+        runtime_sdk_bundle: dict[str, Any] | None = None,
     ) -> str:
         context_json = json.dumps(
             runtime_context or {},
@@ -1270,12 +1569,42 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             runtime_tool_results or [],
             ensure_ascii=False,
         )
+        sdk_module_name = str((runtime_sdk_bundle or {}).get("module_name") or "").strip()
+        sdk_pyi = str((runtime_sdk_bundle or {}).get("pyi") or "")
+        sdk_py = str((runtime_sdk_bundle or {}).get("py") or "")
+        sdk_tool_count = int((runtime_sdk_bundle or {}).get("tool_count") or 0)
+        sdk_pyi_json = json.dumps(sdk_pyi, ensure_ascii=False)
+        sdk_py_json = json.dumps(sdk_py, ensure_ascii=False)
         runtime_block = (
             "import json\n"
             f"RUNTIME_CONTEXT = json.loads({context_json!r})\n"
             f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
             f"RUNTIME_TOOL_RESULTS = json.loads({runtime_tool_results_json!r})\n"
             "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)\n"
+            f"DEETING_SDK_MODULE = {sdk_module_name!r}\n"
+            f"DEETING_SDK_PYI = json.loads({sdk_pyi_json!r})\n"
+            f"DEETING_SDK_PY = json.loads({sdk_py_json!r})\n"
+            "if DEETING_SDK_MODULE and (DEETING_SDK_PYI or DEETING_SDK_PY):\n"
+            "    import builtins\n"
+            "    import os\n"
+            "    import sys\n"
+            "    builtins.__DEETING_RUNTIME__ = deeting\n"
+            "    _sdk_dir = '/tmp/deeting_runtime_sdk'\n"
+            "    os.makedirs(_sdk_dir, exist_ok=True)\n"
+            "    _sdk_py_path = os.path.join(_sdk_dir, f'{DEETING_SDK_MODULE}.py')\n"
+            "    _sdk_pyi_path = os.path.join(_sdk_dir, f'{DEETING_SDK_MODULE}.pyi')\n"
+            "    with open(_sdk_py_path, 'w', encoding='utf-8') as _fp:\n"
+            "        _fp.write(DEETING_SDK_PY)\n"
+            "    with open(_sdk_pyi_path, 'w', encoding='utf-8') as _fp:\n"
+            "        _fp.write(DEETING_SDK_PYI)\n"
+            "    if _sdk_dir not in sys.path:\n"
+            "        sys.path.insert(0, _sdk_dir)\n"
+            "if isinstance(RUNTIME_CONTEXT, dict) and DEETING_SDK_MODULE:\n"
+            "    _sdk_meta = RUNTIME_CONTEXT.get('sdk')\n"
+            "    if not isinstance(_sdk_meta, dict):\n"
+            "        _sdk_meta = {}\n"
+            f"    _sdk_meta.update({{'module': DEETING_SDK_MODULE, 'tool_count': {sdk_tool_count}}})\n"
+            "    RUNTIME_CONTEXT['sdk'] = _sdk_meta\n"
         )
         return f"{_RUNTIME_PREAMBLE}\n{runtime_block}\n{user_code}\n"
 
@@ -1284,6 +1613,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         result: dict[str, Any],
         session_id: str,
         runtime_meta: dict[str, Any],
+        *,
+        render_blocks: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if "error" in result:
             return {
@@ -1295,16 +1626,18 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 "error_detail": result.get("error_detail"),
             }
 
-        stdout = self._join_chunks(result.get("stdout"))
-        stderr = self._join_chunks(result.get("stderr"))
-        final_result = self._join_chunks(result.get("result"))
+        stdout = self._strip_runtime_signal_lines(self._join_chunks(result.get("stdout")))
+        stderr = self._strip_runtime_signal_lines(self._join_chunks(result.get("stderr")))
+        final_result = self._strip_runtime_signal_lines(
+            self._join_chunks(result.get("result"))
+        )
         exit_code = int(result.get("exit_code", 0) or 0)
 
         stdout_trimmed, stdout_truncated = self._truncate(stdout)
         stderr_trimmed, stderr_truncated = self._truncate(stderr)
         final_result_trimmed, result_truncated = self._truncate(final_result)
 
-        return {
+        response = {
             "status": "success" if exit_code == 0 else "failed",
             "session_id": session_id,
             "runtime": runtime_meta,
@@ -1316,6 +1649,9 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 stdout_truncated or stderr_truncated or result_truncated
             ),
         }
+        if render_blocks:
+            response["ui"] = {"blocks": render_blocks}
+        return response
 
     def _build_runtime_meta(self, source: str, session_id: str) -> dict[str, Any]:
         return {
@@ -1331,6 +1667,19 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if value is None:
             return ""
         return str(value)
+
+    def _strip_runtime_signal_lines(self, text: str) -> str:
+        if not text:
+            return ""
+        lines = []
+        for raw in str(text).splitlines():
+            line = raw.strip()
+            if line.startswith(_RUNTIME_TOOL_CALL_MARKER):
+                continue
+            if line.startswith(_RUNTIME_RENDER_BLOCK_MARKER):
+                continue
+            lines.append(raw)
+        return "\n".join(lines)
 
     def _truncate(self, text: str) -> tuple[str, bool]:
         if len(text) <= _MAX_RESULT_CHARS:

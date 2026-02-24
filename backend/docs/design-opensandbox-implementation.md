@@ -99,12 +99,16 @@ parameters:
    - `RUNTIME_CONTEXT`（user/session/tenant、trace、auth scopes、路由摘要、execution meta）
    - `RUNTIME_CONTEXT.bridge`（bridge endpoint + execution_token + timeout）
    - `TOOL_PLAN_RESULTS`（如使用了声明式 `tool_plan` 预取）
+   - `deeting_sdk.pyi/.py`（按当前可用工具动态生成，模块名 `deeting_sdk`）
 3.  若代码内调用 `deeting.call_tool(...)`：
    - 优先走 HTTP Bridge 回调宿主 (`/api/v1/internal/bridge/call`)
    - Bridge 会校验 execution token（TTL、原子调用次数、scope/model 权限）
    - Bridge 失败时回退到 marker 请求，服务端执行真实工具后将结果写入 `RUNTIME_TOOL_RESULTS` 并重跑脚本
-4.  Service spawns/reuses sandbox, executes code, returns output.
-5.  Skill formats output (truncating long logs) and returns to LLM.
+4.  若代码内调用 `deeting.render(view_type, payload, ...)`：
+   - Runtime 输出 render marker，由宿主解析为 `ui.blocks`
+   - 执行结果会附带 `runtime.render_blocks` 供可观测与调试回放
+5.  Service spawns/reuses sandbox, executes code, returns output.
+6.  Skill formats output (truncating long logs) and returns to LLM.
 
 ## 4. Phase 1 Implementation Plan
 

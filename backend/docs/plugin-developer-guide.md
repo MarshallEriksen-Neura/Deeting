@@ -166,3 +166,6 @@ async def invoke(tool_name: str, args: dict, ctx: PluginContext):
 *   **UI Performance**: 渲染器应轻量化。尽量使用 CDN 资源，避免打包过大的依赖。
 *   **Error Handling**: 遇到错误时，返回友好的错误信息，而不是抛出异常。
 *   **Scope Safety**: 涉及“生成系统级资源”的工具参数（如 `target_scope=system`）必须在后端做管理员校验，禁止仅依赖前端或提示词约束。
+*   **Render Contract**: 推荐通过 `{"__render__": {"view_type": "...", "payload": {...}}}` 返回 UI 渲染块。Code Mode 下 `deeting.render(...)` 会自动转换为同类 `ui.blocks` 协议并透传到前端。
+*   **Typed SDK**: Code Mode 运行时会动态注入 `deeting_sdk.pyi/.py`，可直接 `from deeting_sdk import <tool_name>` 并获得更稳定的参数签名提示。
+*   **Observability Contract**: 如需调试回放，建议在 `tool_result.debug` 查看运行时摘要（`runtime_tool_calls` / `render_blocks` / `sdk_stub`）；其中 `runtime_tool_calls.calls[]` 提供步骤级 `duration_ms` 与错误信息字段，便于定位慢调用和失败点。

@@ -64,6 +64,10 @@ def test_append_tool_result_blocks_to_assistant_message():
             "tool_call_id": "call_1",
             "success": True,
             "output": "result line 1\nresult line 2",
+            "debug": {
+                "execution_id": "exec_001",
+                "runtime_tool_calls": {"count": 1},
+            },
         },
         {
             "name": "fetch_doc",
@@ -83,6 +87,10 @@ def test_append_tool_result_blocks_to_assistant_message():
         "status": "success",
         "callId": "call_1",
         "toolName": "search_web",
+        "debug": {
+            "execution_id": "exec_001",
+            "runtime_tool_calls": {"count": 1},
+        },
     }
     assert blocks[2] == {
         "type": "tool_result",

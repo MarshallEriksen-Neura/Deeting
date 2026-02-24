@@ -97,6 +97,10 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
     }
 
     if (block.type === "tool_result") {
+      const debug =
+        block.debug && typeof block.debug === "object"
+          ? (block.debug as Record<string, unknown>)
+          : undefined
       return {
         ...normalizedBase,
         callId: typeof block.callId === "string" ? block.callId : undefined,
@@ -109,6 +113,8 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
           typeof block.result === "string"
             ? normalizeTextValue(block.result)
             : block.result,
+        ui: block.ui,
+        debug,
       }
     }
 

@@ -285,6 +285,8 @@ class AgentExecutorStep(BaseStep):
 
                 # Find and execute tool
                 result = await self._dispatch_tool(ctx, tc, user_mcp_tool_map)
+                ui_blocks = self._extract_tool_ui_blocks(result)
+                debug_payload = self._extract_tool_debug_payload(result)
 
                 tool_error = None
                 tool_success = True
@@ -308,6 +310,8 @@ class AgentExecutorStep(BaseStep):
                             "error": tool_error,
                             "output": history_result,
                             "truncated": history_truncated,
+                            "ui_blocks": ui_blocks,
+                            "debug": debug_payload,
                         }
                     )
                     ctx.set("execution", "tool_calls", tool_calls_log)
@@ -327,9 +331,13 @@ class AgentExecutorStep(BaseStep):
                             "result": (
                                 tool_error if not tool_success and tool_error else result_preview
                             ),
+                            **({"ui": ui_blocks} if ui_blocks else {}),
+                            **({"debug": debug_payload} if debug_payload else {}),
                         }
                     ],
                 )
+                if ui_blocks:
+                    self._emit_blocks(ctx, ui_blocks)
 
                 # 3. Add Tool result to history
                 messages.append(
@@ -519,6 +527,110 @@ class AgentExecutorStep(BaseStep):
             return json.dumps(result, ensure_ascii=False)
 
         return str(result)
+
+    def _extract_tool_ui_blocks(self, result: Any) -> list[dict[str, Any]]:
+        if not isinstance(result, dict):
+            return []
+
+        raw_blocks: list[Any] = []
+        ui_payload = result.get("ui")
+        if isinstance(ui_payload, dict):
+            ui_blocks = ui_payload.get("blocks")
+            if isinstance(ui_blocks, list):
+                raw_blocks.extend(ui_blocks)
+        elif isinstance(ui_payload, list):
+            raw_blocks.extend(ui_payload)
+
+        render_payload = result.get("__render__")
+        if isinstance(render_payload, dict):
+            raw_blocks.append(render_payload)
+
+        normalized: list[dict[str, Any]] = []
+        for item in raw_blocks:
+            block = self._normalize_ui_block(item)
+            if block:
+                normalized.append(block)
+        return normalized
+
+    def _normalize_ui_block(self, item: Any) -> dict[str, Any] | None:
+        if not isinstance(item, dict):
+            return None
+
+        view_type = str(item.get("viewType") or item.get("view_type") or "").strip()
+        if not view_type:
+            return None
+
+        payload = item.get("payload")
+        if payload is None:
+            payload = {}
+
+        block: dict[str, Any] = {
+            "type": "ui",
+            "viewType": view_type,
+            "view_type": view_type,
+            "payload": payload,
+        }
+        title = item.get("title")
+        if isinstance(title, str) and title.strip():
+            block["title"] = title.strip()
+        metadata = item.get("metadata")
+        if metadata is None:
+            metadata = item.get("meta")
+        if metadata is not None:
+            block["metadata"] = metadata
+        return block
+
+    def _extract_tool_debug_payload(self, result: Any) -> dict[str, Any] | None:
+        if not isinstance(result, dict):
+            return None
+
+        runtime = result.get("runtime")
+        if not isinstance(runtime, dict):
+            return None
+
+        debug: dict[str, Any] = {}
+
+        for key in ("execution_id", "session_id", "submitted_at"):
+            value = runtime.get(key)
+            if isinstance(value, str) and value:
+                debug[key] = value
+
+        sdk_stub = runtime.get("sdk_stub")
+        if isinstance(sdk_stub, dict):
+            debug["sdk_stub"] = sdk_stub
+
+        runtime_calls = runtime.get("runtime_tool_calls")
+        if isinstance(runtime_calls, dict):
+            debug["runtime_tool_calls"] = runtime_calls
+
+        render_blocks = runtime.get("render_blocks")
+        if isinstance(render_blocks, dict):
+            render_debug: dict[str, Any] = {}
+            count = render_blocks.get("count")
+            if isinstance(count, int):
+                render_debug["count"] = count
+            blocks = render_blocks.get("blocks")
+            if isinstance(blocks, list):
+                render_debug["count"] = len(blocks)
+            if render_debug:
+                debug["render_blocks"] = render_debug
+
+        status = result.get("status")
+        if isinstance(status, str) and status:
+            debug["status"] = status
+
+        exit_code = result.get("exit_code")
+        if isinstance(exit_code, int):
+            debug["exit_code"] = exit_code
+
+        if result.get("truncated") is True:
+            debug["truncated"] = True
+
+        error_code = result.get("error_code")
+        if isinstance(error_code, str) and error_code:
+            debug["error_code"] = error_code
+
+        return debug or None
 
     def _trim_tool_result_for_history(self, result: str) -> tuple[str, bool]:
         """

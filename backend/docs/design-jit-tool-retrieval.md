@@ -157,6 +157,14 @@ graph TD
 - `execute_code_plan`：在 OpenSandbox 中一次性执行 Python 计划
   - 支持可选 `tool_plan`：先串行调用真实工具（本地插件/MCP），再把结果注入 `TOOL_PLAN_RESULTS` 供代码读取
   - 运行前注入 `RUNTIME_CONTEXT`：包含 user/session/tenant、auth scopes、外部限额信息、路由摘要和 execution 元数据
+  - 动态注入 `deeting_sdk.pyi/.py`（模块名 `deeting_sdk`）：
+    - 基于当前可用工具自动生成类型签名与调用封装，写入沙箱并加入 `sys.path`
+    - 代码可直接 `from deeting_sdk import <tool_name>`，由 SDK 转发到 `deeting.call_tool(...)`
+  - 支持 `deeting.render(view_type, payload, title?, metadata?)`：
+    - 沙箱通过 marker 输出 UI 渲染块，宿主在 `execute_code_plan` 结果中返回 `ui.blocks`
+    - `runtime.render_blocks` 记录渲染块计数与内容，便于调试和前端回放
+    - Agent 执行链路会在 `tool_result.debug` 透传运行时摘要（如 `runtime_tool_calls` / `render_blocks` / `sdk_stub`）
+      - `runtime_tool_calls.calls[]` 包含步骤级字段：`status`、`duration_ms`、`error`、`error_code`
   - 支持运行时 `deeting.call_tool(name, **kwargs)`：
     - 优先通过内部 Bridge HTTP（`/api/v1/internal/bridge/call` + execution token）实时调用宿主工具
     - 若 HTTP 不可达，自动回退到 marker 模式（主进程解析请求并重跑脚本）

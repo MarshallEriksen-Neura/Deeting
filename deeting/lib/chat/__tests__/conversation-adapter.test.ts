@@ -136,6 +136,59 @@ describe("normalizeConversationMessages", () => {
     ])
   })
 
+  it("preserves tool_result debug payload for observability replay", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: "执行完成",
+        turn_index: 15,
+        meta_info: {
+          blocks: [
+            {
+              type: "tool_result",
+              toolName: "execute_code_plan",
+              callId: "call_debug_1",
+              status: "success",
+              result: "ok",
+              debug: {
+                execution_id: "exec_001",
+                runtime_tool_calls: {
+                  count: 2,
+                },
+                sdk_stub: {
+                  module: "deeting_sdk",
+                  tool_count: 5,
+                },
+              },
+            },
+          ],
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        type: "tool_result",
+        callId: "call_debug_1",
+        debug: expect.objectContaining({
+          execution_id: "exec_001",
+          runtime_tool_calls: expect.objectContaining({ count: 2 }),
+          sdk_stub: expect.objectContaining({
+            module: "deeting_sdk",
+            tool_count: 5,
+          }),
+        }),
+      }),
+    ])
+  })
+
   it("keeps error block as renderable assistant output", () => {
     const messages = [
       {
