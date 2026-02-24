@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PluginCard } from "@/components/plugins/plugin-card"
 import { PermissionConfirmDialog } from "@/components/plugins/permission-confirm-dialog"
+import { ImportRepoDialog } from "@/components/plugins/import-repo-dialog"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
-import { installPlugin, uninstallPlugin } from "@/lib/api/plugin-market"
+import { installPlugin, uninstallPlugin, submitPluginRepo } from "@/lib/api/plugin-market"
 import { useDebounce } from "@/hooks/use-debounce"
 import type { PluginMarketSkillItem } from "@/lib/api/plugin-market"
 
@@ -72,6 +73,17 @@ export function PluginsClient() {
     [mutate, t]
   )
 
+  const handleImportRepo = React.useCallback(
+    async (payload: { repo_url: string; revision?: string; skill_id?: string }) => {
+      await submitPluginRepo(payload)
+      toast.success(t("importRepo.successTitle"), {
+        description: t("importRepo.successDesc"),
+      })
+      await mutate()
+    },
+    [mutate, t],
+  )
+
   const isInitialLoading = isLoading && plugins.length === 0
 
   return (
@@ -87,6 +99,11 @@ export function PluginsClient() {
           </span>
         </h1>
         <p className="text-muted-foreground text-lg">{t("page.hero.subtitle")}</p>
+
+        {/* Import from GitHub */}
+        <div className="pt-2">
+          <ImportRepoDialog onSubmit={handleImportRepo} />
+        </div>
 
         {/* Search */}
         <div className="relative group max-w-lg mx-auto mt-8">

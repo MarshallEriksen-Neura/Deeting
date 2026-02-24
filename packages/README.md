@@ -4,11 +4,16 @@ Welcome to the Deeting OS ecosystem. This monorepo provides everything you need 
 
 ## 🚀 Quick Start in 3 Steps
 
-### 1. Create your repository
-Use the [Template](./templates/default-plugin) to create a new GitHub repository. Ensure your repo contains:
+### 1. Scaffold your project
+Run the following command in your terminal to create a new plugin project:
+```bash
+bunx create-deeting-plugin
+```
+Follow the prompts to name your plugin. This will create a directory containing the standard structure:
 - `deeting.json`: Metadata and permissions.
 - `llm-tool.yaml`: Tool definitions for the AI.
 - `main.py`: Your backend logic.
+- `ui/`: Your frontend interface.
 
 ### 2. Implement the Logic
 Your `main.py` should export an `async def invoke` function:
@@ -33,6 +38,42 @@ When running in the **OpenSandbox**, a `deeting` object is automatically injecte
 | `deeting.render(type, data)` | Renders a UI Block in the chat stream. | `deeting.render("table.v1", rows)` |
 | `deeting.call_tool(name, **kwargs)` | Calls another system tool or plugin. | `deeting.call_tool("google_search", q="...")` |
 | `deeting.section(title)` | Groups the following logs under a header. | `deeting.section("Analyzing Data")` |
+
+---
+
+## 🎨 UI Rendering Lifecycle
+
+Deeting uses a secure, sandboxed `<iframe>` to render plugin UIs. To ensure data is injected correctly, your `ui/index.html` must follow this handshake protocol:
+
+### 1. The Handshake Protocol
+1.  **Iframe Load**: Deeting renders your iframe pointing to the signed URL.
+2.  **Ready Signal**: Your UI must send a `DEETING_PLUGIN_READY` message to the parent window once it is fully loaded.
+3.  **Data Injection**: Deeting responds with a `DEETING_PLUGIN_DATA` message containing the `payload` returned by your `main.py`.
+4.  **Theme Sync**: Deeting may send `DEETING_THEME_CHANGE` whenever the user switches between Light/Dark mode.
+
+### 2. Frontend Implementation Example
+Add this script to your `ui/index.html`:
+
+```javascript
+// 1. Listen for messages from Deeting OS
+window.addEventListener('message', (event) => {
+    const { type, payload } = event.data;
+
+    if (type === 'DEETING_PLUGIN_DATA') {
+        // Render your UI using the 'payload' data
+        console.log("Received data from skill:", payload);
+        renderMyApp(payload);
+    }
+
+    if (type === 'DEETING_THEME_CHANGE') {
+        // payload is 'light' or 'dark'
+        document.documentElement.className = payload;
+    }
+});
+
+// 2. Tell the host you are ready to receive data
+window.parent.postMessage({ type: 'DEETING_PLUGIN_READY' }, '*');
+```
 
 ---
 

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deeting Plugin Template UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: transparent;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .dark .glass-card {
+            background: rgba(24, 24, 27, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div id="root" class="glass-card rounded-xl p-6 shadow-sm">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white font-bold">
+                D
+            </div>
+            <div>
+                <h1 id="plugin-title" class="text-lg font-semibold text-slate-900 dark:text-zinc-100">Plugin Template</h1>
+                <p class="text-xs text-slate-500 dark:text-zinc-400">Waiting for data from Deeting OS...</p>
+            </div>
+        </div>
+
+        <div id="content-area" class="space-y-4">
+            <!-- Dynamic data will be rendered here -->
+            <div class="animate-pulse flex space-x-4">
+                <div class="flex-1 space-y-6 py-1">
+                    <div class="h-2 bg-slate-200 dark:bg-zinc-800 rounded"></div>
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-3 gap-4">
+                            <div class="h-2 bg-slate-200 dark:bg-zinc-800 rounded col-span-2"></div>
+                            <div class="h-2 bg-slate-200 dark:bg-zinc-800 rounded col-span-1"></div>
+                        </div>
+                        <div class="h-2 bg-slate-200 dark:bg-zinc-800 rounded"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Deeting UI SDK Inline Implementation
+         */
+        const DeetingRender = {
+            _callbacks: [],
+            onData(cb) {
+                this._callbacks.push(cb);
+            },
+            emit(data) {
+                this._callbacks.forEach(cb => cb(data));
+            }
+        };
+
+        // Listen for messages from the host (Deeting Frontend)
+        window.addEventListener('message', (event) => {
+            // In production, we should validate event.origin
+            const { type, payload, title } = event.data;
+
+            if (type === 'DEETING_DATA') {
+                if (title) document.getElementById('plugin-title').innerText = title;
+                DeetingRender.emit({ payload, title });
+            }
+
+            if (type === 'DEETING_THEME_CHANGE') {
+                if (payload === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }
+        });
+
+        // Example: Handle the data and update UI
+        DeetingRender.onData(({ payload }) => {
+            const contentArea = document.getElementById('content-area');
+            
+            // Format the payload as a nice list/grid
+            let html = '<div class="grid grid-cols-1 gap-3">';
+            
+            if (payload && typeof payload === 'object') {
+                for (const [key, value] of Object.entries(payload)) {
+                    html += `
+                        <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-zinc-800 last:border-0">
+                            <span class="text-sm font-medium text-slate-600 dark:text-zinc-400">${key}</span>
+                            <span class="text-sm text-slate-900 dark:text-zinc-100 font-mono">${JSON.stringify(value)}</span>
+                        </div>
+                    `;
+                }
+            }
+            
+            html += '</div>';
+            contentArea.innerHTML = html;
+        });
+
+        // Signal to host that we are ready
+        window.parent.postMessage({ type: 'DEETING_PLUGIN_READY' }, '*');
+    </script>
+</body>
+</html>

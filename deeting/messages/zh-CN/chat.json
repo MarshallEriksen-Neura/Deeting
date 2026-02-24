@@ -347,6 +347,10 @@
         "empty": "空表格",
         "rowCount": "{count} 行",
         "filteredRowCount": "{filtered} / {total} 行"
+      },
+      "pluginIframe": {
+        "noUrl": "插件渲染地址缺失",
+        "loadError": "插件视图加载失败"
       }
     }
   }

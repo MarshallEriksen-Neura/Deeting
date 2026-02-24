@@ -1,0 +1,47 @@
+name: Deeting Plugin Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Check Manifest (deeting.json)
+        run: |
+          if [ ! -f deeting.json ]; then
+            echo "Error: deeting.json not found!"
+            exit 1
+          fi
+          # Simple JSON validation
+          python3 -c "import json; json.load(open('deeting.json'))"
+
+      - name: Check Backend Entrance (main.py)
+        run: |
+          if [ ! -f main.py ]; then
+            echo "Error: main.py not found!"
+            exit 1
+          fi
+          # Check for invoke function
+          grep "async def invoke" main.py || (echo "Error: 'async def invoke' not found in main.py" && exit 1)
+
+      - name: Python Syntax Check
+        run: |
+          python3 -m py_compile main.py
+
+      - name: Check Tool Spec (llm-tool.yaml)
+        run: |
+          if [ ! -f llm-tool.yaml ]; then
+            echo "Error: llm-tool.yaml not found!"
+            exit 1
+          fi

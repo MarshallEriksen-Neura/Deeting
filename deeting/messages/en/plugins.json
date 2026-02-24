@@ -57,6 +57,21 @@
       "uninstalledDesc": "The plugin has been removed from your environment.",
       "uninstallFailedTitle": "Uninstall failed",
       "uninstallFailedDesc": "Please try again later."
+    },
+    "importRepo": {
+      "trigger": "Import from GitHub",
+      "title": "Import Plugin from GitHub",
+      "description": "Paste a GitHub repository URL to import a plugin into the market.",
+      "urlLabel": "Repository URL",
+      "urlPlaceholder": "https://github.com/owner/repo",
+      "urlInvalid": "Please enter a valid GitHub repository URL",
+      "revisionLabel": "Branch or tag (optional)",
+      "revisionPlaceholder": "main",
+      "submit": "Import",
+      "submitting": "Importing...",
+      "successTitle": "Repository submitted",
+      "successDesc": "The plugin is being ingested and will appear shortly.",
+      "error": "Failed to submit repository. Please try again."
     }
   }
 }

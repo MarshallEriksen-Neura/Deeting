@@ -1,0 +1,23 @@
+{
+  "name": "create-deeting-plugin",
+  "version": "1.0.0",
+  "description": "Scaffold a new Deeting OS plugin instantly.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "bin": {
+    "create-deeting-plugin": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "templates"
+  ],
+  "scripts": {
+    "dev": "bun ./src/index.ts",
+    "prepublishOnly": "cp -r ../templates/default-plugin ./templates"
+  },
+  "dependencies": {
+    "prompts": "^2.4.2",
+    "kleur": "^4.1.5",
+    "fs-extra": "^11.2.0"
+  }
+}

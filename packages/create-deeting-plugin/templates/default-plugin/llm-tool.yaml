@@ -1,0 +1,10 @@
+# 此文件定义了 LLM 如何理解并调用该插件
+name: hello_deeting
+description: "A simple tool to greet the user and show a status dashboard."
+parameters:
+  type: object
+  properties:
+    name:
+      type: string
+      description: "The name of the person to greet."
+  required: ["name"]

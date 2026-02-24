@@ -57,6 +57,21 @@
       "uninstalledDesc": "该插件已从你的环境中移除。",
       "uninstallFailedTitle": "卸载失败",
       "uninstallFailedDesc": "请稍后重试。"
+    },
+    "importRepo": {
+      "trigger": "从 GitHub 导入",
+      "title": "从 GitHub 导入插件",
+      "description": "粘贴 GitHub 仓库地址，将插件导入到市场。",
+      "urlLabel": "仓库地址",
+      "urlPlaceholder": "https://github.com/owner/repo",
+      "urlInvalid": "请输入有效的 GitHub 仓库地址",
+      "revisionLabel": "分支或标签（可选）",
+      "revisionPlaceholder": "main",
+      "submit": "导入",
+      "submitting": "导入中...",
+      "successTitle": "仓库已提交",
+      "successDesc": "插件正在解析中，稍后将显示在市场列表。",
+      "error": "仓库提交失败，请重试。"
     }
   }
 }
