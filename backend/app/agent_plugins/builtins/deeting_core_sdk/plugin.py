@@ -807,7 +807,26 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 args.append(f"{name}: {python_type} | None = None")
 
         params = ", ".join(args)
-        return f"def {tool.name}({params}) -> dict: ..."
+        
+        # Build enhanced Docstring for output awareness
+        doc_lines = [f'"""{tool.description or ""}']
+        output_info = tool.output_description or ""
+        if not output_info and tool.output_schema:
+            props = tool.output_schema.get("properties", {})
+            if props:
+                keys = ", ".join([f"'{k}'" for k in props.keys()])
+                output_info = f"Returns a dict with keys: {keys}."
+        
+        if output_info:
+            doc_lines.append("")
+            doc_lines.append(f"Returns:")
+            doc_lines.append(f"    dict: {output_info}")
+        
+        doc_lines.append('"""')
+        indent = "    "
+        docstring = "\n".join([f"{indent}{line}" if line else "" for line in doc_lines])
+
+        return f"def {tool.name}({params}) -> dict:\n{docstring}\n{indent}..."
 
     async def _build_runtime_sdk_bundle(
         self,

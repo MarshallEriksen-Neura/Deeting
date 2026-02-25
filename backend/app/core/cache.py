@@ -280,6 +280,17 @@ class CacheService:
         if not self._redis:
             return await loader()
 
+        async def _store_loaded_value(value: Any) -> None:
+            if value is None:
+                return
+            ttl_with_jitter = self.jitter_ttl(ttl)
+            if version is None:
+                await self.set(key, value, ttl=ttl_with_jitter)
+            else:
+                await self.set_with_version(
+                    key, value, version, ttl=ttl_with_jitter
+                )
+
         existing = await self.get_with_version(key, version)
         if existing is not None:
             return existing
@@ -295,19 +306,28 @@ class CacheService:
                     return existing
 
                 value = await loader()
-                if value is not None:
-                    ttl_with_jitter = self.jitter_ttl(ttl)
-                    if version is None:
-                        await self.set(key, value, ttl=ttl_with_jitter)
-                    else:
-                        await self.set_with_version(
-                            key, value, version, ttl=ttl_with_jitter
-                        )
+                await _store_loaded_value(value)
                 return value
             else:
-                # 等待持锁者填充，避免击穿
-                await asyncio.sleep(0.05)
-                return await self.get_with_version(key, version)
+                # 等待持锁者填充，避免 50ms 过早返回导致的瞬时空值。
+                deadline = asyncio.get_running_loop().time() + max(
+                    float(lock_ttl), 0.05
+                )
+                while asyncio.get_running_loop().time() < deadline:
+                    await asyncio.sleep(0.05)
+                    existing = await self.get_with_version(key, version)
+                    if existing is not None:
+                        return existing
+
+                # 持锁者未及时写入时降级直查，避免误判为“模型不存在”。
+                logger.warning(
+                    "singleflight_wait_timeout key={} lock_ttl={}",
+                    key,
+                    lock_ttl,
+                )
+                value = await loader()
+                await _store_loaded_value(value)
+                return value
         finally:
             if got_lock:
                 try:

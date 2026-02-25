@@ -49,6 +49,19 @@ class ExpertNetworkPlugin(AgentPlugin):
                         },
                         "required": ["intent_query", "confidence"],
                     },
+                    "output_description": "Returns a list of expert assistant candidates, each with 'assistant_id', 'name', 'summary', and 'score'.",
+                    "output_schema": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "assistant_id": {"type": "string"},
+                                "name": {"type": "string"},
+                                "summary": {"type": "string"},
+                                "score": {"type": "number"}
+                            }
+                        }
+                    }
                 },
             }
         ]

@@ -11,6 +11,8 @@ class ToolDefinition(BaseModel):
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(..., description="JSON Schema for arguments")
+    output_schema: dict[str, Any] | None = Field(default=None, description="Optional JSON Schema for return value")
+    output_description: str | None = Field(default=None, description="Human-readable description of the return value")
 
 
 class ToolCall(BaseModel):

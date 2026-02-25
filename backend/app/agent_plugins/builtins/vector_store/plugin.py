@@ -43,6 +43,7 @@ class VectorStorePlugin(AgentPlugin):
                         },
                         "required": ["content"],
                     },
+                    "output_description": "Returns a success message with the ID of the stored chunk, or an error message.",
                 },
             },
             {
@@ -67,6 +68,7 @@ class VectorStorePlugin(AgentPlugin):
                         },
                         "required": ["query"],
                     },
+                    "output_description": "Returns a formatted multiline string containing search hits with scores and metadata. If no results, returns a 'No results found' message.",
                 },
             },
         ]

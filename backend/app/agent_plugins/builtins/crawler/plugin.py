@@ -45,6 +45,17 @@ class CrawlerPlugin(AgentPlugin):
                         },
                         "required": ["url"],
                     },
+                    "output_description": "Returns a dict containing 'markdown' (primary content), 'title', and 'status'.",
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": {"type": "string", "enum": ["success", "error"]},
+                            "markdown": {"type": "string", "description": "The extracted main content in markdown format."},
+                            "content": {"type": "string", "description": "Alias for markdown content for compatibility."},
+                            "title": {"type": "string", "description": "The page title."},
+                            "metadata": {"type": "object"}
+                        }
+                    }
                 },
             },
             {
@@ -204,10 +215,12 @@ class CrawlerPlugin(AgentPlugin):
                 if data.get("status") == "failed":
                     return {"status": "error", "error": data.get("error")}
 
+                markdown = data.get("markdown")
                 return {
                     "status": "success",
                     "title": data.get("metadata", {}).get("title"),
-                    "markdown": data.get("markdown"),
+                    "markdown": markdown,
+                    "content": markdown,  # Added for compatibility with AI expectations
                     "metadata": data.get("metadata"),
                 }
         except Exception as e:

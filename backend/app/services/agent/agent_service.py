@@ -63,6 +63,8 @@ class AgentService:
                     name=t_name,
                     description=func_def.get("description", ""),
                     input_schema=func_def.get("parameters", {}),
+                    output_schema=func_def.get("output_schema"),
+                    output_description=func_def.get("output_description"),
                 )
             )
         return normalized

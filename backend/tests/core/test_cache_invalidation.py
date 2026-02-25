@@ -112,6 +112,60 @@ async def test_singleflight_returns_same_value_and_loader_once(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_singleflight_waiter_waits_until_cache_is_filled(monkeypatch):
+    fake = FakeRedis()
+    monkeypatch.setattr(cache, "_redis", fake)
+
+    call_count = 0
+
+    async def loader():
+        nonlocal call_count
+        call_count += 1
+        await asyncio.sleep(0.2)
+        return "slow-value"
+
+    key = CacheKeys.preset_routing("chat", "gpt-4o-mini", "external")
+    version = 1
+
+    r1, r2 = await asyncio.gather(
+        cache.get_or_set_singleflight(key, loader=loader, ttl=30, version=version),
+        cache.get_or_set_singleflight(key, loader=loader, ttl=30, version=version),
+    )
+
+    assert r1 == r2 == "slow-value"
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_singleflight_wait_timeout_fallbacks_to_loader(monkeypatch):
+    fake = FakeRedis()
+    monkeypatch.setattr(cache, "_redis", fake)
+
+    call_count = 0
+
+    async def loader():
+        nonlocal call_count
+        call_count += 1
+        await asyncio.sleep(0.2)
+        return "slow-value"
+
+    key = CacheKeys.preset_routing("chat", "gpt-4.1", "external")
+    version = 1
+
+    r1, r2 = await asyncio.gather(
+        cache.get_or_set_singleflight(
+            key, loader=loader, ttl=30, version=version, lock_ttl=0.05
+        ),
+        cache.get_or_set_singleflight(
+            key, loader=loader, ttl=30, version=version, lock_ttl=0.05
+        ),
+    )
+
+    assert r1 == r2 == "slow-value"
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_get_with_version_mismatch_triggers_reload(monkeypatch):
     fake = FakeRedis()
     monkeypatch.setattr(cache, "_redis", fake)

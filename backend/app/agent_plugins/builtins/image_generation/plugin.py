@@ -49,6 +49,7 @@ class ImageGenerationPlugin(AgentPlugin):
                         },
                         "required": ["prompt"],
                     },
+                    "output_description": "Returns a string containing markdown image links (e.g. ![Generated Image](url)) or a success/error message.",
                 },
             }
         ]
