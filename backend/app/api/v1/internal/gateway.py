@@ -138,83 +138,105 @@ async def _status_stream_chat(
     ctx.emit_status(stage="listen", step="request_adapter", state="running")
 
     task = asyncio.create_task(orchestrator.execute(ctx))
+    task_joined = False
+    try:
+        while True:
+            if can_check_cancel and time.monotonic() - last_cancel_check > 0.3:
+                last_cancel_check = time.monotonic()
+                if await cancel_service.consume_cancel(
+                    capability="chat",
+                    user_id=str(ctx.user_id),
+                    request_id=str(request_id),
+                ):
+                    ctx.mark_error(
+                        ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled"
+                    )
+                    yield _format_sse("[DONE]")
+                    return
+            if task.done() and queue.empty():
+                break
+            try:
+                payload = await asyncio.wait_for(queue.get(), timeout=0.25)
+                yield _format_sse(payload)
+            except TimeoutError:
+                continue
 
-    while True:
-        if can_check_cancel and time.monotonic() - last_cancel_check > 0.3:
-            last_cancel_check = time.monotonic()
-            if await cancel_service.consume_cancel(
-                capability="chat",
-                user_id=str(ctx.user_id),
-                request_id=str(request_id),
-            ):
-                if not task.done():
-                    task.cancel()
-                ctx.mark_error(
-                    ErrorSource.CLIENT, "CLIENT_CANCELLED", "client canceled"
-                )
-                yield _format_sse("[DONE]")
-                return
-        if task.done() and queue.empty():
-            break
-        try:
-            payload = await asyncio.wait_for(queue.get(), timeout=0.25)
-            yield _format_sse(payload)
-        except TimeoutError:
-            continue
-
-    result = await task
-    if not result.success or not ctx.is_success:
-        yield _format_sse(
-            {
-                "type": "error",
-                "error_code": ctx.error_code or "GATEWAY_ERROR",
-                "message": ctx.error_message or "Request failed",
-                "source": ctx.error_source.value if ctx.error_source else "gateway",
-                "trace_id": ctx.trace_id,
-            }
-        )
-        yield _format_sse("[DONE]")
-        return
-
-    if ctx.get("upstream_call", "stream"):
-        if ctx.status_stage != "render":
+        result = await task
+        task_joined = True
+        if not result.success or not ctx.is_success:
             yield _format_sse(
                 {
-                    "type": "status",
-                    "stage": "render",
-                    "step": "upstream_call",
-                    "state": "streaming",
+                    "type": "error",
+                    "error_code": ctx.error_code or "GATEWAY_ERROR",
+                    "message": ctx.error_message or "Request failed",
+                    "source": ctx.error_source.value if ctx.error_source else "gateway",
                     "trace_id": ctx.trace_id,
-                    "timestamp": ctx.created_at.isoformat(),
                 }
             )
-        stream = ctx.get("upstream_call", "response_stream")
-        accumulator = (
-            ctx.get("upstream_call", "stream_accumulator") or StreamTokenAccumulator()
-        )
-        wrapped_stream = stream_with_billing(
-            stream=stream,
-            ctx=ctx,
-            accumulator=accumulator,
-            on_complete=_stream_internal_callback,
-        )
-        async for chunk in wrapped_stream:
-            while not queue.empty():
-                try:
-                    payload = queue.get_nowait()
-                    yield _format_sse(payload)
-                except asyncio.QueueEmpty:
-                    break
-            yield chunk
-        return
+            yield _format_sse("[DONE]")
+            return
 
-    response_body = (
-        ctx.get("response_transform", "response")
-        or ctx.get("upstream_call", "response")
-        or {}
-    )
-    yield _format_sse(response_body)
-    yield _format_sse("[DONE]")
+        if ctx.get("upstream_call", "stream"):
+            if ctx.status_stage != "render":
+                yield _format_sse(
+                    {
+                        "type": "status",
+                        "stage": "render",
+                        "step": "upstream_call",
+                        "state": "streaming",
+                        "trace_id": ctx.trace_id,
+                        "timestamp": ctx.created_at.isoformat(),
+                    }
+                )
+            stream = ctx.get("upstream_call", "response_stream")
+            accumulator = (
+                ctx.get("upstream_call", "stream_accumulator")
+                or StreamTokenAccumulator()
+            )
+            wrapped_stream = stream_with_billing(
+                stream=stream,
+                ctx=ctx,
+                accumulator=accumulator,
+                on_complete=_stream_internal_callback,
+            )
+            async for chunk in wrapped_stream:
+                while not queue.empty():
+                    try:
+                        payload = queue.get_nowait()
+                        yield _format_sse(payload)
+                    except asyncio.QueueEmpty:
+                        break
+                yield chunk
+            return
+
+        response_body = (
+            ctx.get("response_transform", "response")
+            or ctx.get("upstream_call", "response")
+            or {}
+        )
+        yield _format_sse(response_body)
+        yield _format_sse("[DONE]")
+    finally:
+        if task_joined:
+            return
+        if not task.done() and ctx.error_source is None:
+            ctx.mark_error(
+                ErrorSource.CLIENT,
+                "CLIENT_DISCONNECTED",
+                "client disconnected",
+            )
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.info("status_stream_task_cancelled trace_id=%s", ctx.trace_id)
+        except Exception as exc:
+            logger.debug(
+                "status_stream_task_finished_with_error trace_id=%s err=%s",
+                ctx.trace_id,
+                exc,
+            )
 
 
 def _estimate_tokens(text: str) -> int:

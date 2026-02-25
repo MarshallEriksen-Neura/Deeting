@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, memo } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import { AlertTriangle, Brain, ChevronDown, Loader2, Terminal } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
@@ -935,10 +935,10 @@ const ErrorMessageBlock = memo<{ message?: string }>(function ErrorMessageBlock(
 const ExecutionConsole = memo<{ blocks: MessageBlock[]; isActive: boolean }>(
   function ExecutionConsole({ blocks, isActive }) {
     const [isExpanded, setIsOpen] = useState(true);
-    const scrollRef = React.useRef<HTMLDivElement>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
 
     // 自动滚动到底部
-    React.useEffect(() => {
+    useEffect(() => {
       if (isActive && scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }

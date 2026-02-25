@@ -1737,6 +1737,19 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if not bridge_endpoint:
             return None
 
+        # Resolve localhost/127.0.0.1 to host.docker.internal or a reachable IP
+        if "localhost" in bridge_endpoint or "127.0.0.1" in bridge_endpoint:
+            target = "host.docker.internal"
+            # In some Linux environments, host.docker.internal is not defined. 
+            # We can try 172.17.0.1 (default Docker bridge gateway) as a fallback.
+            import socket
+            try:
+                socket.gethostbyname(target)
+            except socket.gaierror:
+                target = "172.17.0.1" # Standard Docker bridge IP
+            
+            bridge_endpoint = bridge_endpoint.replace("localhost", target).replace("127.0.0.1", target)
+
         bridge_timeout = int(
             getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 15) or 15
         )

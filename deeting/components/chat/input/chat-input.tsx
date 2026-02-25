@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { ImagePlus, Send, Square } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { GlassButton } from "@/components/ui/glass-button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
@@ -225,16 +225,16 @@ export const ChatInput = React.memo<ChatInputProps>(
             </div>
 
             {/* 图片上传按钮 */}
-            <Button
-              variant="ghost"
+            <GlassButton
+              variant="secondary"
               size="icon"
-              className="shrink-0 min-h-[44px] min-w-[44px] h-11 w-11 rounded-full bg-slate-100 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              className="shrink-0 min-h-[44px] min-w-[44px] h-11 w-11 rounded-full cursor-pointer"
               onClick={handleFileButtonClick}
               aria-label={t("input.image.add")}
               disabled={disabled}
             >
-              <ImagePlus className="h-5 w-5 text-slate-600 dark:text-white/70" />
-            </Button>
+              <ImagePlus className="h-5 w-5" />
+            </GlassButton>
             
             {/* 输入框容器 */}
             <div className="relative flex-1 flex items-end gap-2 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-2 shadow-sm transition-all focus-within:ring-2 focus-within:ring-slate-300 dark:focus-within:ring-white/20">
@@ -248,15 +248,16 @@ export const ChatInput = React.memo<ChatInputProps>(
                 autoFocus
                 disabled={disabled}
               />
-              <Button
+              <GlassButton
+                variant="default"
                 size="icon"
-                className="shrink-0 min-h-[44px] min-w-[44px] h-10 w-10 rounded-full bg-slate-900 text-white hover:bg-slate-800 dark:bg-white/10 dark:text-white dark:hover:bg-white dark:hover:text-black transition-all duration-200 active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="shrink-0 min-h-[44px] min-w-[44px] h-10 w-10 rounded-full cursor-pointer"
                 onClick={handleSendOrCancel}
                 disabled={canCancel ? false : !hasContent || disabled}
                 aria-label={canCancel ? t("controls.stop") : t("controls.send")}
               >
                 {canCancel ? <Square className="w-5 h-5" /> : <Send className="w-5 h-5" />}
-              </Button>
+              </GlassButton>
             </div>
             
             {/* 隐藏的文件输入 */}
