@@ -128,6 +128,7 @@
 | `CODE_MODE_BRIDGE_SCOPE_DENIED` | execution token scope/model 不允许当前调用 | 检查 API Key scopes、allowed_models 与请求模型/能力 |
 | `CODE_MODE_BRIDGE_DISPATCH_FAILED` | bridge 分发工具调用失败 | 查看 trace_id 与日志后重试 |
 | `CODE_MODE_EXECUTION_NOT_FOUND` | 指定 Code Mode 执行记录不存在 | 检查 execution id 是否属于当前用户，或重新执行生成记录 |
+| `SANDBOX_SESSION_BUSY` | 同一会话的沙箱执行正在进行中 | 稍后重试；避免同一 `session_id` 并发触发多次 `execute_code_plan` |
 
 ---
 

@@ -15,6 +15,7 @@ from opensandbox.models.sandboxes import SandboxImageSpec
 
 from app.core.cache import cache
 from app.core.config import settings
+from app.core.distributed_lock import distributed_lock
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,11 @@ _ERROR_CODE_TIMEOUT = "SANDBOX_TIMEOUT"
 _ERROR_CODE_NETWORK_DISCONNECT = "SANDBOX_NETWORK_DISCONNECT"
 _ERROR_CODE_NETWORK = "SANDBOX_NETWORK_ERROR"
 _ERROR_CODE_INTERNAL = "SANDBOX_INTERNAL_ERROR"
+_ERROR_CODE_BUSY = "SANDBOX_SESSION_BUSY"
 _ERROR_CODE_RESOURCE_LIMIT = "SANDBOX_RESOURCE_LIMIT"
 _ERROR_CODE_UNKNOWN = "SANDBOX_EXECUTION_ERROR"
+_SESSION_RUN_LOCK_PREFIX = f"{KEY_PREFIX}:run_lock"
+_SESSION_BUSY_RETRY_ATTEMPTS = 2
 
 
 def key_session(session_id: str) -> str:
@@ -217,45 +221,102 @@ class SandboxManager:
         - If missing, create new (with limit check).
         - Connect, Execute, Renew, Close.
         """
-        sandbox = None
+        if language and language.lower() != "python":
+            return {"error": f"Unsupported language: {language}"}
+
         try:
-            sandbox = await self.get_or_create_sandbox(session_id)
+            timeout_seconds = int(execution_timeout or 30)
+        except (TypeError, ValueError):
+            timeout_seconds = 30
+        timeout_seconds = max(5, timeout_seconds)
+        lock_ttl = max(30, timeout_seconds + 20)
+        lock_retry_times = max(1, min(600, (timeout_seconds + 5) * 10))
+        lock_key = f"{_SESSION_RUN_LOCK_PREFIX}:{session_id}"
 
-            interpreter = await CodeInterpreter.create(sandbox)
-            lang = SupportedLanguage.PYTHON
-            if language and language.lower() != "python":
-                return {"error": f"Unsupported language: {language}"}
+        async with distributed_lock(
+            lock_key,
+            ttl=lock_ttl,
+            retry_times=lock_retry_times,
+            retry_delay=0.1,
+        ) as acquired:
+            if not acquired:
+                detail = (
+                    f"lock_acquire_failed key={lock_key} timeout={timeout_seconds}s"
+                )
+                return {
+                    "error": f"[{_ERROR_CODE_BUSY}] 沙箱会话正忙, 请稍后重试 detail={detail}",
+                    "error_code": _ERROR_CODE_BUSY,
+                    "error_detail": detail,
+                }
+            return await self._run_code_locked(session_id=session_id, code=code)
 
-            result = await interpreter.codes.run(code, language=lang)
-            return {
-                "result": [r.text for r in result.result] if result.result else [],
-                "stdout": (
-                    [l.text for l in result.logs.stdout] if result.logs.stdout else []
-                ),
-                "stderr": (
-                    [l.text for l in result.logs.stderr] if result.logs.stderr else []
-                ),
-                "exit_code": 0,
-            }
-        except ResourceWarning as exc:
-            detail = str(exc)
-            return {
-                "error": f"[{_ERROR_CODE_RESOURCE_LIMIT}] {detail}",
-                "error_code": _ERROR_CODE_RESOURCE_LIMIT,
-                "error_detail": detail,
-            }
-        except Exception as exc:
-            error_payload = self._build_error_payload(exc)
-            logger.error(
-                "Sandbox run error [%s]: %s",
-                error_payload["error_code"],
-                error_payload["error_detail"],
-                exc_info=True,
-            )
-            return error_payload
-        finally:
-            if sandbox:
-                await sandbox.close()
+    async def _run_code_locked(self, *, session_id: str, code: str) -> dict[str, Any]:
+        for attempt in range(_SESSION_BUSY_RETRY_ATTEMPTS):
+            sandbox = None
+            try:
+                sandbox = await self.get_or_create_sandbox(session_id)
+                interpreter = await CodeInterpreter.create(sandbox)
+                result = await interpreter.codes.run(code, language=SupportedLanguage.PYTHON)
+                return {
+                    "result": (
+                        [result_item.text for result_item in result.result]
+                        if result.result
+                        else []
+                    ),
+                    "stdout": (
+                        [line_item.text for line_item in result.logs.stdout]
+                        if result.logs.stdout
+                        else []
+                    ),
+                    "stderr": (
+                        [line_item.text for line_item in result.logs.stderr]
+                        if result.logs.stderr
+                        else []
+                    ),
+                    "exit_code": 0,
+                }
+            except ResourceWarning as exc:
+                detail = str(exc)
+                return {
+                    "error": f"[{_ERROR_CODE_RESOURCE_LIMIT}] {detail}",
+                    "error_code": _ERROR_CODE_RESOURCE_LIMIT,
+                    "error_detail": detail,
+                }
+            except Exception as exc:
+                if self._is_session_busy(exc):
+                    if attempt + 1 < _SESSION_BUSY_RETRY_ATTEMPTS:
+                        sandbox_id = str(getattr(sandbox, "id", "") or "").strip()
+                        logger.warning(
+                            "Sandbox session busy for session %s (attempt %d/%d), recreate sandbox and retry.",
+                            session_id,
+                            attempt + 1,
+                            _SESSION_BUSY_RETRY_ATTEMPTS,
+                        )
+                        if sandbox_id:
+                            await self.stop_sandbox(sandbox_id, session_id=session_id)
+                        else:
+                            await cache.delete(key_session(session_id))
+                        continue
+
+                    error_payload = self._build_error_payload(exc)
+                    logger.warning(
+                        "Sandbox run busy [%s]: %s",
+                        error_payload["error_code"],
+                        error_payload["error_detail"],
+                    )
+                    return error_payload
+
+                error_payload = self._build_error_payload(exc)
+                logger.error(
+                    "Sandbox run error [%s]: %s",
+                    error_payload["error_code"],
+                    error_payload["error_detail"],
+                    exc_info=True,
+                )
+                return error_payload
+            finally:
+                if sandbox:
+                    await sandbox.close()
 
     async def _create_sandbox(self, session_id: str) -> Sandbox:
         redis = self._get_redis()
@@ -380,6 +441,11 @@ class SandboxManager:
 
         for item in chain:
             msg = str(item).lower()
+            if "session is busy" in msg or "codes session is busy" in msg:
+                return _ERROR_CODE_BUSY, "沙箱会话正忙, 请稍后重试"
+
+        for item in chain:
+            msg = str(item).lower()
             name = item.__class__.__name__.lower()
             if isinstance(item, TimeoutError) or "timeout" in name or "timed out" in msg:
                 return _ERROR_CODE_TIMEOUT, "沙箱请求超时"
@@ -425,6 +491,13 @@ class SandboxManager:
         for item in self._iter_exception_chain(exc):
             message = str(item).lower()
             if "sandbox" in message and "not found" in message:
+                return True
+        return False
+
+    def _is_session_busy(self, exc: BaseException) -> bool:
+        for item in self._iter_exception_chain(exc):
+            message = str(item).lower()
+            if "session is busy" in message or "codes session is busy" in message:
                 return True
         return False
 

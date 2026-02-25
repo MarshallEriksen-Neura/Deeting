@@ -307,6 +307,72 @@ async def test_execute_code_plan_logs_empty_result_diagnostic(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_execute_code_plan_recovers_result_from_stdout_json(monkeypatch):
+    plugin = _make_plugin()
+    info_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        return {
+            "stdout": [
+                '[deeting.log] {"status":"ok","items":[{"name":"repo-a","stars":123}]}'
+            ],
+            "stderr": [],
+            "result": [],
+            "exit_code": 0,
+        }
+
+    def _capture_info(*args, **kwargs):
+        info_calls.append((args, kwargs))
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+    monkeypatch.setattr(sdk_module.logger, "info", _capture_info)
+
+    result = await plugin.handle_execute_code_plan(code="deeting.log('done')")
+
+    assert result["status"] == "success"
+    assert json.loads(result["result"]) == {
+        "status": "ok",
+        "items": [{"name": "repo-a", "stars": 123}],
+    }
+    recovered_logs = [
+        call
+        for call in info_calls
+        if call[0]
+        and isinstance(call[0][0], str)
+        and call[0][0] == "code_mode_result_recovered"
+    ]
+    assert len(recovered_logs) == 1
+    empty_logs = [
+        call
+        for call in info_calls
+        if call[0]
+        and isinstance(call[0][0], str)
+        and call[0][0] == "code_mode_empty_result"
+    ]
+    assert len(empty_logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_recovers_result_from_stdout_python_literal(monkeypatch):
+    plugin = _make_plugin()
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        return {
+            "stdout": ["[deeting.log] {'status': 'ok', 'count': 2}"],
+            "stderr": [],
+            "result": [],
+            "exit_code": 0,
+        }
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    result = await plugin.handle_execute_code_plan(code="deeting.log({'status': 'ok'})")
+
+    assert result["status"] == "success"
+    assert json.loads(result["result"]) == {"status": "ok", "count": 2}
+
+
+@pytest.mark.asyncio
 async def test_execute_code_plan_injects_runtime_sdk_stub(monkeypatch):
     plugin = _make_plugin()
     captured: dict[str, str] = {}

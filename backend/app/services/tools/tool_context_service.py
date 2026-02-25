@@ -165,8 +165,13 @@ class ToolContextService:
                 existing_names.add(tool.name)
             
             # 2. 添加 JIT 命中的动态技能
+            # code mode 最小工具集模式下，跳过用户 MCP 工具（只能通过 execute_code_plan 间接调用）
+            skip_user_mcp = code_mode_enabled and code_mode_minimal_toolset
             for tool in dynamic_hits:
                 if tool.name in existing_names:
+                    continue
+                # code mode 下过滤掉用户 MCP 工具，避免 LLM 直接调用被阻拦浪费一轮
+                if skip_user_mcp and tool.name in user_mcp_tool_names:
                     continue
                 # skill__ 动态技能必须依赖 skill_runner；否则只允许白名单系统工具
                 if (
@@ -202,21 +207,29 @@ class ToolContextService:
             final_tools.append(tool)
             existing_names.add(tool.name)
 
-        for payload in user_tool_payloads:
-            name = payload.get("name")
-            if not name or name in existing_names:
-                continue
-            try:
-                final_tools.append(ToolDefinition(**payload))
-                existing_names.add(name)
-            except Exception:
-                continue
+        # code mode 最小工具集模式下，跳过用户 MCP 工具（只能通过 execute_code_plan 间接调用）
+        skip_user_mcp = code_mode_enabled and code_mode_minimal_toolset
+        if not skip_user_mcp:
+            for payload in user_tool_payloads:
+                name = payload.get("name")
+                if not name or name in existing_names:
+                    continue
+                try:
+                    final_tools.append(ToolDefinition(**payload))
+                    existing_names.add(name)
+                except Exception:
+                    continue
+        else:
+            logger.info(
+                "ToolContextService: code mode minimal toolset enabled, skip user MCP tools"
+            )
 
-        for tool in non_core_system_tools:
-            if tool.name in existing_names:
-                continue
-            final_tools.append(tool)
-            existing_names.add(tool.name)
+        if not (code_mode_enabled and code_mode_minimal_toolset):
+            for tool in non_core_system_tools:
+                if tool.name in existing_names:
+                    continue
+                final_tools.append(tool)
+                existing_names.add(tool.name)
 
         logger.info(
             "ToolContextService: done duration_ms=%.2f final_tools=%s",

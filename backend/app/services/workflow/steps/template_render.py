@@ -163,9 +163,13 @@ class TemplateRenderStep(BaseStep):
             if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
                 lines.append(
                     "\n# Code Mode Capability\n"
-                    "For multi-step tasks, default to this flow:\n"
-                    "1) call `search_sdk` to discover exact signatures\n"
-                    "2) write one coherent Python script\n"
+                    "**IMPORTANT: You MUST NOT call any tool other than `search_sdk` and `execute_code_plan` directly. "
+                    "All other tools (including MCP tools like web search, etc.) can ONLY be invoked inside "
+                    "`execute_code_plan` scripts via `deeting.call_tool()`. Direct calls to other tools WILL BE "
+                    "BLOCKED and return an error, wasting a turn.**\n\n"
+                    "Required workflow:\n"
+                    "1) call `search_sdk` to discover exact tool signatures\n"
+                    "2) write one coherent Python script using the discovered tools\n"
                     "3) execute once with `execute_code_plan`\n"
                     "Script conventions:\n"
                     "- Prefer `from deeting_sdk import <tool_name>` when available\n"
@@ -173,7 +177,6 @@ class TemplateRenderStep(BaseStep):
                     "- Do NOT use positional dict args like `deeting.call_tool(name, {...})`\n"
                     "- Always emit final structured output with "
                     "`deeting.log(json.dumps(result, ensure_ascii=False))`\n"
-                    "Use fragmented direct tool chains only when a single code plan is clearly unsuitable."
                 )
 
             lines.append(
@@ -365,17 +368,18 @@ class TemplateRenderStep(BaseStep):
             tool_names = {t.name for t in tools}
             if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
                 code_mode_reminder = (
-                    "\n\n**Code Mode Capability**:\n"
-                    "For multi-step tasks, default to code mode:\n"
-                    "1) Use `search_sdk` to discover precise signatures.\n"
-                    "2) Produce one coherent Python execution plan.\n"
+                    "\n\n**Code Mode Capability (MANDATORY)**:\n"
+                    "**You MUST NOT call any tool other than `search_sdk` and `execute_code_plan` directly. "
+                    "Direct calls to other tools WILL BE BLOCKED and return an error.**\n\n"
+                    "Required workflow:\n"
+                    "1) Use `search_sdk` to discover precise tool signatures.\n"
+                    "2) Produce one coherent Python execution plan using discovered tools.\n"
                     "3) Execute once with `execute_code_plan`.\n"
                     "Conventions:\n"
                     "- Prefer `from deeting_sdk import <tool_name>` when available.\n"
                     "- Or call tools with `deeting.call_tool(name, **kwargs)`.\n"
                     "- Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.\n"
                     "- Always emit final structured output with `deeting.log(json.dumps(result, ensure_ascii=False))`.\n"
-                    "Use fragmented direct tool chains only when one code plan is clearly unsuitable."
                 )
                 enhanced_prompt += code_mode_reminder
 

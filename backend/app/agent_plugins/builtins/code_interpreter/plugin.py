@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.agent_plugins.builtins.code_interpreter.tools import run_python
+from app.agent_plugins.builtins.code_interpreter.tools import run_python, CodeInterpreterArgs
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 
 
@@ -71,10 +71,8 @@ class CodeInterpreterPlugin(AgentPlugin):
                 elif hasattr(ctx, "trace_id"):
                     final_session_id = ctx.trace_id
 
-        class ArgsWrapper:
-            def __init__(self, c, sid):
-                self.code = c
-                self.session_id = sid
-
-        return await run_python(self.context, ArgsWrapper(code, final_session_id))
+        return await run_python(
+            self.context,
+            CodeInterpreterArgs(code=code, session_id=final_session_id),
+        )
 

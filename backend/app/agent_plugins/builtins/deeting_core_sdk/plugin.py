@@ -1905,27 +1905,51 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         stderr_trimmed, stderr_truncated = self._truncate(stderr)
         final_result_trimmed, result_truncated = self._truncate(final_result)
         if exit_code == 0 and not final_result_trimmed.strip():
-            stdout_preview, stdout_preview_truncated = self._truncate_for_log(
-                stdout_trimmed, limit=_MAX_LOG_IO_PREVIEW_CHARS
-            )
-            stderr_preview, stderr_preview_truncated = self._truncate_for_log(
-                stderr_trimmed, limit=_MAX_LOG_IO_PREVIEW_CHARS
-            )
-            logger.info(
-                "code_mode_empty_result",
-                extra={
-                    "execution_id": str(runtime_meta.get("execution_id") or "").strip(),
-                    "trace_id": str(runtime_meta.get("trace_id") or "").strip(),
-                    "session_id": str(runtime_meta.get("session_id") or session_id).strip(),
-                    "stdout_chars": len(stdout_trimmed),
-                    "stderr_chars": len(stderr_trimmed),
-                    "result_chars": len(final_result_trimmed),
-                    "stdout_preview": stdout_preview,
-                    "stderr_preview": stderr_preview,
-                    "stdout_preview_truncated": stdout_preview_truncated,
-                    "stderr_preview_truncated": stderr_preview_truncated,
-                },
-            )
+            recovered_result = self._recover_structured_result_from_stdout(stdout_trimmed)
+            if recovered_result:
+                recovered_result_trimmed, recovered_result_truncated = self._truncate(
+                    recovered_result
+                )
+                final_result_trimmed = recovered_result_trimmed
+                result_truncated = result_truncated or recovered_result_truncated
+                result_preview, result_preview_truncated = self._truncate_for_log(
+                    recovered_result_trimmed, limit=_MAX_LOG_IO_PREVIEW_CHARS
+                )
+                logger.info(
+                    "code_mode_result_recovered",
+                    extra={
+                        "execution_id": str(runtime_meta.get("execution_id") or "").strip(),
+                        "trace_id": str(runtime_meta.get("trace_id") or "").strip(),
+                        "session_id": str(runtime_meta.get("session_id") or session_id).strip(),
+                        "stdout_chars": len(stdout_trimmed),
+                        "recovered_result_chars": len(recovered_result_trimmed),
+                        "result_preview": result_preview,
+                        "result_preview_truncated": result_preview_truncated,
+                        "source": "stdout_last_structured_line",
+                    },
+                )
+            else:
+                stdout_preview, stdout_preview_truncated = self._truncate_for_log(
+                    stdout_trimmed, limit=_MAX_LOG_IO_PREVIEW_CHARS
+                )
+                stderr_preview, stderr_preview_truncated = self._truncate_for_log(
+                    stderr_trimmed, limit=_MAX_LOG_IO_PREVIEW_CHARS
+                )
+                logger.info(
+                    "code_mode_empty_result",
+                    extra={
+                        "execution_id": str(runtime_meta.get("execution_id") or "").strip(),
+                        "trace_id": str(runtime_meta.get("trace_id") or "").strip(),
+                        "session_id": str(runtime_meta.get("session_id") or session_id).strip(),
+                        "stdout_chars": len(stdout_trimmed),
+                        "stderr_chars": len(stderr_trimmed),
+                        "result_chars": len(final_result_trimmed),
+                        "stdout_preview": stdout_preview,
+                        "stderr_preview": stderr_preview,
+                        "stdout_preview_truncated": stdout_preview_truncated,
+                        "stderr_preview_truncated": stderr_preview_truncated,
+                    },
+                )
 
         response = {
             "status": "success" if exit_code == 0 else "failed",
@@ -2000,3 +2024,45 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if len(text) <= limit:
             return text, False
         return text[:limit] + "... (truncated)", True
+
+    def _recover_structured_result_from_stdout(self, stdout: str) -> str:
+        if not stdout:
+            return ""
+
+        for raw_line in reversed(stdout.splitlines()):
+            line = str(raw_line or "").strip()
+            if not line:
+                continue
+
+            candidates: list[str] = [line]
+            if line.startswith("[deeting.log]"):
+                log_payload = line[len("[deeting.log]") :].strip()
+                if log_payload:
+                    candidates.insert(0, log_payload)
+
+            for candidate in candidates:
+                parsed = self._parse_structured_result_candidate(candidate)
+                if parsed is None:
+                    continue
+                return json.dumps(self._to_jsonable(parsed), ensure_ascii=False)
+        return ""
+
+    def _parse_structured_result_candidate(self, text: str) -> Any | None:
+        raw = str(text or "").strip()
+        if not raw:
+            return None
+
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, (dict, list)):
+                return parsed
+        except Exception:
+            pass
+
+        try:
+            parsed = ast.literal_eval(raw)
+        except Exception:
+            return None
+        if isinstance(parsed, (dict, list, tuple)):
+            return parsed
+        return None

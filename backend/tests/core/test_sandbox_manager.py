@@ -4,6 +4,7 @@ import pytest
 
 import app.core.sandbox.manager as sandbox_manager_module
 from app.core.sandbox.manager import (
+    _ERROR_CODE_BUSY,
     _ERROR_CODE_INTERNAL,
     _ERROR_CODE_NETWORK_DISCONNECT,
     _ERROR_CODE_RESOURCE_LIMIT,
@@ -13,7 +14,8 @@ from app.core.sandbox.manager import (
 
 
 class _FakeSandbox:
-    def __init__(self) -> None:
+    def __init__(self, sandbox_id: str = "fake-sandbox") -> None:
+        self.id = sandbox_id
         self.closed = False
 
     async def close(self) -> None:
@@ -31,6 +33,29 @@ class _FakeCodes:
 class _FakeInterpreter:
     def __init__(self, run_impl):
         self.codes = _FakeCodes(run_impl)
+
+
+class _FakeText:
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _FakeLogs:
+    def __init__(self, stdout: list[str] | None = None, stderr: list[str] | None = None):
+        self.stdout = [_FakeText(item) for item in (stdout or [])]
+        self.stderr = [_FakeText(item) for item in (stderr or [])]
+
+
+class _FakeRunResult:
+    def __init__(
+        self,
+        *,
+        result: list[str] | None = None,
+        stdout: list[str] | None = None,
+        stderr: list[str] | None = None,
+    ):
+        self.result = [_FakeText(item) for item in (result or [])]
+        self.logs = _FakeLogs(stdout=stdout, stderr=stderr)
 
 
 @pytest.mark.asyncio
@@ -147,6 +172,83 @@ async def test_run_code_classifies_resource_limit(monkeypatch):
 
     assert result["error_code"] == _ERROR_CODE_RESOURCE_LIMIT
     assert "[SANDBOX_RESOURCE_LIMIT]" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_classifies_session_busy(monkeypatch):
+    manager = SandboxManager()
+    sandbox = _FakeSandbox("busy-sbox")
+
+    async def fake_get_or_create(_session_id: str):
+        return sandbox
+
+    async def run_impl(**_kwargs):
+        raise RuntimeError("error running codes session is busy")
+
+    class FakeCodeInterpreter:
+        @staticmethod
+        async def create(_sandbox):
+            return _FakeInterpreter(run_impl)
+
+    async def fake_stop_sandbox(_sandbox_id: str, session_id: str | None = None):
+        return None
+
+    monkeypatch.setattr(manager, "get_or_create_sandbox", fake_get_or_create)
+    monkeypatch.setattr(manager, "stop_sandbox", fake_stop_sandbox)
+    monkeypatch.setattr(
+        sandbox_manager_module, "CodeInterpreter", FakeCodeInterpreter
+    )
+
+    result = await manager.run_code("s1", "print('ok')")
+
+    assert result["error_code"] == _ERROR_CODE_BUSY
+    assert "[SANDBOX_SESSION_BUSY]" in result["error"]
+    assert sandbox.closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_code_retries_once_when_session_busy(monkeypatch):
+    manager = SandboxManager()
+    sandboxes = [_FakeSandbox("sb-1"), _FakeSandbox("sb-2")]
+    get_calls = {"value": 0}
+    run_calls = {"value": 0}
+    stopped: list[tuple[str, str | None]] = []
+
+    async def fake_get_or_create(_session_id: str):
+        idx = get_calls["value"]
+        get_calls["value"] += 1
+        return sandboxes[idx]
+
+    async def run_impl(**_kwargs):
+        run_calls["value"] += 1
+        if run_calls["value"] == 1:
+            raise RuntimeError("error running codes session is busy")
+        return _FakeRunResult(result=["done"], stdout=["ok"], stderr=[])
+
+    class FakeCodeInterpreter:
+        @staticmethod
+        async def create(_sandbox):
+            return _FakeInterpreter(run_impl)
+
+    async def fake_stop_sandbox(sandbox_id: str, session_id: str | None = None):
+        stopped.append((sandbox_id, session_id))
+
+    monkeypatch.setattr(manager, "get_or_create_sandbox", fake_get_or_create)
+    monkeypatch.setattr(manager, "stop_sandbox", fake_stop_sandbox)
+    monkeypatch.setattr(
+        sandbox_manager_module, "CodeInterpreter", FakeCodeInterpreter
+    )
+
+    result = await manager.run_code("s1", "print('ok')")
+
+    assert result["exit_code"] == 0
+    assert result["result"] == ["done"]
+    assert result["stdout"] == ["ok"]
+    assert get_calls["value"] == 2
+    assert run_calls["value"] == 2
+    assert stopped == [("sb-1", "s1")]
+    assert sandboxes[0].closed is True
+    assert sandboxes[1].closed is True
 
 
 def test_build_network_policy_returns_none_when_empty(monkeypatch):

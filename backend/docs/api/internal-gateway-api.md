@@ -627,6 +627,7 @@ print(response.json())
   - `ui`：工具返回的渲染块数组。
   - `debug`：Code Mode 运行时调试摘要（例如 `runtime_tool_calls`、`render_blocks`、`sdk_stub`）。
     - `runtime_tool_calls.calls[]` 可包含 `tool_name` / `status` / `duration_ms` / `error` / `error_code`，用于前端调试时间线。
+    - 当 `execute_code_plan` 的 `exit_code=0` 但沙箱原始 `result` 为空时，系统会尝试从 `stdout` 最后一条结构化日志（优先 `[deeting.log]` JSON）回填 `result`，并记录 `code_mode_result_recovered` 调试日志。
 
 ---
 
