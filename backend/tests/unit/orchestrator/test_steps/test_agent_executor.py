@@ -4,8 +4,8 @@ from copy import deepcopy
 import pytest
 
 from app.core.config import settings
-from app.services.orchestrator.context import Channel, WorkflowContext
 from app.schemas.tool import ToolCall
+from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.workflow.steps.agent_executor import AgentExecutorStep
 from app.services.workflow.steps.base import StepConfig, StepResult, StepStatus
 
@@ -33,6 +33,68 @@ def test_resolve_tool_call_timeout_uses_step_timeout_cap(monkeypatch):
         settings, "AGENT_TOOL_CALL_TIMEOUT_SECONDS", 90.0, raising=False
     )
     assert step._resolve_tool_call_timeout_seconds() == pytest.approx(90.0)
+
+
+def test_should_block_direct_tool_call_when_code_mode_available():
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set(
+        "template_render",
+        "request_body",
+        {
+            "tools": [
+                {"type": "function", "function": {"name": "search_sdk"}},
+                {"type": "function", "function": {"name": "execute_code_plan"}},
+                {"type": "function", "function": {"name": "tavily-search"}},
+            ]
+        },
+    )
+
+    user_map = {"tavily-search": {"sse_url": "https://example.com", "headers": {}}}
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
+            tool_name="tavily-search",
+            user_mcp_tool_map=user_map,
+        )
+        is True
+    )
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
+            tool_name="skill__com.deeting.example.weather",
+            user_mcp_tool_map={},
+        )
+        is True
+    )
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
+            tool_name="search_sdk",
+            user_mcp_tool_map=user_map,
+        )
+        is False
+    )
+
+
+def test_should_not_block_direct_tool_call_when_code_mode_unavailable():
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set(
+        "template_render",
+        "request_body",
+        {"tools": [{"type": "function", "function": {"name": "tavily-search"}}]},
+    )
+
+    user_map = {"tavily-search": {"sse_url": "https://example.com", "headers": {}}}
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
+            tool_name="tavily-search",
+            user_mcp_tool_map=user_map,
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio

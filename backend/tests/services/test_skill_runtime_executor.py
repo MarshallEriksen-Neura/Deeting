@@ -191,7 +191,8 @@ async def test_executor_builds_script_and_reads_artifacts():
         sandbox.commands.commands_ran[3]
         == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
     )
-    assert sandbox.commands.commands_ran[4].startswith("python ")
+    assert "command -v python3" in sandbox.commands.commands_ran[4]
+    assert "/workspace/skills/docx/run.py" in sandbox.commands.commands_ran[4]
     assert result["artifacts"][0]["content_base64"]
 
 
@@ -229,7 +230,8 @@ async def test_executor_installs_requirements_txt_when_present():
 
     assert sandbox.commands.commands_ran[2] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
     assert sandbox.commands.commands_ran[3] == "pip install -r requirements.txt"
-    assert sandbox.commands.commands_ran[4].startswith("python ")
+    assert "command -v python3" in sandbox.commands.commands_ran[4]
+    assert "/workspace/skills/repo.with.requirements/run.py" in sandbox.commands.commands_ran[4]
 
 
 @pytest.mark.asyncio
@@ -266,7 +268,8 @@ async def test_executor_logs_skip_when_no_dependencies_and_no_requirements(caplo
         )
 
     assert sandbox.commands.commands_ran[2] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
-    assert sandbox.commands.commands_ran[3].startswith("python ")
+    assert "command -v python3" in sandbox.commands.commands_ran[3]
+    assert "/workspace/skills/repo.no.dependencies/run.py" in sandbox.commands.commands_ran[3]
     assert not any(cmd.startswith("pip install") for cmd in sandbox.commands.commands_ran)
     assert any(
         "event=plugin_dependency_install_skipped" in record.message

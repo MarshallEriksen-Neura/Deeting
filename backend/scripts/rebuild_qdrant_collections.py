@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import os
 import sys
-from typing import Iterable
+from collections.abc import Iterable
 
 from loguru import logger
 from sqlalchemy import select
@@ -25,6 +25,7 @@ from app.services.memory.qdrant_service import (
     COLLECTION_SEMANTIC_CACHE,
     system_qdrant,
 )
+from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_collections import (
     get_kb_candidates_collection_name,
     get_kb_system_collection_name,
@@ -61,6 +62,14 @@ def _system_collections() -> list[str]:
             ASSISTANT_COLLECTION_NAME,
         ]
     )
+
+
+async def _resolve_expected_vector_size() -> int:
+    embedding = EmbeddingService()
+    size = await embedding.get_vector_size()
+    if size <= 0:
+        raise RuntimeError("invalid embedding vector size resolved from provider")
+    return int(size)
 
 
 def _user_collection_names(all_collections: list[str]) -> list[str]:
@@ -112,6 +121,9 @@ async def _init_system_collections() -> None:
     from app.services.agent import agent_service
     from app.services.tools.tool_sync_service import tool_sync_service
 
+    vector_size = await _resolve_expected_vector_size()
+    logger.info("Resolved embedding vector size: {}", vector_size)
+
     await system_qdrant.initialize_collections()
     await agent_service.initialize()
     synced = await tool_sync_service.sync_system_tools(agent_service.tools)
@@ -119,7 +131,7 @@ async def _init_system_collections() -> None:
     await ensure_collection_vector_size(
         get_qdrant_client(),
         collection_name=get_skill_collection_name(),
-        vector_size=1536,
+        vector_size=vector_size,
     )
     logger.info("Ensured skill registry collection: {}", get_skill_collection_name())
 

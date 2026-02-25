@@ -18,6 +18,7 @@ from app.services.memory.qdrant_service import (
     COLLECTION_SYS_TOOL_INDEX,
     system_qdrant,
 )
+from app.services.providers.embedding import EmbeddingService
 from app.services.tools.tool_sync_service import tool_sync_service
 from app.storage.qdrant_kb_store import (
     QDRANT_DEFAULT_VECTOR_NAME,
@@ -98,7 +99,15 @@ def _filter_user_collections(all_collections: list[str]) -> list[str]:
     return user_names
 
 
-async def _self_check() -> None:
+async def _resolve_expected_vector_size() -> int:
+    embedding = EmbeddingService()
+    size = await embedding.get_vector_size()
+    if size <= 0:
+        raise RuntimeError("invalid embedding vector size resolved from provider")
+    return int(size)
+
+
+async def _self_check(expected_size: int) -> None:
     if not qdrant_is_configured():
         logger.warning("Qdrant is not configured; skip self-check.")
         return
@@ -114,14 +123,14 @@ async def _self_check() -> None:
     ]
     issues: list[str] = []
     for name in expected:
-        status, detail = await _inspect_collection(name, expected_size=1536)
+        status, detail = await _inspect_collection(name, expected_size=expected_size)
         if status == "missing":
             logger.warning("Missing collection: {}", name)
             continue
         if status != "ok":
             issues.append(f"{name} => {status} ({detail})")
     for name in _filter_user_collections(all_collections):
-        status, detail = await _inspect_collection(name, expected_size=1536)
+        status, detail = await _inspect_collection(name, expected_size=expected_size)
         if status != "ok":
             issues.append(f"{name} => {status} ({detail})")
     if issues:
@@ -140,17 +149,19 @@ async def main():
         synced = await tool_sync_service.sync_system_tools(agent_service.tools)
         logger.info("Synced {} system tools to Qdrant tool index.", synced)
         if qdrant_is_configured():
+            vector_size = await _resolve_expected_vector_size()
+            logger.info("Resolved embedding vector size: {}", vector_size)
             await ensure_collection_vector_size(
                 get_qdrant_client(),
                 collection_name=SKILL_COLLECTION_NAME,
-                vector_size=1536,
+                vector_size=vector_size,
             )
             logger.info("Ensured skill registry collection: {}", SKILL_COLLECTION_NAME)
 
             await ensure_collection_vector_size(
                 get_qdrant_client(),
                 collection_name=ASSISTANT_COLLECTION_NAME,
-                vector_size=1536,
+                vector_size=vector_size,
             )
             logger.info("Ensured expert network collection: {}", ASSISTANT_COLLECTION_NAME)
 
@@ -158,7 +169,7 @@ async def main():
             synced_skills = await _run_sync_all_active_skills()
             logger.info("Synced {} active skills to Qdrant.", synced_skills)
 
-            await _self_check()
+            await _self_check(vector_size)
         logger.info("Successfully initialized collections.")
     except Exception as e:
         logger.exception(f"Failed to initialize collections: {e}")

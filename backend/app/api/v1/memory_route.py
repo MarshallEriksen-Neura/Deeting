@@ -27,6 +27,7 @@ async def get_memory_service(
         user_id=current_user.id,
         plugin_id=None,  # Access all user memories regardless of plugin
         embedding_model=None,
+        enforce_embedding_model_scope=False,
         fail_open=False,  # We want errors in the management API
     )
 

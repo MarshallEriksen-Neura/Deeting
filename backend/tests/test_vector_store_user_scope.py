@@ -309,6 +309,62 @@ async def test_list_points_uses_refreshed_embedding_model_in_filter():
 
 
 @pytest.mark.asyncio
+async def test_list_points_can_disable_embedding_model_filter():
+    user_id = uuid.uuid4()
+    collection_name = get_kb_user_collection_name(
+        user_id, embedding_model="resolved-embed"
+    )
+    captured_filter_models: list[str | None] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == f"/collections/{collection_name}" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "config": {"params": {"vectors": {"text": {"size": 2}}}}
+                    }
+                },
+            )
+        if path == f"/collections/{collection_name}/points/scroll":
+            body = json.loads(request.content.decode())
+            must = ((body.get("filter") or {}).get("must") or [])
+            model_value = None
+            for cond in must:
+                if cond.get("key") == "embedding_model":
+                    model_value = ((cond.get("match") or {}).get("value"))
+                    break
+            captured_filter_models.append(model_value)
+            return httpx.Response(
+                200,
+                json={"result": {"points": [], "next_page_offset": None}},
+            )
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://qdrant.test"
+    )
+    vs_client = QdrantUserVectorService(
+        client=client,
+        user_id=user_id,
+        embedding_model="initial-embed",
+        fail_open=False,
+        enforce_embedding_model_scope=False,
+        embedding_service=SwitchingEmbeddingService(
+            dim=2,
+            initial_model="initial-embed",
+            resolved_model="resolved-embed",
+        ),  # type: ignore[arg-type]
+    )
+
+    _items, _cursor = await vs_client.list_points(limit=10, cursor=None)
+    await client.aclose()
+
+    assert captured_filter_models == [None]
+
+
+@pytest.mark.asyncio
 async def test_delete_uses_resolved_vector_size_when_collection_not_cached():
     user_id = uuid.uuid4()
     plugin_id = "plugin-test"

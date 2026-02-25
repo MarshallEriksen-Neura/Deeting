@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 _MIN_TOOL_RESULT_LIMIT_CHARS = 512
 _DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 300.0
+_CODE_MODE_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
 
 
 @step_registry.register
@@ -717,16 +718,31 @@ class AgentExecutorStep(BaseStep):
         """
         Inner dispatch logic (no timeout wrapper).
         """
+        tool_name = str(tool_call.name or "").strip()
+
+        if self._should_block_direct_tool_call(
+            ctx,
+            tool_name=tool_name,
+            user_mcp_tool_map=user_mcp_tool_map,
+        ):
+            return {
+                "error": (
+                    f"Direct tool call '{tool_name}' is blocked while code mode is available. "
+                    "Use `search_sdk` first, then execute once with `execute_code_plan`."
+                ),
+                "error_code": "CODE_MODE_DIRECT_TOOL_BLOCKED",
+            }
+
         # 1. Check User MCP Servers (via pre-built map)
-        if tool_call.name in user_mcp_tool_map:
-            mcp_info = user_mcp_tool_map[tool_call.name]
+        if tool_name in user_mcp_tool_map:
+            mcp_info = user_mcp_tool_map[tool_name]
             logger.info(
-                f"Calling remote MCP tool '{tool_call.name}' on {mcp_info['sse_url']} ({mcp_info['server_name']})"
+                f"Calling remote MCP tool '{tool_name}' on {mcp_info['sse_url']} ({mcp_info['server_name']})"
             )
             try:
                 result = await mcp_client.call_tool(
                     mcp_info["sse_url"],
-                    tool_call.name,
+                    tool_name,
                     tool_call.arguments,
                     headers=mcp_info["headers"],
                 )
@@ -752,18 +768,18 @@ class AgentExecutorStep(BaseStep):
         if not _uid:
             logger.warning(
                 "Tool '%s' denied: missing real user_id in context trace_id=%s",
-                tool_call.name,
+                tool_name,
                 ctx.trace_id,
             )
             return {
                 "error": (
-                    f"Tool '{tool_call.name}' requires a real user_id context. "
+                    f"Tool '{tool_name}' requires a real user_id context. "
                     "Please retry with authenticated user context."
                 )
             }
 
         plugin_name = agent_service.plugin_manager.get_plugin_name_for_tool_from_registry(
-            tool_call.name
+            tool_name
         )
         if plugin_name:
             try:
@@ -779,20 +795,20 @@ class AgentExecutorStep(BaseStep):
             except Exception as exc:
                 logger.warning(
                     "Tool '%s' denied: failed to bind user context trace_id=%s err=%s",
-                    tool_call.name,
+                    tool_name,
                     ctx.trace_id,
                     exc,
                 )
                 return {
                     "error": (
-                        f"Tool '{tool_call.name}' could not bind user context: {exc}"
+                        f"Tool '{tool_name}' could not bind user context: {exc}"
                     )
                 }
 
             # 1. Try specific handler (handle_toolname)
-            handler = getattr(plugin, f"handle_{tool_call.name}", None)
+            handler = getattr(plugin, f"handle_{tool_name}", None)
             if not handler:
-                handler = getattr(plugin, tool_call.name, None)
+                handler = getattr(plugin, tool_name, None)
 
             # 2. Try generic handler (handle_tool_call)
             is_generic = False
@@ -811,21 +827,62 @@ class AgentExecutorStep(BaseStep):
 
                 try:
                     if is_generic:
-                        return await handler(tool_call.name, **kwargs)
+                        return await handler(tool_name, **kwargs)
                     else:
                         return await handler(**kwargs)
                 except TypeError as e:
                     logger.warning(
-                        f"Tool '{tool_call.name}' parameter error: {e}"
+                        f"Tool '{tool_name}' parameter error: {e}"
                     )
                     return {
-                        "error": f"Invalid parameters for tool '{tool_call.name}': {e}. Check required parameters."
+                        "error": f"Invalid parameters for tool '{tool_name}': {e}. Check required parameters."
                     }
                 except Exception as e:
                     logger.error(
-                        f"Tool '{tool_call.name}' execution failed: {e}",
+                        f"Tool '{tool_name}' execution failed: {e}",
                         exc_info=True,
                     )
-                    return {"error": f"Tool '{tool_call.name}' failed: {e}"}
+                    return {"error": f"Tool '{tool_name}' failed: {e}"}
 
-        return {"error": f"Tool '{tool_call.name}' not found."}
+        return {"error": f"Tool '{tool_name}' not found."}
+
+    def _should_block_direct_tool_call(
+        self,
+        ctx: "WorkflowContext",
+        *,
+        tool_name: str,
+        user_mcp_tool_map: dict[str, Any],
+    ) -> bool:
+        name = str(tool_name or "").strip()
+        if not name:
+            return False
+        if not self._is_code_mode_available(ctx):
+            return False
+        if name in _CODE_MODE_TOOL_NAMES:
+            return False
+
+        is_user_mcp_tool = name in (user_mcp_tool_map or {})
+        is_dynamic_skill_tool = name.startswith("skill__")
+        return is_user_mcp_tool or is_dynamic_skill_tool
+
+    def _is_code_mode_available(self, ctx: "WorkflowContext") -> bool:
+        request_body = ctx.get("template_render", "request_body") or {}
+        tools = request_body.get("tools")
+        if not isinstance(tools, list):
+            return False
+
+        tool_names: set[str] = set()
+        for item in tools:
+            if not isinstance(item, dict):
+                continue
+            function_obj = item.get("function")
+            if isinstance(function_obj, dict):
+                name = str(function_obj.get("name") or "").strip()
+                if name:
+                    tool_names.add(name)
+                    continue
+            name = str(item.get("name") or "").strip()
+            if name:
+                tool_names.add(name)
+
+        return _CODE_MODE_TOOL_NAMES.issubset(tool_names)

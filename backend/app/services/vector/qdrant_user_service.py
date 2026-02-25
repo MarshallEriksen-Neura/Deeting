@@ -64,6 +64,7 @@ class QdrantUserVectorService(VectorStoreClient):
         embedding_service: EmbeddingService | None = None,
         fail_open: bool = True,
         vector_name: str = QDRANT_DEFAULT_VECTOR_NAME,
+        enforce_embedding_model_scope: bool = True,
     ):
         self._client = client
         self._plugin_id = plugin_id
@@ -73,6 +74,7 @@ class QdrantUserVectorService(VectorStoreClient):
             self._embedding_service, "model", None
         )
         self._fail_open = fail_open
+        self._enforce_embedding_model_scope = bool(enforce_embedding_model_scope)
         self._vector_name = str(vector_name or "").strip() or QDRANT_DEFAULT_VECTOR_NAME
         configured_vector_size = getattr(settings, "EMBEDDING_VECTOR_SIZE", None)
         if isinstance(configured_vector_size, int) and configured_vector_size > 0:
@@ -147,7 +149,7 @@ class QdrantUserVectorService(VectorStoreClient):
         must = [{"key": "user_id", "match": {"value": self._user_id}}]
         if self._plugin_id:
             must.append({"key": "plugin_id", "match": {"value": self._plugin_id}})
-        if self._embedding_model:
+        if self._enforce_embedding_model_scope and self._embedding_model:
             must.append(
                 {"key": "embedding_model", "match": {"value": self._embedding_model}}
             )

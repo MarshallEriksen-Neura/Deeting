@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import shlex
 from typing import Any
 
 from opensandbox.services.command import RunCommandOpts
@@ -18,6 +19,14 @@ from app.services.skill_registry.runtimes.base import BaseRuntimeStrategy, Runti
 _MAX_RUNTIME_TOOL_CALLS = 8
 _INVOKE_RESULT_MARKER = "__DEETING_PLUGIN_INVOKE_RESULT__"
 _REQUIREMENTS_CHECK_COMMAND = "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+_PYTHON_ENTRYPOINT_COMMAND_TEMPLATE = (
+    "PYTHON_BIN=\"$(command -v python3 || command -v python || true)\"; "
+    "if [ -z \"$PYTHON_BIN\" ]; then "
+    "echo 'python interpreter not found (python3/python)' >&2; "
+    "exit 127; "
+    "fi; "
+    "\"$PYTHON_BIN\" {script_path}"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -123,7 +132,7 @@ class SandboxRuntimeStrategy(BaseRuntimeStrategy):
 
             execution = await _run_command(
                 sandbox,
-                f"python {script_path}",
+                _build_python_entrypoint_command(script_path),
                 working_directory=workspace_root,
                 return_execution=True,
             )
@@ -306,6 +315,12 @@ def _collect_logs(execution) -> tuple[list[str], list[str]]:
     stdout = [msg.text for msg in getattr(execution.logs, "stdout", [])]
     stderr = [msg.text for msg in getattr(execution.logs, "stderr", [])]
     return stdout, stderr
+
+
+def _build_python_entrypoint_command(script_path: str) -> str:
+    return _PYTHON_ENTRYPOINT_COMMAND_TEMPLATE.format(
+        script_path=shlex.quote(script_path)
+    )
 
 
 def _strip_runtime_log_lines(lines: list[str]) -> list[str]:
