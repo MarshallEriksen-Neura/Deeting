@@ -5,6 +5,11 @@ import { useCallback, useEffect, useMemo, useRef } from "react"
 import { buildApiWsUrl, getAuthToken, refreshAccessToken } from "@/lib/http/client"
 import { useNotificationActions } from "@/stores/notification-store"
 import { type NotificationItem, type NotificationType } from "@/components/notifications/notification-center"
+import {
+  markNotificationRead,
+  markAllNotificationsRead,
+  clearAllNotifications,
+} from "@/lib/api/notifications"
 
 type BackendNotificationLevel = "info" | "warn" | "error" | "critical"
 
@@ -97,6 +102,9 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
     setList,
     upsert,
     setUnreadCount,
+    markAsRead: storeMarkAsRead,
+    markAllAsRead: storeMarkAllAsRead,
+    clear: storeClear,
   } = useNotificationActions()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -116,18 +124,46 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
 
   const sendMarkRead = useCallback(
     (notificationId: string) => {
-      send({ type: "mark_read", notification_id: notificationId })
+      // 1. 立即更新本地状态
+      storeMarkAsRead(notificationId)
+      // 2. 通过 HTTP API 持久化到后端
+      markNotificationRead(notificationId)
+        .then((res) => {
+          setUnreadCount(res.unread_count)
+        })
+        .catch(() => {
+          // HTTP 失败时尝试 WebSocket 作为降级
+          send({ type: "mark_read", notification_id: notificationId })
+        })
     },
-    [send]
+    [send, storeMarkAsRead, setUnreadCount]
   )
 
   const sendMarkAllRead = useCallback(() => {
-    send({ type: "mark_all_read" })
-  }, [send])
+    // 1. 立即更新本地状态
+    storeMarkAllAsRead()
+    // 2. 通过 HTTP API 持久化到后端
+    markAllNotificationsRead()
+      .then((res) => {
+        setUnreadCount(res.unread_count)
+      })
+      .catch(() => {
+        send({ type: "mark_all_read" })
+      })
+  }, [send, storeMarkAllAsRead, setUnreadCount])
 
   const sendClear = useCallback(() => {
-    send({ type: "clear" })
-  }, [send])
+    // 1. 立即更新本地状态
+    storeClear()
+    // 2. 通过 HTTP API 持久化到后端
+    clearAllNotifications()
+      .then((res) => {
+        setUnreadCount(res.unread_count)
+      })
+      .catch(() => {
+        send({ type: "clear" })
+      })
+  }, [send, storeClear, setUnreadCount])
 
   const stopPing = useCallback(() => {
     if (pingTimerRef.current) {

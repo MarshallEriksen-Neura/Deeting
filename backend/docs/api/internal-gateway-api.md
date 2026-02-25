@@ -171,6 +171,22 @@ data: {"type":"blocks","blocks":[{"type":"text","content":"你好！我是谛听
 
 `blocks` 列表支持 `text` / `thought` / `tool_call` / `tool_result` / `ui` 类型，前端可直接渲染。  
 其中 `ui` block 可包含 `viewType`、`payload`、`title`，用于图表/表格等结构化展示。  
+当工具产出文件时，`ui` block 可使用 `viewType=generated.file`，常见 `payload` 字段如下：
+
+```json
+{
+  "name": "report.md",
+  "path": "/workspace/report.md",
+  "size": 2451,
+  "content_type": "text/markdown",
+  "download_url": "https://gateway.example.com/api/v1/media/assets/...",
+  "preview_kind": "markdown",
+  "preview_text": "# Report\\n...",
+  "truncated": false
+}
+```
+
+`preview_kind` 可能为 `text` / `markdown` / `html` / `none`。当为 `none` 时前端仅展示下载入口。  
 `tool_result` block 还可携带 `debug` 字段（如 `runtime_tool_calls`、`render_blocks`、`sdk_stub` 摘要），用于调试与回放展示。
 
 若 `stream=false` 且 `status_stream=true`，会在状态事件之后返回一次完整结果：

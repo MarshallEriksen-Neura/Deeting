@@ -351,6 +351,16 @@
       "pluginIframe": {
         "noUrl": "Plugin renderer URL is missing",
         "loadError": "Failed to load plugin view"
+      },
+      "generatedFile": {
+        "untitled": "Untitled file",
+        "unknown": "Unknown",
+        "preview": "Preview",
+        "download": "Download",
+        "mimeType": "Type",
+        "fileSize": "Size",
+        "noPreview": "Inline preview is not available for this file type. Download to inspect.",
+        "truncated": "Preview is truncated to the first 12000 characters."
       }
     }
   }

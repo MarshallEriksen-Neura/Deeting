@@ -29,7 +29,6 @@ import { cn } from "@/lib/utils"
 import {
   useNotificationSheet,
   useNotificationsList,
-  useNotificationActions,
   useUnreadCount,
 } from "@/stores/notification-store"
 import { normalizeNotificationTimestamp } from "@/components/notifications/notification-utils"
@@ -90,8 +89,7 @@ export function NotificationCenter({
   
   const { isOpen, setOpen } = useNotificationSheet()
   const notifications = useNotificationsList()
-  const { markAsRead, markAllAsRead, clear } = useNotificationActions()
-  
+
   const unreadCount = useUnreadCount()
 
   const groupedNotifications = useMemo(() => {
@@ -122,7 +120,6 @@ export function NotificationCenter({
 
   const handleNotificationClick = (notification: NotificationItem) => {
     if (!notification.read) {
-      markAsRead(notification.id)
       onMarkRead?.(notification.id)
     }
     notification.action?.onClick()
@@ -220,7 +217,6 @@ export function NotificationCenter({
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    markAllAsRead()
                     onMarkAllRead?.()
                   }}
                   className="h-8 w-8 text-gray-500 hover:text-gray-900"
@@ -233,7 +229,6 @@ export function NotificationCenter({
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  clear()
                   onClear?.()
                 }}
                 className="h-8 w-8 text-gray-500 hover:text-gray-900"

@@ -52,6 +52,7 @@ from app.api.v1.internal import (
 from app.api.v1.internal.sandbox_route import router as internal_sandbox_router
 from app.api.v1.media_routes import router as media_router
 from app.api.v1.monitoring_route import router as monitoring_router
+from app.api.v1.notification_route import router as notification_router
 from app.api.v1.notification_ws_route import router as notification_ws_router
 from app.api.v1.plugin_market_route import router as plugin_market_router
 from app.api.v1.providers_route import router as provider_router
@@ -115,6 +116,7 @@ __all__ = [
     "media_router",
     "memory_router",
     "monitoring_router",
+    "notification_router",
     "notification_ws_router",
     "plugin_market_router",
     "provider_router",

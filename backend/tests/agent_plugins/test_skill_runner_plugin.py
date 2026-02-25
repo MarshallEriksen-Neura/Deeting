@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from types import SimpleNamespace
 import uuid
 
@@ -153,3 +154,130 @@ async def test_skill_runner_fallbacks_to_original_view_type_when_ui_session_fail
     assert block["view_type"] == "table.simple"
     assert "renderer_url" not in block["metadata"]
     assert block["metadata"]["plugin_view_type"] == "table.simple"
+
+
+@pytest.mark.asyncio
+async def test_skill_runner_emits_generated_file_block_for_artifact(monkeypatch):
+    class _FakeExecutor:
+        def __init__(self, _repo):
+            pass
+
+        async def execute(self, **_kwargs):
+            return {
+                "exit_code": 0,
+                "stdout": ["done"],
+                "stderr": [],
+                "artifacts": [
+                    {
+                        "name": "report.md",
+                        "type": "file",
+                        "path": "/workspace/report.md",
+                        "size": 24,
+                        "content_base64": base64.b64encode(
+                            b"# Report\n\nThis is a test."
+                        ).decode("utf-8"),
+                    }
+                ],
+            }
+
+    async def _fake_store_asset_bytes(data: bytes, **_kwargs):
+        assert data.startswith(b"# Report")
+        return SimpleNamespace(
+            object_key="skill-artifacts/2026/02/25/report.md",
+            content_type="text/markdown",
+            size_bytes=len(data),
+        )
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.skill_runner.plugin.AsyncSessionLocal",
+        lambda: _AsyncSessionCtx(object()),
+    )
+    monkeypatch.setattr(
+        "app.services.skill_registry.skill_runtime_executor.SkillRuntimeExecutor",
+        _FakeExecutor,
+    )
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.skill_runner.plugin.store_asset_bytes",
+        _fake_store_asset_bytes,
+    )
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.skill_runner.plugin.build_signed_asset_url",
+        lambda object_key, **_kwargs: f"https://deeting.example.com/media/{object_key}",
+    )
+
+    user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    plugin = SkillRunnerPlugin()
+    plugin._context = SimpleNamespace(session_id="sess", user_id=user_id)
+    ctx = SimpleNamespace(
+        session_id="sess-ctx",
+        user_id=user_id,
+        get=lambda namespace, key, default=None: (
+            "https://deeting.example.com"
+            if namespace == "request" and key == "base_url"
+            else default
+        ),
+    )
+
+    result = await plugin.handle_tool_call("skill__com.example.writer", __context__=ctx)
+
+    assert result["status"] == "success"
+    assert result["artifacts"] == ["report.md"]
+    ui_blocks = result["ui"]["blocks"]
+    assert len(ui_blocks) == 1
+    block = ui_blocks[0]
+    assert block["view_type"] == "generated.file"
+    assert block["payload"]["name"] == "report.md"
+    assert block["payload"]["preview_kind"] == "markdown"
+    assert block["payload"]["download_url"].startswith("https://deeting.example.com/media/")
+    assert "content_base64" not in str(block["payload"])
+
+
+@pytest.mark.asyncio
+async def test_skill_runner_skips_invalid_artifact_base64(monkeypatch):
+    class _FakeExecutor:
+        def __init__(self, _repo):
+            pass
+
+        async def execute(self, **_kwargs):
+            return {
+                "exit_code": 0,
+                "stdout": ["done"],
+                "stderr": [],
+                "artifacts": [
+                    {
+                        "name": "broken.txt",
+                        "type": "file",
+                        "path": "/workspace/broken.txt",
+                        "size": 10,
+                        "content_base64": "not-valid-base64!!!",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.skill_runner.plugin.AsyncSessionLocal",
+        lambda: _AsyncSessionCtx(object()),
+    )
+    monkeypatch.setattr(
+        "app.services.skill_registry.skill_runtime_executor.SkillRuntimeExecutor",
+        _FakeExecutor,
+    )
+
+    user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    plugin = SkillRunnerPlugin()
+    plugin._context = SimpleNamespace(session_id="sess", user_id=user_id)
+    ctx = SimpleNamespace(
+        session_id="sess-ctx",
+        user_id=user_id,
+        get=lambda namespace, key, default=None: (
+            "https://deeting.example.com"
+            if namespace == "request" and key == "base_url"
+            else default
+        ),
+    )
+
+    result = await plugin.handle_tool_call("skill__com.example.writer", __context__=ctx)
+
+    assert result["status"] == "success"
+    assert result["artifacts"] == ["broken.txt"]
+    assert "ui" not in result

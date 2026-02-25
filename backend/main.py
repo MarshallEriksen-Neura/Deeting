@@ -182,6 +182,7 @@ def register_routes(app: FastAPI) -> None:
         media_router,
         memory_router,
         monitoring_router,
+        notification_router,
         notification_ws_router,
         plugin_market_router,
         provider_router,
@@ -230,6 +231,9 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(
         admin_skill_registry_router, prefix=api_prefix, tags=["Admin - Skills"]
+    )
+    app.include_router(
+        notification_router, prefix=api_prefix, tags=["Notifications"]
     )
     app.include_router(
         notification_ws_router, prefix=api_prefix, tags=["Notifications"]
