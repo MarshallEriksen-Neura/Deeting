@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from typing import Any
 
 RUNTIME_PROTOCOL_VERSION = "v1"
@@ -9,8 +10,33 @@ EXECUTION_FORMAT_VERSION = f"code_mode.{RUNTIME_PROTOCOL_VERSION}"
 
 RUNTIME_TOOL_CALL_MARKER = "__DEETING_TOOL_CALL_REQUEST__"
 RUNTIME_RENDER_BLOCK_MARKER = "__DEETING_RENDER_BLOCK__"
+RUNTIME_FILE_REF_MARKER = "__DEETING_FILE_REF__"
 
 _RUNTIME_SIGNAL_KEYS = ("stdout", "stderr", "result")
+
+
+def make_file_ref_id() -> str:
+    return f"fref_{secrets.token_urlsafe(16)}"
+
+
+def make_file_ref(
+    *,
+    name: str,
+    content_type: str = "application/octet-stream",
+    size: int = 0,
+    ref_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "__file_ref__": True,
+        "id": ref_id or make_file_ref_id(),
+        "name": name,
+        "content_type": content_type,
+        "size": size,
+    }
+
+
+def is_file_ref(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("__file_ref__") is True and bool(value.get("id"))
 
 
 def join_chunks(value: Any) -> str:

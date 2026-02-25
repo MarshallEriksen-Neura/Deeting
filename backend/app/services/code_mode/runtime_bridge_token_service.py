@@ -38,6 +38,7 @@ class RuntimeBridgeTokenService:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._memory_store: dict[str, dict[str, Any]] = {}
+        self._context_store: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _cache_key(token: str) -> str:
@@ -307,6 +308,51 @@ class RuntimeBridgeTokenService:
                 expired.append(token)
         for token in expired:
             self._memory_store.pop(token, None)
+            self._context_store.pop(token, None)
+
+    async def store_context(self, token: str, context: dict[str, Any]) -> None:
+        """Store runtime context data alongside a bridge token for lazy retrieval."""
+        raw_token = (token or "").strip()
+        if not raw_token or not isinstance(context, dict):
+            return
+        redis_client = getattr(cache, "_redis", None)
+        if redis_client:
+            try:
+                ctx_key = cache._make_key(f"{_CACHE_KEY_PREFIX}:ctx:{raw_token}")
+                await redis_client.set(
+                    ctx_key,
+                    json.dumps(context, ensure_ascii=False),
+                )
+                ttl = await redis_client.ttl(cache._make_key(self._cache_key(raw_token)))
+                if ttl and ttl > 0:
+                    await redis_client.expire(ctx_key, ttl)
+                return
+            except Exception:
+                pass
+        async with self._lock:
+            self._context_store[raw_token] = context
+
+    async def retrieve_context(self, token: str) -> dict[str, Any] | None:
+        """Retrieve stored runtime context for a bridge token."""
+        raw_token = (token or "").strip()
+        if not raw_token:
+            return None
+        redis_client = getattr(cache, "_redis", None)
+        if redis_client:
+            try:
+                ctx_key = cache._make_key(f"{_CACHE_KEY_PREFIX}:ctx:{raw_token}")
+                raw = await redis_client.get(ctx_key)
+                if raw:
+                    data = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+        async with self._lock:
+            ctx = self._context_store.get(raw_token)
+        if isinstance(ctx, dict):
+            return ctx
+        return None
 
     @staticmethod
     def _as_optional_str(value: Any) -> str | None:

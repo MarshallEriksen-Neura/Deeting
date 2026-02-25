@@ -6,10 +6,12 @@
 - 签发 Bridge Agent token（单活版本）
 - 透传 invoke/cancel
 - SSE 事件流透传
+- 文件引用（File Bindings）读写
 """
 
 from __future__ import annotations
 
+import base64
 import uuid
 from typing import Any
 
@@ -310,6 +312,138 @@ async def revoke_agent_token(
     if not success:
         raise HTTPException(status_code=404, detail="Agent token not found")
     return {"message": "Agent token revoked"}
+
+
+class CodeModeBridgeContextRequest(BaseModel):
+    execution_token: str | None = Field(
+        default=None, description="运行时执行令牌（可通过 Header 传入）"
+    )
+
+
+@router.post("/context")
+async def code_mode_get_context(
+    payload: CodeModeBridgeContextRequest,
+    request: Request,
+    x_code_mode_execution_token: str | None = Header(
+        default=None, alias="X-Code-Mode-Execution-Token"
+    ),
+) -> dict[str, Any]:
+    """Lazy context retrieval endpoint for sandbox runtime."""
+    _enforce_trusted_ip_if_needed(request)
+
+    from_header = str(x_code_mode_execution_token or "").strip()
+    token = from_header if from_header else str(payload.execution_token or "").strip()
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "CODE_MODE_BRIDGE_MISSING_TOKEN", "message": "missing execution token"},
+        )
+
+    consumed = await runtime_bridge_token_service.consume_call(token)
+    if not consumed.get("ok"):
+        error_code = str(consumed.get("error_code") or "CODE_MODE_BRIDGE_INVALID_TOKEN")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": error_code, "message": str(consumed.get("error") or "auth failed")},
+        )
+
+    context = await runtime_bridge_token_service.retrieve_context(token)
+    if context is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CODE_MODE_BRIDGE_CONTEXT_NOT_FOUND", "message": "no context stored for token"},
+        )
+
+    return {"ok": True, "context": context}
+
+
+# --- File Bindings ---
+# In-memory file store keyed by ref_id. TTL handled by bridge token expiry.
+_file_store: dict[str, dict[str, Any]] = {}
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+class CodeModeBridgeFileWriteRequest(BaseModel):
+    name: str = Field(..., description="File name")
+    content_base64: str = Field(..., description="Base64-encoded file content")
+    content_type: str = Field(default="application/octet-stream", description="MIME type")
+    execution_token: str | None = Field(default=None, description="运行时执行令牌")
+
+
+class CodeModeBridgeFileReadRequest(BaseModel):
+    ref_id: str = Field(..., description="File reference ID")
+    execution_token: str | None = Field(default=None, description="运行时执行令牌")
+
+
+@router.post("/file/write")
+async def code_mode_file_write(
+    payload: CodeModeBridgeFileWriteRequest,
+    request: Request,
+    x_code_mode_execution_token: str | None = Header(
+        default=None, alias="X-Code-Mode-Execution-Token"
+    ),
+) -> dict[str, Any]:
+    """Store file data and return a lightweight file reference."""
+    from app.services.code_mode.protocol import make_file_ref
+
+    _enforce_trusted_ip_if_needed(request)
+
+    from_header = str(x_code_mode_execution_token or "").strip()
+    token = from_header if from_header else str(payload.execution_token or "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail={"code": "CODE_MODE_BRIDGE_MISSING_TOKEN"})
+
+    consumed = await runtime_bridge_token_service.consume_call(token)
+    if not consumed.get("ok"):
+        raise HTTPException(status_code=401, detail={"code": consumed.get("error_code")})
+
+    try:
+        raw_data = base64.b64decode(payload.content_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_BASE64"})
+
+    if len(raw_data) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail={"code": "FILE_TOO_LARGE", "max_bytes": _MAX_FILE_SIZE})
+
+    ref = make_file_ref(
+        name=payload.name,
+        content_type=payload.content_type,
+        size=len(raw_data),
+    )
+    ref_id = ref["id"]
+    _file_store[ref_id] = {"data": raw_data, "meta": ref}
+    return {"ok": True, "file_ref": ref}
+
+
+@router.post("/file/read")
+async def code_mode_file_read(
+    payload: CodeModeBridgeFileReadRequest,
+    request: Request,
+    x_code_mode_execution_token: str | None = Header(
+        default=None, alias="X-Code-Mode-Execution-Token"
+    ),
+) -> dict[str, Any]:
+    """Retrieve file data by file reference ID."""
+    _enforce_trusted_ip_if_needed(request)
+
+    from_header = str(x_code_mode_execution_token or "").strip()
+    token = from_header if from_header else str(payload.execution_token or "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail={"code": "CODE_MODE_BRIDGE_MISSING_TOKEN"})
+
+    consumed = await runtime_bridge_token_service.consume_call(token)
+    if not consumed.get("ok"):
+        raise HTTPException(status_code=401, detail={"code": consumed.get("error_code")})
+
+    entry = _file_store.get(payload.ref_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail={"code": "FILE_NOT_FOUND"})
+
+    return {
+        "ok": True,
+        "file_ref": entry["meta"],
+        "content_base64": base64.b64encode(entry["data"]).decode("ascii"),
+    }
 
 
 @router.post("/call")

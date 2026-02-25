@@ -19,11 +19,51 @@ def build_runtime_preamble(
 
         class DeetingRuntime:
             def __init__(self, context=None, tool_results=None, max_tool_calls=__MAX_RUNTIME_TOOL_CALLS__):
-                self.version = "1.1.0"
-                self.context = context or {}
+                self.version = "1.2.0"
+                self._inline_context = context or {}
+                self._full_context = None
                 self._tool_results = list(tool_results or [])
                 self._call_index = 0
                 self._max_tool_calls = int(max_tool_calls or 0)
+
+            @property
+            def context(self):
+                if self._full_context is not None:
+                    return self._full_context
+                bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}
+                endpoint = str((bridge or {}).get("endpoint") or "").strip()
+                execution_token = str((bridge or {}).get("execution_token") or "").strip()
+                if endpoint and execution_token:
+                    fetched = self._fetch_context_from_bridge(endpoint, execution_token, bridge)
+                    if fetched is not None:
+                        fetched["bridge"] = bridge
+                        self._full_context = fetched
+                        return self._full_context
+                self._full_context = self._inline_context
+                return self._full_context
+
+            def _fetch_context_from_bridge(self, endpoint, execution_token, bridge):
+                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 15)
+                context_endpoint = endpoint.replace("/call", "/context")
+                try:
+                    import urllib.request
+                    req = urllib.request.Request(
+                        context_endpoint,
+                        data=json.dumps({"execution_token": execution_token}, ensure_ascii=False).encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/json",
+                            "__BRIDGE_EXECUTION_TOKEN_HEADER__": execution_token,
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                        body = response.read().decode("utf-8")
+                    parsed = json.loads(body) if body else {}
+                    if isinstance(parsed, dict) and parsed.get("ok") and isinstance(parsed.get("context"), dict):
+                        return parsed["context"]
+                except Exception:
+                    pass
+                return None
 
             def log(self, *args):
                 print("[deeting.log]", *args)
@@ -71,7 +111,7 @@ def build_runtime_preamble(
                 if idx >= self._max_tool_calls:
                     raise RuntimeError("runtime tool call limit exceeded")
 
-                bridge = self.context.get("bridge") if isinstance(self.context, dict) else {}
+                bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}
                 endpoint = str((bridge or {}).get("endpoint") or "").strip()
                 execution_token = str((bridge or {}).get("execution_token") or "").strip()
                 timeout_seconds = float((bridge or {}).get("timeout_seconds") or 15)
@@ -115,6 +155,79 @@ def build_runtime_preamble(
                 }
                 print("__RUNTIME_TOOL_CALL_MARKER__" + json.dumps(payload, ensure_ascii=False))
                 raise _DeetingHostToolCallSignal(f"pending runtime tool call #{idx}")
+
+            def _bridge_info(self):
+                bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}
+                endpoint = str((bridge or {}).get("endpoint") or "").strip()
+                execution_token = str((bridge or {}).get("execution_token") or "").strip()
+                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 15)
+                return endpoint, execution_token, timeout_seconds
+
+            def write_file(self, name, data, content_type="application/octet-stream"):
+                import base64
+                import urllib.request
+
+                endpoint, execution_token, timeout_seconds = self._bridge_info()
+                if not endpoint or not execution_token:
+                    raise RuntimeError("bridge not available for file operations")
+
+                file_endpoint = endpoint.replace("/call", "/file/write")
+                if isinstance(data, str):
+                    data = data.encode("utf-8")
+                encoded = base64.b64encode(data).decode("ascii")
+
+                req_payload = {
+                    "name": str(name or "file"),
+                    "content_base64": encoded,
+                    "content_type": content_type,
+                    "execution_token": execution_token,
+                }
+                req = urllib.request.Request(
+                    file_endpoint,
+                    data=json.dumps(req_payload, ensure_ascii=False).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "__BRIDGE_EXECUTION_TOKEN_HEADER__": execution_token,
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                    body = response.read().decode("utf-8")
+                parsed = json.loads(body) if body else {}
+                if isinstance(parsed, dict) and parsed.get("ok") and isinstance(parsed.get("file_ref"), dict):
+                    return parsed["file_ref"]
+                raise RuntimeError(str(parsed.get("error") or "file write failed"))
+
+            def read_file(self, file_ref):
+                import base64
+                import urllib.request
+
+                endpoint, execution_token, timeout_seconds = self._bridge_info()
+                if not endpoint or not execution_token:
+                    raise RuntimeError("bridge not available for file operations")
+
+                ref_id = file_ref.get("id") if isinstance(file_ref, dict) else str(file_ref)
+                file_endpoint = endpoint.replace("/call", "/file/read")
+
+                req_payload = {
+                    "ref_id": ref_id,
+                    "execution_token": execution_token,
+                }
+                req = urllib.request.Request(
+                    file_endpoint,
+                    data=json.dumps(req_payload, ensure_ascii=False).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "__BRIDGE_EXECUTION_TOKEN_HEADER__": execution_token,
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                    body = response.read().decode("utf-8")
+                parsed = json.loads(body) if body else {}
+                if isinstance(parsed, dict) and parsed.get("ok") and parsed.get("content_base64"):
+                    return base64.b64decode(parsed["content_base64"])
+                raise RuntimeError(str(parsed.get("error") or "file read failed"))
         """
     )
     return (

@@ -132,6 +132,9 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "description": (
                         "Execute a Python code plan in sandbox. Runtime exposes "
                         "`deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. "
+                        "SDK tool stubs are auto-injected based on your code: use "
+                        "`from deeting_sdk import <tool_name>` directly without calling "
+                        "search_sdk first (search_sdk is optional for discovery). "
                         "Important: call tools with keyword args "
                         "(`deeting.call_tool('tavily-search', query='...', max_results=5)`), "
                         "not positional dict args. Generate one coherent script, and always "
@@ -521,13 +524,34 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 "tool_count": int(runtime_sdk_bundle.get("tool_count") or 0),
                 "pyi_chars": len(str(runtime_sdk_bundle.get("pyi") or "")),
             }
+            if not has_search_snapshot:
+                auto_tool_names = self._extract_sdk_tool_names(runtime_sdk_bundle)
+                if auto_tool_names:
+                    self._store_search_sdk_snapshot(
+                        __context__,
+                        query="(auto-discovered from code)",
+                        tool_names=auto_tool_names,
+                    )
+                    has_search_snapshot = True
+                    allowed_runtime_tools = self._normalize_tool_name_set(auto_tool_names)
+                    runtime_meta["sdk_stub"]["auto_discovered"] = True
+                    runtime_meta["sdk_stub"]["available_tools"] = sorted(auto_tool_names)
         bridge_context = await self._issue_runtime_bridge_context(
             workflow_context=__context__,
             runtime_meta=runtime_meta,
             final_session_id=final_session_id,
         )
+        has_bridge = False
         if bridge_context:
             runtime_context["bridge"] = bridge_context
+            has_bridge = True
+            try:
+                await runtime_bridge_token_service.store_context(
+                    bridge_context.get("execution_token", ""),
+                    runtime_context,
+                )
+            except Exception:
+                has_bridge = False
 
         runtime_tool_results: list[Any] = []
         runtime_tool_trace: list[dict[str, Any]] = []
@@ -540,6 +564,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 runtime_context=runtime_context,
                 runtime_tool_results=runtime_tool_results,
                 runtime_sdk_bundle=runtime_sdk_bundle,
+                lazy_context=has_bridge,
+                is_reexecution=attempt > 0,
             )
 
             with execution_span.child(
@@ -580,6 +606,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                         runtime_meta,
                         started_monotonic=started_monotonic,
                         render_blocks=runtime_render_blocks,
+                        runtime_sdk_bundle=runtime_sdk_bundle,
                     ),
                     runtime_meta_override=runtime_meta,
                 )
@@ -921,6 +948,54 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             return "dict[str, Any]"
         return "Any"
 
+    def _build_output_typed_dict_name(self, tool_name: str) -> str:
+        """Generate a TypedDict class name from tool name, e.g. 'tavily_search' -> 'TavilySearchResult'."""
+        safe = self._safe_python_identifier(tool_name)
+        if not safe:
+            return ""
+        parts = safe.split("_")
+        pascal = "".join(part.capitalize() for part in parts if part)
+        return f"{pascal}Result"
+
+    def _build_output_typed_dict(
+        self,
+        tool: ToolDefinition,
+    ) -> tuple[str, str]:
+        """
+        Generate a TypedDict class definition from output_schema.
+        Returns (typed_dict_class_code, class_name) or ("", "") if not applicable.
+        """
+        schema = tool.output_schema
+        if not isinstance(schema, dict):
+            return "", ""
+        props = schema.get("properties")
+        if not isinstance(props, dict) or not props:
+            return "", ""
+        class_name = self._build_output_typed_dict_name(str(tool.name or ""))
+        if not class_name:
+            return "", ""
+        required_keys = set(schema.get("required") or [])
+        lines: list[str] = [f"class {class_name}(TypedDict, total=False):"]
+        desc = tool.output_description or ""
+        if desc:
+            lines.append(f'    """{desc}"""')
+        for key, prop_schema in props.items():
+            if not isinstance(key, str) or not key.isidentifier():
+                continue
+            prop_def = prop_schema if isinstance(prop_schema, dict) else {}
+            python_type = self._json_schema_to_python_type(prop_def)
+            comment_parts: list[str] = []
+            if key in required_keys:
+                comment_parts.append("required")
+            prop_desc = prop_def.get("description")
+            if prop_desc:
+                comment_parts.append(str(prop_desc))
+            comment = f"  # {'; '.join(comment_parts)}" if comment_parts else ""
+            lines.append(f"    {key}: {python_type}{comment}")
+        if len(lines) <= 1:
+            return "", ""
+        return "\n".join(lines), class_name
+
     def _build_python_stub(
         self,
         tool: ToolDefinition,
@@ -963,7 +1038,12 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         indent = "    "
         docstring = "\n".join([f"{indent}{line}" if line else "" for line in doc_lines])
 
-        return f"def {tool.name}({params}) -> dict:\n{docstring}\n{indent}..."
+        typed_dict_code, typed_dict_name = self._build_output_typed_dict(tool)
+        return_type = typed_dict_name if typed_dict_name else "dict[str, Any]"
+        func_stub = f"def {tool.name}({params}) -> {return_type}:\n{docstring}\n{indent}..."
+        if typed_dict_code:
+            return f"{typed_dict_code}\n\n{func_stub}"
+        return func_stub
 
     async def _build_runtime_sdk_bundle(
         self,
@@ -1042,7 +1122,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         tools: list[ToolDefinition],
     ) -> tuple[str, str]:
         pyi_lines = [
-            "from typing import Any",
+            "from typing import Any, TypedDict",
             "",
             "def call_tool(name: str, **kwargs: Any) -> dict[str, Any]: ...",
             "def available_tools() -> list[str]: ...",
@@ -1050,7 +1130,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         ]
         py_lines = [
             "from __future__ import annotations",
-            "from typing import Any",
+            "from typing import Any, TypedDict",
             "",
             "def _runtime():",
             "    import builtins",
@@ -1080,7 +1160,13 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 continue
 
             declared_tools.append(tool_name)
-            return_type = "dict[str, Any]"
+            typed_dict_code, typed_dict_name = self._build_output_typed_dict(tool)
+            return_type = typed_dict_name if typed_dict_name else "dict[str, Any]"
+            if typed_dict_code:
+                pyi_lines.append(typed_dict_code)
+                pyi_lines.append("")
+                py_lines.append(typed_dict_code)
+                py_lines.append("")
             pyi_lines.append(f"def {py_func_name}({signature}) -> {return_type}: ...")
 
             py_lines.append(f"def {py_func_name}({signature}) -> {return_type}:")
@@ -1980,57 +2066,251 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         runtime_context: dict[str, Any] | None = None,
         runtime_tool_results: list[Any] | None = None,
         runtime_sdk_bundle: dict[str, Any] | None = None,
+        lazy_context: bool = False,
+        is_reexecution: bool = False,
     ) -> str:
-        context_json = json.dumps(
-            runtime_context or {},
-            ensure_ascii=False,
-        )
-        results_json = json.dumps(
-            tool_plan_results or {},
-            ensure_ascii=False,
-        )
-        runtime_tool_results_json = json.dumps(
-            runtime_tool_results or [],
-            ensure_ascii=False,
-        )
+        full_context = runtime_context or {}
+        if lazy_context:
+            inline_context = {"bridge": full_context.get("bridge")} if full_context.get("bridge") else {}
+        else:
+            inline_context = full_context
+
+        context_json = json.dumps(inline_context, ensure_ascii=False)
+        results_json = json.dumps(tool_plan_results or {}, ensure_ascii=False)
+        runtime_tool_results_json = json.dumps(runtime_tool_results or [], ensure_ascii=False)
+
         sdk_module_name = str((runtime_sdk_bundle or {}).get("module_name") or "").strip()
-        sdk_pyi = str((runtime_sdk_bundle or {}).get("pyi") or "")
-        sdk_py = str((runtime_sdk_bundle or {}).get("py") or "")
         sdk_tool_count = int((runtime_sdk_bundle or {}).get("tool_count") or 0)
-        sdk_pyi_json = json.dumps(sdk_pyi, ensure_ascii=False)
-        sdk_py_json = json.dumps(sdk_py, ensure_ascii=False)
+
         runtime_block = (
             "import json\n"
             f"RUNTIME_CONTEXT = json.loads({context_json!r})\n"
             f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
             f"RUNTIME_TOOL_RESULTS = json.loads({runtime_tool_results_json!r})\n"
             "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)\n"
-            f"DEETING_SDK_MODULE = {sdk_module_name!r}\n"
-            f"DEETING_SDK_PYI = json.loads({sdk_pyi_json!r})\n"
-            f"DEETING_SDK_PY = json.loads({sdk_py_json!r})\n"
-            "if DEETING_SDK_MODULE and (DEETING_SDK_PYI or DEETING_SDK_PY):\n"
-            "    import builtins\n"
-            "    import os\n"
-            "    import sys\n"
-            "    builtins.__DEETING_RUNTIME__ = deeting\n"
-            "    _sdk_dir = '/tmp/deeting_runtime_sdk'\n"
-            "    os.makedirs(_sdk_dir, exist_ok=True)\n"
-            "    _sdk_py_path = os.path.join(_sdk_dir, f'{DEETING_SDK_MODULE}.py')\n"
-            "    _sdk_pyi_path = os.path.join(_sdk_dir, f'{DEETING_SDK_MODULE}.pyi')\n"
-            "    with open(_sdk_py_path, 'w', encoding='utf-8') as _fp:\n"
-            "        _fp.write(DEETING_SDK_PY)\n"
-            "    with open(_sdk_pyi_path, 'w', encoding='utf-8') as _fp:\n"
-            "        _fp.write(DEETING_SDK_PYI)\n"
-            "    if _sdk_dir not in sys.path:\n"
-            "        sys.path.insert(0, _sdk_dir)\n"
-            "if isinstance(RUNTIME_CONTEXT, dict) and DEETING_SDK_MODULE:\n"
-            "    _sdk_meta = RUNTIME_CONTEXT.get('sdk')\n"
-            "    if not isinstance(_sdk_meta, dict):\n"
-            "        _sdk_meta = {}\n"
-            f"    _sdk_meta.update({{'module': DEETING_SDK_MODULE, 'tool_count': {sdk_tool_count}}})\n"
-            "    RUNTIME_CONTEXT['sdk'] = _sdk_meta\n"
         )
+
+        if is_reexecution and sdk_module_name:
+            runtime_block += (
+                "import builtins\n"
+                "import os\n"
+                "import sys\n"
+                "builtins.__DEETING_RUNTIME__ = deeting\n"
+                "_sdk_dir = '/tmp/deeting_runtime_sdk'\n"
+                "if _sdk_dir not in sys.path:\n"
+                "    sys.path.insert(0, _sdk_dir)\n"
+            )
+        elif sdk_module_name:
+            sdk_pyi = str((runtime_sdk_bundle or {}).get("pyi") or "")
+            sdk_py = str((runtime_sdk_bundle or {}).get("py") or "")
+            sdk_pyi_json = json.dumps(sdk_pyi, ensure_ascii=False)
+            sdk_py_json = json.dumps(sdk_py, ensure_ascii=False)
+            runtime_block += (
+                f"DEETING_SDK_MODULE = {sdk_module_name!r}\n"
+                f"DEETING_SDK_PYI = json.loads({sdk_pyi_json!r})\n"
+                f"DEETING_SDK_PY = json.loads({sdk_py_json!r})\n"
+                "if DEETING_SDK_MODULE and (DEETING_SDK_PYI or DEETING_SDK_PY):\n"
+                "    import builtins\n"
+                "    import os\n"
+                "    import sys\n"
+                "    builtins.__DEETING_RUNTIME__ = deeting\n"
+                "    _sdk_dir = '/tmp/deeting_runtime_sdk'\n"
+                "    os.makedirs(_sdk_dir, exist_ok=True)\n"
+                "    _sdk_py_path = os.path.join(_sdk_dir, f'{DEETING_SDK_MODULE}.py')\n"
+                "    _sdk_pyi_path = os.path.join(_sdk_dir, f'{DEETING_SDK_MODULE}.pyi')\n"
+                "    with open(_sdk_py_path, 'w', encoding='utf-8') as _fp:\n"
+                "        _fp.write(DEETING_SDK_PY)\n"
+                "    with open(_sdk_pyi_path, 'w', encoding='utf-8') as _fp:\n"
+                "        _fp.write(DEETING_SDK_PYI)\n"
+                "    if _sdk_dir not in sys.path:\n"
+                "        sys.path.insert(0, _sdk_dir)\n"
+            )
+
+        if sdk_module_name:
+            runtime_block += (
+                "if isinstance(RUNTIME_CONTEXT, dict):\n"
+                "    _sdk_meta = RUNTIME_CONTEXT.get('sdk')\n"
+                "    if not isinstance(_sdk_meta, dict):\n"
+                "        _sdk_meta = {}\n"
+                f"    _sdk_meta.update({{'module': {sdk_module_name!r}, 'tool_count': {sdk_tool_count}}})\n"
+                "    RUNTIME_CONTEXT['sdk'] = _sdk_meta\n"
+            )
+
         return f"{_RUNTIME_PREAMBLE}\n{runtime_block}\n{user_code}\n"
+
+    _ERROR_CLASSIFIERS: list[tuple[str, str, str, str]] = [
+        # (error_type_prefix, regex_pattern, category, severity)
+        ("SyntaxError", r"SyntaxError:\s*(.+?)(?:\s*\(.*line\s+(\d+))?", "syntax", "fixable"),
+        ("IndentationError", r"IndentationError:\s*(.+)", "syntax", "fixable"),
+        ("NameError", r"NameError:\s*name\s+'([^']+)'\s+is\s+not\s+defined", "reference", "fixable"),
+        ("KeyError", r"KeyError:\s*['\"]?([^'\"]+)['\"]?", "key_access", "fixable"),
+        ("ImportError", r"(?:ImportError|ModuleNotFoundError):\s*(.+)", "import", "fixable"),
+        ("TypeError", r"TypeError:\s*(.+)", "type", "fixable"),
+        ("AttributeError", r"AttributeError:\s*(.+)", "attribute", "fixable"),
+        ("IndexError", r"IndexError:\s*(.+)", "index", "fixable"),
+        ("ValueError", r"ValueError:\s*(.+)", "value", "fixable"),
+        ("ZeroDivisionError", r"ZeroDivisionError:\s*(.+)", "arithmetic", "fixable"),
+        ("RuntimeError", r"RuntimeError:\s*(.+)", "runtime", "needs_review"),
+        ("TimeoutError", r"TimeoutError:\s*(.+)", "timeout", "needs_redesign"),
+        ("PermissionError", r"PermissionError:\s*(.+)", "permission", "needs_review"),
+        ("FileNotFoundError", r"FileNotFoundError:\s*(.+)", "file_access", "fixable"),
+    ]
+
+    def _classify_execution_error(
+        self,
+        stderr: str,
+        stdout: str,
+        exit_code: int,
+    ) -> dict[str, Any] | None:
+        """Parse stderr to extract structured error classification."""
+        text = stderr or stdout or ""
+        if not text.strip() and exit_code == 0:
+            return None
+
+        lines = text.strip().splitlines()
+        traceback_lines: list[str] = []
+        error_line: str = ""
+        error_lineno: int | None = None
+
+        in_traceback = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("Traceback (most recent call last)"):
+                in_traceback = True
+                traceback_lines = [stripped]
+                continue
+            if in_traceback:
+                traceback_lines.append(stripped)
+                lineno_match = re.search(r'line\s+(\d+)', stripped)
+                if lineno_match:
+                    error_lineno = int(lineno_match.group(1))
+
+        if traceback_lines:
+            error_line = traceback_lines[-1] if traceback_lines else ""
+        elif lines:
+            for raw_line in reversed(lines):
+                stripped = raw_line.strip()
+                if stripped and any(
+                    stripped.startswith(prefix)
+                    for prefix, *_ in self._ERROR_CLASSIFIERS
+                ):
+                    error_line = stripped
+                    break
+            if not error_line:
+                error_line = lines[-1].strip()
+
+        for type_prefix, pattern, category, severity in self._ERROR_CLASSIFIERS:
+            m = re.search(pattern, text)
+            if m:
+                return {
+                    "error_type": type_prefix,
+                    "error_message": m.group(0),
+                    "detail": m.group(1) if m.lastindex and m.lastindex >= 1 else "",
+                    "line_number": error_lineno,
+                    "category": category,
+                    "severity": severity,
+                    "traceback_tail": "\n".join(traceback_lines[-6:]) if traceback_lines else None,
+                }
+
+        if exit_code != 0:
+            return {
+                "error_type": "UnknownError",
+                "error_message": error_line or f"process exited with code {exit_code}",
+                "detail": "",
+                "line_number": error_lineno,
+                "category": "unknown",
+                "severity": "needs_review",
+                "traceback_tail": "\n".join(traceback_lines[-6:]) if traceback_lines else None,
+            }
+        return None
+
+    def _generate_repair_hints(
+        self,
+        classification: dict[str, Any],
+        *,
+        runtime_sdk_bundle: dict[str, Any] | None = None,
+    ) -> list[str]:
+        """Generate context-aware repair suggestions based on error classification."""
+        hints: list[str] = []
+        category = classification.get("category", "")
+        detail = str(classification.get("detail") or "")
+        error_type = str(classification.get("error_type") or "")
+
+        if category == "syntax":
+            hints.append("Check for unmatched brackets, missing colons, or incorrect indentation.")
+            if "unexpected indent" in detail.lower() or "IndentationError" in error_type:
+                hints.append("Ensure consistent indentation (use 4 spaces, not tabs).")
+            if "EOL" in detail or "EOF" in detail:
+                hints.append("There may be an unclosed string literal or parenthesis.")
+
+        elif category == "reference":
+            name = detail
+            hints.append(f"The name '{name}' is not defined in the current scope.")
+            sdk_tools = self._extract_sdk_tool_names(runtime_sdk_bundle)
+            if sdk_tools:
+                close = [t for t in sdk_tools if name.lower() in t.lower() or t.lower() in name.lower()]
+                if close:
+                    hints.append(f"Did you mean one of: {', '.join(close)}?")
+                module_name = str((runtime_sdk_bundle or {}).get("module_name") or "deeting_sdk")
+                hints.append(f"Import SDK functions: from {module_name} import {name}")
+            hints.append("Or use deeting.call_tool(tool_name, **kwargs) for dynamic calls.")
+
+        elif category == "key_access":
+            hints.append(f"Key '{detail}' was not found in the dictionary.")
+            hints.append("Use .get(key, default) for safe access instead of direct indexing.")
+            hints.append("Print the dict keys first to verify available fields: print(result.keys())")
+
+        elif category == "import":
+            hints.append(f"The module is not available in the sandbox environment.")
+            hints.append("Only Python standard library modules are available.")
+            hints.append("For external data, use deeting.call_tool() to call server-side tools.")
+
+        elif category == "type":
+            hints.append("Check the types of arguments being passed to the function.")
+            if "argument" in detail.lower():
+                hints.append("Verify the function signature and expected parameter types.")
+            if "subscriptable" in detail.lower() or "iterable" in detail.lower():
+                hints.append("The value may be None or a different type than expected. Add a type check.")
+
+        elif category == "attribute":
+            hints.append("The object does not have the expected attribute.")
+            hints.append("Check the object type and its available methods/properties.")
+            if "NoneType" in detail:
+                hints.append("The variable is None. Add a None check before accessing attributes.")
+
+        elif category == "index":
+            hints.append("List index is out of range. Check the list length before accessing by index.")
+
+        elif category == "file_access":
+            hints.append("File not found. Check the file path and ensure the file exists.")
+            hints.append("Use os.path.exists() to verify paths before access.")
+
+        elif category == "timeout":
+            hints.append("Execution timed out. Reduce data size or optimize the algorithm.")
+            hints.append("Break long operations into smaller batches.")
+
+        elif category == "permission":
+            hints.append("Permission denied. The sandbox restricts certain system operations.")
+
+        if not hints:
+            hints.append("Review the error traceback above for the root cause.")
+            hints.append("Simplify the code to isolate the issue.")
+
+        return hints
+
+    def _extract_sdk_tool_names(self, runtime_sdk_bundle: dict[str, Any] | None) -> list[str]:
+        """Extract available tool names from SDK bundle for error hints."""
+        if not runtime_sdk_bundle:
+            return []
+        py_content = str(runtime_sdk_bundle.get("py") or "")
+        names: list[str] = []
+        for line in py_content.splitlines():
+            m = re.match(r"def\s+(\w+)\s*\(", line)
+            if m:
+                fn = m.group(1)
+                if fn not in {"_runtime", "call_tool", "available_tools"}:
+                    names.append(fn)
+        return names
 
     def _format_execution_result(
         self,
@@ -2040,10 +2320,11 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         *,
         started_monotonic: float | None = None,
         render_blocks: list[dict[str, Any]] | None = None,
+        runtime_sdk_bundle: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
         if "error" in result:
-            return {
+            err_response: dict[str, Any] = {
                 "status": "failed",
                 "format_version": _EXECUTION_FORMAT_VERSION,
                 "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
@@ -2053,6 +2334,14 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 "error_code": result.get("error_code"),
                 "error_detail": result.get("error_detail"),
             }
+            err_text = str(result.get("error") or "") + "\n" + str(result.get("error_detail") or "")
+            classification = self._classify_execution_error(err_text, "", 1)
+            if classification:
+                classification["repair_hints"] = self._generate_repair_hints(
+                    classification, runtime_sdk_bundle=runtime_sdk_bundle,
+                )
+                err_response["error_analysis"] = classification
+            return err_response
 
         stdout = self._strip_runtime_signal_lines(self._join_chunks(result.get("stdout")))
         stderr = self._strip_runtime_signal_lines(self._join_chunks(result.get("stderr")))
@@ -2127,6 +2416,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         }
         if render_blocks:
             response["ui"] = {"blocks": render_blocks}
+        if exit_code != 0:
+            classification = self._classify_execution_error(
+                stderr_trimmed, stdout_trimmed, exit_code,
+            )
+            if classification:
+                classification["repair_hints"] = self._generate_repair_hints(
+                    classification, runtime_sdk_bundle=runtime_sdk_bundle,
+                )
+                response["error_analysis"] = classification
         return response
 
     def _build_runtime_meta(
