@@ -221,8 +221,21 @@ async def _run_summarize(session_id: str) -> str:
             logger.info(f"conversation_summarize_skip_empty session={session_id}")
             return "no_messages"
 
-        summarizer = SummarizerService()
-        summary_text = await summarizer.summarize(messages)
+        # 从 DB 获取 user_id，用于查找用户秘书模型
+        user_id: str | None = None
+        async with AsyncSessionLocal() as db:
+            session_uuid = uuid.UUID(session_id)
+            stmt = select(ConversationSession.user_id).where(
+                ConversationSession.id == session_uuid
+            )
+            result = await db.execute(stmt)
+            uid = result.scalar_one_or_none()
+            if uid:
+                user_id = str(uid)
+
+            summarizer = SummarizerService(db, user_id)
+            summary_text, summarizer_model = await summarizer.summarize(messages)
+
         covered_from = messages[0].get("turn_index", 1)
         covered_to = messages[-1].get("turn_index", covered_from)
         token_estimate = sum(int(m.get("token_estimate", 0)) for m in messages)
@@ -246,6 +259,7 @@ async def _run_summarize(session_id: str) -> str:
             summary_payload=summary_payload,
             messages=messages,
             meta=meta,
+            summarizer_model=summarizer_model,
         )
 
         # 更新 meta 状态：重置 total_tokens 为当前窗口估算，解除 summarizing
@@ -279,6 +293,7 @@ async def _persist_summary(
     summary_payload: dict[str, Any],
     messages: list[dict[str, Any]],
     meta: dict[str, Any],
+    summarizer_model: str | None = None,
 ) -> None:
     session_uuid = uuid.UUID(session_id)
     async with AsyncSessionLocal() as db:
@@ -349,9 +364,6 @@ async def _persist_summary(
                 )
                 await db.execute(stmt)
 
-            preset_val = settings.CONVERSATION_SUMMARIZER_PRESET_ID
-            preset_uuid = uuid.UUID(preset_val) if preset_val else None
-
             previous_summary_id = None
             if summary_payload.get("version", 0) > 1:
                 prev_stmt = select(ConversationSummary.id).where(
@@ -370,8 +382,8 @@ async def _persist_summary(
                 start_message_id=None,
                 end_message_id=None,
                 token_estimate=summary_payload["token_estimate"],
-                summarizer_model=None,
-                summarizer_preset_id=preset_uuid,
+                summarizer_model=summarizer_model,
+                summarizer_preset_id=None,
             )
             db.add(summary)
             await db.commit()
