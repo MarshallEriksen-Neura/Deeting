@@ -478,6 +478,35 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     );
                   }
 
+                  // --- E. 实时控制台日志 (Streaming Stdout) ---
+                  if (part.type === 'console_log' || part.type === 'execution_section') {
+                    // 我们采用聚合逻辑：如果是连续的日志/章节，只在第一处渲染整个控制台，后续的跳过
+                    const isFirstInSequence = index === 0 || 
+                      (parts[index-1].type !== 'console_log' && parts[index-1].type !== 'execution_section');
+                    
+                    if (!isFirstInSequence) return null;
+
+                    // 收集后续所有连续的控制台相关块
+                    const consoleSequence: MessageBlock[] = [];
+                    for (let i = index; i < parts.length; i++) {
+                      if (parts[i].type === 'console_log' || parts[i].type === 'execution_section') {
+                        consoleSequence.push(parts[i]);
+                      } else {
+                        break;
+                      }
+                    }
+
+                    return (
+                      <motion.div
+                        key={`console-group-${index}`}
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                      >
+                        <ExecutionConsole blocks={consoleSequence} isActive={isActive} />
+                      </motion.div>
+                    );
+                  }
+
                   if (part.type === 'error') {
                     return (
                       <motion.div
@@ -901,3 +930,84 @@ const ErrorMessageBlock = memo<{ message?: string }>(function ErrorMessageBlock(
     </div>
   );
 });
+
+// === 组件：实时执行控制台 (Terminal Style) ===
+const ExecutionConsole = memo<{ blocks: MessageBlock[]; isActive: boolean }>(
+  function ExecutionConsole({ blocks, isActive }) {
+    const [isExpanded, setIsOpen] = useState(true);
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    // 自动滚动到底部
+    React.useEffect(() => {
+      if (isActive && scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, [blocks.length, isActive]);
+
+    return (
+      <div className="w-full max-w-2xl my-2 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-50 dark:bg-zinc-950 text-left">
+        {/* Header */}
+        <div 
+          className="flex items-center justify-between px-3 py-2 bg-zinc-100 dark:bg-zinc-900 cursor-pointer border-b border-zinc-200 dark:border-zinc-800"
+          onClick={() => setIsOpen(!isExpanded)}
+        >
+          <div className="flex items-center gap-2">
+            <Terminal size={14} className="text-zinc-500" />
+            <span className="text-xs font-mono font-bold text-zinc-600 dark:text-zinc-400">
+              SANDBOX EXECUTION
+            </span>
+            {isActive && (
+              <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            )}
+          </div>
+          <ChevronDown 
+            size={14} 
+            className={cn("text-zinc-400 transition-transform duration-200", !isExpanded && "-rotate-90")} 
+          />
+        </div>
+
+        {/* Console Body */}
+        <Collapsible open={isExpanded}>
+          <CollapsibleContent>
+            <div 
+              ref={scrollRef}
+              className="p-3 max-h-[300px] overflow-y-auto font-mono text-[11px] leading-relaxed"
+            >
+              {blocks.map((block, i) => {
+                if (block.type === 'execution_section') {
+                  const b = block as ExecutionSectionBlock;
+                  return (
+                    <div key={i} className="mt-3 mb-1 text-zinc-900 dark:text-zinc-100 font-bold border-b border-zinc-200 dark:border-zinc-800 pb-0.5">
+                      {`> ${b.title}`}
+                    </div>
+                  );
+                }
+                if (block.type === 'console_log') {
+                  const b = block as ConsoleLogBlock;
+                  const isError = b.stream === 'stderr';
+                  return (
+                    <div key={i} className={cn(
+                      "whitespace-pre-wrap break-all",
+                      isError ? "text-red-500" : "text-zinc-600 dark:text-zinc-400"
+                    )}>
+                      <span className="opacity-30 mr-2 select-none">|</span>
+                      {b.content}
+                    </div>
+                  );
+                }
+                return null;
+              })}
+              
+              {isActive && (
+                <div className="flex items-center gap-1 mt-1 opacity-50 italic">
+                  <Loader2 size={10} className="animate-spin" />
+                  <span>Executing...</span>
+                </div>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+    );
+  }
+);

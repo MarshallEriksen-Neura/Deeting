@@ -243,10 +243,16 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 "error_code": "CODE_MODE_SEARCH_FAILED",
             }
 
-        items: list[dict[str, Any]] = []
+        items: list[dict[str, Any]] | None = []
         for tool in tools:
             if tool.name in {"search_sdk", "execute_code_plan"}:
                 continue
+            
+            # Defensive backfilling: if some fields are missing (stale index), 
+            # try to fetch from local plugin registry.
+            if not tool.output_description or not tool.output_schema:
+                self._backfill_tool_metadata(tool)
+
             parameter_docs = self._build_parameter_docs(tool)
             item = {
                 "name": tool.name,
@@ -557,7 +563,12 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         runtime_tool_trace: list[dict[str, Any]] = []
         runtime_render_blocks: list[dict[str, Any]] = []
 
-        for attempt in range(_MAX_RUNTIME_TOOL_CALLS + 1):
+        # If bridge is active, we only need a single sandbox execution because
+        # tool calls are handled synchronously via the bridge inside the sandbox.
+        max_attempts = 1 if has_bridge else (_MAX_RUNTIME_TOOL_CALLS + 1)
+
+        for attempt in range(max_attempts):
+            is_reexecution = attempt > 0
             wrapped_code = self._build_wrapped_code(
                 source,
                 tool_plan_results=tool_plan_results,
@@ -565,7 +576,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 runtime_tool_results=runtime_tool_results,
                 runtime_sdk_bundle=runtime_sdk_bundle,
                 lazy_context=has_bridge,
-                is_reexecution=attempt > 0,
+                is_reexecution=is_reexecution,
             )
 
             with execution_span.child(
@@ -573,22 +584,67 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 attributes={
                     "code_mode.sandbox_attempt": attempt + 1,
                     "code_mode.execution_timeout": timeout_value,
+                    "code_mode.execution_mode": "bridge" if has_bridge else "marker",
                 },
             ) as sandbox_span:
-                result = await sandbox_manager.run_code(
+                # 切换到流式执行模式，实现实时日志展示
+                result = {
+                    "stdout": [],
+                    "stderr": [],
+                    "result": [],
+                    "exit_code": 0
+                }
+                
+                async for chunk in sandbox_manager.run_code_stream(
                     final_session_id,
                     wrapped_code,
                     language=normalized_language,
                     execution_timeout=timeout_value,
-                )
+                ):
+                    if "error" in chunk:
+                        result["error"] = chunk["error"]
+                        result["error_code"] = chunk.get("error_code")
+                        break
+                    
+                    if chunk["type"] == "stdout":
+                        text = chunk["content"]
+                        result["stdout"].append(text)
+                        # 实时推送 stdout 到前端控制台
+                        if __context__ and hasattr(__context__, "emit_blocks"):
+                            __context__.emit_blocks([{
+                                "type": "console_log",
+                                "stream": "stdout",
+                                "content": text
+                            }])
+                    
+                    elif chunk["type"] == "stderr":
+                        text = chunk["content"]
+                        result["stderr"].append(text)
+                        # 实时推送 stderr 到前端控制台
+                        if __context__ and hasattr(__context__, "emit_blocks"):
+                            __context__.emit_blocks([{
+                                "type": "console_log",
+                                "stream": "stderr",
+                                "content": text
+                            }])
+                    
+                    elif chunk["type"] == "exit":
+                        result["exit_code"] = chunk.get("exit_code", 0)
+                        result["result"] = chunk.get("result", [])
+
                 sandbox_span.set_attribute(
                     "code_mode.sandbox_exit_code",
                     int(result.get("exit_code", 0) or 0),
                 )
+            
+            # Collect render blocks from this execution
             runtime_render_blocks.extend(self._extract_runtime_render_blocks(result))
 
-            runtime_tool_request = self._extract_runtime_tool_request(result)
+            # In bridge mode, we don't extract tool requests from stdout as they already happened via HTTP.
+            runtime_tool_request = self._extract_runtime_tool_request(result) if not has_bridge else None
+            
             if not runtime_tool_request:
+                # Execution finished (either naturally or it was a bridge run)
                 if runtime_tool_trace:
                     runtime_meta["runtime_tool_calls"] = {
                         "count": len(runtime_tool_trace),
@@ -611,6 +667,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     runtime_meta_override=runtime_meta,
                 )
 
+            # --- Marker Mode Restart Loop (only reachable if has_bridge=False) ---
             if len(runtime_tool_results) >= _MAX_RUNTIME_TOOL_CALLS:
                 runtime_meta["runtime_tool_calls"] = {
                     "count": len(runtime_tool_trace),
@@ -659,17 +716,23 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     },
                     runtime_meta_override=runtime_meta,
                 )
-            if has_search_snapshot and tool_name not in allowed_runtime_tools:
+            # Check search snapshot but allow core system tools to always be reachable
+            _core_whitelist = {"fetch_web_content", "search_knowledge", "add_knowledge_chunk", "crawl_website"}
+            is_allowed = (not has_search_snapshot) or (tool_name in allowed_runtime_tools) or (tool_name in _core_whitelist)
+
+            if not is_allowed:
                 self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+                error_msg = f"runtime tool call '{tool_name}' is not in latest search_sdk results"
+                if tool_name == "tavily-search":
+                    error_msg += ". Please use 'fetch_web_content' for web scraping instead."
+                
                 return await _finalize_response(
                     {
                     "status": "failed",
                     "format_version": _EXECUTION_FORMAT_VERSION,
                     "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
                     "runtime": runtime_meta,
-                    "error": (
-                        f"runtime tool call '{tool_name}' is not in latest search_sdk results"
-                    ),
+                    "error": error_msg,
                     "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
                     "request": runtime_tool_request,
                     },
@@ -877,6 +940,20 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         return f"user:{self.context.user_id}"
 
+    def _backfill_tool_metadata(self, tool: ToolDefinition) -> None:
+        """从实时插件注册表中回填元数据，防止向量索引过时。"""
+        from app.services.agent.agent_service import agent_service
+        
+        # 遍历已激活或注册的工具列表
+        source_tool = next((t for t in agent_service.tools if t.name == tool.name), None)
+        if source_tool:
+            if not tool.output_description and source_tool.output_description:
+                tool.output_description = source_tool.output_description
+            if not tool.output_schema and source_tool.output_schema:
+                tool.output_schema = source_tool.output_schema
+            if not tool.description and source_tool.description:
+                tool.description = source_tool.description
+
     def _build_signature(
         self,
         tool: ToolDefinition,
@@ -894,7 +971,10 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             if (not is_required) and ("default" in param):
                 fragment += f"={self._format_literal(param.get('default'))}"
             parts.append(fragment)
-        return f"{tool.name}({', '.join(parts)})"
+
+        _, typed_dict_name = self._build_output_typed_dict(tool)
+        return_type = typed_dict_name or "dict[str, Any]"
+        return f"{tool.name}({', '.join(parts)}) -> {return_type}"
 
     def _build_parameter_docs(self, tool: ToolDefinition) -> list[dict[str, Any]]:
         schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
@@ -1000,6 +1080,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         self,
         tool: ToolDefinition,
         parameter_docs: list[dict[str, Any]],
+        return_type_override: str | None = None,
+        include_typed_dict: bool = True,
     ) -> str:
         args: list[str] = []
         for param in parameter_docs:
@@ -1020,6 +1102,9 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         params = ", ".join(args)
         
+        typed_dict_code, typed_dict_name = self._build_output_typed_dict(tool)
+        return_type = return_type_override or typed_dict_name or "dict[str, Any]"
+        
         # Build enhanced Docstring for output awareness
         doc_lines = [f'"""{tool.description or ""}']
         output_info = tool.output_description or ""
@@ -1032,16 +1117,14 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if output_info:
             doc_lines.append("")
             doc_lines.append(f"Returns:")
-            doc_lines.append(f"    dict: {output_info}")
+            doc_lines.append(f"    {return_type}: {output_info}")
         
         doc_lines.append('"""')
         indent = "    "
         docstring = "\n".join([f"{indent}{line}" if line else "" for line in doc_lines])
 
-        typed_dict_code, typed_dict_name = self._build_output_typed_dict(tool)
-        return_type = typed_dict_name if typed_dict_name else "dict[str, Any]"
         func_stub = f"def {tool.name}({params}) -> {return_type}:\n{docstring}\n{indent}..."
-        if typed_dict_code:
+        if include_typed_dict and typed_dict_code:
             return f"{typed_dict_code}\n\n{func_stub}"
         return func_stub
 
@@ -1142,7 +1225,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "def call_tool(name: str, **kwargs: Any) -> dict[str, Any]:",
             "    result = _runtime().call_tool(name, **kwargs)",
             "    if isinstance(result, dict):",
-            "        return result",
+                "        return result",
             "    return {'result': result}",
             "",
         ]
@@ -1153,27 +1236,26 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             if not tool_name:
                 continue
             parameter_docs = self._build_parameter_docs(tool)
-            signature, call_kwargs = self._build_runtime_wrapper_signature(parameter_docs)
             py_func_name = self._safe_python_identifier(tool_name)
-
             if not py_func_name:
                 continue
 
             declared_tools.append(tool_name)
             typed_dict_code, typed_dict_name = self._build_output_typed_dict(tool)
-            return_type = typed_dict_name if typed_dict_name else "dict[str, Any]"
+            return_type = typed_dict_name or "dict[str, Any]"
+
             if typed_dict_code:
                 pyi_lines.append(typed_dict_code)
                 pyi_lines.append("")
                 py_lines.append(typed_dict_code)
                 py_lines.append("")
-            pyi_lines.append(f"def {py_func_name}({signature}) -> {return_type}: ...")
 
-            py_lines.append(f"def {py_func_name}({signature}) -> {return_type}:")
-            if call_kwargs:
-                py_lines.append(f"    return call_tool({tool_name!r}, {call_kwargs})")
-            else:
-                py_lines.append(f"    return call_tool({tool_name!r})")
+            # Render PYI stub
+            pyi_lines.append(self._build_python_stub(tool, parameter_docs, include_typed_dict=False))
+            pyi_lines.append("")
+
+            # Render PY implementation
+            py_lines.append(self._render_tool_implementation(tool, parameter_docs, return_type))
             py_lines.append("")
 
         tool_list_literal = json.dumps(declared_tools, ensure_ascii=False)
@@ -1189,18 +1271,16 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         )
         return "\n".join(pyi_lines) + "\n", "\n".join(py_lines) + "\n"
 
-    def _build_runtime_wrapper_signature(
+    def _render_tool_implementation(
         self,
+        tool: ToolDefinition,
         parameter_docs: list[dict[str, Any]],
-    ) -> tuple[str, str]:
+        return_type: str,
+    ) -> str:
         args: list[str] = []
         call_pairs: list[str] = []
-
         for param in parameter_docs:
             name = str(param.get("name") or "").strip()
-            if not self._safe_python_identifier(name):
-                return "**kwargs: Any", "**kwargs"
-
             python_type = str(param.get("python_type") or "Any")
             is_required = bool(param.get("required"))
             if is_required:
@@ -1212,7 +1292,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 args.append(f"{name}: {python_type} | None = None")
             call_pairs.append(f"{name}={name}")
 
-        return ", ".join(args), ", ".join(call_pairs)
+        params = ", ".join(args)
+        call_kwargs = ", ".join(call_pairs)
+        
+        lines = [f"def {tool.name}({params}) -> {return_type}:"]
+        if call_kwargs:
+            lines.append(f"    return call_tool({tool.name!r}, {call_kwargs})")
+        else:
+            lines.append(f"    return call_tool({tool.name!r})")
+        return "\n".join(lines)
 
     def _safe_python_identifier(self, value: str) -> str:
         text = str(value or "").strip()

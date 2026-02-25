@@ -3,6 +3,8 @@ export type BlockType =
   | 'thought'
   | 'tool_call'
   | 'tool_result'
+  | 'console_log'
+  | 'execution_section'
   | 'flight_offer'
   | 'file_preview'
   | 'error'
@@ -50,6 +52,17 @@ export interface ToolResultBlock extends BaseBlock {
   debug?: Record<string, unknown>
 }
 
+export interface ConsoleLogBlock extends BaseBlock {
+  type: 'console_log'
+  stream?: 'stdout' | 'stderr'
+  content: string
+}
+
+export interface ExecutionSectionBlock extends BaseBlock {
+  type: 'execution_section'
+  title: string
+}
+
 export interface FlightOfferBlock extends BaseBlock {
   type: 'flight_offer'
   data: Record<string, unknown>
@@ -78,6 +91,8 @@ export type MessageBlock =
   | ThoughtBlock
   | ToolCallBlock
   | ToolResultBlock
+  | ConsoleLogBlock
+  | ExecutionSectionBlock
   | FlightOfferBlock
   | FilePreviewBlock
   | ErrorBlock

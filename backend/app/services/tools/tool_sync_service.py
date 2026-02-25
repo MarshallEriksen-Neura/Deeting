@@ -150,6 +150,8 @@ class ToolSyncService:
                 "plugin_id": item.plugin_id,
                 "description": item.tool.description,
                 "schema_json": _safe_schema(item.tool.input_schema),
+                "output_schema_json": _safe_schema(item.tool.output_schema),
+                "output_description": item.tool.output_description,
                 "embedding_model": getattr(self._embedding_service, "model", None),
             },
             id_fn=lambda item: _make_point_id("system", item.plugin_id, item.tool.name),
@@ -202,6 +204,8 @@ class ToolSyncService:
                 "plugin_id": "user_mcp",
                 "description": tool.description,
                 "schema_json": _safe_schema(tool.input_schema),
+                "output_schema_json": _safe_schema(tool.output_schema),
+                "output_description": tool.output_description,
                 "embedding_model": getattr(self._embedding_service, "model", None),
             },
             id_fn=lambda tool: _make_point_id(str(user_id), origin, tool.name),
@@ -414,7 +418,7 @@ class ToolSyncService:
         user_id: uuid.UUID | None
     ) -> list[ToolDefinition]:
         """确保核心系统工具始终可见"""
-        core_tool_names = {"search_knowledge", "add_knowledge_chunk", "crawl_website"}
+        core_tool_names = {"search_knowledge", "add_knowledge_chunk", "crawl_website", "fetch_web_content"}
         existing_names = {t.name for t in current_tools}
         missing_names = core_tool_names - existing_names
         
@@ -426,10 +430,22 @@ class ToolSyncService:
             await agent_service.initialize(user_id=user_id)
 
         added_count = 0
+        # First, try to get from registered tools
         for tool in agent_service.tools:
             if tool.name in missing_names:
                 current_tools.insert(0, tool)
+                existing_names.add(tool.name)
+                missing_names.remove(tool.name)
                 added_count += 1
+        
+        # If still missing (e.g. plugin not activated), try to get from all plugin classes
+        if missing_names:
+            all_available = agent_service.list_registered_tools()
+            for tool in all_available:
+                if tool.name in missing_names:
+                    current_tools.insert(0, tool)
+                    added_count += 1
+                    missing_names.remove(tool.name)
         
         if added_count > 0:
             logger.info("Injected %s missing core tools into search results", added_count)
@@ -687,6 +703,8 @@ class ToolSyncService:
             name=str(payload.get("tool_name") or ""),
             description=payload.get("description"),
             input_schema=_safe_schema(payload.get("schema_json")),
+            output_schema=_safe_schema(payload.get("output_schema_json")),
+            output_description=payload.get("output_description"),
         )
 
     def _filter_skill_hits_for_user(

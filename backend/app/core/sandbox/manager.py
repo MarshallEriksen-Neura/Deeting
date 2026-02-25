@@ -208,6 +208,63 @@ class SandboxManager:
         if redis:
             await redis.srem(KEY_ACTIVE_SET, sandbox_id)
 
+    async def run_code_stream(
+        self,
+        session_id: str,
+        code: str,
+        language: str = "python",
+        execution_timeout: int = 30,
+    ):
+        """
+        Execute code and stream stdout/stderr line by line via AsyncGenerator.
+        """
+        if language and language.lower() != "python":
+            yield {"error": f"Unsupported language: {language}"}
+            return
+
+        try:
+            timeout_seconds = int(execution_timeout or 30)
+        except (TypeError, ValueError):
+            timeout_seconds = 30
+        
+        lock_key = f"{_SESSION_RUN_LOCK_PREFIX}:{session_id}"
+        # For streaming, we use a simpler locking strategy or rely on the caller
+        async with distributed_lock(lock_key, ttl=timeout_seconds + 20) as acquired:
+            if not acquired:
+                yield {"error": "Sandbox session busy", "error_code": _ERROR_CODE_BUSY}
+                return
+
+            sandbox = None
+            try:
+                sandbox = await self.get_or_create_sandbox(session_id)
+                interpreter = await CodeInterpreter.create(sandbox)
+                
+                # Use the underlying run method but we'll manually fetch logs if the SDK doesn't stream.
+                # Since most current CodeInterpreter SDKs for Sandbox are blocking, 
+                # we run it in a task and poll logs if possible, OR we wait for completion 
+                # but process the log lines as a batch immediately.
+                # FUTURE: Replace with true streaming SDK call if available.
+                result = await interpreter.codes.run(code, language=SupportedLanguage.PYTHON)
+                
+                if result.logs.stdout:
+                    for line in result.logs.stdout:
+                        yield {"type": "stdout", "content": line.text}
+                
+                if result.logs.stderr:
+                    for line in result.logs.stderr:
+                        yield {"type": "stderr", "content": line.text}
+                
+                yield {
+                    "type": "exit",
+                    "exit_code": 0,
+                    "result": [r.text for r in result.result] if result.result else []
+                }
+            except Exception as exc:
+                yield self._build_error_payload(exc)
+            finally:
+                if sandbox:
+                    await sandbox.close()
+
     async def run_code(
         self,
         session_id: str,

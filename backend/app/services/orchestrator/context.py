@@ -162,6 +162,30 @@ class WorkflowContext:
         self.executed_steps.append(step_name)
         self.step_timings[step_name] = duration_ms
 
+    def emit_blocks(self, blocks: list[dict[str, Any]]) -> None:
+        """
+        推送实时 UI 块事件（如控制台输出、图表、中间状态等）
+
+        Args:
+            blocks: UI 块列表
+        """
+        if not self.status_emitter or not blocks:
+            return
+
+        payload = {
+            "type": "blocks",
+            "blocks": blocks,
+            "trace_id": self.trace_id,
+            "timestamp": Datetime.utcnow().isoformat(),
+        }
+        result = self.status_emitter(payload)
+        if hasattr(result, "__await__"):
+            try:
+                import asyncio
+                asyncio.create_task(result)
+            except RuntimeError:
+                pass
+
     def emit_status(
         self,
         stage: str,

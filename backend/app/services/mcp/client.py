@@ -80,14 +80,23 @@ class MCPClient:
                     # List tools
                     result = await session.list_tools()
 
-                    return [
-                        ToolDefinition(
-                            name=t.name,
-                            description=t.description,
-                            input_schema=t.inputSchema,
+                    tools: list[ToolDefinition] = []
+                    for t in result.tools:
+                        # Capture extra fields not explicitly in MCP standard but often present
+                        raw = t.model_dump() if hasattr(t, "model_dump") else {}
+                        output_schema = raw.get("outputSchema") or raw.get("output_schema")
+                        output_description = raw.get("outputDescription") or raw.get("output_description")
+
+                        tools.append(
+                            ToolDefinition(
+                                name=t.name,
+                                description=t.description,
+                                input_schema=t.inputSchema,
+                                output_schema=output_schema,
+                                output_description=output_description,
+                            )
                         )
-                        for t in result.tools
-                    ]
+                    return tools
         except Exception as e:
             raise MCPClientError(f"SDK Error: {e}") from e
 
