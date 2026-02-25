@@ -70,6 +70,14 @@ def test_should_block_direct_tool_call_when_code_mode_available():
     assert (
         step._should_block_direct_tool_call(
             ctx,
+            tool_name="fetch_web_content",
+            user_mcp_tool_map={},
+        )
+        is True
+    )
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
             tool_name="search_sdk",
             user_mcp_tool_map=user_map,
         )

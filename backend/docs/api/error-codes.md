@@ -130,6 +130,15 @@
 | `CODE_MODE_EXECUTION_NOT_FOUND` | 指定 Code Mode 执行记录不存在 | 检查 execution id 是否属于当前用户，或重新执行生成记录 |
 | `SANDBOX_SESSION_BUSY` | 同一会话的沙箱执行正在进行中 | 稍后重试；避免同一 `session_id` 并发触发多次 `execute_code_plan` |
 
+### 8. Code Mode 执行错误
+
+| 错误码 | 说明 | 解决方案 |
+|--------|------|----------|
+| `CODE_MODE_DIRECT_TOOL_BLOCKED` | 在 Code Mode 可用时，模型直接调用了非 `search_sdk/execute_code_plan` 工具 | 先调用 `search_sdk`，再通过 `execute_code_plan` 在脚本里调用工具 |
+| `CODE_MODE_TOOL_PLAN_INVALID` | `execute_code_plan.tool_plan` 校验失败（参数结构无效，或工具不在最近 `search_sdk` 结果中） | 修复 `tool_plan` 结构；确保步骤里的 `tool_name` 来自最近一次 `search_sdk` 返回 |
+| `CODE_MODE_RUNTIME_TOOL_CALL_INVALID` | 沙箱运行时工具调用非法（缺少 `tool_name`、递归调用、或工具不在最近 `search_sdk` 结果中） | 仅在脚本里调用合法工具；避免调用 `search_sdk/execute_code_plan`；先 `search_sdk` 再执行 |
+| `CODE_MODE_TOOL_PLAN_FAILED` | `tool_plan` 执行阶段失败 | 检查步骤错误信息与上游工具返回，必要时拆分步骤或设置 `on_error=continue` |
+
 ---
 
 ## HTTP 状态码映射

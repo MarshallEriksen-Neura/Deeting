@@ -45,6 +45,8 @@ _SDK_TOOLCARD_FORMAT_VERSION = code_mode_protocol.SDK_TOOLCARD_FORMAT_VERSION
 _EXECUTION_FORMAT_VERSION = code_mode_protocol.EXECUTION_FORMAT_VERSION
 _RUNTIME_TOOL_CALL_MARKER = code_mode_protocol.RUNTIME_TOOL_CALL_MARKER
 _RUNTIME_RENDER_BLOCK_MARKER = code_mode_protocol.RUNTIME_RENDER_BLOCK_MARKER
+_SEARCH_SDK_CONTEXT_NAMESPACE = "code_mode"
+_SEARCH_SDK_CONTEXT_KEY = "search_sdk_snapshot"
 _BRIDGE_EXECUTION_TOKEN_HEADER = DEFAULT_BRIDGE_EXECUTION_TOKEN_HEADER
 _FORBIDDEN_IMPORT_ROOTS = {
     "aiohttp",
@@ -262,6 +264,13 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             if len(items) >= safe_limit:
                 break
 
+        tool_names = [str(item.get("name") or "").strip() for item in items]
+        self._store_search_sdk_snapshot(
+            __context__,
+            query=q,
+            tool_names=tool_names,
+        )
+
         return {
             "mode": "code_mode",
             "format_version": _SDK_TOOLCARD_FORMAT_VERSION,
@@ -379,6 +388,13 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             final_session_id,
             workflow_context=__context__,
         )
+        has_search_snapshot = self._has_search_sdk_snapshot(__context__)
+        allowed_runtime_tools = self._resolve_search_allowed_tools(__context__)
+        if has_search_snapshot:
+            runtime_meta["search_sdk"] = {
+                "tool_count": len(allowed_runtime_tools),
+                "tool_names": sorted(allowed_runtime_tools),
+            }
         runtime_meta["trace_id"] = execution_span.trace_id
         runtime_meta["execution_span_id"] = execution_span.span_id
         started_monotonic = perf_counter()
@@ -401,6 +417,14 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         if dry_run:
             plan_validation = self._validate_tool_plan(safe_tool_plan)
+            plan_validation.extend(
+                self._validate_tool_plan_allowed_tools(
+                    safe_tool_plan,
+                    allowed_tools=allowed_runtime_tools,
+                    enforce_snapshot=has_search_snapshot,
+                )
+            )
+            plan_validation = sorted(set(plan_validation))
             self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
             return await _finalize_response(
                 {
@@ -423,6 +447,14 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             )
 
         plan_validation = self._validate_tool_plan(safe_tool_plan)
+        plan_validation.extend(
+            self._validate_tool_plan_allowed_tools(
+                safe_tool_plan,
+                allowed_tools=allowed_runtime_tools,
+                enforce_snapshot=has_search_snapshot,
+            )
+        )
+        plan_validation = sorted(set(plan_validation))
         if plan_validation:
             self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
             return await _finalize_response(
@@ -481,6 +513,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         runtime_sdk_bundle = await self._build_runtime_sdk_bundle(
             workflow_context=__context__,
             source_code=source,
+            allowed_tool_names=allowed_runtime_tools,
         )
         if runtime_sdk_bundle:
             runtime_meta["sdk_stub"] = {
@@ -599,6 +632,22 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     },
                     runtime_meta_override=runtime_meta,
                 )
+            if has_search_snapshot and tool_name not in allowed_runtime_tools:
+                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+                return await _finalize_response(
+                    {
+                    "status": "failed",
+                    "format_version": _EXECUTION_FORMAT_VERSION,
+                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
+                    "runtime": runtime_meta,
+                    "error": (
+                        f"runtime tool call '{tool_name}' is not in latest search_sdk results"
+                    ),
+                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
+                    "request": runtime_tool_request,
+                    },
+                    runtime_meta_override=runtime_meta,
+                )
 
             call_arguments = runtime_tool_request.get("arguments") or {}
             if not isinstance(call_arguments, dict):
@@ -689,6 +738,94 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             user_id=user_id,
             query=query,
         )
+
+    def _store_search_sdk_snapshot(
+        self,
+        workflow_context: Any | None,
+        *,
+        query: str,
+        tool_names: list[str],
+    ) -> None:
+        if workflow_context is None:
+            return
+
+        normalized_tools = sorted(self._normalize_tool_name_set(tool_names))
+        snapshot = {
+            "query": str(query or "").strip(),
+            "tool_names": normalized_tools,
+            "tool_count": len(normalized_tools),
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+
+        if hasattr(workflow_context, "set"):
+            try:
+                workflow_context.set(
+                    _SEARCH_SDK_CONTEXT_NAMESPACE,
+                    _SEARCH_SDK_CONTEXT_KEY,
+                    snapshot,
+                )
+                return
+            except Exception:
+                pass
+
+        if isinstance(workflow_context, dict):
+            namespace_obj = workflow_context.get(_SEARCH_SDK_CONTEXT_NAMESPACE)
+            if not isinstance(namespace_obj, dict):
+                namespace_obj = {}
+                workflow_context[_SEARCH_SDK_CONTEXT_NAMESPACE] = namespace_obj
+            namespace_obj[_SEARCH_SDK_CONTEXT_KEY] = snapshot
+
+    def _resolve_search_allowed_tools(self, workflow_context: Any | None) -> set[str]:
+        snapshot = self._context_ns_value(
+            workflow_context,
+            _SEARCH_SDK_CONTEXT_NAMESPACE,
+            _SEARCH_SDK_CONTEXT_KEY,
+            None,
+        )
+        if not isinstance(snapshot, dict):
+            return set()
+        return self._normalize_tool_name_set(snapshot.get("tool_names"))
+
+    def _has_search_sdk_snapshot(self, workflow_context: Any | None) -> bool:
+        snapshot = self._context_ns_value(
+            workflow_context,
+            _SEARCH_SDK_CONTEXT_NAMESPACE,
+            _SEARCH_SDK_CONTEXT_KEY,
+            None,
+        )
+        return isinstance(snapshot, dict) and "tool_names" in snapshot
+
+    def _normalize_tool_name_set(self, value: Any) -> set[str]:
+        if not isinstance(value, (list, tuple, set)):
+            return set()
+        normalized: set[str] = set()
+        for item in value:
+            name = str(item or "").strip()
+            if name:
+                normalized.add(name)
+        return normalized
+
+    def _validate_tool_plan_allowed_tools(
+        self,
+        tool_plan: list[dict[str, Any]],
+        *,
+        allowed_tools: set[str] | None,
+        enforce_snapshot: bool = False,
+    ) -> list[str]:
+        if not enforce_snapshot:
+            return []
+        violations: list[str] = []
+        for idx, step in enumerate(tool_plan):
+            if not isinstance(step, dict):
+                continue
+            tool_name = str(step.get("tool_name") or "").strip()
+            if not tool_name:
+                continue
+            if tool_name not in allowed_tools:
+                violations.append(
+                    f"step[{idx}] tool_name '{tool_name}' is not in latest search_sdk results"
+                )
+        return violations
 
     def _resolve_user_id(self, workflow_context: Any | None) -> uuid.UUID:
         raw_user_id = self._context_attr(
@@ -833,6 +970,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         *,
         workflow_context: Any | None,
         source_code: str,
+        allowed_tool_names: set[str] | None = None,
     ) -> dict[str, Any] | None:
         try:
             user_id = self._resolve_user_id(workflow_context)
@@ -852,9 +990,12 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         filtered_tools: list[ToolDefinition] = []
         seen_names: set[str] = set()
+        allowed_name_set = self._normalize_tool_name_set(allowed_tool_names or [])
         for tool in tools:
             name = str(getattr(tool, "name", "") or "").strip()
             if not name or name in {"search_sdk", "execute_code_plan"}:
+                continue
+            if allowed_name_set and name not in allowed_name_set:
                 continue
             if name in seen_names:
                 continue

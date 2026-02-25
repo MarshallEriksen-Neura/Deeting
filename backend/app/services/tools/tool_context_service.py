@@ -13,6 +13,7 @@ from app.services.mcp.discovery import mcp_discovery_service
 from app.services.tools.tool_sync_service import tool_sync_service
 
 logger = logging.getLogger(__name__)
+_CODE_MODE_CORE_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
 
 
 def extract_last_user_message(messages: Iterable[dict] | None) -> str:
@@ -103,9 +104,7 @@ class ToolContextService:
         non_core_system_tools = [
             tool for tool in system_tools if tool.name not in core_tool_names
         ]
-        code_mode_enabled = {"search_sdk", "execute_code_plan"}.issubset(
-            allowed_tool_names
-        )
+        code_mode_enabled = _CODE_MODE_CORE_TOOL_NAMES.issubset(allowed_tool_names)
         code_mode_minimal_toolset = bool(
             getattr(settings, "CODE_MODE_MINIMAL_TOOLSET", False)
         )
@@ -169,6 +168,14 @@ class ToolContextService:
             skip_user_mcp = code_mode_enabled and code_mode_minimal_toolset
             for tool in dynamic_hits:
                 if tool.name in existing_names:
+                    continue
+                # Code mode 最小工具集下，JIT 仅允许 code mode 核心工具，
+                # 其余工具需通过 search_sdk -> execute_code_plan 间接调用。
+                if (
+                    code_mode_enabled
+                    and code_mode_minimal_toolset
+                    and tool.name not in _CODE_MODE_CORE_TOOL_NAMES
+                ):
                     continue
                 # code mode 下过滤掉用户 MCP 工具，避免 LLM 直接调用被阻拦浪费一轮
                 if skip_user_mcp and tool.name in user_mcp_tool_names:

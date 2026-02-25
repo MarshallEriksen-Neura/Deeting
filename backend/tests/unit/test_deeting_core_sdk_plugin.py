@@ -151,6 +151,45 @@ async def test_search_sdk_usage_hint_includes_code_mode_conventions(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_search_sdk_records_snapshot_into_workflow_context(monkeypatch):
+    plugin = _make_plugin()
+
+    async def _fake_build_tools(*, session, user_id, query):
+        return [
+            ToolDefinition(
+                name="fetch_web_content",
+                description="Fetch one web page",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            )
+        ]
+
+    monkeypatch.setattr(
+        sdk_module.tool_context_service, "build_tools", _fake_build_tools
+    )
+
+    wf_ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        user_id=str(plugin.context.user_id),
+        session_id="sess-1",
+    )
+    result = await plugin.handle_search_sdk(
+        "查找网页抓取工具",
+        limit=1,
+        __context__=wf_ctx,
+    )
+
+    snapshot = wf_ctx.get("code_mode", "search_sdk_snapshot")
+    assert result["count"] == 1
+    assert isinstance(snapshot, dict)
+    assert snapshot["tool_count"] == 1
+    assert snapshot["tool_names"] == ["fetch_web_content"]
+
+
+@pytest.mark.asyncio
 async def test_execute_code_plan_blocks_forbidden_import():
     plugin = _make_plugin()
 
@@ -716,6 +755,118 @@ async def test_execute_code_plan_runtime_call_tool_blocks_recursive_tools(monkey
 
     assert result["status"] == "failed"
     assert result["error_code"] == "CODE_MODE_RUNTIME_TOOL_CALL_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_tool_plan_rejects_tool_not_in_latest_search_results(
+    monkeypatch,
+):
+    plugin = _make_plugin()
+
+    async def _fake_build_tool_candidates(*, user_id, query):
+        return [
+            ToolDefinition(
+                name="fetch_web_content",
+                description="Fetch web content",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            ),
+            ToolDefinition(
+                name="crawl_website",
+                description="Crawl website",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            ),
+        ]
+
+    monkeypatch.setattr(plugin, "_build_tool_candidates", _fake_build_tool_candidates)
+
+    wf_ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        user_id=str(plugin.context.user_id),
+        session_id="sess-1",
+    )
+    await plugin.handle_search_sdk("抓取网页", limit=1, __context__=wf_ctx)
+
+    result = await plugin.handle_execute_code_plan(
+        code="deeting.log('x')",
+        tool_plan=[{"tool_name": "crawl_website", "arguments": {"url": "https://x.com"}}],
+        __context__=wf_ctx,
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_code"] == "CODE_MODE_TOOL_PLAN_INVALID"
+    assert any("not in latest search_sdk results" in item for item in result["violations"])
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_runtime_call_tool_rejects_not_in_latest_search_results(
+    monkeypatch,
+):
+    plugin = _make_plugin()
+
+    async def _fake_build_tool_candidates(*, user_id, query):
+        return [
+            ToolDefinition(
+                name="fetch_web_content",
+                description="Fetch web content",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            ),
+            ToolDefinition(
+                name="crawl_website",
+                description="Crawl website",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            ),
+        ]
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
+            {
+                "index": 0,
+                "tool_name": "crawl_website",
+                "arguments": {"url": "https://example.com"},
+            },
+            ensure_ascii=False,
+        )
+        return {
+            "stdout": [marker],
+            "stderr": ["runtime interrupted for host tool call"],
+            "result": [],
+            "exit_code": 1,
+        }
+
+    monkeypatch.setattr(plugin, "_build_tool_candidates", _fake_build_tool_candidates)
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+
+    wf_ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        user_id=str(plugin.context.user_id),
+        session_id="sess-1",
+    )
+    await plugin.handle_search_sdk("抓取网页", limit=1, __context__=wf_ctx)
+
+    result = await plugin.handle_execute_code_plan(
+        code="deeting.call_tool('crawl_website', url='https://example.com')",
+        __context__=wf_ctx,
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_code"] == "CODE_MODE_RUNTIME_TOOL_CALL_INVALID"
+    assert "not in latest search_sdk results" in str(result.get("error") or "")
 
 
 @pytest.mark.asyncio

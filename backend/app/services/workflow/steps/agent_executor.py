@@ -860,10 +860,7 @@ class AgentExecutorStep(BaseStep):
             return False
         if name in _CODE_MODE_TOOL_NAMES:
             return False
-
-        is_user_mcp_tool = name in (user_mcp_tool_map or {})
-        is_dynamic_skill_tool = name.startswith("skill__")
-        return is_user_mcp_tool or is_dynamic_skill_tool
+        return True
 
     def _is_code_mode_available(self, ctx: "WorkflowContext") -> bool:
         request_body = ctx.get("template_render", "request_body") or {}

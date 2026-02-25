@@ -197,6 +197,14 @@ data: {"id":"chatcmpl-abc123","object":"chat.completion","choices":[{"message":{
 data: [DONE]
 ```
 
+#### Code Mode 约束（Tool Calling）
+
+当请求工具集中同时包含 `search_sdk` 和 `execute_code_plan` 时，Agent 会进入 Code Mode 严格模式：
+
+- 仅允许模型直接调用 `search_sdk` / `execute_code_plan`。
+- 其他任意工具（系统工具、动态技能、用户 MCP 工具）直接调用会被拦截，返回 `CODE_MODE_DIRECT_TOOL_BLOCKED`。
+- 推荐顺序：先 `search_sdk` 获取工具签名，再通过一次 `execute_code_plan` 在脚本内调用工具。
+
 ---
 
 ### 2. Sandbox Run
@@ -344,6 +352,7 @@ Content-Type: application/json
 - 仅允许当前登录用户访问自己的执行记录。
 - 回放会复用历史 `runtime_context` 中的能力/权限线索，并可通过请求体覆盖 `code/tool_plan/session_id`。
 - 回放本身也会写入新的执行记录。
+- 若同一工作流上下文中存在最近一次 `search_sdk` 的工具快照，`execute_code_plan` 的 `tool_plan` 与运行时 `deeting.call_tool(...)` 仅允许调用该快照中的工具；否则会返回 `CODE_MODE_TOOL_PLAN_INVALID` 或 `CODE_MODE_RUNTIME_TOOL_CALL_INVALID`。快照为空时等价于“本轮不允许任何工具调用”。
 
 ---
 
