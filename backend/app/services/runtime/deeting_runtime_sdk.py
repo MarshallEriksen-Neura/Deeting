@@ -50,7 +50,18 @@ def build_runtime_preamble(
                 print("__RUNTIME_RENDER_BLOCK_MARKER__" + json.dumps(block, ensure_ascii=False, default=str))
                 return block
 
-            def call_tool(self, tool_name, **arguments):
+            def call_tool(self, tool_name, *args, **arguments):
+                if args:
+                    if len(args) == 1 and isinstance(args[0], dict):
+                        merged = dict(args[0])
+                        merged.update(arguments or {})
+                        arguments = merged
+                        self.log("deprecated call_tool positional dict detected; use keyword args")
+                    else:
+                        raise TypeError(
+                            "deeting.call_tool expects keyword args, "
+                            "e.g. deeting.call_tool('tavily-search', query='...', max_results=5)"
+                        )
                 idx = self._call_index
                 self._call_index += 1
 

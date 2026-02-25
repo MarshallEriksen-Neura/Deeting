@@ -162,11 +162,17 @@ class TemplateRenderStep(BaseStep):
 
             if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
                 lines.append(
-                    "\n# Code Mode\n"
+                    "\n# Code Mode Capability\n"
                     "For multi-step tasks, default to this flow:\n"
                     "1) call `search_sdk` to discover exact signatures\n"
-                    "2) write one coherent Python plan\n"
+                    "2) write one coherent Python script\n"
                     "3) execute once with `execute_code_plan`\n"
+                    "Script conventions:\n"
+                    "- Prefer `from deeting_sdk import <tool_name>` when available\n"
+                    "- Or use `deeting.call_tool(name, **kwargs)`\n"
+                    "- Do NOT use positional dict args like `deeting.call_tool(name, {...})`\n"
+                    "- Always emit final structured output with "
+                    "`deeting.log(json.dumps(result, ensure_ascii=False))`\n"
                     "Use fragmented direct tool chains only when a single code plan is clearly unsuitable."
                 )
 
@@ -364,6 +370,11 @@ class TemplateRenderStep(BaseStep):
                     "1) Use `search_sdk` to discover precise signatures.\n"
                     "2) Produce one coherent Python execution plan.\n"
                     "3) Execute once with `execute_code_plan`.\n"
+                    "Conventions:\n"
+                    "- Prefer `from deeting_sdk import <tool_name>` when available.\n"
+                    "- Or call tools with `deeting.call_tool(name, **kwargs)`.\n"
+                    "- Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.\n"
+                    "- Always emit final structured output with `deeting.log(json.dumps(result, ensure_ascii=False))`.\n"
                     "Use fragmented direct tool chains only when one code plan is clearly unsuitable."
                 )
                 enhanced_prompt += code_mode_reminder

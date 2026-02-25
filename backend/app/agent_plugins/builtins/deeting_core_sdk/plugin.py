@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 _MAX_SEARCH_LIMIT = 20
 _MAX_CODE_CHARS = 12000
 _MAX_RESULT_CHARS = 4000
+_MAX_LOG_SOURCE_PREVIEW_CHARS = 3000
+_MAX_LOG_IO_PREVIEW_CHARS = 600
 _MAX_TOOL_PLAN_STEPS = 20
 _MAX_RUNTIME_TOOL_CALLS = 8
 _MAX_RUNTIME_SDK_STUB_TOOLS = 80
@@ -96,7 +98,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "description": (
                         "Search Deeting SDK capabilities by intent and return typed "
                         "signatures, parameter docs, and python stubs. Use before "
-                        "execute_code_plan."
+                        "execute_code_plan. Prefer calling tools by generated stubs "
+                        "or `deeting.call_tool(name, **kwargs)`."
                     ),
                     "parameters": {
                         "type": "object",
@@ -126,7 +129,12 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "name": "execute_code_plan",
                     "description": (
                         "Execute a Python code plan in sandbox. Runtime exposes "
-                        "`deeting.log()`, `deeting.section()`, and `deeting.call_tool()`."
+                        "`deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. "
+                        "Important: call tools with keyword args "
+                        "(`deeting.call_tool('tavily-search', query='...', max_results=5)`), "
+                        "not positional dict args. Generate one coherent script, and always "
+                        "emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` "
+                        "instead of relying on top-level `return`."
                     ),
                     "parameters": {
                         "type": "object",
@@ -263,6 +271,10 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "tools": items,
             "usage_hint": (
                 "先根据参数文档和 python_stub 规划步骤，再调用 execute_code_plan 一次性执行。"
+                "脚本内优先 `from deeting_sdk import tool_name` 或 "
+                "`deeting.call_tool(name, **kwargs)`；不要写 "
+                "`deeting.call_tool(name, { ... })`。最后请用 "
+                "`deeting.log(json.dumps(result, ensure_ascii=False))` 输出结构化结果。"
             ),
         }
 
@@ -370,6 +382,22 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         runtime_meta["trace_id"] = execution_span.trace_id
         runtime_meta["execution_span_id"] = execution_span.span_id
         started_monotonic = perf_counter()
+        source_preview, source_preview_truncated = self._truncate_for_log(
+            source, limit=_MAX_LOG_SOURCE_PREVIEW_CHARS
+        )
+        logger.info(
+            "code_mode_source",
+            extra={
+                "execution_id": str(runtime_meta.get("execution_id") or "").strip(),
+                "trace_id": str(runtime_meta.get("trace_id") or "").strip(),
+                "session_id": final_session_id,
+                "language": normalized_language,
+                "code_chars": len(source),
+                "tool_plan_steps": len(safe_tool_plan),
+                "code_preview": source_preview,
+                "code_preview_truncated": source_preview_truncated,
+            },
+        )
 
         if dry_run:
             plan_validation = self._validate_tool_plan(safe_tool_plan)
@@ -1876,6 +1904,28 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         stdout_trimmed, stdout_truncated = self._truncate(stdout)
         stderr_trimmed, stderr_truncated = self._truncate(stderr)
         final_result_trimmed, result_truncated = self._truncate(final_result)
+        if exit_code == 0 and not final_result_trimmed.strip():
+            stdout_preview, stdout_preview_truncated = self._truncate_for_log(
+                stdout_trimmed, limit=_MAX_LOG_IO_PREVIEW_CHARS
+            )
+            stderr_preview, stderr_preview_truncated = self._truncate_for_log(
+                stderr_trimmed, limit=_MAX_LOG_IO_PREVIEW_CHARS
+            )
+            logger.info(
+                "code_mode_empty_result",
+                extra={
+                    "execution_id": str(runtime_meta.get("execution_id") or "").strip(),
+                    "trace_id": str(runtime_meta.get("trace_id") or "").strip(),
+                    "session_id": str(runtime_meta.get("session_id") or session_id).strip(),
+                    "stdout_chars": len(stdout_trimmed),
+                    "stderr_chars": len(stderr_trimmed),
+                    "result_chars": len(final_result_trimmed),
+                    "stdout_preview": stdout_preview,
+                    "stderr_preview": stderr_preview,
+                    "stdout_preview_truncated": stdout_preview_truncated,
+                    "stderr_preview_truncated": stderr_preview_truncated,
+                },
+            )
 
         response = {
             "status": "success" if exit_code == 0 else "failed",
@@ -1943,3 +1993,10 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if len(text) <= _MAX_RESULT_CHARS:
             return text, False
         return text[:_MAX_RESULT_CHARS] + "... (truncated)", True
+
+    def _truncate_for_log(self, text: str, *, limit: int) -> tuple[str, bool]:
+        if limit <= 0:
+            return "", bool(text)
+        if len(text) <= limit:
+            return text, False
+        return text[:limit] + "... (truncated)", True

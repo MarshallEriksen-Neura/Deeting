@@ -204,3 +204,79 @@ def test_is_sandbox_not_found_returns_false_for_other_errors():
     manager = SandboxManager()
     exc = RuntimeError("connection reset by peer")
     assert manager._is_sandbox_not_found(exc) is False
+
+
+@pytest.mark.asyncio
+async def test_reap_zombies_keeps_active_sandbox_when_ref_exists(monkeypatch):
+    manager = SandboxManager()
+    killed: list[str] = []
+    removed: list[str] = []
+
+    class _FakeRedis:
+        async def smembers(self, _key):
+            return {b"sbox-1"}
+
+        async def srem(self, _key, sandbox_id):
+            removed.append(sandbox_id)
+
+    class _FakeService:
+        async def kill_sandbox(self, sandbox_id):
+            killed.append(sandbox_id)
+
+    class _FakeFactory:
+        def __init__(self, _config):
+            pass
+
+        def create_sandbox_service(self):
+            return _FakeService()
+
+    async def _fake_cache_get(key: str):
+        if key == sandbox_manager_module.key_ref("sbox-1"):
+            return "1"
+        return None
+
+    monkeypatch.setattr(manager, "_get_redis", lambda: _FakeRedis())
+    monkeypatch.setattr(sandbox_manager_module, "AdapterFactory", _FakeFactory)
+    monkeypatch.setattr(sandbox_manager_module.cache, "get", _fake_cache_get)
+
+    await manager.reap_zombies()
+
+    assert killed == []
+    assert removed == []
+
+
+@pytest.mark.asyncio
+async def test_reap_zombies_reaps_sandbox_when_ref_missing(monkeypatch):
+    manager = SandboxManager()
+    killed: list[str] = []
+    removed: list[str] = []
+
+    class _FakeRedis:
+        async def smembers(self, _key):
+            return {b"sbox-2"}
+
+        async def srem(self, _key, sandbox_id):
+            removed.append(sandbox_id)
+
+    class _FakeService:
+        async def kill_sandbox(self, sandbox_id):
+            killed.append(sandbox_id)
+
+    class _FakeFactory:
+        def __init__(self, _config):
+            pass
+
+        def create_sandbox_service(self):
+            return _FakeService()
+
+    async def _fake_cache_get(_key: str):
+        return None
+
+    monkeypatch.setattr(manager, "_get_redis", lambda: _FakeRedis())
+    monkeypatch.setattr(sandbox_manager_module, "AdapterFactory", _FakeFactory)
+    monkeypatch.setattr(sandbox_manager_module.cache, "get", _fake_cache_get)
+
+    await manager.reap_zombies()
+
+    assert killed == ["sbox-2"]
+    assert removed == ["sbox-2"]

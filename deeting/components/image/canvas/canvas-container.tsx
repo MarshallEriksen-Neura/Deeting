@@ -2,14 +2,18 @@
 
 import { useEffect, useRef, useMemo, useCallback, memo, Suspense, lazy } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X, Download, Maximize2, Monitor } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useChatStore } from '@/store/chat-store';
+import { useArtifactStore } from '@/store/artifact-store';
 import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useI18n } from '@/hooks/use-i18n';
 import type { MessageBlock } from '@/lib/chat/message-protocol';
 import type { ChatImageAttachment } from '@/lib/chat/message-content';
 import { MarkdownViewer } from '@/components/chat/markdown-viewer';
 import { CanvasSkeleton } from '@/components/common/skeletons';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // 动态导入 AIResponseBubble 组件实现代码分割
 const AIResponseBubble = lazy(() =>
@@ -138,12 +142,7 @@ AssistantMessageBubble.displayName = 'AssistantMessageBubble';
  * - 自动滚动到底部
  * - 加载历史消息
  * - 动态调整布局偏移
- * 
- * 性能优化：
- * - 使用 React.memo 优化子组件
- * - 使用 useMemo 缓存计算结果
- * - 使用 useCallback 缓存事件处理函数
- * - 使用 Suspense 和 lazy 实现代码分割
+ * - 展示 Artifacts 沉浸式预览（Coze/Manus 模式）
  */
 export default function Canvas() {
   const t = useI18n('chat');
@@ -164,6 +163,9 @@ export default function Canvas() {
     statusCode: state.statusCode,
     statusMeta: state.statusMeta,
   })));
+
+  // Artifact 联动状态
+  const { activeArtifact, isOpen, closeArtifact } = useArtifactStore();
 
   // 映射 historyLoading 为 isLoading
   const historyLoading = isLoading;
@@ -284,73 +286,155 @@ export default function Canvas() {
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full overflow-y-auto px-4 scrollbar-hide"
-      style={{
-        paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
-        paddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
-        scrollPaddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
-        scrollPaddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
-      }}
-    >
-      <div className="max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-8 pt-2">
-        {historyLoading && (
-          <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>{t("history.loading")}</span>
-          </div>
-        )}
-        {messages.map((msg) => {
-          const isLastAssistant = msg.id === lastAssistantId;
-          const isActive = isLastAssistant && isLoading;
+    <div className="flex h-full w-full overflow-hidden">
+      {/* 聊天消息流 */}
+      <motion.div
+        ref={containerRef}
+        animate={{ 
+          width: isOpen ? "50%" : "100%",
+          paddingRight: isOpen ? "2rem" : "1rem" 
+        }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="h-full overflow-y-auto px-4 scrollbar-hide relative z-10"
+        style={{
+          paddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
+          paddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
+          scrollPaddingTop: "calc(var(--chat-hud-offset, 112px) + env(safe-area-inset-top))",
+          scrollPaddingBottom: "calc(var(--chat-controls-offset, 152px) + env(safe-area-inset-bottom))",
+        }}
+      >
+        <div className={cn(
+          "mx-auto flex flex-col gap-8 pt-2 transition-all",
+          isOpen ? "max-w-full" : "max-w-5xl 2xl:max-w-6xl"
+        )}>
+          {historyLoading && (
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>{t("history.loading")}</span>
+            </div>
+          )}
+          {messages.map((msg) => {
+            const isLastAssistant = msg.id === lastAssistantId;
+            const isActive = isLastAssistant && isLoading;
 
-          if (msg.role === 'assistant') {
-            const blocks: MessageBlock[] = msg.blocks?.length ? msg.blocks : [];
-            return (
-              <AssistantMessageBubble
-                key={msg.id}
-                blocks={blocks}
-                attachments={msg.attachments}
-                isActive={isActive}
-                streamEnabled={streamEnabled}
-                statusStage={statusStage}
-                statusCode={statusCode}
-                statusMeta={statusMeta}
-                reveal={!isLoading && !streamEnabled && isLastAssistant}
-                imageAlt={imageAlt}
-              />
-            );
-          }
-
-          return (
-            <UserMessageBubble
-              key={msg.id}
-              content={msg.content}
-              attachments={msg.attachments}
-              imageAlt={imageAlt}
-            />
-          );
-        })}
-
-        {/* Standalone Loading Bubble (for initial wait before first token) */}
-        {showStandaloneLoading && (
-           <div className="flex justify-start w-full">
-             <Suspense fallback={<CanvasSkeleton />}>
-               <AIResponseBubble
-                  parts={[]}
-                  isActive={true}
+            if (msg.role === 'assistant') {
+              const blocks: MessageBlock[] = msg.blocks?.length ? msg.blocks : [];
+              return (
+                <AssistantMessageBubble
+                  key={msg.id}
+                  blocks={blocks}
+                  attachments={msg.attachments}
+                  isActive={isActive}
                   streamEnabled={streamEnabled}
                   statusStage={statusStage}
                   statusCode={statusCode}
                   statusMeta={statusMeta}
-               />
-             </Suspense>
-           </div>
-        )}
+                  reveal={!isLoading && !streamEnabled && isLastAssistant}
+                  imageAlt={imageAlt}
+                />
+              );
+            }
 
-        <div ref={messagesEndRef} />
-      </div>
+            return (
+              <UserMessageBubble
+                key={msg.id}
+                content={msg.content}
+                attachments={msg.attachments}
+                imageAlt={imageAlt}
+              />
+            );
+          })}
+
+          {/* Standalone Loading Bubble */}
+          {showStandaloneLoading && (
+            <div className="flex justify-start w-full">
+              <Suspense fallback={<CanvasSkeleton />}>
+                <AIResponseBubble
+                    parts={[]}
+                    isActive={true}
+                    streamEnabled={streamEnabled}
+                    statusStage={statusStage}
+                    statusCode={statusCode}
+                    statusMeta={statusMeta}
+                />
+              </Suspense>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+      </motion.div>
+
+      {/* Artifact 沉浸式侧边栏 (Manus/Coze 模式) */}
+      <AnimatePresence>
+        {isOpen && activeArtifact && (
+          <motion.div
+            initial={{ x: "100%", opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: "100%", opacity: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 26 }}
+            className="w-1/2 h-full bg-white dark:bg-zinc-950 border-l border-border relative z-20 flex flex-col shadow-2xl"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-zinc-50/50 dark:bg-zinc-900/50">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                  <Monitor className="w-5 h-5 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold truncate tracking-tight">{activeArtifact.name}</h2>
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">{activeArtifact.type}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeArtifact.payload.download_url && (
+                  <Button asChild size="icon" variant="ghost" className="h-9 w-9 rounded-full">
+                    <a href={activeArtifact.payload.download_url} target="_blank" rel="noopener noreferrer">
+                      <Download className="w-4 h-4" />
+                    </a>
+                  </Button>
+                )}
+                <Button onClick={closeArtifact} size="icon" variant="ghost" className="h-9 w-9 rounded-full hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div className="flex-1 overflow-y-auto p-8 scrollbar-hide">
+              <div className="max-w-3xl mx-auto">
+                {activeArtifact.payload.preview_kind === 'html' ? (
+                  <div className="w-full h-full min-h-[80vh] bg-white rounded-xl border border-border shadow-inner overflow-hidden">
+                    <iframe 
+                      srcDoc={activeArtifact.payload.preview_text}
+                      className="w-full h-full border-0"
+                      title="Preview"
+                      sandbox="allow-scripts"
+                    />
+                  </div>
+                ) : (
+                  <MarkdownViewer 
+                    content={activeArtifact.payload.preview_text || ""} 
+                    className="chat-markdown chat-markdown-assistant"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Footer / Status */}
+            <div className="px-6 py-3 border-t border-border bg-zinc-50/30 dark:bg-zinc-900/30 flex items-center justify-between text-[11px] text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span>沉浸式阅读模式</span>
+              </div>
+              <div className="flex items-center gap-3 font-mono">
+                <span>UTF-8</span>
+                <span>{activeArtifact.type.toUpperCase()}</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

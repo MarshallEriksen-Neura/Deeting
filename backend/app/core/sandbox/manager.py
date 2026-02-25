@@ -112,7 +112,11 @@ class SandboxManager:
                 sid_bytes.decode() if isinstance(sid_bytes, bytes) else sid_bytes
             )
 
-            if not await redis.exists(key_ref(sandbox_id)):
+            # IMPORTANT: ref/session keys are written through CacheService with CACHE_PREFIX.
+            # Use cache.get() here instead of raw redis.exists() to avoid false negatives
+            # caused by prefix mismatch, which would reap active sandboxes incorrectly.
+            ref_alive = await cache.get(key_ref(sandbox_id))
+            if ref_alive is None:
                 logger.info("Reaping expired sandbox: %s", sandbox_id)
                 try:
                     await service.kill_sandbox(sandbox_id)

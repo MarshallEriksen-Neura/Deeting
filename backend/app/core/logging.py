@@ -1,9 +1,15 @@
 import logging
+import json
 import sys
 
 from loguru import logger
 
 from app.core.config import settings
+
+_RESERVED_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__.keys()) | {
+    "message",
+    "asctime",
+}
 
 
 class InterceptHandler(logging.Handler):
@@ -18,15 +24,28 @@ class InterceptHandler(logging.Handler):
         except ValueError:
             level = record.levelno
 
+        extra = self._extract_extra(record)
+
         # 获取调用栈深度
         frame, depth = logging.currentframe(), 2
         while frame.f_code.co_filename == logging.__file__:
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+        message = record.getMessage()
+        if extra and not settings.LOG_JSON_FORMAT:
+            message = f"{message} | extra={json.dumps(extra, ensure_ascii=False, default=str)}"
+
+        sink = logger.bind(**extra) if extra else logger
+        sink.opt(depth=depth, exception=record.exc_info).log(level, message)
+
+    def _extract_extra(self, record: logging.LogRecord) -> dict[str, object]:
+        payload: dict[str, object] = {}
+        for key, value in record.__dict__.items():
+            if key in _RESERVED_LOG_RECORD_FIELDS or key.startswith("_"):
+                continue
+            payload[key] = value
+        return payload
 
 
 def setup_logging():

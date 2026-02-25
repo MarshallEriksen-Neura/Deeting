@@ -122,6 +122,35 @@ async def test_search_sdk_returns_parameter_docs_and_examples(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_sdk_usage_hint_includes_code_mode_conventions(monkeypatch):
+    plugin = _make_plugin()
+
+    async def _fake_build_tools(*, session, user_id, query):
+        return [
+            ToolDefinition(
+                name="tavily-search",
+                description="search web",
+                input_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            )
+        ]
+
+    monkeypatch.setattr(
+        sdk_module.tool_context_service, "build_tools", _fake_build_tools
+    )
+
+    result = await plugin.handle_search_sdk("搜索本周趋势")
+
+    usage_hint = str(result.get("usage_hint") or "")
+    assert "deeting.call_tool(name, **kwargs)" in usage_hint
+    assert "deeting.call_tool(name, { ... })" in usage_hint
+    assert "deeting.log(json.dumps(result, ensure_ascii=False))" in usage_hint
+
+
+@pytest.mark.asyncio
 async def test_execute_code_plan_blocks_forbidden_import():
     plugin = _make_plugin()
 
@@ -168,6 +197,7 @@ async def test_execute_code_plan_executes_in_sandbox(monkeypatch):
     assert captured["language"] == "python"
     assert captured["execution_timeout"] == "15"
     assert "class DeetingRuntime" in captured["code"]
+    assert "def call_tool(self, tool_name, *args, **arguments)" in captured["code"]
     assert "import urllib.request" in captured["code"]
     assert "X-Code-Mode-Execution-Token" in captured["code"]
     assert "RUNTIME_CONTEXT = json.loads" in captured["code"]
@@ -202,6 +232,78 @@ async def test_execute_code_plan_calls_persist_execution_record(monkeypatch):
     assert captured["persisted"] is True
     assert captured["status"] == "success"
     assert captured["language"] == "python"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_logs_source_preview(monkeypatch):
+    plugin = _make_plugin()
+    info_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        return {
+            "stdout": ["ok"],
+            "stderr": [],
+            "result": [],
+            "exit_code": 0,
+        }
+
+    def _capture_info(*args, **kwargs):
+        info_calls.append((args, kwargs))
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+    monkeypatch.setattr(sdk_module.logger, "info", _capture_info)
+
+    result = await plugin.handle_execute_code_plan(code="x = 1\nprint(x)")
+
+    assert result["status"] == "success"
+    source_logs = [
+        call
+        for call in info_calls
+        if call[0] and isinstance(call[0][0], str) and call[0][0] == "code_mode_source"
+    ]
+    assert len(source_logs) == 1
+    source_extra = source_logs[0][1].get("extra")
+    assert isinstance(source_extra, dict)
+    assert source_extra["code_preview"] == "x = 1\nprint(x)"
+    assert source_extra["code_preview_truncated"] is False
+    assert source_extra["code_chars"] == len("x = 1\nprint(x)")
+
+
+@pytest.mark.asyncio
+async def test_execute_code_plan_logs_empty_result_diagnostic(monkeypatch):
+    plugin = _make_plugin()
+    info_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    async def _fake_run_code(session_id, code, language, execution_timeout):
+        return {
+            "stdout": ["log line"],
+            "stderr": [],
+            "result": [],
+            "exit_code": 0,
+        }
+
+    def _capture_info(*args, **kwargs):
+        info_calls.append((args, kwargs))
+
+    monkeypatch.setattr(sdk_module.sandbox_manager, "run_code", _fake_run_code)
+    monkeypatch.setattr(sdk_module.logger, "info", _capture_info)
+
+    result = await plugin.handle_execute_code_plan(code="print('log line')")
+
+    assert result["status"] == "success"
+    empty_result_logs = [
+        call
+        for call in info_calls
+        if call[0]
+        and isinstance(call[0][0], str)
+        and call[0][0] == "code_mode_empty_result"
+    ]
+    assert len(empty_result_logs) == 1
+    empty_extra = empty_result_logs[0][1].get("extra")
+    assert isinstance(empty_extra, dict)
+    assert empty_extra["result_chars"] == 0
+    assert empty_extra["stdout_chars"] > 0
+    assert empty_extra["stderr_chars"] == 0
 
 
 @pytest.mark.asyncio
