@@ -37,7 +37,6 @@ export function SettingsClient() {
 
       <SettingsForm
         isAuthenticated={isAuthenticated}
-        isAdmin={isAdmin}
       />
     </Container>
   )

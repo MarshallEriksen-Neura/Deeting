@@ -1,5 +1,4 @@
 export interface SettingsFormValues {
-  cloudModel: string
   secretaryModel: string
 }
 
