@@ -64,7 +64,7 @@ EXTERNAL_CHAT_WORKFLOW = WorkflowConfig(
             timeout=settings.AGENT_EXECUTOR_TIMEOUT_EXTERNAL_SECONDS,
             max_retries=2,
             retry_delay=1.0,
-            max_turns=12,
+            max_turns=settings.AGENT_EXECUTOR_MAX_TURNS_EXTERNAL,
         ),
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },
@@ -128,7 +128,7 @@ INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
         "agent_executor": StepConfig(
             timeout=settings.AGENT_EXECUTOR_TIMEOUT_INTERNAL_SECONDS,
             max_retries=2,
-            max_turns=15,
+            max_turns=settings.AGENT_EXECUTOR_MAX_TURNS_INTERNAL,
         ),  # 内部超时更长，轮数更多
         "billing": StepConfig(timeout=10.0, max_retries=3),
     },

@@ -35,6 +35,28 @@ def test_resolve_tool_call_timeout_uses_step_timeout_cap(monkeypatch):
     assert step._resolve_tool_call_timeout_seconds() == pytest.approx(90.0)
 
 
+def test_resolve_max_turns_uses_request_value_within_hard_limit(monkeypatch):
+    step = AgentExecutorStep(config=StepConfig(max_turns=24))
+    monkeypatch.setattr(settings, "AGENT_EXECUTOR_MAX_TURNS_HARD_LIMIT", 60, raising=False)
+
+    assert step._resolve_max_turns({"max_turns": 48}) == 48
+
+
+def test_resolve_max_turns_clamps_to_hard_limit(monkeypatch):
+    step = AgentExecutorStep(config=StepConfig(max_turns=24))
+    monkeypatch.setattr(settings, "AGENT_EXECUTOR_MAX_TURNS_HARD_LIMIT", 20, raising=False)
+
+    assert step._resolve_max_turns({"max_turns": 99}) == 20
+
+
+def test_resolve_max_turns_falls_back_when_request_invalid(monkeypatch):
+    step = AgentExecutorStep(config=StepConfig(max_turns=18))
+    monkeypatch.setattr(settings, "AGENT_EXECUTOR_MAX_TURNS_HARD_LIMIT", 60, raising=False)
+
+    assert step._resolve_max_turns({"max_turns": "bad"}) == 18
+    assert step._resolve_max_turns({"max_turns": 0}) == 18
+
+
 def test_should_block_direct_tool_call_when_code_mode_available():
     step = AgentExecutorStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)

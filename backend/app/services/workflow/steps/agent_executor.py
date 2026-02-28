@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 _MIN_TOOL_RESULT_LIMIT_CHARS = 512
 _DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 300.0
+_DEFAULT_MAX_TURNS = 10
+_DEFAULT_MAX_TURNS_HARD_LIMIT = 60
 _CODE_MODE_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
 
 
@@ -39,8 +41,10 @@ class AgentExecutorStep(BaseStep):
     def __init__(self, config=None):
         super().__init__(config)
         self.upstream_step = UpstreamCallStep(config)
-        # Default max_turns is 10, can be overridden by config
-        self.max_turns = getattr(config, "max_turns", 10) if config else 10
+        self.max_turns = self._coerce_positive_int(
+            getattr(config, "max_turns", _DEFAULT_MAX_TURNS) if config else _DEFAULT_MAX_TURNS,
+            _DEFAULT_MAX_TURNS,
+        )
 
     # ------------------------------------------------------------------
     # Failure / Degrade hooks
@@ -157,8 +161,7 @@ class AgentExecutorStep(BaseStep):
         # Deep copy to avoid mutating the original context prematurely
         request_body = deepcopy(raw_request_body)
 
-        # Allow overriding max_turns from request body
-        max_turns = request_body.get("max_turns", self.max_turns)
+        max_turns = self._resolve_max_turns(request_body)
 
         # Remember original stream setting
         original_stream = request_body.get("stream", False)
@@ -367,6 +370,37 @@ class AgentExecutorStep(BaseStep):
         ctx.set("template_render", "request_body", request_body)
 
         return last_step_result
+
+    @staticmethod
+    def _coerce_positive_int(value: Any, fallback: int) -> int:
+        try:
+            parsed = int(value)
+        except Exception:
+            return fallback
+        return parsed if parsed > 0 else fallback
+
+    def _resolve_max_turns(self, request_body: dict[str, Any]) -> int:
+        requested = request_body.get("max_turns")
+        effective = self.max_turns
+        if requested is not None:
+            effective = self._coerce_positive_int(requested, self.max_turns)
+
+        hard_limit = self._coerce_positive_int(
+            getattr(
+                settings,
+                "AGENT_EXECUTOR_MAX_TURNS_HARD_LIMIT",
+                _DEFAULT_MAX_TURNS_HARD_LIMIT,
+            ),
+            _DEFAULT_MAX_TURNS_HARD_LIMIT,
+        )
+        if effective > hard_limit:
+            logger.info(
+                "AgentExecutor max_turns clamped from %s to hard limit %s",
+                effective,
+                hard_limit,
+            )
+            return hard_limit
+        return effective
 
     async def _inject_assistant_mid_loop(
         self,

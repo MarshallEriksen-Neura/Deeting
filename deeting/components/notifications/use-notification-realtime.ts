@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react"
 
 import { buildApiWsUrl, getAuthToken, refreshAccessToken } from "@/lib/http/client"
 import { useNotificationActions } from "@/stores/notification-store"
+import { useAuthStore } from "@/store/auth-store"
 import { type NotificationItem, type NotificationType } from "@/components/notifications/notification-center"
 import {
   markNotificationRead,
@@ -98,6 +99,7 @@ export function setTaskProgressCallback(callback: (task: any) => void) {
 
 export function useNotificationRealtime(options: RealtimeOptions = {}) {
   const { enabled = true } = options
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const {
     setList,
     upsert,
@@ -188,7 +190,7 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
   }, [stopPing])
 
   const scheduleReconnect = useCallback((immediate = false) => {
-    if (!activeRef.current || !enabled) return
+    if (!activeRef.current || !enabled || !isAuthenticated) return
     if (reconnectTimerRef.current) return
 
     const attempt = reconnectAttemptRef.current
@@ -205,10 +207,10 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
       void connect()
     }, delay)
     reconnectAttemptRef.current += 1
-  }, [enabled])
+  }, [enabled, isAuthenticated])
 
   const connect = useCallback(async () => {
-    if (!enabled || !activeRef.current) return
+    if (!enabled || !activeRef.current || !isAuthenticated) return
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return
 
     let token = getAuthToken()
@@ -292,10 +294,10 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
     ws.onerror = () => {
       ws.close()
     }
-  }, [enabled, scheduleReconnect, setList, setUnreadCount, startPing, stopPing, upsert])
+  }, [enabled, isAuthenticated, scheduleReconnect, setList, setUnreadCount, startPing, stopPing, upsert])
 
   useEffect(() => {
-    if (!enabled) return undefined
+    if (!enabled || !isAuthenticated) return undefined
     activeRef.current = true
     void connect()
 
@@ -307,7 +309,7 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
       }
       cleanupSocket()
     }
-  }, [cleanupSocket, connect, enabled])
+  }, [cleanupSocket, connect, enabled, isAuthenticated])
 
   return useMemo(
     () => ({

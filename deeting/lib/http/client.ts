@@ -26,11 +26,15 @@ export class ApiError extends Error {
 }
 
 let authToken: string | null = null
+const AUTH_STORE_KEY = "deeting-auth-store"
+export const AUTH_INVALIDATED_EVENT = "deeting:auth-invalidated"
+const AUTH_REFRESH_COOLDOWN_MS = 30_000
+let refreshBlockedUntil = 0
 
 function loadAuthTokenFromStorage() {
   if (typeof window === "undefined") return null
   try {
-    const stored = sessionStorage.getItem("deeting-auth-store")
+    const stored = sessionStorage.getItem(AUTH_STORE_KEY)
     if (!stored) return null
     const parsed = JSON.parse(stored)
     return parsed.state?.accessToken ?? null
@@ -60,6 +64,35 @@ export function setAuthToken(token: string | null) {
 
 export function clearAuthToken() {
   authToken = null
+}
+
+function purgeAuthStorage() {
+  if (typeof window === "undefined") return
+  try {
+    sessionStorage.removeItem(AUTH_STORE_KEY)
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function notifyAuthInvalidated() {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(new CustomEvent(AUTH_INVALIDATED_EVENT))
+}
+
+function markRefreshBlocked() {
+  refreshBlockedUntil = Date.now() + AUTH_REFRESH_COOLDOWN_MS
+}
+
+function canAttemptRefresh() {
+  return Date.now() >= refreshBlockedUntil
+}
+
+function handleRefreshFailure() {
+  clearAuthToken()
+  purgeAuthStorage()
+  notifyAuthInvalidated()
+  markRefreshBlocked()
 }
 
 export function getAuthToken() {
@@ -166,8 +199,11 @@ apiClient.interceptors.response.use(
       requestUrl === REFRESH_PATH ||
       requestUrl?.endsWith("/auth/refresh") ||
       originalConfig.skipAuthRefresh
+    const hasAuthContext = Boolean(
+      originalConfig.headers?.Authorization || getAuthToken()
+    )
 
-    if (status === 401 && !isRefreshRequest) {
+    if (status === 401 && !isRefreshRequest && hasAuthContext && canAttemptRefresh()) {
       try {
         const newToken = await refreshAccessToken()
         if (newToken) {
@@ -210,6 +246,8 @@ function toApiError(error: AxiosError) {
 }
 
 export async function refreshAccessToken(): Promise<string | null> {
+  if (!canAttemptRefresh()) return null
+
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
@@ -224,6 +262,10 @@ export async function refreshAccessToken(): Promise<string | null> {
           persistAccessToken(token)
           return token
         }
+        handleRefreshFailure()
+        return null
+      } catch {
+        handleRefreshFailure()
         return null
       } finally {
         refreshPromise = null
@@ -235,9 +277,8 @@ export async function refreshAccessToken(): Promise<string | null> {
 
 function persistAccessToken(token: string) {
   if (typeof window === "undefined") return
-  const key = "deeting-auth-store"
   try {
-    const raw = sessionStorage.getItem(key)
+    const raw = sessionStorage.getItem(AUTH_STORE_KEY)
     if (!raw) return
     const parsed = JSON.parse(raw)
     const prevState = parsed.state ?? {}
@@ -247,7 +288,7 @@ function persistAccessToken(token: string) {
       tokenType: prevState.tokenType || "bearer",
       isAuthenticated: Boolean(token),
     }
-    sessionStorage.setItem(key, JSON.stringify(parsed))
+    sessionStorage.setItem(AUTH_STORE_KEY, JSON.stringify(parsed))
   } catch {
     // ignore storage errors
   }
