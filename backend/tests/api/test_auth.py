@@ -132,14 +132,42 @@ class TestTokenRefresh:
             json={"refresh_token": auth_tokens["refresh_token"]},
         )
         assert response1.status_code == 200
+        refreshed_access_token = response1.json()["access_token"]
 
-        # 尝试重用旧的 refresh token（应该失败）
+        # 清空 Cookie，强制第二次仅使用旧 body token 触发重用检测
+        client.cookies.clear()
         response2 = await client.post(
             "/api/v1/auth/refresh",
             json={"refresh_token": auth_tokens["refresh_token"]},
         )
         assert response2.status_code == 401
         assert "reuse" in response2.json()["detail"].lower()
+
+        # 并发/快速重试不应误伤全量会话（新 access token 仍可访问）
+        me_resp = await client.get(
+            "/api/v1/users/me",
+            headers={"Authorization": f"Bearer {refreshed_access_token}"},
+        )
+        assert me_resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_refresh_prefers_cookie_over_body_token(
+        self, client: AsyncClient, auth_tokens: dict
+    ):
+        """当 Cookie 与 body 同时存在且不一致时，应优先使用 Cookie。"""
+        # 第一次刷新，客户端 Cookie 将自动更新为新 refresh token
+        response1 = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": auth_tokens["refresh_token"]},
+        )
+        assert response1.status_code == 200
+
+        # 第二次故意带旧 body token；若后端优先 Cookie，应继续成功
+        response2 = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": auth_tokens["refresh_token"]},
+        )
+        assert response2.status_code == 200
 
     @pytest.mark.asyncio
     async def test_refresh_invalid_token(self, client: AsyncClient):

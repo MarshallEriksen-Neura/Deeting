@@ -32,6 +32,7 @@ class ToolContextService:
         session: AsyncSession | None,
         user_id: str | uuid.UUID | None,
         query: str | None,
+        include_non_core_in_code_mode: bool = False,
     ) -> list[ToolDefinition]:
         from app.services.agent.agent_service import agent_service
 
@@ -108,6 +109,9 @@ class ToolContextService:
         code_mode_minimal_toolset = bool(
             getattr(settings, "CODE_MODE_MINIMAL_TOOLSET", False)
         )
+        effective_code_mode_minimal_toolset = (
+            code_mode_minimal_toolset and not include_non_core_in_code_mode
+        )
 
         user_tool_payloads: list[dict] = []
         user_mcp_tool_names: set[str] = set()
@@ -165,7 +169,7 @@ class ToolContextService:
             
             # 2. 添加 JIT 命中的动态技能
             # code mode 最小工具集模式下，跳过用户 MCP 工具（只能通过 execute_code_plan 间接调用）
-            skip_user_mcp = code_mode_enabled and code_mode_minimal_toolset
+            skip_user_mcp = code_mode_enabled and effective_code_mode_minimal_toolset
             for tool in dynamic_hits:
                 if tool.name in existing_names:
                     continue
@@ -173,7 +177,7 @@ class ToolContextService:
                 # 其余工具需通过 search_sdk -> execute_code_plan 间接调用。
                 if (
                     code_mode_enabled
-                    and code_mode_minimal_toolset
+                    and effective_code_mode_minimal_toolset
                     and tool.name not in _CODE_MODE_CORE_TOOL_NAMES
                 ):
                     continue
@@ -190,7 +194,7 @@ class ToolContextService:
                     existing_names.add(tool.name)
 
             # 3. 补充添加所有已启用的内置系统工具 (确保爬虫等基础能力不丢失)
-            if not (code_mode_enabled and code_mode_minimal_toolset):
+            if not (code_mode_enabled and effective_code_mode_minimal_toolset):
                 for tool in non_core_system_tools:
                     if tool.name in existing_names:
                         continue
@@ -215,7 +219,7 @@ class ToolContextService:
             existing_names.add(tool.name)
 
         # code mode 最小工具集模式下，跳过用户 MCP 工具（只能通过 execute_code_plan 间接调用）
-        skip_user_mcp = code_mode_enabled and code_mode_minimal_toolset
+        skip_user_mcp = code_mode_enabled and effective_code_mode_minimal_toolset
         if not skip_user_mcp:
             for payload in user_tool_payloads:
                 name = payload.get("name")
@@ -231,7 +235,7 @@ class ToolContextService:
                 "ToolContextService: code mode minimal toolset enabled, skip user MCP tools"
             )
 
-        if not (code_mode_enabled and code_mode_minimal_toolset):
+        if not (code_mode_enabled and effective_code_mode_minimal_toolset):
             for tool in non_core_system_tools:
                 if tool.name in existing_names:
                     continue

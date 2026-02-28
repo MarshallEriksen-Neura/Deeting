@@ -42,6 +42,45 @@ class FakeManifestGenerator:
         }
 
 
+@pytest.mark.asyncio
+async def test_repo_ingestion_passes_user_id_to_manifest_generator(monkeypatch, tmp_path):
+    (tmp_path / "requirements.txt").write_text("lxml", encoding="utf-8")
+    (tmp_path / "README.md").write_text("docx", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "app.services.skill_registry.repo_ingestion_service.clone_repo",
+        lambda *_args, **_kwargs: (tmp_path, tmp_path),
+    )
+
+    captured: dict[str, str | None] = {"user_id": None}
+
+    class CaptureManifestGenerator:
+        async def generate(self, *_args, **kwargs):
+            captured["user_id"] = kwargs.get("user_id")
+            return {
+                "name": "Docx Skill",
+                "description": "docx parser",
+                "capabilities": ["docx"],
+                "usage_spec": {"example_code": "print(1)"},
+            }
+
+    service = RepoIngestionService(
+        repo=FakeRepo(),
+        manifest_generator=CaptureManifestGenerator(),
+        parsers=[PythonRepoParser(), NodeRepoParser()],
+    )
+
+    await service.ingest_repo(
+        "https://example.com/repo.git",
+        "main",
+        skill_id="docx_skill",
+        runtime_hint="python_library",
+        user_id="123e4567-e89b-12d3-a456-426614174000",
+    )
+
+    assert captured["user_id"] == "123e4567-e89b-12d3-a456-426614174000"
+
+
 class FakeRelationRepo:
     def __init__(self) -> None:
         self.values: dict[str, list[str]] = {}

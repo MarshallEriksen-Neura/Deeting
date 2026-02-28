@@ -3,6 +3,7 @@
 """
 
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -36,6 +37,24 @@ class AuthService:
         self.db = db
         self.user_repo = UserRepository(db)
         self.provisioner = UserProvisioningService(db)
+
+    @staticmethod
+    def _is_refresh_reuse_within_grace(refresh_data: dict[str, Any]) -> bool:
+        """
+        判定 refresh token 重用是否发生在并发宽限窗口内。
+        仅用于避免同一时刻并发刷新触发误伤式全量登出。
+        """
+        used_at_ts = refresh_data.get("used_at_ts")
+        if used_at_ts is None:
+            return False
+        try:
+            used_at = float(used_at_ts)
+        except (TypeError, ValueError):
+            return False
+        grace = max(0, int(settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS))
+        if grace <= 0:
+            return False
+        return (Datetime.now().timestamp() - used_at) <= grace
 
     # ========== 登录相关 ==========
 
@@ -196,6 +215,15 @@ class AuthService:
             )
 
         if refresh_data.get("used"):
+            if self._is_refresh_reuse_within_grace(refresh_data):
+                logger.warning(
+                    "refresh_token_reuse_within_grace",
+                    extra={"user_id": str(user_id), "jti": jti},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token reuse detected, retry with latest token",
+                )
             # 检测到 token 重用，可能是攻击，撤销所有 token
             logger.warning(
                 "refresh_token_reuse_detected",
@@ -209,6 +237,7 @@ class AuthService:
 
         # 标记旧 refresh token 为已使用
         refresh_data["used"] = True
+        refresh_data["used_at_ts"] = int(Datetime.now().timestamp())
         await cache.set(refresh_key, refresh_data, ttl=60)  # 短 TTL，防止重放
 
         # 验证用户和 token 版本

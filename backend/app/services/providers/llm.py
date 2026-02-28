@@ -2,7 +2,6 @@ import json
 import logging
 from typing import Any
 
-from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.schemas.gateway import ChatCompletionRequest
 from app.schemas.tool import ToolCall, ToolDefinition
@@ -22,6 +21,64 @@ class LLMService:
     def __init__(self):
         pass
 
+    async def _resolve_context_identity_and_model(
+        self,
+        *,
+        session,
+        model: str | None,
+        user_id: str | None,
+        tenant_id: str | None,
+        api_key_id: str | None,
+    ) -> tuple[str, str | None, str | None, str | None]:
+        from app.repositories.provider_instance_repository import (
+            ProviderModelRepository,
+        )
+        from app.repositories.secretary_repository import UserSecretaryRepository
+
+        target_model = model
+        resolved_user_id = str(user_id) if user_id else None
+        resolved_tenant_id = str(tenant_id) if tenant_id else None
+        resolved_api_key_id = str(api_key_id) if api_key_id else None
+
+        if not resolved_user_id:
+            secretary_repo = UserSecretaryRepository(session)
+            fallback = await secretary_repo.get_primary_superuser_secretary()
+            if fallback:
+                superuser, secretary = fallback
+                resolved_user_id = str(superuser.id)
+                if not target_model and secretary.model_name:
+                    target_model = str(secretary.model_name).strip() or None
+                if resolved_user_id:
+                    logger.info(
+                        "LLMService: fallback to primary superuser secretary user_id=%s model=%s",
+                        resolved_user_id,
+                        target_model,
+                    )
+
+        if not target_model and resolved_user_id:
+            model_repo = ProviderModelRepository(session)
+            user_models = await model_repo.get_available_models_for_user(resolved_user_id)
+            if user_models:
+                target_model = user_models[0]
+                logger.info(
+                    "LLMService: Auto-selected default model '%s' for user %s",
+                    target_model,
+                    resolved_user_id,
+                )
+
+        if not target_model:
+            raise RuntimeError(
+                "LLMService failed: no model specified and no available model in user/secretary context"
+            )
+
+        if resolved_user_id:
+            if not resolved_tenant_id:
+                resolved_tenant_id = resolved_user_id
+            if not resolved_api_key_id:
+                resolved_api_key_id = resolved_user_id
+
+        return target_model, resolved_user_id, resolved_tenant_id, resolved_api_key_id
+
     async def chat_completion(
         self,
         messages: list[dict],
@@ -39,30 +96,16 @@ class LLMService:
         Executes a chat completion using the internal orchestrator.
         """
         async with AsyncSessionLocal() as session:
-            # 1. Determine Target Model
-            target_model = model
-            if not target_model:
-                # Dynamic default: Find first available chat model for user
-                from app.repositories.provider_instance_repository import (
-                    ProviderModelRepository,
+            # 1. Resolve model and runtime identity
+            target_model, resolved_user_id, resolved_tenant_id, resolved_api_key_id = (
+                await self._resolve_context_identity_and_model(
+                    session=session,
+                    model=model,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    api_key_id=api_key_id,
                 )
-
-                model_repo = ProviderModelRepository(session)
-                # We try to get any valid model for this user
-                # We can use get_available_models_for_user which returns IDs
-                if user_id:
-                    user_models = await model_repo.get_available_models_for_user(
-                        str(user_id)
-                    )
-                    if user_models:
-                        target_model = user_models[0]
-                        logger.info(
-                            f"LLMService: Auto-selected default model '{target_model}' for user {user_id}"
-                        )
-
-            # Fallback only if still empty (system default or panic)
-            if not target_model:
-                target_model = getattr(settings, "INTERNAL_LLM_MODEL_ID", "kimi-k2")
+            )
 
             # 2. Build Request Object
             internal_req = ChatCompletionRequest(
@@ -84,15 +127,12 @@ class LLMService:
             )
             if trace_id:
                 ctx.trace_id = trace_id
-            if tenant_id:
-                ctx.tenant_id = str(tenant_id)
-            if user_id:
-                ctx.user_id = str(user_id)
-            if api_key_id:
-                ctx.api_key_id = str(api_key_id)
-            elif user_id:
-                # 内部调用默认用 user_id 作为 api_key 维度
-                ctx.api_key_id = str(user_id)
+            if resolved_tenant_id:
+                ctx.tenant_id = str(resolved_tenant_id)
+            if resolved_user_id:
+                ctx.user_id = str(resolved_user_id)
+            if resolved_api_key_id:
+                ctx.api_key_id = str(resolved_api_key_id)
 
             # 4. Configure Context
             ctx.set("validation", "request", internal_req)

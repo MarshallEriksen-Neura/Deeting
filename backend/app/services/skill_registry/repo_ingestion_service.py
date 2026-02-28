@@ -65,6 +65,7 @@ class RepoIngestionService:
         skill_id: str | None = None,
         runtime_hint: str | None = None,
         source_subdir: str | None = None,
+        user_id: str | None = None,
     ) -> dict:
         if self.repo is None or self.manifest_generator is None:
             raise ValueError("repo and manifest_generator are required for ingestion")
@@ -96,7 +97,11 @@ class RepoIngestionService:
                 manifest = parser.extract_manifest(evidence)
                 logger.info(f"Using authoritative manifest from parser: {parser.__class__.__name__}")
             else:
-                manifest = await self.manifest_generator.generate(evidence, runtime=runtime)
+                manifest = await self.manifest_generator.generate(
+                    evidence,
+                    runtime=runtime,
+                    user_id=user_id,
+                )
                 # Merge parser evidence if needed
                 parser_manifest = parser.extract_manifest(evidence)
                 if parser_manifest:

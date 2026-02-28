@@ -27,8 +27,9 @@
   失败：`401`（验证码错误/过期），`403`（被封禁或缺少邀请码），`429`（连续失败达到 `LOGIN_RATE_LIMIT_ATTEMPTS=5`，窗口 `LOGIN_RATE_LIMIT_WINDOW=600s`）。新用户首登自动注册并激活，遵循邀请码策略。
 
 - **POST `/auth/refresh`**  
-  请求体 `RefreshRequest`：`refresh_token`。  
-  返回新的 `TokenPair`（旧 refresh 会被标记已用，重复使用将触发全量登出）。  
+  优先使用 HttpOnly Cookie `refresh_token`；若 Cookie 缺省则回退读取请求体 `RefreshRequest.refresh_token`。  
+  当 Cookie 与请求体同时存在且不一致时，以 Cookie 为准。  
+  返回新的 `TokenPair`（旧 refresh 会被标记已用；短时间并发重试会返回 401 提示重试，超出宽限仍按重放处理）。  
   失败：`401 Invalid/expired token`。
 
 - **POST `/auth/logout`**  

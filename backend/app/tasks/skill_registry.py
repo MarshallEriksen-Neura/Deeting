@@ -243,6 +243,7 @@ async def _run_repo_ingestion(
             revision=revision,
             skill_id=skill_id,
             runtime_hint=runtime_hint,
+            user_id=user_id,
         )
 
         await push_task_progress(

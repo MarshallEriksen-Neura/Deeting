@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.http_client import create_async_http_client
+from app.core.logging import logger
 from app.deps.auth import get_current_user
 from app.models import User
 from app.schemas.auth import (
@@ -91,6 +92,22 @@ def _clear_refresh_cookie(response: Response) -> None:
     )
 
 
+def _normalize_refresh_token(raw: str | None) -> str | None:
+    """
+    规范化 refresh token 输入：
+    - 支持 `refresh_token=<jwt>` 形式
+    - 容忍误传整段 Cookie 字符串，仅截取第一个 `;` 前内容
+    """
+    if not raw:
+        return None
+    token = raw.strip()
+    if token.startswith(f"{REFRESH_COOKIE_NAME}="):
+        token = token[len(f"{REFRESH_COOKIE_NAME}=") :]
+    if ";" in token:
+        token = token.split(";", 1)[0].strip()
+    return token or None
+
+
 @router.post("/login/code", response_model=MessageResponse)
 async def send_login_code(
     payload: SendLoginCodeRequest,
@@ -148,11 +165,15 @@ async def refresh_token(
     """
     刷新 Token
 
-    - 优先读取请求体 refresh_token；若缺省则回退到 HttpOnly Cookie
+    - 优先读取 HttpOnly Cookie；若缺省则回退到请求体 refresh_token
     - 实现轮换策略（旧 token 失效）
     - 返回新的 token pair 并重写 Cookie
     """
-    refresh_token_value = request.refresh_token if request else refresh_cookie
+    cookie_token = _normalize_refresh_token(refresh_cookie)
+    body_token = _normalize_refresh_token(request.refresh_token) if request else None
+    if cookie_token and body_token and cookie_token != body_token:
+        logger.warning("refresh_token_mismatch_cookie_body", extra={"use": "cookie"})
+    refresh_token_value = cookie_token or body_token
     if not refresh_token_value:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

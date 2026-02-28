@@ -36,10 +36,14 @@ def _make_plugin() -> DeetingCoreSdkPlugin:
 @pytest.mark.asyncio
 async def test_search_sdk_returns_typed_signatures(monkeypatch):
     plugin = _make_plugin()
+    captured: dict[str, bool] = {"include_non_core_in_code_mode": False}
 
-    async def _fake_build_tools(*, session, user_id, query):
+    async def _fake_build_tools(
+        *, session, user_id, query, include_non_core_in_code_mode=False
+    ):
         assert query == "查找网页抓取工具"
         assert user_id == plugin.context.user_id
+        captured["include_non_core_in_code_mode"] = bool(include_non_core_in_code_mode)
         return [
             ToolDefinition(
                 name="fetch_web_content",
@@ -64,6 +68,7 @@ async def test_search_sdk_returns_typed_signatures(monkeypatch):
     result = await plugin.handle_search_sdk("查找网页抓取工具", limit=1)
 
     assert result["count"] == 1
+    assert captured["include_non_core_in_code_mode"] is True
     assert result["tools"][0]["name"] == "fetch_web_content"
     assert result["tools"][0]["signature"] == "fetch_web_content(url:string)"
     assert result["tools"][0]["python_stub"] == "def fetch_web_content(url: str) -> dict: ..."
@@ -74,7 +79,9 @@ async def test_search_sdk_returns_typed_signatures(monkeypatch):
 async def test_search_sdk_returns_parameter_docs_and_examples(monkeypatch):
     plugin = _make_plugin()
 
-    async def _fake_build_tools(*, session, user_id, query):
+    async def _fake_build_tools(
+        *, session, user_id, query, include_non_core_in_code_mode=False
+    ):
         return [
             ToolDefinition(
                 name="search_web",
@@ -125,7 +132,9 @@ async def test_search_sdk_returns_parameter_docs_and_examples(monkeypatch):
 async def test_search_sdk_usage_hint_includes_code_mode_conventions(monkeypatch):
     plugin = _make_plugin()
 
-    async def _fake_build_tools(*, session, user_id, query):
+    async def _fake_build_tools(
+        *, session, user_id, query, include_non_core_in_code_mode=False
+    ):
         return [
             ToolDefinition(
                 name="tavily-search",
@@ -154,7 +163,9 @@ async def test_search_sdk_usage_hint_includes_code_mode_conventions(monkeypatch)
 async def test_search_sdk_records_snapshot_into_workflow_context(monkeypatch):
     plugin = _make_plugin()
 
-    async def _fake_build_tools(*, session, user_id, query):
+    async def _fake_build_tools(
+        *, session, user_id, query, include_non_core_in_code_mode=False
+    ):
         return [
             ToolDefinition(
                 name="fetch_web_content",

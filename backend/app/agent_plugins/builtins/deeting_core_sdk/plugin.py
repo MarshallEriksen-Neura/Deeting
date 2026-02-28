@@ -821,12 +821,14 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     session=db_session,
                     user_id=user_id,
                     query=query,
+                    include_non_core_in_code_mode=True,
                 )
 
         return await tool_context_service.build_tools(
             session=None,
             user_id=user_id,
             query=query,
+            include_non_core_in_code_mode=True,
         )
 
     def _store_search_sdk_snapshot(
