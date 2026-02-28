@@ -1,6 +1,7 @@
 import json
 import logging
 from typing import Any
+from uuid import UUID
 
 from app.core.database import AsyncSessionLocal
 from app.schemas.gateway import ChatCompletionRequest
@@ -30,45 +31,45 @@ class LLMService:
         tenant_id: str | None,
         api_key_id: str | None,
     ) -> tuple[str, str | None, str | None, str | None]:
-        from app.repositories.provider_instance_repository import (
-            ProviderModelRepository,
-        )
         from app.repositories.secretary_repository import UserSecretaryRepository
 
-        target_model = model
+        target_model = str(model).strip() if isinstance(model, str) else model
         resolved_user_id = str(user_id) if user_id else None
         resolved_tenant_id = str(tenant_id) if tenant_id else None
         resolved_api_key_id = str(api_key_id) if api_key_id else None
 
-        if not resolved_user_id:
-            secretary_repo = UserSecretaryRepository(session)
-            fallback = await secretary_repo.get_primary_superuser_secretary()
-            if fallback:
-                superuser, secretary = fallback
-                resolved_user_id = str(superuser.id)
-                if not target_model and secretary.model_name:
-                    target_model = str(secretary.model_name).strip() or None
-                if resolved_user_id:
-                    logger.info(
-                        "LLMService: fallback to primary superuser secretary user_id=%s model=%s",
-                        resolved_user_id,
-                        target_model,
-                    )
-
-        if not target_model and resolved_user_id:
-            model_repo = ProviderModelRepository(session)
-            user_models = await model_repo.get_available_models_for_user(resolved_user_id)
-            if user_models:
-                target_model = user_models[0]
-                logger.info(
-                    "LLMService: Auto-selected default model '%s' for user %s",
-                    target_model,
-                    resolved_user_id,
+        if not target_model:
+            if not resolved_user_id:
+                raise RuntimeError(
+                    "LLMService failed: user_id is required when model is not specified"
                 )
+
+            try:
+                user_uuid = UUID(str(resolved_user_id))
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError("LLMService failed: invalid user_id") from exc
+
+            secretary_repo = UserSecretaryRepository(session)
+            secretary = await secretary_repo.get_by_user_id(user_uuid)
+            secretary_model = (
+                str(secretary.model_name).strip()
+                if secretary and secretary.model_name
+                else None
+            )
+            if not secretary_model:
+                raise RuntimeError(
+                    f"LLMService failed: secretary model is not configured for user {resolved_user_id}"
+                )
+            target_model = secretary_model
+            logger.info(
+                "LLMService: resolved model from secretary user_id=%s model=%s",
+                resolved_user_id,
+                target_model,
+            )
 
         if not target_model:
             raise RuntimeError(
-                "LLMService failed: no model specified and no available model in user/secretary context"
+                "LLMService failed: no model specified"
             )
 
         if resolved_user_id:

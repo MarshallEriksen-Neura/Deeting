@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     MCP_TOOL_SCORE_THRESHOLD: float = 0.75
     MCP_TOOL_SYSTEM_INDEX_HASH_TTL_SECONDS: int = 86400
     CODE_MODE_MINIMAL_TOOLSET: bool = True
+    MCP_HTTP_TRUST_ENV: bool = False
 
     # Spec Knowledge 三层漏斗配置
     SPEC_KB_OBSERVATION_WINDOW_SECONDS: int = 900

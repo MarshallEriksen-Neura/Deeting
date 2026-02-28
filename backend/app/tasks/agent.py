@@ -85,12 +85,19 @@ async def _chat_completion_with_fallback(
     messages: list[dict],
     tools: list[ToolDefinition],
     model_hint: str | None,
+    user_id: str | None,
 ) -> tuple[Any, str | None]:
     from app.services.providers.llm import llm_service
 
     try:
         response = await llm_service.chat_completion(
-            messages=messages, tools=tools, temperature=0.0, model=model_hint
+            messages=messages,
+            tools=tools,
+            temperature=0.0,
+            model=model_hint,
+            user_id=user_id,
+            tenant_id=user_id,
+            api_key_id=user_id,
         )
         return response, model_hint
     except Exception as exc:
@@ -105,6 +112,9 @@ async def _chat_completion_with_fallback(
             messages=messages,
             tools=tools,
             temperature=0.0,
+            user_id=user_id,
+            tenant_id=user_id,
+            api_key_id=user_id,
         )
         return response, None
 
@@ -224,6 +234,7 @@ Extract the relevant information from the context and use the available tools to
                     messages=messages,
                     tools=tools,
                     model_hint=selected_model,
+                    user_id=user_id,
                 )
 
                 if isinstance(response, str):

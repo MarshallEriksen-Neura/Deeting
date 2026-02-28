@@ -17,6 +17,10 @@ def test_crawler_plugin_tools_include_repo_ingestion():
         for tool in tools
     )
     assert any(
+        tool.get("function", {}).get("name") == "poll_repo_ingestion"
+        for tool in tools
+    )
+    assert any(
         tool.get("function", {}).get("name") == "batch_convert_artifact_to_assistants"
         for tool in tools
     )
@@ -185,3 +189,89 @@ async def test_resolve_owner_user_id_system_scope_returns_none_for_superuser(mon
     )
 
     assert owner_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_handle_poll_repo_ingestion_pending(monkeypatch):
+    plugin = CrawlerPlugin()
+    plugin._context = _DummyContext()
+
+    class _FakeAsyncResult:
+        def __init__(self, _task_id, app=None):
+            self.state = "PENDING"
+            self.result = None
+
+        def ready(self):
+            return False
+
+        def successful(self):
+            return False
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.crawler.plugin.AsyncResult",
+        _FakeAsyncResult,
+    )
+
+    result = await plugin.handle_poll_repo_ingestion(task_id="task-001")
+    assert result["status"] == "queued"
+    assert result["state"] == "PENDING"
+    assert result["ready"] is False
+    assert result["task_id"] == "task-001"
+
+
+@pytest.mark.asyncio
+async def test_handle_poll_repo_ingestion_success(monkeypatch):
+    plugin = CrawlerPlugin()
+    plugin._context = _DummyContext()
+
+    class _FakeAsyncResult:
+        def __init__(self, _task_id, app=None):
+            self.state = "SUCCESS"
+            self.result = {"skill_id": "core.demo.skill", "status": "created"}
+
+        def ready(self):
+            return True
+
+        def successful(self):
+            return True
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.crawler.plugin.AsyncResult",
+        _FakeAsyncResult,
+    )
+
+    result = await plugin.handle_poll_repo_ingestion(task_id="task-002")
+    assert result["status"] == "completed"
+    assert result["state"] == "SUCCESS"
+    assert result["ready"] is True
+    assert result["successful"] is True
+    assert result["result"]["skill_id"] == "core.demo.skill"
+
+
+@pytest.mark.asyncio
+async def test_handle_poll_repo_ingestion_failure(monkeypatch):
+    plugin = CrawlerPlugin()
+    plugin._context = _DummyContext()
+
+    class _FakeAsyncResult:
+        def __init__(self, _task_id, app=None):
+            self.state = "FAILURE"
+            self.result = RuntimeError("git clone failed")
+
+        def ready(self):
+            return True
+
+        def successful(self):
+            return False
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.crawler.plugin.AsyncResult",
+        _FakeAsyncResult,
+    )
+
+    result = await plugin.handle_poll_repo_ingestion(task_id="task-003")
+    assert result["status"] == "failed"
+    assert result["state"] == "FAILURE"
+    assert result["ready"] is True
+    assert result["successful"] is False
+    assert "git clone failed" in result["error"]

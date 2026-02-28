@@ -1,6 +1,8 @@
 import asyncio
+import hashlib
 import json
 import logging
+import re
 import shlex
 from datetime import timedelta
 from typing import Any, Optional
@@ -32,6 +34,7 @@ _ERROR_CODE_RESOURCE_LIMIT = "SANDBOX_RESOURCE_LIMIT"
 _ERROR_CODE_UNKNOWN = "SANDBOX_EXECUTION_ERROR"
 _SESSION_RUN_LOCK_PREFIX = f"{KEY_PREFIX}:run_lock"
 _SESSION_BUSY_RETRY_ATTEMPTS = 2
+_K8S_LABEL_VALUE_MAX_LEN = 63
 
 
 def key_session(session_id: str) -> str:
@@ -388,12 +391,13 @@ class SandboxManager:
         config = ConnectionConfig(domain=self.url, request_timeout=timedelta(minutes=5))
         factory = AdapterFactory(config)
         service = factory.create_sandbox_service()
+        metadata_session_id = _sanitize_k8s_label_value(session_id)
 
         response = await service.create_sandbox(
             spec=SandboxImageSpec(image=settings.OPENSANDBOX_IMAGE),
             entrypoint=_build_sandbox_entrypoint(settings.OPENSANDBOX_ENTRYPOINT),
             env={"PYTHON_VERSION": settings.OPENSANDBOX_PYTHON_VERSION},
-            metadata={"session_id": session_id},
+            metadata={"session_id": metadata_session_id},
             timeout=self.default_timeout,
             resource={
                 "cpu": settings.OPENSANDBOX_RESOURCE_CPU,
@@ -608,6 +612,33 @@ def _build_sandbox_entrypoint(configured_entrypoint: str) -> list[str]:
         f"exec {quoted_entrypoint}"
     )
     return ["/bin/sh", "-lc", script]
+
+
+def _sanitize_k8s_label_value(raw_value: str) -> str:
+    """
+    Sanitize metadata value to satisfy Kubernetes label value constraints:
+    - max 63 chars
+    - start/end with alphanumeric
+    - allowed chars: [A-Za-z0-9._-]
+    """
+    value = str(raw_value or "").strip()
+    value = re.sub(r"[^A-Za-z0-9._-]+", "-", value)
+    value = re.sub(r"^[^A-Za-z0-9]+", "", value)
+    value = re.sub(r"[^A-Za-z0-9]+$", "", value)
+
+    if not value:
+        return "na"
+
+    if len(value) <= _K8S_LABEL_VALUE_MAX_LEN:
+        return value
+
+    suffix = hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
+    keep = _K8S_LABEL_VALUE_MAX_LEN - len(suffix) - 1
+    prefix = value[:keep]
+    prefix = re.sub(r"[^A-Za-z0-9]+$", "", prefix)
+    if not prefix:
+        prefix = "v"
+    return f"{prefix}-{suffix}"
 
 
 sandbox_manager = SandboxManager.get_instance()

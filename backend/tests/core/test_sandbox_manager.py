@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import pytest
 
@@ -10,6 +11,7 @@ from app.core.sandbox.manager import (
     _ERROR_CODE_RESOURCE_LIMIT,
     _ERROR_CODE_TIMEOUT,
     SandboxManager,
+    _sanitize_k8s_label_value,
 )
 
 
@@ -382,3 +384,49 @@ async def test_reap_zombies_reaps_sandbox_when_ref_missing(monkeypatch):
 
     assert killed == ["sbox-2"]
     assert removed == ["sbox-2"]
+
+
+def test_sanitize_k8s_label_value_replaces_invalid_chars():
+    value = _sanitize_k8s_label_value("user:820ae05c-6900-4b07-b3d1-1f1a0959bbd5")
+    assert value == "user-820ae05c-6900-4b07-b3d1-1f1a0959bbd5"
+
+
+def test_sanitize_k8s_label_value_truncates_to_valid_length():
+    raw = "user:" + ("a" * 100)
+    value = _sanitize_k8s_label_value(raw)
+    assert len(value) <= 63
+    assert re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", value)
+
+
+@pytest.mark.asyncio
+async def test_create_sandbox_uses_sanitized_session_id_in_metadata(monkeypatch):
+    manager = SandboxManager()
+    captured: dict = {}
+
+    class _FakeResponse:
+        id = "sbx-1"
+
+    class _FakeService:
+        async def create_sandbox(self, **kwargs):
+            captured.update(kwargs)
+            return _FakeResponse()
+
+    class _FakeFactory:
+        def __init__(self, _config):
+            pass
+
+        def create_sandbox_service(self):
+            return _FakeService()
+
+    async def _fake_connect(_sandbox_id, _factory=None, _service=None, wait_ready=False):
+        assert wait_ready is True
+        return _FakeSandbox("sbx-1")
+
+    monkeypatch.setattr(manager, "_get_redis", lambda: None)
+    monkeypatch.setattr(manager, "_connect_sandbox", _fake_connect)
+    monkeypatch.setattr(sandbox_manager_module, "AdapterFactory", _FakeFactory)
+
+    sandbox = await manager._create_sandbox("user:820ae05c-6900-4b07-b3d1-1f1a0959bbd5")
+
+    assert sandbox.id == "sbx-1"
+    assert captured["metadata"]["session_id"] == "user-820ae05c-6900-4b07-b3d1-1f1a0959bbd5"

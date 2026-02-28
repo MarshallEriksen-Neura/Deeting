@@ -5,7 +5,6 @@ import pytest
 import sys
 import types
 
-from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.repositories.secretary_repository import UserSecretaryRepository
 
 
@@ -23,61 +22,18 @@ def _load_llm_module(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_resolve_context_uses_primary_superuser_secretary(monkeypatch):
+async def test_resolve_context_uses_user_secretary_model(monkeypatch):
     llm_module = _load_llm_module(monkeypatch)
     service = llm_module.LLMService()
-    superuser_id = "123e4567-e89b-12d3-a456-426614174000"
+    user_id = "123e4567-e89b-12d3-a456-426614174000"
 
-    async def fake_get_primary_superuser_secretary(_self):
-        return (
-            SimpleNamespace(id=superuser_id),
-            SimpleNamespace(model_name="Kimi-K2"),
-        )
-
-    async def fake_get_available_models_for_user(_self, _user_id: str):
-        return []
+    async def fake_get_by_user_id(_self, _user_id):
+        return SimpleNamespace(model_name="Kimi-K2")
 
     monkeypatch.setattr(
         UserSecretaryRepository,
-        "get_primary_superuser_secretary",
-        fake_get_primary_superuser_secretary,
-    )
-    monkeypatch.setattr(
-        ProviderModelRepository,
-        "get_available_models_for_user",
-        fake_get_available_models_for_user,
-    )
-
-    target_model, resolved_user_id, resolved_tenant_id, resolved_api_key_id = (
-        await service._resolve_context_identity_and_model(
-            session=object(),
-            model=None,
-            user_id=None,
-            tenant_id=None,
-            api_key_id=None,
-        )
-    )
-
-    assert target_model == "Kimi-K2"
-    assert resolved_user_id == superuser_id
-    assert resolved_tenant_id == superuser_id
-    assert resolved_api_key_id == superuser_id
-
-
-@pytest.mark.asyncio
-async def test_resolve_context_uses_user_available_model(monkeypatch):
-    llm_module = _load_llm_module(monkeypatch)
-    service = llm_module.LLMService()
-    user_id = "123e4567-e89b-12d3-a456-426614174001"
-
-    async def fake_get_available_models_for_user(_self, target_user_id: str):
-        assert target_user_id == user_id
-        return ["DeepSeek-V3"]
-
-    monkeypatch.setattr(
-        ProviderModelRepository,
-        "get_available_models_for_user",
-        fake_get_available_models_for_user,
+        "get_by_user_id",
+        fake_get_by_user_id,
     )
 
     target_model, resolved_user_id, resolved_tenant_id, resolved_api_key_id = (
@@ -90,27 +46,21 @@ async def test_resolve_context_uses_user_available_model(monkeypatch):
         )
     )
 
-    assert target_model == "DeepSeek-V3"
+    assert target_model == "Kimi-K2"
     assert resolved_user_id == user_id
     assert resolved_tenant_id == user_id
     assert resolved_api_key_id == user_id
 
 
 @pytest.mark.asyncio
-async def test_resolve_context_raises_without_any_model(monkeypatch):
+async def test_resolve_context_raises_without_user_id_when_model_unspecified(monkeypatch):
     llm_module = _load_llm_module(monkeypatch)
     service = llm_module.LLMService()
 
-    async def fake_get_primary_superuser_secretary(_self):
-        return None
-
-    monkeypatch.setattr(
-        UserSecretaryRepository,
-        "get_primary_superuser_secretary",
-        fake_get_primary_superuser_secretary,
-    )
-
-    with pytest.raises(RuntimeError, match="no model specified"):
+    with pytest.raises(
+        RuntimeError,
+        match="user_id is required when model is not specified",
+    ):
         await service._resolve_context_identity_and_model(
             session=object(),
             model=None,
@@ -118,3 +68,49 @@ async def test_resolve_context_raises_without_any_model(monkeypatch):
             tenant_id=None,
             api_key_id=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_resolve_context_raises_without_secretary_model(monkeypatch):
+    llm_module = _load_llm_module(monkeypatch)
+    service = llm_module.LLMService()
+    user_id = "123e4567-e89b-12d3-a456-426614174001"
+
+    async def fake_get_by_user_id(_self, _user_id):
+        return SimpleNamespace(model_name=None)
+
+    monkeypatch.setattr(
+        UserSecretaryRepository,
+        "get_by_user_id",
+        fake_get_by_user_id,
+    )
+
+    with pytest.raises(RuntimeError, match="secretary model is not configured"):
+        await service._resolve_context_identity_and_model(
+            session=object(),
+            model=None,
+            user_id=user_id,
+            tenant_id=None,
+            api_key_id=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_context_keeps_explicit_model_without_user(monkeypatch):
+    llm_module = _load_llm_module(monkeypatch)
+    service = llm_module.LLMService()
+
+    target_model, resolved_user_id, resolved_tenant_id, resolved_api_key_id = (
+        await service._resolve_context_identity_and_model(
+            session=object(),
+            model="gpt-4o-mini",
+            user_id=None,
+            tenant_id=None,
+            api_key_id=None,
+        )
+    )
+
+    assert target_model == "gpt-4o-mini"
+    assert resolved_user_id is None
+    assert resolved_tenant_id is None
+    assert resolved_api_key_id is None

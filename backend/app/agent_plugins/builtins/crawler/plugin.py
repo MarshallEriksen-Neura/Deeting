@@ -1,6 +1,8 @@
 import uuid
 from typing import Any
 
+from celery.result import AsyncResult
+
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
@@ -18,7 +20,7 @@ class CrawlerPlugin(AgentPlugin):
     def metadata(self) -> PluginMetadata:
         return PluginMetadata(
             name="core.tools.crawler",
-            version="2.4.0",  # Added assistant conversion scope control
+            version="2.5.0",  # Added repo ingestion polling tool
             description="Provides web crawling capabilities via Deeting Scout Service.",
             author="Gemini CLI",
         )
@@ -112,6 +114,40 @@ class CrawlerPlugin(AgentPlugin):
                             },
                         },
                         "required": ["repo_url"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "poll_repo_ingestion",
+                    "description": "Poll status for a repository ingestion task submitted by submit_repo_ingestion.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "task_id": {
+                                "type": "string",
+                                "description": "Task ID returned by submit_repo_ingestion.",
+                            }
+                        },
+                        "required": ["task_id"],
+                    },
+                    "output_description": "Returns task state, readiness, and final result or error when available.",
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": ["queued", "running", "completed", "failed", "error"],
+                            },
+                            "task_id": {"type": "string"},
+                            "state": {"type": "string"},
+                            "ready": {"type": "boolean"},
+                            "successful": {"type": "boolean"},
+                            "result": {"type": "object"},
+                            "error": {"type": "string"},
+                        },
+                        "required": ["status", "task_id", "state", "ready"],
                     },
                 },
             },
@@ -397,3 +433,49 @@ class CrawlerPlugin(AgentPlugin):
             args=[repo_url, revision, skill_id, runtime_hint, str(self.context.user_id)],
         )
         return {"status": "queued", "task_id": task.id}
+
+    async def handle_poll_repo_ingestion(
+        self,
+        task_id: str,
+        **kwargs,
+    ) -> dict[str, Any]:
+        from app.core.celery_app import celery_app
+
+        task_key = str(task_id or "").strip()
+        if not task_key:
+            return {"status": "error", "error": "task_id is required"}
+
+        try:
+            result = AsyncResult(task_key, app=celery_app)
+            state = str(result.state or "PENDING").upper()
+            ready = bool(result.ready())
+            status = "running"
+            if state == "PENDING":
+                status = "queued"
+            elif state in {"SUCCESS"}:
+                status = "completed"
+            elif state in {"FAILURE", "REVOKED"}:
+                status = "failed"
+
+            payload: dict[str, Any] = {
+                "status": status,
+                "task_id": task_key,
+                "state": state,
+                "ready": ready,
+            }
+            if ready:
+                successful = bool(result.successful())
+                payload["successful"] = successful
+                if successful:
+                    payload["result"] = result.result
+                else:
+                    payload["error"] = str(result.result)
+            return payload
+        except Exception as exc:
+            return {
+                "status": "error",
+                "task_id": task_key,
+                "state": "UNKNOWN",
+                "ready": False,
+                "error": f"failed to poll repo ingestion task: {exc}",
+            }

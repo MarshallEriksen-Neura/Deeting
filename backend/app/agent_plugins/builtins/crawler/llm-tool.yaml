@@ -55,6 +55,15 @@ tools:
           type: string
           description: "Optional runtime hint (e.g. python_library, node_library)."
       required: ["repo_url"]
+  - name: poll_repo_ingestion
+    description: "Poll status for a repository ingestion task submitted by submit_repo_ingestion."
+    parameters:
+      type: object
+      properties:
+        task_id:
+          type: string
+          description: "Task ID returned by submit_repo_ingestion."
+      required: ["task_id"]
   - name: convert_artifact_to_assistant
     description: "Convert one crawled knowledge artifact into a single assistant."
     parameters:

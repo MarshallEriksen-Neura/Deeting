@@ -2,9 +2,11 @@ import asyncio
 import logging
 from typing import Any
 
+import httpx
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
+from app.core.config import settings
 from app.schemas.tool import ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,30 @@ class MCPClient:
         self.max_retries = max_retries
         self.retry_backoff_base = retry_backoff_base
         self.retry_backoff_max = retry_backoff_max
+        self.trust_env = bool(getattr(settings, "MCP_HTTP_TRUST_ENV", False))
+
+    def _httpx_client_factory(
+        self,
+        headers: dict[str, Any] | None = None,
+        timeout: httpx.Timeout | None = None,
+        auth: httpx.Auth | None = None,
+    ) -> httpx.AsyncClient:
+        """
+        MCP SSE 专用 HTTP 客户端工厂。
+
+        默认禁用 trust_env，避免容器继承的全局代理影响 MCP 工具连通性。
+        如需继承环境代理，可通过 MCP_HTTP_TRUST_ENV=true 开启。
+        """
+        kwargs: dict[str, Any] = {
+            "follow_redirects": True,
+            "trust_env": self.trust_env,
+            "timeout": timeout or httpx.Timeout(30.0, read=300.0),
+        }
+        if headers is not None:
+            kwargs["headers"] = headers
+        if auth is not None:  # pragma: no cover
+            kwargs["auth"] = auth
+        return httpx.AsyncClient(**kwargs)
 
     async def fetch_tools(
         self, sse_url: str, headers: dict[str, str] | None = None
@@ -70,7 +96,12 @@ class MCPClient:
             # Note: sse_client context manager yields (read_stream, write_stream)
             # We assume sse_client handles headers if supported, otherwise we might need to modify it or accept defaults.
             # Currently mcp 1.25.0 sse_client accepts headers.
-            async with sse_client(sse_url, headers=headers, timeout=self.timeout) as (
+            async with sse_client(
+                sse_url,
+                headers=headers,
+                timeout=self.timeout,
+                httpx_client_factory=self._httpx_client_factory,
+            ) as (
                 read,
                 write,
             ):
@@ -108,7 +139,12 @@ class MCPClient:
         headers: dict[str, str] | None = None,
     ) -> Any:
         try:
-            async with sse_client(sse_url, headers=headers, timeout=self.timeout) as (
+            async with sse_client(
+                sse_url,
+                headers=headers,
+                timeout=self.timeout,
+                httpx_client_factory=self._httpx_client_factory,
+            ) as (
                 read,
                 write,
             ):

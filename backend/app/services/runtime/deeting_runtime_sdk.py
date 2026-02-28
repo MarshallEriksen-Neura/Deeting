@@ -138,10 +138,20 @@ def build_runtime_preamble(
                         parsed = json.loads(body) if body else {}
                         if isinstance(parsed, dict):
                             if parsed.get("ok") is False:
-                                return {
-                                    "error": str(parsed.get("error") or "bridge call failed"),
-                                    "error_code": parsed.get("error_code"),
+                                nested = parsed.get("result") if isinstance(parsed.get("result"), dict) else {}
+                                error_text = nested.get("error")
+                                if error_text is None:
+                                    error_text = parsed.get("error")
+                                error_code = nested.get("error_code")
+                                if error_code is None:
+                                    error_code = parsed.get("error_code")
+                                normalized = {
+                                    "error": str(error_text or "bridge call failed"),
+                                    "error_code": error_code,
                                 }
+                                if isinstance(parsed.get("meta"), dict):
+                                    normalized["bridge_meta"] = parsed.get("meta")
+                                return normalized
                             if "result" in parsed:
                                 return parsed.get("result")
                             return parsed
