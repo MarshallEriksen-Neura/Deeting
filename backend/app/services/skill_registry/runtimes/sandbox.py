@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -80,10 +81,25 @@ class SandboxRuntimeStrategy(BaseRuntimeStrategy):
                 sandbox, f"rm -rf {workspace_root} && mkdir -p {workspace_root}"
             )
 
-            await _run_command(
-                sandbox,
-                f"git clone --depth 1 --branch {revision} {repo_url} {repo_root}",
-            )
+            # Retry git clone up to 3 times to handle sporadic network resets
+            clone_success = False
+            clone_error = None
+            for attempt in range(3):
+                try:
+                    await _run_command(
+                        sandbox,
+                        f"git clone --depth 1 --branch {revision} {repo_url} {repo_root}",
+                    )
+                    clone_success = True
+                    break
+                except Exception as e:
+                    clone_error = e
+                    # Give it a small delay before retry
+                    await asyncio.sleep(1)
+            
+            if not clone_success:
+                raise RuntimeError(f"Failed to clone repository after 3 attempts: {clone_error}")
+
             install_dir = f"{repo_root}/{subdir}" if subdir else repo_root
             if dependencies:
                 await _run_command(
@@ -179,9 +195,12 @@ async def _run_command(
         else None
     )
     execution = await sandbox.commands.run(command, opts=opts)
-    if return_execution:
-        return execution
-    return None
+    if not return_execution:
+        # Check for error if we're not returning the execution object
+        if execution.error:
+            stderr = [msg.text for msg in getattr(execution.logs, "stderr", [])]
+            raise RuntimeError(f"Command failed: {command}\nError: {execution.error}\nStderr: {''.join(stderr)}")
+    return execution
 
 
 async def _has_requirements_txt(sandbox, *, working_directory: str) -> bool:
@@ -220,6 +239,7 @@ import importlib.util
 import inspect
 import json
 import os
+import sys
 
 RUNTIME_CONTEXT = json.loads({runtime_context_json!r})
 REPO_ROOT = {repo_root!r}
@@ -233,10 +253,18 @@ deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=[])
 def _read_manifest():
     manifest_path = os.path.join(REPO_ROOT, "deeting.json")
     if not os.path.exists(manifest_path):
+        print(f"[DEBUG] deeting.json not found at {{manifest_path}}. Contents of {{REPO_ROOT}}:", os.listdir(REPO_ROOT) if os.path.exists(REPO_ROOT) else "DIR_NOT_FOUND", file=sys.stderr)
         return None
-    with open(manifest_path, "r", encoding="utf-8") as fp:
-        data = json.load(fp)
-    return data if isinstance(data, dict) else None
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as fp:
+            data = json.load(fp)
+        if not isinstance(data, dict):
+            print(f"[DEBUG] deeting.json is not a dict: {{type(data)}}", file=sys.stderr)
+            return None
+        return data
+    except Exception as e:
+        print(f"[DEBUG] Error reading deeting.json: {{e}}", file=sys.stderr)
+        return None
 
 def _resolve_backend_entry(manifest):
     entry = manifest.get("entry") if isinstance(manifest, dict) else {{}}
@@ -288,7 +316,7 @@ async def _run_plugin_invoke(manifest):
                 )
     return result
 
-def _run_legacy_example():
+async def _run_legacy_example():
     if not str(LEGACY_EXAMPLE_CODE or "").strip():
         raise RuntimeError("legacy usage_spec.example_code is empty")
     scope = {{
@@ -298,15 +326,21 @@ def _run_legacy_example():
         "RUNTIME_CONTEXT": RUNTIME_CONTEXT,
         "deeting": deeting,
     }}
-    exec(LEGACY_EXAMPLE_CODE, scope, scope)
-    return scope.get("result")
+    wrapper = "async def __wrapped_legacy__():\\n"
+    for line in LEGACY_EXAMPLE_CODE.splitlines():
+        wrapper += f"    {{line}}\\n"
+    wrapper += "    return locals().get('result')\\n"
+
+    exec(wrapper, scope, scope)
+    func = scope["__wrapped_legacy__"]
+    return await func()
 
 async def _main():
     manifest = _read_manifest()
     if isinstance(manifest, dict):
         invoke_result = await _run_plugin_invoke(manifest)
     else:
-        invoke_result = _run_legacy_example()
+        invoke_result = await _run_legacy_example()
     print(INVOKE_RESULT_MARKER + json.dumps(invoke_result, ensure_ascii=False, default=str))
 
 asyncio.run(_main())
@@ -468,6 +502,7 @@ async def _issue_runtime_bridge_context(context: RuntimeContext) -> dict[str, An
         claims=RuntimeBridgeClaims(
             user_id=user_id,
             session_id=session_id,
+            trace_id=context.trace_id,
             capability="skill_runtime",
             max_calls=_MAX_RUNTIME_TOOL_CALLS,
         ),

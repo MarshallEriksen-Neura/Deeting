@@ -5,11 +5,14 @@ WorkflowContext: 编排上下文管理
 各步骤在各自命名空间读写，避免键冲突。
 """
 
+from __future__ import annotations
+
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +73,13 @@ class WorkflowContext:
     - 支持序列化用于审计日志
     """
 
+    @classmethod
+    def get_active(cls, trace_id: str) -> WorkflowContext | None:
+        """根据 trace_id 找回当前活跃的上下文对象"""
+        if not trace_id:
+            return None
+        return _active_contexts.get(trace_id)
+
     # ===== 请求元数据（不可变）=====
     trace_id: str = field(default_factory=lambda: uuid4().hex)
     channel: Channel = Channel.INTERNAL
@@ -80,7 +90,6 @@ class WorkflowContext:
     api_key_id: str | None = None
     user_id: str | None = None
     session_id: str | None = None
-
 
     # 请求信息
     capability: str | None = None  # 如 chat, embedding, image_generation
@@ -116,7 +125,6 @@ class WorkflowContext:
     # ===== 步骤执行追踪 =====
     executed_steps: list[str] = field(default_factory=list)
     step_timings: dict[str, float] = field(default_factory=dict)  # step_name -> ms
-    failed_step: str | None = None
 
     # ===== 状态流（可选）=====
     status_emitter: Callable[[dict[str, Any]], Any] | None = None
@@ -125,6 +133,11 @@ class WorkflowContext:
     status_state: str | None = None
     status_code: str | None = None
     status_meta: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        # 自动注册到全局表
+        if self.trace_id:
+            _active_contexts[self.trace_id] = self
 
     def get(self, step_name: str, key: str, default: Any = None) -> Any:
         """
@@ -243,6 +256,11 @@ class WorkflowContext:
                 # 非运行中的事件循环时忽略
                 pass
 
+    def push_blocks(self, *blocks: dict[str, Any]) -> None:
+        """向前端推送多个 UI 块（emit_blocks 的便捷封装）"""
+        if blocks:
+            self.emit_blocks(list(blocks))
+
     def mark_error(
         self,
         source: ErrorSource,
@@ -306,3 +324,8 @@ class WorkflowContext:
     def is_internal(self) -> bool:
         """是否为内部通道"""
         return self.channel == Channel.INTERNAL
+
+
+# 全局活跃上下文注册表，使用弱引用避免内存泄漏
+# 放在类定义之后以解决 NameError
+_active_contexts: weakref.WeakValueDictionary[str, WorkflowContext] = weakref.WeakValueDictionary()

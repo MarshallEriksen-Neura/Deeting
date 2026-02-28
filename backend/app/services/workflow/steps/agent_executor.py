@@ -151,6 +151,75 @@ class AgentExecutorStep(BaseStep):
             }
         )
 
+    def _prepare_tool_call(
+        self,
+        tc_raw: Any,
+        *,
+        turn: int,
+        index: int,
+    ) -> dict[str, Any]:
+        """
+        Normalize one raw tool call into:
+        - a safe history payload for next-turn upstream requests
+        - a parsed ToolCall for local dispatch
+        """
+        raw_call = tc_raw if isinstance(tc_raw, dict) else {}
+        raw_function = raw_call.get("function")
+        function = raw_function if isinstance(raw_function, dict) else {}
+
+        tool_call_id = str(raw_call.get("id") or f"tool_call_{turn}_{index}")
+        tool_name = str(function.get("name") or raw_call.get("name") or "").strip()
+        if not tool_name:
+            tool_name = "__invalid_tool_name__"
+
+        raw_arguments = function.get("arguments")
+        if raw_arguments is None:
+            raw_arguments = raw_call.get("arguments", {})
+
+        if isinstance(raw_arguments, str):
+            args_str = raw_arguments
+        else:
+            try:
+                args_str = json.dumps(
+                    raw_arguments if raw_arguments is not None else {},
+                    ensure_ascii=False,
+                )
+            except TypeError:
+                args_str = "{}"
+
+        parse_error: json.JSONDecodeError | None = None
+        parsed_args: dict[str, Any] = {}
+        try:
+            loaded = json.loads(args_str)
+            if isinstance(loaded, dict):
+                parsed_args = loaded
+            else:
+                # Tool arguments must be an object for downstream handlers.
+                parsed_args = {"value": loaded}
+                args_str = json.dumps(parsed_args, ensure_ascii=False)
+        except json.JSONDecodeError as exc:
+            parse_error = exc
+            parsed_args = {}
+            args_str = "{}"
+
+        return {
+            "tool_call": ToolCall(
+                id=tool_call_id,
+                name=tool_name,
+                arguments=parsed_args,
+            ),
+            "args_str": args_str,
+            "parse_error": parse_error,
+            "history_tool_call": {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": args_str,
+                },
+            },
+        }
+
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         # 1. Get initial state
         raw_request_body = ctx.get("template_render", "request_body")
@@ -227,21 +296,30 @@ class AgentExecutorStep(BaseStep):
                 break
 
             # --- C. Execute Tools ---
-            # 1. Add Assistant message to history
-            messages.append(message)
+            prepared_calls: list[dict[str, Any]] = []
+            history_tool_calls: list[dict[str, Any]] = []
+            for idx, tc_raw in enumerate(tool_calls_raw):
+                prepared = self._prepare_tool_call(tc_raw, turn=turn, index=idx)
+                prepared_calls.append(prepared)
+                history_tool_calls.append(prepared["history_tool_call"])
+
+            # 1. Add sanitized assistant message to history.
+            # Never replay raw tool_calls directly to upstream.
+            assistant_message_for_history = (
+                deepcopy(message) if isinstance(message, dict) else {"role": "assistant"}
+            )
+            assistant_message_for_history["role"] = "assistant"
+            assistant_message_for_history["tool_calls"] = history_tool_calls
+            messages.append(assistant_message_for_history)
 
             # 2. Process each call
-            for tc_raw in tool_calls_raw:
-                func = tc_raw.get("function", {})
-                args_str = func.get("arguments", "{}")
-                if not isinstance(args_str, str):
-                    args_str = json.dumps(args_str, ensure_ascii=False)
-
-                try:
-                    parsed_args = json.loads(args_str)
-                except json.JSONDecodeError as e:
+            for prepared in prepared_calls:
+                tc: ToolCall = prepared["tool_call"]
+                args_str: str = prepared["args_str"]
+                parse_error: json.JSONDecodeError | None = prepared["parse_error"]
+                if parse_error is not None:
                     logger.warning(
-                        f"Malformed tool call arguments for '{func.get('name')}': {e} "
+                        f"Malformed tool call arguments for '{tc.name}': {parse_error} "
                         f"trace_id={ctx.trace_id}"
                     )
                     # Return the parse error as a tool result so the LLM can
@@ -249,21 +327,15 @@ class AgentExecutorStep(BaseStep):
                     messages.append(
                         {
                             "role": "tool",
-                            "tool_call_id": tc_raw.get("id"),
-                            "name": func.get("name"),
+                            "tool_call_id": tc.id,
+                            "name": tc.name,
                             "content": (
-                                f"Error: Failed to parse tool call arguments as JSON: {e}. "
+                                f"Error: Failed to parse tool call arguments as JSON: {parse_error}. "
                                 f"Please fix the JSON syntax and try again."
                             ),
                         }
                     )
                     continue
-
-                tc = ToolCall(
-                    id=tc_raw.get("id"),
-                    name=func.get("name"),
-                    arguments=parsed_args,
-                )
 
                 # Emit Status Event (Transient Spinner)
                 ctx.emit_status(

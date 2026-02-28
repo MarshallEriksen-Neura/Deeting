@@ -937,3 +937,12 @@ def test_plugins_yaml_registers_deeting_core_sdk_plugin():
     assert plugin.get("module") == "app.agent_plugins.builtins.deeting_core_sdk.plugin"
     assert plugin.get("class_name") == "DeetingCoreSdkPlugin"
     assert set(plugin.get("tools", [])) == {"search_sdk", "execute_code_plan"}
+
+
+def test_build_wrapped_code_injects_deeting_module_alias():
+    plugin = _make_plugin()
+
+    wrapped = plugin._build_wrapped_code("import deeting\ndeeting.log('ok')")
+
+    assert "types.ModuleType('deeting')" in wrapped
+    assert "sys.modules['deeting'] = _deeting_module" in wrapped

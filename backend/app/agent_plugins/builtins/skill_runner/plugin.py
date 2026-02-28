@@ -87,6 +87,7 @@ class SkillRunnerPlugin(AgentPlugin):
                     user_id=user_id,
                     inputs=runtime_inputs,
                     intent="execution",
+                    trace_id=getattr(ctx, "trace_id", None),
                 )
 
                 # Format result for LLM consumption
@@ -124,6 +125,11 @@ class SkillRunnerPlugin(AgentPlugin):
                 )
                 if ui_blocks:
                     output["ui"] = {"blocks": ui_blocks}
+                    # 核心修复：如果当前有上下文，主动推送渲染指令，确保嵌套调用时 UI 也能冒泡
+                    if ctx and hasattr(ctx, "push_blocks"):
+                        for block in ui_blocks:
+                            await ctx.push_blocks(block)
+                        logger.info(f"SkillRunner: Pushed {len(ui_blocks)} UI blocks to active context.")
 
                 return output
 

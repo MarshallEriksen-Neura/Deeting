@@ -127,12 +127,23 @@ async def _run_sync_skill(skill_id: str) -> str:
             await repo.update(skill, {"vector_id": vector_id})
 
         manifest = getattr(skill, "manifest_json", {}) or {}
-        schema_json = manifest.get("io_schema", {})
+        io_schema = manifest.get("io_schema", {})
+        
+        # If io_schema is a full tool definition (with 'parameters' key), 
+        # use only the parameters part for the schema_json.
+        schema_json = io_schema
+        if isinstance(io_schema, dict) and "parameters" in io_schema:
+            schema_json = io_schema["parameters"]
+
+        description = getattr(skill, "description", None)
+        if not description and isinstance(io_schema, dict):
+            description = io_schema.get("description")
 
         payload = {
             "skill_id": skill.id,
             "name": skill.name,
             "status": skill.status,
+            "description": description,
             "schema_json": schema_json,
             "embedding_model": embedding_service.model,
         }

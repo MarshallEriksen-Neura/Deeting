@@ -2191,6 +2191,13 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
             f"RUNTIME_TOOL_RESULTS = json.loads({runtime_tool_results_json!r})\n"
             "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)\n"
+            "import types\n"
+            "import sys\n"
+            "_deeting_module = types.ModuleType('deeting')\n"
+            "for _name in ('log', 'section', 'get_context', 'render', 'call_tool', 'write_file', 'read_file'):\n"
+            "    setattr(_deeting_module, _name, getattr(deeting, _name))\n"
+            "setattr(_deeting_module, 'context', deeting.context)\n"
+            "sys.modules['deeting'] = _deeting_module\n"
         )
 
         if is_reexecution and sdk_module_name:

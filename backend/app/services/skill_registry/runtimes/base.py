@@ -16,12 +16,14 @@ class RuntimeContext:
         sandbox_manager: Any = None,
         intent: str | None = None,
         kill_on_exit: bool = False,
+        trace_id: str | None = None,
     ):
         self.session_id = session_id
         self.user_id = user_id
         self.sandbox_manager = sandbox_manager
         self.intent = intent
         self.kill_on_exit = kill_on_exit
+        self.trace_id = trace_id
 
 
 class BaseRuntimeStrategy(ABC):

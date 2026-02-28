@@ -49,6 +49,7 @@ class SkillRuntimeExecutor:
         intent: str | None = None,
         inputs: dict[str, Any],
         kill_on_exit: bool = False,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         skill = await self.repo.get_by_id(skill_id)
         if not skill:
@@ -74,6 +75,7 @@ class SkillRuntimeExecutor:
             sandbox_manager=self.sandbox_manager,
             intent=intent,
             kill_on_exit=kill_on_exit,
+            trace_id=trace_id,
         )
 
         return await strategy.execute(skill, inputs, context)

@@ -80,17 +80,23 @@ class DeetingPluginParser(RepoParserPlugin):
         Produce the final manifest. Since deeting.json is the source of truth,
         we use it directly if available.
         """
-        raw_meta = getattr(evidence, "metadata", {})
+        raw_meta = getattr(evidence, "metadata", {}) or {}
         deeting_json = raw_meta.get("deeting_json") or {}
         tool_spec = raw_meta.get("llm_tool_yaml") or {}
 
         # Deeting Standard Manifest
+        description = deeting_json.get("description")
+        if not description and tool_spec.get("description"):
+            description = tool_spec.get("description")
+        if not description and evidence.readme:
+            description = evidence.readme[:300]
+
         manifest = {
             "id": deeting_json.get("id"),
             "name": deeting_json.get("name"),
             "version": deeting_json.get("version"),
             "author": deeting_json.get("author"),
-            "description": deeting_json.get("description") or (evidence.readme[:300] if evidence.readme else ""),
+            "description": description,
             "permissions": deeting_json.get("permissions") or [],
             "entry": deeting_json.get("entry") or {},
             "io_schema": tool_spec, # The tool spec is our I/O contract
@@ -126,6 +132,6 @@ class DeetingPluginParser(RepoParserPlugin):
         return f"""
 # Example usage of {deeting_json.get('name', 'plugin')}
 # Call this tool via deeting.call_tool('{tool_name}', ...)
-result = await deeting.call_tool('{tool_name}', city="Beijing")
+result = deeting.call_tool('{tool_name}', city="Beijing")
 deeting.log(result)
 """.strip()

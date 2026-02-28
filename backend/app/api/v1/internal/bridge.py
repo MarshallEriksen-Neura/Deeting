@@ -204,20 +204,27 @@ async def _dispatch_code_mode_tool(
         session_id=claims.session_id,
     )
 
-    workflow_context = WorkflowContext(
-        channel=Channel.INTERNAL,
-        user_id=str(claims.user_id),
-        tenant_id=claims.tenant_id,
-        api_key_id=claims.api_key_id,
-        session_id=claims.session_id,
-        trace_id=claims.trace_id,
-        capability=claims.capability,
-        requested_model=claims.requested_model,
-    )
-    if claims.scopes:
-        workflow_context.set("auth", "scopes", claims.scopes)
-    if claims.allowed_models:
-        workflow_context.set("external_auth", "allowed_models", claims.allowed_models)
+    # 核心修复：尝试从全局活跃表中找回原始的 WorkflowContext 以恢复推送能力
+    active_ctx = WorkflowContext.get_active(claims.trace_id) if claims.trace_id else None
+    
+    if active_ctx:
+        workflow_context = active_ctx
+        logger.debug("CodeModeBridge: found and reused active workflow context for trace_id=%s", claims.trace_id)
+    else:
+        workflow_context = WorkflowContext(
+            channel=Channel.INTERNAL,
+            user_id=str(claims.user_id),
+            tenant_id=claims.tenant_id,
+            api_key_id=claims.api_key_id,
+            session_id=claims.session_id,
+            trace_id=claims.trace_id,
+            capability=claims.capability,
+            requested_model=claims.requested_model,
+        )
+        if claims.scopes:
+            workflow_context.set("auth", "scopes", claims.scopes)
+        if claims.allowed_models:
+            workflow_context.set("external_auth", "allowed_models", claims.allowed_models)
 
     result = await plugin._dispatch_real_tool(
         tool_name=tool_name,

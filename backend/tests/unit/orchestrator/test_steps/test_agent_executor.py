@@ -263,6 +263,95 @@ async def test_execute_truncates_tool_result_in_history(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_execute_sanitizes_malformed_tool_arguments_in_history(monkeypatch):
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set(
+        "template_render",
+        "request_body",
+        {
+            "messages": [{"role": "user", "content": "请执行代码计划"}],
+            "stream": False,
+            "max_turns": 3,
+        },
+    )
+
+    upstream_requests: list[list[dict]] = []
+
+    async def fake_upstream_execute(inner_ctx):
+        request_body = inner_ctx.get("template_render", "request_body") or {}
+        upstream_requests.append(deepcopy(request_body.get("messages", [])))
+
+        if len(upstream_requests) == 1:
+            inner_ctx.set(
+                "upstream_call",
+                "response",
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": "tc_bad_1",
+                                        "function": {
+                                            "name": "execute_code_plan",
+                                            "arguments": '{"code":"C:\\q"}',
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+            )
+        else:
+            inner_ctx.set(
+                "upstream_call",
+                "response",
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "参数已修正",
+                            }
+                        }
+                    ]
+                },
+            )
+        return StepResult(status=StepStatus.SUCCESS)
+
+    async def fake_build_user_map(_ctx):
+        return {}
+
+    async def fake_dispatch_tool(_ctx, _tool_call, _tool_map):
+        raise AssertionError("Malformed tool arguments should not dispatch tool execution.")
+
+    monkeypatch.setattr(step.upstream_step, "execute", fake_upstream_execute)
+    monkeypatch.setattr(step, "_build_user_mcp_tool_map", fake_build_user_map)
+    monkeypatch.setattr(step, "_dispatch_tool", fake_dispatch_tool)
+
+    result = await step.execute(ctx)
+
+    assert result.status == StepStatus.SUCCESS
+    assert len(upstream_requests) >= 2
+
+    second_turn_msgs = upstream_requests[1]
+    assistant_msg = next(
+        m
+        for m in second_turn_msgs
+        if m.get("role") == "assistant" and isinstance(m.get("tool_calls"), list)
+    )
+    assert assistant_msg["tool_calls"][0]["function"]["arguments"] == "{}"
+
+    tool_msg = next(m for m in second_turn_msgs if m.get("role") == "tool")
+    assert tool_msg["tool_call_id"] == "tc_bad_1"
+    assert "Failed to parse tool call arguments as JSON" in tool_msg["content"]
+
+
+@pytest.mark.asyncio
 async def test_execute_emits_ui_blocks_from_tool_result(monkeypatch):
     step = AgentExecutorStep()
     emitted: list[dict] = []
