@@ -124,6 +124,7 @@
 | `CODE_MODE_BRIDGE_TOKEN_EXPIRED` | execution token 已过期 | 重新执行 `execute_code_plan` |
 | `CODE_MODE_BRIDGE_CALL_LIMIT` | bridge 调用次数超限 | 降低单次脚本内动态调用次数 |
 | `CODE_MODE_BRIDGE_TOOL_NOT_ALLOWED` | 禁止调用递归工具 | 不要在 bridge 上调用 `search_sdk/execute_code_plan` |
+| `CODE_MODE_ASSISTANT_ONBOARDING_FAILED` | 同一 trace 的 `assistant_onboarding` 已失败，禁止继续写入用户记忆 | 先向用户明确 onboarding 失败并修复问题，再重试 onboarding；不要走 `add_knowledge_chunk` 兜底 |
 | `CODE_MODE_BRIDGE_IP_FORBIDDEN` | 调用来源 IP 不在白名单 | 调整 `CODE_MODE_BRIDGE_TRUSTED_IPS` 或关闭强制校验 |
 | `CODE_MODE_BRIDGE_SCOPE_DENIED` | execution token scope/model 不允许当前调用 | 检查 API Key scopes、allowed_models 与请求模型/能力 |
 | `CODE_MODE_BRIDGE_DISPATCH_FAILED` | bridge 分发工具调用失败 | 查看 trace_id 与日志后重试 |

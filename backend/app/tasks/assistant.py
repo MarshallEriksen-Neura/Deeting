@@ -207,7 +207,9 @@ async def _run_assistant_onboarding(url: str, user_id: str | None = None) -> dic
 
 
 @celery_app.task(name="assistant.run_onboarding")
-def run_assistant_onboarding(url: str, user_id: str | None = None) -> dict | str:
+def run_assistant_onboarding(
+    url: str, user_id: str | None = None, **_kwargs
+) -> dict | str:
     try:
         return run_async(_run_assistant_onboarding(url, user_id=user_id))
     except Exception as exc:

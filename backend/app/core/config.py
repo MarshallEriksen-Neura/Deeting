@@ -22,6 +22,19 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_gateway"
     )
+    # SQLAlchemy 连接池（异步 API）
+    DB_ASYNC_POOL_SIZE: int = 10
+    DB_ASYNC_MAX_OVERFLOW: int = 5
+    DB_ASYNC_POOL_TIMEOUT_SECONDS: float = 30.0
+    DB_ASYNC_POOL_RECYCLE_SECONDS: int = 1800
+    DB_ASYNC_POOL_USE_LIFO: bool = True
+    # SQLAlchemy 连接池（同步 Celery/脚本）
+    # Celery prefork 下每个子进程通常只需 1 条连接，默认收敛以避免连接风暴
+    DB_SYNC_POOL_SIZE: int = 1
+    DB_SYNC_MAX_OVERFLOW: int = 0
+    DB_SYNC_POOL_TIMEOUT_SECONDS: float = 5.0
+    DB_SYNC_POOL_RECYCLE_SECONDS: int = 1800
+    DB_SYNC_POOL_USE_LIFO: bool = True
 
     # 调试模式
     DEBUG: bool = False

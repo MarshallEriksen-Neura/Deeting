@@ -213,8 +213,11 @@ docker-compose restart gateway
 # postgresql.conf
 max_connections = 200
 
-# 调整应用连接池
-DATABASE_URL=postgresql+asyncpg://...?min_size=10&max_size=50
+# 调整应用连接池（backend/.env）
+DB_ASYNC_POOL_SIZE=10
+DB_ASYNC_MAX_OVERFLOW=5
+DB_SYNC_POOL_SIZE=1
+DB_SYNC_MAX_OVERFLOW=0
 ```
 
 ---

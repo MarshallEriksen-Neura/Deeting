@@ -179,6 +179,72 @@ def _detail_code(detail: Any, fallback: str) -> str:
     return fallback
 
 
+_ONBOARDING_TOOL_NAMES = {
+    "system.assistant_onboarding",
+    "skill__system.assistant_onboarding",
+}
+_MEMORY_WRITE_TOOL_NAME = "add_knowledge_chunk"
+_ONBOARDING_FAILURE_BY_TRACE: dict[str, str] = {}
+_MAX_ONBOARDING_FAILURE_TRACK = 4096
+
+
+def _is_failed_tool_result(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    if bool(result.get("error")):
+        return True
+    status = str(result.get("status") or "").strip().lower()
+    if status in {"failed", "error", "partial"}:
+        return True
+    ok = result.get("ok")
+    if isinstance(ok, bool) and not ok:
+        return True
+    return False
+
+
+def _extract_tool_failure_reason(result: Any) -> str:
+    if not isinstance(result, dict):
+        return "tool execution failed"
+    message = (
+        result.get("error")
+        or result.get("message")
+        or result.get("stderr")
+        or result.get("stdout")
+        or "tool execution failed"
+    )
+    text = str(message or "").strip()
+    if len(text) > 400:
+        text = text[:400] + "...(truncated)"
+    return text or "tool execution failed"
+
+
+def _remember_onboarding_failure(trace_id: str, reason: str) -> None:
+    key = str(trace_id or "").strip()
+    if not key:
+        return
+    if key in _ONBOARDING_FAILURE_BY_TRACE:
+        _ONBOARDING_FAILURE_BY_TRACE.pop(key, None)
+    _ONBOARDING_FAILURE_BY_TRACE[key] = reason
+    while len(_ONBOARDING_FAILURE_BY_TRACE) > _MAX_ONBOARDING_FAILURE_TRACK:
+        oldest = next(iter(_ONBOARDING_FAILURE_BY_TRACE), None)
+        if oldest is None:
+            break
+        _ONBOARDING_FAILURE_BY_TRACE.pop(oldest, None)
+
+
+def _clear_onboarding_failure(trace_id: str) -> None:
+    key = str(trace_id or "").strip()
+    if key:
+        _ONBOARDING_FAILURE_BY_TRACE.pop(key, None)
+
+
+def _get_onboarding_failure(trace_id: str) -> str | None:
+    key = str(trace_id or "").strip()
+    if not key:
+        return None
+    return _ONBOARDING_FAILURE_BY_TRACE.get(key)
+
+
 async def _dispatch_code_mode_tool(
     *,
     claims: RuntimeBridgeClaims,
@@ -511,15 +577,39 @@ async def code_mode_call_tool(
         max_calls = int(consumed.get("max_calls") or 0)
         _enforce_claim_permissions(claims, tool_name)
 
+        if tool_name == _MEMORY_WRITE_TOOL_NAME:
+            onboarding_failure = _get_onboarding_failure(str(claims.trace_id or ""))
+            if onboarding_failure:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "CODE_MODE_ASSISTANT_ONBOARDING_FAILED",
+                        "message": (
+                            "assistant_onboarding failed in this session; "
+                            "memory write is blocked to avoid unintended fallback."
+                        ),
+                        "reason": onboarding_failure,
+                    },
+                )
+
         result = await _dispatch_code_mode_tool(
             claims=claims,
             tool_name=tool_name,
             arguments=arguments,
         )
-        success = not (isinstance(result, dict) and bool(result.get("error")))
+        if tool_name in _ONBOARDING_TOOL_NAMES:
+            if _is_failed_tool_result(result):
+                _remember_onboarding_failure(
+                    str(claims.trace_id or ""),
+                    _extract_tool_failure_reason(result),
+                )
+            else:
+                _clear_onboarding_failure(str(claims.trace_id or ""))
+
+        success = not _is_failed_tool_result(result)
         error_code = (
             str(result.get("error_code") or "tool_error")
-            if isinstance(result, dict) and result.get("error")
+            if not success and isinstance(result, dict)
             else None
         )
         duration_seconds = timer.seconds()

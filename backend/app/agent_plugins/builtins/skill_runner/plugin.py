@@ -114,6 +114,19 @@ class SkillRunnerPlugin(AgentPlugin):
                     ],  # Simplify artifact list
                 }
 
+                if result.get("exit_code") != 0:
+                    raw_error = result.get("error")
+                    error_message = str(
+                        raw_error
+                        or stderr_str
+                        or stdout_str
+                        or f"Skill '{skill_id}' execution failed."
+                    ).strip()
+                    output["error"] = error_message or "Skill execution failed."
+                    raw_error_code = result.get("error_code")
+                    if isinstance(raw_error_code, str) and raw_error_code.strip():
+                        output["error_code"] = raw_error_code.strip()
+
                 if result.get("result"):
                     output["return_value"] = result.get("result")
                 ui_blocks = await self._build_ui_blocks(

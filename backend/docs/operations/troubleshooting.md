@@ -340,9 +340,14 @@ psql -c "SELECT * FROM pg_stat_activity WHERE state = 'active'"
 
 **解决方案**:
 ```bash
-# 增加连接池大小（如果连接耗尽）
-# 在 .env 中调整 DATABASE_URL 参数
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db?min_size=10&max_size=50
+# 先收敛应用连接池，避免总连接数超过 PostgreSQL max_connections
+# backend/.env
+DB_ASYNC_POOL_SIZE=10
+DB_ASYNC_MAX_OVERFLOW=5
+DB_SYNC_POOL_SIZE=1
+DB_SYNC_MAX_OVERFLOW=0
+
+# 如仍不足，再评估提升 PostgreSQL max_connections
 ```
 
 ### 4.4 Celery Worker 问题

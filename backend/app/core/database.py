@@ -16,7 +16,13 @@ _engine_kwargs = {
     "pool_pre_ping": True,
 }
 if not _db_url.startswith("sqlite"):
-    _engine_kwargs.update(pool_size=20, max_overflow=10)
+    _engine_kwargs.update(
+        pool_size=settings.DB_ASYNC_POOL_SIZE,
+        max_overflow=settings.DB_ASYNC_MAX_OVERFLOW,
+        pool_timeout=settings.DB_ASYNC_POOL_TIMEOUT_SECONDS,
+        pool_recycle=settings.DB_ASYNC_POOL_RECYCLE_SECONDS,
+        pool_use_lifo=settings.DB_ASYNC_POOL_USE_LIFO,
+    )
 
 engine = create_async_engine(_db_url, **_engine_kwargs)
 

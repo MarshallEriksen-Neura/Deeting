@@ -281,3 +281,46 @@ async def test_skill_runner_skips_invalid_artifact_base64(monkeypatch):
     assert result["status"] == "success"
     assert result["artifacts"] == ["broken.txt"]
     assert "ui" not in result
+
+
+@pytest.mark.asyncio
+async def test_skill_runner_returns_error_when_runtime_failed(monkeypatch):
+    class _FakeExecutor:
+        def __init__(self, _repo):
+            pass
+
+        async def execute(self, **_kwargs):
+            return {
+                "exit_code": 1,
+                "stdout": ["failed in worker"],
+                "stderr": [],
+                "error": "assistant onboarding failed",
+                "error_code": "SYSTEM_ONBOARDING_TASK_FAILED",
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.skill_runner.plugin.AsyncSessionLocal",
+        lambda: _AsyncSessionCtx(object()),
+    )
+    monkeypatch.setattr(
+        "app.services.skill_registry.skill_runtime_executor.SkillRuntimeExecutor",
+        _FakeExecutor,
+    )
+
+    user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    plugin = SkillRunnerPlugin()
+    plugin._context = SimpleNamespace(session_id="sess", user_id=user_id)
+    ctx = SimpleNamespace(
+        session_id="sess-ctx",
+        user_id=user_id,
+        get=lambda namespace, key, default=None: default,
+    )
+
+    result = await plugin.handle_tool_call(
+        "skill__system.assistant_onboarding", __context__=ctx, url="https://example.com"
+    )
+
+    assert result["status"] == "failed"
+    assert result["error"] == "assistant onboarding failed"
+    assert result["error_code"] == "SYSTEM_ONBOARDING_TASK_FAILED"

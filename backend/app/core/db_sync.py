@@ -25,7 +25,13 @@ _engine_kwargs = {
     "echo": False,  # Celery 日志中尽量少打 SQL
 }
 if not sync_database_url.startswith("sqlite"):
-    _engine_kwargs.update(pool_size=10, max_overflow=20)
+    _engine_kwargs.update(
+        pool_size=settings.DB_SYNC_POOL_SIZE,
+        max_overflow=settings.DB_SYNC_MAX_OVERFLOW,
+        pool_timeout=settings.DB_SYNC_POOL_TIMEOUT_SECONDS,
+        pool_recycle=settings.DB_SYNC_POOL_RECYCLE_SECONDS,
+        pool_use_lifo=settings.DB_SYNC_POOL_USE_LIFO,
+    )
 
 engine = create_engine(sync_database_url, **_engine_kwargs)
 

@@ -2,6 +2,7 @@ from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 from loguru import logger
 import httpx
+import re
 
 class ComplianceManager:
     """
@@ -29,15 +30,23 @@ class ComplianceManager:
         "vpn.", "intranet."              # 内网特征
     ]
 
-    # 3. 内容敏感词库 (正文包含即熔断)
-    # 这是一个基础列表，生产环境建议从外部文件或配置加载
-    CONTENT_SENSITIVE_KEYWORDS = [
-        # 政治敏感类 (示例，实际部署需扩充)
-        "涉密", "绝密", "机密", "秘密级",
-        "内部资料", "严禁外传",
-        "色情", "赌博", "博彩", # 基础黄赌毒
-        # "反动", "暴恐" 等具体词汇根据实际合规要求添加
-    ]
+    # 3. 内容敏感词库 (正文匹配即熔断)
+    # 使用正则匹配，并为明确的误伤短语提供豁免。
+    CONTENT_SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+        ("涉密", re.compile(r"涉密")),
+        ("绝密", re.compile(r"绝密")),
+        ("机密", re.compile(r"机密")),
+        ("秘密级", re.compile(r"秘密级")),
+        ("内部资料", re.compile(r"内部资料")),
+        ("严禁外传", re.compile(r"严禁外传")),
+        ("色情", re.compile(r"色情")),
+        ("赌博", re.compile(r"赌博")),
+        ("博彩", re.compile(r"博彩")),
+    )
+    CONTENT_SENSITIVE_EXEMPT_PHRASES: dict[str, tuple[str, ...]] = {
+        # “出色情节”中的“色情”为“出色 + 情节”的跨词子串，不应触发合规拦截
+        "色情": ("出色情节",),
+    }
 
     # 4. 白名单 (这些域名不受合规性检查限制，常用于官方文档抓取测试)
     DOMAIN_WHITELIST = [
@@ -84,13 +93,28 @@ class ComplianceManager:
         if not text:
             return True
             
-        # 简单高效的字符串匹配，量大时可考虑 Aho-Corasick 算法优化
-        for kw in self.CONTENT_SENSITIVE_KEYWORDS:
-            if kw in text:
+        for kw, pattern in self.CONTENT_SENSITIVE_PATTERNS:
+            for match in pattern.finditer(text):
+                if self._is_exempt_keyword_match(text, kw, match.start()):
+                    continue
                 logger.warning(f"🚫 Compliance Block (Sensitive Content): Found keyword '{kw}'")
                 return False
         
         return True
+
+    def _is_exempt_keyword_match(self, text: str, keyword: str, match_start: int) -> bool:
+        exempt_phrases = self.CONTENT_SENSITIVE_EXEMPT_PHRASES.get(keyword, ())
+        if not exempt_phrases:
+            return False
+
+        for phrase in exempt_phrases:
+            kw_offset = phrase.find(keyword)
+            if kw_offset < 0:
+                continue
+            phrase_start = match_start - kw_offset
+            if phrase_start >= 0 and text.startswith(phrase, phrase_start):
+                return True
+        return False
 
     def _check_blacklist(self, url: str) -> bool:
         try:

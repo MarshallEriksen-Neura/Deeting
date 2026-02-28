@@ -37,10 +37,20 @@ class BackendTaskRuntimeStrategy(BaseRuntimeStrategy):
         # Check if it's a Celery task
         if hasattr(func, "delay"):
             # Execute asynchronously via Celery
-            task_kwargs = {**inputs}
+            # Strip internal meta keys injected by SkillRunner (e.g. __tool_name__)
+            # to avoid leaking reserved params into backend task signatures.
+            task_kwargs = {
+                key: value
+                for key, value in (inputs or {}).items()
+                if not str(key).startswith("__")
+            }
             should_wait = task_kwargs.pop("wait", False)
+            is_onboarding_skill = skill.id in (
+                "system.skill_onboarding",
+                "system.assistant_onboarding",
+            )
             # Force wait for onboarding tasks to provide better DX for AI
-            if skill.id in ("system.skill_onboarding", "system.assistant_onboarding"):
+            if is_onboarding_skill:
                 should_wait = True
 
             if context.user_id:
@@ -62,7 +72,19 @@ class BackendTaskRuntimeStrategy(BaseRuntimeStrategy):
                     }
                 except Exception as e:
                     logger.error(f"BackendTask: failed to wait for celery task {skill.id}: {e}")
-                    # Fallback to async if wait fails
+                    # Onboarding must fail fast with explicit error to avoid ambiguous
+                    # "task triggered" messages that can mislead follow-up actions.
+                    if is_onboarding_skill:
+                        return {
+                            "status": "failed",
+                            "error": f"System skill '{skill.id}' failed: {e!s}",
+                            "error_code": "SYSTEM_ONBOARDING_TASK_FAILED",
+                            "stdout": [
+                                "Onboarding task failed. Please report failure to the user.",
+                            ],
+                            "exit_code": 1,
+                        }
+                    # Keep historical behavior for non-onboarding skills.
                     return {
                         "status": "partial",
                         "error": f"Failed to get synchronous result: {e!s}",

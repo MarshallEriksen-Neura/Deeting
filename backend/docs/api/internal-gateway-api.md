@@ -283,6 +283,8 @@ Content-Type: application/json
 - execution token 有 TTL 和最大调用次数限制，超过上限返回 `429`。
 - execution token 的 `allowed_models/scopes` 会在服务端做二次校验，不满足返回 `403`。
 - 可通过配置开启来源 IP 白名单校验（`CODE_MODE_BRIDGE_ENFORCE_TRUSTED_IPS`）。
+- 当 `skill__system.assistant_onboarding` 在同一 trace 内失败后，后续 `add_knowledge_chunk` 会被拒绝并返回 `409 CODE_MODE_ASSISTANT_ONBOARDING_FAILED`，用于避免模型在 onboarding 失败后擅自写入用户记忆。
+- `ok` 字段按工具结果统一判定：只要工具结果包含失败状态（如 `status=failed/partial` 或 `error` 字段），`ok=false`。
 
 ---
 

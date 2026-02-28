@@ -148,3 +148,123 @@ async def test_internal_bridge_call_scope_denied(client, monkeypatch):
 
     assert resp.status_code == 403
     assert body["detail"]["code"] == "CODE_MODE_BRIDGE_SCOPE_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_internal_bridge_call_marks_failed_status_as_tool_error(client, monkeypatch):
+    metrics_calls = []
+
+    async def _fake_consume_call(_token):
+        return {
+            "ok": True,
+            "claims": RuntimeBridgeClaims(
+                user_id="123e4567-e89b-12d3-a456-426614174000",
+                session_id="sess-001",
+                trace_id="trace-failed-001",
+            ),
+            "call_index": 0,
+            "max_calls": 8,
+        }
+
+    async def _fake_dispatch_code_mode_tool(*, claims, tool_name, arguments):
+        assert claims.session_id == "sess-001"
+        assert tool_name == "skill__system.assistant_onboarding"
+        assert arguments["url"] == "https://example.com"
+        return {
+            "status": "failed",
+            "error": "onboarding failed",
+            "error_code": "SYSTEM_ONBOARDING_TASK_FAILED",
+        }
+
+    def _fake_record_metric(*, tool_name, success, duration_seconds, error_code=None):
+        metrics_calls.append((tool_name, success, error_code))
+
+    monkeypatch.setattr(
+        bridge_module.runtime_bridge_token_service, "consume_call", _fake_consume_call
+    )
+    monkeypatch.setattr(
+        bridge_module, "_dispatch_code_mode_tool", _fake_dispatch_code_mode_tool
+    )
+    monkeypatch.setattr(bridge_module, "record_code_mode_bridge_call", _fake_record_metric)
+    bridge_module._ONBOARDING_FAILURE_BY_TRACE.clear()
+
+    resp = await client.post(
+        "/api/v1/internal/bridge/call",
+        json={
+            "tool_name": "skill__system.assistant_onboarding",
+            "arguments": {"url": "https://example.com"},
+        },
+        headers={"X-Code-Mode-Execution-Token": "tok-005"},
+    )
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["ok"] is False
+    assert metrics_calls[0] == (
+        "skill__system.assistant_onboarding",
+        False,
+        "SYSTEM_ONBOARDING_TASK_FAILED",
+    )
+
+
+@pytest.mark.asyncio
+async def test_internal_bridge_blocks_memory_write_after_onboarding_failure(
+    client, monkeypatch
+):
+    state = {"count": 0}
+
+    async def _fake_consume_call(_token):
+        return {
+            "ok": True,
+            "claims": RuntimeBridgeClaims(
+                user_id="123e4567-e89b-12d3-a456-426614174000",
+                session_id="sess-001",
+                trace_id="trace-onboarding-block",
+            ),
+            "call_index": state["count"],
+            "max_calls": 8,
+        }
+
+    async def _fake_dispatch_code_mode_tool(*, claims, tool_name, arguments):
+        state["count"] += 1
+        if tool_name == "skill__system.assistant_onboarding":
+            return {
+                "status": "failed",
+                "error": "onboarding failed",
+                "error_code": "SYSTEM_ONBOARDING_TASK_FAILED",
+            }
+        return {"status": "ok"}
+
+    monkeypatch.setattr(
+        bridge_module.runtime_bridge_token_service, "consume_call", _fake_consume_call
+    )
+    monkeypatch.setattr(
+        bridge_module, "_dispatch_code_mode_tool", _fake_dispatch_code_mode_tool
+    )
+    bridge_module._ONBOARDING_FAILURE_BY_TRACE.clear()
+
+    first = await client.post(
+        "/api/v1/internal/bridge/call",
+        json={
+            "tool_name": "skill__system.assistant_onboarding",
+            "arguments": {"url": "https://example.com"},
+        },
+        headers={"X-Code-Mode-Execution-Token": "tok-006"},
+    )
+    assert first.status_code == 200
+    assert first.json()["ok"] is False
+
+    second = await client.post(
+        "/api/v1/internal/bridge/call",
+        json={
+            "tool_name": "add_knowledge_chunk",
+            "arguments": {"content": "fallback write"},
+        },
+        headers={"X-Code-Mode-Execution-Token": "tok-006"},
+    )
+    body = second.json()
+
+    assert second.status_code == 409
+    assert body["detail"]["code"] == "CODE_MODE_ASSISTANT_ONBOARDING_FAILED"
+    # Ensure memory tool call was blocked before dispatch.
+    assert state["count"] == 1

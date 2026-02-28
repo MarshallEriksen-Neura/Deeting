@@ -1,6 +1,7 @@
 import uuid
 from typing import Any
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app
@@ -21,12 +22,21 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID | None:
         return None
 
 
+def _is_connection_exhausted_error(exc: OperationalError) -> bool:
+    error_text = str(getattr(exc, "orig", exc)).lower()
+    return (
+        "too many clients" in error_text
+        or "remaining connection slots are reserved" in error_text
+    )
+
+
 @celery_app.task(name="app.tasks.audit.record_audit_log")
 def record_audit_log_task(log_data: dict[str, Any]) -> str:
     """
     异步记录审计日志 (GatewayLog)
     """
-    db: Session = next(get_sync_db())
+    db_gen = get_sync_db()
+    db: Session = next(db_gen)
     try:
         # 转换 UUID 字段
         for field in ("user_id", "api_key_id", "preset_id"):
@@ -37,12 +47,20 @@ def record_audit_log_task(log_data: dict[str, Any]) -> str:
         db.add(log_entry)
         db.commit()
         return f"Audit log recorded: {log_entry.id}"
-    except Exception as e:
-        logger.error(f"Failed to record audit log: {e}")
+    except OperationalError as exc:
         db.rollback()
-        raise e
+        if _is_connection_exhausted_error(exc):
+            logger.warning("audit_log_skip_db_connection_exhausted err=%s", exc)
+            return "Skipped: database connections exhausted"
+        logger.error("Failed to record audit log: %s", exc)
+        raise
+    except Exception as exc:
+        logger.error("Failed to record audit log: %s", exc)
+        db.rollback()
+        raise
     finally:
-        # get_sync_db 是生成器，next() 后需要手动 close 或者依赖 finally
-        # 但 next() 获取的是 yield 出的值，yield 后的 finally 块要在 generator close 时执行
-        # 直接调用 db.close() 更安全
-        db.close()
+        close = getattr(db_gen, "close", None)
+        if callable(close):
+            close()
+        else:
+            db.close()
