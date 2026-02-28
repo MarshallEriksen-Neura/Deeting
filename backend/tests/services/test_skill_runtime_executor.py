@@ -88,22 +88,30 @@ class _FakeExecutionLogs:
 
 
 class _FakeExecution:
-    def __init__(self, stdout_text: str = "ok") -> None:
+    def __init__(self, stdout_text: str = "ok", error=None) -> None:
         self.logs = _FakeExecutionLogs(stdout_text=stdout_text)
         self.result = []
+        self.error = error
 
 
 class _FakeCommands:
-    def __init__(self, has_requirements: bool = False) -> None:
+    def __init__(
+        self,
+        has_requirements: bool = False,
+        *,
+        execution_error=None,
+    ) -> None:
         self.commands_ran: list[str] = []
         self.has_requirements = has_requirements
+        self.execution_error = execution_error
 
     async def run(self, command: str, *, opts=None, handlers=None):
         self.commands_ran.append(command)
         if command == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi":
             signal = "1" if self.has_requirements else "0"
             return _FakeExecution(stdout_text=signal)
-        return _FakeExecution(stdout_text="ok")
+        error = self.execution_error if "command -v python3" in command else None
+        return _FakeExecution(stdout_text="ok", error=error)
 
 
 class _FakeFiles:
@@ -118,9 +126,17 @@ class _FakeFiles:
 
 
 class _FakeSandbox:
-    def __init__(self, *, has_requirements: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        has_requirements: bool = False,
+        execution_error=None,
+    ) -> None:
         self.id = "fake_sandbox"
-        self.commands = _FakeCommands(has_requirements=has_requirements)
+        self.commands = _FakeCommands(
+            has_requirements=has_requirements,
+            execution_error=execution_error,
+        )
         self.files = _FakeFiles()
 
     async def close(self) -> None:
@@ -304,3 +320,45 @@ async def test_executor_requires_user_id_for_repo_skill():
             inputs={},
             intent="edit",
         )
+
+
+@pytest.mark.asyncio
+async def test_executor_surfaces_execution_error_from_sandbox():
+    manifest = {"usage_spec": {"example_code": "print('ok')"}}
+    skill = type(
+        "Skill",
+        (),
+        {
+            "id": "repo.exec.error",
+            "runtime": "opensandbox",
+            "source_repo": "https://example.com/repo.git",
+            "source_revision": "main",
+            "source_subdir": None,
+            "manifest_json": manifest,
+        },
+    )()
+    execution_error = type(
+        "Err",
+        (),
+        {
+            "name": "CommandExecError",
+            "value": "fork/exec /usr/bin/bash: no such file or directory",
+            "traceback": [],
+        },
+    )()
+    sandbox = _FakeSandbox(execution_error=execution_error)
+    executor = SkillRuntimeExecutor(
+        _FakeRepo(skill),
+        sandbox_manager=_FakeSandboxManager(sandbox),
+    )
+
+    result = await executor.execute(
+        "repo.exec.error",
+        session_id="u1",
+        user_id="00000000-0000-0000-0000-000000000001",
+        inputs={},
+        intent="dry_run",
+    )
+
+    assert result["exit_code"] == 1
+    assert result["error"]["name"] == "CommandExecError"

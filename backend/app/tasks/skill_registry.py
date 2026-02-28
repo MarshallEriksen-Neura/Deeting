@@ -83,6 +83,8 @@ def _build_embedding_text(skill) -> str:
     parts = [
         skill.id,
         skill.name,
+        getattr(skill, "source_repo", ""),
+        getattr(skill, "source_subdir", ""),
         skill.status,
         description,
         manifest_summary,
@@ -208,6 +210,7 @@ async def _run_repo_ingestion(
     revision: str = "main",
     skill_id: str | None = None,
     runtime_hint: str | None = None,
+    source_subdir: str | None = None,
     user_id: str | None = None,
 ) -> dict:
     from app.services.skill_registry.manifest_generator import SkillManifestGenerator
@@ -243,6 +246,7 @@ async def _run_repo_ingestion(
             revision=revision,
             skill_id=skill_id,
             runtime_hint=runtime_hint,
+            source_subdir=source_subdir,
             user_id=user_id,
         )
 
@@ -258,6 +262,7 @@ def ingest_skill_repo(
     revision: str = "main",
     skill_id: str | None = None,
     runtime_hint: str | None = None,
+    source_subdir: str | None = None,
     user_id: str | None = None,
 ) -> dict | str:
     try:
@@ -267,6 +272,7 @@ def ingest_skill_repo(
                 revision=revision,
                 skill_id=skill_id,
                 runtime_hint=runtime_hint,
+                source_subdir=source_subdir,
                 user_id=user_id,
             )
         )

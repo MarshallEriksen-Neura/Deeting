@@ -21,6 +21,9 @@ export const MemoryCard = memo(function MemoryCard({
   const t = useTranslations("memory")
   const source = item.payload?.plugin_id || "extracted_fact"
   const isExtracted = source === "extracted_fact"
+  const sourceLabel = isExtracted
+    ? t("source.autoExtracted")
+    : (source.split("/").pop() ?? t("source.unknown"))
 
   return (
     <GlassCard className="p-5 flex flex-col justify-between group h-full transition-all hover:ring-1 hover:ring-blue-500/30">
@@ -33,12 +36,12 @@ export const MemoryCard = memo(function MemoryCard({
               <History className="w-3 h-3 text-purple-500" />
             )}
             <span className="text-[10px] font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wider">
-              {isExtracted ? "Auto-Extracted" : source.split("/").pop()}
+              {sourceLabel}
             </span>
           </div>
           {item.score && (
             <span className="text-[10px] text-gray-400">
-              Score: {item.score.toFixed(2)}
+              {t("fields.score")}: {item.score.toFixed(2)}
             </span>
           )}
         </div>

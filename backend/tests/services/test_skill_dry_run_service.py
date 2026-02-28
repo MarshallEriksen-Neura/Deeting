@@ -240,3 +240,71 @@ async def test_dry_run_skips_self_heal_after_max_attempts():
 
         assert self_heal.calls == []
         assert result["status"] == "dry_run_fail"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_marks_fail_when_runtime_error_payload_exists():
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        created = await repo.create(
+            {
+                "id": "core.tools.docx.runtime.error",
+                "name": "Docx",
+                "manifest_json": {},
+            }
+        )
+        executor = _FakeExecutor(
+            {
+                "stdout": [],
+                "stderr": [],
+                "artifacts": [],
+                "error": {
+                    "name": "CommandExecError",
+                    "value": "fork/exec /usr/bin/bash: no such file or directory",
+                    "traceback": [],
+                },
+            }
+        )
+        metrics = SkillMetricsService(repo, failure_threshold=2)
+        service = SkillDryRunService(repo, executor, metrics, failure_threshold=2)
+
+        result = await service.run(created.id)
+        updated = await repo.get_by_id(created.id)
+
+        assert result["status"] == "dry_run_fail"
+        assert result["error_code"] == "exec_failed"
+        assert updated is not None
+        assert updated.status == "dry_run_fail"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_marks_fail_when_stderr_has_python_traceback():
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        created = await repo.create(
+            {
+                "id": "core.tools.docx.traceback",
+                "name": "Docx",
+                "manifest_json": {},
+            }
+        )
+        executor = _FakeExecutor(
+            {
+                "stdout": [],
+                "stderr": [
+                    "Traceback (most recent call last):",
+                    "ModuleNotFoundError: No module named 'deeting_sdk'",
+                ],
+                "artifacts": [],
+            }
+        )
+        metrics = SkillMetricsService(repo, failure_threshold=2)
+        service = SkillDryRunService(repo, executor, metrics, failure_threshold=2)
+
+        result = await service.run(created.id)
+        updated = await repo.get_by_id(created.id)
+
+        assert result["status"] == "dry_run_fail"
+        assert result["error_code"] == "exec_failed"
+        assert updated is not None
+        assert updated.status == "dry_run_fail"

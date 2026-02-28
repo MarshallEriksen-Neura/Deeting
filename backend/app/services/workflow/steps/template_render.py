@@ -12,6 +12,7 @@ import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from app.core.config import settings
 from app.prompts.router_base import ROUTER_BASE_PROMPT
 from app.services.orchestrator.registry import step_registry
 from app.services.providers.request_renderer import request_renderer
@@ -161,12 +162,16 @@ class TemplateRenderStep(BaseStep):
                 lines.append(f"- {tool_name}: {getattr(t, 'description', '')}")
 
             if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
+                allowed_direct = ", ".join(
+                    f"`{name}`" for name in self._resolve_code_mode_direct_allowlist()
+                )
                 lines.append(
                     "\n# Code Mode Capability\n"
-                    "**IMPORTANT: You MUST NOT call any tool other than `search_sdk` and `execute_code_plan` directly. "
-                    "All other tools (including MCP tools like web search, etc.) can ONLY be invoked inside "
-                    "`execute_code_plan` scripts via `deeting.call_tool()`. Direct calls to other tools WILL BE "
-                    "BLOCKED and return an error, wasting a turn.**\n\n"
+                    "**IMPORTANT: In Code Mode, direct tool calls are blocked for most tools. "
+                    f"Only these tools may be called directly: {allowed_direct}. "
+                    "All other tools (including most MCP tools) can ONLY be invoked inside "
+                    "`execute_code_plan` scripts via `deeting.call_tool()`. Direct calls to blocked tools WILL "
+                    "return an error, wasting a turn.**\n\n"
                     "Required workflow:\n"
                     "1) call `search_sdk` to discover exact tool signatures\n"
                     "2) write one coherent Python script using the discovered tools\n"
@@ -367,10 +372,14 @@ class TemplateRenderStep(BaseStep):
         if tools:
             tool_names = {t.name for t in tools}
             if {"search_sdk", "execute_code_plan"}.issubset(tool_names):
+                allowed_direct = ", ".join(
+                    f"`{name}`" for name in self._resolve_code_mode_direct_allowlist()
+                )
                 code_mode_reminder = (
                     "\n\n**Code Mode Capability (MANDATORY)**:\n"
-                    "**You MUST NOT call any tool other than `search_sdk` and `execute_code_plan` directly. "
-                    "Direct calls to other tools WILL BE BLOCKED and return an error.**\n\n"
+                    "**In Code Mode, direct tool calls are blocked for most tools. "
+                    f"Only these tools may be called directly: {allowed_direct}. "
+                    "Direct calls to blocked tools WILL BE BLOCKED and return an error.**\n\n"
                     "Required workflow:\n"
                     "1) Use `search_sdk` to discover precise tool signatures.\n"
                     "2) Produce one coherent Python execution plan using discovered tools.\n"
@@ -422,6 +431,19 @@ class TemplateRenderStep(BaseStep):
         if request_template:
             return request_template
         return default_params or {}
+
+    @staticmethod
+    def _resolve_code_mode_direct_allowlist() -> list[str]:
+        core_tools = {"search_sdk", "execute_code_plan"}
+        raw = getattr(settings, "CODE_MODE_DIRECT_TOOL_ALLOWLIST", "")
+        if isinstance(raw, str):
+            extras = [item.strip().lower() for item in raw.split(",")]
+        elif isinstance(raw, list):
+            extras = [str(item).strip().lower() for item in raw]
+        else:
+            extras = []
+        merged = core_tools | {item for item in extras if item}
+        return sorted(merged)
 
     @staticmethod
     def _drop_none_fields(payload: dict) -> dict:

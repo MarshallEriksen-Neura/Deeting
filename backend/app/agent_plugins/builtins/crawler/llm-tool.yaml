@@ -37,7 +37,7 @@ tools:
           description: "Custom User-Agent string."
       required: ["url"]
   - name: submit_repo_ingestion
-    description: "Ingest a skill repository and build a skill manifest asynchronously."
+    description: "Ingest a GitHub repository as a functional skill that the assistant can execute. Use this instead of fetch_web_content when the user intent is to 'learn', 'install', or 'register' a new capability from a code repository. This build a structured manifest with executable tools."
     parameters:
       type: object
       properties:

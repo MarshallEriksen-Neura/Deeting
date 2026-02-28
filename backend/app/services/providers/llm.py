@@ -3,6 +3,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import text
 from app.core.database import AsyncSessionLocal
 from app.schemas.gateway import ChatCompletionRequest
 from app.schemas.tool import ToolCall, ToolDefinition
@@ -56,9 +57,20 @@ class LLMService:
                 if secretary and secretary.model_name
                 else None
             )
+            
+            if not secretary_model:
+                # 规范化方案：从系统设置中获取默认内部模型
+                from app.repositories.system_setting_repository import SystemSettingRepository
+                setting_repo = SystemSettingRepository(session)
+                default_model_setting = await setting_repo.get_by_key("default_internal_model")
+                if default_model_setting and isinstance(default_model_setting.value, dict):
+                    secretary_model = default_model_setting.value.get("model_id")
+                    if secretary_model:
+                        logger.info("LLMService: using system default model from settings: %s", secretary_model)
+
             if not secretary_model:
                 raise RuntimeError(
-                    f"LLMService failed: secretary model is not configured for user {resolved_user_id}"
+                    f"LLMService failed: secretary model is not configured for user {resolved_user_id} and no system default found"
                 )
             target_model = secretary_model
             logger.info(

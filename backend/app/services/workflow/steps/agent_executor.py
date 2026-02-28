@@ -26,6 +26,7 @@ _DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 300.0
 _DEFAULT_MAX_TURNS = 10
 _DEFAULT_MAX_TURNS_HARD_LIMIT = 60
 _CODE_MODE_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
+_CODE_MODE_DEFAULT_DIRECT_ALLOWLIST = {"consult_expert_network", "search_knowledge"}
 
 
 @step_registry.register
@@ -759,9 +760,14 @@ class AgentExecutorStep(BaseStep):
             tool_name=tool_name,
             user_mcp_tool_map=user_mcp_tool_map,
         ):
+            allowed_direct = sorted(
+                _CODE_MODE_TOOL_NAMES | self._resolve_code_mode_direct_allowlist()
+            )
+            allowed_str = ", ".join(f"`{name}`" for name in allowed_direct)
             return {
                 "error": (
                     f"Direct tool call '{tool_name}' is blocked while code mode is available. "
+                    f"Allowed direct tools: {allowed_str}. "
                     "Use `search_sdk` first, then execute once with `execute_code_plan`."
                 ),
                 "error_code": "CODE_MODE_DIRECT_TOOL_BLOCKED",
@@ -887,14 +893,36 @@ class AgentExecutorStep(BaseStep):
         tool_name: str,
         user_mcp_tool_map: dict[str, Any],
     ) -> bool:
-        name = str(tool_name or "").strip()
+        name = str(tool_name or "").strip().lower()
         if not name:
             return False
         if not self._is_code_mode_available(ctx):
             return False
         if name in _CODE_MODE_TOOL_NAMES:
             return False
+        if name in self._resolve_code_mode_direct_allowlist():
+            return False
         return True
+
+    @staticmethod
+    def _resolve_code_mode_direct_allowlist() -> set[str]:
+        raw = getattr(settings, "CODE_MODE_DIRECT_TOOL_ALLOWLIST", "")
+        values: list[str]
+        if isinstance(raw, str):
+            values = [item.strip() for item in raw.split(",")]
+        elif isinstance(raw, list):
+            values = [str(item).strip() for item in raw]
+        else:
+            values = []
+
+        normalized = {
+            item.lower()
+            for item in values
+            if isinstance(item, str) and item.strip()
+        }
+        if normalized:
+            return normalized
+        return set(_CODE_MODE_DEFAULT_DIRECT_ALLOWLIST)
 
     def _is_code_mode_available(self, ctx: "WorkflowContext") -> bool:
         request_body = ctx.get("template_render", "request_body") or {}

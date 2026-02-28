@@ -357,7 +357,7 @@ class ToolSyncService:
         user_limit = int(getattr(settings, "MCP_TOOL_USER_TOPK", 5) or 5)
         skill_limit = int(getattr(settings, "MCP_TOOL_SKILL_TOPK", 3) or 3)
         total_limit = max(1, sys_limit + user_limit + skill_limit)
-        threshold = float(getattr(settings, "MCP_TOOL_SCORE_THRESHOLD", 0.75) or 0.75)
+        threshold = float(getattr(settings, "MCP_TOOL_SCORE_THRESHOLD", 0.40) or 0.40)
 
         sys_start = time.perf_counter()
         sys_hits = await self._search_system(
@@ -402,8 +402,8 @@ class ToolSyncService:
         final_hits = self._merge_hits(user_hits, sys_hits, skill_hits, total_limit)
         result = [self._hit_to_def(hit) for hit in final_hits]
         
-        # 强制确保核心系统工具可见，解决 AI "无头"问题
-        result = await self._ensure_core_tools_visibility(result, user_id)
+        # 确保关键引导工具在特定意图下可见，但不截断结果
+        result = await self._ensure_onboarding_tools_visibility(result, q, user_id)
 
         logger.info(
             "ToolSyncService: search_tools done duration_ms=%.2f final_hits=%s",
@@ -412,45 +412,45 @@ class ToolSyncService:
         )
         return result
 
-    async def _ensure_core_tools_visibility(
+    async def _ensure_onboarding_tools_visibility(
         self, 
-        current_tools: list[ToolDefinition], 
+        current_tools: list[ToolDefinition],
+        query: str,
         user_id: uuid.UUID | None
     ) -> list[ToolDefinition]:
-        """确保核心系统工具始终可见"""
-        core_tool_names = {"search_knowledge", "add_knowledge_chunk", "crawl_website", "fetch_web_content"}
-        existing_names = {t.name for t in current_tools}
-        missing_names = core_tool_names - existing_names
+        """对于学习、接入、注册等意图，强制确保 onboarding 技能可见"""
+        lower_query = query.lower()
+        onboarding_triggers = {"学习", "接入", "注册", "install", "learn", "github", "repo", "repository", "skill", "assistant"}
         
-        if not missing_names:
+        is_onboarding_intent = any(trigger in lower_query for trigger in onboarding_triggers)
+        if not is_onboarding_intent:
             return current_tools
 
-        from app.services.agent.agent_service import agent_service
-        if not agent_service.tools:
-            await agent_service.initialize(user_id=user_id)
-
-        added_count = 0
-        # First, try to get from registered tools
-        for tool in agent_service.tools:
-            if tool.name in missing_names:
-                current_tools.insert(0, tool)
-                existing_names.add(tool.name)
-                missing_names.remove(tool.name)
-                added_count += 1
+        onboarding_ids = {"system.skill_onboarding", "system.assistant_onboarding"}
+        existing_names = {t.name for t in current_tools}
         
-        # If still missing (e.g. plugin not activated), try to get from all plugin classes
-        if missing_names:
-            all_available = agent_service.list_registered_tools()
-            for tool in all_available:
-                if tool.name in missing_names:
-                    current_tools.insert(0, tool)
-                    added_count += 1
-                    missing_names.remove(tool.name)
-        
-        if added_count > 0:
-            logger.info("Injected %s missing core tools into search results", added_count)
+        added_tools = []
+        for oid in onboarding_ids:
+            tool_name = f"skill__{oid}"
+            if tool_name in existing_names:
+                continue
             
-        return current_tools[:20]
+            async with AsyncSessionLocal() as session:
+                from app.repositories.skill_registry_repository import SkillRegistryRepository
+                repo = SkillRegistryRepository(session)
+                skill = await repo.get_by_id(oid)
+                if skill and skill.status == "active":
+                    manifest = skill.manifest_json or {}
+                    schema = manifest.get("io_schema", {})
+                    added_tools.append(ToolDefinition(
+                        name=tool_name,
+                        description=skill.description,
+                        input_schema=_safe_schema(schema)
+                    ))
+                    logger.info("Injected onboarding tool %s due to intent match", tool_name)
+                    
+        # 置于首位且不截断原始结果（除非超过更大上限）
+        return (added_tools + current_tools)[:40]
 
     async def _search_system(
         self,
@@ -636,7 +636,14 @@ class ToolSyncService:
         merged: list[dict[str, Any]] = []
         seen: set[str] = set()
 
-        for hit in user_hits:
+        # 优先保证 Skill 命中的可见性（多样性保障）
+        # 即使分值较低，只要过阈值，也给至少 3 个席位
+        skill_list = list(skill_hits)
+        system_list = list(system_hits)
+        user_list = list(user_hits)
+
+        # 1. 先加入 User Hits (最高权)
+        for hit in user_list:
             name = self._get_hit_name(hit)
             if not name or name in seen:
                 continue
@@ -645,26 +652,38 @@ class ToolSyncService:
             if len(merged) >= total_limit:
                 return merged
 
-        for hit in system_hits:
-            name = self._get_hit_name(hit)
-            if not name or name in seen:
-                continue
-            merged.append(hit)
-            seen.add(name)
-            if len(merged) >= total_limit:
-                return merged
-
-        for hit in skill_hits:
+        # 2. 加入前 3 个 Skill Hits (保障位)
+        for hit in skill_list[:3]:
             name = self._get_skill_name(hit)
             if not name or name in seen:
                 continue
-            # Mark this as a skill for _hit_to_def
             if "payload" in hit:
                 hit["payload"]["is_skill"] = True
             merged.append(hit)
             seen.add(name)
+
+        # 3. 加入 System Hits
+        for hit in system_list:
+            name = self._get_hit_name(hit)
+            if not name or name in seen:
+                continue
+            merged.append(hit)
+            seen.add(name)
             if len(merged) >= total_limit:
                 break
+
+        # 4. 补齐剩余的 Skill Hits
+        if len(merged) < total_limit:
+            for hit in skill_list[3:]:
+                name = self._get_skill_name(hit)
+                if not name or name in seen:
+                    continue
+                if "payload" in hit:
+                    hit["payload"]["is_skill"] = True
+                merged.append(hit)
+                seen.add(name)
+                if len(merged) >= total_limit:
+                    break
 
         return merged
 

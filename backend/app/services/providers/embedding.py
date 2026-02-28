@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,6 +21,8 @@ from app.services.providers.upstream_url import build_upstream_url_with_params
 from app.services.secrets.manager import SecretManager
 from app.services.system import get_cached_embedding_model
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class _EmbeddingRuntime:
@@ -35,6 +39,10 @@ class EmbeddingService:
     Service to generate embeddings using OpenAI (or configured provider).
     Supports dynamic configuration injection.
     """
+
+    _EMBEDDING_CHUNK_TARGET_CHARS = 3000
+    _EMBEDDING_CHUNK_OVERLAP_CHARS = 300
+    _EMBEDDING_CHUNK_MAX_DEPTH = 8
 
     def __init__(self, config: dict[str, Any] | None = None):
         """
@@ -127,10 +135,7 @@ class EmbeddingService:
         Embed a single string.
         """
         runtime = await self._ensure_runtime()
-        vectors = await self._request_embeddings(runtime, [text])
-        if not vectors:
-            raise RuntimeError("embedding provider returned empty embedding")
-        embedding = vectors[0]
+        embedding = await self._embed_text_with_split_fallback(runtime, text)
         if isinstance(embedding, list) and embedding:
             self._vector_size = len(embedding)
         return embedding
@@ -362,6 +367,46 @@ class EmbeddingService:
             raise RuntimeError("embedding provider returned no vectors")
         return vectors
 
+    async def _embed_text_with_split_fallback(
+        self,
+        runtime: _EmbeddingRuntime,
+        text: str,
+        *,
+        depth: int = 0,
+    ) -> list[float]:
+        try:
+            vectors = await self._request_embeddings(runtime, [text])
+            if not vectors:
+                raise RuntimeError("embedding provider returned empty embedding")
+            return vectors[0]
+        except RuntimeError as exc:
+            if not self._is_input_too_long_error(exc):
+                raise
+            if depth >= self._EMBEDDING_CHUNK_MAX_DEPTH:
+                raise RuntimeError(
+                    "embedding input remains too long after chunk retries"
+                ) from exc
+
+            chunks = self._split_text_for_embedding(text, force=True)
+            if len(chunks) <= 1:
+                raise
+
+            logger.warning(
+                "EmbeddingService: input too long, applying chunk fallback depth=%s chunks=%s",
+                depth,
+                len(chunks),
+            )
+
+            vectors: list[list[float]] = []
+            weights: list[int] = []
+            for chunk in chunks:
+                vector = await self._embed_text_with_split_fallback(
+                    runtime, chunk, depth=depth + 1
+                )
+                vectors.append(vector)
+                weights.append(max(1, len(chunk)))
+            return self._aggregate_chunk_vectors(vectors, weights)
+
     async def _post_embeddings_request(
         self,
         runtime: _EmbeddingRuntime,
@@ -434,6 +479,79 @@ class EmbeddingService:
                 return vectors
 
         return []
+
+    @classmethod
+    def _split_text_for_embedding(cls, text: str, *, force: bool = False) -> list[str]:
+        raw = str(text or "")
+        if not raw:
+            return [""]
+
+        max_chars = cls._EMBEDDING_CHUNK_TARGET_CHARS
+        overlap = cls._EMBEDDING_CHUNK_OVERLAP_CHARS
+
+        if len(raw) <= max_chars:
+            if force and len(raw) > 1:
+                midpoint = len(raw) // 2
+                return [raw[:midpoint], raw[midpoint:]]
+            return [raw]
+
+        chunks: list[str] = []
+        step = max(1, max_chars - overlap)
+        start = 0
+        while start < len(raw):
+            end = min(len(raw), start + max_chars)
+            chunk = raw[start:end]
+            if chunk:
+                chunks.append(chunk)
+            if end >= len(raw):
+                break
+            start += step
+        return chunks
+
+    @staticmethod
+    def _aggregate_chunk_vectors(
+        vectors: list[list[float]],
+        weights: list[int],
+    ) -> list[float]:
+        if not vectors:
+            raise RuntimeError("embedding provider returned empty embedding chunks")
+
+        dim = len(vectors[0])
+        if dim <= 0:
+            raise RuntimeError("embedding provider returned empty embedding vector")
+        for vector in vectors:
+            if len(vector) != dim:
+                raise RuntimeError("embedding provider returned inconsistent dimensions")
+
+        total_weight = float(sum(max(1, int(w)) for w in weights))
+        if total_weight <= 0:
+            total_weight = float(len(vectors))
+
+        merged = [0.0] * dim
+        for vector, weight in zip(vectors, weights, strict=False):
+            w = float(max(1, int(weight)))
+            for idx, value in enumerate(vector):
+                merged[idx] += float(value) * w
+        averaged = [value / total_weight for value in merged]
+
+        norm = math.sqrt(sum(value * value for value in averaged))
+        if norm <= 0:
+            return averaged
+        return [value / norm for value in averaged]
+
+    @staticmethod
+    def _is_input_too_long_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        if "status=400" not in message:
+            return False
+        return (
+            "input length" in message
+            and "token" in message
+            and (
+                "exceeds maximum allowed token size" in message
+                or "maximum context length" in message
+            )
+        )
 
     @staticmethod
     def _is_gemini_like(protocol: str) -> bool:

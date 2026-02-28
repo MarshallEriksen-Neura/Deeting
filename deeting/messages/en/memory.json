@@ -24,7 +24,12 @@
   },
   "fields": {
     "content": "Memory Content",
-    "createdAt": "Created At"
+    "createdAt": "Created At",
+    "score": "Score"
+  },
+  "source": {
+    "autoExtracted": "Auto-Extracted",
+    "unknown": "Unknown Source"
   },
   "success": {
     "updated": "Memory updated",

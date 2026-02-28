@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
-import { Trash2, Edit2, Loader2, Plus, Search, Brain } from "lucide-react"
+import { Loader2, Plus, Brain } from "lucide-react"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { InfiniteList } from "@/components/ui/infinite-list"
@@ -26,7 +26,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
 import { useAdminSystemMemories } from "@/lib/swr/use-admin-memory"
 import { addAdminSystemMemory, updateAdminSystemMemory, deleteAdminSystemMemory } from "@/lib/api/admin-memory"
 import type { MemoryItem } from "@/types/memory"
@@ -34,7 +33,7 @@ import { MemoryCard } from "../../../dashboard/memory/components/memory-card"
 
 export function AdminMemoryClient() {
   const t = useTranslations("memory")
-  const admT = useTranslations("admin")
+  const systemMemoryT = useTranslations("admin.systemMemory.page")
   const { memories, isLoading, isLoadingMore, isReachedEnd, mutate, loadMore } = useAdminSystemMemories(24)
 
   const [editingItem, setEditingItem] = useState<MemoryItem | null>(null)
@@ -52,12 +51,12 @@ export function AdminMemoryClient() {
     setIsAdding(true)
     try {
       await addAdminSystemMemory({ content: addContent })
-      toast.success("System knowledge added")
+      toast.success(systemMemoryT("toast.addSuccess"))
       mutate()
       setAddDialogOpen(false)
       setAddContent("")
-    } catch (err) {
-      toast.error("Failed to add system knowledge")
+    } catch {
+      toast.error(systemMemoryT("toast.addError"))
     } finally {
       setIsAdding(false)
     }
@@ -71,8 +70,8 @@ export function AdminMemoryClient() {
       toast.success(t("success.updated"))
       mutate()
       setEditingItem(null)
-    } catch (err) {
-      toast.error("Failed to update memory")
+    } catch {
+      toast.error(systemMemoryT("toast.updateError"))
     } finally {
       setIsUpdating(false)
     }
@@ -83,12 +82,12 @@ export function AdminMemoryClient() {
       await deleteAdminSystemMemory(id)
       toast.success(t("success.deleted"))
       mutate()
-    } catch (err) {
-      toast.error("Failed to delete memory")
+    } catch {
+      toast.error(systemMemoryT("toast.deleteError"))
     } finally {
       setDeleteId(null)
     }
-  }, [mutate, t])
+  }, [mutate, systemMemoryT, t])
 
   if (isLoading && memories.length === 0) {
     return (
@@ -105,7 +104,7 @@ export function AdminMemoryClient() {
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {memories.length} entries in System KB
+            {systemMemoryT("stats.entryCount", { count: memories.length })}
           </p>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -114,7 +113,7 @@ export function AdminMemoryClient() {
             className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Add Knowledge
+            {systemMemoryT("actions.addKnowledge")}
           </GlassButton>
         </div>
       </div>
@@ -129,10 +128,10 @@ export function AdminMemoryClient() {
           </div>
           <div className="max-w-xs space-y-2">
             <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-              System Knowledge is Empty
+              {systemMemoryT("empty.title")}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Add platform-level facts or rules that all assistants should know.
+              {systemMemoryT("empty.description")}
             </p>
           </div>
         </div>
@@ -142,7 +141,7 @@ export function AdminMemoryClient() {
           isLoading={!!isLoadingMore}
           onLoadMore={loadMore}
           useScrollArea={false}
-          noMoreDisplay="— 没有更多了 —"
+          noMoreDisplay={systemMemoryT("list.noMore")}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {memories.map((item) => (
@@ -164,9 +163,9 @@ export function AdminMemoryClient() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
-            <DialogTitle>Add System Knowledge</DialogTitle>
+            <DialogTitle>{systemMemoryT("dialogs.add.title")}</DialogTitle>
             <DialogDescription>
-              This information will be shared across all users and assistants.
+              {systemMemoryT("dialogs.add.description")}
             </DialogDescription>
           </DialogHeader>
           <div className="py-6">
@@ -174,7 +173,7 @@ export function AdminMemoryClient() {
               value={addContent}
               onChange={(e) => setAddContent(e.target.value)}
               className="min-h-[180px] text-base"
-              placeholder="e.g. The platform supports advanced RAG and multi-agent orchestration..."
+              placeholder={systemMemoryT("dialogs.add.placeholder")}
             />
           </div>
           <DialogFooter>

@@ -18,14 +18,39 @@ class SkillManifestGenerator:
         from app.services.providers.llm import llm_service
 
         prompt = _build_prompt(evidence, runtime)
-        response = await llm_service.chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            user_id=user_id,
-            tenant_id=user_id,
-            api_key_id=user_id,
-        )
-        return _parse_json_response(response)
+        try:
+            response = await llm_service.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                user_id=user_id,
+                tenant_id=user_id,
+                api_key_id=user_id,
+            )
+            return _parse_json_response(response)
+        except Exception as exc:
+            logger.warning(f"manifest_generator_llm_failed: {exc}. Using basic fallback.")
+            return self._generate_fallback(evidence, runtime)
+
+    def _generate_fallback(self, evidence: EvidencePack, runtime: str) -> dict:
+        name = "Ingested Skill"
+        # Try to extract a name from repo path or files
+        if evidence.metadata.get("repo_url"):
+            name = evidence.metadata["repo_url"].split("/")[-1].replace(".git", "")
+        
+        description = f"Automated ingestion of repository."
+        if evidence.readme:
+            # Take the first 200 chars of README
+            readme_clean = " ".join(evidence.readme.split()[:40])
+            description = f"{readme_clean[:250]}..."
+        
+        return {
+            "name": name,
+            "description": description,
+            "capabilities": ["auto-ingested", runtime] + (evidence.entrypoints[:3]),
+            "usage_spec": {
+                "example_code": f"# Auto-generated example\n# Entrypoints: {', '.join(evidence.entrypoints[:5])}"
+            }
+        }
 
 
 def _build_prompt(evidence: EvidencePack, runtime: str) -> str:
@@ -34,6 +59,7 @@ def _build_prompt(evidence: EvidencePack, runtime: str) -> str:
         readme = readme[:4000].rstrip()
     deps = ", ".join(evidence.dependencies[:20])
     entrypoints = ", ".join(evidence.entrypoints[:10])
+    files = ", ".join(evidence.files[:50])
     return f"""
 You are a Skill Manifest Builder for Deeting OS.
 Based on the evidence below, generate a JSON manifest for a library-first skill.
@@ -47,6 +73,7 @@ Rules:
 Runtime: {runtime}
 
 Evidence:
+- Files (top 50): {files or "none"}
 - Dependencies: {deps or "none"}
 - Entrypoints: {entrypoints or "none"}
 - README:

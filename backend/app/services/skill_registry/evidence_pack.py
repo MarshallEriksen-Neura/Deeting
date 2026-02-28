@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class EvidencePack:
-    max_files: int = 10
+    max_files: int = 100
     files: list[str] = field(default_factory=list)
     readme: str | None = None
     dependencies: list[str] = field(default_factory=list)

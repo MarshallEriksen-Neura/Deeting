@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     MCP_TOOL_SCORE_THRESHOLD: float = 0.75
     MCP_TOOL_SYSTEM_INDEX_HASH_TTL_SECONDS: int = 86400
     CODE_MODE_MINIMAL_TOOLSET: bool = True
+    # Code Mode 直调放行名单（逗号分隔），其余工具仍建议通过 execute_code_plan 间接调用
+    CODE_MODE_DIRECT_TOOL_ALLOWLIST: str = "consult_expert_network,search_knowledge"
     MCP_HTTP_TRUST_ENV: bool = False
 
     # Spec Knowledge 三层漏斗配置

@@ -18,8 +18,10 @@ from opensandbox.models.sandboxes import SandboxImageSpec
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.distributed_lock import distributed_lock
+from app.core.sandbox.opensandbox_compat import apply_traceback_null_compat_patch
 
 logger = logging.getLogger(__name__)
+apply_traceback_null_compat_patch()
 
 # Redis Keys
 KEY_PREFIX = "sandbox"

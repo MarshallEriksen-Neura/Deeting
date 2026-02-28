@@ -100,6 +100,22 @@ def test_should_block_direct_tool_call_when_code_mode_available():
     assert (
         step._should_block_direct_tool_call(
             ctx,
+            tool_name="consult_expert_network",
+            user_mcp_tool_map={},
+        )
+        is False
+    )
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
+            tool_name="search_knowledge",
+            user_mcp_tool_map={},
+        )
+        is False
+    )
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
             tool_name="search_sdk",
             user_mcp_tool_map=user_map,
         )

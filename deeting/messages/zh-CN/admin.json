@@ -529,7 +529,35 @@
     },
     "systemMemory": {
       "title": "系统知识管理",
-      "description": "维护平台级公共知识库，供所有用户和 AI 助手共享。"
+      "description": "维护平台级公共知识库，供所有用户和 AI 助手共享。",
+      "page": {
+        "stats": {
+          "entryCount": "系统知识库共 {count} 条"
+        },
+        "actions": {
+          "addKnowledge": "新增知识"
+        },
+        "empty": {
+          "title": "系统知识库为空",
+          "description": "添加平台级事实或规则，供所有助手共享。"
+        },
+        "list": {
+          "noMore": "— 没有更多系统知识了 —"
+        },
+        "dialogs": {
+          "add": {
+            "title": "新增系统知识",
+            "description": "这条信息会被所有用户和助手共享使用。",
+            "placeholder": "例如：平台支持高级 RAG 和多智能体编排..."
+          }
+        },
+        "toast": {
+          "addSuccess": "系统知识已添加",
+          "addError": "添加系统知识失败",
+          "updateError": "更新系统知识失败",
+          "deleteError": "删除系统知识失败"
+        }
+      }
     },
     "notifications": {
       "title": "通知管理",

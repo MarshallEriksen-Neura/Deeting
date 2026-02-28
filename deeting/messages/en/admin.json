@@ -529,7 +529,35 @@
     },
     "systemMemory": {
       "title": "System Knowledge Management",
-      "description": "Maintain platform-level public knowledge shared by all users and AI assistants."
+      "description": "Maintain platform-level public knowledge shared by all users and AI assistants.",
+      "page": {
+        "stats": {
+          "entryCount": "{count} entries in System KB"
+        },
+        "actions": {
+          "addKnowledge": "Add Knowledge"
+        },
+        "empty": {
+          "title": "System Knowledge Is Empty",
+          "description": "Add platform-level facts or rules that all assistants should know."
+        },
+        "list": {
+          "noMore": "— No more system knowledge —"
+        },
+        "dialogs": {
+          "add": {
+            "title": "Add System Knowledge",
+            "description": "This information will be shared across all users and assistants.",
+            "placeholder": "e.g. The platform supports advanced RAG and multi-agent orchestration..."
+          }
+        },
+        "toast": {
+          "addSuccess": "System knowledge added",
+          "addError": "Failed to add system knowledge",
+          "updateError": "Failed to update system knowledge",
+          "deleteError": "Failed to delete system knowledge"
+        }
+      }
     },
     "notifications": {
       "title": "Notification Management",

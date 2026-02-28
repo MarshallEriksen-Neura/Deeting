@@ -141,6 +141,7 @@ class SandboxRuntimeStrategy(BaseRuntimeStrategy):
             stderr = _strip_runtime_log_lines(stderr_raw)
             invoke_result = _extract_invoke_result(stdout_raw, stderr_raw)
             render_blocks = _extract_render_blocks(stdout_raw, stderr_raw)
+            execution_error = _extract_execution_error(execution)
             artifact_results = await _collect_artifacts(
                 sandbox, artifacts, workspace_root
             )
@@ -148,9 +149,11 @@ class SandboxRuntimeStrategy(BaseRuntimeStrategy):
                 "status": "ok",
                 "stdout": stdout,
                 "stderr": stderr,
-                "exit_code": 0,
+                "exit_code": 1 if execution_error else 0,
                 "artifacts": artifact_results,
             }
+            if execution_error:
+                response["error"] = execution_error
             if invoke_result is not None:
                 response["result"] = invoke_result
             if render_blocks:
@@ -332,6 +335,17 @@ def _strip_runtime_log_lines(lines: list[str]) -> list[str]:
                 continue
             cleaned.append(line)
     return cleaned
+
+
+def _extract_execution_error(execution) -> dict[str, Any] | None:
+    error = getattr(execution, "error", None)
+    if error is None:
+        return None
+    return {
+        "name": getattr(error, "name", None),
+        "value": getattr(error, "value", None),
+        "traceback": list(getattr(error, "traceback", []) or []),
+    }
 
 
 def _extract_invoke_result(stdout: list[str], stderr: list[str]) -> Any | None:

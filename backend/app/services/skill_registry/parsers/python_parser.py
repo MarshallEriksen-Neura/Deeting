@@ -103,8 +103,20 @@ def _collect_entrypoints(root_path: Path) -> list[str]:
         root_path / "src" / "__main__.py",
         root_path / "src" / "main.py",
     ]
+    # Check for scripts folder
+    scripts_dir = root_path / "scripts"
+    if scripts_dir.is_dir():
+        for py_file in scripts_dir.glob("*.py"):
+            if py_file.name != "__init__.py":
+                candidates.append(py_file)
+    
     entrypoints: list[str] = []
     for path in candidates:
         if path.exists():
-            entrypoints.append(path.relative_to(root_path).as_posix())
+            try:
+                rel = path.relative_to(root_path).as_posix()
+                if rel not in entrypoints:
+                    entrypoints.append(rel)
+            except ValueError:
+                continue
     return entrypoints

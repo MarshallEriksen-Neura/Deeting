@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from app.repositories.skill_registry_repository import SkillRegistryRepository
@@ -44,6 +45,15 @@ class SkillDryRunService:
         except Exception as exc:
             return await self._handle_failure(
                 skill, "exec_failed", str(exc), allow_self_heal=allow_self_heal
+            )
+
+        execution_error = _detect_execution_error(result)
+        if execution_error:
+            return await self._handle_failure(
+                skill,
+                "exec_failed",
+                execution_error,
+                allow_self_heal=allow_self_heal,
             )
 
         error_code = _validate_artifacts(
@@ -151,3 +161,31 @@ def _can_self_heal(manifest: dict[str, Any] | str | None, max_attempts: int) -> 
     if not isinstance(history, list):
         return True
     return len(history) < max_attempts
+
+
+_PYTHON_TRACEBACK_RE = re.compile(r"^\s*Traceback \(most recent call last\):\s*$")
+
+
+def _detect_execution_error(result: dict[str, Any]) -> str | None:
+    error = result.get("error")
+    if isinstance(error, dict):
+        name = str(error.get("name") or error.get("ename") or "").strip()
+        value = str(error.get("value") or error.get("evalue") or "").strip()
+        detail = value or name or str(error)
+        if detail:
+            return f"runtime execution error: {detail}"
+    elif error:
+        return f"runtime execution error: {error!s}"
+
+    stderr_lines = result.get("stderr")
+    if isinstance(stderr_lines, list):
+        for raw_line in stderr_lines:
+            line = str(raw_line or "").rstrip("\n")
+            if _PYTHON_TRACEBACK_RE.match(line):
+                return "runtime stderr contains python traceback"
+    elif stderr_lines is not None:
+        line = str(stderr_lines).rstrip("\n")
+        if _PYTHON_TRACEBACK_RE.match(line):
+            return "runtime stderr contains python traceback"
+
+    return None

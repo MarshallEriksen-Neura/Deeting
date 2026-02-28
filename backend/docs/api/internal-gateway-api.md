@@ -201,9 +201,10 @@ data: [DONE]
 
 当请求工具集中同时包含 `search_sdk` 和 `execute_code_plan` 时，Agent 会进入 Code Mode 严格模式：
 
-- 仅允许模型直接调用 `search_sdk` / `execute_code_plan`。
-- 其他任意工具（系统工具、动态技能、用户 MCP 工具）直接调用会被拦截，返回 `CODE_MODE_DIRECT_TOOL_BLOCKED`。
+- 默认允许模型直接调用：`search_sdk`、`execute_code_plan`、`consult_expert_network`、`search_knowledge`。
+- 其余工具（系统工具、动态技能、用户 MCP 工具）直接调用会被拦截，返回 `CODE_MODE_DIRECT_TOOL_BLOCKED`。
 - 推荐顺序：先 `search_sdk` 获取工具签名，再通过一次 `execute_code_plan` 在脚本内调用工具。
+- 可通过环境变量 `CODE_MODE_DIRECT_TOOL_ALLOWLIST`（逗号分隔）调整额外放行名单。
 
 ---
 
@@ -410,6 +411,10 @@ Content-Type: application/json
 - Dry Run 成功 → `active`
 - Dry Run 失败 → `dry_run_fail`
 - 连续失败达到阈值 → `needs_review`
+
+**失败判定补充（2026-02-28）**
+- 若运行时返回 `execution.error`（例如 `CommandExecError`），Dry Run 直接判定失败。
+- 若运行日志 `stderr` 含 Python traceback 起始行（`Traceback (most recent call last):`），Dry Run 直接判定失败。
 
 **失败自愈（Self‑Heal）**
 - 每次失败都会触发自愈，**最多 N=2 次/技能**

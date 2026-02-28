@@ -184,3 +184,107 @@ async def test_embedding_service_raises_when_provider_resolution_fails(monkeypat
     service = EmbeddingService()
     with pytest.raises(RuntimeError, match="embedding provider model not found"):
         await service.embed_text("hello")
+
+
+@pytest.mark.asyncio
+async def test_embedding_service_splits_and_aggregates_when_input_too_long(monkeypatch):
+    calls: list[str] = []
+
+    async def _fake_cached_model() -> str:
+        return "db-embedding-model"
+
+    async def _fake_resolve_runtime(self, model: str):
+        return embedding_module._EmbeddingRuntime(
+            model=model,
+            protocol="openai",
+            url="https://example.com/v1/embeddings",
+            params={},
+            headers={"Authorization": "Bearer test"},
+        )
+
+    async def _fake_post(self, _runtime, payload):
+        text = str(payload.get("input") or "")
+        calls.append(text)
+        if len(text) > 5:
+            raise RuntimeError(
+                "embedding upstream error status=400 "
+                'body={"error":"Input length 5000 exceeds maximum allowed token size 4096"}'
+            )
+        return {"data": [{"embedding": [float(len(text)), 0.0]}]}
+
+    monkeypatch.setattr(
+        embedding_module,
+        "get_cached_embedding_model",
+        _fake_cached_model,
+    )
+    monkeypatch.setattr(
+        EmbeddingService,
+        "_resolve_runtime_from_provider",
+        _fake_resolve_runtime,
+    )
+    monkeypatch.setattr(
+        EmbeddingService,
+        "_post_embeddings_request",
+        _fake_post,
+    )
+
+    service = EmbeddingService()
+    vector = await service.embed_text("abcdefghij")
+
+    assert calls[0] == "abcdefghij"
+    assert calls[1:] == ["abcde", "fghij"]
+    assert vector == pytest.approx([1.0, 0.0], abs=1e-8)
+
+
+@pytest.mark.asyncio
+async def test_embedding_service_recursively_splits_when_chunk_still_too_long(monkeypatch):
+    calls: list[str] = []
+
+    async def _fake_cached_model() -> str:
+        return "db-embedding-model"
+
+    async def _fake_resolve_runtime(self, model: str):
+        return embedding_module._EmbeddingRuntime(
+            model=model,
+            protocol="openai",
+            url="https://example.com/v1/embeddings",
+            params={},
+            headers={"Authorization": "Bearer test"},
+        )
+
+    async def _fake_post(self, _runtime, payload):
+        text = str(payload.get("input") or "")
+        calls.append(text)
+        if len(text) > 2:
+            raise RuntimeError(
+                "embedding upstream error status=400 "
+                'body={"error":"Input length 99 exceeds maximum allowed token size 10"}'
+            )
+        return {"data": [{"embedding": [float(len(text)), 0.0]}]}
+
+    monkeypatch.setattr(
+        embedding_module,
+        "get_cached_embedding_model",
+        _fake_cached_model,
+    )
+    monkeypatch.setattr(
+        EmbeddingService,
+        "_resolve_runtime_from_provider",
+        _fake_resolve_runtime,
+    )
+    monkeypatch.setattr(
+        EmbeddingService,
+        "_post_embeddings_request",
+        _fake_post,
+    )
+
+    service = EmbeddingService()
+    vector = await service.embed_text("abcdefgh")
+
+    assert calls[0] == "abcdefgh"
+    assert "abcd" in calls and "efgh" in calls
+    assert calls.count("ab") == 1
+    assert calls.count("cd") == 1
+    assert calls.count("ef") == 1
+    assert calls.count("gh") == 1
+    assert vector == pytest.approx([1.0, 0.0], abs=1e-8)

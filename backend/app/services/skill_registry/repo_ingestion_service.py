@@ -109,10 +109,17 @@ class RepoIngestionService:
                         if v and not manifest.get(k):
                             manifest[k] = v
 
+            # Improve resolved_skill_id generation logic
+            repo_name_from_url = ""
+            if repo_url:
+                repo_name_from_url = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+
             resolved_skill_id = (
                 skill_id
                 or str(manifest.get("id") or "").strip()
                 or str(manifest.get("name") or "").strip()
+                or repo_name_from_url
+                or "ingested_skill"
             )
             if not resolved_skill_id:
                 raise ValueError("skill_id is required for ingestion")

@@ -37,10 +37,38 @@ class BackendTaskRuntimeStrategy(BaseRuntimeStrategy):
         # Check if it's a Celery task
         if hasattr(func, "delay"):
             # Execute asynchronously via Celery
-            # Inject user_id if it's expected by the task or just pass it as kwarg
             task_kwargs = {**inputs}
+            should_wait = task_kwargs.pop("wait", False)
+            # Force wait for onboarding tasks to provide better DX for AI
+            if skill.id in ("system.skill_onboarding", "system.assistant_onboarding"):
+                should_wait = True
+
             if context.user_id:
                 task_kwargs["user_id"] = context.user_id
+
+            if should_wait:
+                # Use apply_async + get() to wait for results
+                # We limit wait time to avoid blocking gateway indefinitely
+                try:
+                    task = func.apply_async(kwargs=task_kwargs)
+                    result = task.get(timeout=30) # Wait up to 30s
+                    return {
+                        "status": "ok",
+                        "result": result,
+                        "stdout": [
+                            f"System skill '{skill.id}' executed successfully via background worker.",
+                        ],
+                        "exit_code": 0,
+                    }
+                except Exception as e:
+                    logger.error(f"BackendTask: failed to wait for celery task {skill.id}: {e}")
+                    # Fallback to async if wait fails
+                    return {
+                        "status": "partial",
+                        "error": f"Failed to get synchronous result: {e!s}",
+                        "stdout": [f"Task triggered but wait failed. Check task logs for details."],
+                        "exit_code": 1,
+                    }
 
             task = func.delay(**task_kwargs)
             return {

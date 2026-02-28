@@ -14,6 +14,7 @@ plugins:
       - "fetch_web_content"
       - "crawl_website"
       - "submit_repo_ingestion"
+      - "poll_repo_ingestion"
       - "convert_artifact_to_assistant"
       - "batch_convert_artifact_to_assistants"
 
@@ -79,7 +80,8 @@ plugins:
     class_name: "PlannerPlugin"
     enabled_by_default: true
     tools:
-      - "create_plan"
+      - "propose_execution_plan"
+      - "retrieve_similar_plans"
 
   # === Expert Network (JIT Persona Routing) ===
   - id: "system.expert_network"

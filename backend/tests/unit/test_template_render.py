@@ -129,6 +129,8 @@ async def test_template_render_injects_code_mode_reminder():
     assert "Code Mode Capability" in system_prompt
     assert "search_sdk" in system_prompt
     assert "execute_code_plan" in system_prompt
+    assert "consult_expert_network" in system_prompt
+    assert "search_knowledge" in system_prompt
     assert "deeting.call_tool(name, **kwargs)" in system_prompt
     assert "deeting.call_tool(name, {...})" in system_prompt
     assert "deeting.log(json.dumps(result, ensure_ascii=False))" in system_prompt

@@ -24,7 +24,12 @@
   },
   "fields": {
     "content": "记忆内容",
-    "createdAt": "创建时间"
+    "createdAt": "创建时间",
+    "score": "分数"
+  },
+  "source": {
+    "autoExtracted": "自动提取",
+    "unknown": "未知来源"
   },
   "success": {
     "updated": "记忆已更新",
