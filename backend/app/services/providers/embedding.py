@@ -43,6 +43,8 @@ class EmbeddingService:
     _EMBEDDING_CHUNK_TARGET_CHARS = 3000
     _EMBEDDING_CHUNK_OVERLAP_CHARS = 300
     _EMBEDDING_CHUNK_MAX_DEPTH = 8
+    _EMBEDDING_UPSTREAM_RETRY_ATTEMPTS = 3
+    _EMBEDDING_UPSTREAM_RETRY_BASE_DELAY_SECONDS = 0.2
 
     def __init__(self, config: dict[str, Any] | None = None):
         """
@@ -415,22 +417,40 @@ class EmbeddingService:
         timeout_seconds = float(
             getattr(settings, "QDRANT_TIMEOUT_SECONDS", 10.0) or 10.0
         )
-        async with create_async_http_client(timeout=timeout_seconds) as client:
-            response = await client.post(
-                runtime.url,
-                params=runtime.params or None,
-                headers=runtime.headers,
-                json=payload,
-            )
-        if response.status_code >= 400:
-            body_preview = (response.text or "")[:300]
-            raise RuntimeError(
-                f"embedding upstream error status={response.status_code} body={body_preview}"
-            )
-        data = response.json()
-        if not isinstance(data, dict):
-            raise RuntimeError("embedding upstream invalid json payload")
-        return data
+        max_attempts = max(1, int(self._EMBEDDING_UPSTREAM_RETRY_ATTEMPTS))
+        for attempt in range(1, max_attempts + 1):
+            async with create_async_http_client(timeout=timeout_seconds) as client:
+                response = await client.post(
+                    runtime.url,
+                    params=runtime.params or None,
+                    headers=runtime.headers,
+                    json=payload,
+                )
+
+            if response.status_code >= 400:
+                body_preview = (response.text or "")[:300]
+                retryable = self._is_retryable_status_code(response.status_code)
+                if retryable and attempt < max_attempts:
+                    delay = self._retry_backoff_seconds(attempt)
+                    logger.warning(
+                        "EmbeddingService: upstream temporary error status=%s attempt=%s/%s, retrying in %.2fs",
+                        response.status_code,
+                        attempt,
+                        max_attempts,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise RuntimeError(
+                    f"embedding upstream error status={response.status_code} body={body_preview}"
+                )
+
+            data = response.json()
+            if not isinstance(data, dict):
+                raise RuntimeError("embedding upstream invalid json payload")
+            return data
+
+        raise RuntimeError("embedding upstream retry exhausted")
 
     def _build_payload(self, runtime: _EmbeddingRuntime, texts: list[str]) -> dict[str, Any]:
         if self._is_gemini_like(runtime.protocol):
@@ -551,6 +571,17 @@ class EmbeddingService:
                 "exceeds maximum allowed token size" in message
                 or "maximum context length" in message
             )
+        )
+
+    @staticmethod
+    def _is_retryable_status_code(status_code: int) -> bool:
+        return status_code == 429 or status_code >= 500
+
+    @classmethod
+    def _retry_backoff_seconds(cls, attempt: int) -> float:
+        attempt_idx = max(1, int(attempt))
+        return float(cls._EMBEDDING_UPSTREAM_RETRY_BASE_DELAY_SECONDS) * (
+            2 ** (attempt_idx - 1)
         )
 
     @staticmethod

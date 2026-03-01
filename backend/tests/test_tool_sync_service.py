@@ -254,3 +254,52 @@ async def test_search_tools_filters_repo_skills_by_installation(monkeypatch):
     result = await service.search_tools("find plugin", user_id=uuid.uuid4())
     names = [tool.name for tool in result]
     assert names == ["skill__core.tools.crawler", "skill__plugin.a"]
+
+
+@pytest.mark.asyncio
+async def test_search_tools_truncates_long_query_for_embedding(monkeypatch):
+    captured: dict[str, str] = {}
+
+    class CapturingEmbeddingService:
+        async def embed_text(self, text: str):
+            captured["text"] = text
+            return [0.1, 0.2]
+
+    service = ToolSyncService(embedding_service=CapturingEmbeddingService())
+
+    async def fake_search_system(*_args, **_kwargs):
+        return []
+
+    async def fake_search_skills(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "app.services.tools.tool_sync_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(service, "_search_system", fake_search_system)
+    monkeypatch.setattr(service, "_search_skills", fake_search_skills)
+
+    long_query = "a" * 5000
+    result = await service.search_tools(long_query)
+    assert result == []
+    prepared = captured["text"]
+    assert len(prepared) <= service._QUERY_EMBED_MAX_CHARS
+    assert prepared.startswith("a" * 2000)
+    assert prepared.endswith("a" * 900)
+
+
+@pytest.mark.asyncio
+async def test_search_tools_fails_open_when_embedding_errors(monkeypatch):
+    class BrokenEmbeddingService:
+        async def embed_text(self, _text: str):
+            raise RuntimeError("embedding upstream error status=500 body=Internal Server Error")
+
+    service = ToolSyncService(embedding_service=BrokenEmbeddingService())
+    monkeypatch.setattr(
+        "app.services.tools.tool_sync_service.qdrant_is_configured",
+        lambda: True,
+    )
+
+    result = await service.search_tools("query that should fail embedding")
+    assert result == []

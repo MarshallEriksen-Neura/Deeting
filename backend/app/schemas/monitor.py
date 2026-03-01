@@ -117,6 +117,13 @@ class MonitorExecutionLogResponse(BaseSchema):
     created_at: datetime = Field(..., description="创建时间")
 
 
+class MonitorExecutionLogListResponse(BaseSchema):
+    items: list[MonitorExecutionLogResponse] = Field(default_factory=list, description="执行日志列表")
+    total: int = Field(..., ge=0, description="总数")
+    skip: int = Field(..., ge=0, description="跳过数量")
+    limit: int = Field(..., ge=1, description="每页数量")
+
+
 class MonitorStatsResponse(BaseSchema):
     total_tasks: int = Field(..., description="总任务数")
     active_tasks: int = Field(..., description="活跃任务数")

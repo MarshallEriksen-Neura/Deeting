@@ -41,14 +41,26 @@ class UserNotificationService:
         _ = TelegramSender
         _ = EmailSender
 
+    @staticmethod
+    def _normalize_channel(channel: NotificationChannel | str) -> NotificationChannel:
+        if isinstance(channel, NotificationChannel):
+            return channel
+        try:
+            return NotificationChannel(channel)
+        except ValueError as exc:
+            raise ValueError(f"未支持的渠道: {channel}") from exc
+
     async def get_user_channels(
         self,
         user_id: uuid.UUID,
         active_only: bool = True,
+        channel_ids: list[uuid.UUID] | None = None,
     ) -> list[UserNotificationChannel]:
         stmt = select(UserNotificationChannel).where(UserNotificationChannel.user_id == user_id)
         if active_only:
             stmt = stmt.where(UserNotificationChannel.is_active == True)
+        if channel_ids:
+            stmt = stmt.where(UserNotificationChannel.id.in_(channel_ids))
         stmt = stmt.order_by(UserNotificationChannel.priority.asc())
 
         result = await self.session.execute(stmt)
@@ -61,6 +73,8 @@ class UserNotificationService:
         content: str,
         extra: dict[str, Any] | None = None,
         fallback: bool = True,
+        channel_ids: list[uuid.UUID] | None = None,
+        stop_on_success: bool = True,
     ) -> list[NotificationResult]:
         """
         向用户发送通知，按优先级尝试所有启用的渠道
@@ -71,11 +85,13 @@ class UserNotificationService:
             content: 通知内容
             extra: 额外信息
             fallback: 是否在失败时尝试下一个渠道
+            channel_ids: 指定只发送到这些渠道（为空则按全量启用渠道）
+            stop_on_success: 是否在首个成功后立即停止
 
         Returns:
             所有渠道的发送结果列表
         """
-        channels = await self.get_user_channels(user_id)
+        channels = await self.get_user_channels(user_id, channel_ids=channel_ids)
 
         if not channels:
             logger.warning(f"No notification channels configured for user {user_id}")
@@ -91,13 +107,14 @@ class UserNotificationService:
         success = False
 
         for channel_config in channels:
-            sender = NotificationSenderRegistry.get_sender(channel_config.channel)
+            normalized_channel = self._normalize_channel(channel_config.channel)
+            sender = NotificationSenderRegistry.get_sender(normalized_channel)
             if not sender:
-                logger.warning(f"No sender registered for channel {channel_config.channel}")
+                logger.warning(f"No sender registered for channel {normalized_channel}")
                 continue
 
             runtime_config = await self._resolve_runtime_config(
-                channel_config.channel,
+                normalized_channel,
                 channel_config.config,
             )
 
@@ -113,10 +130,13 @@ class UserNotificationService:
                 channel_config.last_used_at = datetime.utcnow()
                 self.session.add(channel_config)
                 await self.session.commit()
-                logger.info(f"Notification sent successfully via {channel_config.channel} to user {user_id}")
-                break
+                logger.info(
+                    f"Notification sent successfully via {normalized_channel} to user {user_id}"
+                )
+                if stop_on_success:
+                    break
             else:
-                logger.warning(f"Failed to send via {channel_config.channel}: {result.error}")
+                logger.warning(f"Failed to send via {normalized_channel}: {result.error}")
                 if not fallback:
                     break
 
@@ -152,6 +172,7 @@ class UserNotificationService:
         priority: int = 100,
     ) -> UserNotificationChannel:
         """创建用户的通知渠道"""
+        channel = self._normalize_channel(channel)
         sender = NotificationSenderRegistry.get_sender(channel)
         if not sender:
             raise ValueError(f"未支持的渠道: {channel}")
@@ -205,12 +226,13 @@ class UserNotificationService:
             raise ValueError("无权限操作")
 
         if config is not None:
-            sender = NotificationSenderRegistry.get_sender(channel.channel)
+            normalized_channel = self._normalize_channel(channel.channel)
+            sender = NotificationSenderRegistry.get_sender(normalized_channel)
             if sender:
                 is_valid, error = await sender.validate_config(config)
                 if not is_valid:
                     raise ValueError(f"配置验证失败: {error}")
-            channel.config = await self._secure_channel_config(channel.channel, config)
+            channel.config = await self._secure_channel_config(normalized_channel, config)
 
         if display_name is not None:
             channel.display_name = display_name
@@ -251,6 +273,31 @@ class UserNotificationService:
             return channel
         return None
 
+    async def get_channel_with_runtime_config(
+        self,
+        channel_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> tuple[UserNotificationChannel, dict[str, Any]] | None:
+        """
+        获取渠道详情（含可编辑的运行时配置，已解析 db: 密钥引用）。
+        """
+        channel = await self.get_channel(channel_id, user_id)
+        if not channel:
+            return None
+        runtime_config = await self.resolve_runtime_config(
+            channel.channel,
+            channel.config if isinstance(channel.config, dict) else {},
+        )
+        return channel, runtime_config
+
+    async def resolve_runtime_config(
+        self,
+        channel: NotificationChannel | str,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """公开配置解析入口，供 API 层安全复用。"""
+        return await self._resolve_runtime_config(channel, config)
+
     @staticmethod
     def _is_sensitive_config_key(key: str) -> bool:
         normalized = (key or "").strip().lower()
@@ -267,9 +314,10 @@ class UserNotificationService:
 
     async def _secure_channel_config(
         self,
-        channel: NotificationChannel,
+        channel: NotificationChannel | str,
         config: dict[str, Any],
     ) -> dict[str, Any]:
+        channel = self._normalize_channel(channel)
         secured: dict[str, Any] = {}
         provider = f"notification_{channel.value}"
 
@@ -301,9 +349,10 @@ class UserNotificationService:
 
     async def _resolve_runtime_config(
         self,
-        channel: NotificationChannel,
+        channel: NotificationChannel | str,
         config: dict[str, Any],
     ) -> dict[str, Any]:
+        channel = self._normalize_channel(channel)
         resolved: dict[str, Any] = {}
         provider = f"notification_{channel.value}"
 

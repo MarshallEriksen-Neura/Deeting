@@ -87,6 +87,12 @@ export const userNavigation: NavGroup[] = [
         icon: "crosshair",
       },
       {
+        id: "notification-channels",
+        label: "nav.notificationChannels",
+        href: "/dashboard/notification-channels",
+        icon: "bell",
+      },
+      {
         id: "monitoring",
         label: "nav.monitoring",
         href: "/dashboard/monitoring",

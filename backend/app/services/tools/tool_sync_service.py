@@ -77,6 +77,9 @@ class ToolSyncService:
     """
     负责工具索引的同步与检索 (JIT Tool Retrieval).
     """
+    _QUERY_EMBED_MAX_CHARS = 3000
+    _QUERY_EMBED_HEAD_CHARS = 2000
+    _QUERY_EMBED_TAIL_CHARS = 900
 
     def __init__(
         self,
@@ -345,9 +348,19 @@ class ToolSyncService:
         q = (query or "").strip()
         if not q:
             return []
+        q_for_embedding = self._prepare_query_for_embedding(q)
 
         embed_start = time.perf_counter()
-        vector = await self._embedding_service.embed_text(q)
+        try:
+            vector = await self._embedding_service.embed_text(q_for_embedding)
+        except Exception as exc:  # pragma: no cover - fail-open
+            logger.warning(
+                "ToolSyncService: embedding failed query_len=%s prepared_len=%s",
+                len(q),
+                len(q_for_embedding),
+                exc_info=exc,
+            )
+            return []
         logger.info(
             "ToolSyncService: embedding duration_ms=%.2f",
             (time.perf_counter() - embed_start) * 1000,
@@ -411,6 +424,33 @@ class ToolSyncService:
             len(result),
         )
         return result
+
+    @classmethod
+    def _prepare_query_for_embedding(cls, query: str) -> str:
+        q = str(query or "").strip()
+        max_chars = max(1, int(cls._QUERY_EMBED_MAX_CHARS))
+        if len(q) <= max_chars:
+            return q
+
+        head_chars = min(max_chars, max(1, int(cls._QUERY_EMBED_HEAD_CHARS)))
+        tail_budget = max_chars - head_chars
+        tail_chars = min(
+            max(0, tail_budget),
+            max(0, int(cls._QUERY_EMBED_TAIL_CHARS)),
+        )
+        if tail_chars <= 0:
+            prepared = q[:max_chars]
+        else:
+            prepared = f"{q[:head_chars]}\n...\n{q[-tail_chars:]}"
+            if len(prepared) > max_chars:
+                prepared = prepared[:max_chars]
+
+        logger.info(
+            "ToolSyncService: truncate query for embedding original_len=%s prepared_len=%s",
+            len(q),
+            len(prepared),
+        )
+        return prepared
 
     async def _ensure_onboarding_tools_visibility(
         self, 

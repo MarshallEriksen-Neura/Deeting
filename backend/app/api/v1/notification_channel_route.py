@@ -16,12 +16,24 @@ from app.services.notifications.user_notification_service import UserNotificatio
 router = APIRouter(prefix="/notification-channels", tags=["Notification Channels"])
 
 
+def _channel_to_value(channel: NotificationChannel | str) -> str:
+    if isinstance(channel, NotificationChannel):
+        return channel.value
+    return str(channel)
+
+
 class ChannelConfig(BaseModel):
     """渠道配置基类"""
 
     webhook_url: str | None = Field(None, description="Webhook URL")
     bot_token: str | None = Field(None, description="Telegram Bot Token")
     chat_id: str | None = Field(None, description="Telegram Chat ID")
+    chat_ids: list[str] = Field(default_factory=list, description="飞书/消息群 Chat ID 列表")
+    bot_open_id: str | None = Field(None, description="飞书机器人 Open ID")
+    bot_model: str | None = Field(None, description="飞书消息回复模型")
+    bot_system_prompt: str | None = Field(None, description="飞书消息回复系统提示词")
+    bot_app_id: str | None = Field(None, description="飞书应用 App ID（渠道级）")
+    bot_app_secret: str | None = Field(None, description="飞书应用 App Secret（渠道级）")
     smtp_host: str | None = Field(None, description="SMTP 服务器")
     smtp_port: int | None = Field(None, description="SMTP 端口")
     from_email: str | None = Field(None, description="发件人邮箱")
@@ -67,13 +79,13 @@ async def list_channels(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     service = UserNotificationService(db)
-    channels = await service.get_user_channels(user.id)
+    channels = await service.get_user_channels(user.id, active_only=False)
     return {
         "items": [
             {
                 "id": c.id,
                 "user_id": c.user_id,
-                "channel": c.channel.value,
+                "channel": _channel_to_value(c.channel),
                 "display_name": c.display_name,
                 "is_active": c.is_active,
                 "priority": c.priority,
@@ -104,7 +116,7 @@ async def create_channel(
         )
         return {
             "id": channel.id,
-            "channel": channel.channel.value,
+            "channel": _channel_to_value(channel.channel),
             "message": "渠道创建成功",
         }
     except ValueError as e:
@@ -121,16 +133,18 @@ async def get_channel(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     service = UserNotificationService(db)
-    channel = await service.get_channel(channel_id, user.id)
-    if not channel:
+    channel_with_config = await service.get_channel_with_runtime_config(channel_id, user.id)
+    if not channel_with_config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="渠道不存在",
         )
+    channel, editable_config = channel_with_config
     return {
         "id": channel.id,
         "user_id": channel.user_id,
-        "channel": channel.channel.value,
+        "channel": _channel_to_value(channel.channel),
+        "config": editable_config,
         "display_name": channel.display_name,
         "is_active": channel.is_active,
         "priority": channel.priority,

@@ -145,7 +145,7 @@ alembic upgrade head
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 
 # 启动 Celery Worker
-celery -A app.core.celery_app worker --loglevel=info --queues=default,internal,external,billing,retry
+celery -A app.core.celery_app worker --loglevel=info --queues=default,internal,external,billing,retry,conversation,image_generation,skill_registry,reasoning,notification,monitor_dlq
 
 # 启动 Celery Beat
 celery -A app.core.celery_app beat --loglevel=info
@@ -191,7 +191,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A app.core.celery_app worker --loglevel=info --queues=default,internal,external,billing,retry --concurrency=4
+    command: celery -A app.core.celery_app worker --loglevel=info --queues=default,internal,external,billing,retry,conversation,image_generation,skill_registry,reasoning,notification,monitor_dlq --concurrency=4
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/ai_gateway
       - REDIS_URL=redis://redis:6379/0

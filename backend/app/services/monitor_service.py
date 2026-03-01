@@ -10,6 +10,7 @@ from app.repositories.monitor_repository import (
     MonitorExecutionLogRepository,
     MonitorTaskRepository,
 )
+from app.schemas.monitor import MonitorExecutionLogResponse
 from app.services.monitor_cron import next_run_after, validate_cron_expr
 from app.services.secrets.manager import SecretManager
 from app.utils.time_utils import Datetime
@@ -233,7 +234,7 @@ class MonitorService:
         logs = await self.log_repo.get_by_task(task_id, skip, limit)
         total = await self.log_repo.get_by_task_count(task_id)
         return {
-            "items": logs,
+            "items": [self._serialize_execution_log(log) for log in logs],
             "total": total,
             "skip": skip,
             "limit": limit,
@@ -364,3 +365,7 @@ class MonitorService:
             "created_at": task.created_at,
             "updated_at": task.updated_at,
         }
+
+    @staticmethod
+    def _serialize_execution_log(log: Any) -> dict[str, Any]:
+        return MonitorExecutionLogResponse.model_validate(log).model_dump()

@@ -242,6 +242,12 @@ class Settings(BaseSettings):
     # 飞书回调验签（监控互动卡片）
     FEISHU_CALLBACK_SECRET: str = ""
     FEISHU_CALLBACK_MAX_SKEW_SECONDS: int = 300
+    # 飞书应用机器人（消息事件自动回复）
+    FEISHU_BOT_APP_ID: str = ""
+    FEISHU_BOT_APP_SECRET: str = ""
+    FEISHU_BOT_OPEN_ID: str = ""
+    FEISHU_BOT_MODEL: str = ""
+    FEISHU_BOT_SYSTEM_PROMPT: str = ""
     OSS_PROVIDER: str = "aliyun_oss"  # aliyun_oss | s3
     OSS_ENDPOINT: str = ""
     OSS_REGION: str = ""

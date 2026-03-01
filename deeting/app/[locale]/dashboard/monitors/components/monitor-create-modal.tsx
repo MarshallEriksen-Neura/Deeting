@@ -16,10 +16,27 @@ import {
   Plus,
   X,
   Loader2,
+  Bell,
+  Mail,
+  Send,
+  Globe,
+  MessageSquare,
+  ExternalLink,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { MonitorTask, MonitorTaskCreateInput } from "@/lib/api/monitors"
 import { createMonitorTask, updateMonitorTask } from "@/lib/api/monitors"
+import { useNotificationChannels } from "@/lib/swr/use-notification-channels"
+import type { ChannelType } from "@/lib/api/notification-channels"
+import { CHANNEL_META } from "@/lib/api/notification-channels"
+
+const CHANNEL_ICON_MAP: Record<ChannelType, typeof Bell> = {
+  feishu: MessageSquare,
+  dingtalk: MessageSquare,
+  telegram: Send,
+  email: Mail,
+  webhook: Globe,
+}
 
 interface MonitorCreateModalProps {
   open: boolean
@@ -74,6 +91,11 @@ export function MonitorCreateModal({
   const [newStrategyLabel, setNewStrategyLabel] = useState("")
   const [newStrategyTemplate, setNewStrategyTemplate] = useState("")
   const [showAddStrategy, setShowAddStrategy] = useState(false)
+  const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([])
+
+  // Notification channels
+  const { data: channelsData } = useNotificationChannels()
+  const activeChannels = (channelsData?.items ?? []).filter((c) => c.is_active)
 
   // Populate on edit
   useEffect(() => {
@@ -98,12 +120,16 @@ export function MonitorCreateModal({
           }))
         )
       }
+      // Restore channel selection from notify_config
+      const nc = editTask.notify_config as { channel_ids?: string[] } | null
+      setSelectedChannelIds(nc?.channel_ids ?? [])
     } else {
       setTitle("")
       setObjective("")
       setCronPreset("0 */6 * * *")
       setCustomCron("")
       setStrategies(DEFAULT_STRATEGIES)
+      setSelectedChannelIds([])
     }
   }, [editTask, open])
 
@@ -118,12 +144,18 @@ export function MonitorCreateModal({
           title: title.trim(),
           objective: objective.trim(),
           cron_expr: cronValue,
+          notify_config: selectedChannelIds.length
+            ? { channel_ids: selectedChannelIds }
+            : undefined,
         })
       } else {
         const payload: MonitorTaskCreateInput = {
           title: title.trim(),
           objective: objective.trim(),
           cron_expr: cronValue,
+          notify_config: selectedChannelIds.length
+            ? { channel_ids: selectedChannelIds }
+            : undefined,
         }
         await createMonitorTask(payload)
       }
@@ -306,6 +338,73 @@ export function MonitorCreateModal({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Notification Channels */}
+          <div>
+            <label className="mb-2 flex items-center gap-1.5 text-xs font-medium text-[var(--foreground)]">
+              <Bell className="h-3.5 w-3.5 text-amber-400" />
+              通知渠道
+              <span className="ml-auto text-[10px] font-normal text-[var(--muted)]">
+                质变时推送
+              </span>
+            </label>
+            {activeChannels.length > 0 ? (
+              <div className="space-y-1.5">
+                {activeChannels.map((ch) => {
+                  const meta = CHANNEL_META[ch.channel as ChannelType]
+                  const Icon = CHANNEL_ICON_MAP[ch.channel as ChannelType] ?? Bell
+                  const checked = selectedChannelIds.includes(ch.id)
+                  return (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedChannelIds((prev) =>
+                          checked
+                            ? prev.filter((id) => id !== ch.id)
+                            : [...prev, ch.id]
+                        )
+                      }
+                      className={cn(
+                        "flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-all",
+                        checked
+                          ? "border-[var(--primary)]/30 bg-[var(--primary)]/5"
+                          : "border-white/5 bg-[var(--foreground)]/[0.02] hover:border-white/10"
+                      )}
+                    >
+                      <Icon className={cn("h-4 w-4 shrink-0", meta?.color ?? "text-[var(--muted)]")} />
+                      <span className="flex-1 text-xs font-medium text-[var(--foreground)]">
+                        {ch.display_name || meta?.label || ch.channel}
+                      </span>
+                      <span
+                        className={cn(
+                          "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+                          checked
+                            ? "border-[var(--primary)] bg-[var(--primary)] text-white"
+                            : "border-white/20"
+                        )}
+                      >
+                        {checked && (
+                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <a
+                href="/dashboard/notification-channels"
+                className="flex items-center gap-2 rounded-xl border border-dashed border-white/10 px-3 py-2.5 text-xs text-[var(--muted)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
+              >
+                <Plus className="h-3 w-3" />
+                前往配置通知渠道
+                <ExternalLink className="ml-auto h-3 w-3" />
+              </a>
+            )}
           </div>
         </div>
 

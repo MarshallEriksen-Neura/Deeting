@@ -1,12 +1,18 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { Plus, Crosshair } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
+import { toast } from "sonner"
 
 import { Container } from "@/components/ui/container"
 import { useMonitorTasks, useMonitorStats } from "@/lib/swr/use-monitors"
-import type { MonitorTask, MonitorStatus } from "@/lib/api/monitors"
+import {
+  fetchMonitorLogs,
+  triggerMonitorTask,
+  type MonitorTask,
+  type MonitorStatus,
+} from "@/lib/api/monitors"
 
 import { MonitorStatsRow } from "./monitor-stats-row"
 import { MonitorTaskCard } from "./monitor-task-card"
@@ -26,6 +32,8 @@ export function MonitorsClient() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<MonitorTask | null>(null)
   const [logTaskId, setLogTaskId] = useState<string | null>(null)
+  const [pendingTriggerByTask, setPendingTriggerByTask] = useState<Record<string, string>>({})
+  const mountedRef = useRef(true)
 
   const queryParams = statusFilter === "all" ? undefined : { status: statusFilter }
   const { data: tasks, isLoading, mutate: mutateTasks } = useMonitorTasks(queryParams)
@@ -35,6 +43,89 @@ export function MonitorsClient() {
     mutateTasks()
     mutateStats()
   }, [mutateTasks, mutateStats])
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const clearPendingTrigger = useCallback((taskId: string) => {
+    setPendingTriggerByTask((prev) => {
+      if (!prev[taskId]) return prev
+      const next = { ...prev }
+      delete next[taskId]
+      return next
+    })
+  }, [])
+
+  const trackTriggerResult = useCallback(
+    async (task: MonitorTask, startedAtIso: string) => {
+      const startedAtMs = Date.parse(startedAtIso)
+      const toleranceMs = 2_000
+      const maxRounds = 30
+
+      for (let round = 0; round < maxRounds; round++) {
+        await new Promise((resolve) => setTimeout(resolve, 4_000))
+        try {
+          const logs = await fetchMonitorLogs(task.id, { skip: 0, limit: 10 })
+          const latest = logs.items.find((item) => Date.parse(item.triggered_at) >= startedAtMs - toleranceMs)
+          if (!latest) {
+            continue
+          }
+
+          if (latest.status === "success") {
+            toast.success("本次执行完成")
+          } else if (latest.status === "failure") {
+            toast.error(latest.error_message || "本次执行失败")
+          } else {
+            toast("本次执行已跳过")
+          }
+
+          if (mountedRef.current) {
+            clearPendingTrigger(task.id)
+            refreshAll()
+          }
+          return
+        } catch {
+          // ignore transient polling errors
+        }
+      }
+
+      if (mountedRef.current) {
+        clearPendingTrigger(task.id)
+        refreshAll()
+        toast("执行仍在进行中，可稍后查看日志")
+      }
+    },
+    [clearPendingTrigger, refreshAll]
+  )
+
+  const handleTrigger = useCallback(
+    async (task: MonitorTask) => {
+      const startedAtIso = new Date().toISOString()
+      let accepted = false
+      setPendingTriggerByTask((prev) => {
+        if (prev[task.id]) return prev
+        accepted = true
+        return { ...prev, [task.id]: startedAtIso }
+      })
+      if (!accepted) return
+
+      try {
+        await triggerMonitorTask(task.id)
+        toast.success("已提交执行，正在等待结果...")
+        refreshAll()
+        void trackTriggerResult(task, startedAtIso)
+      } catch {
+        if (mountedRef.current) {
+          clearPendingTrigger(task.id)
+        }
+        toast.error("触发失败，请重试")
+      }
+    },
+    [clearPendingTrigger, refreshAll, trackTriggerResult]
+  )
 
   const handleEdit = useCallback((task: MonitorTask) => {
     setEditingTask(task)
@@ -132,6 +223,8 @@ export function MonitorsClient() {
                   onEdit={handleEdit}
                   onViewLogs={setLogTaskId}
                   onRefresh={refreshAll}
+                  onTrigger={handleTrigger}
+                  isTriggering={Boolean(pendingTriggerByTask[task.id])}
                 />
               </motion.div>
             ))}

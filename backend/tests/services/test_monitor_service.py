@@ -217,6 +217,35 @@ async def test_get_task_stats_counts_execution_logs(async_session: AsyncSession)
 
 
 @pytest.mark.asyncio
+async def test_get_execution_logs_serializes_items(async_session: AsyncSession):
+    user = await _create_user(async_session, "monitor_user_execution_logs@example.com")
+    service = MonitorService(async_session)
+
+    created = await service.create_task(user_id=user.id, title="日志序列化任务", objective="目标")
+    task_id = created["id"]
+
+    async_session.add(
+        MonitorExecutionLog(
+            task_id=task_id,
+            triggered_at=Datetime.now(),
+            status="success",
+            input_data={"foo": "bar"},
+            output_data={"summary": "ok"},
+            tokens_used=12,
+        )
+    )
+    await async_session.commit()
+
+    result = await service.get_execution_logs(task_id, skip=0, limit=10)
+    assert result["total"] == 1
+    assert len(result["items"]) == 1
+    assert isinstance(result["items"][0], dict)
+    assert result["items"][0]["task_id"] == task_id
+    assert result["items"][0]["status"] == "success"
+    assert result["items"][0]["tokens_used"] == 12
+
+
+@pytest.mark.asyncio
 async def test_unauthorized_access_fails(async_session: AsyncSession):
     user1 = await _create_user(async_session, "user1@example.com")
     user2 = await _create_user(async_session, "user2@example.com")

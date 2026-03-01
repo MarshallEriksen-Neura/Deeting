@@ -288,3 +288,112 @@ async def test_embedding_service_recursively_splits_when_chunk_still_too_long(mo
     assert calls.count("ef") == 1
     assert calls.count("gh") == 1
     assert vector == pytest.approx([1.0, 0.0], abs=1e-8)
+
+
+@pytest.mark.asyncio
+async def test_embedding_service_retries_on_upstream_5xx(monkeypatch):
+    class _FakeResponse:
+        def __init__(self, status_code: int, payload: dict, text: str = ""):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = text
+
+        def json(self):
+            return self._payload
+
+    class _FakeClient:
+        def __init__(self, responses: list[_FakeResponse]):
+            self._responses = responses
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return self._responses.pop(0)
+
+    responses = [
+        _FakeResponse(500, {}, "Internal Server Error"),
+        _FakeResponse(200, {"data": [{"embedding": [0.1, 0.2]}]}),
+    ]
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float):
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(
+        embedding_module,
+        "create_async_http_client",
+        lambda **_kwargs: _FakeClient(responses),
+    )
+    monkeypatch.setattr(embedding_module.asyncio, "sleep", _fake_sleep)
+
+    service = EmbeddingService()
+    runtime = embedding_module._EmbeddingRuntime(
+        model="m",
+        protocol="openai",
+        url="https://example.com/v1/embeddings",
+        params={},
+        headers={},
+    )
+
+    payload = {"model": "m", "input": "hello"}
+    data = await service._post_embeddings_request(runtime, payload)
+    assert data == {"data": [{"embedding": [0.1, 0.2]}]}
+    assert sleep_calls == [0.2]
+
+
+@pytest.mark.asyncio
+async def test_embedding_service_raises_after_5xx_retry_exhausted(monkeypatch):
+    class _FakeResponse:
+        def __init__(self, status_code: int, text: str = ""):
+            self.status_code = status_code
+            self.text = text
+
+        def json(self):
+            return {}
+
+    class _FakeClient:
+        def __init__(self, responses: list[_FakeResponse]):
+            self._responses = responses
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return self._responses.pop(0)
+
+    responses = [
+        _FakeResponse(500, "Internal Server Error"),
+        _FakeResponse(500, "Internal Server Error"),
+        _FakeResponse(500, "Internal Server Error"),
+    ]
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float):
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(
+        embedding_module,
+        "create_async_http_client",
+        lambda **_kwargs: _FakeClient(responses),
+    )
+    monkeypatch.setattr(embedding_module.asyncio, "sleep", _fake_sleep)
+
+    service = EmbeddingService()
+    runtime = embedding_module._EmbeddingRuntime(
+        model="m",
+        protocol="openai",
+        url="https://example.com/v1/embeddings",
+        params={},
+        headers={},
+    )
+
+    with pytest.raises(RuntimeError, match="status=500"):
+        await service._post_embeddings_request(runtime, {"model": "m", "input": "hello"})
+    assert sleep_calls == [0.2, 0.4]

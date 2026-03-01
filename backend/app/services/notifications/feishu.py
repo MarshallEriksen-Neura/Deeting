@@ -102,11 +102,9 @@ class FeishuSender(NotificationSender):
         if content.extra and "snapshot_preview" in content.extra:
             snapshot = content.extra["snapshot_preview"]
             if snapshot:
-                snapshot_str = json.dumps(snapshot, ensure_ascii=False, indent=2)
-                elements.append({
-                    "tag": "note",
-                    "elements": [{"tag": "plain_text", "content": f"📊 研判快照预览:\n{snapshot_str[:500]}..."}]
-                })
+                snapshot_block = self._build_snapshot_block(snapshot)
+                if snapshot_block:
+                    elements.append(snapshot_block)
 
         # 2. 注入监控反馈交互按钮
         monitor_task_id = content.extra.get("monitor_task_id") if content.extra else None
@@ -177,6 +175,8 @@ class FeishuSender(NotificationSender):
             for key, value in content.extra.items():
                 if key in {"monitor_task_id", "trace_id", "snapshot_preview", "monitor_actions"}:
                     continue
+                if self._is_empty_value(value):
+                    continue
                 extra_info.append(f"**{key}**: {value}")
             if extra_info:
                 elements.append({
@@ -196,6 +196,74 @@ class FeishuSender(NotificationSender):
                 },
                 "elements": elements,
             },
+        }
+
+    @staticmethod
+    def _is_empty_value(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, (list, dict, tuple, set)):
+            return len(value) == 0
+        return False
+
+    def _build_snapshot_block(self, snapshot: Any) -> dict[str, Any] | None:
+        if isinstance(snapshot, dict):
+            lines: list[str] = ["📊 **研判快照**"]
+
+            status = snapshot.get("status")
+            if isinstance(status, str) and status.strip():
+                lines.append(f"- 状态: `{status.strip()}`")
+
+            timestamp = snapshot.get("timestamp_utc") or snapshot.get("updated_at") or snapshot.get("time")
+            if isinstance(timestamp, str) and timestamp.strip():
+                lines.append(f"- 时间: {timestamp.strip()}")
+
+            key_facts = snapshot.get("key_facts")
+            if isinstance(key_facts, list):
+                facts = [str(item).strip() for item in key_facts if str(item).strip()]
+                if facts:
+                    lines.append("- 关键事实:")
+                    for fact in facts[:4]:
+                        lines.append(f"  - {fact}")
+
+            scenarios = snapshot.get("scenarios")
+            if isinstance(scenarios, dict) and scenarios:
+                scenario_items: list[tuple[str, str]] = []
+                for name, score in scenarios.items():
+                    if self._is_empty_value(name) or self._is_empty_value(score):
+                        continue
+                    scenario_items.append((str(name), str(score)))
+                if scenario_items:
+                    lines.append("- 场景分布:")
+                    for name, score in scenario_items[:4]:
+                        lines.append(f"  - {name}: {score}")
+
+            # 若提取不出有效结构化信息，则回退到 JSON 预览
+            if len(lines) == 1:
+                snapshot_str = json.dumps(snapshot, ensure_ascii=False)
+                preview = snapshot_str[:500] + ("..." if len(snapshot_str) > 500 else "")
+                return {
+                    "tag": "note",
+                    "elements": [{"tag": "plain_text", "content": f"📊 研判快照预览:\n{preview}"}],
+                }
+
+            text = "\n".join(lines)
+            if len(text) > 1200:
+                text = text[:1200] + "..."
+            return {
+                "tag": "markdown",
+                "content": text,
+            }
+
+        snapshot_str = str(snapshot).strip()
+        if not snapshot_str:
+            return None
+        preview = snapshot_str[:500] + ("..." if len(snapshot_str) > 500 else "")
+        return {
+            "tag": "note",
+            "elements": [{"tag": "plain_text", "content": f"📊 研判快照预览:\n{preview}"}],
         }
 
 

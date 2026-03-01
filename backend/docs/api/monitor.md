@@ -12,6 +12,8 @@
 - `cron_expr`: 5 段 Cron 表达式（`minute hour day month weekday`）
 - `allowed_tools`: 后台任务可调用的工具白名单，工具名必须匹配 `^[A-Za-z0-9][A-Za-z0-9_./:-]{0,63}$`，最多 32 个
 - `notify_config`: 任务级通知配置；命中敏感键（如 `webhook/token/secret/password`）的值会自动加密存储，接口返回时会脱敏为 `***`
+  - 当前支持 `channel_ids: string[]`（通知渠道 ID 列表，来自 `/api/v1/notification-channels`）。
+  - 监控任务触发通知时，若配置了 `channel_ids`，会按优先级向这些渠道依次发送（不提前短路）；未配置时按用户全量启用渠道与优先级发送（首个成功后停止）。
 
 ---
 
@@ -118,6 +120,12 @@
 
 立即触发一次异步研判。
 
+说明：
+
+- 该接口为“手动触发”，会强制发送通知（不受 `is_significant_change` 是否为 `true` 的限制）。
+- 该接口采用即时投递（不加随机抖动），触发后会尽快进入 `reasoning_worker`。
+- 定时调度触发仍保持原行为：仅在检测到显著变化时发送通知。
+
 成功响应：
 
 ```json
@@ -143,6 +151,34 @@
 
 - `success`
 - `failure`
+- `skipped`
+
+成功响应（200）：
+
+```json
+{
+  "items": [
+    {
+      "id": "934cab76-5fa7-40f2-9943-e1d667ecf0af",
+      "task_id": "0e4e2c2f-9b6a-4c7a-a7a7-6bdf2d2ffb2a",
+      "triggered_at": "2026-03-01T11:20:00Z",
+      "status": "success",
+      "input_data": {
+        "source": "scheduler"
+      },
+      "output_data": {
+        "is_significant_change": true
+      },
+      "tokens_used": 128,
+      "error_message": null,
+      "created_at": "2026-03-01T11:20:05Z"
+    }
+  ],
+  "total": 1,
+  "skip": 0,
+  "limit": 50
+}
+```
 
 ---
 
@@ -209,3 +245,27 @@
 - 必须携带飞书签名头（`X-Lark-Request-Timestamp` / `X-Lark-Request-Nonce` / `X-Lark-Signature`）。
 - 服务端会做时间窗校验与 nonce 防重放校验。
 - 需要配置 `FEISHU_CALLBACK_SECRET`，否则回调接口会拒绝请求。
+
+### 飞书应用机器人消息事件
+
+`POST /api/v1/monitors/feishu/events` 用于飞书应用机器人事件订阅（`im.message.receive_v1`）：
+
+- 群聊场景：仅当消息中 `@机器人` 时触发自动回复。
+- 私聊场景：文本消息直接触发自动回复。
+- 仅处理 `message_type=text`，其余事件会返回 `code=0` 并忽略。
+- 回调收到后会异步投递 Celery 任务 `app.tasks.monitor.feishu_message_reply`，接口立即返回 `{"code":0}`。
+
+配置项：
+
+- `FEISHU_CALLBACK_SECRET`：飞书事件签名密钥（与卡片回调共用）。
+- `FEISHU_BOT_APP_ID` / `FEISHU_BOT_APP_SECRET`：应用级默认凭证（仅作为兜底）。
+- `FEISHU_BOT_OPEN_ID` / `FEISHU_BOT_MODEL` / `FEISHU_BOT_SYSTEM_PROMPT`：全局兜底配置（可选）。
+
+多用户推荐做法（按渠道配置覆盖，优先级高于环境变量）：
+
+- 在 `user_notification_channel` 的 `feishu` 渠道 `config` 中按群维度配置：
+  - `chat_ids: ["oc_xxx", "..."]` 或 `chat_id: "oc_xxx"`（用于把群映射到用户渠道）
+  - `bot_app_id` / `bot_app_secret`（可选，允许每个用户/渠道独立应用）
+  - `bot_open_id`（可选，精准识别 @机器人）
+  - `bot_model`（可选，用户级回复模型）
+  - `bot_system_prompt`（可选，用户级提示词）

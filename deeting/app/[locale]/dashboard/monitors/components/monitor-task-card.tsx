@@ -6,6 +6,7 @@ import {
   Pause,
   Zap,
   Clock,
+  Loader2,
   Coins,
   Bot,
   MoreHorizontal,
@@ -16,11 +17,11 @@ import {
 } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 import type { MonitorTask } from "@/lib/api/monitors"
 import {
   pauseMonitorTask,
   resumeMonitorTask,
-  triggerMonitorTask,
   deleteMonitorTask,
 } from "@/lib/api/monitors"
 
@@ -29,6 +30,8 @@ interface MonitorTaskCardProps {
   onEdit: (task: MonitorTask) => void
   onViewLogs: (taskId: string) => void
   onRefresh: () => void
+  onTrigger: (task: MonitorTask) => Promise<void>
+  isTriggering?: boolean
 }
 
 const STATUS_CONFIG = {
@@ -57,6 +60,8 @@ export function MonitorTaskCard({
   onEdit,
   onViewLogs,
   onRefresh,
+  onTrigger,
+  isTriggering = false,
 }: MonitorTaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [acting, setActing] = useState(false)
@@ -67,10 +72,14 @@ export function MonitorTaskCard({
     try {
       if (task.status === "active") {
         await pauseMonitorTask(task.id)
+        toast.success("任务已暂停")
       } else {
         await resumeMonitorTask(task.id)
+        toast.success("任务已恢复运行")
       }
       onRefresh()
+    } catch {
+      toast.error("操作失败，请重试")
     } finally {
       setActing(false)
     }
@@ -79,19 +88,21 @@ export function MonitorTaskCard({
   const handleTrigger = useCallback(async () => {
     setActing(true)
     try {
-      await triggerMonitorTask(task.id)
-      onRefresh()
+      await onTrigger(task)
     } finally {
       setActing(false)
     }
-  }, [task.id, onRefresh])
+  }, [onTrigger, task])
 
   const handleDelete = useCallback(async () => {
     if (!confirm("确定要删除该寻猎任务？此操作不可逆。")) return
     setActing(true)
     try {
       await deleteMonitorTask(task.id)
+      toast.success("任务已删除")
       onRefresh()
+    } catch {
+      toast.error("删除失败，请重试")
     } finally {
       setActing(false)
     }
@@ -120,6 +131,11 @@ export function MonitorTaskCard({
           <h3 className="truncate text-sm font-semibold text-[var(--foreground)]">
             {task.title}
           </h3>
+          {isTriggering && (
+            <span className="shrink-0 rounded-md bg-sky-500/15 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+              执行中
+            </span>
+          )}
         </div>
         <div className="relative shrink-0">
           <button
@@ -158,7 +174,7 @@ export function MonitorTaskCard({
                     setMenuOpen(false)
                     handleTrigger()
                   }}
-                  disabled={acting || task.status !== "active"}
+                  disabled={acting || isTriggering || task.status !== "active"}
                 />
                 <div className="my-1 h-px bg-white/5" />
                 <MenuButton
@@ -202,14 +218,18 @@ export function MonitorTaskCard({
 
       {/* Countdown + Next run */}
       <div className="mt-3 mb-4">
-        <CountdownTimer nextRunAt={task.next_run_at} status={task.status} />
+        <CountdownTimer
+          nextRunAt={task.next_run_at}
+          status={task.status}
+          isTriggering={isTriggering}
+        />
       </div>
 
       {/* Footer actions */}
       <div className="mt-auto flex items-center gap-2 pt-2 border-t border-white/5">
         <button
           onClick={handleToggle}
-          disabled={acting}
+          disabled={acting || isTriggering}
           className={cn(
             "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
             task.status === "active"
@@ -330,36 +350,39 @@ function EvolutionBar({
 function CountdownTimer({
   nextRunAt,
   status,
+  isTriggering,
 }: {
   nextRunAt: string | null
   status: MonitorTask["status"]
+  isTriggering: boolean
 }) {
-  const [remaining, setRemaining] = useState("")
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const canCountdown = !isTriggering && Boolean(nextRunAt) && status === "active"
 
   useEffect(() => {
-    if (!nextRunAt || status !== "active") {
-      setRemaining("")
-      return
-    }
-
-    function tick() {
-      const diff = new Date(nextRunAt!).getTime() - Date.now()
-      if (diff <= 0) {
-        setRemaining("即将执行...")
-        return
-      }
-      const h = Math.floor(diff / 3_600_000)
-      const m = Math.floor((diff % 3_600_000) / 60_000)
-      const s = Math.floor((diff % 60_000) / 1_000)
-      setRemaining(
-        h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`
-      )
-    }
-
-    tick()
-    const id = setInterval(tick, 1000)
+    if (!canCountdown) return
+    const id = setInterval(() => setNowMs(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [nextRunAt, status])
+  }, [canCountdown])
+
+  const remaining = (() => {
+    if (!canCountdown) return ""
+    const diff = new Date(nextRunAt!).getTime() - nowMs
+    if (diff <= 0) return "即将执行..."
+    const h = Math.floor(diff / 3_600_000)
+    const m = Math.floor((diff % 3_600_000) / 60_000)
+    const s = Math.floor((diff % 60_000) / 1_000)
+    return h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`
+  })()
+
+  if (isTriggering) {
+    return (
+      <div className="flex items-center gap-1.5 text-[11px] text-sky-400">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        正在执行研判...
+      </div>
+    )
+  }
 
   if (!remaining) {
     return (

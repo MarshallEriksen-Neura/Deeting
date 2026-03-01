@@ -39,6 +39,7 @@ SCHEDULE_ZSET_KEY = "monitor:schedule:zset"
 MONITOR_MAX_RAW_OUTPUT_CHARS = 40_000
 MONITOR_MAX_CHANGE_SUMMARY_CHARS = 4_000
 MONITOR_MAX_SNAPSHOT_BYTES = 16_000
+MONITOR_MIN_SUMMARY_CHARS_FOR_NO_SNAPSHOT = 120
 
 # 监控任务专用工作流：走真实 orchestrator，不做测试上游注入。
 MONITOR_WORKFLOW = WorkflowConfig(
@@ -177,10 +178,15 @@ def _enqueue_dead_letter(
 
 
 @celery_app.task(bind=True, name="app.tasks.monitor.trigger_reasoning", queue="default")
-def trigger_reasoning_task(self, task_id: str) -> dict[str, Any]:
-    jitter = random.randint(0, JITTER_MAX_SECONDS)
-    reasoning_task.apply_async(args=[task_id], countdown=jitter, queue=REASONING_QUEUE)
-    return {"status": "triggered", "task_id": task_id, "jitter": jitter}
+def trigger_reasoning_task(self, task_id: str, force_notify: bool = False) -> dict[str, Any]:
+    # 手动触发（force_notify）要求尽快执行并强制推送，避免 ETA 调度带来的延迟/丢失风险。
+    jitter = 0 if bool(force_notify) else random.randint(0, JITTER_MAX_SECONDS)
+    reasoning_task.apply_async(
+        args=[task_id, bool(force_notify)],
+        countdown=jitter,
+        queue=REASONING_QUEUE,
+    )
+    return {"status": "triggered", "task_id": task_id, "jitter": jitter, "force_notify": bool(force_notify)}
 
 
 @celery_app.task(
@@ -192,10 +198,10 @@ def trigger_reasoning_task(self, task_id: str) -> dict[str, Any]:
     retry_jitter=True,
     max_retries=RETRY_MAX,
 )
-def reasoning_task(self, task_id: str) -> dict[str, Any]:
-    logger.info(f"monitor_reasoning_started task_id={task_id}")
+def reasoning_task(self, task_id: str, force_notify: bool = False) -> dict[str, Any]:
+    logger.info(f"monitor_reasoning_started task_id={task_id} force_notify={bool(force_notify)}")
     try:
-        return run_async(_execute_reasoning_flow(task_id))
+        return run_async(_execute_reasoning_flow(task_id, bool(force_notify)))
     except Exception as exc:
         if _is_final_retry(self):
             retries = int(getattr(self.request, "retries", RETRY_MAX) or RETRY_MAX)
@@ -242,7 +248,7 @@ async def _resolve_task_model(session, task: MonitorTask) -> str:
     raise RuntimeError(f"Monitor task {task.id} 无可用模型（task/user/system 均未配置）")
 
 
-async def _execute_reasoning_flow(task_id: str) -> dict[str, Any]:
+async def _execute_reasoning_flow(task_id: str, force_notify: bool = False) -> dict[str, Any]:
     async with AsyncSessionLocal() as session:
         task = await session.get(MonitorTask, uuid.UUID(task_id))
         if not task or not task.is_active:
@@ -347,11 +353,18 @@ async def _execute_reasoning_flow(task_id: str) -> dict[str, Any]:
                 task.current_interval_minutes = interval_minutes
                 task.next_run_at = next_run_at
                 task.last_executed_at = triggered_at
-                if has_change:
+                should_notify = has_change or bool(force_notify)
+                if should_notify:
+                    change_summary = str(analysis.get("change_summary") or "").strip()
+                    if (not has_change) and bool(force_notify) and not str(change_summary or "").strip():
+                        change_summary = (
+                            "### 例行简报\n"
+                            "手动触发：本次未检测到显著变化，按要求推送最新研判结果。"
+                        )
                     notification_task.apply_async(
                         args=[
                             task_id,
-                            analysis.get("change_summary"),
+                            change_summary,
                             analysis.get("new_snapshot"),
                         ],
                         queue=NOTIFICATION_QUEUE,
@@ -409,7 +422,7 @@ def _build_monitor_prompt(task: MonitorTask, strategy: str) -> str:
 请获取最新信息，必须以 JSON 格式输出：
 {{
   "is_significant_change": boolean,
-  "change_summary": "Markdown string",
+  "change_summary": "用于通知的可读 Markdown 简报（即使无显著变化，也要给出简报）",
   "new_snapshot": {{ ... }}
 }}
 """
@@ -462,10 +475,9 @@ def _parse_agent_output(content: str) -> dict[str, Any]:
             summary = summary_raw if isinstance(summary_raw, str) else ""
             if len(summary) > MONITOR_MAX_CHANGE_SUMMARY_CHARS:
                 summary = summary[:MONITOR_MAX_CHANGE_SUMMARY_CHARS]
-            if not is_change:
-                summary = ""
-
             snapshot = _clamp_snapshot(parsed.get("new_snapshot"))
+            if not summary.strip():
+                summary = _build_snapshot_summary(snapshot, is_significant_change=is_change)
             return {
                 "is_significant_change": is_change,
                 "change_summary": summary,
@@ -478,6 +490,57 @@ def _parse_agent_output(content: str) -> dict[str, Any]:
         "change_summary": "",
         "new_snapshot": {},
     }
+
+
+def _build_snapshot_summary(snapshot: dict[str, Any], *, is_significant_change: bool) -> str:
+    if not isinstance(snapshot, dict) or not snapshot:
+        return ""
+
+    lines: list[str] = []
+    if is_significant_change:
+        lines.append("### 研判结论")
+        lines.append("检测到显著变化，请关注下列关键信号。")
+    else:
+        lines.append("### 例行简报")
+        lines.append("当前未检测到显著变化，以下为最新态势更新。")
+
+    status = snapshot.get("status")
+    if isinstance(status, str) and status.strip():
+        lines.append("")
+        lines.append(f"- 当前状态: `{status.strip()}`")
+
+    timestamp = snapshot.get("timestamp_utc") or snapshot.get("updated_at") or snapshot.get("time")
+    if isinstance(timestamp, str) and timestamp.strip():
+        lines.append(f"- 更新时间: {timestamp.strip()}")
+
+    key_facts = snapshot.get("key_facts")
+    if isinstance(key_facts, list):
+        facts = [str(item).strip() for item in key_facts if str(item).strip()]
+        if facts:
+            lines.append("")
+            lines.append("### 关键事实")
+            for fact in facts[:5]:
+                lines.append(f"- {fact}")
+
+    scenarios = snapshot.get("scenarios")
+    if isinstance(scenarios, dict) and scenarios:
+        pairs = []
+        for name, score in scenarios.items():
+            name_text = str(name).strip()
+            score_text = str(score).strip()
+            if not name_text or not score_text:
+                continue
+            pairs.append((name_text, score_text))
+        if pairs:
+            lines.append("")
+            lines.append("### 场景评估")
+            for name_text, score_text in pairs[:5]:
+                lines.append(f"- {name_text}: {score_text}")
+
+    summary = "\n".join(lines).strip()
+    if len(summary) > MONITOR_MAX_CHANGE_SUMMARY_CHARS:
+        return summary[:MONITOR_MAX_CHANGE_SUMMARY_CHARS]
+    return summary
 
 
 async def _record_mab_feedback(svc, scene, arm, reward):
@@ -610,6 +673,45 @@ def notification_task(self, task_id: str, change_summary: str | None, new_snapsh
         raise
 
 
+@celery_app.task(
+    bind=True,
+    name="app.tasks.monitor.feishu_message_reply",
+    queue="default",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    max_retries=2,
+)
+def feishu_message_reply_task(self, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_async(_execute_feishu_message_reply(payload))
+
+
+async def _execute_feishu_message_reply(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.services.monitoring.feishu_bot_service import FeishuBotService
+
+    service = FeishuBotService()
+    return await service.process_message_event(payload if isinstance(payload, dict) else {})
+
+
+def _extract_notify_channel_ids(notify_config: dict[str, Any] | None) -> list[uuid.UUID]:
+    raw_ids = (notify_config or {}).get("channel_ids")
+    if not isinstance(raw_ids, list):
+        return []
+
+    parsed: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    for raw in raw_ids:
+        try:
+            channel_id = uuid.UUID(str(raw))
+        except Exception:
+            continue
+        if channel_id in seen:
+            continue
+        seen.add(channel_id)
+        parsed.append(channel_id)
+    return parsed
+
+
 async def _execute_notification_flow(task_id: str, summary: str | None, snapshot: dict | None) -> dict[str, Any]:
     from app.services.notifications.user_notification_service import UserNotificationService
 
@@ -618,17 +720,24 @@ async def _execute_notification_flow(task_id: str, summary: str | None, snapshot
         if not task:
             return {"status": "error", "reason": "task_not_found"}
         service = UserNotificationService(session)
+        channel_ids = _extract_notify_channel_ids(task.notify_config if isinstance(task.notify_config, dict) else None)
+        summary_text = str(summary or "").strip()
         extra = {
             "monitor_task_id": str(task.id),
-            "snapshot_preview": snapshot,
-            "assistant_id": str(task.assistant_id) if task.assistant_id else None,
             "trace_id": f"notif_{task_id}_{Datetime.now().strftime('%y%m%d%H%M')}",
         }
+        if task.assistant_id:
+            extra["assistant_id"] = str(task.assistant_id)
+        # 正文足够时优先展示正文，避免卡片被快照 JSON 淹没。
+        if snapshot and len(summary_text) < MONITOR_MIN_SUMMARY_CHARS_FOR_NO_SNAPSHOT:
+            extra["snapshot_preview"] = snapshot
         results = await service.notify_user(
             user_id=task.user_id,
             title=f"🔔 监控提醒: {task.title}",
-            content=summary or "变化提醒",
+            content=summary_text or "变化提醒",
             extra=extra,
+            channel_ids=channel_ids or None,
+            stop_on_success=not bool(channel_ids),
         )
         return {"status": "success", "count": len(results)}
 

@@ -1,9 +1,17 @@
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
 from app.services.monitor_cron import next_run_after, validate_cron_expr
 from app.schemas.monitor import MonitorTaskCreate
-from app.tasks.monitor import _build_monitor_prompt, _parse_agent_output
+from app.tasks.monitor import (
+    _build_monitor_prompt,
+    _extract_notify_channel_ids,
+    _parse_agent_output,
+    reasoning_task,
+    trigger_reasoning_task,
+)
 from app.utils.time_utils import Datetime
 
 
@@ -45,6 +53,33 @@ def test_parse_agent_output_fallback_on_invalid_json():
     assert parsed["is_significant_change"] is False
 
 
+def test_parse_agent_output_keeps_summary_when_not_significant_change():
+    output = """{
+      "is_significant_change": false,
+      "change_summary": "### 例行简报\\n局势总体平稳，仅有小幅波动。",
+      "new_snapshot": {"status": "stable"}
+    }"""
+    parsed = _parse_agent_output(output)
+    assert parsed["is_significant_change"] is False
+    assert "例行简报" in parsed["change_summary"]
+
+
+def test_parse_agent_output_builds_snapshot_summary_when_summary_missing():
+    output = """{
+      "is_significant_change": false,
+      "change_summary": "",
+      "new_snapshot": {
+        "status": "watching",
+        "timestamp_utc": "2026-03-01T14:14:32Z",
+        "key_facts": ["事实A", "事实B"]
+      }
+    }"""
+    parsed = _parse_agent_output(output)
+    assert parsed["is_significant_change"] is False
+    assert "例行简报" in parsed["change_summary"]
+    assert "事实A" in parsed["change_summary"]
+
+
 def test_build_monitor_prompt_has_required_fields():
     class DummyTask:
         title = "示例任务"
@@ -73,3 +108,56 @@ def test_monitor_task_create_rejects_invalid_allowed_tools():
             objective="watch",
             allowed_tools=["bad tool"],
         )
+
+
+def test_extract_notify_channel_ids_filters_invalid_and_deduplicates():
+    c1 = uuid.uuid4()
+    c2 = uuid.uuid4()
+    parsed = _extract_notify_channel_ids(
+        {
+            "channel_ids": [
+                str(c1),
+                "invalid",
+                c1,
+                str(c2),
+            ]
+        }
+    )
+    assert parsed == [c1, c2]
+
+
+def test_trigger_reasoning_task_propagates_force_notify(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    def _fake_apply_async(*, args, countdown, queue):
+        captured["args"] = args
+        captured["countdown"] = countdown
+        captured["queue"] = queue
+
+    monkeypatch.setattr(reasoning_task, "apply_async", _fake_apply_async)
+    monkeypatch.setattr("app.tasks.monitor.random.randint", lambda a, b: 7)
+
+    result = trigger_reasoning_task.run("task-1", True)
+
+    assert result["status"] == "triggered"
+    assert result["force_notify"] is True
+    assert captured["args"] == ["task-1", True]
+    assert captured["countdown"] == 0
+
+
+def test_trigger_reasoning_task_default_force_notify_false(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    def _fake_apply_async(*, args, countdown, queue):
+        captured["args"] = args
+        captured["countdown"] = countdown
+        captured["queue"] = queue
+
+    monkeypatch.setattr(reasoning_task, "apply_async", _fake_apply_async)
+    monkeypatch.setattr("app.tasks.monitor.random.randint", lambda a, b: 3)
+
+    result = trigger_reasoning_task.run("task-2")
+
+    assert result["force_notify"] is False
+    assert captured["args"] == ["task-2", False]
+    assert captured["countdown"] == 3

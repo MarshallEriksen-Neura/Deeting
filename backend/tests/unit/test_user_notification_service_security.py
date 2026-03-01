@@ -41,7 +41,7 @@ async def test_resolve_runtime_config_decrypts_db_ref(monkeypatch):
 
     monkeypatch.setattr(service.secret_manager, "get", _fake_get)
 
-    resolved = await service._resolve_runtime_config(
+    resolved = await service.resolve_runtime_config(
         NotificationChannel.FEISHU,
         {"webhook_url": "db:secret-ref", "display_name": "my_feishu"},
     )

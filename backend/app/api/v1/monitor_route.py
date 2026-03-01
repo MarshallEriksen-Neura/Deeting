@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -17,6 +18,7 @@ from app.core.database import get_db
 from app.deps.auth import get_current_active_user
 from app.models import User
 from app.schemas.monitor import (
+    MonitorExecutionLogListResponse,
     MonitorStatsResponse,
     MonitorTaskCreate,
     MonitorTaskListResponse,
@@ -24,7 +26,7 @@ from app.schemas.monitor import (
     MonitorTaskUpdate,
 )
 from app.services.monitor_service import MonitorService
-from app.tasks.monitor import trigger_reasoning_task
+from app.tasks.monitor import feishu_message_reply_task, trigger_reasoning_task
 
 from app.services.feedback.trace_feedback_service import TraceFeedbackService
 
@@ -177,6 +179,41 @@ async def handle_feishu_callback(
     }
 
 
+@router.post("/feishu/events", include_in_schema=False)
+async def handle_feishu_events(request: Request) -> dict[str, Any]:
+    """
+    接收飞书应用机器人事件回调（用于 @机器人 后自动回复）。
+    """
+    raw_body = await request.body()
+    try:
+        data = json.loads(raw_body.decode("utf-8") or "{}")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid callback payload") from exc
+
+    # URL 验证阶段先回 challenge（用于飞书控制台保存回调地址）。
+    if data.get("type") == "url_verification":
+        return {"challenge": data.get("challenge")}
+
+    # 常规事件再做签名校验。
+    await _verify_feishu_callback_signature(request, raw_body)
+
+    if "encrypt" in data:
+        # 当前仅支持飞书“明文模式”事件回调。
+        logger.warning("feishu_event_encrypted_payload_not_supported")
+        return {"code": 0, "msg": "ignored_encrypted_payload"}
+
+    header = data.get("header")
+    if not isinstance(header, dict):
+        return {"code": 0, "msg": "ignored_invalid_header"}
+
+    event_type = str(header.get("event_type") or "").strip()
+    if event_type != "im.message.receive_v1":
+        return {"code": 0, "msg": "ignored_non_message_event"}
+
+    feishu_message_reply_task.delay(data)
+    return {"code": 0, "msg": "ok"}
+
+
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_monitor(
     request: MonitorTaskCreate,
@@ -300,7 +337,7 @@ async def trigger_monitor(
     if task.get("status") != "active":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅 active 任务可触发")
 
-    trigger_reasoning_task.delay(str(task_id))
+    trigger_reasoning_task.delay(str(task_id), True)
     return {"task_id": task_id, "message": "已提交执行"}
 
 
@@ -320,14 +357,14 @@ async def delete_monitor(
         ) from e
 
 
-@router.get("/{task_id}/logs", response_model=dict)
+@router.get("/{task_id}/logs", response_model=MonitorExecutionLogListResponse)
 async def get_monitor_logs(
     task_id: uuid.UUID,
     skip: int = 0,
     limit: int = 50,
     user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+) -> MonitorExecutionLogListResponse:
     service = MonitorService(db)
     task = await service.get_task(task_id)
     if not task:
