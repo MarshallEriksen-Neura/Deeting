@@ -21,6 +21,7 @@ from . import image_generation  # noqa: F401
 from . import knowledge_tasks  # noqa: F401
 from . import media  # noqa: F401
 from . import memory_tasks  # noqa: F401
+from . import monitor  # noqa: F401
 from . import notification  # noqa: F401
 from . import periodic  # noqa: F401
 from . import quota_sync  # noqa: F401

@@ -1,0 +1,75 @@
+name: "system/monitor"
+description: "Active monitoring and proactive alerting system. Enables creation of scheduled intelligence tasks."
+tools:
+  - name: "sys_create_monitor"
+    description: "Create a new persistent monitoring task for tracking news, tech updates, prices, etc."
+    parameters:
+      type: "object"
+      properties:
+        title:
+          type: "string"
+          description: "Name of the task, e.g., 'Iran War 72H Watch'."
+        objective:
+          type: "string"
+          description: "Core intelligence goal. Specify what to watch and alert triggers."
+        cron_expr:
+          type: "string"
+          default: "0 */6 * * *"
+          description: "Execution frequency in standard Cron format."
+        initial_strategies:
+          type: "array"
+          items:
+            type: "string"
+          description: "Optional strategy prompts used by MAB for early exploration."
+        notify_config:
+          type: "object"
+          description: "Notification settings, e.g., {'channel': 'feishu'}."
+        allowed_tools:
+          type: "array"
+          items:
+            type: "string"
+          description: "Whitelist of tools the background agent can use (e.g., fetch_web_content)."
+      required: ["title", "objective"]
+
+  - name: "sys_list_monitors"
+    description: "List all active monitoring tasks and their cost/token usage."
+    parameters:
+      type: "object"
+      properties:
+        skip:
+          type: "integer"
+          description: "Pagination offset."
+        limit:
+          type: "integer"
+          description: "Pagination limit."
+
+  - name: "sys_update_monitor"
+    description: "Manage existing monitoring tasks (pause, resume, update frequency)."
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "Unique task ID."
+        action:
+          type: "string"
+          enum: ["pause", "resume", "update", "delete"]
+          description: "Action to perform."
+        cron_expr:
+          type: "string"
+          description: "New Cron expression (only for 'update')."
+        title:
+          type: "string"
+          description: "Updated task title (only for 'update')."
+        objective:
+          type: "string"
+          description: "Updated objective (only for 'update')."
+        notify_config:
+          type: "object"
+          description: "Updated notify config (only for 'update')."
+        allowed_tools:
+          type: "array"
+          items:
+            type: "string"
+          description: "Updated allowed tools (only for 'update')."
+      required: ["task_id", "action"]

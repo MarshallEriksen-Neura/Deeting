@@ -81,6 +81,12 @@ export const userNavigation: NavGroup[] = [
         icon: "coins",
       },
       {
+        id: "monitors",
+        label: "nav.monitors",
+        href: "/dashboard/monitors",
+        icon: "crosshair",
+      },
+      {
         id: "monitoring",
         label: "nav.monitoring",
         href: "/dashboard/monitoring",

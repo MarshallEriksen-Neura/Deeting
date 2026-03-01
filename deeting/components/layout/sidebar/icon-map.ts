@@ -10,6 +10,7 @@ import {
   Cloud,
   Coins,
   Cpu,
+  Crosshair,
   CreditCard,
   Database,
   Eye,
@@ -89,6 +90,8 @@ export const navIconMap = {
   image: Image,
   creditCard: CreditCard,
   gitBranch: GitBranch,
+  // Monitor navigation icon
+  crosshair: Crosshair,
 } satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof navIconMap

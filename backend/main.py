@@ -181,6 +181,9 @@ def register_routes(app: FastAPI) -> None:
         mcp_router,
         media_router,
         memory_router,
+        monitor_router,
+        notification_channel_router,
+        monitoring_router,
         monitoring_router,
         notification_router,
         notification_ws_router,
@@ -346,6 +349,10 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(provider_router, prefix=api_prefix, tags=["Providers"])
     app.include_router(media_router, prefix=api_prefix, tags=["Media"])
     app.include_router(memory_router, prefix=api_prefix, tags=["User Memory"])
+    app.include_router(monitor_router, prefix=api_prefix, tags=["Monitor"])
+    app.include_router(notification_channel_router, prefix=api_prefix, tags=["Notification Channels"])
+    app.include_router(gateway_logs_router, prefix=api_prefix, tags=["Logs"])
+    app.include_router(gateway_logs_router, prefix=api_prefix, tags=["Logs"])
     app.include_router(gateway_logs_router, prefix=api_prefix, tags=["Logs"])
     app.include_router(dashboard_router, prefix=api_prefix, tags=["Dashboard"])
     app.include_router(monitoring_router, prefix=api_prefix, tags=["Monitoring"])

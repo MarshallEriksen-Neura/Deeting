@@ -115,3 +115,15 @@ plugins:
     tools:
       - "search_sdk"
       - "execute_code_plan"
+
+  # === Monitor Automation ===
+  - id: "system/monitor"
+    name: "Monitor Automation"
+    module: "app.agent_plugins.builtins.monitor.plugin"
+    class_name: "MonitorPlugin"
+    enabled_by_default: true
+    description: "Create and manage proactive monitoring tasks."
+    tools:
+      - "sys_create_monitor"
+      - "sys_list_monitors"
+      - "sys_update_monitor"

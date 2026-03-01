@@ -67,6 +67,16 @@ celery_app.conf.update(
             "schedule": crontab(minute=0),  # Hourly
             "options": {"expires": 3300},
         },
+        "monitor-scheduler-tick": {
+            "task": "app.tasks.monitor.scheduler",
+            "schedule": 30.0,
+            "options": {"expires": 25},
+        },
+        "monitor-scheduler-bootstrap": {
+            "task": "app.tasks.monitor.bootstrap_schedule",
+            "schedule": 600.0,
+            "options": {"expires": 120},
+        },
     },
     # 任务路由配置
     task_routes={
@@ -79,6 +89,10 @@ celery_app.conf.update(
         "app.tasks.callbacks.*": {"queue": "external"},
         "app.tasks.media.*": {"queue": "external"},
         "app.tasks.image_generation.*": {"queue": "image_generation"},
+        "app.tasks.monitor.reasoning_worker": {"queue": "reasoning"},
+        "app.tasks.monitor.notification_worker": {"queue": "notification"},
+        "app.tasks.monitor.dead_letter": {"queue": "monitor_dlq"},
+        "app.tasks.monitor.*": {"queue": "default"},
         "app.tasks.upstream.*": {"queue": "retry"},
         "*": {"queue": "default"},
     },

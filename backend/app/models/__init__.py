@@ -81,7 +81,10 @@ from .upstream_secret import UpstreamSecret
 from .user import Permission, Role, RolePermission, User, UserRole
 from .user_mcp_server import UserMcpServer
 from .user_mcp_source import UserMcpSource
+from .user_notification_channel import NotificationChannel, UserNotificationChannel
 from .user_skill_installation import UserSkillInstallation
+
+from .monitor import MonitorDeadLetter, MonitorExecutionLog, MonitorStatus, MonitorTask
 from .user_document import UserDocument
 
 __all__ = [
@@ -162,6 +165,8 @@ __all__ = [
     "UserMcpSubscription",
     "UserMcpServer",
     "UserMcpSource",
+    "UserNotificationChannel",
+    "NotificationChannel",
     "UserSkillInstallation",
     "UserDocument",
     "SkillRegistry",
@@ -173,7 +178,12 @@ __all__ = [
     "SpecExecutionLog",
     "SpecWorkerSession",
     "SpecKnowledgeCandidate",
-    "TraceFeedback",
+    # Monitor
+    "MonitorTask",
+    "MonitorExecutionLog",
+    "MonitorDeadLetter",
+    "MonitorStatus",
+    # Knowledge (Unified Crawler)
     # Knowledge (Unified Crawler)
     "KnowledgeArtifact",
     "KnowledgeChunk",

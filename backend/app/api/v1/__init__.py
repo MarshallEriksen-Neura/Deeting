@@ -50,6 +50,9 @@ from app.api.v1.internal import (
     video_generation_router as internal_video_generation_router,
 )
 from app.api.v1.internal.sandbox_route import router as internal_sandbox_router
+from app.api.v1.monitor_route import router as monitor_router
+from app.api.v1.notification_channel_route import router as notification_channel_router
+
 from app.api.v1.media_routes import router as media_router
 from app.api.v1.monitoring_route import router as monitoring_router
 from app.api.v1.notification_route import router as notification_router
@@ -115,6 +118,8 @@ __all__ = [
     "mcp_router",
     "media_router",
     "memory_router",
+    "monitor_router",
+    "notification_channel_router",
     "monitoring_router",
     "notification_router",
     "notification_ws_router",

@@ -14,8 +14,8 @@ export PYTHONPATH=$PYTHONPATH:$(pwd)
 echo "Starting Celery Worker and Beat..."
 
 # Define queues based on app/core/celery_app.py
-# Queues: default, internal, billing, external, retry, conversation, image_generation, skill_registry
-QUEUES="default,internal,billing,external,retry,conversation,image_generation,skill_registry"
+# Queues: default, internal, billing, external, retry, conversation, image_generation, skill_registry, reasoning, notification, monitor_dlq
+QUEUES="default,internal,billing,external,retry,conversation,image_generation,skill_registry,reasoning,notification,monitor_dlq"
 
 # Start Celery Worker
 # -A: App instance

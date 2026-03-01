@@ -845,6 +845,17 @@ class AgentExecutorStep(BaseStep):
                 "error_code": "CODE_MODE_DIRECT_TOOL_BLOCKED",
             }
 
+        monitor_allowed_tools = self._resolve_monitor_allowed_tools(ctx)
+        if monitor_allowed_tools is not None and tool_name not in monitor_allowed_tools:
+            allowed_str = ", ".join(sorted(monitor_allowed_tools)) if monitor_allowed_tools else "(empty)"
+            return {
+                "error": (
+                    f"Tool '{tool_name}' is not allowed for this monitor task. "
+                    f"Allowed tools: {allowed_str}"
+                ),
+                "error_code": "MONITOR_TOOL_NOT_ALLOWED",
+            }
+
         # 1. Check User MCP Servers (via pre-built map)
         if tool_name in user_mcp_tool_map:
             mcp_info = user_mcp_tool_map[tool_name]
@@ -957,6 +968,24 @@ class AgentExecutorStep(BaseStep):
                     return {"error": f"Tool '{tool_name}' failed: {e}"}
 
         return {"error": f"Tool '{tool_name}' not found."}
+
+    @staticmethod
+    def _resolve_monitor_allowed_tools(ctx: "WorkflowContext") -> set[str] | None:
+        """
+        仅在 monitor 会话下启用工具白名单。
+        - 返回 None: 非 monitor 场景，不做限制
+        - 返回 set: monitor 场景，按白名单限制工具调用
+        """
+        session_id = str(getattr(ctx, "session_id", "") or "")
+        if not session_id.startswith("monitor:"):
+            return None
+
+        raw_allowed = ctx.get("monitor", "allowed_tools")
+        if raw_allowed is None:
+            return set()
+        if not isinstance(raw_allowed, list):
+            return set()
+        return {str(name).strip() for name in raw_allowed if str(name).strip()}
 
     def _should_block_direct_tool_call(
         self,

@@ -239,6 +239,9 @@ class Settings(BaseSettings):
 
     # 对象存储 / 短链配置
     SECRET_KEY: str = ""
+    # 飞书回调验签（监控互动卡片）
+    FEISHU_CALLBACK_SECRET: str = ""
+    FEISHU_CALLBACK_MAX_SKEW_SECONDS: int = 300
     OSS_PROVIDER: str = "aliyun_oss"  # aliyun_oss | s3
     OSS_ENDPOINT: str = ""
     OSS_REGION: str = ""
