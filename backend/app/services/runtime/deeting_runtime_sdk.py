@@ -141,10 +141,27 @@ def build_runtime_preamble(
                                 nested = parsed.get("result") if isinstance(parsed.get("result"), dict) else {}
                                 error_text = nested.get("error")
                                 if error_text is None:
+                                    error_text = nested.get("message")
+                                if error_text is None:
                                     error_text = parsed.get("error")
+                                if error_text is None:
+                                    error_text = parsed.get("message")
+                                nested_detail = nested.get("detail")
+                                if error_text is None and isinstance(nested_detail, dict):
+                                    error_text = nested_detail.get("message") or nested_detail.get("error")
+                                if error_text is None and isinstance(parsed.get("detail"), dict):
+                                    error_text = parsed.get("detail", {}).get("message") or parsed.get("detail", {}).get("error")
                                 error_code = nested.get("error_code")
                                 if error_code is None:
+                                    error_code = nested.get("code")
+                                if error_code is None and isinstance(nested_detail, dict):
+                                    error_code = nested_detail.get("code")
+                                if error_code is None:
                                     error_code = parsed.get("error_code")
+                                if error_code is None:
+                                    error_code = parsed.get("code")
+                                if error_code is None and isinstance(parsed.get("detail"), dict):
+                                    error_code = parsed.get("detail", {}).get("code")
                                 normalized = {
                                     "error": str(error_text or "bridge call failed"),
                                     "error_code": error_code,

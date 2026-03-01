@@ -275,3 +275,70 @@ async def test_handle_poll_repo_ingestion_failure(monkeypatch):
     assert result["ready"] is True
     assert result["successful"] is False
     assert "git clone failed" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_handle_batch_convert_artifact_to_assistants_returns_error_field(monkeypatch):
+    plugin = CrawlerPlugin()
+    plugin._context = _DummyContext(user_id=uuid.uuid4())
+
+    class _FakeKnowledgeRepo:
+        def __init__(self, _session):
+            pass
+
+    class _FakeAssistantRepo:
+        def __init__(self, _session):
+            pass
+
+    class _FakeAssistantVersionRepo:
+        def __init__(self, _session):
+            pass
+
+    class _FakeAssistantService:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class _FakeIngestionService:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def batch_refine_and_create_assistants(self, *_args, **_kwargs):
+            raise RuntimeError("No assistant candidates extracted from artifact")
+
+    async def _fake_resolve_owner_user_id(*_args, **_kwargs):
+        return uuid.uuid4()
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.crawler.plugin.AsyncSessionLocal",
+        lambda: _DummyAsyncSession(),
+    )
+    monkeypatch.setattr(
+        "app.repositories.knowledge_repository.KnowledgeRepository",
+        _FakeKnowledgeRepo,
+    )
+    monkeypatch.setattr(
+        "app.repositories.assistant_repository.AssistantRepository",
+        _FakeAssistantRepo,
+    )
+    monkeypatch.setattr(
+        "app.repositories.assistant_repository.AssistantVersionRepository",
+        _FakeAssistantVersionRepo,
+    )
+    monkeypatch.setattr(
+        "app.services.assistant.assistant_service.AssistantService",
+        _FakeAssistantService,
+    )
+    monkeypatch.setattr(
+        "app.services.assistant.assistant_ingestion_service.AssistantIngestionService",
+        _FakeIngestionService,
+    )
+    monkeypatch.setattr(plugin, "_resolve_owner_user_id", _fake_resolve_owner_user_id)
+
+    result = await plugin.handle_batch_convert_artifact_to_assistants(
+        artifact_id=str(uuid.uuid4()),
+        max_assistants=5,
+    )
+
+    assert result["status"] == "error"
+    assert result["error"] == "No assistant candidates extracted from artifact"
+    assert result["message"] == "No assistant candidates extracted from artifact"

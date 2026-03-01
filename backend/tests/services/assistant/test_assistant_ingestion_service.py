@@ -183,6 +183,46 @@ async def test_batch_refine_and_create_assistants_uses_csv_fast_path(monkeypatch
     assert knowledge_repo.updated_payloads[-1] == {"status": "indexed"}
 
 
+@pytest.mark.asyncio
+async def test_batch_refine_and_create_assistants_uses_markdown_table_fast_path(
+    monkeypatch,
+):
+    markdown_table = (
+        "| 类型 | prompt类型 | prompt实例（连续对话用；隔开） |\n"
+        "| --- | --- | --- |\n"
+        "| 闲聊 | 向上管理 | 总裁昨天让我微信给他发个材料，我给忘记了 |\n"
+        "| 创意 | 活动策划 | 给我出一个迪奥2023春季发布会活动策划 |\n"
+    )
+    artifact = SimpleNamespace(id=uuid.uuid4(), raw_content=markdown_table)
+    knowledge_repo = _FakeKnowledgeRepo(artifact)
+    assistant_service = _FakeAssistantService()
+    service = AssistantIngestionService(assistant_service, knowledge_repo)
+
+    monkeypatch.setattr(
+        service,
+        "_resolve_refine_model",
+        AsyncMock(return_value="gpt-test"),
+    )
+    llm_splitter = AsyncMock(side_effect=AssertionError("LLM splitter should not be called"))
+    monkeypatch.setattr(service, "_extract_batch_assistant_data", llm_splitter)
+
+    result = await service.batch_refine_and_create_assistants(
+        artifact.id,
+        user_id=uuid.uuid4(),
+        max_items=10,
+    )
+
+    assert result["status"] == "success"
+    assert result["count"] == 2
+    assert len(result["assistants"]) == 2
+    assert assistant_service.created[0]["payload"].version.name == "向上管理"
+    assert (
+        assistant_service.created[1]["payload"].version.system_prompt
+        == "给我出一个迪奥2023春季发布会活动策划"
+    )
+    assert knowledge_repo.updated_payloads[-1] == {"status": "indexed"}
+
+
 def test_extract_json_payload_supports_markdown_and_embedded_text():
     payload = {"name": "Persona", "system_prompt": "do X"}
     json_text = json.dumps(payload, ensure_ascii=False)

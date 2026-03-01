@@ -492,7 +492,7 @@ async def _issue_runtime_bridge_context(context: RuntimeContext) -> dict[str, An
         return None
 
     bridge_timeout = int(
-        getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 15) or 15
+        getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 60) or 60
     )
     bridge_ttl = int(getattr(settings, "CODE_MODE_BRIDGE_TOKEN_TTL_SECONDS", 600) or 600)
     if bridge_ttl <= 0:

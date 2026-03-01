@@ -88,3 +88,37 @@ def test_runtime_call_tool_compatible_with_top_level_bridge_error(monkeypatch):
         "error": "bridge dispatch failed",
         "error_code": "CODE_MODE_BRIDGE_DISPATCH_FAILED",
     }
+
+
+def test_runtime_call_tool_extracts_message_when_error_missing(monkeypatch):
+    def _fake_urlopen(_req, timeout=0):
+        assert timeout == 4
+        return _FakeResponse(
+            {
+                "ok": False,
+                "result": {
+                    "status": "error",
+                    "message": "No assistant candidates extracted from artifact",
+                },
+                "meta": {"trace_id": "trace-2"},
+            }
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+    runtime_cls = _build_runtime_class()
+    runtime = runtime_cls(
+        context={
+            "bridge": {
+                "endpoint": "http://bridge.local/api/v1/internal/bridge/call",
+                "execution_token": "token-3",
+                "timeout_seconds": 4,
+            }
+        }
+    )
+
+    result = runtime.call_tool("batch_convert_artifact_to_assistants", artifact_id="x")
+
+    assert result["error"] == "No assistant candidates extracted from artifact"
+    assert result["error_code"] is None
+    assert result["bridge_meta"]["trace_id"] == "trace-2"

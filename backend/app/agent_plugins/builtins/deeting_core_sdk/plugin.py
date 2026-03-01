@@ -1753,7 +1753,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             bridge_endpoint = bridge_endpoint.replace("localhost", target).replace("127.0.0.1", target)
 
         bridge_timeout = int(
-            getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 15) or 15
+            getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 60) or 60
         )
         bridge_ttl = int(
             getattr(settings, "CODE_MODE_BRIDGE_TOKEN_TTL_SECONDS", 600) or 600

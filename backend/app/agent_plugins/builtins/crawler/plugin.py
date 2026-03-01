@@ -352,12 +352,15 @@ class CrawlerPlugin(AgentPlugin):
                 await session.commit()
                 return result
             except PermissionError as e:
-                return {"status": "error", "message": str(e)}
+                err = str(e)
+                return {"status": "error", "error": err, "message": err}
             except ValueError as e:
-                return {"status": "error", "message": str(e)}
+                err = str(e)
+                return {"status": "error", "error": err, "message": err}
             except Exception as e:
                 self.context.get_logger().error(f"Assistant conversion failed: {e}")
-                return {"status": "error", "message": str(e)}
+                err = str(e)
+                return {"status": "error", "error": err, "message": err}
 
     async def handle_batch_convert_artifact_to_assistants(
         self,
@@ -409,14 +412,17 @@ class CrawlerPlugin(AgentPlugin):
                 await session.commit()
                 return result
             except PermissionError as e:
-                return {"status": "error", "message": str(e)}
+                err = str(e)
+                return {"status": "error", "error": err, "message": err}
             except ValueError as e:
-                return {"status": "error", "message": str(e)}
+                err = str(e)
+                return {"status": "error", "error": err, "message": err}
             except Exception as e:
                 self.context.get_logger().error(
                     f"Batch assistant conversion failed: {e}"
                 )
-                return {"status": "error", "message": str(e)}
+                err = str(e)
+                return {"status": "error", "error": err, "message": err}
 
     async def handle_submit_repo_ingestion(
         self,

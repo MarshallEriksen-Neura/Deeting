@@ -1,17 +1,38 @@
-# 使用 Playwright 官方镜像作为基础，包含 Python 和核心系统依赖
-FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
+# 使用 Python 3.12 slim 镜像作为基础
+FROM python:3.12-slim
 
 WORKDIR /app
 
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
 
-# 安装必要的系统工具
+# 安装系统依赖（包括 Playwright 运行所需的依赖）
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    wget \
+    gnupg \
+    libglib2.0-0 \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libdbus-1-3 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件
@@ -21,9 +42,7 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
-# --- 关键步骤：安装浏览器及系统依赖 ---
-# 虽然基础镜像是 Playwright，但显式运行 install 确保版本对齐，
-# 并且 install-deps 确保在任何 Linux 变体下都具备运行环境。
+# 安装 Playwright 浏览器
 RUN playwright install chromium && \
     playwright install-deps chromium
 

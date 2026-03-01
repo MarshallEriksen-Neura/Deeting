@@ -97,9 +97,14 @@ class AssistantIngestionService:
             artifact.raw_content,
             max_items=max_items,
         )
+        if not refinement_items:
+            refinement_items = self._extract_assistants_from_markdown_table(
+                artifact.raw_content,
+                max_items=max_items,
+            )
         if refinement_items:
             logger.info(
-                "Batch assistant CSV fast-path extracted %s items",
+                "Batch assistant fast-path extracted %s items",
                 len(refinement_items),
             )
         else:
@@ -356,6 +361,140 @@ class AssistantIngestionService:
                 break
 
         return items
+
+    def _extract_assistants_from_markdown_table(
+        self,
+        raw_content: str,
+        *,
+        max_items: int,
+    ) -> list[dict[str, Any]]:
+        if not raw_content:
+            return []
+
+        lines = [line.rstrip("\n") for line in str(raw_content).splitlines()]
+        if not lines:
+            return []
+
+        def _normalize_header(value: str) -> str:
+            return (
+                str(value or "")
+                .strip()
+                .strip('"')
+                .replace(" ", "")
+                .replace("（", "(")
+                .replace("）", ")")
+                .lower()
+            )
+
+        def _split_row(row: str) -> list[str]:
+            raw = str(row or "").strip()
+            if not raw.startswith("|"):
+                return []
+            raw = raw.strip("|")
+            return [cell.strip() for cell in raw.split("|")]
+
+        def _is_separator_row(cells: list[str]) -> bool:
+            if not cells:
+                return False
+            for cell in cells:
+                token = str(cell).strip().replace(":", "").replace("-", "")
+                if token:
+                    return False
+            return True
+
+        def _find_col_index(headers: list[str], candidates: list[str]) -> int | None:
+            for idx, header in enumerate(headers):
+                for keyword in candidates:
+                    if keyword in header:
+                        return idx
+            return None
+
+        collected: list[dict[str, Any]] = []
+        seen_prompts: set[str] = set()
+
+        for i in range(len(lines) - 1):
+            header_line = lines[i].strip()
+            separator_line = lines[i + 1].strip()
+            if not header_line.startswith("|") or not separator_line.startswith("|"):
+                continue
+
+            headers_raw = _split_row(header_line)
+            sep_cells = _split_row(separator_line)
+            if not headers_raw or not sep_cells:
+                continue
+            if not _is_separator_row(sep_cells):
+                continue
+
+            headers = [_normalize_header(item) for item in headers_raw]
+            prompt_instance_idx = _find_col_index(
+                headers,
+                ["prompt实例", "prompt示例", "promptexample", "prompt"],
+            )
+            if prompt_instance_idx is None:
+                continue
+            prompt_type_idx = _find_col_index(headers, ["prompt类型", "prompttype"])
+            category_idx = _find_col_index(headers, ["类型", "category"])
+
+            row_no = i + 2
+            while row_no < len(lines):
+                row_line = lines[row_no].strip()
+                if not row_line.startswith("|"):
+                    break
+                row_cells = _split_row(row_line)
+                if not row_cells or _is_separator_row(row_cells):
+                    row_no += 1
+                    continue
+                if prompt_instance_idx >= len(row_cells):
+                    row_no += 1
+                    continue
+
+                prompt_text = str(row_cells[prompt_instance_idx] or "").strip()
+                if (
+                    not prompt_text
+                    or prompt_text.lower() in {"prompt实例", "prompt"}
+                    or prompt_text.startswith("![")
+                ):
+                    row_no += 1
+                    continue
+
+                dedup_key = prompt_text[:2000]
+                if dedup_key in seen_prompts:
+                    row_no += 1
+                    continue
+                seen_prompts.add(dedup_key)
+
+                prompt_type = ""
+                if prompt_type_idx is not None and prompt_type_idx < len(row_cells):
+                    prompt_type = str(row_cells[prompt_type_idx] or "").strip()
+                category = ""
+                if category_idx is not None and category_idx < len(row_cells):
+                    category = str(row_cells[category_idx] or "").strip()
+
+                name = prompt_type or category or f"Imported Assistant {len(collected) + 1}"
+                tags = [tag for tag in [category, prompt_type, "markdown-import"] if tag]
+                summary_prefix = f"{category}/{prompt_type}".strip("/")
+                summary = (
+                    f"Imported from markdown table: {summary_prefix or name}"
+                )[:100]
+
+                collected.append(
+                    {
+                        "name": name,
+                        "summary": summary,
+                        "description": (
+                            f"Imported from markdown table row {row_no + 1}."
+                        ),
+                        "system_prompt": prompt_text,
+                        "tags": tags[:5],
+                        "icon_id": "lucide:bot",
+                    }
+                )
+                if len(collected) >= max_items:
+                    return collected
+
+                row_no += 1
+
+        return collected
 
     @staticmethod
     def _extract_csv_text(raw_content: str) -> str | None:
