@@ -11,8 +11,9 @@ import { GlassCard } from "@/components/ui/glass-card"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useUserProfile } from "@/hooks/use-user"
-import { ImageCropDialog, CropResult } from "@/components/chat/input"
+import { ImageCropDialog, type CropResult } from "@/components/chat/input"
 import { initAssetUpload, completeAssetUpload } from "@/lib/api/media-assets"
+import { ApiError } from "@/lib/http"
 import { calculateFileHash } from "@/lib/utils/file"
 import { toast } from "sonner"
 
@@ -30,6 +31,17 @@ function getUserRole(isSuperuser: boolean, permissionFlags: Record<string, numbe
   if (isSuperuser) return "ADMIN"
   const hasProFeatures = Object.values(permissionFlags).some(v => v > 0)
   return hasProFeatures ? "PRO PILOT" : "PILOT"
+}
+
+function getErrorMessage(error: unknown): string | null {
+  if (error instanceof ApiError) {
+    const payload = error.data as { detail?: string; message?: string } | undefined
+    return payload?.detail || payload?.message || error.message
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return null
 }
 
 export function UserProfileSidebar() {
@@ -71,10 +83,7 @@ export function UserProfileSidebar() {
     setIsUploading(true)
     
     try {
-      // Convert base64 to blob
-      const response = await fetch(result.base64)
-      const blob = await response.blob()
-      const file = new File([blob], "avatar.png", { type: "image/png" })
+      const file = new File([result.blob], "avatar.png", { type: result.blob.type || "image/png" })
       
       // Calculate file hash
       const contentHash = await calculateFileHash(file)
@@ -88,14 +97,30 @@ export function UserProfileSidebar() {
       }, "public")
       
       // Step 2: Upload to OSS if not deduped
-      if (!initResult.deduped && initResult.upload_url) {
+      if (!initResult.deduped) {
+        if (!initResult.upload_url) {
+          throw new Error("Missing upload URL")
+        }
         const uploadResponse = await fetch(initResult.upload_url, {
           method: "PUT",
           body: file,
           headers: initResult.upload_headers || { "Content-Type": file.type },
         })
         if (!uploadResponse.ok) {
-          throw new Error("Upload failed")
+          let detail = `Upload failed (${uploadResponse.status})`
+          try {
+            const contentType = uploadResponse.headers.get("content-type") || ""
+            if (contentType.includes("application/json")) {
+              const body = await uploadResponse.json() as { detail?: string; message?: string }
+              detail = body.detail || body.message || detail
+            } else {
+              const text = (await uploadResponse.text()).trim()
+              if (text) detail = text
+            }
+          } catch {
+            // ignore parse failure
+          }
+          throw new Error(detail)
         }
       }
       
@@ -116,7 +141,8 @@ export function UserProfileSidebar() {
       toast.success(t("idCard.avatarUpdated"))
     } catch (error) {
       console.error("Avatar upload failed:", error)
-      toast.error(t("idCard.avatarUploadFailed"))
+      const detail = getErrorMessage(error)
+      toast.error(detail ? `${t("idCard.avatarUploadFailed")}: ${detail}` : t("idCard.avatarUploadFailed"))
     } finally {
       setIsUploading(false)
     }
@@ -175,6 +201,7 @@ export function UserProfileSidebar() {
 
               {/* Upload Avatar Trigger */}
               <button
+                type="button"
                 onClick={handleUploadClick}
                 disabled={isUploading}
                 className="absolute bottom-0 left-0 bg-muted text-muted-foreground p-2.5 rounded-full hover:scale-110 hover:bg-muted/80 transition-all shadow-lg z-20 group/upload disabled:opacity-50 disabled:cursor-not-allowed"

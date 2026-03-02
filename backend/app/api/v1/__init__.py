@@ -33,6 +33,7 @@ from app.api.v1.auth_route import router as auth_router
 from app.api.v1.credits_route import router as credits_router
 from app.api.v1.dashboard_route import router as dashboard_router
 from app.api.v1.endpoints.mcp import router as user_mcp_router
+from app.api.v1.endpoints.login_sessions import router as login_sessions_router
 from app.api.v1.external.gateway import router as external_gateway_router
 from app.api.v1.feedback_route import router as feedback_router
 from app.api.v1.gateway_logs_route import router as gateway_logs_router
@@ -131,5 +132,6 @@ __all__ = [
     "user_api_keys_router",
     "user_documents_router",
     "user_mcp_router",
+    "login_sessions_router",
     "users_router",
 ]

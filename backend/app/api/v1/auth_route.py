@@ -144,12 +144,14 @@ async def login(
     client_ip = raw_request.headers.get("x-forwarded-for", "").split(",")[
         0
     ].strip() or (raw_request.client.host if raw_request.client else None)
-    tokens = await service.login_with_code(
+    user_agent = raw_request.headers.get("user-agent")
+    tokens, _refresh_jti = await service.login_with_code(
         email=request.email,
         code=request.code,
         invite_code=request.invite_code,
         username=request.username,
         client_ip=client_ip,
+        user_agent=user_agent,
     )
     _set_refresh_cookie(response, tokens.refresh_token)
     return tokens
@@ -181,7 +183,7 @@ async def refresh_token(
         )
 
     service = AuthService(db)
-    tokens = await service.refresh_tokens(refresh_token_value)
+    tokens, _refresh_jti = await service.refresh_tokens(refresh_token_value)
     _set_refresh_cookie(response, tokens.refresh_token)
     return tokens
 
@@ -221,7 +223,7 @@ async def linuxdo_callback(
 
     # 复用现有登录颁发逻辑
     auth = AuthService(db)
-    tokens = await auth.create_tokens(user)
+    tokens, _refresh_jti = await auth.create_tokens(user)
     _set_refresh_cookie(response, tokens.refresh_token)
     return OAuthCallbackResponse(
         access_token=tokens.access_token,

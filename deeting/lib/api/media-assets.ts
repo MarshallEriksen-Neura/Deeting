@@ -2,7 +2,7 @@ import { z } from "zod"
 
 import { request } from "@/lib/http"
 
-const MEDIA_ASSETS_BASE = "/media/assets"
+const MEDIA_ASSETS_BASE = "/api/v1/media/assets"
 
 const AssetUploadInitResponseSchema = z.object({
   deduped: z.boolean(),

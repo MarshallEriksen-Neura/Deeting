@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from hashlib import sha256
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +13,9 @@ from app.services.oss.asset_storage_service import (
     AssetStorageNotConfigured,
     build_public_asset_url,
     build_signed_asset_url,
+    get_effective_asset_storage_mode,
     head_asset_object,
+    load_asset_bytes,
     presign_asset_put_url,
 )
 
@@ -80,6 +84,7 @@ class AssetUploadService:
             expires_seconds=expires_seconds or 3600,
             content_hash=content_hash,
             bucket_type=bucket_type,
+            base_url=base_url,
         )
         return {
             "deduped": False,
@@ -106,8 +111,24 @@ class AssetUploadService:
         Args:
             bucket_type: "private" 或 "public"，决定返回的 URL 类型
         """
-        meta = await head_asset_object(object_key)
-        _ensure_meta_valid(meta, content_hash, size_bytes, content_type)
+        mode = get_effective_asset_storage_mode()
+        if mode == "local":
+            try:
+                body, detected_content_type = await load_asset_bytes(object_key)
+            except Exception as exc:
+                raise ValueError("asset not found") from exc
+            _ensure_local_object_valid(
+                body=body,
+                detected_content_type=detected_content_type,
+                content_hash=content_hash,
+                size_bytes=size_bytes,
+                content_type=content_type,
+            )
+            etag = None
+        else:
+            meta = await head_asset_object(object_key)
+            _ensure_meta_valid(meta, content_hash, size_bytes, content_type)
+            etag = meta.etag
 
         existing = await self.asset_repo.get_by_hash(content_hash, size_bytes)
         if existing:
@@ -129,7 +150,7 @@ class AssetUploadService:
             "size_bytes": size_bytes,
             "content_type": content_type,
             "object_key": object_key,
-            "etag": meta.etag,
+            "etag": etag,
             "uploader_user_id": uploader_user_id,
         }
 
@@ -162,7 +183,23 @@ class AssetUploadService:
         try:
             meta = await head_asset_object(asset.object_key)
         except AssetStorageNotConfigured:
-            return False
+            if get_effective_asset_storage_mode() != "local":
+                return False
+            try:
+                body, detected_content_type = await load_asset_bytes(asset.object_key)
+            except Exception:
+                return False
+            try:
+                _ensure_local_object_valid(
+                    body=body,
+                    detected_content_type=detected_content_type,
+                    content_hash=content_hash,
+                    size_bytes=size_bytes,
+                    content_type=content_type,
+                )
+                return True
+            except ValueError:
+                return False
         except Exception as exc:
             logger.warning(
                 "media_asset_head_failed",
@@ -197,6 +234,28 @@ def _ensure_meta_valid(
             return
         raise ValueError("asset hash metadata missing")
     if meta_hash != content_hash:
+        raise ValueError("asset hash mismatch")
+
+
+def _ensure_local_object_valid(
+    *,
+    body: bytes,
+    detected_content_type: str,
+    content_hash: str,
+    size_bytes: int,
+    content_type: str,
+) -> None:
+    if len(body) != size_bytes:
+        raise ValueError("asset size mismatch")
+
+    # local 模式下 content-type 基于扩展名推断，允许大小写/参数差异
+    detected_main = str(detected_content_type or "").split(";", 1)[0].strip().lower()
+    expected_main = str(content_type or "").split(";", 1)[0].strip().lower()
+    if detected_main and expected_main and detected_main != expected_main:
+        raise ValueError("asset content type mismatch")
+
+    local_hash = sha256(body).hexdigest()
+    if local_hash != content_hash:
         raise ValueError("asset hash mismatch")
 
 

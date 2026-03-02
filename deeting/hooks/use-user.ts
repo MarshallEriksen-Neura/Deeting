@@ -54,11 +54,12 @@ export function useUserProfile() {
   const refreshProfile = useCallback(() => mutate(), [mutate])
 
   const updateProfile = useCallback(async (payload: UserUpdateRequest) => {
-    const updated = await updateUserProfile(payload)
+    const fallbackPermissionFlags = data?.permission_flags ?? profile?.permission_flags ?? {}
+    const updated = await updateUserProfile(payload, fallbackPermissionFlags)
     setProfile(updated)
     await mutate(updated, false)
     return updated
-  }, [mutate, setProfile])
+  }, [data?.permission_flags, mutate, profile?.permission_flags, setProfile])
 
   return {
     profile: data ?? profile,

@@ -169,6 +169,7 @@ def register_routes(app: FastAPI) -> None:
         external_gateway_router,
         feedback_router,
         gateway_logs_router,
+        login_sessions_router,
         internal_bridge_router,
         internal_code_mode_router,
         internal_conversation_router,
@@ -202,6 +203,7 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(auth_router, prefix=api_prefix, tags=["Authentication"])
     app.include_router(users_router, prefix=api_prefix, tags=["Users"])
+    app.include_router(login_sessions_router, prefix=api_prefix, tags=["Login Sessions"])
     app.include_router(assistants_router, prefix=api_prefix, tags=["Assistants"])
     app.include_router(user_api_keys_router, prefix=api_prefix, tags=["API Keys"])
     app.include_router(available_models_router, prefix=api_prefix, tags=["Models"])

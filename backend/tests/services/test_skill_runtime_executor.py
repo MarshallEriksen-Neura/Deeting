@@ -1,4 +1,5 @@
 import pytest
+from itertools import count
 
 from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 
@@ -104,9 +105,19 @@ class _FakeCommands:
         self.commands_ran: list[str] = []
         self.has_requirements = has_requirements
         self.execution_error = execution_error
+        self.repo_present = False
 
     async def run(self, command: str, *, opts=None, handlers=None):
         self.commands_ran.append(command)
+        if command.startswith("rm -rf "):
+            self.repo_present = False
+            return _FakeExecution(stdout_text="ok")
+        if command.startswith("git clone "):
+            self.repo_present = True
+            return _FakeExecution(stdout_text="ok")
+        if command.startswith("if [ -d "):
+            signal = "1" if self.repo_present else "0"
+            return _FakeExecution(stdout_text=signal)
         if command == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi":
             signal = "1" if self.has_requirements else "0"
             return _FakeExecution(stdout_text=signal)
@@ -126,13 +137,15 @@ class _FakeFiles:
 
 
 class _FakeSandbox:
+    _counter = count(1)
+
     def __init__(
         self,
         *,
         has_requirements: bool = False,
         execution_error=None,
     ) -> None:
-        self.id = "fake_sandbox"
+        self.id = f"fake_sandbox_{next(self._counter)}"
         self.commands = _FakeCommands(
             has_requirements=has_requirements,
             execution_error=execution_error,
@@ -199,16 +212,13 @@ async def test_executor_builds_script_and_reads_artifacts():
     assert "class DeetingRuntime" in run_script
     assert "plugin backend must define async def invoke" in run_script
     assert "__DEETING_PLUGIN_INVOKE_RESULT__" in run_script
-    assert sandbox.commands.commands_ran[0].startswith("rm -rf ")
-    assert "mkdir -p" in sandbox.commands.commands_ran[0]
-    assert "git clone" in sandbox.commands.commands_ran[1]
-    assert sandbox.commands.commands_ran[2] == "pip install lxml"
-    assert (
-        sandbox.commands.commands_ran[3]
-        == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
-    )
-    assert "command -v python3" in sandbox.commands.commands_ran[4]
-    assert "/workspace/skills/docx/run.py" in sandbox.commands.commands_ran[4]
+    assert sandbox.commands.commands_ran[0].startswith("mkdir -p ")
+    assert sandbox.commands.commands_ran[1].startswith("rm -rf /workspace/skills/docx/repo")
+    assert "git clone" in sandbox.commands.commands_ran[2]
+    assert sandbox.commands.commands_ran[3] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+    assert sandbox.commands.commands_ran[4] == "pip install lxml"
+    assert "command -v python3" in sandbox.commands.commands_ran[5]
+    assert "/workspace/skills/docx/run.py" in sandbox.commands.commands_ran[5]
     assert result["artifacts"][0]["content_base64"]
 
 
@@ -244,10 +254,10 @@ async def test_executor_installs_requirements_txt_when_present():
         intent="edit",
     )
 
-    assert sandbox.commands.commands_ran[2] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
-    assert sandbox.commands.commands_ran[3] == "pip install -r requirements.txt"
-    assert "command -v python3" in sandbox.commands.commands_ran[4]
-    assert "/workspace/skills/repo.with.requirements/run.py" in sandbox.commands.commands_ran[4]
+    assert sandbox.commands.commands_ran[3] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+    assert sandbox.commands.commands_ran[4] == "pip install -r requirements.txt"
+    assert "command -v python3" in sandbox.commands.commands_ran[5]
+    assert "/workspace/skills/repo.with.requirements/run.py" in sandbox.commands.commands_ran[5]
 
 
 @pytest.mark.asyncio
@@ -283,9 +293,9 @@ async def test_executor_logs_skip_when_no_dependencies_and_no_requirements(caplo
             intent="edit",
         )
 
-    assert sandbox.commands.commands_ran[2] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
-    assert "command -v python3" in sandbox.commands.commands_ran[3]
-    assert "/workspace/skills/repo.no.dependencies/run.py" in sandbox.commands.commands_ran[3]
+    assert sandbox.commands.commands_ran[3] == "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+    assert "command -v python3" in sandbox.commands.commands_ran[4]
+    assert "/workspace/skills/repo.no.dependencies/run.py" in sandbox.commands.commands_ran[4]
     assert not any(cmd.startswith("pip install") for cmd in sandbox.commands.commands_ran)
     assert any(
         "event=plugin_dependency_install_skipped" in record.message
@@ -362,3 +372,50 @@ async def test_executor_surfaces_execution_error_from_sandbox():
 
     assert result["exit_code"] == 1
     assert result["error"]["name"] == "CommandExecError"
+
+
+@pytest.mark.asyncio
+async def test_executor_reuses_repo_and_dependency_cache_within_same_sandbox():
+    manifest = {
+        "usage_spec": {"example_code": "print('ok')"},
+        "installation": {"dependencies": ["lxml"]},
+    }
+    skill = type(
+        "Skill",
+        (),
+        {
+            "id": "repo.cache.hit",
+            "runtime": "opensandbox",
+            "source_repo": "https://example.com/repo.git",
+            "source_revision": "main",
+            "source_subdir": None,
+            "manifest_json": manifest,
+        },
+    )()
+    sandbox = _FakeSandbox(has_requirements=False)
+    executor = SkillRuntimeExecutor(
+        _FakeRepo(skill),
+        sandbox_manager=_FakeSandboxManager(sandbox),
+    )
+
+    await executor.execute(
+        "repo.cache.hit",
+        session_id="u1",
+        user_id="00000000-0000-0000-0000-000000000001",
+        inputs={},
+        intent="edit",
+    )
+    before_second = len(sandbox.commands.commands_ran)
+
+    await executor.execute(
+        "repo.cache.hit",
+        session_id="u1",
+        user_id="00000000-0000-0000-0000-000000000001",
+        inputs={},
+        intent="edit",
+    )
+    second_run_cmds = sandbox.commands.commands_ran[before_second:]
+
+    assert sum(1 for cmd in sandbox.commands.commands_ran if cmd.startswith("git clone")) == 1
+    assert sum(1 for cmd in sandbox.commands.commands_ran if cmd.startswith("pip install lxml")) == 1
+    assert any(cmd.startswith("if [ -d /workspace/skills/repo.cache.hit/repo") for cmd in second_run_cmds)

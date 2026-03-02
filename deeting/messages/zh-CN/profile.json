@@ -34,15 +34,15 @@
       "manageAll": "管理所有连接设置"
     },
     "deviceManagement": {
-      "title": "已连接终端",
-      "description": "管理已授权的 Bridge Agents 和 MCP 客户端",
-      "agentId": "Agent ID",
-      "lastActive": "最近签发",
-      "expiresAt": "过期时间",
-      "revoke": "撤销授权",
-      "status": "状态",
-      "active": "活跃",
-      "expired": "已过期"
+      "title": "登录设备",
+      "description": "管理您的登录会话和已授权设备",
+      "lastActive": "最近活跃",
+      "revoke": "注销会话",
+      "revoked": "已成功注销该设备会话",
+      "revokeFailed": "注销失败，请稍后重试",
+      "empty": "暂无登录设备记录",
+      "currentDevice": "当前设备",
+      "unknownDevice": "未知设备"
     },
     "memoryCore": {
       "title": "神经记忆 (Memory Core)",

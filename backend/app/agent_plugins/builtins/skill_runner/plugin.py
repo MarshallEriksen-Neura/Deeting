@@ -140,8 +140,9 @@ class SkillRunnerPlugin(AgentPlugin):
                     output["ui"] = {"blocks": ui_blocks}
                     # 核心修复：如果当前有上下文，主动推送渲染指令，确保嵌套调用时 UI 也能冒泡
                     if ctx and hasattr(ctx, "push_blocks"):
-                        for block in ui_blocks:
-                            await ctx.push_blocks(block)
+                        push_result = ctx.push_blocks(*ui_blocks)
+                        if hasattr(push_result, "__await__"):
+                            await push_result
                         logger.info(f"SkillRunner: Pushed {len(ui_blocks)} UI blocks to active context.")
 
                 return output

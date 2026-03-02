@@ -340,18 +340,6 @@ export default function HUD() {
                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
                 className="absolute top-full mt-3 w-64 bg-white/82 dark:bg-[#121212]/88 backdrop-blur-2xl border border-white/70 dark:border-white/10 rounded-[1.75rem] shadow-[0_18px_40px_-20px_rgba(15,23,42,0.35)] ring-1 ring-white/40 dark:ring-white/5 overflow-hidden p-3 flex flex-col gap-2 z-50"
             >
-                <div className="flex items-center gap-3 p-2 mb-1 border-b border-slate-200/70 dark:border-white/5 pb-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-900/90 dark:bg-white/80 flex items-center justify-center text-white dark:text-black text-xs font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]">
-                        AD
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-xs font-semibold text-slate-900 dark:text-white/90">{t("hud.system.userName")}</span>
-                        <span className="text-[10px] font-medium text-slate-500/90 dark:text-white/40 italic">
-                          {t("hud.system.integrity", { value: "100%" })}
-                        </span>
-                    </div>
-                </div>
-
                 <div className="grid grid-cols-2 gap-2">
                     <MenuLink href="/" icon={<Home className="w-4 h-4" />} label={t("hud.menu.home")} />
                     <MenuLink href="/dashboard" icon={<LayoutDashboard className="w-4 h-4" />} label={t("hud.menu.dashboard")} />

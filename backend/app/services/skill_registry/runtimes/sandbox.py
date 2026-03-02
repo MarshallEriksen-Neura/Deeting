@@ -20,6 +20,9 @@ from app.services.skill_registry.runtimes.base import BaseRuntimeStrategy, Runti
 _MAX_RUNTIME_TOOL_CALLS = 8
 _INVOKE_RESULT_MARKER = "__DEETING_PLUGIN_INVOKE_RESULT__"
 _REQUIREMENTS_CHECK_COMMAND = "if [ -f requirements.txt ]; then echo 1; else echo 0; fi"
+_DIRECTORY_CHECK_COMMAND_TEMPLATE = (
+    "if [ -d {path} ]; then echo 1; else echo 0; fi"
+)
 _PYTHON_ENTRYPOINT_COMMAND_TEMPLATE = (
     "PYTHON_BIN=\"$(command -v python3 || command -v python || true)\"; "
     "if [ -z \"$PYTHON_BIN\" ]; then "
@@ -29,6 +32,8 @@ _PYTHON_ENTRYPOINT_COMMAND_TEMPLATE = (
     "\"$PYTHON_BIN\" {script_path}"
 )
 logger = logging.getLogger(__name__)
+_PREPARED_REPO_CACHE: set[tuple[str, str, str, str, str]] = set()
+_INSTALLED_DEPS_CACHE: set[tuple[str, str, str, str, str, tuple[str, ...], bool]] = set()
 
 
 class SandboxRuntimeStrategy(BaseRuntimeStrategy):
@@ -75,56 +80,33 @@ class SandboxRuntimeStrategy(BaseRuntimeStrategy):
         try:
             workspace_root = f"/workspace/skills/{skill.id}"
             repo_root = f"{workspace_root}/repo"
-
-            # Cleanup previous run in the same sandbox to avoid git clone errors
-            await _run_command(
-                sandbox, f"rm -rf {workspace_root} && mkdir -p {workspace_root}"
+            await _run_command(sandbox, f"mkdir -p {workspace_root}")
+            await _prepare_repo(
+                sandbox=sandbox,
+                sandbox_id=str(sandbox_id),
+                skill_id=str(skill.id),
+                repo_url=str(repo_url),
+                revision=str(revision),
+                subdir=str(subdir or ""),
+                repo_root=repo_root,
             )
 
-            # Retry git clone up to 3 times to handle sporadic network resets
-            clone_success = False
-            clone_error = None
-            for attempt in range(3):
-                try:
-                    await _run_command(
-                        sandbox,
-                        f"git clone --depth 1 --branch {revision} {repo_url} {repo_root}",
-                    )
-                    clone_success = True
-                    break
-                except Exception as e:
-                    clone_error = e
-                    # Give it a small delay before retry
-                    await asyncio.sleep(1)
-            
-            if not clone_success:
-                raise RuntimeError(f"Failed to clone repository after 3 attempts: {clone_error}")
-
             install_dir = f"{repo_root}/{subdir}" if subdir else repo_root
-            if dependencies:
-                await _run_command(
-                    sandbox,
-                    f"pip install {' '.join(dependencies)}",
-                    working_directory=install_dir,
-                )
             has_requirements = await _has_requirements_txt(
                 sandbox, working_directory=install_dir
             )
-            if has_requirements:
-                await _run_command(
-                    sandbox,
-                    "pip install -r requirements.txt",
-                    working_directory=install_dir,
-                )
-            elif not dependencies:
-                logger.info(
-                    "event=plugin_dependency_install_skipped "
-                    "reason=no_manifest_dependencies_and_no_requirements_txt "
-                    "skill_id=%s user_id=%s install_dir=%s",
-                    str(skill.id),
-                    str(context.user_id) if context.user_id is not None else "",
-                    install_dir,
-                )
+            await _ensure_dependencies_installed(
+                sandbox=sandbox,
+                sandbox_id=str(sandbox_id),
+                skill_id=str(skill.id),
+                repo_url=str(repo_url),
+                revision=str(revision),
+                subdir=str(subdir or ""),
+                dependencies=dependencies,
+                has_requirements=has_requirements,
+                install_dir=install_dir,
+                user_id=(str(context.user_id) if context.user_id is not None else ""),
+            )
 
             runtime_context = {
                 "session_id": str(session),
@@ -177,6 +159,7 @@ class SandboxRuntimeStrategy(BaseRuntimeStrategy):
             return response
         finally:
             if context.kill_on_exit:
+                _clear_sandbox_cache(str(sandbox_id))
                 await sandbox_manager.stop_sandbox(sandbox_id, session_id=session)
             else:
                 await sandbox.close()
@@ -219,6 +202,150 @@ async def _has_requirements_txt(sandbox, *, working_directory: str) -> bool:
         if value in {"0", "1"}:
             return value == "1"
     return False
+
+
+async def _directory_exists(sandbox, path: str) -> bool:
+    execution = await _run_command(
+        sandbox,
+        _DIRECTORY_CHECK_COMMAND_TEMPLATE.format(path=shlex.quote(path)),
+        return_execution=True,
+    )
+    stdout, stderr = _collect_logs(execution)
+    lines: list[str] = []
+    for chunk in [*(stdout or []), *(stderr or [])]:
+        lines.extend(str(chunk).splitlines())
+    for line in reversed(lines):
+        value = str(line).strip()
+        if value in {"0", "1"}:
+            return value == "1"
+    return False
+
+
+def _purge_repo_cache(sandbox_id: str, skill_id: str) -> None:
+    stale = [k for k in _PREPARED_REPO_CACHE if k[0] == sandbox_id and k[1] == skill_id]
+    for key in stale:
+        _PREPARED_REPO_CACHE.discard(key)
+
+
+def _purge_dep_cache(sandbox_id: str, skill_id: str) -> None:
+    stale = [k for k in _INSTALLED_DEPS_CACHE if k[0] == sandbox_id and k[1] == skill_id]
+    for key in stale:
+        _INSTALLED_DEPS_CACHE.discard(key)
+
+
+def _clear_sandbox_cache(sandbox_id: str) -> None:
+    stale_repo = [k for k in _PREPARED_REPO_CACHE if k[0] == sandbox_id]
+    for key in stale_repo:
+        _PREPARED_REPO_CACHE.discard(key)
+    stale_deps = [k for k in _INSTALLED_DEPS_CACHE if k[0] == sandbox_id]
+    for key in stale_deps:
+        _INSTALLED_DEPS_CACHE.discard(key)
+
+
+async def _prepare_repo(
+    *,
+    sandbox,
+    sandbox_id: str,
+    skill_id: str,
+    repo_url: str,
+    revision: str,
+    subdir: str,
+    repo_root: str,
+) -> None:
+    key = (sandbox_id, skill_id, repo_url, revision, subdir)
+    if key in _PREPARED_REPO_CACHE and await _directory_exists(sandbox, repo_root):
+        logger.info(
+            "event=plugin_repo_prepare_cache_hit skill_id=%s sandbox_id=%s revision=%s",
+            skill_id,
+            sandbox_id,
+            revision,
+        )
+        return
+
+    _purge_repo_cache(sandbox_id, skill_id)
+    _purge_dep_cache(sandbox_id, skill_id)
+    await _run_command(sandbox, f"rm -rf {repo_root}")
+
+    clone_success = False
+    clone_error = None
+    for _attempt in range(3):
+        try:
+            await _run_command(
+                sandbox,
+                f"git clone --depth 1 --branch {revision} {repo_url} {repo_root}",
+            )
+            clone_success = True
+            break
+        except Exception as exc:
+            clone_error = exc
+            await asyncio.sleep(1)
+
+    if not clone_success:
+        raise RuntimeError(
+            f"Failed to clone repository after 3 attempts: {clone_error}"
+        )
+
+    _PREPARED_REPO_CACHE.add(key)
+
+
+async def _ensure_dependencies_installed(
+    *,
+    sandbox,
+    sandbox_id: str,
+    skill_id: str,
+    repo_url: str,
+    revision: str,
+    subdir: str,
+    dependencies: list[str],
+    has_requirements: bool,
+    install_dir: str,
+    user_id: str,
+) -> None:
+    dep_signature = tuple(str(item) for item in dependencies)
+    key = (
+        sandbox_id,
+        skill_id,
+        repo_url,
+        revision,
+        subdir,
+        dep_signature,
+        bool(has_requirements),
+    )
+    if key in _INSTALLED_DEPS_CACHE:
+        logger.info(
+            "event=plugin_dependency_install_cache_hit "
+            "skill_id=%s sandbox_id=%s requirements=%s deps_count=%s",
+            skill_id,
+            sandbox_id,
+            int(bool(has_requirements)),
+            len(dep_signature),
+        )
+        return
+
+    if dependencies:
+        await _run_command(
+            sandbox,
+            f"pip install {' '.join(dependencies)}",
+            working_directory=install_dir,
+        )
+    if has_requirements:
+        await _run_command(
+            sandbox,
+            "pip install -r requirements.txt",
+            working_directory=install_dir,
+        )
+    elif not dependencies:
+        logger.info(
+            "event=plugin_dependency_install_skipped "
+            "reason=no_manifest_dependencies_and_no_requirements_txt "
+            "skill_id=%s user_id=%s install_dir=%s",
+            skill_id,
+            user_id,
+            install_dir,
+        )
+
+    _purge_dep_cache(sandbox_id, skill_id)
+    _INSTALLED_DEPS_CACHE.add(key)
 
 
 def _build_script(
@@ -492,7 +619,7 @@ async def _issue_runtime_bridge_context(context: RuntimeContext) -> dict[str, An
         return None
 
     bridge_timeout = int(
-        getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 60) or 60
+        getattr(settings, "CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS", 120) or 120
     )
     bridge_ttl = int(getattr(settings, "CODE_MODE_BRIDGE_TOKEN_TTL_SECONDS", 600) or 600)
     if bridge_ttl <= 0:

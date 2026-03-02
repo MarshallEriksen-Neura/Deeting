@@ -344,7 +344,7 @@ class Settings(BaseSettings):
         "http://host.docker.internal:8000/api/v1/internal/bridge/call"
     )
     CODE_MODE_BRIDGE_TOKEN_TTL_SECONDS: int = 600
-    CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS: int = 60
+    CODE_MODE_BRIDGE_HTTP_TIMEOUT_SECONDS: int = 120
     CODE_MODE_BRIDGE_ENFORCE_TRUSTED_IPS: bool = False
     CODE_MODE_BRIDGE_TRUSTED_IPS: str = ""
 

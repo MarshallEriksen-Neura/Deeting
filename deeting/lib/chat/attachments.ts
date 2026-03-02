@@ -1,5 +1,6 @@
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import { completeAssetUpload, initAssetUpload } from "@/lib/api/media-assets"
+import { calculateFileHash } from "@/lib/utils/file"
 
 type AttachmentBuildResult = {
   attachments: ChatImageAttachment[]
@@ -16,19 +17,12 @@ const createAttachmentId = () => {
   return `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-const bufferToHex = (buffer: ArrayBuffer) =>
-  Array.from(new Uint8Array(buffer))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-
 const hashFile = async (file: File) => {
-  const data = await file.arrayBuffer()
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", data)
-  return bufferToHex(digest)
+  return calculateFileHash(file)
 }
 
 // Export for use in other modules
-export { bufferToHex, hashFile }
+export { hashFile }
 
 const buildUploadHeaders = (
   uploadHeaders: Record<string, string> | null | undefined,

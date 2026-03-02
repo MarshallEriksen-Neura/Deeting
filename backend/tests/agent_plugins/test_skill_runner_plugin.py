@@ -157,6 +157,57 @@ async def test_skill_runner_fallbacks_to_original_view_type_when_ui_session_fail
 
 
 @pytest.mark.asyncio
+async def test_skill_runner_pushes_ui_blocks_with_sync_context_method(monkeypatch):
+    class _FakeExecutor:
+        def __init__(self, _repo):
+            pass
+
+        async def execute(self, **_kwargs):
+            return {
+                "exit_code": 0,
+                "stdout": ["ok"],
+                "stderr": [],
+                "artifacts": [],
+                "render_blocks": [
+                    {
+                        "type": "ui",
+                        "view_type": "weather.card",
+                        "payload": {"city": "天津", "temp": 23},
+                    }
+                ],
+            }
+
+    class _Ctx(SimpleNamespace):
+        def push_blocks(self, *blocks):
+            self.pushed.extend(blocks)
+
+    monkeypatch.setattr(
+        "app.agent_plugins.builtins.skill_runner.plugin.AsyncSessionLocal",
+        lambda: _AsyncSessionCtx(object()),
+    )
+    monkeypatch.setattr(
+        "app.services.skill_registry.skill_runtime_executor.SkillRuntimeExecutor",
+        _FakeExecutor,
+    )
+
+    user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    plugin = SkillRunnerPlugin()
+    plugin._context = SimpleNamespace(session_id="sess", user_id=user_id)
+    ctx = _Ctx(
+        session_id="sess-ctx",
+        user_id=user_id,
+        pushed=[],
+        get=lambda namespace, key, default=None: default,
+    )
+
+    result = await plugin.handle_tool_call("skill__com.deeting.example.weather", __context__=ctx)
+
+    assert result["status"] == "success"
+    assert len(ctx.pushed) == 1
+    assert ctx.pushed[0]["viewType"] == "weather.card"
+
+
+@pytest.mark.asyncio
 async def test_skill_runner_emits_generated_file_block_for_artifact(monkeypatch):
     class _FakeExecutor:
         def __init__(self, _repo):

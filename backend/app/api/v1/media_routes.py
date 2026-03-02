@@ -25,6 +25,7 @@ from app.services.oss.asset_storage_service import (
     get_effective_asset_storage_mode,
     load_asset_bytes,
     presign_asset_get_url,
+    store_local_asset_object,
     verify_signed_asset_request,
 )
 from app.services.oss.asset_upload_service import AssetUploadService
@@ -125,6 +126,44 @@ async def init_asset_upload(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
     return AssetUploadInitResponse(**result)
+
+
+@router.put("/media/assets/upload/local/{object_key:path}", include_in_schema=False)
+async def upload_local_asset(
+    object_key: str,
+    request: Request,
+    expires: int = Query(..., description="Unix timestamp (seconds)"),
+    sig: str = Query(..., description="HMAC signature"),
+) -> Response:
+    """local 模式上传入口（由 init 返回的签名 URL 使用）。"""
+    if get_effective_asset_storage_mode() != "local":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ASSET_STORAGE_MODE!=local 不支持本地直传",
+        )
+
+    try:
+        verify_signed_asset_request(object_key, expires=expires, sig=sig)
+        body = await request.body()
+        await store_local_asset_object(
+            object_key=object_key,
+            data=body,
+            content_type=request.headers.get("content-type"),
+        )
+    except SignedAssetUrlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    except AssetStorageNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -34,15 +34,15 @@
       "manageAll": "Manage all connection settings"
     },
     "deviceManagement": {
-      "title": "Connected Terminals",
-      "description": "Manage authorized Bridge Agents and MCP Clients",
-      "agentId": "Agent ID",
-      "lastActive": "Last Issued",
-      "expiresAt": "Expires",
-      "revoke": "Revoke",
-      "status": "Status",
-      "active": "Active",
-      "expired": "Expired"
+      "title": "Login Devices",
+      "description": "Manage your login sessions and authorized devices",
+      "lastActive": "Last Active",
+      "revoke": "Revoke Session",
+      "revoked": "Session revoked successfully",
+      "revokeFailed": "Failed to revoke session, please try again",
+      "empty": "No login devices recorded",
+      "currentDevice": "Current",
+      "unknownDevice": "Unknown Device"
     },
     "memoryCore": {
       "title": "Neural Memory (Memory Core)",

@@ -43,7 +43,7 @@ def build_runtime_preamble(
                 return self._full_context
 
             def _fetch_context_from_bridge(self, endpoint, execution_token, bridge):
-                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 15)
+                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 120)
                 context_endpoint = endpoint.replace("/call", "/context")
                 try:
                     import urllib.request
@@ -114,9 +114,10 @@ def build_runtime_preamble(
                 bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}
                 endpoint = str((bridge or {}).get("endpoint") or "").strip()
                 execution_token = str((bridge or {}).get("execution_token") or "").strip()
-                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 15)
+                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 120)
                 if endpoint and execution_token:
                     try:
+                        import time
                         import urllib.request
 
                         request_payload = {
@@ -124,6 +125,7 @@ def build_runtime_preamble(
                             "arguments": arguments or {},
                             "execution_token": execution_token,
                         }
+                        bridge_started = time.perf_counter()
                         req = urllib.request.Request(
                             endpoint,
                             data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
@@ -173,7 +175,12 @@ def build_runtime_preamble(
                                 return parsed.get("result")
                             return parsed
                     except Exception as exc:
-                        self.log("bridge call failed, fallback marker mode:", exc)
+                        elapsed_ms = int(max(0.0, (time.perf_counter() - bridge_started) * 1000))
+                        self.log(
+                            "bridge call failed, fallback marker mode:",
+                            exc,
+                            f"(tool={str(tool_name or '').strip()}, timeout_seconds={timeout_seconds}, elapsed_ms={elapsed_ms}, endpoint={endpoint})",
+                        )
 
                 payload = {
                     "index": idx,
@@ -187,7 +194,7 @@ def build_runtime_preamble(
                 bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}
                 endpoint = str((bridge or {}).get("endpoint") or "").strip()
                 execution_token = str((bridge or {}).get("execution_token") or "").strip()
-                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 15)
+                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 120)
                 return endpoint, execution_token, timeout_seconds
 
             def write_file(self, name, data, content_type="application/octet-stream"):

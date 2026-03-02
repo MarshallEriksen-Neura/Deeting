@@ -42,6 +42,26 @@
 }
 ```
 
+说明：
+- 当 `ASSET_STORAGE_MODE=oss` 时，`upload_url` 为对象存储预签名 URL（直传 OSS/S3）。
+- 当 `ASSET_STORAGE_MODE=local` 时，`upload_url` 为网关本地签名上传地址（`PUT /media/assets/upload/local/{object_key}`），前端仍按同样的 `PUT upload_url` 流程上传。
+
+## PUT /media/assets/upload/local/{object_key}
+仅 `ASSET_STORAGE_MODE=local` 使用的上传入口。由 `upload/init` 返回的签名 URL 调用，无需额外鉴权。
+
+Query 参数：
+- `expires` number，过期 Unix 时间戳（秒）
+- `sig` string，签名
+
+请求体：
+- 原始二进制文件内容（Body）
+
+请求头：
+- `Content-Type`（建议与 init 的 `content_type` 一致）
+
+响应：
+- `204 No Content`
+
 ## POST /media/assets/upload/complete
 上传完成确认：校验元信息并写入去重索引。
 

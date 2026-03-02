@@ -102,7 +102,8 @@ class AuthService:
         invite_code: str | None = None,
         username: str | None = None,
         client_ip: str | None = None,
-    ) -> TokenPair:
+        user_agent: str | None = None,
+    ) -> tuple[TokenPair, str]:
         """邮箱验证码登录（若不存在则自动注册并可绑定邀请码）。"""
         await self.check_login_rate_limit(email, client_ip)
 
@@ -147,17 +148,27 @@ class AuthService:
             await self._ensure_default_assistant(user)
 
         await self.reset_login_failures(email)
-        tokens = await self.create_tokens(user)
+        tokens, refresh_jti = await self.create_tokens(user)
+
+        # 记录登录会话
+        from app.services.users.login_session_service import LoginSessionService
+        session_service = LoginSessionService(self.db)
+        await session_service.record_session(
+            user_id=user.id,
+            refresh_token_jti=refresh_jti,
+            ip_address=client_ip,
+            user_agent=user_agent,
+        )
 
         logger.info(
             "login_success",
             extra={"user_id": str(user.id), "email": user.email, "created": created},
         )
 
-        return tokens
+        return tokens, refresh_jti
 
-    async def create_tokens(self, user: User) -> TokenPair:
-        """为用户创建 token 对"""
+    async def create_tokens(self, user: User) -> tuple[TokenPair, str]:
+        """为用户创建 token 对，返回 (TokenPair, refresh_jti)"""
         access_jti = generate_jti()
         refresh_jti = generate_jti()
 
@@ -181,9 +192,9 @@ class AuthService:
             "tokens_created", extra={"user_id": str(user.id), "access_jti": access_jti}
         )
 
-        return TokenPair(access_token=access_token, refresh_token=refresh_token)
+        return TokenPair(access_token=access_token, refresh_token=refresh_token), refresh_jti
 
-    async def refresh_tokens(self, refresh_token: str) -> TokenPair:
+    async def refresh_tokens(self, refresh_token: str) -> tuple[TokenPair, str]:
         """刷新 token（实现轮换策略）"""
         try:
             payload = decode_token(refresh_token)
@@ -263,7 +274,11 @@ class AuthService:
                 detail="Token version mismatch, please login again",
             )
 
-        # 创建新的 token 对
+        # 更新旧会话活跃时间，创建新 token 对
+        from app.services.users.login_session_service import LoginSessionService
+        session_service = LoginSessionService(self.db)
+        if jti:
+            await session_service.touch_session(refresh_token_jti=jti)
         return await self.create_tokens(user)
 
     async def logout(self, access_jti: str, refresh_jti: str | None = None) -> None:
@@ -317,6 +332,13 @@ class AuthService:
 
         if access_jti:
             await self.logout(access_jti, refresh_jti)
+            # 注销登录会话
+            if refresh_jti:
+                from app.services.users.login_session_service import LoginSessionService
+                session_service = LoginSessionService(self.db)
+                await session_service.revoke_by_jti(
+                    user_id=user_id, refresh_token_jti=refresh_jti
+                )
             logger.info("logout_success", extra={"user_id": str(user_id)})
 
     async def revoke_all_tokens(self, user_id: UUID) -> None:

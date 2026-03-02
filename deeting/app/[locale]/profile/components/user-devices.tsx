@@ -1,32 +1,67 @@
 "use client"
 
-import { Monitor } from "lucide-react"
+import { useState } from "react"
+import { Monitor, Smartphone, Tablet } from "lucide-react"
 import { useTranslations } from "next-intl"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { GlassButton } from "@/components/ui/glass-button"
-import { 
-  GlassCard, 
-  GlassCardContent, 
-  GlassCardDescription, 
-  GlassCardHeader, 
-  GlassCardTitle 
+import {
+  GlassCard,
+  GlassCardContent,
+  GlassCardDescription,
+  GlassCardHeader,
+  GlassCardTitle
 } from "@/components/ui/glass-card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { useLoginSessions } from "@/hooks/use-login-sessions"
 
-export interface ConnectedDevice {
-  agent_id: string
-  issued_at: string
-  expires_at: string
-  status: string
+function DeviceIcon({ type, size = 18 }: { type: string | null; size?: number }) {
+  if (type === "mobile") return <Smartphone size={size} />
+  if (type === "tablet") return <Tablet size={size} />
+  return <Monitor size={size} />
 }
 
-interface UserDevicesProps {
-  devices: ConnectedDevice[]
+function formatTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
 }
 
-export function UserDevices({ devices }: UserDevicesProps) {
+export function UserDevices() {
   const t = useTranslations("profile")
+  const { sessions, isLoading, revoke } = useLoginSessions()
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+
+  const handleRevoke = async (sessionId: string) => {
+    setRevokingId(sessionId)
+    try {
+      await revoke(sessionId)
+      toast.success(t("deviceManagement.revoked"))
+    } catch {
+      toast.error(t("deviceManagement.revokeFailed"))
+    } finally {
+      setRevokingId(null)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <GlassCard padding="none" hover="none" className="border-none shadow-sm overflow-hidden">
+        <GlassCardHeader className="p-6 bg-muted/30 border-b border-border/50">
+          <Skeleton className="h-6 w-48" />
+        </GlassCardHeader>
+        <GlassCardContent className="p-4 space-y-4">
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </GlassCardContent>
+      </GlassCard>
+    )
+  }
 
   return (
     <GlassCard padding="none" hover="none" className="border-none shadow-sm overflow-hidden">
@@ -44,30 +79,49 @@ export function UserDevices({ devices }: UserDevicesProps) {
          </div>
       </GlassCardHeader>
       <GlassCardContent className="p-0">
-         <div className="divide-y divide-border/50">
-            {devices.map((item) => (
-              <div key={item.agent_id} className="p-4 flex items-center justify-between hover:bg-muted/20 transition-colors group">
+        {sessions.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            {t("deviceManagement.empty")}
+          </div>
+        ) : (
+          <div className="divide-y divide-border/50">
+            {sessions.map((item) => (
+              <div key={item.id} className="p-4 flex items-center justify-between hover:bg-muted/20 transition-colors group">
                  <div className="flex items-center gap-4">
-                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center bg-teal-500/10 text-teal-500 font-bold shadow-sm border border-white/10")}>
-                      <Monitor size={18} />
+                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center font-bold shadow-sm border border-white/10", item.is_current ? "bg-teal-500/10 text-teal-500" : "bg-muted/50 text-muted-foreground")}>
+                      <DeviceIcon type={item.device_type} />
                     </div>
                     <div>
                        <p className="text-sm font-semibold flex items-center gap-2">
-                          {item.agent_id}
-                          {item.status === "active" && <Badge variant="secondary" className="h-5 text-[10px] bg-green-500/10 text-green-500 hover:bg-green-500/20">{t("deviceManagement.active")}</Badge>}
-                          {item.status === "expired" && <Badge variant="secondary" className="h-5 text-[10px] bg-gray-500/10 text-gray-500 hover:bg-gray-500/20">{t("deviceManagement.expired")}</Badge>}
+                          {item.device_name || t("deviceManagement.unknownDevice")}
+                          {item.is_current && (
+                            <Badge variant="secondary" className="h-5 text-[10px] bg-green-500/10 text-green-500 hover:bg-green-500/20">
+                              {t("deviceManagement.currentDevice")}
+                            </Badge>
+                          )}
                        </p>
-                       <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                          {t("deviceManagement.lastActive")}: {item.issued_at}
+                       <p className="text-xs text-muted-foreground mt-0.5">
+                          {item.ip_address && <span className="font-mono">{item.ip_address}</span>}
+                          {item.ip_address && " · "}
+                          {t("deviceManagement.lastActive")}: {formatTime(item.last_active_at)}
                        </p>
                     </div>
                  </div>
-                 <GlassButton variant="outline" size="sm" className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20">
-                    {t("deviceManagement.revoke")}
-                 </GlassButton>
+                 {!item.is_current && (
+                   <GlassButton
+                     variant="outline"
+                     size="sm"
+                     className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20"
+                     disabled={revokingId === item.id}
+                     onClick={() => handleRevoke(item.id)}
+                   >
+                      {revokingId === item.id ? "..." : t("deviceManagement.revoke")}
+                   </GlassButton>
+                 )}
               </div>
             ))}
-         </div>
+          </div>
+        )}
       </GlassCardContent>
     </GlassCard>
   )

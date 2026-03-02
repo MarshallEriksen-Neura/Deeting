@@ -18,6 +18,10 @@ export const UserProfileSchema = z.object({
   permission_flags: PermissionFlagsSchema,
 })
 
+const UserUpdateResponseSchema = UserProfileSchema.extend({
+  permission_flags: PermissionFlagsSchema.optional(),
+})
+
 export type UserProfile = z.infer<typeof UserProfileSchema>
 
 export type UserUpdateRequest = {
@@ -34,11 +38,18 @@ export async function fetchCurrentUser(): Promise<UserProfile> {
   return UserProfileSchema.parse(data)
 }
 
-export async function updateUserProfile(payload: UserUpdateRequest): Promise<UserProfile> {
+export async function updateUserProfile(
+  payload: UserUpdateRequest,
+  fallbackPermissionFlags: Record<string, number> = {}
+): Promise<UserProfile> {
   const data = await request<UserProfile>({
     url: `${USER_BASE}/me`,
     method: "PATCH",
     data: payload,
   })
-  return UserProfileSchema.parse(data)
+  const parsed = UserUpdateResponseSchema.parse(data)
+  return UserProfileSchema.parse({
+    ...parsed,
+    permission_flags: parsed.permission_flags ?? fallbackPermissionFlags,
+  })
 }

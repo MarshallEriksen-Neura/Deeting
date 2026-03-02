@@ -84,7 +84,7 @@ export interface ImageCropDialogProps {
   /** 是否显示比例切换工具栏，默认 true */
   showAspectRatioToolbar?: boolean
   /** 裁剪完成回调 */
-  onCropComplete: (result: CropResult) => void
+  onCropComplete: (result: CropResult) => void | Promise<void>
 }
 
 /**
@@ -204,7 +204,7 @@ export function ImageCropDialog({
         )
       })
 
-      onCropComplete({ blob, base64, width, height })
+      await onCropComplete({ blob, base64, width, height })
       onOpenChange(false)
     } catch (error) {
       console.error("Crop failed:", error)
@@ -339,11 +339,11 @@ export function ImageCropDialog({
 
         {/* 底部：确认/取消 */}
         <DialogFooter className="px-4 py-3 border-t">
-          <Button variant="outline" onClick={handleCancel} disabled={isProcessing}>
+          <Button type="button" variant="outline" onClick={handleCancel} disabled={isProcessing}>
             <X className="h-4 w-4 mr-1" />
             {t("input.image.cropDialog.cancel")}
           </Button>
-          <Button onClick={handleConfirm} disabled={isProcessing}>
+          <Button type="button" onClick={handleConfirm} disabled={isProcessing}>
             {isProcessing ? (
               <span className="animate-spin mr-1">⏳</span>
             ) : (

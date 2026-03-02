@@ -374,6 +374,32 @@ def build_signed_asset_url(
     )
 
 
+def build_signed_asset_upload_url(
+    object_key: str,
+    *,
+    base_url: str | None = None,
+    ttl_seconds: int | None = None,
+) -> str:
+    api_base = (base_url or "").rstrip("/")
+    if not api_base:
+        api_base = "http://localhost:8000"
+
+    api_prefix = str(getattr(settings, "API_V1_STR", "/api/v1") or "/api/v1").rstrip(
+        "/"
+    )
+    if not api_prefix.startswith("/"):
+        api_prefix = "/" + api_prefix
+
+    ttl = int(ttl_seconds or settings.ASSET_SIGNED_URL_TTL_SECONDS or 3600)
+    expires_at = int(time.time()) + max(1, ttl)
+    sig = _hmac_signature(object_key, expires_at)
+    safe_key = quote(_normalize_object_key(object_key), safe="/")
+    return (
+        f"{api_base}{api_prefix}/media/assets/upload/local/{safe_key}"
+        f"?expires={expires_at}&sig={sig}"
+    )
+
+
 def verify_signed_asset_request(object_key: str, *, expires: int, sig: str) -> None:
     now = int(time.time())
     if int(expires) <= now:
@@ -471,6 +497,37 @@ async def delete_asset_object(object_key: str) -> None:
         await anyio.to_thread.run_sync(_delete_s3)
 
 
+async def store_local_asset_object(
+    object_key: str,
+    data: bytes,
+    *,
+    content_type: str | None = None,
+) -> StoredAsset:
+    if get_effective_asset_storage_mode() != "local":
+        raise AssetStorageNotConfigured("仅 ASSET_STORAGE_MODE=local 支持本地直传")
+    if not data:
+        raise ValueError("empty asset bytes")
+
+    normalized_key = _normalize_object_key(object_key)
+    detected_type = (
+        content_type
+        or mimetypes.guess_type(normalized_key)[0]
+        or "application/octet-stream"
+    )
+
+    def _put_local() -> None:
+        path = _local_path_for_object_key(normalized_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    await anyio.to_thread.run_sync(_put_local)
+    return StoredAsset(
+        object_key=normalized_key,
+        content_type=detected_type,
+        size_bytes=len(data),
+    )
+
+
 async def presign_asset_get_url(object_key: str, *, expires_seconds: int) -> str:
     if get_effective_asset_storage_mode() == "local":
         raise AssetStorageNotConfigured(
@@ -506,6 +563,7 @@ async def presign_asset_put_url(
     expires_seconds: int = 3600,
     content_hash: str | None = None,
     bucket_type: str = "private",
+    base_url: str | None = None,
 ) -> tuple[str, str, int, dict[str, str]]:
     """生成上传预签名 URL
 
@@ -516,18 +574,29 @@ async def presign_asset_put_url(
         content_hash: 文件内容哈希（用于校验）
         bucket_type: 存储桶类型，"private" 或 "public"
     """
-    if get_effective_asset_storage_mode() == "local":
-        raise AssetStorageNotConfigured(
-            "ASSET_STORAGE_MODE=local 时不支持生成上传预签名 URL"
-        )
-    if not _oss_is_configured():
-        raise AssetStorageNotConfigured("OSS_* 未配置，无法生成上传预签名 URL")
     ttl = int(expires_seconds)
     if ttl <= 0:
         raise ValueError("expires_seconds must be positive")
 
     ext = _guess_ext(content_type)
     object_key = _build_object_key(ext=ext, kind=kind)
+    mode = get_effective_asset_storage_mode()
+
+    if mode == "local":
+        upload_url = build_signed_asset_upload_url(
+            object_key,
+            base_url=base_url,
+            ttl_seconds=ttl,
+        )
+        return (
+            object_key,
+            upload_url,
+            ttl,
+            {"Content-Type": content_type},
+        )
+
+    if not _oss_is_configured():
+        raise AssetStorageNotConfigured("OSS_* 未配置，无法生成上传预签名 URL")
 
     upload_headers = _build_upload_headers(
         content_type=content_type, content_hash=content_hash
@@ -574,11 +643,13 @@ __all__ = [
     "SignedAssetUrlError",
     "StoredAsset",
     "build_public_asset_url",
+    "build_signed_asset_upload_url",
     "build_signed_asset_url",
     "delete_asset_object",
     "get_effective_asset_storage_mode",
     "head_asset_object",
     "load_asset_bytes",
+    "store_local_asset_object",
     "presign_asset_get_url",
     "presign_asset_put_url",
     "store_asset_b64",

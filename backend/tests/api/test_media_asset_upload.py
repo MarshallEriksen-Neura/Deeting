@@ -215,3 +215,98 @@ async def test_media_asset_sign_endpoint(
     assert len(data["assets"]) == len(object_keys)
     assert data["assets"][0]["object_key"] == object_keys[0]
     assert data["assets"][0]["asset_url"].startswith("http://test/api/v1/media/assets/")
+
+
+@pytest.mark.asyncio
+async def test_media_asset_upload_init_local_returns_signed_upload_url(
+    client: AsyncClient,
+    auth_tokens: dict,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settings, "SECRET_KEY", "secret")
+    monkeypatch.setattr(settings, "ASSET_STORAGE_MODE", "local")
+    monkeypatch.setattr(settings, "ASSET_LOCAL_DIR", str(tmp_path))
+
+    content = b"local-upload-init"
+    content_hash = hashlib.sha256(content).hexdigest()
+
+    resp = await client.post(
+        "/api/v1/media/assets/upload/init?bucket_type=public",
+        json={
+            "content_hash": content_hash,
+            "size_bytes": len(content),
+            "content_type": "image/png",
+            "kind": "avatar",
+        },
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["deduped"] is False
+    assert data["upload_url"].startswith("http://test/api/v1/media/assets/upload/local/")
+    assert "expires=" in data["upload_url"]
+    assert "sig=" in data["upload_url"]
+    assert data["upload_headers"]["Content-Type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_media_asset_upload_local_put_and_complete(
+    client: AsyncClient,
+    auth_tokens: dict,
+    AsyncSessionLocal,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settings, "SECRET_KEY", "secret")
+    monkeypatch.setattr(settings, "ASSET_STORAGE_MODE", "local")
+    monkeypatch.setattr(settings, "ASSET_LOCAL_DIR", str(tmp_path))
+
+    content = b"local-upload-complete"
+    content_hash = hashlib.sha256(content).hexdigest()
+
+    init_resp = await client.post(
+        "/api/v1/media/assets/upload/init?bucket_type=public",
+        json={
+            "content_hash": content_hash,
+            "size_bytes": len(content),
+            "content_type": "image/png",
+            "kind": "avatar",
+        },
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert init_resp.status_code == 200
+    init_data = init_resp.json()
+    assert init_data["deduped"] is False
+
+    upload_resp = await client.put(
+        init_data["upload_url"],
+        content=content,
+        headers={"Content-Type": "image/png"},
+    )
+    assert upload_resp.status_code == 204
+
+    complete_resp = await client.post(
+        "/api/v1/media/assets/upload/complete?bucket_type=public",
+        json={
+            "object_key": init_data["object_key"],
+            "content_hash": content_hash,
+            "size_bytes": len(content),
+            "content_type": "image/png",
+        },
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert complete_resp.status_code == 200
+    complete_data = complete_resp.json()
+    assert complete_data["object_key"] == init_data["object_key"]
+    assert complete_data["asset_url"]
+    assert init_data["object_key"] in complete_data["asset_url"]
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(MediaAsset).where(MediaAsset.content_hash == content_hash)
+        )
+        asset = result.scalar_one_or_none()
+        assert asset is not None
+        assert asset.object_key == init_data["object_key"]

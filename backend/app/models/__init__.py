@@ -54,6 +54,7 @@ from .image_generation import (
     ImageGenerationStatus,
 )
 from .invite_code import InviteCode, InviteCodeStatus
+from .login_session import LoginSession
 from .knowledge_folder import KnowledgeFolder
 from .knowledge import KnowledgeArtifact, KnowledgeChunk
 from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
@@ -183,6 +184,8 @@ __all__ = [
     "MonitorExecutionLog",
     "MonitorDeadLetter",
     "MonitorStatus",
+    # Login Session
+    "LoginSession",
     # Knowledge (Unified Crawler)
     # Knowledge (Unified Crawler)
     "KnowledgeArtifact",
