@@ -57,6 +57,24 @@ class FakeRedis:
         return lst[start : end + 1]
 
 
+class FakeRedisDecoded:
+    def __init__(self):
+        self.hash_store: dict[str, dict[str, object]] = {}
+
+    async def hset(self, key: str, mapping: dict):
+        bucket = self.hash_store.setdefault(key, {})
+        for field, value in mapping.items():
+            bucket[str(field)] = value
+        return True
+
+    async def hgetall(self, key: str):
+        return self.hash_store.get(key, {}).copy()
+
+    async def hget(self, key: str, field: str):
+        bucket = self.hash_store.get(key, {})
+        return bucket.get(str(field))
+
+
 @pytest.mark.asyncio
 async def test_get_health_status_returns_unknown_when_stale():
     redis = FakeRedis()
@@ -119,3 +137,23 @@ async def test_record_request_result_maps_status():
     down = await svc.get_health_status("inst-3")
     assert down["status"] == "down"
     assert down["latency"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_health_status_supports_decoded_response_keys():
+    redis = FakeRedisDecoded()
+    svc = HealthMonitorService(redis, stale_seconds=300)
+    await redis.hset(
+        "provider:health:inst-4",
+        mapping={
+            "status": "healthy",
+            "latency": 321,
+            "last_check": int(time.time()),
+        },
+    )
+
+    result = await svc.get_health_status("inst-4")
+
+    assert result["status"] == "healthy"
+    assert result["latency"] == 321
+    assert result["last_check"] > 0

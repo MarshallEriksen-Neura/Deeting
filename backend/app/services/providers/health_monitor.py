@@ -88,9 +88,23 @@ class HealthMonitorService:
         if not data:
             return {"status": "unknown", "latency": 0, "last_check": 0}
 
-        status = self._to_str(data.get(b"status", b"unknown")).strip().lower()
-        latency = max(self._to_int(data.get(b"latency", 0)), 0)
-        last_check = max(self._to_int(data.get(b"last_check", 0)), 0)
+        # 兼容 decode_responses=False(bytes key) 与 decode_responses=True(str key)
+        # 两种 Redis 客户端返回格式，避免有值时被误判为 unknown。
+        status_raw = data.get(b"status")
+        if status_raw is None:
+            status_raw = data.get("status", "unknown")
+
+        latency_raw = data.get(b"latency")
+        if latency_raw is None:
+            latency_raw = data.get("latency", 0)
+
+        last_check_raw = data.get(b"last_check")
+        if last_check_raw is None:
+            last_check_raw = data.get("last_check", 0)
+
+        status = self._to_str(status_raw).strip().lower()
+        latency = max(self._to_int(latency_raw), 0)
+        last_check = max(self._to_int(last_check_raw), 0)
 
         # 超过 stale_seconds 未更新的状态统一降级为 unknown，避免旧状态长期误导。
         if (

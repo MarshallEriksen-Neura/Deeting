@@ -32,4 +32,17 @@ describe("ControlsContainer (web)", () => {
     render(<ControlsContainer />)
     expect(screen.queryByLabelText("hud.selectAgent")).toBeNull()
   })
+
+  it("should render auto routing button with new icon gradient style", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    render(<ControlsContainer />)
+
+    const routingButton = screen.getByLabelText("routing.override")
+    const autoIconContainer = routingButton.querySelector("span.w-8.h-8")
+
+    expect(autoIconContainer).toBeInTheDocument()
+    expect(autoIconContainer?.className).toContain("bg-gradient-to-br")
+    expect(autoIconContainer?.className).toContain("from-sky-500")
+    expect(autoIconContainer?.className).toContain("to-cyan-500")
+  })
 })

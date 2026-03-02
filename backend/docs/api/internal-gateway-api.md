@@ -974,6 +974,44 @@ Authorization: Bearer <access_token>
 
 #### 响应体
 
+```json
+{
+  "instances": [
+    {
+      "instance_id": "b8b8fdfd-8b6f-4f7d-8d3e-2b1c9c3c6e1a",
+      "instance_name": "openai-main",
+      "provider": "openai",
+      "icon": null,
+      "models": [
+        {
+          "id": "gpt-4o",
+          "object": "model",
+          "owned_by": "openai",
+          "health_status": "healthy",
+          "latency_ms": 120,
+          "icon": null,
+          "upstream_model_id": "gpt-4o",
+          "provider_model_id": "3a5e9c7f-2f18-4d3c-9e87-15b1c6b3f2a1",
+          "input_types": ["text"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`models[*]` 字段说明：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 前端展示/路由统一模型 ID |
+| `owned_by` | string | 提供商标识 |
+| `health_status` | string | 健康状态：`healthy` / `degraded` / `down` / `unknown` |
+| `latency_ms` | number | 实例最近延迟（毫秒）；无可用数据时为 `0` |
+| `provider_model_id` | string | provider model UUID（内部网关调用必填） |
+| `upstream_model_id` | string | 上游原始模型名 |
+| `input_types` | string[]/null | 支持的输入类型 |
+
 ---
 
 ### 4. Debug: Test Routing
@@ -1040,16 +1078,6 @@ Authorization: Bearer <access_token>
     "validation",
     "routing",
     "upstream_call"
-  ]
-}
-```
-
-```json
-{
-  "data": [
-    {"id": "gpt-4", "object": "model", "owned_by": "gateway"},
-    {"id": "gpt-3.5-turbo", "object": "model", "owned_by": "gateway"},
-    {"id": "claude-3-opus", "object": "model", "owned_by": "gateway"}
   ]
 }
 ```

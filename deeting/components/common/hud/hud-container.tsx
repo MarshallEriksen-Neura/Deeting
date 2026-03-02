@@ -56,6 +56,7 @@ export default function HUD() {
     setMessages,
     clearAttachments,
     isLoading,
+    errorMessage,
     statusCode,
     statusMeta,
     resetSession,
@@ -75,6 +76,7 @@ export default function HUD() {
       setMessages: state.setMessages,
       clearAttachments: state.clearAttachments,
       isLoading: state.isLoading,
+      errorMessage: state.errorMessage,
       statusCode: state.statusCode,
       statusMeta: state.statusMeta,
       resetSession: state.resetSession,
@@ -153,7 +155,12 @@ export default function HUD() {
   const activeModel =
     activeModelSource.find((model) => model.provider_model_id === activeModelId || model.id === activeModelId) ??
     activeModelSource[0];
-  const activeModelVisual = resolveModelVisual(activeModel);
+  const activeModelVisual = resolveModelVisual(activeModel, {
+    healthStatus: activeModel?.health_status ?? null,
+    statusCode,
+    isLoading,
+    hasError: Boolean(errorMessage),
+  });
   const statusDetail = resolveStatusDetail(t, statusCode, statusMeta);
   
   const activeAssistant = useMemo(() => 

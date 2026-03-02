@@ -204,6 +204,8 @@ class ModelInfo(BaseModel):
     id: str
     object: str = "model"
     owned_by: str = "system"
+    health_status: str | None = None
+    latency_ms: int | None = None
     icon: str | None = None
     upstream_model_id: str | None = None
     provider_model_id: str | None = None

@@ -59,6 +59,7 @@ from app.constants.model_capability_map import (
     expand_capabilities,
     normalize_capabilities,
 )
+from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.database import get_db
 from app.core.distributed_lock import distributed_lock
@@ -106,6 +107,7 @@ from app.services.orchestrator.orchestrator import (
 )
 from app.services.orchestrator.registry import step_registry
 from app.services.providers.blocks_transformer import build_normalized_blocks
+from app.services.providers.health_monitor import HealthMonitorService
 from app.services.providers.model_file_proxy_service import (
     ModelFileProxyError,
     ModelFileProxyService,
@@ -1031,6 +1033,28 @@ async def list_models(
     preset_cache: dict[str, any] = {}
     inst_list = list(instances)
     inst_map = {str(i.id): i for i in inst_list}
+    instance_health: dict[str, dict[str, Any]] = {
+        str(i.id): {"status": "unknown", "latency": 0} for i in inst_list
+    }
+    redis_client = getattr(cache, "_redis", None)
+    if redis_client:
+        health_service = HealthMonitorService(redis_client)
+        for inst in inst_list:
+            instance_id = str(inst.id)
+            try:
+                health_payload = await health_service.get_health_status(instance_id)
+            except Exception:
+                health_payload = {"status": "unknown", "latency": 0}
+            status_value = str(health_payload.get("status", "unknown") or "unknown").lower()
+            latency_value = health_payload.get("latency", 0)
+            try:
+                latency_ms = max(int(latency_value or 0), 0)
+            except (TypeError, ValueError):
+                latency_ms = 0
+            instance_health[instance_id] = {
+                "status": status_value,
+                "latency": latency_ms,
+            }
     models = await model_repo.list()
     logger.info(
         f"internal_models_list loaded user_id={user.id} "
@@ -1113,6 +1137,10 @@ async def list_models(
                 "id": m.unified_model_id or m.model_id,
                 "object": "model",
                 "owned_by": preset.provider,
+                "health_status": instance_health.get(str(inst.id), {}).get(
+                    "status", "unknown"
+                ),
+                "latency_ms": instance_health.get(str(inst.id), {}).get("latency", 0),
                 "icon": icon,
                 "upstream_model_id": m.model_id,
                 "provider_model_id": str(m.id),

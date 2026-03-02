@@ -9,6 +9,8 @@ export const ModelInfoSchema = z.object({
   id: z.string(),
   object: z.string().optional(),
   owned_by: z.string().optional(),
+  health_status: z.string().nullable().optional(),
+  latency_ms: z.number().nullable().optional(),
   icon: z.string().nullable().optional(),
   upstream_model_id: z.string().nullable().optional(),
   provider_model_id: z.string().nullable().optional(),

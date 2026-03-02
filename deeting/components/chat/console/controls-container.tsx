@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Paperclip, X, Square, Clapperboard, Lock, FileText } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Paperclip, X, Square, Clapperboard, Lock, FileText, Bot } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useRef, useState, useCallback, memo } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -588,13 +588,13 @@ function ControlsContainer() {
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm ${
                       activeAssistantId
                         ? `bg-gradient-to-br ${activeAssistant?.color ?? "from-slate-400 to-slate-600"}`
-                        : "bg-slate-700"
+                        : "bg-gradient-to-br from-sky-500 to-cyan-500"
                     }`}
                   >
                     {activeAssistantId ? (
                       (activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")
                     ) : (
-                      <Sparkles className="w-4 h-4 text-white" />
+                      <Bot className="w-4 h-4 text-white" />
                     )}
                   </span>
                   <div className="flex flex-col items-start leading-tight">
@@ -620,8 +620,8 @@ function ControlsContainer() {
                     onClick={handleClearOverride}
                     disabled={!activeAssistantId}
                   >
-                    <span className="w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center">
-                      <Sparkles className="w-4 h-4" />
+                    <span className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-500 to-cyan-500 text-white flex items-center justify-center">
+                      <Bot className="w-4 h-4" />
                     </span>
                     <div className="flex flex-col items-start">
                       <span className="text-sm font-medium text-slate-800 dark:text-white/90">

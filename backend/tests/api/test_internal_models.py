@@ -126,6 +126,18 @@ async def test_internal_models_includes_user_instances(
     instances = data.get("instances", [])
     ids = {item["id"] for inst in instances for item in inst.get("models", [])}
     assert "gpt-4-user" in ids
+    user_model = next(
+        item
+        for inst in instances
+        for item in inst.get("models", [])
+        if item.get("id") == "gpt-4-user"
+    )
+    assert user_model["health_status"] in {
+        "healthy",
+        "degraded",
+        "down",
+        "unknown",
+    }
 
 
 @pytest.mark.asyncio
