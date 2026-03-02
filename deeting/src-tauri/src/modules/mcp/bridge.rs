@@ -39,11 +39,14 @@ struct LogFallbackPayload {
     raw: String,
 }
 
+use crate::state::AppState;
+
 #[tauri::command]
 pub async fn set_mcp_backend_url(
-    state: tauri::State<'_, McpBridgeState>,
+    state: tauri::State<'_, AppState>,
     url: String,
 ) -> Result<(), String> {
+    let state = &state.mcp.bridge;
     state.set_base_url(url).await;
     Ok(())
 }
@@ -51,9 +54,10 @@ pub async fn set_mcp_backend_url(
 #[tauri::command]
 pub async fn start_mcp_log_stream(
     app: tauri::AppHandle,
-    state: tauri::State<'_, McpBridgeState>,
+    state: tauri::State<'_, AppState>,
     tool_id: String,
 ) -> Result<(), String> {
+    let state = &state.mcp.bridge;
     let mut streams = state.streams.lock().await;
     if streams.contains_key(&tool_id) {
         return Ok(());
@@ -76,9 +80,10 @@ pub async fn start_mcp_log_stream(
 
 #[tauri::command]
 pub async fn stop_mcp_log_stream(
-    state: tauri::State<'_, McpBridgeState>,
+    state: tauri::State<'_, AppState>,
     tool_id: String,
 ) -> Result<(), String> {
+    let state = &state.mcp.bridge;
     let mut streams = state.streams.lock().await;
     if let Some(handle) = streams.remove(&tool_id) {
         handle.abort();

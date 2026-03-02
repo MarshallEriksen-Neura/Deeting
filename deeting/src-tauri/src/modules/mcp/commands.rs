@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, Emitter};
 
-use crate::mcp::error::McpError;
-use crate::mcp::process::ProcessManager;
-use crate::mcp::store::{expand_path, ExtractedToolFields, McpStore, NewSource, ToolUpsert};
-use crate::mcp::types::{
+use crate::modules::mcp::error::McpError;
+use crate::modules::mcp::process::ProcessManager;
+use crate::modules::mcp::store::{expand_path, ExtractedToolFields, McpStore, NewSource, ToolUpsert};
+use crate::modules::mcp::types::{
     CreateAssistantMessageRequest, CreateLocalAssistantRequest, CreateSourceRequest,
     ImportConfigRequest, LocalAssistant, LocalAssistantMessage, LocalChatInputMessage,
     LocalChatRequest, LocalChatResponse, McpConfigPayload, McpConflictStatus, McpLogEntry,
@@ -17,7 +17,8 @@ use crate::mcp::types::{
     McpTrustLevel, ResolveConflictRequest, SyncSourceRequest, UpdateLocalAssistantRequest,
     UpdateToolConfigRequest,
 };
-use crate::mcp::McpRuntimeState;
+use crate::modules::mcp::McpRuntimeState;
+use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 struct CloudToolSummary {
@@ -51,24 +52,27 @@ struct CloudSubscriptionItem {
 
 #[tauri::command]
 pub async fn set_cloud_base_url(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     url: String,
 ) -> Result<(), String> {
+    let state = &state.mcp;
     let mut base = state.cloud_base_url.write().await;
     *base = url;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn list_mcp_sources(state: State<'_, McpRuntimeState>) -> Result<Vec<McpSource>, String> {
+pub async fn list_mcp_sources(state: State<'_, AppState>) -> Result<Vec<McpSource>, String> {
+    let state = &state.mcp;
     state.store.list_sources().await.map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn create_mcp_source(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     payload: CreateSourceRequest,
 ) -> Result<McpSource, String> {
+    let state = &state.mcp;
     let source = state
         .store
         .insert_source(NewSource {
@@ -87,10 +91,11 @@ pub async fn create_mcp_source(
 
 #[tauri::command]
 pub async fn sync_mcp_source(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     source_id: String,
     payload: SyncSourceRequest,
 ) -> Result<Vec<McpTool>, String> {
+    let state = &state.mcp;
     let source = state
         .store
         .get_source(&source_id)
@@ -126,22 +131,25 @@ pub async fn sync_mcp_source(
 }
 
 #[tauri::command]
-pub async fn list_mcp_tools(state: State<'_, McpRuntimeState>) -> Result<Vec<McpTool>, String> {
+pub async fn list_mcp_tools(state: State<'_, AppState>) -> Result<Vec<McpTool>, String> {
+    let state = &state.mcp;
     state.store.list_tools().await.map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn list_local_assistants(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<LocalAssistant>, String> {
+    let state = &state.mcp;
     state.store.list_local_assistants().await.map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn create_local_assistant(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     payload: CreateLocalAssistantRequest,
 ) -> Result<String, String> {
+    let state = &state.mcp;
     state
         .store
         .create_local_assistant(payload)
@@ -151,10 +159,11 @@ pub async fn create_local_assistant(
 
 #[tauri::command]
 pub async fn update_local_assistant(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     id: String,
     payload: UpdateLocalAssistantRequest,
 ) -> Result<LocalAssistant, String> {
+    let state = &state.mcp;
     state
         .store
         .update_local_assistant(&id, payload)
@@ -164,9 +173,10 @@ pub async fn update_local_assistant(
 
 #[tauri::command]
 pub async fn delete_local_assistant(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
+    let state = &state.mcp;
     state
         .store
         .delete_local_assistant(&id)
@@ -176,9 +186,10 @@ pub async fn delete_local_assistant(
 
 #[tauri::command]
 pub async fn list_assistant_messages(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     assistant_id: String,
 ) -> Result<Vec<LocalAssistantMessage>, String> {
+    let state = &state.mcp;
     state
         .store
         .list_assistant_messages(&assistant_id)
@@ -188,9 +199,10 @@ pub async fn list_assistant_messages(
 
 #[tauri::command]
 pub async fn append_assistant_message(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     payload: CreateAssistantMessageRequest,
 ) -> Result<LocalAssistantMessage, String> {
+    let state = &state.mcp;
     state
         .store
         .append_assistant_message(payload)
@@ -200,9 +212,10 @@ pub async fn append_assistant_message(
 
 #[tauri::command]
 pub async fn local_chat_complete(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     payload: LocalChatRequest,
 ) -> Result<LocalChatResponse, String> {
+    let state = &state.mcp;
     let model = payload.model.trim().to_string();
     if model.is_empty() {
         return Err(to_string(McpError::validation("model is required")));
@@ -285,9 +298,10 @@ pub async fn local_chat_complete(
 
 #[tauri::command]
 pub async fn delete_assistant_messages(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     assistant_id: String,
 ) -> Result<(), String> {
+    let state = &state.mcp;
     state
         .store
         .delete_assistant_messages(&assistant_id)
@@ -297,9 +311,10 @@ pub async fn delete_assistant_messages(
 
 #[tauri::command]
 pub async fn import_mcp_config(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     payload: ImportConfigRequest,
 ) -> Result<Vec<McpTool>, String> {
+    let state = &state.mcp;
     let source = if let Some(source_id) = payload.source_id {
         state
             .store
@@ -319,9 +334,10 @@ pub async fn import_mcp_config(
 #[tauri::command]
 pub async fn start_mcp_tool(
     app: AppHandle,
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<McpTool, String> {
+    let state = &state.mcp;
     let tool = state
         .store
         .get_tool(&tool_id)
@@ -339,7 +355,7 @@ pub async fn start_mcp_tool(
             .map_err(to_string)?;
         app.emit_all(&format!("mcp-log://{}", tool_id), McpLogEntry {
             timestamp: now_rfc3339(),
-            stream: crate::mcp::types::McpLogStream::Event,
+            stream: crate::modules::mcp::types::McpLogStream::Event,
             message,
         }).ok();
         return Err("missing required env".to_string());
@@ -361,9 +377,10 @@ pub async fn start_mcp_tool(
 
 #[tauri::command]
 pub async fn stop_mcp_tool(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<McpTool, String> {
+    let state = &state.mcp;
     state
         .process_manager
         .stop_tool(&tool_id)
@@ -380,19 +397,21 @@ pub async fn stop_mcp_tool(
 
 #[tauri::command]
 pub async fn update_mcp_tool_env(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     tool_id: String,
     env: Option<HashMap<String, String>>,
 ) -> Result<McpTool, String> {
+    let state = &state.mcp;
     state.store.update_tool_env(&tool_id, env).await.map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn apply_pending_config(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     tool_id: String,
     payload: UpdateToolConfigRequest,
 ) -> Result<McpTool, String> {
+    let state = &state.mcp;
     if !payload.apply_pending {
         return Err("apply_pending must be true".to_string());
     }
@@ -401,10 +420,11 @@ pub async fn apply_pending_config(
 
 #[tauri::command]
 pub async fn resolve_mcp_conflict(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     tool_id: String,
     payload: ResolveConflictRequest,
 ) -> Result<McpTool, String> {
+    let state = &state.mcp;
     match payload.action.as_str() {
         "update" => apply_pending_update(&state, &tool_id).await.map_err(to_string),
         "keep" => {
@@ -422,17 +442,19 @@ pub async fn resolve_mcp_conflict(
 
 #[tauri::command]
 pub async fn get_mcp_logs(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<Vec<McpLogEntry>, String> {
+    let state = &state.mcp;
     Ok(state.process_manager.logs(&tool_id).await)
 }
 
 #[tauri::command]
 pub async fn clear_mcp_logs(
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<(), String> {
+    let state = &state.mcp;
     state.process_manager.clear_logs(&tool_id).await;
     Ok(())
 }
@@ -440,9 +462,10 @@ pub async fn clear_mcp_logs(
 #[tauri::command]
 pub async fn sync_cloud_subscriptions(
     app: AppHandle,
-    state: State<'_, McpRuntimeState>,
+    state: State<'_, AppState>,
     access_token: String,
 ) -> Result<Vec<McpTool>, String> {
+    let state = &state.mcp;
     let base_url = state.cloud_base_url.read().await.clone();
     let url = format!("{}/api/v1/mcp/subscriptions", base_url.trim_end_matches('/'));
     let response = state
@@ -563,7 +586,7 @@ pub async fn sync_cloud_subscriptions(
                 .await;
             app.emit_all(&format!("mcp-log://{}", tool.id), McpLogEntry {
                 timestamp: now_rfc3339(),
-                stream: crate::mcp::types::McpLogStream::Event,
+                stream: crate::modules::mcp::types::McpLogStream::Event,
                 message: "cloud subscription removed".to_string(),
             }).ok();
         }
