@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef } from "react"
 import { cancelChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat"
-import { buildMessageContent } from "@/lib/chat/message-content"
+import { buildMessageContent, serializeMessageContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { createRequestId } from "@/lib/chat/request-id"
 
@@ -27,9 +27,13 @@ export function resolveAssistantRequestContext({
   }
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
-import { fetchConversationHistory } from "@/lib/api/conversations"
+import {
+  fetchConversationHistory,
+  regenerateConversationReply,
+  sendConversationMessage,
+} from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
-import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
+import { useChatStore, type Message } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 function createMessageId() {
@@ -280,12 +284,14 @@ export function useChatMessagingService() {
       const windowState = await fetchConversationHistory(sessionId, { limit: 30 })
       const mapped = mapConversationMessages(windowState.messages ?? [])
       let resolved = mapped
-      try {
-        resolved = await resolveMessageAttachments(mapped)
-      } catch (error) {
-        console.warn("signAssets_failed", error)
-        setErrorMessage("i18n:input.image.errorSign")
-        resolved = mapped
+      if (!isTauriRuntime) {
+        try {
+          resolved = await resolveMessageAttachments(mapped)
+        } catch (error) {
+          console.warn("signAssets_failed", error)
+          setErrorMessage("i18n:input.image.errorSign")
+          resolved = mapped
+        }
       }
       setMessages(resolved)
       setSessionId(sessionId)
@@ -300,7 +306,7 @@ export function useChatMessagingService() {
     } finally {
       setHistoryState({ loading: false })
     }
-  }, [setMessages, setSessionId, setErrorMessage, setHistoryState])
+  }, [isTauriRuntime, setMessages, setSessionId, setErrorMessage, setHistoryState])
 
   const resetSession = useCallback(() => {
     setMessages([])
@@ -329,12 +335,14 @@ export function useChatMessagingService() {
       })
       const mapped = mapConversationMessages(windowState.messages ?? [])
       let resolved = mapped
-      try {
-        resolved = await resolveMessageAttachments(mapped)
-      } catch (error) {
-        console.warn("signAssets_failed", error)
-        setErrorMessage("i18n:input.image.errorSign")
-        resolved = mapped
+      if (!isTauriRuntime) {
+        try {
+          resolved = await resolveMessageAttachments(mapped)
+        } catch (error) {
+          console.warn("signAssets_failed", error)
+          setErrorMessage("i18n:input.image.errorSign")
+          resolved = mapped
+        }
       }
       const currentMessages = useChatStore.getState().messages
       setMessages([...resolved, ...currentMessages])
@@ -347,7 +355,7 @@ export function useChatMessagingService() {
     } finally {
       setHistoryState({ loading: false })
     }
-  }, [setErrorMessage, setHistoryState, setMessages])
+  }, [isTauriRuntime, setErrorMessage, setHistoryState, setMessages])
 
   const cancelActiveRequest = useCallback(async () => {
     const requestId = requestIdRef.current
@@ -401,7 +409,6 @@ export function useChatMessagingService() {
     setIsLoading(true)
     clearStatus()
 
-    const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant?.systemPrompt)
     let resolvedSessionId = sessionId
     const storageKey = sessionStorageKey
     if (!resolvedSessionId) {
@@ -411,19 +418,72 @@ export function useChatMessagingService() {
         setSessionId(resolvedSessionId)
       }
     }
-    const payload = {
-      model: selectedModel.id,
-      provider_model_id: selectedModel.provider_model_id ?? undefined,
-      messages: requestMessages,
-      temperature: config.temperature,
-      max_tokens: config.maxTokens,
-      request_id: createRequestId(),
-      assistant_id: assistantId,
-      session_id: resolvedSessionId ?? undefined,
-    }
-    requestIdRef.current = payload.request_id ?? null
 
     try {
+      if (isTauriRuntime) {
+        if (!resolvedSessionId) {
+          throw new Error("Session not found")
+        }
+
+        const response = await sendConversationMessage(resolvedSessionId, {
+          content: serializeMessageContent(trimmedInput, attachments),
+          model: selectedModel.id,
+          provider_model_id: selectedModel.provider_model_id ?? undefined,
+          temperature: config.temperature,
+          top_p: config.topP,
+          max_tokens: config.maxTokens,
+        })
+        setSessionId(response.session_id || resolvedSessionId)
+
+        const normalized = mapConversationMessages([response.assistant_message]).find(
+          (message) => message.role === "assistant"
+        )
+        if (!normalized) {
+          const fallback =
+            typeof response.assistant_message.content === "string"
+              ? response.assistant_message.content
+              : ""
+          if (fallback.trim().length > 0) {
+            appendMessageBlocks(assistantMessageId, [
+              { type: "text", content: fallback } as MessageBlock,
+            ])
+          }
+          return
+        }
+
+        const latestMessages = useChatStore.getState().messages
+        setMessages(
+          latestMessages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: normalized.content,
+                  attachments: normalized.attachments,
+                  createdAt: normalized.createdAt,
+                  metaInfo: normalized.metaInfo,
+                  toolCalls: normalized.toolCalls,
+                  toolCallId: normalized.toolCallId,
+                  blocks: normalized.blocks,
+                }
+              : message
+          )
+        )
+        return
+      }
+
+      const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant?.systemPrompt)
+      const payload = {
+        model: selectedModel.id,
+        provider_model_id: selectedModel.provider_model_id ?? undefined,
+        messages: requestMessages,
+        temperature: config.temperature,
+        max_tokens: config.maxTokens,
+        request_id: createRequestId(),
+        assistant_id: assistantId,
+        session_id: resolvedSessionId ?? undefined,
+      }
+      requestIdRef.current = payload.request_id ?? null
+
       const streamedText = await streamChatCompletion(
         { ...payload, stream: streamEnabled, status_stream: true },
         {
@@ -602,6 +662,7 @@ export function useChatMessagingService() {
     setErrorMessage,
     setStatus,
     clearStatus,
+    isTauriRuntime,
   ])
 
   const regenerateMessage = useCallback(async (targetMessageId: string) => {
@@ -621,7 +682,7 @@ export function useChatMessagingService() {
       models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
       models[0]
     const activeAssistant = agent
-    if (!selectedModel || (isTauriRuntime && !activeAssistant)) return
+    if (!selectedModel) return
 
     const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
       isTauriRuntime,
@@ -643,7 +704,6 @@ export function useChatMessagingService() {
     clearStatus()
 
     // 构建请求消息（不含被删除的 assistant 消息）
-    const requestMessages = buildChatMessages(messagesBeforeTarget, activeAssistant?.systemPrompt)
     let resolvedSessionId = sessionId
     const storageKey = sessionStorageKey
     if (!resolvedSessionId) {
@@ -653,20 +713,73 @@ export function useChatMessagingService() {
         setSessionId(resolvedSessionId)
       }
     }
-    const payload = {
-      model: selectedModel.id,
-      provider_model_id: selectedModel.provider_model_id ?? undefined,
-      messages: requestMessages,
-      temperature: config.temperature,
-      max_tokens: config.maxTokens,
-      request_id: createRequestId(),
-      assistant_id: assistantId,
-      session_id: resolvedSessionId ?? undefined,
-      regenerate: true,
-    }
-    requestIdRef.current = payload.request_id ?? null
 
     try {
+      if (isTauriRuntime) {
+        if (!resolvedSessionId) {
+          throw new Error("Session not found")
+        }
+
+        const response = await regenerateConversationReply(resolvedSessionId, {
+          model: selectedModel.id,
+          provider_model_id: selectedModel.provider_model_id ?? undefined,
+          temperature: config.temperature,
+          top_p: config.topP,
+          max_tokens: config.maxTokens,
+        })
+        setSessionId(response.session_id || resolvedSessionId)
+
+        const normalized = mapConversationMessages([response.message]).find(
+          (message) => message.role === "assistant"
+        )
+
+        if (!normalized) {
+          const fallback =
+            typeof response.message.content === "string"
+              ? response.message.content
+              : ""
+          if (fallback.trim().length > 0) {
+            appendMessageBlocks(assistantMessageId, [
+              { type: "text", content: fallback } as MessageBlock,
+            ])
+          }
+          return
+        }
+
+        const latestMessages = useChatStore.getState().messages
+        setMessages(
+          latestMessages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: normalized.content,
+                  attachments: normalized.attachments,
+                  createdAt: normalized.createdAt,
+                  metaInfo: normalized.metaInfo,
+                  toolCalls: normalized.toolCalls,
+                  toolCallId: normalized.toolCallId,
+                  blocks: normalized.blocks,
+                }
+              : message
+          )
+        )
+        return
+      }
+
+      const requestMessages = buildChatMessages(messagesBeforeTarget, activeAssistant?.systemPrompt)
+      const payload = {
+        model: selectedModel.id,
+        provider_model_id: selectedModel.provider_model_id ?? undefined,
+        messages: requestMessages,
+        temperature: config.temperature,
+        max_tokens: config.maxTokens,
+        request_id: createRequestId(),
+        assistant_id: assistantId,
+        session_id: resolvedSessionId ?? undefined,
+        regenerate: true,
+      }
+      requestIdRef.current = payload.request_id ?? null
+
       const streamedText = await streamChatCompletion(
         { ...payload, stream: streamEnabled, status_stream: true },
         {
@@ -829,6 +942,7 @@ export function useChatMessagingService() {
     setErrorMessage,
     setStatus,
     clearStatus,
+    isTauriRuntime,
   ])
 
   return {

@@ -4,6 +4,16 @@ import { request } from "@/lib/http"
 
 const CONVERSATION_BASE = "/api/v1/internal/conversations"
 
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
+
 export const ConversationMessageSchema = z.object({
   role: z.string(),
   content: z.any().nullable().optional(),
@@ -25,6 +35,18 @@ export type ConversationMessage = z.infer<typeof ConversationMessageSchema>
 export type ConversationWindow = z.infer<typeof ConversationWindowSchema>
 
 export async function fetchConversationWindow(sessionId: string): Promise<ConversationWindow> {
+  if (isTauriRuntime()) {
+    const history = await invokeTauri<ConversationHistoryResponse>(
+      "list_local_conversation_history",
+      { session_id: sessionId, query: { limit: 200 } }
+    )
+    return ConversationWindowSchema.parse({
+      session_id: sessionId,
+      messages: history.messages ?? [],
+      meta: null,
+      summary: null,
+    })
+  }
   const data = await request({
     url: `${CONVERSATION_BASE}/${sessionId}`,
     method: "GET",
@@ -85,6 +107,26 @@ export async function fetchConversationHistory(
   sessionId: string,
   options: { cursor?: number; limit?: number } = {}
 ): Promise<ConversationHistoryResponse> {
+  if (isTauriRuntime()) {
+    try {
+      const data = await invokeTauri<ConversationHistoryResponse>(
+        "list_local_conversation_history",
+        {
+          session_id: sessionId,
+          query: {
+            cursor: options.cursor ?? null,
+            limit: options.limit ?? null,
+          },
+        }
+      )
+      const normalized = normalizeConversationHistoryPayload(sessionId, data)
+      const parsed = ConversationHistoryResponseSchema.safeParse(data)
+      return parsed.success ? parsed.data : normalized
+    } catch {
+      return { session_id: sessionId, messages: [], next_cursor: null, has_more: false }
+    }
+  }
+
   const params = new URLSearchParams()
   if (options.cursor) {
     params.set("cursor", String(options.cursor))
@@ -168,6 +210,54 @@ export const ConversationRenameResponseSchema = z.object({
 
 export type ConversationRenameResponse = z.infer<typeof ConversationRenameResponseSchema>
 
+export const ConversationDeleteResponseSchema = z.object({
+  session_id: z.string(),
+  turn_index: z.number().int(),
+  deleted: z.boolean(),
+})
+
+export type ConversationDeleteResponse = z.infer<typeof ConversationDeleteResponseSchema>
+
+export const ConversationClearResponseSchema = z.object({
+  session_id: z.string(),
+  cleared: z.boolean(),
+})
+
+export type ConversationClearResponse = z.infer<typeof ConversationClearResponseSchema>
+
+export const ConversationRegenerateResponseSchema = z.object({
+  session_id: z.string(),
+  deleted_turn_index: z.number().int().nullable().optional(),
+  message: ConversationMessageSchema,
+})
+
+export type ConversationRegenerateResponse = z.infer<typeof ConversationRegenerateResponseSchema>
+
+export const ConversationSendResponseSchema = z.object({
+  session_id: z.string(),
+  user_message: ConversationMessageSchema,
+  assistant_message: ConversationMessageSchema,
+})
+
+export type ConversationSendResponse = z.infer<typeof ConversationSendResponseSchema>
+
+export type ConversationRegenerateRequest = {
+  model: string
+  provider_model_id?: string | null
+  temperature?: number
+  top_p?: number
+  max_tokens?: number
+}
+
+export type ConversationSendRequest = {
+  content: string
+  model: string
+  provider_model_id?: string | null
+  temperature?: number
+  top_p?: number
+  max_tokens?: number
+}
+
 export type ConversationSessionsQuery = {
   cursor?: string | null
   size?: number
@@ -178,6 +268,18 @@ export type ConversationSessionsQuery = {
 export async function fetchConversationSessions(
   query: ConversationSessionsQuery
 ): Promise<ConversationSessionPage> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationSessionPage>("list_local_conversations", {
+      query: {
+        cursor: query.cursor ?? null,
+        size: query.size ?? null,
+        assistant_id: query.assistant_id ?? null,
+        status: query.status ?? "active",
+      },
+    })
+    return ConversationSessionPageSchema.parse(data)
+  }
+
   const data = await request({
     url: CONVERSATION_BASE,
     method: "GET",
@@ -189,6 +291,16 @@ export async function fetchConversationSessions(
 export async function createConversation(
   payload: ConversationCreateRequest = {}
 ): Promise<ConversationCreateResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationCreateResponse>("create_local_conversation", {
+      payload: {
+        assistant_id: payload.assistant_id ?? null,
+        title: payload.title ?? null,
+      },
+    })
+    return ConversationCreateResponseSchema.parse(data)
+  }
+
   const data = await request({
     url: CONVERSATION_BASE,
     method: "POST",
@@ -198,6 +310,13 @@ export async function createConversation(
 }
 
 export async function archiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationArchiveResponse>("archive_local_conversation", {
+      session_id: sessionId,
+    })
+    return ConversationArchiveResponseSchema.parse(data)
+  }
+
   const data = await request({
     url: `${CONVERSATION_BASE}/${sessionId}/archive`,
     method: "POST",
@@ -206,6 +325,13 @@ export async function archiveConversation(sessionId: string): Promise<Conversati
 }
 
 export async function unarchiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationArchiveResponse>("unarchive_local_conversation", {
+      session_id: sessionId,
+    })
+    return ConversationArchiveResponseSchema.parse(data)
+  }
+
   const data = await request({
     url: `${CONVERSATION_BASE}/${sessionId}/unarchive`,
     method: "POST",
@@ -217,10 +343,121 @@ export async function renameConversation(
   sessionId: string,
   title: string
 ): Promise<ConversationRenameResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationRenameResponse>("rename_local_conversation", {
+      session_id: sessionId,
+      payload: { title },
+    })
+    return ConversationRenameResponseSchema.parse(data)
+  }
+
   const data = await request({
     url: `${CONVERSATION_BASE}/${sessionId}/title`,
     method: "PATCH",
     data: { title },
   })
   return ConversationRenameResponseSchema.parse(data)
+}
+
+export async function deleteConversationMessage(
+  sessionId: string,
+  turnIndex: number
+): Promise<ConversationDeleteResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationDeleteResponse>("delete_local_conversation_message", {
+      session_id: sessionId,
+      turn_index: turnIndex,
+    })
+    return ConversationDeleteResponseSchema.parse(data)
+  }
+
+  const data = await request({
+    url: `${CONVERSATION_BASE}/${sessionId}/messages/${turnIndex}`,
+    method: "DELETE",
+  })
+  return ConversationDeleteResponseSchema.parse(data)
+}
+
+export async function clearConversation(sessionId: string): Promise<ConversationClearResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationClearResponse>("clear_local_conversation", {
+      session_id: sessionId,
+    })
+    return ConversationClearResponseSchema.parse(data)
+  }
+
+  const data = await request({
+    url: `${CONVERSATION_BASE}/${sessionId}/clear`,
+    method: "POST",
+  })
+  return ConversationClearResponseSchema.parse(data)
+}
+
+export async function regenerateConversationReply(
+  sessionId: string,
+  payload: ConversationRegenerateRequest
+): Promise<ConversationRegenerateResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ConversationRegenerateResponse>("regenerate_local_conversation_reply", {
+      session_id: sessionId,
+      payload: {
+        model: payload.model,
+        provider_model_id: payload.provider_model_id ?? null,
+        temperature: payload.temperature ?? null,
+        top_p: payload.top_p ?? null,
+        max_tokens: payload.max_tokens ?? null,
+      },
+    })
+    return ConversationRegenerateResponseSchema.parse(data)
+  }
+
+  const data = await request<{
+    session_id?: string | null
+    choices?: Array<{ message?: { content?: string | null } }>
+  }>({
+    url: `${CONVERSATION_BASE}/${sessionId}/regenerate`,
+    method: "POST",
+    data: {
+      model: payload.model,
+      temperature: payload.temperature,
+      max_tokens: payload.max_tokens,
+    },
+  })
+
+  const content = data?.choices?.[0]?.message?.content ?? ""
+  return ConversationRegenerateResponseSchema.parse({
+    session_id: data?.session_id || sessionId,
+    deleted_turn_index: null,
+    message: {
+      role: "assistant",
+      content,
+      turn_index: null,
+      created_at: null,
+      is_truncated: null,
+      name: null,
+      meta_info: null,
+    },
+  })
+}
+
+export async function sendConversationMessage(
+  sessionId: string,
+  payload: ConversationSendRequest
+): Promise<ConversationSendResponse> {
+  if (!isTauriRuntime()) {
+    throw new Error("sendConversationMessage is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<ConversationSendResponse>("send_local_conversation_message", {
+    session_id: sessionId,
+    payload: {
+      content: payload.content,
+      model: payload.model,
+      provider_model_id: payload.provider_model_id ?? null,
+      temperature: payload.temperature ?? null,
+      top_p: payload.top_p ?? null,
+      max_tokens: payload.max_tokens ?? null,
+    },
+  })
+  return ConversationSendResponseSchema.parse(data)
 }

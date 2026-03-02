@@ -1,4 +1,4 @@
-pub mod modules;
+﻿pub mod modules;
 pub mod state;
 
 use std::path::Path;
@@ -6,6 +6,7 @@ use std::sync::Arc;
 use log::warn;
 use tauri::Manager;
 use crate::modules::mcp::error::McpError;
+use crate::modules::memory::MemoryState;
 use crate::modules::mcp::process::ProcessManager;
 use crate::modules::mcp::store::{expand_path, McpStore};
 use crate::modules::mcp::types::McpSourceStatus;
@@ -27,6 +28,7 @@ pub fn run() {
       }
       let handle = app.handle().clone();
       let cloud_base_url = resolve_cloud_base_url();
+      let lancedb_uri = resolve_lancedb_uri(app)?;
       let state = tauri::async_runtime::block_on(async {
         let database_url = resolve_database_url(app)?;
         
@@ -45,8 +47,10 @@ pub fn run() {
         // Providers 初始化
         let provider_state = ProviderState::new(&database_url).await
             .map_err(|e| McpError::Storage(e.to_string()))?;
+        let memory_state = MemoryState::new(&lancedb_uri).await
+            .map_err(|e| McpError::Storage(e.to_string()))?;
 
-        Ok::<_, McpError>(AppState::new(mcp_state, provider_state))
+        Ok::<_, McpError>(AppState::new(mcp_state, provider_state, memory_state))
       })
       .map_err(|err| Box::<dyn std::error::Error>::from(err))?;
 
@@ -92,12 +96,25 @@ pub fn run() {
       crate::modules::mcp::commands::sync_mcp_source,
       crate::modules::mcp::commands::list_mcp_tools,
       crate::modules::mcp::commands::list_local_assistants,
+      crate::modules::mcp::commands::list_local_assistant_entities,
+      crate::modules::mcp::commands::list_local_assistant_versions,
       crate::modules::mcp::commands::create_local_assistant,
       crate::modules::mcp::commands::update_local_assistant,
       crate::modules::mcp::commands::delete_local_assistant,
       crate::modules::mcp::commands::list_assistant_messages,
       crate::modules::mcp::commands::append_assistant_message,
       crate::modules::mcp::commands::delete_assistant_messages,
+      crate::modules::mcp::commands::list_local_conversations,
+      crate::modules::mcp::commands::create_local_conversation,
+      crate::modules::mcp::commands::archive_local_conversation,
+      crate::modules::mcp::commands::unarchive_local_conversation,
+      crate::modules::mcp::commands::rename_local_conversation,
+      crate::modules::mcp::commands::list_local_conversation_history,
+      crate::modules::mcp::commands::append_local_conversation_message,
+      crate::modules::mcp::commands::delete_local_conversation_message,
+      crate::modules::mcp::commands::clear_local_conversation,
+      crate::modules::mcp::commands::send_local_conversation_message,
+      crate::modules::mcp::commands::regenerate_local_conversation_reply,
       crate::modules::mcp::commands::import_mcp_config,
       crate::modules::mcp::commands::start_mcp_tool,
       crate::modules::mcp::commands::stop_mcp_tool,
@@ -112,9 +129,23 @@ pub fn run() {
       crate::modules::mcp::bridge::stop_mcp_log_stream,
 
       // Provider Commands
+      crate::modules::providers::commands::list_local_provider_presets,
+      crate::modules::providers::commands::replace_local_provider_presets,
       crate::modules::providers::commands::list_local_provider_instances,
       crate::modules::providers::commands::create_local_provider_instance,
-      crate::modules::providers::commands::list_local_provider_models
+      crate::modules::providers::commands::update_local_provider_instance,
+      crate::modules::providers::commands::delete_local_provider_instance,
+      crate::modules::providers::commands::list_local_provider_models,
+      crate::modules::providers::commands::sync_local_provider_models,
+      crate::modules::providers::commands::quick_add_local_provider_models,
+      crate::modules::providers::commands::update_local_provider_model,
+      crate::modules::providers::commands::test_local_provider_model,
+
+      // Local Memory Commands
+      crate::modules::memory::commands::append_local_memory,
+      crate::modules::memory::commands::list_local_memories,
+      crate::modules::memory::commands::delete_local_memory,
+      crate::modules::memory::commands::clear_local_memories
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -154,6 +185,35 @@ fn default_db_path<R: tauri::Runtime>(app: &tauri::App<R>) -> String {
     return format!("{user_profile}/.config/deeting/deeting.db");
   }
   "deeting.db".to_string()
+}
+
+fn resolve_lancedb_uri<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<String, McpError> {
+  let path = non_empty_env("DESKTOP_LANCEDB_PATH")
+    .unwrap_or_else(|| default_lancedb_path(app));
+  let expanded = expand_path(&path);
+  let absolute = if expanded.is_absolute() {
+    expanded
+  } else {
+    std::env::current_dir()
+      .map_err(|err| McpError::Storage(err.to_string()))?
+      .join(expanded)
+  };
+  std::fs::create_dir_all(&absolute)
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+  Ok(absolute.to_string_lossy().to_string())
+}
+
+fn default_lancedb_path<R: tauri::Runtime>(app: &tauri::App<R>) -> String {
+  if let Ok(app_data_dir) = app.path().app_data_dir() {
+    return app_data_dir.join("memory_lancedb").to_string_lossy().to_string();
+  }
+  if let Some(home) = non_empty_env("HOME") {
+    return format!("{home}/.config/deeting/memory_lancedb");
+  }
+  if let Some(user_profile) = non_empty_env("USERPROFILE") {
+    return format!("{user_profile}/.config/deeting/memory_lancedb");
+  }
+  "memory_lancedb".to_string()
 }
 
 fn non_empty_env(key: &str) -> Option<String> {

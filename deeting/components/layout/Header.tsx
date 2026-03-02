@@ -3,7 +3,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu } from "lucide-react"
+import { Menu, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
 
@@ -29,26 +29,31 @@ export function Header({
   userName,
   userEmail,
   userAvatarSrc,
-  onMenuClick,
   className,
 }: HeaderProps) {
   const pathname = usePathname()
-  
-  if (shouldHideGlobalHeader(pathname)) {
-    return null
-  }
 
+  // All hooks must be called before any conditional return
   const tHeader = useTranslations("common.header")
   const tNav = useTranslations("common.headerNav")
   const { isAuthenticated } = useAuthStore()
   const { profile } = useUserProfile()
   const { logout } = useAuthService()
   const [mounted, setMounted] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
   }, [])
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [pathname])
+
+  if (shouldHideGlobalHeader(pathname)) {
+    return null
+  }
 
   const navWithActive = navItems.map((item) => {
     const match =
@@ -71,54 +76,66 @@ export function Header({
       className={cn(
         // iOS-style floating header
         "fixed top-4 left-4 right-4 z-50",
-        // Glassmorphism effect - iOS frosted glass
+        // Glassmorphism effect
         "bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl",
         // iOS-style border and shadow
         "border border-black/5 dark:border-white/10",
         "shadow-[0_8px_32px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.4)]",
-        // Rounded corners (iOS style)
+        // Rounded corners
         "rounded-2xl",
         // Smooth transitions
         "transition-all duration-300 ease-out",
         className
       )}
     >
-      <Container className="flex h-16 items-center justify-between px-6" gutter="none">
-        {/* Left section: Logo + Navigation */}
-        <div className="flex items-center gap-6">
-          {/* Mobile menu button */}
+      {/* Main header bar */}
+      <Container className="flex h-16 items-center justify-between px-4 sm:px-6">
+        {/* Left section: Hamburger (mobile) + Logo + Nav (desktop) */}
+        <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+          {/* Mobile menu toggle */}
           <GlassButton
             variant="ghost"
             size="icon-sm"
-            className="md:hidden"
-            onClick={onMenuClick}
+            className="md:hidden shrink-0"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-expanded={mobileMenuOpen}
+            aria-label="Toggle menu"
           >
-            <Menu className="size-5" />
-            <span className="sr-only">Toggle menu</span>
+            {mobileMenuOpen
+              ? <X className="size-5" />
+              : <Menu className="size-5" />
+            }
           </GlassButton>
 
           {/* Logo */}
           <Link
             href="/"
-            className="flex items-center transition-all duration-200 ease-out hover:opacity-75 active:scale-95"
+            className="flex items-center shrink-0 transition-all duration-200 ease-out hover:opacity-75 active:scale-95"
           >
             <Image
               src={logoSrc}
               alt={logoText}
               width={200}
               height={40}
-              className="h-7 w-auto object-contain sm:h-8 lg:h-9 xl:h-10"
+              className="h-7 w-auto object-contain sm:h-8 lg:h-9"
               priority
             />
           </Link>
 
+          {/* Desktop nav links */}
           <NavLinks items={navWithActive} />
         </div>
 
-        <div className="flex items-center gap-2">
-          <ActionButtons />
-          <LanguageSwitcher />
-          <div className="mx-1 h-5 w-px bg-black/10 dark:bg-white/10" />
+        {/* Right section */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Action buttons + language — desktop only */}
+          <div className="hidden md:flex items-center gap-1">
+            <ActionButtons />
+            <LanguageSwitcher />
+            <div className="mx-1 h-5 w-px bg-black/10 dark:bg-white/10" />
+          </div>
+
+          {/* User menu / login — always visible */}
           {mounted && isAuthenticated ? (
             <UserMenu
               userName={profile?.username ?? profile?.email ?? userName ?? tHeader("guest")}
@@ -131,7 +148,7 @@ export function Header({
               asChild
               variant="ghost"
               size="sm"
-              className="h-9 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-all duration-200 ease-out active:scale-95"
+              className="h-9 px-3 sm:px-4 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-all duration-200 ease-out active:scale-95"
             >
               <Link href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`}>
                 {tHeader("login")}
@@ -140,6 +157,41 @@ export function Header({
           )}
         </div>
       </Container>
+
+      {/* Mobile menu panel */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t border-black/5 dark:border-white/10 px-4 pb-4 pt-2">
+          {/* Nav items */}
+          <nav className="flex flex-col gap-0.5 mb-3">
+            {navWithActive.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "relative px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+                  "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white",
+                  "hover:bg-slate-100/80 dark:hover:bg-slate-800/60",
+                  item.isActive && [
+                    "text-slate-900 dark:text-white",
+                    "bg-slate-100/80 dark:bg-slate-800/60",
+                  ]
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Divider */}
+          <div className="h-px bg-black/5 dark:bg-white/10 mb-3" />
+
+          {/* Action buttons + language switcher */}
+          <div className="flex items-center gap-1 flex-wrap">
+            <ActionButtons />
+            <LanguageSwitcher />
+          </div>
+        </div>
+      )}
     </header>
   )
 }

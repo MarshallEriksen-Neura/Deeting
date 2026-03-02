@@ -1,11 +1,10 @@
-"use client"
+﻿"use client"
 
 import { useCallback } from "react"
-import { invoke } from "@tauri-apps/api/core"
 import { useChatStore } from "@/store/chat-store"
 import { useChatMessagingService } from "./use-chat-messaging-service"
-import { serializeMessageContent } from "@/lib/chat/message-content"
 import { useI18n } from "@/hooks/use-i18n"
+import { createConversation } from "@/lib/api/conversations"
 
 interface UseChatMessagingProps {
   agent?: { id: string; name: string }
@@ -14,8 +13,17 @@ interface UseChatMessagingProps {
 
 export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProps) {
   const t = useI18n("chat")
-  
-  const { input, attachments, config, isLoading, errorMessage, setErrorMessage } = useChatStore()
+
+  const {
+    input,
+    attachments,
+    config,
+    isLoading,
+    errorMessage,
+    setErrorMessage,
+    sessionId,
+    setSessionId,
+  } = useChatStore()
   const { sendMessage: serviceSendMessage, cancelActiveRequest } = useChatMessagingService()
 
   const handleSendMessage = useCallback(async () => {
@@ -28,26 +36,20 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
         return
       }
 
-      // 1. 持久化用户消息到 Tauri DB
-      void invoke("append_assistant_message", {
-        assistant_id: agent.id,
-        role: "user",
-        content: serializeMessageContent(userContent, attachments)
-      }).catch(() => undefined)
-
-      // 2. 委托给服务（添加到 UI，调用 API）
-      await serviceSendMessage()
-
-      // 3. 持久化助手响应到 Tauri DB
-      const currentMessages = useChatStore.getState().messages
-      const lastMsg = currentMessages[currentMessages.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant') {
-        void invoke("append_assistant_message", {
-          assistant_id: agent.id,
-          role: "assistant",
-          content: lastMsg.content
-        }).catch(() => undefined)
+      let localSessionId = sessionId
+      if (!localSessionId) {
+        try {
+          const created = await createConversation({ assistant_id: agent.id })
+          if (created.session_id) {
+            localSessionId = created.session_id
+            setSessionId(created.session_id)
+          }
+        } catch {
+          // ignore local conversation create failures
+        }
       }
+
+      await serviceSendMessage()
     } else {
       await serviceSendMessage()
     }
@@ -57,9 +59,11 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
     input,
     attachments,
     config.model,
+    sessionId,
+    setSessionId,
     setErrorMessage,
     serviceSendMessage,
-    t
+    t,
   ])
 
   const hasContent = Boolean(input.trim() || attachments.length)

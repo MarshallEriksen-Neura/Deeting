@@ -2,9 +2,12 @@ import * as React from "react"
 import useSWRInfinite from "swr/infinite"
 
 import type { ApiError } from "@/lib/http"
-import { swrFetcher, type SWRResult } from "@/lib/swr/fetcher"
-import type { CursorPage } from "@/types/pagination"
-import type { ConversationSessionItem, ConversationSessionsQuery } from "@/lib/api/conversations"
+import {
+  fetchConversationSessions,
+  type ConversationSessionPage,
+  type ConversationSessionItem,
+  type ConversationSessionsQuery,
+} from "@/lib/api/conversations"
 import { useAuthStore } from "@/store/auth-store"
 
 type ConversationSessionsState = {
@@ -15,19 +18,35 @@ type ConversationSessionsState = {
   error?: ApiError
   loadMore: () => void
   reset: () => void
-  mutate: SWRResult<CursorPage<ConversationSessionItem>>["mutate"]
+  mutate: () => Promise<unknown>
 }
+
+type SessionKey = readonly [
+  "conversation-sessions",
+  ConversationSessionsQuery,
+]
 
 export function useConversationSessions(
   query: ConversationSessionsQuery = {},
   options: { enabled?: boolean } = {}
 ): ConversationSessionsState {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const isTauriRuntime = React.useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  )
+  const requiresAuth = !isTauriRuntime
   const pageSize = query.size ?? 20
 
   const getKey = React.useCallback(
-    (pageIndex: number, previousPageData: CursorPage<ConversationSessionItem> | null) => {
-      if (options.enabled === false || !isAuthenticated) {
+    (
+      pageIndex: number,
+      previousPageData: ConversationSessionPage | null
+    ): SessionKey | null => {
+      if (options.enabled === false || (requiresAuth && !isAuthenticated)) {
         return null
       }
       if (previousPageData && !previousPageData.next_page) {
@@ -36,18 +55,24 @@ export function useConversationSessions(
       const cursor =
         pageIndex === 0 ? (query.cursor ?? null) : previousPageData?.next_page
       return [
-        "/api/v1/internal/conversations",
+        "conversation-sessions",
         {
-          params: {
-            cursor,
-            size: pageSize,
-            assistant_id: query.assistant_id ?? undefined,
-            status: query.status ?? undefined,
-          },
+          cursor,
+          size: pageSize,
+          assistant_id: query.assistant_id ?? undefined,
+          status: query.status ?? undefined,
         },
-      ]
+      ] as const
     },
-    [options.enabled, isAuthenticated, pageSize, query.assistant_id, query.status, query.cursor]
+    [
+      options.enabled,
+      requiresAuth,
+      isAuthenticated,
+      pageSize,
+      query.assistant_id,
+      query.status,
+      query.cursor,
+    ]
   )
 
   const {
@@ -57,9 +82,16 @@ export function useConversationSessions(
     size,
     setSize,
     mutate,
-  } = useSWRInfinite<CursorPage<ConversationSessionItem>, ApiError>(getKey, swrFetcher, {
-    revalidateOnFocus: false,
-  })
+  } = useSWRInfinite<ConversationSessionPage, ApiError>(
+    getKey,
+    (key) => {
+      const [, params] = key as SessionKey
+      return fetchConversationSessions(params)
+    },
+    {
+      revalidateOnFocus: false,
+    }
+  )
 
   const items = React.useMemo(() => {
     if (!data) return []
@@ -84,6 +116,8 @@ export function useConversationSessions(
     setSize(1)
   }, [setSize])
 
+  const revalidate = React.useCallback(() => mutate(), [mutate])
+
   return {
     items,
     hasMore,
@@ -92,6 +126,6 @@ export function useConversationSessions(
     error,
     loadMore,
     reset,
-    mutate,
+    mutate: revalidate,
   }
 }

@@ -4,16 +4,23 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
+use uuid::Uuid;
 
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::{expand_path, ExtractedToolFields, NewSource, ToolUpsert};
 use crate::modules::mcp::types::{
-    CreateAssistantMessageRequest, CreateLocalAssistantRequest, CreateSourceRequest,
-    ImportConfigRequest, LocalAssistant, LocalAssistantMessage, LocalChatInputMessage,
-    LocalChatRequest, LocalChatResponse, McpConfigPayload, McpConflictStatus, McpLogEntry,
-    McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
-    ResolveConflictRequest, SyncSourceRequest, UpdateLocalAssistantRequest,
-    UpdateToolConfigRequest,
+    CreateAssistantMessageRequest, CreateConversationMessageRequest, CreateLocalAssistantRequest,
+    CreateSourceRequest, ImportConfigRequest, LocalAssistant, LocalAssistantEntity, LocalAssistantMessage,
+    LocalAssistantVersion, LocalChatInputMessage, LocalChatRequest, LocalChatResponse, LocalConversationArchiveResponse,
+    LocalConversationClearResponse, LocalConversationCreateRequest, LocalConversationCreateResponse,
+    LocalConversationDeleteResponse, LocalConversationHistoryQuery, LocalConversationHistoryMessage,
+    LocalConversationHistoryResponse, LocalConversationRegenerateRequest,
+    LocalConversationRegenerateResponse, LocalConversationRenameRequest,
+    LocalConversationRenameResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
+    LocalConversationSendRequest, LocalConversationSendResponse, LocalConversationStatus,
+    McpConfigPayload, McpConflictStatus, McpLogEntry, McpSource,
+    McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
+    ResolveConflictRequest, SyncSourceRequest, UpdateLocalAssistantRequest, UpdateToolConfigRequest,
 };
 use crate::modules::mcp::McpRuntimeState;
 use crate::state::AppState;
@@ -143,6 +150,31 @@ pub async fn list_local_assistants(
 }
 
 #[tauri::command]
+pub async fn list_local_assistant_entities(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalAssistantEntity>, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_assistant_entities()
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_assistant_versions(
+    state: State<'_, AppState>,
+    assistant_id: Option<String>,
+) -> Result<Vec<LocalAssistantVersion>, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_assistant_versions(assistant_id.as_deref())
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn create_local_assistant(
     state: State<'_, AppState>,
     payload: CreateLocalAssistantRequest,
@@ -213,85 +245,9 @@ pub async fn local_chat_complete(
     state: State<'_, AppState>,
     payload: LocalChatRequest,
 ) -> Result<LocalChatResponse, String> {
-    let state = &state.mcp;
-    let model = payload.model.trim().to_string();
-    if model.is_empty() {
-        return Err(to_string(McpError::validation("model is required")));
-    }
-    if payload.messages.is_empty() {
-        return Err(to_string(McpError::validation("messages is required")));
-    }
-
-    let base_url = payload.base_url.unwrap_or_default();
-    if base_url.trim().is_empty() {
-        return Err(to_string(McpError::validation("base_url is required")));
-    }
-
-    let mut messages = payload.messages;
-    if let Some(assistant_id) = payload.assistant_id.as_deref() {
-        let assistant = state
-            .store
-            .get_local_assistant(assistant_id)
-            .await
-            .map_err(to_string)?
-            .ok_or_else(|| {
-                to_string(McpError::NotFound(format!(
-                    "assistant {assistant_id} not found"
-                )))
-            })?;
-        let system_prompt = assistant.system_prompt.trim().to_string();
-        if !system_prompt.is_empty()
-            && !messages.iter().any(|msg| msg.role == "system")
-        {
-            messages.insert(
-                0,
-                LocalChatInputMessage {
-                    role: "system".to_string(),
-                    content: system_prompt,
-                },
-            );
-        }
-    }
-
-    let request_body = build_chat_payload(
-        model,
-        messages,
-        payload.temperature,
-        payload.top_p,
-        payload.max_tokens,
-    )?;
-    let endpoint = build_chat_endpoint(&base_url);
-
-    let mut request = state.client.post(&endpoint).json(&request_body);
-    if let Some(api_key) = payload.api_key {
-        let header_value = normalize_bearer_token(&api_key);
-        if !header_value.is_empty() {
-            request = request.header("Authorization", header_value);
-        }
-    }
-
-    let response = request
-        .send()
+    run_local_chat_complete(&state.mcp, payload)
         .await
-        .map_err(|err| McpError::Network(err.to_string()))
-        .map_err(to_string)?;
-    let status = response.status();
-    let response_json: Value = response
-        .json()
-        .await
-        .map_err(|err| McpError::Network(err.to_string()))
-        .map_err(to_string)?;
-
-    if !status.is_success() {
-        let message = extract_error_message(&response_json)
-            .unwrap_or_else(|| format!("upstream error: {}", status));
-        return Err(message);
-    }
-
-    let content = extract_chat_content(&response_json)
-        .ok_or_else(|| to_string(McpError::Process("empty response content".to_string())))?;
-
-    Ok(LocalChatResponse { content })
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -305,6 +261,282 @@ pub async fn delete_assistant_messages(
         .delete_assistant_messages(&assistant_id)
         .await
         .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversations(
+    state: State<'_, AppState>,
+    query: Option<LocalConversationSessionsQuery>,
+) -> Result<LocalConversationSessionPage, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_conversations(query.unwrap_or(LocalConversationSessionsQuery {
+            cursor: None,
+            size: None,
+            assistant_id: None,
+            status: Some(LocalConversationStatus::Active),
+        }))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_conversation(
+    state: State<'_, AppState>,
+    payload: Option<LocalConversationCreateRequest>,
+) -> Result<LocalConversationCreateResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_conversation(payload.unwrap_or(LocalConversationCreateRequest {
+            assistant_id: None,
+            title: None,
+        }))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn archive_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationArchiveResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_conversation_status(&session_id, LocalConversationStatus::Archived)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn unarchive_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationArchiveResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_conversation_status(&session_id, LocalConversationStatus::Active)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn rename_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: LocalConversationRenameRequest,
+) -> Result<LocalConversationRenameResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .rename_local_conversation(&session_id, payload.title)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_history(
+    state: State<'_, AppState>,
+    session_id: String,
+    query: Option<LocalConversationHistoryQuery>,
+) -> Result<LocalConversationHistoryResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_conversation_history(
+            &session_id,
+            query.unwrap_or(LocalConversationHistoryQuery {
+                cursor: None,
+                limit: None,
+            }),
+        )
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn append_local_conversation_message(
+    state: State<'_, AppState>,
+    payload: CreateConversationMessageRequest,
+) -> Result<LocalConversationHistoryMessage, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .append_local_conversation_message(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_conversation_message(
+    state: State<'_, AppState>,
+    session_id: String,
+    turn_index: i64,
+) -> Result<LocalConversationDeleteResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .delete_local_conversation_message(&session_id, turn_index)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn clear_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationClearResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .clear_local_conversation(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn send_local_conversation_message(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: LocalConversationSendRequest,
+) -> Result<LocalConversationSendResponse, String> {
+    let app_state = state.inner();
+    let mcp_state = &app_state.mcp;
+    let normalized_session_id = session_id.trim().to_string();
+    if normalized_session_id.is_empty() {
+        return Err(to_string(McpError::validation("session_id is required")));
+    }
+
+    if payload.content.trim().is_empty() {
+        return Err(to_string(McpError::validation("content is required")));
+    }
+
+    let user_message = mcp_state
+        .store
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: normalized_session_id.clone(),
+            role: "user".to_string(),
+            content: payload.content,
+            name: None,
+            meta_info: None,
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map_err(to_string)?;
+
+    let chat_ctx = mcp_state
+        .store
+        .get_local_conversation_chat_context(&normalized_session_id)
+        .await
+        .map_err(to_string)?;
+    let chat_session_id = chat_ctx.session_id.clone();
+
+    let (model_id, base_url, secret_key) = resolve_local_model_connection(
+        app_state,
+        &payload.model,
+        payload.provider_model_id.as_deref(),
+    )
+    .await
+    .map_err(to_string)?;
+
+    let chat = run_local_chat_complete(
+        mcp_state,
+        LocalChatRequest {
+            assistant_id: chat_ctx.assistant_id,
+            model: model_id,
+            messages: chat_ctx.messages,
+            temperature: payload.temperature,
+            top_p: payload.top_p,
+            max_tokens: payload.max_tokens,
+            base_url: Some(base_url),
+            api_key: secret_key,
+        },
+    )
+    .await
+    .map_err(to_string)?;
+
+    let assistant_message = mcp_state
+        .store
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: normalized_session_id.clone(),
+            role: "assistant".to_string(),
+            content: chat.content,
+            name: None,
+            meta_info: None,
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map_err(to_string)?;
+
+    Ok(LocalConversationSendResponse {
+        session_id: chat_session_id,
+        user_message,
+        assistant_message,
+    })
+}
+
+#[tauri::command]
+pub async fn regenerate_local_conversation_reply(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: LocalConversationRegenerateRequest,
+) -> Result<LocalConversationRegenerateResponse, String> {
+    let app_state = state.inner();
+    let mcp_state = &app_state.mcp;
+    let regenerate_ctx = mcp_state
+        .store
+        .prepare_local_conversation_regenerate(&session_id)
+        .await
+        .map_err(to_string)?;
+
+    let (model_id, base_url, secret_key) = resolve_local_model_connection(
+        app_state,
+        &payload.model,
+        payload.provider_model_id.as_deref(),
+    )
+    .await
+    .map_err(to_string)?;
+
+    let chat = run_local_chat_complete(
+        mcp_state,
+        LocalChatRequest {
+            assistant_id: regenerate_ctx.assistant_id.clone(),
+            model: model_id,
+            messages: regenerate_ctx.messages.clone(),
+            temperature: payload.temperature,
+            top_p: payload.top_p,
+            max_tokens: payload.max_tokens,
+            base_url: Some(base_url),
+            api_key: secret_key,
+        },
+    )
+    .await
+    .map_err(to_string)?;
+
+    let message = mcp_state
+        .store
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: regenerate_ctx.session_id.clone(),
+            role: "assistant".to_string(),
+            content: chat.content,
+            name: None,
+            meta_info: None,
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map_err(to_string)?;
+
+    Ok(LocalConversationRegenerateResponse {
+        session_id: regenerate_ctx.session_id,
+        deleted_turn_index: regenerate_ctx.deleted_turn_index,
+        message,
+    })
 }
 
 #[tauri::command]
@@ -896,7 +1128,7 @@ fn build_chat_payload(
         .map(|m| {
             let mut map = serde_json::Map::new();
             map.insert("role".to_string(), serde_json::Value::String(m.role));
-            map.insert("content".to_string(), serde_json::Value::String(m.content));
+            map.insert("content".to_string(), parse_chat_message_content(&m.content));
             serde_json::Value::Object(map)
         })
         .collect();
@@ -913,6 +1145,189 @@ fn build_chat_payload(
     }
 
     Ok(serde_json::Value::Object(payload))
+}
+
+fn parse_chat_message_content(raw: &str) -> serde_json::Value {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('[') {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            return parsed;
+        }
+    }
+    serde_json::Value::String(raw.to_string())
+}
+
+async fn run_local_chat_complete(
+    state: &McpRuntimeState,
+    payload: LocalChatRequest,
+) -> Result<LocalChatResponse, McpError> {
+    let model = payload.model.trim().to_string();
+    if model.is_empty() {
+        return Err(McpError::validation("model is required"));
+    }
+    if payload.messages.is_empty() {
+        return Err(McpError::validation("messages is required"));
+    }
+
+    let base_url = payload.base_url.unwrap_or_default();
+    if base_url.trim().is_empty() {
+        return Err(McpError::validation("base_url is required"));
+    }
+
+    let mut messages = payload.messages;
+    if let Some(assistant_id) = payload.assistant_id.as_deref() {
+        let assistant = state
+            .store
+            .get_local_assistant(assistant_id)
+            .await?
+            .ok_or_else(|| {
+                McpError::NotFound(format!("assistant {assistant_id} not found"))
+            })?;
+        let system_prompt = assistant.system_prompt.trim().to_string();
+        if !system_prompt.is_empty()
+            && !messages.iter().any(|msg| msg.role == "system")
+        {
+            messages.insert(
+                0,
+                LocalChatInputMessage {
+                    role: "system".to_string(),
+                    content: system_prompt,
+                },
+            );
+        }
+    }
+
+    let request_body = build_chat_payload(
+        model,
+        messages,
+        payload.temperature,
+        payload.top_p,
+        payload.max_tokens,
+    )
+    .map_err(McpError::validation)?;
+    let endpoint = build_chat_endpoint(&base_url);
+
+    let mut request = state.client.post(&endpoint).json(&request_body);
+    if let Some(api_key) = payload.api_key {
+        let header_value = normalize_bearer_token(&api_key);
+        if !header_value.is_empty() {
+            request = request.header("Authorization", header_value);
+        }
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|err| McpError::Network(err.to_string()))?;
+    let status = response.status();
+    let response_json: Value = response
+        .json()
+        .await
+        .map_err(|err| McpError::Network(err.to_string()))?;
+
+    if !status.is_success() {
+        let message = extract_error_message(&response_json)
+            .unwrap_or_else(|| format!("upstream error: {}", status));
+        return Err(McpError::Network(message));
+    }
+
+    let content = extract_chat_content(&response_json)
+        .ok_or_else(|| McpError::Process("empty response content".to_string()))?;
+
+    Ok(LocalChatResponse { content })
+}
+
+async fn resolve_local_model_connection(
+    app_state: &AppState,
+    requested_model: &str,
+    provider_model_id: Option<&str>,
+) -> Result<(String, String, Option<String>), McpError> {
+    let normalized_model = requested_model.trim().to_string();
+    if normalized_model.is_empty() {
+        return Err(McpError::validation("model is required"));
+    }
+
+    let instances = app_state
+        .providers
+        .store
+        .list_instances()
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+    let enabled_instances: Vec<_> = instances
+        .into_iter()
+        .filter(|instance| instance.is_enabled)
+        .collect();
+
+    if enabled_instances.is_empty() {
+        return Err(McpError::NotFound(
+            "no enabled provider instances found".to_string(),
+        ));
+    }
+
+    if let Some(raw_provider_model_id) = provider_model_id {
+        let provider_model_uuid = Uuid::parse_str(raw_provider_model_id.trim())
+            .map_err(|_| McpError::validation("invalid provider_model_id"))?;
+        let model = app_state
+            .providers
+            .store
+            .get_model(&provider_model_uuid)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?
+            .ok_or_else(|| McpError::NotFound("provider model not found".to_string()))?;
+
+        if !model.is_active {
+            return Err(McpError::validation("provider model is inactive"));
+        }
+
+        let instance = enabled_instances
+            .iter()
+            .find(|item| item.id == model.instance_id)
+            .ok_or_else(|| {
+                McpError::NotFound("provider instance not enabled for this model".to_string())
+            })?;
+
+        let connection = app_state
+            .providers
+            .store
+            .get_instance_connection(&instance.id)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?
+            .ok_or_else(|| McpError::NotFound("provider instance connection missing".to_string()))?;
+
+        return Ok((model.model_id, connection.base_url, connection.secret_key));
+    }
+
+    for instance in enabled_instances {
+        let models = app_state
+            .providers
+            .store
+            .list_models(&instance.id)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let selected_model = models.into_iter().find(|item| {
+            item.is_active
+                && (item.model_id == normalized_model || item.id.to_string() == normalized_model)
+        });
+
+        if let Some(model) = selected_model {
+            let connection = app_state
+                .providers
+                .store
+                .get_instance_connection(&instance.id)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?
+                .ok_or_else(|| {
+                    McpError::NotFound("provider instance connection missing".to_string())
+                })?;
+            return Ok((model.model_id, connection.base_url, connection.secret_key));
+        }
+    }
+
+    Err(McpError::NotFound(format!(
+        "no active local provider model matches {}",
+        normalized_model
+    )))
 }
 
 fn build_chat_endpoint(base_url: &str) -> String {

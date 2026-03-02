@@ -2,7 +2,7 @@
 
 import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon } from 'lucide-react';
 import { Link } from '@/i18n/routing';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -185,8 +185,8 @@ export default function HUD() {
          setSessionId(created.session_id);
          if (typeof window !== "undefined") {
            const params = new URLSearchParams(searchParams?.toString());
-           params.set("session", created.session_id);
-           params.delete("agentId");
+          params.set("session", created.session_id);
+          params.delete("agentId");
           const basePath =
             isTauriRuntime && targetAssistantId ? `/chat/${targetAssistantId}` : "/chat";
            const query = params.toString();
@@ -386,7 +386,7 @@ export default function HUD() {
   );
 }
 
-function MenuLink({ href, icon, label }: any) {
+function MenuLink({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
     return (
         <Link href={href} className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-all group shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
             <div className="text-slate-500/90 dark:text-white/45 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">

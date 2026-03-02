@@ -1,4 +1,4 @@
-import type { AxiosAdapter, AxiosResponse } from 'axios';
+import type { AxiosAdapter, AxiosResponse } from "axios";
 
 // Only load this module if we are definitely in a Tauri environment
 // Webpack/Next.js dynamic imports will handle code splitting
@@ -6,7 +6,7 @@ import type { AxiosAdapter, AxiosResponse } from 'axios';
 export const createTauriAdapter = async (): Promise<AxiosAdapter> => {
   // Dynamic import to avoid breaking server-side rendering or web builds
   // where @tauri-apps/plugin-http might not be resolvable or compatible
-  const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+  const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
 
   return async (config) => {
     // 1. Build full URL
@@ -17,11 +17,11 @@ export const createTauriAdapter = async (): Promise<AxiosAdapter> => {
     // but ONLY if the adapter is the default one? 
     // Let's manually construct it to be safe if it's relative.
     
-    let fullUrl = config.url || '';
-    if (config.baseURL && !fullUrl.startsWith('http')) {
+    let fullUrl = config.url || "";
+    if (config.baseURL && !fullUrl.startsWith("http")) {
         // Simple join, handling slashes
-        const baseUrl = config.baseURL.replace(/\/$/, '');
-        const path = fullUrl.replace(/^\//, '');
+        const baseUrl = config.baseURL.replace(/\/$/, "");
+        const path = fullUrl.replace(/^\//, "");
         fullUrl = `${baseUrl}/${path}`;
     }
 
@@ -36,7 +36,11 @@ export const createTauriAdapter = async (): Promise<AxiosAdapter> => {
     }
 
     // 3. Prepare body
-    const body = config.data ? (typeof config.data === 'string' ? config.data : JSON.stringify(config.data)) : undefined;
+    const body = config.data
+      ? typeof config.data === "string"
+        ? config.data
+        : JSON.stringify(config.data)
+      : undefined;
 
     // 4. Execute request
     const requestInit: RequestInit = {
@@ -52,7 +56,7 @@ export const createTauriAdapter = async (): Promise<AxiosAdapter> => {
     let parsedData = responseData;
     try {
         parsedData = JSON.parse(responseData);
-    } catch (e) {
+    } catch {
         // Not JSON, keep as text
     }
 
@@ -70,21 +74,65 @@ export const createTauriAdapter = async (): Promise<AxiosAdapter> => {
         axiosResponse.headers[key.toLowerCase()] = val;
     });
 
+    // Tauri plugin errors are surfaced via header even when HTTP status is 200.
+    const tauriResponse = response.headers.get("Tauri-Response");
+    if (tauriResponse?.toLowerCase() === "error") {
+      const fallbackMessage = "Tauri HTTP plugin request failed";
+      const message = resolveTauriErrorMessage(parsedData) || fallbackMessage;
+      console.error("[tauri-http] request failed", {
+        url: fullUrl,
+        payload: parsedData,
+      });
+      throw buildAxiosStyleError(message, "ERR_TAURI_HTTP", config, axiosResponse);
+    }
+
     // 6. Handle errors like Axios does (validateStatus)
     const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
     if (!validateStatus(response.status)) {
-        throw {
-            message: `Request failed with status code ${response.status}`,
-            name: 'AxiosError',
-            code: response.status.toString(),
-            config,
-            request: {},
-            response: axiosResponse,
-            isAxiosError: true,
-            toJSON: () => ({})
-        };
+        throw buildAxiosStyleError(
+          `Request failed with status code ${response.status}`,
+          response.status.toString(),
+          config,
+          axiosResponse
+        );
     }
 
     return axiosResponse;
   };
 };
+
+function resolveTauriErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const data = payload as Record<string, unknown>;
+  const direct = [data.message, data.error, data.details];
+  for (const item of direct) {
+    if (typeof item === "string" && item.trim().length > 0) {
+      return item;
+    }
+  }
+  if (data.error && typeof data.error === "object") {
+    const nested = data.error as Record<string, unknown>;
+    if (typeof nested.message === "string" && nested.message.trim().length > 0) {
+      return nested.message;
+    }
+  }
+  return null;
+}
+
+function buildAxiosStyleError(
+  message: string,
+  code: string,
+  config: Parameters<AxiosAdapter>[0],
+  response: AxiosResponse
+) {
+  return {
+    message,
+    name: "AxiosError",
+    code,
+    config,
+    request: {},
+    response,
+    isAxiosError: true,
+    toJSON: () => ({}),
+  };
+}

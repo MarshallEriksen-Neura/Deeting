@@ -11,6 +11,5 @@ export interface HeaderProps {
   userName?: string
   userEmail?: string
   userAvatarSrc?: string
-  onMenuClick?: () => void
   className?: string
 }

@@ -40,12 +40,6 @@ export const userNavigation: NavGroup[] = [
     title: "nav.main",
     items: [
       {
-        id: "dashboard",
-        label: "nav.dashboard",
-        href: "/dashboard",
-        icon: "layoutDashboard",
-      },
-      {
         id: "routes",
         label: "nav.routes",
         href: "/dashboard/routes",
