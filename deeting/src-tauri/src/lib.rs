@@ -8,6 +8,7 @@ use crate::modules::mcp::process::ProcessManager;
 use crate::modules::mcp::store::{expand_path, McpStore};
 use crate::modules::mcp::types::McpSourceStatus;
 use crate::modules::mcp::McpRuntimeState;
+use crate::modules::providers::ProviderState;
 use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,6 +27,8 @@ pub fn run() {
       let cloud_base_url = resolve_cloud_base_url();
       let state = tauri::async_runtime::block_on(async {
         let database_url = resolve_database_url()?;
+        
+        // MCP 初始化
         let store = Arc::new(McpStore::new(&database_url).await?);
         store.init().await?;
         store.ensure_local_source().await?;
@@ -36,7 +39,12 @@ pub fn run() {
           process_manager,
           cloud_base_url,
         );
-        Ok::<_, McpError>(AppState::new(mcp_state))
+
+        // Providers 初始化
+        let provider_state = ProviderState::new(&database_url).await
+            .map_err(|e| McpError::Storage(e.to_string()))?;
+
+        Ok::<_, McpError>(AppState::new(mcp_state, provider_state))
       })
       .map_err(|err| Box::<dyn std::error::Error>::from(err))?;
 
@@ -75,6 +83,7 @@ pub fn run() {
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
+      // MCP Commands
       crate::modules::mcp::commands::set_cloud_base_url,
       crate::modules::mcp::commands::list_mcp_sources,
       crate::modules::mcp::commands::create_mcp_source,
@@ -96,10 +105,14 @@ pub fn run() {
       crate::modules::mcp::commands::get_mcp_logs,
       crate::modules::mcp::commands::clear_mcp_logs,
       crate::modules::mcp::commands::sync_cloud_subscriptions,
-      // Bridge commands
       crate::modules::mcp::bridge::set_mcp_backend_url,
       crate::modules::mcp::bridge::start_mcp_log_stream,
-      crate::modules::mcp::bridge::stop_mcp_log_stream
+      crate::modules::mcp::bridge::stop_mcp_log_stream,
+
+      // Provider Commands
+      crate::modules::providers::commands::list_local_provider_instances,
+      crate::modules::providers::commands::create_local_provider_instance,
+      crate::modules::providers::commands::list_local_provider_models
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
