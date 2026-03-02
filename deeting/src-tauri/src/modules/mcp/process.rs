@@ -8,9 +8,9 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::mcp::error::McpError;
-use crate::mcp::store::McpStore;
-use crate::mcp::types::{McpLogEntry, McpLogStream, McpTool, McpToolStatus};
+use crate::modules::mcp::error::McpError;
+use crate::modules::mcp::store::McpStore;
+use crate::modules::mcp::types::{McpLogEntry, McpLogStream, McpTool, McpToolStatus};
 
 const DEFAULT_LOG_BUFFER_SIZE: usize = 1000;
 const CRASH_WINDOW: Duration = Duration::from_secs(5);
@@ -132,7 +132,7 @@ impl ProcessManager {
         self.emit_log(&tool.id, McpLogStream::Event, "process started".to_string())
             .await;
 
-        self.spawn_monitor(tool.id.clone(), child).await;
+        self.spawn_monitor(tool.id.clone(), child);
 
         Ok(())
     }
@@ -220,7 +220,7 @@ impl ProcessManager {
     }
 
     async fn notify_crash(&self, tool_id: &str, message: String) {
-        #[derive(serde::Serialize)]
+        #[derive(serde::Serialize, Clone)]
         struct SupervisorPayload {
             tool_id: String,
             tool_name: String,
@@ -240,7 +240,7 @@ impl ProcessManager {
             tool_name,
             message,
         };
-        let _ = self.app_handle.emit_all("mcp-supervisor", payload);
+        let _ = self.app_handle.emit("mcp-supervisor", payload);
     }
 
     async fn ensure_log_buffer(&self, tool_id: &str) {
@@ -264,12 +264,12 @@ impl ProcessManager {
         }
 
         let event_name = format!("mcp-log://{}", tool_id);
-        let _ = self.app_handle.emit_all(&event_name, entry);
+        let _ = self.app_handle.emit(&event_name, entry);
     }
 
-    async fn spawn_monitor(&self, tool_id: String, child: Arc<Mutex<Child>>) {
+    fn spawn_monitor(&self, tool_id: String, child: Arc<Mutex<Child>>) {
         let manager = self.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 let mut child_guard = child.lock().await;

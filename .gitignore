@@ -11,7 +11,7 @@ __pycache__/
 .workflow/
 .specify/
 .mcp.json
-.agents/
+
 .omc/
 backend/__pycache__
 backend/*.py[oc]
@@ -129,3 +129,10 @@ media/
 ai_higress/
 ai_higress_front/
 .worktrees
+
+# ============================================
+# Local-only installers / temp files (root)
+# ============================================
+/$null
+/rustup-init.exe
+/vs_buildtools.exe

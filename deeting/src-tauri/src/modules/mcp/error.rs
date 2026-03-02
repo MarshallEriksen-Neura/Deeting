@@ -19,3 +19,21 @@ impl McpError {
         McpError::Validation(message.into())
     }
 }
+
+impl From<sqlx::Error> for McpError {
+    fn from(err: sqlx::Error) -> Self {
+        McpError::Storage(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for McpError {
+    fn from(err: serde_json::Error) -> Self {
+        McpError::Storage(err.to_string())
+    }
+}
+
+impl From<time::error::Format> for McpError {
+    fn from(err: time::error::Format) -> Self {
+        McpError::Storage(err.to_string())
+    }
+}

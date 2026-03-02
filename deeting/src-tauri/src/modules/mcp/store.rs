@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use sha2::{Digest, Sha256};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::mcp::error::McpError;
-use crate::mcp::types::{
+use crate::modules::mcp::error::McpError;
+use crate::modules::mcp::types::{
     CreateAssistantMessageRequest, CreateLocalAssistantRequest, LocalAssistant, LocalAssistantMessage,
     McpConflictStatus, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
     McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest,
@@ -22,9 +23,12 @@ pub struct McpStore {
 
 impl McpStore {
     pub async fn new(database_url: &str) -> Result<Self, McpError> {
+        let options = SqliteConnectOptions::from_str(database_url)
+            .map_err(|err| McpError::Storage(err.to_string()))?
+            .create_if_missing(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(database_url)
+            .connect_with(options)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(Self { pool })
@@ -414,7 +418,7 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
-        Ok(row.and_then(|row| row.try_get::<String, _>("pending_config_json").ok()))
+        Ok(row.and_then(|r: SqliteRow| r.try_get::<String, _>("pending_config_json").ok()))
     }
 
     pub async fn get_tool_by_source_name(
@@ -735,7 +739,7 @@ impl McpStore {
             .map_err(|err| McpError::Storage(err.to_string()))?
         };
 
-        Ok(row.and_then(|row| row.try_get::<String, _>("id").ok()))
+        Ok(row.and_then(|r: SqliteRow| r.try_get::<String, _>("id").ok()))
     }
 
     async fn insert_tool(&self, tool: ToolUpsert) -> Result<(), McpError> {
@@ -1106,7 +1110,7 @@ impl McpStore {
             .fetch_all(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
-        let exists = rows.iter().any(|row| {
+        let exists = rows.iter().any(|row: &SqliteRow| {
             row.try_get::<String, _>("name")
                 .map(|name| name == column)
                 .unwrap_or(false)

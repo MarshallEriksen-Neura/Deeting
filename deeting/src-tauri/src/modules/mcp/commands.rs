@@ -1,20 +1,18 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use serde::Deserialize;
-use serde_json::{Map, Value};
-use tauri::{AppHandle, State, Emitter};
+use serde_json::Value;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::modules::mcp::error::McpError;
-use crate::modules::mcp::process::ProcessManager;
-use crate::modules::mcp::store::{expand_path, ExtractedToolFields, McpStore, NewSource, ToolUpsert};
+use crate::modules::mcp::store::{expand_path, ExtractedToolFields, NewSource, ToolUpsert};
 use crate::modules::mcp::types::{
     CreateAssistantMessageRequest, CreateLocalAssistantRequest, CreateSourceRequest,
     ImportConfigRequest, LocalAssistant, LocalAssistantMessage, LocalChatInputMessage,
     LocalChatRequest, LocalChatResponse, McpConfigPayload, McpConflictStatus, McpLogEntry,
     McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
-    McpTrustLevel, ResolveConflictRequest, SyncSourceRequest, UpdateLocalAssistantRequest,
+    ResolveConflictRequest, SyncSourceRequest, UpdateLocalAssistantRequest,
     UpdateToolConfigRequest,
 };
 use crate::modules::mcp::McpRuntimeState;
@@ -353,7 +351,7 @@ pub async fn start_mcp_tool(
             .set_tool_status(&tool_id, McpToolStatus::Pending, None, Some(message.clone()))
             .await
             .map_err(to_string)?;
-        app.emit_all(&format!("mcp-log://{}", tool_id), McpLogEntry {
+        app.emit(&format!("mcp-log://{}", tool_id), McpLogEntry {
             timestamp: now_rfc3339(),
             stream: crate::modules::mcp::types::McpLogStream::Event,
             message,
@@ -584,7 +582,7 @@ pub async fn sync_cloud_subscriptions(
                 .store
                 .set_tool_status(&tool.id, McpToolStatus::Orphaned, None, Some("cloud subscription removed".to_string()))
                 .await;
-            app.emit_all(&format!("mcp-log://{}", tool.id), McpLogEntry {
+            app.emit(&format!("mcp-log://{}", tool.id), McpLogEntry {
                 timestamp: now_rfc3339(),
                 stream: crate::modules::mcp::types::McpLogStream::Event,
                 message: "cloud subscription removed".to_string(),
@@ -881,4 +879,75 @@ pub fn default_cloud_source_name() -> &'static str {
 
 pub fn default_local_source_path() -> PathBuf {
     expand_path("~/.config/deeting/mcp.json")
+}
+
+fn build_chat_payload(
+    model: String,
+    messages: Vec<LocalChatInputMessage>,
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    max_tokens: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::Value::String(model));
+
+    let msgs: Vec<serde_json::Value> = messages
+        .into_iter()
+        .map(|m| {
+            let mut map = serde_json::Map::new();
+            map.insert("role".to_string(), serde_json::Value::String(m.role));
+            map.insert("content".to_string(), serde_json::Value::String(m.content));
+            serde_json::Value::Object(map)
+        })
+        .collect();
+    payload.insert("messages".to_string(), serde_json::Value::Array(msgs));
+
+    if let Some(temp) = temperature {
+        payload.insert("temperature".to_string(), serde_json::Value::from(temp));
+    }
+    if let Some(tp) = top_p {
+        payload.insert("top_p".to_string(), serde_json::Value::from(tp));
+    }
+    if let Some(mt) = max_tokens {
+        payload.insert("max_tokens".to_string(), serde_json::Value::from(mt));
+    }
+
+    Ok(serde_json::Value::Object(payload))
+}
+
+fn build_chat_endpoint(base_url: &str) -> String {
+    format!("{}/v1/chat/completions", base_url.trim_end_matches('/'))
+}
+
+fn normalize_bearer_token(token: &str) -> String {
+    if token.starts_with("Bearer ") {
+        token.to_string()
+    } else {
+        format!("Bearer {}", token)
+    }
+}
+
+fn extract_error_message(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("error")
+        .and_then(|e| e.get("message"))
+        .and_then(|m| m.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            value
+                .get("message")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string())
+        })
+}
+
+fn extract_chat_content(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|msg| msg.get("content"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string())
 }
