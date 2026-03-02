@@ -1,23 +1,26 @@
 "use client"
 
 import * as React from "react"
-import { ImagePlus, Send, Square } from "lucide-react"
+import { Paperclip, Send, Square } from "lucide-react"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
-import { useDebounce } from "@/hooks/use-debounce"
 import { useChatStore } from "@/store/chat-store"
 import { AttachmentPreview } from "./attachment-preview"
-import type { ChatImageAttachment } from "@/lib/chat/message-content"
-import { buildImageAttachments, UPLOAD_ERROR_CODES } from "@/lib/chat/attachments"
+import type { ChatAttachment } from "@/lib/chat/message-content"
+import {
+  buildChatAttachments,
+  UPLOAD_ERROR_CODES,
+  ATTACHMENT_INVALID_ERROR_CODES,
+} from "@/lib/chat/attachments"
 
 /**
  * ChatInput 组件 - 聊天输入框
  * 
  * 提供消息输入、附件上传、流式模式切换等功能。
- * 使用防抖优化输入性能，使用 useCallback 缓存事件处理函数。
+ * 使用 useCallback 缓存事件处理函数。
  * 
  * @example
  * ```tsx
@@ -51,7 +54,7 @@ interface ChatInputProps {
   /** 错误消息 */
   errorMessage: string | null
   /** 附件列表 */
-  attachments: ChatImageAttachment[]
+  attachments: ChatAttachment[]
   /** 删除附件回调 */
   onRemoveAttachment: (attachmentId: string) => void
   /** 清空附件回调 */
@@ -90,14 +93,13 @@ export const ChatInput = React.memo<ChatInputProps>(
     const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
     
     // 使用 attachments hook 来处理文件上传
-    const { addAttachments } = useChatStore()
+    const { addAttachments, models, config } = useChatStore((state) => ({
+      addAttachments: state.addAttachments,
+      models: state.models,
+      config: state.config,
+    }))
     
-    // 应用防抖优化（300ms）
-    // 注意：这里我们对内部状态应用防抖，而不是直接对 inputValue 防抖
-    // 因为 inputValue 是受控的，我们需要立即更新显示，但可以延迟触发某些副作用
-    const debouncedInputValue = useDebounce(inputValue, 300)
-    
-    // 计算是否有内容（使用防抖后的值进行某些判断）
+    // 计算是否有内容
     const hasContent = Boolean(inputValue.trim() || attachments.length)
     const canCancel = Boolean(isGenerating && onCancel)
     
@@ -110,27 +112,44 @@ export const ChatInput = React.memo<ChatInputProps>(
       return errorMessage
     }, [errorMessage, t])
 
+    const selectedModel = React.useMemo(
+      () =>
+        models.find(
+          (model) =>
+            model.provider_model_id === config.model || model.id === config.model
+        ) ?? models[0],
+      [models, config.model]
+    )
+
     // 使用 useCallback 缓存文件处理函数
     const handleFiles = React.useCallback(async (files: File[]) => {
       if (!files.length) return
       setAttachmentError(null)
-      const result = await buildImageAttachments(files)
-      if (result.skipped > 0 && result.attachments.length === 0) {
-        setAttachmentError(t("input.image.errorInvalid"))
-        return
-      }
+      const result = await buildChatAttachments(files, {
+        model: selectedModel?.id,
+        providerModelId: selectedModel?.provider_model_id ?? undefined,
+      })
       if (result.attachments.length) {
         addAttachments(result.attachments)
       }
       if (result.rejected > 0) {
+        const hasInvalidError = result.errors.some((error) =>
+          ATTACHMENT_INVALID_ERROR_CODES.has(error)
+        )
+        if (hasInvalidError) {
+          setAttachmentError(t("input.attachment.errorInvalid"))
+          return
+        }
         const hasUploadError = result.errors.some((error) =>
           UPLOAD_ERROR_CODES.has(error)
         )
         setAttachmentError(
-          hasUploadError ? t("input.image.errorUpload") : t("input.image.errorRead")
+          hasUploadError
+            ? t("input.attachment.errorUpload")
+            : t("input.attachment.errorRead")
         )
       }
-    }, [t, addAttachments])
+    }, [t, addAttachments, selectedModel])
 
     // 使用 useCallback 缓存粘贴处理函数
     const handlePaste = React.useCallback((event: React.ClipboardEvent<HTMLInputElement>) => {
@@ -224,16 +243,16 @@ export const ChatInput = React.memo<ChatInputProps>(
               </div>
             </div>
 
-            {/* 图片上传按钮 */}
+            {/* 附件上传按钮 */}
             <GlassButton
               variant="secondary"
               size="icon"
               className="shrink-0 min-h-[44px] min-w-[44px] h-11 w-11 rounded-full cursor-pointer"
               onClick={handleFileButtonClick}
-              aria-label={t("input.image.add")}
+              aria-label={t("input.attachment.add")}
               disabled={disabled}
             >
-              <ImagePlus className="h-5 w-5" />
+              <Paperclip className="h-5 w-5" />
             </GlassButton>
             
             {/* 输入框容器 */}
@@ -264,7 +283,7 @@ export const ChatInput = React.memo<ChatInputProps>(
             <Input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="*/*"
               multiple
               className="hidden"
               onChange={handleFileChange}

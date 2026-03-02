@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, ImagePlus, X, Square, Clapperboard, Lock } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Paperclip, X, Square, Clapperboard, Lock, FileText } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useRef, useState, useCallback, memo } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -16,7 +16,8 @@ import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
-import { buildImageAttachments, UPLOAD_ERROR_CODES } from '@/lib/chat/attachments';
+import { formatFileSize } from '@/lib/utils/file';
+import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODES } from '@/lib/chat/attachments';
 import { createConversation } from '@/lib/api/conversations';
 import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
 
@@ -90,7 +91,10 @@ function ControlsContainer() {
   );
 
   // 从 agent 派生 assistants 列表
-  const assistants: ChatAssistant[] = agent ? [agent] : [];
+  const assistants = useMemo<ChatAssistant[]>(
+    () => (agent ? [agent] : []),
+    [agent]
+  );
 
   const isTauriRuntime = useMemo(
     () =>
@@ -126,6 +130,12 @@ function ControlsContainer() {
   const canSend = useMemo(
     () => Boolean(models.length > 0 && (input.trim().length > 0 || attachments.length > 0) && !isLoading),
     [models.length, input, attachments.length, isLoading]
+  );
+  const selectedModel = useMemo(
+    () =>
+      models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
+      models[0],
+    [models, config.model]
   );
   
   const isGenerating = isLoading;
@@ -243,23 +253,29 @@ function ControlsContainer() {
   const handleFiles = useCallback(async (files: File[]) => {
     if (!files.length) return;
     setAttachmentError(null);
-    const result = await buildImageAttachments(files);
-    if (result.skipped > 0 && result.attachments.length === 0) {
-      setAttachmentError(t("input.image.errorInvalid"));
-      return;
-    }
+    const result = await buildChatAttachments(files, {
+      model: selectedModel?.id,
+      providerModelId: selectedModel?.provider_model_id ?? undefined,
+    });
     if (result.attachments.length) {
       addAttachments(result.attachments);
     }
     if (result.rejected > 0) {
+      const hasInvalidError = result.errors.some((error) =>
+        ATTACHMENT_INVALID_ERROR_CODES.has(error)
+      );
+      if (hasInvalidError) {
+        setAttachmentError(t("input.attachment.errorInvalid"));
+        return;
+      }
       const hasUploadError = result.errors.some((error) =>
         UPLOAD_ERROR_CODES.has(error)
       );
       setAttachmentError(
-        hasUploadError ? t("input.image.errorUpload") : t("input.image.errorRead")
+        hasUploadError ? t("input.attachment.errorUpload") : t("input.attachment.errorRead")
       );
     }
-  }, [t, addAttachments]);
+  }, [t, addAttachments, selectedModel]);
 
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLInputElement>) => {
     if (isLoading) return;
@@ -382,40 +398,81 @@ function ControlsContainer() {
       </div>
 
       {attachments.length > 0 ? (
-        <div className="flex items-center gap-2 px-1">
-          {attachments
-            .filter((attachment) => attachment.url)
-            .map((attachment) => (
-            <div
-              key={attachment.id}
-              className="group relative h-16 w-16 shrink-0"
-            >
-              <div className="h-full w-full overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/10 bg-slate-100 dark:bg-slate-800 transition-colors group-hover:border-slate-300 dark:group-hover:border-white/20">
-                <Image
-                  src={attachment.url ?? ""}
-                  alt={attachment.name ?? t("input.image.alt")}
-                  width={64}
-                  height={64}
-                  className="h-full w-full object-cover"
-                  unoptimized
-                />
-              </div>
-              <button
-                type="button"
-                className={cn(
-                  "absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full",
-                  "bg-slate-500 text-white hover:bg-slate-700 dark:bg-slate-400 dark:text-black dark:hover:bg-slate-200",
-                  "opacity-0 transition-opacity group-hover:opacity-100",
-                  "shadow-sm"
-                )}
-                onClick={() => removeAttachment(attachment.id)}
-                aria-label={t("input.image.remove")}
-                disabled={isLoading}
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          {attachments.map((attachment) => {
+            const isFileAttachment = attachment.kind === "file" || Boolean(attachment.fileId);
+
+            if (isFileAttachment) {
+              return (
+                <div
+                  key={attachment.id}
+                  className="group relative flex h-16 w-52 shrink-0 items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2 dark:border-white/10 dark:bg-slate-900/60"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+                      {attachment.name ?? t("input.attachment.untitled")}
+                    </div>
+                    <div className="truncate text-[10px] text-slate-500 dark:text-slate-400">
+                      {typeof attachment.size === "number" ? formatFileSize(attachment.size) : attachment.type || ""}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={cn(
+                      "absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full",
+                      "bg-slate-500 text-white hover:bg-slate-700 dark:bg-slate-400 dark:text-black dark:hover:bg-slate-200",
+                      "opacity-0 transition-opacity group-hover:opacity-100",
+                      "shadow-sm"
+                    )}
+                    onClick={() => removeAttachment(attachment.id)}
+                    aria-label={t("input.attachment.remove")}
+                    disabled={isLoading}
+                  >
+                    <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+                  </button>
+                </div>
+              );
+            }
+
+            if (!attachment.url) {
+              return null;
+            }
+
+            return (
+              <div
+                key={attachment.id}
+                className="group relative h-16 w-16 shrink-0"
               >
-                <X className="h-2.5 w-2.5" strokeWidth={2.5} />
-              </button>
-            </div>
-          ))}
+                <div className="h-full w-full overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/10 bg-slate-100 dark:bg-slate-800 transition-colors group-hover:border-slate-300 dark:group-hover:border-white/20">
+                  <Image
+                    src={attachment.url}
+                    alt={attachment.name ?? t("input.image.alt")}
+                    width={64}
+                    height={64}
+                    className="h-full w-full object-cover"
+                    unoptimized
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={cn(
+                    "absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full",
+                    "bg-slate-500 text-white hover:bg-slate-700 dark:bg-slate-400 dark:text-black dark:hover:bg-slate-200",
+                    "opacity-0 transition-opacity group-hover:opacity-100",
+                    "shadow-sm"
+                  )}
+                  onClick={() => removeAttachment(attachment.id)}
+                  aria-label={t("input.attachment.remove")}
+                  disabled={isLoading}
+                >
+                  <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
@@ -616,12 +673,12 @@ function ControlsContainer() {
             type="button"
             variant="ghost"
             size="icon"
-            aria-label={t("input.image.add")}
+            aria-label={t("input.attachment.add")}
             onClick={handleFileInputClick}
             className="min-h-[44px] min-w-[44px] size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
             disabled={isLoading}
           >
-            <ImagePlus className="w-5 h-5" />
+            <Paperclip className="w-5 h-5" />
           </Button>
         </div>
 
@@ -646,7 +703,7 @@ function ControlsContainer() {
       <Input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="*/*"
         multiple
         className="hidden"
         onChange={handleFileChange}

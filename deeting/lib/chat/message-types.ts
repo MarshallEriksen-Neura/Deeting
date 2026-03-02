@@ -1,4 +1,4 @@
-import type { ChatImageAttachment } from "@/lib/chat/message-content"
+import type { ChatAttachment } from "@/lib/chat/message-content"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 export type MessageRole = "user" | "assistant" | "system"
@@ -34,7 +34,7 @@ export interface Message {
   id: string
   role: MessageRole
   content: string
-  attachments?: ChatImageAttachment[]
+  attachments?: ChatAttachment[]
   createdAt: number
   metaInfo?: MessageMetaInfo
   toolCalls?: ToolCall[]

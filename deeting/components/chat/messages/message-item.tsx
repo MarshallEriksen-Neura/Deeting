@@ -2,15 +2,17 @@
 
 import * as React from "react"
 import Image from "next/image"
+import { FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { MessageActions } from "./message-actions"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
-import type { ChatImageAttachment } from "@/lib/chat/message-content"
+import type { ChatAttachment } from "@/lib/chat/message-content"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+import { formatFileSize } from "@/lib/utils/file"
 
 interface MessageItemProps {
   message: Message
@@ -220,7 +222,7 @@ MessageItem.displayName = "MessageItem"
  * 使用 React.memo 优化性能
  */
 interface MessageAttachmentsProps {
-  attachments: ChatImageAttachment[]
+  attachments: ChatAttachment[]
   variant?: "assistant" | "user"
   alt: string
 }
@@ -229,39 +231,78 @@ const MessageAttachments = React.memo<MessageAttachmentsProps>(
   ({ attachments, variant = "assistant", alt }) => {
     if (!attachments.length) return null
 
-    const gridCols = attachments.length > 2 ? "grid-cols-3" : "grid-cols-2"
+    const imageAttachments = attachments.filter(
+      (attachment) =>
+        !(attachment.kind === "file" || attachment.fileId) && Boolean(attachment.url)
+    )
+    const fileAttachments = attachments.filter(
+      (attachment) => attachment.kind === "file" || Boolean(attachment.fileId)
+    )
+    const gridCols = imageAttachments.length > 2 ? "grid-cols-3" : "grid-cols-2"
     const cardBg = variant === "user" ? "bg-white/10" : "bg-muted/40"
 
     return (
-      <div className={cn("grid gap-2", gridCols)}>
-        {attachments
-          .filter((attachment) => attachment.url)
-          .map((attachment) => (
-            <ImageLightbox
-              key={attachment.id}
-              src={attachment.url ?? ""}
-              alt={attachment.name ?? alt}
-            >
+      <div className="space-y-2">
+        {imageAttachments.length ? (
+          <div className={cn("grid gap-2", gridCols)}>
+            {imageAttachments.map((attachment) => (
+              <ImageLightbox
+                key={attachment.id}
+                src={attachment.url ?? ""}
+                alt={attachment.name ?? alt}
+              >
+                <div
+                  className={cn(
+                    "relative overflow-hidden rounded-xl border border-white/10 shadow-sm cursor-zoom-in group",
+                    cardBg
+                  )}
+                >
+                  <Image
+                    src={attachment.url ?? ""}
+                    alt={attachment.name ?? alt}
+                    width={320}
+                    height={320}
+                    className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    unoptimized
+                  />
+                  <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
+                    <span className="truncate">{attachment.name ?? alt}</span>
+                  </div>
+                </div>
+              </ImageLightbox>
+            ))}
+          </div>
+        ) : null}
+
+        {fileAttachments.length ? (
+          <div className="space-y-2">
+            {fileAttachments.map((attachment) => (
               <div
+                key={attachment.id}
                 className={cn(
-                  "relative overflow-hidden rounded-xl border border-white/10 shadow-sm cursor-zoom-in group",
-                  cardBg
+                  "flex items-center gap-3 rounded-xl border border-white/10 px-3 py-2 text-[12px] shadow-sm",
+                  variant === "user"
+                    ? "bg-white/10 text-primary-foreground"
+                    : "bg-muted/40 text-foreground"
                 )}
               >
-                <Image
-                  src={attachment.url ?? ""}
-                  alt={attachment.name ?? alt}
-                  width={320}
-                  height={320}
-                  className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  unoptimized
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-black/35 px-2 py-1 text-[10px] text-white/80">
-                  <span className="truncate">{attachment.name ?? alt}</span>
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-black/10 text-current">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">
+                    {attachment.name ?? attachment.fileId ?? "File"}
+                  </div>
+                  <div className="truncate opacity-80 text-[11px]">
+                    {typeof attachment.size === "number"
+                      ? formatFileSize(attachment.size)
+                      : attachment.type || attachment.fileId || ""}
+                  </div>
                 </div>
               </div>
-            </ImageLightbox>
-          ))}
+            ))}
+          </div>
+        ) : null}
       </div>
     )
   },
@@ -273,7 +314,9 @@ const MessageAttachments = React.memo<MessageAttachmentsProps>(
         (att, idx) =>
           att.id === nextProps.attachments[idx]?.id &&
           att.url === nextProps.attachments[idx]?.url &&
-          att.name === nextProps.attachments[idx]?.name
+          att.name === nextProps.attachments[idx]?.name &&
+          att.fileId === nextProps.attachments[idx]?.fileId &&
+          att.kind === nextProps.attachments[idx]?.kind
       )
 
     // variant 未变化

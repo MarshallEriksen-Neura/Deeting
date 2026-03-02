@@ -96,6 +96,14 @@
           "cancel": "取消",
           "confirm": "确认裁剪"
         }
+      },
+      "attachment": {
+        "add": "上传附件",
+        "remove": "移除附件",
+        "untitled": "未命名文件",
+        "errorInvalid": "当前模型不可用，请先选择模型后再上传文件。",
+        "errorRead": "读取附件失败，请重试。",
+        "errorUpload": "上传附件失败，请检查网络后重试。"
       }
     },
     "history": {

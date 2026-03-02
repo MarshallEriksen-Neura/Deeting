@@ -1,14 +1,22 @@
 export type ChatContentBlock =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } | string }
+  | {
+      type: "input_file"
+      input_file?: { file_id?: string; filename?: string } | string
+      file_id?: string
+      filename?: string
+    }
 
 export type ChatMessageContent = string | ChatContentBlock[]
 
-export type ChatImageAttachment = {
+export type ChatAttachment = {
   id: string
+  kind?: "image" | "file"
   url?: string
   objectKey?: string
-  source?: 'oss' | 'local' | 'data'
+  fileId?: string
+  source?: "oss" | "local" | "data" | "model"
   name?: string
   size?: number
   type?: string
@@ -16,6 +24,9 @@ export type ChatImageAttachment = {
   height?: number
   sha256?: string
 }
+
+// 兼容旧命名，避免影响现有调用方
+export type ChatImageAttachment = ChatAttachment
 
 const isContentBlock = (value: unknown): value is ChatContentBlock => {
   if (!value || typeof value !== "object") return false
@@ -46,7 +57,38 @@ const parseImageUrl = (
   return { url: trimmed }
 }
 
-const buildContentUrl = (attachment: ChatImageAttachment): string | null => {
+const parseInputFile = (
+  value: unknown
+): { fileId: string; filename?: string } | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed ? { fileId: trimmed } : null
+  }
+  if (!value || typeof value !== "object") return null
+  const candidate = value as { file_id?: unknown; filename?: unknown }
+  const rawFileId = candidate.file_id
+  if (typeof rawFileId !== "string" || !rawFileId.trim()) return null
+  const filename =
+    typeof candidate.filename === "string" && candidate.filename.trim()
+      ? candidate.filename.trim()
+      : undefined
+  return { fileId: rawFileId.trim(), filename }
+}
+
+const parseInputFileFromBlock = (
+  block: Extract<ChatContentBlock, { type: "input_file" }>
+): { fileId: string; filename?: string } | null => {
+  const nested = parseInputFile(block.input_file)
+  if (nested) return nested
+  const direct = parseInputFile({
+    file_id: block.file_id,
+    filename: block.filename,
+  })
+  if (direct) return direct
+  return null
+}
+
+const buildContentUrl = (attachment: ChatAttachment): string | null => {
   if (attachment.objectKey) {
     return `asset://${attachment.objectKey}`
   }
@@ -54,15 +96,31 @@ const buildContentUrl = (attachment: ChatImageAttachment): string | null => {
   return null
 }
 
+const isFileAttachment = (attachment: ChatAttachment) => {
+  if (attachment.kind === "file") return true
+  return typeof attachment.fileId === "string" && attachment.fileId.trim().length > 0
+}
+
 export function buildContentBlocks(
   text: string,
-  attachments: ChatImageAttachment[]
+  attachments: ChatAttachment[]
 ): ChatContentBlock[] {
   const blocks: ChatContentBlock[] = []
   if (text.trim()) {
     blocks.push({ type: "text", text })
   }
   attachments.forEach((attachment) => {
+    if (isFileAttachment(attachment)) {
+      const fileId = attachment.fileId?.trim()
+      if (!fileId) return
+      blocks.push({
+        type: "input_file",
+        input_file: attachment.name
+          ? { file_id: fileId, filename: attachment.name }
+          : { file_id: fileId },
+      })
+      return
+    }
     const url = buildContentUrl(attachment)
     if (!url) return
     blocks.push({
@@ -75,7 +133,7 @@ export function buildContentBlocks(
 
 export function buildMessageContent(
   text: string,
-  attachments: ChatImageAttachment[]
+  attachments: ChatAttachment[]
 ): ChatMessageContent {
   if (!attachments.length) {
     return text
@@ -84,7 +142,7 @@ export function buildMessageContent(
 }
 
 function parseBlocks(blocks: ChatContentBlock[]) {
-  const attachments: ChatImageAttachment[] = []
+  const attachments: ChatAttachment[] = []
   const textParts: string[] = []
 
   blocks.forEach((block, index) => {
@@ -100,8 +158,22 @@ function parseBlocks(blocks: ChatContentBlock[]) {
       if (!imageInfo) return
       attachments.push({
         id: `image-${index + 1}`,
+        kind: "image",
         url: imageInfo.url,
         objectKey: imageInfo.objectKey,
+      })
+      return
+    }
+
+    if (block.type === "input_file") {
+      const fileInfo = parseInputFileFromBlock(block)
+      if (!fileInfo) return
+      attachments.push({
+        id: `file-${index + 1}`,
+        kind: "file",
+        fileId: fileInfo.fileId,
+        name: fileInfo.filename,
+        source: "model",
       })
     }
   })
@@ -128,7 +200,7 @@ function tryParseContentString(content: string): ChatContentBlock[] | null {
 
 export function parseMessageContent(content: unknown): {
   text: string
-  attachments: ChatImageAttachment[]
+  attachments: ChatAttachment[]
 } {
   if (typeof content === "string") {
     const parsedBlocks = tryParseContentString(content)
@@ -158,7 +230,7 @@ export function parseMessageContent(content: unknown): {
 
 export function serializeMessageContent(
   text: string,
-  attachments: ChatImageAttachment[]
+  attachments: ChatAttachment[]
 ): string {
   if (!attachments.length) {
     return text

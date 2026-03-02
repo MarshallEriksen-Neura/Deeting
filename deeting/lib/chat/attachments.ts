@@ -1,12 +1,19 @@
-import type { ChatImageAttachment } from "@/lib/chat/message-content"
+import type { ChatAttachment } from "@/lib/chat/message-content"
 import { completeAssetUpload, initAssetUpload } from "@/lib/api/media-assets"
+import { uploadModelFile } from "@/lib/api/model-files"
 import { calculateFileHash } from "@/lib/utils/file"
 
 type AttachmentBuildResult = {
-  attachments: ChatImageAttachment[]
+  attachments: ChatAttachment[]
   rejected: number
   skipped: number
   errors: string[]
+}
+
+type AttachmentBuildOptions = {
+  model?: string
+  providerModelId?: string
+  purpose?: string
 }
 
 const createAttachmentId = () => {
@@ -14,7 +21,7 @@ const createAttachmentId = () => {
   if (cryptoObj?.randomUUID) {
     return cryptoObj.randomUUID()
   }
-  return `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 const hashFile = async (file: File) => {
@@ -42,6 +49,12 @@ const UPLOAD_ERROR_CODES = new Set([
   "upload_complete_failed",
   "missing_upload_url",
   "missing_asset_url",
+  "model_file_upload_failed",
+  "model_file_missing_id",
+])
+
+const ATTACHMENT_INVALID_ERROR_CODES = new Set([
+  "missing_model_context",
 ])
 
 const fileToDataUrl = (file: File): Promise<string> =>
@@ -63,10 +76,11 @@ const uploadFile = async (url: string, headers: Headers, file: File) => {
   }
 }
 
-const buildDataUrlAttachment = async (file: File): Promise<ChatImageAttachment> => {
+const buildDataUrlAttachment = async (file: File): Promise<ChatAttachment> => {
   const dataUrl = await fileToDataUrl(file)
   return {
     id: createAttachmentId(),
+    kind: "image",
     url: dataUrl,
     name: file.name,
     size: file.size,
@@ -75,7 +89,7 @@ const buildDataUrlAttachment = async (file: File): Promise<ChatImageAttachment> 
   }
 }
 
-const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> => {
+const buildImageAttachment = async (file: File): Promise<ChatAttachment> => {
   let contentHash: string
   try {
     contentHash = await hashFile(file)
@@ -128,6 +142,7 @@ const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> =>
 
   return {
     id: createAttachmentId(),
+    kind: "image",
     url: assetUrl,
     objectKey: init.object_key,
     name: file.name,
@@ -138,20 +153,69 @@ const buildImageAttachment = async (file: File): Promise<ChatImageAttachment> =>
   }
 }
 
-export async function buildImageAttachments(
-  files: File[]
+const buildModelFileAttachment = async (
+  file: File,
+  options: AttachmentBuildOptions
+): Promise<ChatAttachment> => {
+  let uploaded: Awaited<ReturnType<typeof uploadModelFile>>
+  try {
+    uploaded = await uploadModelFile({
+      file,
+      purpose: options.purpose,
+      model: options.model,
+      providerModelId: options.providerModelId,
+    })
+  } catch {
+    throw new Error("model_file_upload_failed")
+  }
+
+  const fileId = typeof uploaded.id === "string" ? uploaded.id.trim() : ""
+  if (!fileId) {
+    throw new Error("model_file_missing_id")
+  }
+
+  return {
+    id: createAttachmentId(),
+    kind: "file",
+    fileId,
+    name:
+      typeof uploaded.filename === "string" && uploaded.filename.trim()
+        ? uploaded.filename.trim()
+        : file.name,
+    size: file.size,
+    type: file.type,
+    source: "model",
+  }
+}
+
+const buildAttachment = async (
+  file: File,
+  options: AttachmentBuildOptions
+): Promise<ChatAttachment> => {
+  if (file.type.startsWith("image/")) {
+    return buildImageAttachment(file)
+  }
+
+  if (!options.model && !options.providerModelId) {
+    throw new Error("missing_model_context")
+  }
+
+  return buildModelFileAttachment(file, options)
+}
+
+export async function buildChatAttachments(
+  files: File[],
+  options: AttachmentBuildOptions = {}
 ): Promise<AttachmentBuildResult> {
-  const imageFiles = files.filter((file) => file.type.startsWith("image/"))
-  const skipped = files.length - imageFiles.length
-  if (!imageFiles.length) {
-    return { attachments: [], rejected: 0, skipped, errors: [] }
+  if (!files.length) {
+    return { attachments: [], rejected: 0, skipped: 0, errors: [] }
   }
 
   const results = await Promise.allSettled(
-    imageFiles.map(async (file) => buildImageAttachment(file))
+    files.map(async (file) => buildAttachment(file, options))
   )
 
-  const attachments: ChatImageAttachment[] = []
+  const attachments: ChatAttachment[] = []
   let rejected = 0
   const errors: string[] = []
   results.forEach((result) => {
@@ -171,11 +235,18 @@ export async function buildImageAttachments(
   })
 
   if (errors.length) {
-    console.warn("image_upload_failed", { errors })
+    console.warn("attachment_upload_failed", { errors })
   }
 
-  return { attachments, rejected, skipped, errors }
+  return { attachments, rejected, skipped: 0, errors }
 }
 
-export type { AttachmentBuildResult }
-export { UPLOAD_ERROR_CODES }
+// 兼容旧调用名
+export async function buildImageAttachments(
+  files: File[]
+): Promise<AttachmentBuildResult> {
+  return buildChatAttachments(files)
+}
+
+export type { AttachmentBuildResult, AttachmentBuildOptions }
+export { UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODES }

@@ -2,70 +2,40 @@
 
 import * as React from "react"
 import Image from "next/image"
-import { X } from "lucide-react"
+import { FileText, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { useLazyImage } from "@/hooks/use-lazy-image"
-import type { ChatImageAttachment } from "@/lib/chat/message-content"
-
-/**
- * AttachmentPreview 组件 - 附件预览
- * 
- * 用于展示聊天消息中的图片附件，支持懒加载和删除操作。
- * 使用 React.memo 优化性能，避免不必要的重渲染。
- * 
- * @example
- * ```tsx
- * // 用户输入场景
- * <AttachmentPreview
- *   attachments={attachments}
- *   variant="user"
- *   onRemove={handleRemove}
- *   onClear={handleClear}
- * />
- * 
- * // 助手消息场景（只读）
- * <AttachmentPreview
- *   attachments={attachments}
- *   variant="assistant"
- * />
- * ```
- */
+import { formatFileSize } from "@/lib/utils/file"
+import type { ChatAttachment } from "@/lib/chat/message-content"
 
 interface AttachmentPreviewProps {
-  /** 附件列表 */
-  attachments: ChatImageAttachment[]
-  /** 变体类型：assistant（助手消息）或 user（用户输入） */
-  variant?: 'assistant' | 'user'
-  /** 删除单个附件的回调 */
+  attachments: ChatAttachment[]
+  variant?: "assistant" | "user"
   onRemove?: (id: string) => void
-  /** 清空所有附件的回调 */
   onClear?: () => void
-  /** 是否禁用交互 */
   disabled?: boolean
-  /** 自定义类名 */
   className?: string
 }
 
-/**
- * 单个附件项组件
- * 使用 useLazyImage Hook 实现图片懒加载
- */
 interface AttachmentItemProps {
-  attachment: ChatImageAttachment
-  variant: 'assistant' | 'user'
+  attachment: ChatAttachment
+  variant: "assistant" | "user"
   onRemove?: (id: string) => void
   disabled?: boolean
 }
 
-const AttachmentItem = React.memo<AttachmentItemProps>(
+const isFileAttachment = (attachment: ChatAttachment) =>
+  attachment.kind === "file" || Boolean(attachment.fileId)
+
+const ImageAttachmentItem = React.memo<AttachmentItemProps>(
   ({ attachment, variant, onRemove, disabled }) => {
     const t = useI18n("chat")
-    const isUserVariant = variant === 'user'
+    const isUserVariant = variant === "user"
 
     const { imageSrc, isLoading, error, imgRef } = useLazyImage({
       src: attachment.url ?? "",
-      rootMargin: '50px',
+      rootMargin: "50px",
       threshold: 0.01,
     })
 
@@ -73,7 +43,6 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
       return null
     }
 
-    // 用户输入场景：紧凑缩略图
     if (isUserVariant) {
       return (
         <div className="group relative h-16 w-16 shrink-0">
@@ -110,7 +79,7 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
                 "shadow-sm"
               )}
               onClick={() => onRemove(attachment.id)}
-              aria-label={t("input.image.remove")}
+              aria-label={t("input.attachment.remove")}
               disabled={disabled}
             >
               <X className="h-2.5 w-2.5" strokeWidth={2.5} />
@@ -120,7 +89,6 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
       )
     }
 
-    // 助手消息场景：保持原有卡片样式
     return (
       <div className="group relative overflow-hidden rounded-xl shadow-sm border border-slate-200/70 dark:border-white/10 bg-white dark:bg-background/60">
         <div className="relative h-28 w-full bg-slate-100 dark:bg-slate-800">
@@ -147,9 +115,7 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
             {attachment.name ?? t("input.image.alt")}
           </span>
           {typeof attachment.size === "number" && (
-            <span className="shrink-0">
-              {Math.max(1, Math.round(attachment.size / 1024))} KB
-            </span>
+            <span className="shrink-0">{formatFileSize(attachment.size)}</span>
           )}
         </div>
       </div>
@@ -165,28 +131,133 @@ const AttachmentItem = React.memo<AttachmentItemProps>(
   }
 )
 
-AttachmentItem.displayName = "AttachmentItem"
+ImageAttachmentItem.displayName = "ImageAttachmentItem"
 
-/**
- * AttachmentPreview 主组件
- */
+const FileAttachmentItem = React.memo<AttachmentItemProps>(
+  ({ attachment, variant, onRemove, disabled }) => {
+    const t = useI18n("chat")
+    const isUserVariant = variant === "user"
+
+    if (isUserVariant) {
+      return (
+        <div className="group relative flex h-16 w-56 shrink-0 items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2 dark:border-white/10 dark:bg-slate-900/60">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+              {attachment.name ?? t("input.attachment.untitled")}
+            </div>
+            <div className="truncate text-[10px] text-slate-500 dark:text-slate-400">
+              {typeof attachment.size === "number"
+                ? formatFileSize(attachment.size)
+                : attachment.type || ""}
+            </div>
+          </div>
+          {onRemove && (
+            <button
+              type="button"
+              className={cn(
+                "absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full",
+                "bg-slate-500 text-white hover:bg-slate-700 dark:bg-slate-400 dark:text-black dark:hover:bg-slate-200",
+                "opacity-0 transition-opacity group-hover:opacity-100",
+                "shadow-sm"
+              )}
+              onClick={() => onRemove(attachment.id)}
+              aria-label={t("input.attachment.remove")}
+              disabled={disabled}
+            >
+              <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-slate-200/70 bg-white/90 p-3 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <FileText className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">
+            {attachment.name ?? t("input.attachment.untitled")}
+          </div>
+          <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+            {typeof attachment.size === "number"
+              ? formatFileSize(attachment.size)
+              : attachment.type || attachment.fileId || ""}
+          </div>
+        </div>
+      </div>
+    )
+  },
+  (prevProps, nextProps) => {
+    return (
+      prevProps.attachment.id === nextProps.attachment.id &&
+      prevProps.attachment.fileId === nextProps.attachment.fileId &&
+      prevProps.attachment.name === nextProps.attachment.name &&
+      prevProps.attachment.size === nextProps.attachment.size &&
+      prevProps.attachment.type === nextProps.attachment.type &&
+      prevProps.variant === nextProps.variant &&
+      prevProps.disabled === nextProps.disabled
+    )
+  }
+)
+
+FileAttachmentItem.displayName = "FileAttachmentItem"
+
+function AttachmentItem({ attachment, variant, onRemove, disabled }: AttachmentItemProps) {
+  if (isFileAttachment(attachment)) {
+    return (
+      <FileAttachmentItem
+        attachment={attachment}
+        variant={variant}
+        onRemove={onRemove}
+        disabled={disabled}
+      />
+    )
+  }
+
+  return (
+    <ImageAttachmentItem
+      attachment={attachment}
+      variant={variant}
+      onRemove={onRemove}
+      disabled={disabled}
+    />
+  )
+}
+
 export const AttachmentPreview = React.memo<AttachmentPreviewProps>(
-  ({ attachments, variant = 'user', onRemove, onClear, disabled, className }) => {
-    const isUserVariant = variant === 'user'
+  ({ attachments, variant = "user", onRemove, disabled, className }) => {
+    const isUserVariant = variant === "user"
 
     const validAttachments = React.useMemo(
-      () => attachments.filter((attachment) => attachment.url),
+      () =>
+        attachments.filter(
+          (attachment) => isFileAttachment(attachment) || Boolean(attachment.url)
+        ),
       [attachments]
+    )
+
+    const imageAttachments = React.useMemo(
+      () => validAttachments.filter((attachment) => !isFileAttachment(attachment)),
+      [validAttachments]
+    )
+
+    const fileAttachments = React.useMemo(
+      () => validAttachments.filter((attachment) => isFileAttachment(attachment)),
+      [validAttachments]
     )
 
     if (validAttachments.length === 0) {
       return null
     }
 
-    // 用户输入场景：紧凑的水平缩略图条
     if (isUserVariant) {
       return (
-        <div className={cn("flex items-center gap-2", className)}>
+        <div className={cn("flex flex-wrap items-center gap-2", className)}>
           {validAttachments.map((attachment) => (
             <AttachmentItem
               key={attachment.id}
@@ -200,32 +271,47 @@ export const AttachmentPreview = React.memo<AttachmentPreviewProps>(
       )
     }
 
-    // 助手消息场景：保持网格布局
     return (
       <div
         className={cn(
-          "rounded-2xl border p-3 shadow-sm",
+          "rounded-2xl border p-3 shadow-sm space-y-2",
           "border-slate-200/70 dark:border-white/10",
           "bg-slate-50/80 dark:bg-muted/30",
           className
         )}
       >
-        <div
-          className={cn(
-            "grid gap-2",
-            validAttachments.length > 3 ? "grid-cols-3" : "grid-cols-2"
-          )}
-        >
-          {validAttachments.map((attachment) => (
-            <AttachmentItem
-              key={attachment.id}
-              attachment={attachment}
-              variant={variant}
-              onRemove={onRemove}
-              disabled={disabled}
-            />
-          ))}
-        </div>
+        {imageAttachments.length ? (
+          <div
+            className={cn(
+              "grid gap-2",
+              imageAttachments.length > 3 ? "grid-cols-3" : "grid-cols-2"
+            )}
+          >
+            {imageAttachments.map((attachment) => (
+              <AttachmentItem
+                key={attachment.id}
+                attachment={attachment}
+                variant={variant}
+                onRemove={onRemove}
+                disabled={disabled}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {fileAttachments.length ? (
+          <div className="space-y-2">
+            {fileAttachments.map((attachment) => (
+              <AttachmentItem
+                key={attachment.id}
+                attachment={attachment}
+                variant={variant}
+                onRemove={onRemove}
+                disabled={disabled}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
     )
   },
@@ -235,7 +321,13 @@ export const AttachmentPreview = React.memo<AttachmentPreviewProps>(
     }
     const attachmentsEqual = prevProps.attachments.every((prev, index) => {
       const next = nextProps.attachments[index]
-      return prev.id === next.id && prev.url === next.url
+      return (
+        prev.id === next.id &&
+        prev.url === next.url &&
+        prev.fileId === next.fileId &&
+        prev.name === next.name &&
+        prev.kind === next.kind
+      )
     })
     if (!attachmentsEqual) {
       return false
@@ -243,7 +335,8 @@ export const AttachmentPreview = React.memo<AttachmentPreviewProps>(
     return (
       prevProps.variant === nextProps.variant &&
       prevProps.disabled === nextProps.disabled &&
-      prevProps.className === nextProps.className
+      prevProps.className === nextProps.className &&
+      prevProps.onClear === nextProps.onClear
     )
   }
 )

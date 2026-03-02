@@ -96,6 +96,14 @@
           "cancel": "Cancel",
           "confirm": "Confirm Crop"
         }
+      },
+      "attachment": {
+        "add": "Add attachment",
+        "remove": "Remove attachment",
+        "untitled": "Untitled file",
+        "errorInvalid": "No available model context. Please select a model before uploading files.",
+        "errorRead": "Failed to read attachment. Please try again.",
+        "errorUpload": "Attachment upload failed. Please check your network and try again."
       }
     },
     "history": {
