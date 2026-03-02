@@ -45,11 +45,13 @@ const mapFromInstanceOnly = (inst: ProviderInstanceResponse) => ({
 function buildItems(hub?: ProviderHubResponse, instances: ProviderInstanceResponse[] = []) {
   const result: Array<ReturnType<typeof mapFromHub>> = []
   const seen = new Set<string>()
+  const instanceById = new Map(instances.map((inst) => [inst.id, inst]))
 
   if (hub?.providers?.length) {
     for (const preset of hub.providers) {
       for (const inst of preset.instances || []) {
-        const mapped = mapFromHub(preset, inst)
+        const fullInst = instanceById.get(String(inst.id))
+        const mapped = mapFromHub(preset, fullInst ?? inst)
         result.push(mapped)
         seen.add(mapped.id)
       }

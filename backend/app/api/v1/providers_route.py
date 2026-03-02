@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
 from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models.provider_instance import ProviderModel
@@ -21,6 +22,7 @@ from app.schemas.provider_instance import (
     ProviderVerifyResponse,
 )
 from app.services.providers.provider_hub_service import ProviderHubService
+from app.services.providers.health_monitor import HealthMonitorService
 from app.services.providers.provider_instance_service import ProviderInstanceService
 
 router = APIRouter(prefix="/providers", tags=["Providers"])
@@ -139,7 +141,23 @@ async def list_instances(
     instances = await svc.list_instances(
         user_id=getattr(user, "id", None), include_public=include_public
     )
-    return instances
+
+    health_svc = HealthMonitorService(cache.redis)
+    response_list: list[ProviderInstanceResponse] = []
+
+    for inst in instances:
+        dto = ProviderInstanceResponse.model_validate(inst)
+        try:
+            health = await health_svc.get_health_status(str(inst.id))
+            dto.health_status = health.get("status", "unknown")
+            dto.latency_ms = health.get("latency", 0)
+            dto.sparkline = await health_svc.get_sparkline(str(inst.id))
+        except Exception:
+            # Redis unavailable or init error
+            pass
+        response_list.append(dto)
+
+    return response_list
 
 
 @router.patch("/instances/{instance_id}", response_model=ProviderInstanceResponse)

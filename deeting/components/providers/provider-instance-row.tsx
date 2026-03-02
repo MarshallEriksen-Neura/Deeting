@@ -53,17 +53,25 @@ interface Props {
 
 export default function ProviderInstanceRow({ data, index, onToggle, onDelete, onViewModels, onEdit }: Props) {
   const t = useTranslations("providers.list")
-  const [history, setHistory] = React.useState<number[]>(data.sparkline || [])
   const [confirmOpen, setConfirmOpen] = React.useState(false)
 
-  React.useEffect(() => {
-    if (typeof data.latency_ms === "number") {
-      setHistory((prev) => {
-        const next = [...prev, data.latency_ms ?? 0].slice(-20)
-        return next
-      })
+  const history = React.useMemo(() => {
+    const values = Array.isArray(data.sparkline)
+      ? data.sparkline
+          .map((v) => Number(v))
+          .filter((v) => Number.isFinite(v))
+      : []
+
+    if (values.length > 0) {
+      return values.slice(-20)
     }
-  }, [data.latency_ms])
+
+    if (typeof data.latency_ms === "number" && Number.isFinite(data.latency_ms)) {
+      return [Math.max(data.latency_ms, 0)]
+    }
+
+    return []
+  }, [data.sparkline, data.latency_ms])
 
   const isEnabled = data.is_enabled !== false
   const isOffline = (data.health_status || "").toLowerCase() === "down" || !isEnabled

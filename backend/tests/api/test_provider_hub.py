@@ -1,9 +1,12 @@
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 
+from app.core.cache import cache
 from app.models import ProviderPreset
+from app.models.provider_instance import ProviderInstance
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -145,3 +148,41 @@ async def test_provider_hub_marks_connected_after_instance_created(
     assert openai_card is not None
     assert openai_card["connected"] is True
     assert len(openai_card.get("instances", [])) >= 1
+
+
+@pytest.mark.asyncio
+async def test_provider_instances_includes_health_and_sparkline(
+    client, auth_tokens, AsyncSessionLocal
+):
+    async with AsyncSessionLocal() as session:
+        await _seed_presets(session)
+        inst = ProviderInstance(
+            id=uuid4(),
+            preset_slug="openai",
+            name="openai-health-check",
+            base_url="https://api.openai.com",
+            credentials_ref="ENV_OPENAI_KEY",
+            priority=0,
+            is_enabled=True,
+        )
+        session.add(inst)
+        await session.commit()
+
+        await cache._redis.hset(  # type: ignore[attr-defined]
+            f"provider:health:{inst.id}",
+            mapping={"status": "healthy", "latency": 187},
+        )
+        await cache._redis.rpush(  # type: ignore[attr-defined]
+            f"provider:health:{inst.id}:history", 160, 170, 180
+        )
+
+    headers = {"Authorization": f"Bearer {auth_tokens['access_token']}"}
+    resp = await client.get("/api/v1/providers/instances", headers=headers)
+
+    assert resp.status_code == 200
+    rows = resp.json()
+    target = next((item for item in rows if item["id"] == str(inst.id)), None)
+    assert target is not None
+    assert target["health_status"] == "healthy"
+    assert target["latency_ms"] == 187
+    assert target["sparkline"] == [160, 170, 180]

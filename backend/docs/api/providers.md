@@ -12,6 +12,19 @@
   - `include_public`：是否包含公共实例
 - 响应：`ProviderHubResponse`
 
+## Provider 实例列表（用户侧）
+
+- `GET /providers/instances`
+- Query：
+  - `include_public`：是否包含公共实例
+- 响应：`ProviderInstanceResponse[]`
+- 说明：
+  - 返回字段包含 `health_status`、`latency_ms`、`sparkline`。
+  - 以上健康字段由 Redis 健康监控键实时注入：
+    - `provider:health:{instance_id}`
+    - `provider:health:{instance_id}:history`
+  - 当 Redis 不可用或无数据时，回退为 schema 默认值（`unknown` / `0` / `[]`）。
+
 ### 搜索索引（Meilisearch）
 
 - 索引名：`${MEILISEARCH_INDEX_PREFIX}_provider_presets`（默认 `ai_gateway_provider_presets`）
@@ -34,4 +47,5 @@
 ---
 
 变更记录
+- 2026-03-02：新增 `GET /providers/instances` 文档，明确返回 `health_status/latency_ms/sparkline` 及 Redis 回退行为。
 - 2026-02-02：新增 Providers Hub API 文档与 Meilisearch 索引说明。
