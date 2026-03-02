@@ -17,6 +17,10 @@
   - 响应: OpenAI ChatCompletion 格式
   - 支持流式 (stream=true)
 
+- POST /v1/files
+  - 请求: multipart/form-data（file + purpose/model/provider_model_id）
+  - 响应: 上游文件对象
+
 - POST /v1/embeddings
   - 请求: OpenAI Embeddings 格式
   - 响应: OpenAI Embeddings 格式
@@ -45,9 +49,10 @@ from fastapi import APIRouter
 
 router = APIRouter(tags=["Internal Gateway"])
 
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.api.v1.external.gateway import _stream_billing_callback
 from app.constants.model_capability_map import (
@@ -101,6 +106,10 @@ from app.services.orchestrator.orchestrator import (
 )
 from app.services.orchestrator.registry import step_registry
 from app.services.providers.blocks_transformer import build_normalized_blocks
+from app.services.providers.model_file_proxy_service import (
+    ModelFileProxyError,
+    ModelFileProxyService,
+)
 from app.services.system import CancelService
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
@@ -926,6 +935,77 @@ async def embeddings(
     response_body = ctx.get("response_transform", "response")
     status_code = ctx.get("upstream_call", "status_code") or 200
     return JSONResponse(content=response_body, status_code=status_code)
+
+
+async def _parse_file_upload_form(
+    request: Request,
+) -> tuple[UploadFile, dict[str, str], str | None, str | None]:
+    form = await request.form()
+    file_val = form.get("file")
+    if not isinstance(file_val, (UploadFile, StarletteUploadFile)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="file is required in multipart form",
+        )
+
+    text_fields: dict[str, str] = {}
+    for key, value in form.multi_items():
+        if key == "file":
+            continue
+        if isinstance(value, (UploadFile, StarletteUploadFile)):
+            continue
+        text_fields[key] = str(value)
+
+    model = text_fields.pop("model", None)
+    provider_model_id = text_fields.pop("provider_model_id", None)
+    return file_val, text_fields, model, provider_model_id
+
+
+@router.post(
+    "/files",
+)
+async def upload_file_to_model(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    trace_id = getattr(request.state, "trace_id", None) if request else None
+    try:
+        upload_file, text_fields, model, provider_model_id = await _parse_file_upload_form(
+            request
+        )
+        file_bytes = await upload_file.read()
+        service = ModelFileProxyService(db)
+        result = await service.proxy_upload(
+            channel="internal",
+            user_id=str(user.id) if user else None,
+            model=model,
+            provider_model_id=provider_model_id,
+            form_fields=text_fields,
+            filename=upload_file.filename or "",
+            file_bytes=file_bytes,
+            content_type=upload_file.content_type,
+            include_public=True,
+            allowed_providers=None,
+        )
+    except HTTPException:
+        raise
+    except ModelFileProxyError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=GatewayError(
+                code=exc.code,
+                message=exc.message,
+                source=exc.source,
+                trace_id=trace_id,
+                upstream_status=exc.upstream_status,
+            ).model_dump(),
+        )
+
+    response_body = result.response_body
+    if not isinstance(response_body, (dict, list)):
+        response_body = {"data": response_body}
+    return JSONResponse(content=response_body, status_code=result.status_code)
 
 
 @router.get("/models", response_model=ModelGroupListResponse)

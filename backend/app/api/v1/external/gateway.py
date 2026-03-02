@@ -14,6 +14,10 @@
   - 响应: OpenAI ChatCompletion 格式（已脱敏）
   - 支持流式 (stream=true)
 
+- POST /v1/files
+  - 请求: multipart/form-data（file + purpose/model/provider_model_id）
+  - 响应: 上游文件对象
+
 - POST /v1/embeddings
   - 请求: OpenAI Embeddings 格式
   - 响应: OpenAI Embeddings 格式（已脱敏）
@@ -40,10 +44,11 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.core.cache import cache
 from app.core.config import settings
@@ -75,6 +80,10 @@ from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import (
     GatewayOrchestrator,
     get_external_orchestrator,
+)
+from app.services.providers.model_file_proxy_service import (
+    ModelFileProxyError,
+    ModelFileProxyService,
 )
 from app.services.providers.api_key import ApiKeyService
 from app.services.workflow.steps.upstream_call import (
@@ -610,6 +619,27 @@ def handle_workflow_result(ctx: WorkflowContext) -> JSONResponse | StreamingResp
     return JSONResponse(content=response_body, status_code=status_code)
 
 
+async def _parse_file_upload_form(
+    request: Request,
+) -> tuple[UploadFile, dict[str, str], str | None, str | None]:
+    form = await request.form()
+    file_val = form.get("file")
+    if not isinstance(file_val, (UploadFile, StarletteUploadFile)):
+        raise ValueError("file is required in multipart form")
+
+    text_fields: dict[str, str] = {}
+    for key, value in form.multi_items():
+        if key == "file":
+            continue
+        if isinstance(value, (UploadFile, StarletteUploadFile)):
+            continue
+        text_fields[key] = str(value)
+
+    model = text_fields.pop("model", None)
+    provider_model_id = text_fields.pop("provider_model_id", None)
+    return file_val, text_fields, model, provider_model_id
+
+
 # ==========================================
 # Route Handlers
 # ==========================================
@@ -739,6 +769,90 @@ async def embeddings(
     ctx.set("external_memory", "path", path)
     await orchestrator.execute(ctx)
     return handle_workflow_result(ctx)
+
+
+@router.post("/files")
+async def files(
+    request: Request,
+    principal: ExternalPrincipal = Depends(get_external_principal),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    trace_id = getattr(request.state, "trace_id", None) if request else None
+    path = request.url.path if request else ""
+    user_id = await _resolve_external_user_id(request, path, db, principal=principal)
+    if not user_id:
+        return _external_user_required_response(request)
+
+    try:
+        upload_file, text_fields, model, provider_model_id = await _parse_file_upload_form(
+            request
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=GatewayError(
+                code="INVALID_REQUEST",
+                message=str(exc),
+                source="client",
+                trace_id=trace_id,
+            ).model_dump(),
+        )
+
+    if principal.allowed_models:
+        if not model:
+            return JSONResponse(
+                status_code=400,
+                content=GatewayError(
+                    code="INVALID_REQUEST",
+                    message="model is required when allowed_models is configured",
+                    source="gateway",
+                    trace_id=trace_id,
+                ).model_dump(),
+            )
+        if model not in principal.allowed_models:
+            return JSONResponse(
+                status_code=403,
+                content=GatewayError(
+                    code="MODEL_NOT_ALLOWED",
+                    message=f"Model not allowed by API key: {model}",
+                    source="gateway",
+                    trace_id=trace_id,
+                ).model_dump(),
+            )
+
+    allowed_providers, _, _ = _parse_provider_scopes(principal.scopes)
+    file_bytes = await upload_file.read()
+    service = ModelFileProxyService(db)
+
+    try:
+        result = await service.proxy_upload(
+            channel="external",
+            user_id=user_id,
+            model=model,
+            provider_model_id=provider_model_id,
+            form_fields=text_fields,
+            filename=upload_file.filename or "",
+            file_bytes=file_bytes,
+            content_type=upload_file.content_type,
+            include_public=True,
+            allowed_providers=allowed_providers or None,
+        )
+    except ModelFileProxyError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=GatewayError(
+                code=exc.code,
+                message=exc.message,
+                source=exc.source,
+                trace_id=trace_id,
+                upstream_status=exc.upstream_status,
+            ).model_dump(),
+        )
+
+    response_body = result.response_body
+    if not isinstance(response_body, (dict, list)):
+        response_body = {"data": response_body}
+    return JSONResponse(content=response_body, status_code=result.status_code)
 
 
 @router.get("/models", response_model=ModelListResponse)

@@ -208,6 +208,48 @@ data: [DONE]
 
 ---
 
+### 1.1 Files Upload
+
+将文件直接上传到上游模型文件接口（OpenAI-compatible `POST /files`）。
+
+**端点**: `POST /files`  
+**Content-Type**: `multipart/form-data`
+
+#### 表单字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `file` | file | 是 | 文件内容（如 `pdf/txt/docx`） |
+| `purpose` | string | 否 | 上传用途，默认 `assistants` |
+| `model` | string | 否 | 对外模型名（用于路由） |
+| `provider_model_id` | string | 否 | 指定 provider model ID（优先于 `model`） |
+
+说明：
+- `model` 与 `provider_model_id` 至少提供一个。
+- 若同时提供 `model` 与 `provider_model_id`，两者必须指向同一模型。
+- 网关会按内部路由策略选择实例，并向上游 `.../files` 发起 multipart 请求。
+
+#### 成功响应示例
+
+```json
+{
+  "id": "file-abc123",
+  "object": "file",
+  "purpose": "assistants",
+  "filename": "demo.pdf"
+}
+```
+
+#### 常见错误
+
+| HTTP | code | 说明 |
+|------|------|------|
+| 400 | `INVALID_REQUEST` | 缺少 `file`，或未传 `model/provider_model_id` |
+| 404 | `MODEL_NOT_AVAILABLE` | 当前用户下无可用路由 |
+| 502/504 | `UPSTREAM_ERROR`/`UPSTREAM_TIMEOUT` | 上游失败或超时 |
+
+---
+
 ### 2. Sandbox Run
 
 执行内部沙箱代码（OpenSandbox）。  

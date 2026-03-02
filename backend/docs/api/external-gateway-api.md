@@ -217,6 +217,51 @@ data: [DONE]
 
 ---
 
+### 1.1 Files Upload
+
+将文件直接上传到上游模型文件接口（OpenAI-compatible `POST /files`）。
+
+**端点**: `POST /files`  
+**Content-Type**: `multipart/form-data`
+
+#### 表单字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `file` | file | 是 | 文件内容（如 `pdf/txt/docx`） |
+| `purpose` | string | 否 | 上传用途，默认 `assistants` |
+| `model` | string | 否 | 对外模型名（用于路由与 API Key `allowed_models` 校验） |
+| `provider_model_id` | string | 否 | 指定 provider model ID（优先于 `model`） |
+
+说明：
+- `model` 与 `provider_model_id` 至少提供一个。
+- 若同时提供 `model` 与 `provider_model_id`，两者必须指向同一模型。
+- 当 API Key 配置了 `allowed_models` 时，必须传 `model` 且需在允许列表内。
+- 网关会按当前用户可见实例和 provider scope 做路由，再向上游 `.../files` 发起 multipart 请求。
+
+#### 成功响应示例
+
+```json
+{
+  "id": "file-abc123",
+  "object": "file",
+  "purpose": "assistants",
+  "filename": "demo.pdf"
+}
+```
+
+#### 常见错误
+
+| HTTP | code | 说明 |
+|------|------|------|
+| 400 | `INVALID_REQUEST` | 缺少 `file`，或未传 `model/provider_model_id` |
+| 401 | `INVALID_API_KEY` | 外部 API Key 未绑定用户 |
+| 403 | `MODEL_NOT_ALLOWED` | 请求模型不在 API Key 允许范围 |
+| 404 | `MODEL_NOT_AVAILABLE` | 当前用户/权限下无可用路由 |
+| 502/504 | `UPSTREAM_ERROR`/`UPSTREAM_TIMEOUT` | 上游失败或超时 |
+
+---
+
 ### 2. Embeddings
 
 创建文本嵌入向量。

@@ -95,6 +95,7 @@
 | `VALIDATION_ERROR` | 请求参数校验失败 | 检查请求体格式和必填字段 |
 | `INVALID_MODEL` | 模型名称无效 | 使用 GET /models 获取可用模型列表 |
 | `INVALID_REQUEST` | 请求格式错误 | 检查 JSON 格式和字段类型 |
+| `MODEL_NOT_AVAILABLE` | 当前用户/权限下无可用模型路由 | 检查模型是否存在、实例是否启用、是否有权限 |
 | `MISSING_PARAMETER` | 缺少必填参数 | 补充必填参数 |
 | `TEMPLATE_RENDER_ERROR` | 模板渲染失败 | 检查 prompt 模板语法 |
 
@@ -104,6 +105,7 @@
 |--------|----------|------|----------|
 | `UPSTREAM_ERROR` | 502 | 上游服务错误 | 稍后重试，可能是提供商临时故障 |
 | `UPSTREAM_TIMEOUT` | 504 | 上游服务超时 | 减少请求复杂度或稍后重试 |
+| `UPSTREAM_AUTH_MISSING` | 502 | 上游鉴权密钥缺失或不可用 | 检查 provider 凭证引用与密钥配置 |
 | `HTTP_500` | 502 | 上游返回 500 | 稍后重试 |
 | `HTTP_503` | 502 | 上游返回 503 | 上游过载，稍后重试 |
 | `CIRCUIT_OPEN` | 503 | 熔断器开启 | 上游故障，等待恢复 |
@@ -149,7 +151,7 @@
 | `400` | Bad Request | VALIDATION_ERROR, INVALID_MODEL |
 | `401` | Unauthorized | INVALID_SIGNATURE, INVALID_API_KEY, TOKEN_EXPIRED |
 | `402` | Payment Required | INSUFFICIENT_BALANCE |
-| `403` | Forbidden | QUOTA_*_EXCEEDED, IP_NOT_WHITELISTED, SCOPE_DENIED |
+| `403` | Forbidden | QUOTA_*_EXCEEDED, IP_NOT_WHITELISTED, SCOPE_DENIED, MODEL_NOT_ALLOWED |
 | `404` | Not Found | 资源不存在 |
 | `429` | Too Many Requests | RATE_LIMIT_* |
 | `500` | Internal Server Error | 内部错误 |
