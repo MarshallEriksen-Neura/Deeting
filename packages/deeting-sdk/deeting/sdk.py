@@ -11,8 +11,7 @@ class DeetingSDK:
 
     def section(self, title: str) -> None:
         """在输出中创建一个新的视觉分段"""
-        print(f"
-[deeting.section] {title}")
+        print(f"[deeting.section] {title}")
 
     def call_tool(self, tool_name: str, **arguments: Any) -> Dict[str, Any]:
         """实时调用 Deeting 系统中的其他工具"""
