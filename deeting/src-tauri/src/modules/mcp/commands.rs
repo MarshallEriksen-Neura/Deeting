@@ -60,6 +60,9 @@ const LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_RETENTION_SECS: i64 = 7 * 24 * 60 * 60;
 const LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_NAME: &str = "conversation_summary_idle_dispatch";
 const LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_INTERVAL_SECS: i64 = 5;
 const LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_INITIAL_DELAY_SECS: i64 = 5;
+const LOCAL_KNOWLEDGE_CONTEXT_MARKER: &str = "Local Knowledge Context (AUTO)";
+const LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS: i64 = 4;
+const LOCAL_KNOWLEDGE_CONTEXT_MAX_CHARS_PER_SNIPPET: usize = 500;
 
 #[derive(Debug, Deserialize)]
 struct CloudToolSummary {
@@ -531,12 +534,25 @@ pub async fn create_local_user_document(
     state: State<'_, AppState>,
     payload: CreateLocalUserDocumentRequest,
 ) -> Result<LocalKnowledgeFile, String> {
-    let state = &state.mcp;
-    state
+    let app_state = state.inner().clone();
+    let mcp_state = &app_state.mcp;
+    let file = mcp_state
         .store
         .create_local_user_document(payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    let file_id = file.id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) = sync_local_document_vector_index(&app_state, &file_id).await {
+            warn!(
+                "local knowledge vector indexing failed for file {}: {}",
+                file_id, err
+            );
+        }
+    });
+
+    Ok(file)
 }
 
 #[tauri::command]
@@ -571,12 +587,25 @@ pub async fn delete_local_user_document(
     state: State<'_, AppState>,
     file_id: String,
 ) -> Result<(), String> {
-    let state = &state.mcp;
-    state
+    let app_state = state.inner();
+    let mcp_state = &app_state.mcp;
+    mcp_state
         .store
         .delete_local_user_document(&file_id)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    if let Err(err) = app_state
+        .memory
+        .store
+        .clear_knowledge_chunks_for_file(&file_id)
+        .await
+    {
+        warn!(
+            "failed to clear local knowledge vector index for deleted file {}: {}",
+            file_id, err
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -584,12 +613,25 @@ pub async fn retry_local_user_document(
     state: State<'_, AppState>,
     file_id: String,
 ) -> Result<LocalKnowledgeFile, String> {
-    let state = &state.mcp;
-    state
+    let app_state = state.inner().clone();
+    let mcp_state = &app_state.mcp;
+    let file = mcp_state
         .store
         .retry_local_user_document(&file_id)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    let file_id = file.id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) = sync_local_document_vector_index(&app_state, &file_id).await {
+            warn!(
+                "local knowledge vector re-index failed for retried file {}: {}",
+                file_id, err
+            );
+        }
+    });
+
+    Ok(file)
 }
 
 #[tauri::command]
@@ -1187,6 +1229,15 @@ pub async fn send_local_conversation_message(
         .await
         .map_err(to_string)?;
     let chat_session_id = chat_ctx.session_id.clone();
+    let mut request_messages = chat_ctx.messages.clone();
+    if let Err(err) =
+        maybe_inject_local_knowledge_prompt(app_state, mcp_state, &mut request_messages).await
+    {
+        warn!(
+            "failed to inject local knowledge prompt for session {}: {}",
+            normalized_session_id, err
+        );
+    }
 
     let model_connection = resolve_local_model_connection(
         app_state,
@@ -1196,7 +1247,7 @@ pub async fn send_local_conversation_message(
     .await
     .map_err(to_string)?;
     let trace_id = Uuid::new_v4().to_string();
-    let input_tokens_est = estimate_local_chat_messages_tokens(&chat_ctx.messages);
+    let input_tokens_est = estimate_local_chat_messages_tokens(&request_messages);
     let upstream_endpoint = build_chat_endpoint(&model_connection.base_url);
 
     let chat_started = Instant::now();
@@ -1207,7 +1258,7 @@ pub async fn send_local_conversation_message(
         LocalChatRequest {
             assistant_id: chat_ctx.assistant_id.clone(),
             model: model_connection.model_id.clone(),
-            messages: chat_ctx.messages,
+            messages: request_messages,
             temperature: payload.temperature,
             top_p: payload.top_p,
             max_tokens: payload.max_tokens,
@@ -1366,8 +1417,17 @@ pub async fn regenerate_local_conversation_reply(
     )
     .await
     .map_err(to_string)?;
+    let mut request_messages = regenerate_ctx.messages.clone();
+    if let Err(err) =
+        maybe_inject_local_knowledge_prompt(app_state, mcp_state, &mut request_messages).await
+    {
+        warn!(
+            "failed to inject local knowledge prompt for regenerate session {}: {}",
+            regenerate_ctx.session_id, err
+        );
+    }
     let trace_id = Uuid::new_v4().to_string();
-    let input_tokens_est = estimate_local_chat_messages_tokens(&regenerate_ctx.messages);
+    let input_tokens_est = estimate_local_chat_messages_tokens(&request_messages);
     let upstream_endpoint = build_chat_endpoint(&model_connection.base_url);
 
     let chat_started = Instant::now();
@@ -1378,7 +1438,7 @@ pub async fn regenerate_local_conversation_reply(
         LocalChatRequest {
             assistant_id: regenerate_ctx.assistant_id.clone(),
             model: model_connection.model_id.clone(),
-            messages: regenerate_ctx.messages.clone(),
+            messages: request_messages.clone(),
             temperature: payload.temperature,
             top_p: payload.top_p,
             max_tokens: payload.max_tokens,
@@ -1694,13 +1754,14 @@ pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Resu
 pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String> {
     let plugins = vec![
         serde_json::json!({
-            "id": "core.tools.crawler",
-            "name": "Scout (Web Crawler)",
-            "description": "Deep web crawling, site ingestion, and documentation learning.",
+            "id": "official.skills.crawler",
+            "name": "Scout Crawler",
+            "description": "Universal web crawling and content extraction skill.",
+            "package_path": "packages/official-skills/crawler",
             "tools": [
                 {
                     "name": "fetch_web_content",
-                    "description": "Fetch and extract content from a SINGLE URL.",
+                    "description": "Fetch and extract clean content from a SINGLE URL.",
                     "input_schema": {
                         "type": "object",
                         "properties": {
@@ -1725,9 +1786,10 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
             ]
         }),
         serde_json::json!({
-            "id": "system.code_interpreter",
+            "id": "official.skills.code_interpreter",
             "name": "Code Interpreter",
             "description": "Executes Python code in a stateful sandbox for data analysis and math.",
+            "package_path": "packages/official-skills/code-interpreter",
             "tools": [
                 {
                     "name": "run_python",
@@ -1735,7 +1797,8 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
                     "input_schema": {
                         "type": "object",
                         "properties": {
-                            "code": {"type": "string", "description": "The Python code to execute."}
+                            "code": {"type": "string", "description": "The Python code to execute."},
+                            "session_id": {"type": "string", "description": "Optional session ID."}
                         },
                         "required": ["code"]
                     }
@@ -1743,17 +1806,168 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
             ]
         }),
         serde_json::json!({
-            "id": "system.planner",
+            "id": "official.skills.planner",
             "name": "Planner",
             "description": "Architect capabilities: Design execution plans and manage workflows.",
+            "package_path": "packages/official-skills/planner",
             "tools": [
                 {
                     "name": "propose_execution_plan",
                     "description": "Propose a multi-step execution plan for complex requests.",
                     "input_schema": { "type": "object", "properties": {} }
+                },
+                {
+                    "name": "retrieve_similar_plans",
+                    "description": "Search the Knowledge Base for similar past plans to reuse.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "The user's current request description" }
+                        },
+                        "required": ["query"]
+                    }
                 }
             ]
         }),
+        serde_json::json!({
+            "id": "official.skills.image_generation",
+            "name": "Image Generation",
+            "description": "Generate images from text descriptions.",
+            "package_path": "packages/official-skills/image-generation",
+            "tools": [
+                {
+                    "name": "generate_image",
+                    "description": "Generate an image based on a text prompt.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": { "type": "string" },
+                            "size": { "type": "string", "default": "1024x1024" }
+                        },
+                        "required": ["prompt"]
+                    }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "official.skills.memory",
+            "name": "Knowledge & Memory",
+            "description": "Manage long-term memory and knowledge base search.",
+            "package_path": "packages/official-skills/memory",
+            "tools": [
+                {
+                    "name": "add_knowledge_chunk",
+                    "description": "Store information in long-term memory.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "content": { "type": "string" },
+                            "metadata": { "type": "object" }
+                        },
+                        "required": ["content"]
+                    }
+                },
+                {
+                    "name": "search_knowledge",
+                    "description": "Search personal and system knowledge base.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string" },
+                            "scope": { "type": "string", "enum": ["personal", "system", "all"] }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "official.skills.expert_network",
+            "name": "Expert Network",
+            "description": "Retrieve expert assistants for a given intent query.",
+            "package_path": "packages/official-skills/expert-network",
+            "tools": [
+                {
+                    "name": "consult_expert_network",
+                    "description": "Search expert assistants by intent query.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "intent_query": { "type": "string" },
+                            "confidence": { "type": "number" }
+                        },
+                        "required": ["intent_query", "confidence"]
+                    }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "official.skills.database",
+            "name": "Provider Manager",
+            "description": "Manage LLM Provider Presets and Templates.",
+            "package_path": "packages/official-skills/database",
+            "tools": [
+                {
+                    "name": "list_provider_presets",
+                    "description": "List all available LLM provider templates.",
+                    "input_schema": { "type": "object", "properties": {} }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "official.skills.monitor",
+            "name": "Active Monitor",
+            "description": "Proactive monitoring and alerting system.",
+            "package_path": "packages/official-skills/monitor",
+            "tools": [
+                {
+                    "name": "sys_list_monitors",
+                    "description": "List all active monitors.",
+                    "input_schema": { "type": "object", "properties": {} }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "official.skills.provider_registry",
+            "name": "Provider Registry",
+            "description": "Expert plugin for discovering and registering AI Providers.",
+            "package_path": "packages/official-skills/provider-registry",
+            "tools": [
+                {
+                    "name": "get_unified_schema",
+                    "description": "Get the internal standard schema for a specific capability.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "capability": { "type": "string" }
+                        },
+                        "required": ["capability"]
+                    }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "official.skills.provider_probe",
+            "name": "Provider Probe",
+            "description": "Probe AI providers to verify connectivity.",
+            "package_path": "packages/official-skills/provider-probe",
+            "tools": [
+                {
+                    "name": "probe_provider",
+                    "description": "Probe a provider to verify connectivity.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "provider_type": { "type": "string", "enum": ["openai", "gemini"] },
+                            "base_url": { "type": "string" },
+                            "api_key": { "type": "string" },
+                            "model": { "type": "string" }
+                        },
+                        "required": ["provider_type", "base_url", "api_key", "model"]
+                    }
+                }
+            ]
+        })
     ];
 
     let mcp = &app_state.mcp;
@@ -1763,6 +1977,7 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
         let id = plugin["id"].as_str().unwrap();
         let name = plugin["name"].as_str().unwrap();
         let description = plugin["description"].as_str().unwrap();
+        let package_path = plugin.get("package_path").and_then(|v| v.as_str());
 
         // Register as a special 'system_plugin' source if not exists
         let source_id = format!("system_plugin_{}", id);
@@ -1771,6 +1986,17 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
             let tool_name = tool_def["name"].as_str().unwrap();
             let tool_desc = tool_def["description"].as_str().unwrap();
             let config_json = serde_json::to_string(tool_def).unwrap();
+
+            let (command, args) = if let Some(path) = package_path {
+                // If it's a standalone package, set up command to run it
+                let full_path = std::env::current_dir().unwrap().join(path).join("main.py");
+                (
+                    Some("python".to_string()),
+                    Some(vec![full_path.to_string_lossy().to_string()]),
+                )
+            } else {
+                (None, None)
+            };
 
             let upsert = ToolUpsert {
                 id: None,
@@ -1783,8 +2009,8 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
                 capabilities: vec!["system_plugin".to_string()],
                 description: tool_desc.to_string(),
                 error: None,
-                command: None,
-                args: None,
+                command,
+                args,
                 env: None,
                 config_json,
                 config_hash: "system_builtin".to_string(),
@@ -1794,7 +2020,6 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
                 is_read_only: true,
                 is_new: false,
             };
-
             if let Ok(tool) = store.upsert_tool(upsert).await {
                 // Index for semantic search
                 let app_state_clone = app_state.clone();
@@ -2479,6 +2704,112 @@ async fn run_local_chat_complete(
     })
 }
 
+pub(crate) async fn rebuild_local_knowledge_vector_index(
+    app_state: &AppState,
+) -> Result<(), McpError> {
+    let files = app_state
+        .mcp
+        .store
+        .list_local_user_documents(LocalUserDocumentListQuery {
+            folder_id: None,
+            status: Some("indexed".to_string()),
+            q: None,
+        })
+        .await?;
+    for file in files {
+        if let Err(err) = sync_local_document_vector_index(app_state, &file.id).await {
+            warn!(
+                "failed to rebuild local knowledge vector index for file {}: {}",
+                file.id, err
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn sync_local_document_vector_index(
+    app_state: &AppState,
+    file_id: &str,
+) -> Result<(), McpError> {
+    let normalized_file_id = file_id.trim().to_string();
+    if normalized_file_id.is_empty() {
+        return Err(McpError::validation("file_id is required"));
+    }
+
+    let file = app_state
+        .mcp
+        .store
+        .get_local_user_document(&normalized_file_id)
+        .await?;
+    app_state
+        .memory
+        .store
+        .clear_knowledge_chunks_for_file(&normalized_file_id)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+    if file.status != "active" {
+        return Ok(());
+    }
+
+    let mut offset = 0_i64;
+    let limit = 100_i64;
+    loop {
+        let chunk_page = app_state
+            .mcp
+            .store
+            .list_local_user_document_chunks(
+                &normalized_file_id,
+                LocalUserDocumentChunkListQuery {
+                    offset: Some(offset),
+                    limit: Some(limit),
+                },
+            )
+            .await?;
+        if chunk_page.items.is_empty() {
+            break;
+        }
+
+        for chunk in &chunk_page.items {
+            let vector = match app_state
+                .providers
+                .embedding
+                .embed_text(&chunk.content)
+                .await
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    warn!(
+                        "skip vector index for chunk {} due to embedding error: {}",
+                        chunk.id, err
+                    );
+                    continue;
+                }
+            };
+            app_state
+                .memory
+                .store
+                .append_knowledge_chunk(
+                    chunk.id.clone(),
+                    chunk.file_id.clone(),
+                    file.name.clone(),
+                    chunk.index,
+                    chunk.content.clone(),
+                    chunk.token_count,
+                    vector,
+                )
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+        }
+
+        offset += chunk_page.items.len() as i64;
+        if offset >= chunk_page.total {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
 async fn maybe_inject_code_mode_prompt(
     _state: &McpRuntimeState,
     messages: &mut Vec<LocalChatInputMessage>,
@@ -2516,6 +2847,260 @@ async fn maybe_inject_code_mode_prompt(
         },
     );
     Ok(())
+}
+
+async fn maybe_inject_local_knowledge_prompt(
+    app_state: &AppState,
+    state: &McpRuntimeState,
+    messages: &mut Vec<LocalChatInputMessage>,
+) -> Result<(), McpError> {
+    if messages.is_empty() {
+        return Ok(());
+    }
+    let latest_user_query = messages
+        .iter()
+        .rev()
+        .find(|message| message.role == "user")
+        .map(|message| message.content.trim().to_string())
+        .filter(|message| !message.is_empty());
+    let Some(latest_user_query) = latest_user_query else {
+        return Ok(());
+    };
+
+    let hits = retrieve_local_knowledge_hits_hybrid(app_state, state, &latest_user_query).await?;
+    if hits.is_empty() {
+        return Ok(());
+    }
+
+    let context_prompt = build_local_knowledge_context_prompt(&hits);
+    if let Some(system_index) = messages.iter().position(|message| message.role == "system") {
+        if !messages[system_index]
+            .content
+            .contains(LOCAL_KNOWLEDGE_CONTEXT_MARKER)
+        {
+            messages[system_index].content = format!(
+                "{}\n\n{}",
+                messages[system_index].content.trim(),
+                context_prompt
+            );
+        }
+    } else {
+        messages.insert(
+            0,
+            LocalChatInputMessage {
+                role: "system".to_string(),
+                content: context_prompt,
+            },
+        );
+    }
+
+    Ok(())
+}
+
+async fn retrieve_local_knowledge_hits_hybrid(
+    app_state: &AppState,
+    state: &McpRuntimeState,
+    query: &str,
+) -> Result<Vec<LocalKnowledgeSearchHit>, McpError> {
+    let lexical_hits = state
+        .store
+        .search_local_knowledge_chunks(query, Some(LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS * 3))
+        .await?;
+
+    let mut merged: HashMap<String, LocalKnowledgeSearchHit> = HashMap::new();
+    let mut lexical_scores: HashMap<String, f64> = HashMap::new();
+    let mut vector_scores: HashMap<String, f64> = HashMap::new();
+
+    for hit in lexical_hits {
+        lexical_scores.insert(hit.chunk_id.clone(), hit.score.max(0.0));
+        merged.insert(hit.chunk_id.clone(), hit);
+    }
+
+    let vector_hits = match app_state.providers.embedding.embed_text(query).await {
+        Ok(query_vector) => app_state
+            .memory
+            .store
+            .search_knowledge_chunks(
+                query_vector,
+                (LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS * 4).max(1) as usize,
+            )
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        Err(err) => {
+            warn!("local knowledge vector query embedding failed: {}", err);
+            Vec::new()
+        }
+    };
+
+    for raw_hit in vector_hits {
+        let chunk_id = raw_hit
+            .get("chunk_id")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        if chunk_id.is_empty() {
+            continue;
+        }
+        let distance = raw_hit
+            .get("distance")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(1.0)
+            .max(0.0);
+        let vector_score = 1.0 / (1.0 + distance);
+        vector_scores
+            .entry(chunk_id.clone())
+            .and_modify(|value| {
+                if vector_score > *value {
+                    *value = vector_score;
+                }
+            })
+            .or_insert(vector_score);
+
+        merged.entry(chunk_id.clone()).or_insert_with(|| {
+            let index = raw_hit
+                .get("index")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(0)
+                .max(0);
+            let token_count = raw_hit
+                .get("token_count")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(0)
+                .max(0);
+            LocalKnowledgeSearchHit {
+                chunk_id: chunk_id.clone(),
+                file_id: raw_hit
+                    .get("file_id")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                file_name: raw_hit
+                    .get("file_name")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                index,
+                content: raw_hit
+                    .get("content")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                token_count,
+                score: 0.0,
+            }
+        });
+    }
+
+    let query_tokens = tokenize_local_query_terms(query);
+    let query_lower = query.trim().to_ascii_lowercase();
+    let mut reranked = Vec::new();
+    for (chunk_id, mut hit) in merged {
+        let lexical_score = lexical_scores.get(&chunk_id).copied().unwrap_or(0.0);
+        let vector_score = vector_scores.get(&chunk_id).copied();
+        hit.score = rerank_local_knowledge_hit(
+            &query_lower,
+            &query_tokens,
+            &hit.content,
+            lexical_score,
+            vector_score,
+        );
+        if hit.score > 0.0 {
+            reranked.push(hit);
+        }
+    }
+
+    reranked.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.file_name.cmp(&right.file_name))
+            .then_with(|| left.index.cmp(&right.index))
+    });
+    reranked.truncate(LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS as usize);
+    Ok(reranked)
+}
+
+fn tokenize_local_query_terms(query: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut tokens = Vec::new();
+    for token in query
+        .to_ascii_lowercase()
+        .split(|ch: char| !ch.is_alphanumeric())
+    {
+        let trimmed = token.trim();
+        if trimmed.len() < 2 {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            tokens.push(trimmed.to_string());
+        }
+    }
+    tokens.truncate(8);
+    tokens
+}
+
+fn rerank_local_knowledge_hit(
+    query_lower: &str,
+    query_tokens: &[String],
+    content: &str,
+    lexical_score: f64,
+    vector_score: Option<f64>,
+) -> f64 {
+    let content_lower = content.trim().to_ascii_lowercase();
+    if content_lower.is_empty() {
+        return 0.0;
+    }
+    let mut score = lexical_score.max(0.0);
+    if !query_lower.is_empty() && content_lower.contains(query_lower) {
+        score += 5.0;
+    }
+    for token in query_tokens {
+        if content_lower.contains(token) {
+            score += 1.1;
+        }
+    }
+    if let Some(value) = vector_score {
+        score += value.max(0.0) * 6.0;
+    }
+    score
+}
+
+fn build_local_knowledge_context_prompt(hits: &[LocalKnowledgeSearchHit]) -> String {
+    let mut lines = vec![
+        format!("{LOCAL_KNOWLEDGE_CONTEXT_MARKER}"),
+        "Use relevant snippets below when answering; do not fabricate unavailable details."
+            .to_string(),
+    ];
+    for (index, hit) in hits.iter().enumerate() {
+        let content = truncate_local_knowledge_snippet(&hit.content);
+        lines.push(format!(
+            "[{}] source={}#{} score={:.2}\n{}",
+            index + 1,
+            hit.file_name,
+            hit.index + 1,
+            hit.score,
+            content
+        ));
+    }
+    lines.join("\n\n")
+}
+
+fn truncate_local_knowledge_snippet(content: &str) -> String {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut chars = trimmed.chars();
+    let snippet: String = chars
+        .by_ref()
+        .take(LOCAL_KNOWLEDGE_CONTEXT_MAX_CHARS_PER_SNIPPET)
+        .collect();
+    if chars.next().is_some() {
+        format!("{snippet}...")
+    } else {
+        snippet
+    }
 }
 
 async fn has_code_mode_available(state: &McpRuntimeState) -> Result<bool, McpError> {
@@ -3811,12 +4396,14 @@ pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_local_summary_fallback, extract_chat_tool_calls,
-        extract_tool_signature_from_config_json, format_conversation_for_summary,
-        truncate_summary_text, truncate_tool_results_payload,
+        build_local_knowledge_context_prompt, build_local_summary_fallback,
+        extract_chat_tool_calls, extract_tool_signature_from_config_json,
+        format_conversation_for_summary, rerank_local_knowledge_hit, tokenize_local_query_terms,
+        truncate_local_knowledge_snippet, truncate_summary_text, truncate_tool_results_payload,
         LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS,
+        LOCAL_KNOWLEDGE_CONTEXT_MARKER,
     };
-    use crate::modules::mcp::types::LocalChatInputMessage;
+    use crate::modules::mcp::types::{LocalChatInputMessage, LocalKnowledgeSearchHit};
 
     #[test]
     fn format_conversation_skips_empty_content() {
@@ -3909,5 +4496,54 @@ mod tests {
         let output = truncate_tool_results_payload(&input);
         assert!(output.contains("[truncated:"));
         assert!(output.len() > LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS);
+    }
+
+    #[test]
+    fn build_local_knowledge_context_prompt_contains_marker_and_sources() {
+        let hits = vec![LocalKnowledgeSearchHit {
+            chunk_id: "c1".to_string(),
+            file_id: "f1".to_string(),
+            file_name: "runbook.md".to_string(),
+            index: 2,
+            content: "deployment steps".to_string(),
+            token_count: 5,
+            score: 12.3,
+        }];
+
+        let prompt = build_local_knowledge_context_prompt(&hits);
+        assert!(prompt.contains(LOCAL_KNOWLEDGE_CONTEXT_MARKER));
+        assert!(prompt.contains("source=runbook.md#3"));
+        assert!(prompt.contains("deployment steps"));
+    }
+
+    #[test]
+    fn truncate_local_knowledge_snippet_appends_ellipsis_when_needed() {
+        let long_text = "x".repeat(1200);
+        let truncated = truncate_local_knowledge_snippet(&long_text);
+        assert!(truncated.ends_with("..."));
+        assert!(truncated.len() < long_text.len());
+    }
+
+    #[test]
+    fn tokenize_local_query_terms_extracts_words() {
+        let terms = tokenize_local_query_terms("Deploy rust service quickly!");
+        assert!(terms.contains(&"deploy".to_string()));
+        assert!(terms.contains(&"rust".to_string()));
+        assert!(terms.contains(&"service".to_string()));
+    }
+
+    #[test]
+    fn rerank_local_knowledge_hit_boosts_phrase_and_vector() {
+        let query = "deploy rust service";
+        let tokens = tokenize_local_query_terms(query);
+        let strong = rerank_local_knowledge_hit(
+            query,
+            &tokens,
+            "how to deploy rust service on desktop",
+            4.0,
+            Some(0.7),
+        );
+        let weak = rerank_local_knowledge_hit(query, &tokens, "random notes", 0.0, Some(0.1));
+        assert!(strong > weak);
     }
 }

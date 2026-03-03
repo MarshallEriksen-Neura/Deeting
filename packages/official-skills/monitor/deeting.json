@@ -1,0 +1,13 @@
+{
+  "id": "official.skills.monitor",
+  "name": "Active Monitor",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Proactive monitoring and alerting system.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

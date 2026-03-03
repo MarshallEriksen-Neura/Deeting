@@ -1,0 +1,19 @@
+tools:
+  - name: add_knowledge_chunk
+    description: "Store information in long-term memory for future retrieval."
+    parameters:
+      type: object
+      properties:
+        content: { type: string, description: "Text to remember." }
+        metadata: { type: object, default: {} }
+      required: ["content"]
+
+  - name: search_knowledge
+    description: "Search personal and system knowledge base."
+    parameters:
+      type: object
+      properties:
+        query: { type: string, description: "Search query." }
+        scope: { type: string, enum: ["personal", "system", "all"], default: "all" }
+        limit: { type: integer, default: 5 }
+      required: ["query"]

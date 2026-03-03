@@ -1,0 +1,16 @@
+{
+  "id": "official.skills.provider_probe",
+  "name": "Provider Probe",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Probe AI providers to verify connectivity and schema compatibility.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "network.outbound"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

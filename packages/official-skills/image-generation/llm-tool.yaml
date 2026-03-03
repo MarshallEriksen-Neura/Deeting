@@ -1,0 +1,14 @@
+tools:
+  - name: generate_image
+    description: "Generate an image based on a text prompt."
+    parameters:
+      type: object
+      properties:
+        prompt:
+          type: string
+          description: "Detailed description of the image."
+        size:
+          type: string
+          description: "Image size (e.g., 1024x1024)."
+          default: "1024x1024"
+      required: ["prompt"]

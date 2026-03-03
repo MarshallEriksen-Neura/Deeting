@@ -25,6 +25,7 @@ from app.repositories.conversation_session_repository import (
     ConversationSessionRepository,
 )
 from app.repositories.provider_instance_repository import ProviderModelRepository
+from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.repositories.spec_agent_repository import SpecAgentRepository
 from app.schemas.spec_agent import SpecManifest, SpecNode
 from app.schemas.tool import ToolCall, ToolDefinition
@@ -34,6 +35,7 @@ from app.services.knowledge.spec_knowledge_service import SpecKnowledgeService
 from app.services.mcp.client import mcp_client
 from app.services.mcp.discovery import mcp_discovery_service
 from app.services.providers.llm import llm_service
+from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 from app.services.tools.tool_context_service import tool_context_service
 from app.utils.time_utils import Datetime
 
@@ -482,6 +484,30 @@ class SpecExecutor:
                 return await self._maybe_await(handler, tool_call.arguments)
             except Exception as exc:
                 logger.exception("Local tool call failed: %s", tool_call.name)
+                return {"error": str(exc)}
+
+        # Fallback to Skill Registry for standalone/builtin skills
+        skill_repo = SkillRegistryRepository(self.repo.session)
+        skill = await skill_repo.get_by_tool_name(tool_call.name)
+        if skill:
+            executor = SkillRuntimeExecutor(skill_repo)
+            try:
+                # Add tool_name hint for the executor
+                inputs = dict(tool_call.arguments or {})
+                inputs["__tool_name__"] = tool_call.name
+                
+                exec_result = await executor.execute(
+                    skill_id=skill.id,
+                    session_id=str(self.plan_id),
+                    user_id=self.user_id,
+                    inputs=inputs,
+                    intent=tool_call.name
+                )
+                if exec_result.get("status") == "ok":
+                    return exec_result.get("result")
+                return {"error": exec_result.get("error", "Skill execution failed")}
+            except Exception as exc:
+                logger.exception("Skill execution error: %s", tool_call.name)
                 return {"error": str(exc)}
 
         return {"error": f"Tool '{tool_call.name}' not found"}

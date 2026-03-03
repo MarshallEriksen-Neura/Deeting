@@ -1,0 +1,13 @@
+{
+  "id": "official.skills.expert_network",
+  "name": "Expert Network",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Retrieve expert assistants for a given intent query.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

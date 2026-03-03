@@ -19,5 +19,22 @@ class SkillRegistryRepository(BaseRepository[SkillRegistry]):
         )
         return result.scalars().first()
 
+    async def get_by_tool_name(self, tool_name: str) -> SkillRegistry | None:
+        # Search for tool_name inside manifest_json['tools']
+        # This implementation works for both PostgreSQL and SQLite (in a basic way)
+        # For more efficiency, we fetch active skills and filter.
+        stmt = select(SkillRegistry).where(SkillRegistry.status == "active")
+        result = await self.session.execute(stmt)
+        skills = result.scalars().all()
+        
+        for skill in skills:
+            manifest = skill.manifest_json or {}
+            tools = manifest.get("tools", [])
+            if isinstance(tools, list):
+                for tool in tools:
+                    if isinstance(tool, dict) and tool.get("name") == tool_name:
+                        return skill
+        return None
+
 
 __all__ = ["SkillRegistryRepository"]

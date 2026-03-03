@@ -1,0 +1,14 @@
+tools:
+  - name: sys_create_monitor
+    description: "Create a persistent monitoring task."
+    parameters:
+      type: object
+      properties:
+        title: { type: string }
+        objective: { type: string }
+        cron_expr: { type: string, default: "0 */6 * * *" }
+      required: ["title", "objective"]
+
+  - name: sys_list_monitors
+    description: "List all active monitors."
+    parameters: { type: object, properties: {} }

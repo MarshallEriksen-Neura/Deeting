@@ -37,11 +37,12 @@ use crate::modules::mcp::types::{
     LocalConversationWindowResponse, LocalGatewayLogItem, LocalGatewayLogListResponse,
     LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse,
     LocalKnowledgeBreadcrumbItem, LocalKnowledgeChunk, LocalKnowledgeChunkListResponse,
-    LocalKnowledgeFile, LocalKnowledgeFolder, LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery,
-    LocalKnowledgeTreeResponse, LocalTraceFeedback, LocalTraceFeedbackRequest,
-    LocalUserDocumentChunkListQuery, LocalUserDocumentListQuery, McpConflictStatus, McpSource,
-    McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus, McpTrustLevel,
-    UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest, UpdateLocalUserDocumentRequest,
+    LocalKnowledgeFile, LocalKnowledgeFolder, LocalKnowledgeSearchHit, LocalKnowledgeStatsResponse,
+    LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse, LocalTraceFeedback,
+    LocalTraceFeedbackRequest, LocalUserDocumentChunkListQuery, LocalUserDocumentListQuery,
+    McpConflictStatus, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
+    McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest,
+    UpdateLocalUserDocumentRequest,
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
@@ -59,6 +60,8 @@ const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
 const LOCAL_KNOWLEDGE_TOTAL_BYTES: i64 = 10 * 1024 * 1024 * 1024;
+const LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS: usize = 1200;
+const LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS: usize = 120;
 
 pub struct McpStore {
     pool: SqlitePool,
@@ -1394,6 +1397,19 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         Ok(row.and_then(|r: SqliteRow| r.try_get::<String, _>("pending_config_json").ok()))
+    }
+
+    pub async fn get_tool_by_name(&self, name: &str) -> Result<Option<McpTool>, McpError> {
+        let row = sqlx::query("SELECT * FROM mcp_tools WHERE name = ? LIMIT 1")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        match row {
+            Some(r) => Ok(Some(row_to_tool(&r)?)),
+            None => Ok(None),
+        }
     }
 
     pub async fn get_tool_by_source_name(
@@ -3801,22 +3817,19 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
-        let row = sqlx::query(
-            r#"
-            SELECT
-              id, filename, folder_id, status, error_message, chunk_count,
-              meta_info, created_at, updated_at
-            FROM user_document
-            WHERE id = ? AND user_id = ?
-            LIMIT 1;
-            "#,
-        )
-        .bind(&id)
-        .bind(LOCAL_DESKTOP_USER_ID)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-        row_to_local_knowledge_file(&row)
+        if let Err(err) = self
+            .process_local_user_document_chunks_if_available(&id, &meta_info)
+            .await
+        {
+            let _ = self
+                .mark_local_user_document_failed(
+                    &id,
+                    &format!("local document processing failed: {}", err),
+                )
+                .await;
+        }
+
+        self.get_local_user_document(&id).await
     }
 
     pub async fn get_local_user_document(
@@ -4023,6 +4036,37 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
+        let meta_info_row = sqlx::query(
+            r#"
+            SELECT meta_info
+            FROM user_document
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let meta_info = meta_info_row
+            .and_then(|row| row.try_get::<String, _>("meta_info").ok())
+            .filter(|raw| !raw.trim().is_empty())
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+
+        if let Err(err) = self
+            .process_local_user_document_chunks_if_available(&normalized_id, &meta_info)
+            .await
+        {
+            let _ = self
+                .mark_local_user_document_failed(
+                    &normalized_id,
+                    &format!("local document retry failed: {}", err),
+                )
+                .await;
+        }
+
         self.get_local_user_document(&normalized_id).await
     }
 
@@ -4114,6 +4158,218 @@ impl McpStore {
             offset,
             limit,
         })
+    }
+
+    pub async fn search_local_knowledge_chunks(
+        &self,
+        query: &str,
+        limit: Option<i64>,
+    ) -> Result<Vec<LocalKnowledgeSearchHit>, McpError> {
+        let normalized_query = query.trim().to_string();
+        if normalized_query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let normalized_limit = limit.unwrap_or(4).clamp(1, 20);
+        let tokens = tokenize_local_search_query(&normalized_query);
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let lowered_tokens: Vec<String> = tokens
+            .iter()
+            .map(|token| token.to_ascii_lowercase())
+            .collect();
+        let query_lower = normalized_query.to_ascii_lowercase();
+        let mut where_predicate = String::new();
+        for (index, _) in lowered_tokens.iter().enumerate() {
+            if index > 0 {
+                where_predicate.push_str(" OR ");
+            }
+            where_predicate.push_str("LOWER(kc.text_content) LIKE ? ESCAPE '\\'");
+        }
+
+        let sql = format!(
+            r#"
+            SELECT
+              kc.id AS chunk_id,
+              kc.document_id AS file_id,
+              kc.chunk_index AS chunk_index,
+              kc.text_content AS text_content,
+              kc.token_count AS token_count,
+              ud.filename AS file_name
+            FROM knowledge_chunk kc
+            INNER JOIN user_document ud
+              ON ud.id = kc.document_id AND ud.user_id = kc.user_id
+            WHERE kc.user_id = ?
+              AND ud.status = 'indexed'
+              AND ({where_predicate})
+            ORDER BY kc.updated_at DESC, kc.chunk_index ASC
+            LIMIT 300;
+            "#
+        );
+
+        let mut query_builder = sqlx::query(&sql).bind(LOCAL_DESKTOP_USER_ID);
+        for token in &lowered_tokens {
+            query_builder = query_builder.bind(format!(
+                "%{}%",
+                token.replace('%', "\\%").replace('_', "\\_")
+            ));
+        }
+        let rows = query_builder
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut scored_hits = Vec::new();
+        for row in rows {
+            let content: String = row.try_get("text_content")?;
+            let content_lower = content.to_ascii_lowercase();
+            let score =
+                compute_local_knowledge_match_score(&query_lower, &lowered_tokens, &content_lower);
+            if score <= 0.0 {
+                continue;
+            }
+            scored_hits.push(LocalKnowledgeSearchHit {
+                chunk_id: row.try_get("chunk_id")?,
+                file_id: row.try_get("file_id")?,
+                file_name: row.try_get("file_name")?,
+                index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
+                content,
+                token_count: row.try_get::<i64, _>("token_count").unwrap_or(0).max(0),
+                score,
+            });
+        }
+
+        scored_hits.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| right.token_count.cmp(&left.token_count))
+                .then_with(|| left.file_name.cmp(&right.file_name))
+                .then_with(|| left.index.cmp(&right.index))
+        });
+        scored_hits.truncate(normalized_limit as usize);
+
+        Ok(scored_hits)
+    }
+
+    async fn process_local_user_document_chunks_if_available(
+        &self,
+        file_id: &str,
+        meta_info: &serde_json::Value,
+    ) -> Result<(), McpError> {
+        let Some(raw_text) = extract_local_document_text(meta_info) else {
+            return Ok(());
+        };
+        let chunks = split_local_document_text_into_chunks(&raw_text);
+        if chunks.is_empty() {
+            self.mark_local_user_document_failed(file_id, "document content is empty")
+                .await?;
+            return Ok(());
+        }
+
+        let now = now_rfc3339()?;
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            DELETE FROM knowledge_chunk
+            WHERE document_id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(file_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        for (index, chunk) in chunks.iter().enumerate() {
+            let chunk_id = Uuid::new_v4().to_string();
+            sqlx::query(
+                r#"
+                INSERT INTO knowledge_chunk (
+                  id, document_id, user_id, chunk_index, text_content, token_count, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                "#,
+            )
+            .bind(&chunk_id)
+            .bind(file_id)
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .bind(index as i64)
+            .bind(chunk)
+            .bind(estimate_local_tokens(chunk).max(0))
+            .bind(&now)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE user_document
+            SET status = 'indexed',
+                error_message = NULL,
+                chunk_count = ?,
+                updated_at = ?
+            WHERE id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(chunks.len() as i64)
+        .bind(&now)
+        .bind(file_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn mark_local_user_document_failed(
+        &self,
+        file_id: &str,
+        error_message: &str,
+    ) -> Result<(), McpError> {
+        let now = now_rfc3339()?;
+        let normalized_error = truncate_local_document_error_message(error_message);
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            DELETE FROM knowledge_chunk
+            WHERE document_id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(file_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            UPDATE user_document
+            SET status = 'failed',
+                error_message = ?,
+                chunk_count = 0,
+                updated_at = ?
+            WHERE id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(normalized_error)
+        .bind(&now)
+        .bind(file_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        tx.commit().await?;
+        Ok(())
     }
 
     async fn get_local_knowledge_folder_by_id(
@@ -8079,6 +8335,145 @@ fn normalize_storage_document_status(status: Option<&str>) -> &'static str {
     }
 }
 
+fn truncate_local_document_error_message(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "local document processing failed".to_string();
+    }
+    trimmed.chars().take(300).collect::<String>()
+}
+
+fn extract_local_document_text(meta_info: &serde_json::Value) -> Option<String> {
+    const CANDIDATE_KEYS: [&str; 5] = ["raw_text", "text", "content", "markdown", "body"];
+    for key in CANDIDATE_KEYS {
+        if let Some(value) = meta_info.get(key).and_then(|value| value.as_str()) {
+            let normalized = value.trim().to_string();
+            if !normalized.is_empty() {
+                return Some(normalized);
+            }
+        }
+    }
+
+    let mut composed_segments = Vec::new();
+    if let Some(items) = meta_info.get("chunks").and_then(|value| value.as_array()) {
+        for item in items {
+            if let Some(text) = item.as_str() {
+                let normalized = text.trim();
+                if !normalized.is_empty() {
+                    composed_segments.push(normalized.to_string());
+                }
+            }
+        }
+    }
+    if composed_segments.is_empty() {
+        None
+    } else {
+        Some(composed_segments.join("\n\n"))
+    }
+}
+
+fn split_local_document_text_into_chunks(text: &str) -> Vec<String> {
+    let normalized = text.trim();
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let chars: Vec<char> = normalized.chars().collect();
+    if chars.len() <= LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS {
+        return vec![normalized.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    while start < chars.len() {
+        let mut end = (start + LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS).min(chars.len());
+        if end < chars.len() {
+            let scan_floor = start + (LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS / 2);
+            let mut cursor = end;
+            while cursor > scan_floor {
+                let current = chars[cursor - 1];
+                if current.is_whitespace()
+                    || matches!(current, '。' | '！' | '？' | '.' | '!' | '?' | '\n')
+                {
+                    end = cursor;
+                    break;
+                }
+                cursor -= 1;
+            }
+        }
+
+        let chunk = chars[start..end]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_string();
+        if !chunk.is_empty() {
+            chunks.push(chunk);
+        }
+
+        if end >= chars.len() {
+            break;
+        }
+        let next_start = end.saturating_sub(LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS);
+        if next_start == start {
+            start = end;
+        } else {
+            start = next_start;
+        }
+    }
+
+    chunks
+}
+
+fn tokenize_local_search_query(query: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut seen = HashSet::new();
+    let normalized = query.to_ascii_lowercase();
+    for token in normalized.split(|ch: char| !ch.is_alphanumeric()) {
+        let trimmed = token.trim();
+        if trimmed.len() < 2 {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            tokens.push(trimmed.to_string());
+        }
+    }
+    if tokens.is_empty() && !normalized.trim().is_empty() {
+        tokens.push(normalized.trim().to_string());
+    }
+    tokens.truncate(8);
+    tokens
+}
+
+fn compute_local_knowledge_match_score(
+    query_lower: &str,
+    tokens_lower: &[String],
+    content_lower: &str,
+) -> f64 {
+    if content_lower.is_empty() {
+        return 0.0;
+    }
+    let mut score = 0.0;
+    if !query_lower.is_empty() && content_lower.contains(query_lower) {
+        score += 8.0;
+    }
+    for token in tokens_lower {
+        let mut start = 0usize;
+        let mut token_hits = 0usize;
+        while start < content_lower.len() {
+            let Some(pos) = content_lower[start..].find(token) else {
+                break;
+            };
+            token_hits += 1;
+            start += pos + token.len();
+        }
+        if token_hits > 0 {
+            score += (token_hits as f64) * (1.0 + (token.len() as f64 / 10.0));
+        }
+    }
+    score
+}
+
 fn estimate_local_tokens(text: &str) -> i64 {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -8450,4 +8845,75 @@ pub fn expand_path(path: &str) -> PathBuf {
         }
     }
     PathBuf::from(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        compute_local_knowledge_match_score, extract_local_document_text,
+        split_local_document_text_into_chunks, tokenize_local_search_query,
+        truncate_local_document_error_message,
+    };
+
+    #[test]
+    fn extract_local_document_text_prefers_raw_text() {
+        let meta = serde_json::json!({
+            "text": "secondary",
+            "raw_text": "primary"
+        });
+        let extracted = extract_local_document_text(&meta).expect("text should exist");
+        assert_eq!(extracted, "primary");
+    }
+
+    #[test]
+    fn extract_local_document_text_falls_back_to_chunks() {
+        let meta = serde_json::json!({
+            "chunks": ["first", " ", "second"]
+        });
+        let extracted = extract_local_document_text(&meta).expect("text should exist");
+        assert_eq!(extracted, "first\n\nsecond");
+    }
+
+    #[test]
+    fn split_local_document_text_into_chunks_splits_long_text() {
+        let source = "abc ".repeat(2000);
+        let chunks = split_local_document_text_into_chunks(&source);
+        assert!(chunks.len() > 1);
+        assert!(chunks.iter().all(|chunk| !chunk.trim().is_empty()));
+    }
+
+    #[test]
+    fn split_local_document_text_into_chunks_keeps_short_text() {
+        let chunks = split_local_document_text_into_chunks("short text");
+        assert_eq!(chunks, vec!["short text".to_string()]);
+    }
+
+    #[test]
+    fn truncate_local_document_error_message_limits_length() {
+        let source = "x".repeat(500);
+        let truncated = truncate_local_document_error_message(&source);
+        assert_eq!(truncated.chars().count(), 300);
+    }
+
+    #[test]
+    fn tokenize_local_search_query_extracts_terms() {
+        let tokens = tokenize_local_search_query("How to deploy Rust service?");
+        assert!(tokens.contains(&"how".to_string()));
+        assert!(tokens.contains(&"deploy".to_string()));
+        assert!(tokens.contains(&"rust".to_string()));
+        assert!(tokens.contains(&"service".to_string()));
+    }
+
+    #[test]
+    fn compute_local_knowledge_match_score_prefers_phrase_match() {
+        let query = "deploy rust service";
+        let tokens = tokenize_local_search_query(query);
+        let strong = compute_local_knowledge_match_score(
+            query,
+            &tokens,
+            "how to deploy rust service to production",
+        );
+        let weak = compute_local_knowledge_match_score(query, &tokens, "rust notes and tricks");
+        assert!(strong > weak);
+    }
 }

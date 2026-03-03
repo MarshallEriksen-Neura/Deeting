@@ -1,0 +1,32 @@
+tools:
+  - name: propose_execution_plan
+    description: "Propose a multi-step execution plan for the user to approve. Use this when the request is complex."
+    parameters:
+      type: object
+      properties:
+        plan_id: { type: string, description: "Unique ID for the plan" }
+        title: { type: string, description: "High-level title of the plan" }
+        rationale: { type: string, description: "Reasoning behind the plan structure" }
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              description: { type: string }
+              tool_name: { type: string }
+              tool_args: { type: object }
+              dependencies: { type: array, items: { type: string } }
+            required: ["id", "title", "tool_name"]
+      required: ["title", "tasks"]
+
+  - name: retrieve_similar_plans
+    description: "Search the Knowledge Base for similar past plans to reuse."
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "The user's current request description"
+      required: ["query"]

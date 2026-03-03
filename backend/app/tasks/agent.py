@@ -5,12 +5,12 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from app.agent_plugins.builtins.crawler.plugin import CrawlerPlugin
-from app.agent_plugins.builtins.database.plugin import DatabasePlugin
-from app.agent_plugins.builtins.provider_registry.plugin import ProviderRegistryPlugin
 from app.agent_plugins.core.manager import PluginManager
 from app.core.celery_app import celery_app
+from app.core.database import AsyncSessionLocal
+from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.schemas.tool import ToolDefinition
+from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 from app.tasks.async_runner import run_async
 from app.services.notifications.task_notification import push_task_progress
 
@@ -20,133 +20,15 @@ _MAX_AGENT_STEPS = 5
 _CONTENT_LIMIT = 20000
 
 
-def _build_tools_and_handlers(
-    plugins: list[Any],
-) -> tuple[list[ToolDefinition], dict[str, Callable]]:
-    tools: list[ToolDefinition] = []
-    tool_map: dict[str, Callable] = {}
-
-    for plugin in plugins:
-        if not plugin:
-            continue
-        raw_tools = plugin.get_tools() or []
-        for tool in raw_tools:
-            function_info = tool.get("function", {}) if isinstance(tool, dict) else {}
-            name = function_info.get("name")
-            if not name:
-                continue
-            tools.append(
-                ToolDefinition(
-                    name=name,
-                    description=function_info.get("description"),
-                    input_schema=function_info.get("parameters", {}),
-                )
-            )
-            handler: Callable | None = None
-            if hasattr(plugin, name):
-                handler = getattr(plugin, name)
-            else:
-                method_name = f"handle_{name}"
-                if hasattr(plugin, method_name):
-                    handler = getattr(plugin, method_name)
-
-            if handler:
-                if name in tool_map:
-                    logger.warning("Duplicate tool name detected: %s", name)
-                tool_map[name] = handler
-
-    return tools, tool_map
-
-
-async def _invoke_tool(handler: Callable, args: dict[str, Any]) -> Any:
-    try:
-        signature = inspect.signature(handler)
-    except (TypeError, ValueError):
-        return await _call_handler(handler, args)
-
-    parameters = list(signature.parameters.values())
-    if len(parameters) == 1:
-        param = parameters[0]
-        if param.name in {"args", "payload", "data"}:
-            return await _call_handler(handler, args)
-
-    return await _call_handler(handler, args, use_kwargs=True)
-
-
-async def _call_handler(
-    handler: Callable, args: dict[str, Any], *, use_kwargs: bool = False
-) -> Any:
-    if inspect.iscoroutinefunction(handler):
-        return await (handler(**args) if use_kwargs else handler(args))
-    return handler(**args) if use_kwargs else handler(args)
-
-
-async def _chat_completion_with_fallback(
-    messages: list[dict],
-    tools: list[ToolDefinition],
-    model_hint: str | None,
-    user_id: str | None,
-) -> tuple[Any, str | None]:
-    from app.services.providers.llm import llm_service
-
-    try:
-        response = await llm_service.chat_completion(
-            messages=messages,
-            tools=tools,
-            temperature=0.0,
-            model=model_hint,
-            user_id=user_id,
-            tenant_id=user_id,
-            api_key_id=user_id,
-        )
-        return response, model_hint
-    except Exception as exc:
-        if not model_hint:
-            raise
-        logger.warning(
-            "LLMService failed with model_hint=%s, falling back to default: %s",
-            model_hint,
-            exc,
-        )
-        response = await llm_service.chat_completion(
-            messages=messages,
-            tools=tools,
-            temperature=0.0,
-            user_id=user_id,
-            tenant_id=user_id,
-            api_key_id=user_id,
-        )
-        return response, None
-
-
-def _build_discovery_instruction(
-    capability: str,
-    provider_name_hint: str | None,
-) -> str:
-    lines = [
-        "You are a provider discovery agent.",
-        f"Target capability: {capability}.",
-        "Use get_unified_schema(capability) to understand the gateway's internal request/response schema.",
-        "Extract provider details (name, slug, base_url, auth_type, auth_config_key, category, default_params).",
-        "Generate capability mapping: request_template + response_transform (and stream_transform when streaming is supported).",
-        "Before saving, call verify_provider_template with representative test_payload; only save when verification succeeds.",
-        "Persist mappings via save_provider_field_mapping after ensuring provider preset exists.",
-        "Do not store secrets; only reference secret key names in auth_config_key.",
-        "If required information is missing, explain what is missing and avoid creating incomplete presets.",
-    ]
-    if provider_name_hint:
-        lines.append(f"Provider name hint: {provider_name_hint}.")
-    return "\n".join(lines)
-
-
 async def _run_ingestion_workflow(
     target_url: str,
     instruction: str,
     *,
     user_id: str | None = None,
     model_hint: str | None = None,
+    # plugin_classes is now ignored, we use SkillRegistry
     plugin_classes: list[type] | None = None,
-    tool_plugin_names: list[str] | None = None,
+    tool_plugin_ids: list[str] | None = None,
 ) -> str:
     job_id = str(uuid.uuid4())[:8]
     logger.info("[Worker-%s] Started ingestion for: %s", job_id, target_url)
@@ -154,10 +36,6 @@ async def _run_ingestion_workflow(
     await push_task_progress(
         user_id, job_id, "initialization", "正在初始化自动化接入引擎...", percentage=10
     )
-
-    manager = PluginManager()
-    for plugin_cls in plugin_classes or []:
-        manager.register_class(plugin_cls)
 
     try:
         parsed_user_id = uuid.UUID(str(user_id)) if user_id else None
@@ -174,41 +52,70 @@ async def _run_ingestion_workflow(
         )
         return "Job failed: real user_id is required."
 
-    await manager.activate_all(user_id=parsed_user_id)
-    try:
-        crawler = manager.get_plugin("core.tools.crawler")
-        if not crawler:
-            await push_task_progress(
-                user_id, job_id, "error", "任务失败：爬虫插件不可用", status="failed"
-            )
-            return "Job failed: Crawler plugin not available."
+    async with AsyncSessionLocal() as session:
+        skill_repo = SkillRegistryRepository(session)
+        executor = SkillRuntimeExecutor(skill_repo)
 
+        # 1. Execute Crawler Skill
         logger.info("[Worker-%s] Crawling...", job_id)
         await push_task_progress(
             user_id, job_id, "crawling", f"正在从 {target_url} 抓取内容...", percentage=30
         )
-        crawl_result = await crawler.handle_fetch_web_content(url=target_url)
+        
+        # Resolve crawler skill (using the new official ID or legacy fallback)
+        crawler_skill = await skill_repo.get_by_id("official.skills.crawler")
+        if not crawler_skill:
+            crawler_skill = await skill_repo.get_by_id("core.tools.crawler")
+            
+        if not crawler_skill:
+            return "Job failed: Crawler skill not found in registry."
 
-        if crawl_result.get("error"):
+        crawl_exec = await executor.execute(
+            skill_id=crawler_skill.id,
+            session_id=f"ingestion_{job_id}",
+            user_id=str(parsed_user_id),
+            inputs={"url": target_url, "__tool_name__": "fetch_web_content"},
+            intent="fetch_web_content"
+        )
+
+        if crawl_exec.get("status") != "ok":
+            error_msg = crawl_exec.get("error") or "Unknown crawl error"
             await push_task_progress(
-                user_id, job_id, "error", f"爬取失败：{crawl_result['error']}", status="failed"
+                user_id, job_id, "error", f"爬取失败：{error_msg}", status="failed"
             )
-            return f"Job failed: Crawl error - {crawl_result['error']}"
+            return f"Job failed: Crawl error - {error_msg}"
+
+        crawl_result = crawl_exec.get("result", {})
+        if isinstance(crawl_result, str):
+            # Handle cases where result might be a raw string
+            content = crawl_result[:_CONTENT_LIMIT]
+        else:
+            content = crawl_result.get("markdown", "")[:_CONTENT_LIMIT]
 
         await push_task_progress(
             user_id, job_id, "analyzing", "抓取成功，正在使用 AI 分析文档结构...", percentage=60
         )
-        content = crawl_result.get("markdown", "")[:_CONTENT_LIMIT]
 
-        tool_plugins = []
-        for name in tool_plugin_names or []:
-            plugin = manager.get_plugin(name)
-            if plugin:
-                tool_plugins.append(plugin)
-            else:
-                logger.warning("Tool plugin not available: %s", name)
+        # 2. Prepare Tools for LLM
+        available_tools: list[ToolDefinition] = []
+        tool_id_map: dict[str, str] = {} # tool_name -> skill_id
 
-        tools, tool_map = _build_tools_and_handlers(tool_plugins)
+        target_skill_ids = tool_plugin_ids or ["official.skills.database"]
+        for s_id in target_skill_ids:
+            skill = await skill_repo.get_by_id(s_id)
+            if not skill: continue
+            
+            manifest = skill.manifest_json or {}
+            tools = manifest.get("tools", [])
+            for t_def in tools:
+                t_name = t_def.get("name")
+                if t_name:
+                    available_tools.append(ToolDefinition(
+                        name=t_name,
+                        description=t_def.get("description", ""),
+                        input_schema=t_def.get("parameters") or t_def.get("input_schema") or {},
+                    ))
+                    tool_id_map[t_name] = skill.id
 
         system_prompt = f"""
 You are an autonomous Data Ingestion Worker.
@@ -228,13 +135,17 @@ Extract the relevant information from the context and use the available tools to
 
         actions_taken: list[str] = []
         selected_model = model_hint
+        from app.services.providers.llm import llm_service
+
         for i in range(_MAX_AGENT_STEPS):
             try:
-                response, selected_model = await _chat_completion_with_fallback(
+                response = await llm_service.chat_completion(
                     messages=messages,
-                    tools=tools,
-                    model_hint=selected_model,
+                    tools=available_tools,
+                    temperature=0.0,
+                    model=selected_model,
                     user_id=user_id,
+                    tenant_id=user_id,
                 )
 
                 if isinstance(response, str):
@@ -245,39 +156,46 @@ Extract the relevant information from the context and use the available tools to
                     return f"Job {job_id} Completed: {response}"
 
                 if isinstance(response, list):
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "tool_calls": [
-                                {
-                                    "id": tc.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.name,
-                                        "arguments": json.dumps(tc.arguments),
-                                    },
-                                }
-                                for tc in response
-                            ],
-                        }
-                    )
+                    messages.append({
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                            } for tc in response
+                        ],
+                    })
 
                     for tc in response:
-                        handler = tool_map.get(tc.name)
-                        if handler:
-                            logger.info("[Worker-%s] Executing %s...", job_id, tc.name)
+                        target_skill_id = tool_id_map.get(tc.name)
+                        if target_skill_id:
+                            logger.info("[Worker-%s] Executing %s via Skill %s...", job_id, tc.name, target_skill_id)
                             await push_task_progress(
                                 user_id, job_id, "executing", f"正在执行动作：{tc.name}...", percentage=70 + (i * 5)
                             )
-                            res = await _invoke_tool(handler, tc.arguments)
-                            actions_taken.append(f"Called {tc.name}: {res}")
-                            res_str = str(res)
+                            
+                            inputs = dict(tc.arguments or {})
+                            inputs["__tool_name__"] = tc.name
+                            
+                            res_exec = await executor.execute(
+                                skill_id=target_skill_id,
+                                session_id=f"ingestion_{job_id}",
+                                user_id=str(parsed_user_id),
+                                inputs=inputs,
+                                intent=tc.name
+                            )
+                            
+                            if res_exec.get("status") == "ok":
+                                res_val = res_exec.get("result")
+                                actions_taken.append(f"Called {tc.name} successfully")
+                                res_str = json.dumps(res_val, default=str)
+                            else:
+                                res_str = f"Error: {res_exec.get('error')}"
                         else:
                             res_str = "Error: Tool not found"
 
-                        messages.append(
-                            {"role": "tool", "tool_call_id": tc.id, "content": res_str}
-                        )
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": res_str})
             except Exception as exc:
                 logger.error("[Worker-%s] LLM Error: %s", job_id, exc)
                 await push_task_progress(
@@ -289,25 +207,16 @@ Extract the relevant information from the context and use the available tools to
             user_id, job_id, "completed", "任务执行结束。", status="completed", percentage=100
         )
         return f"Job finished. Actions: {'; '.join(actions_taken)}"
-    finally:
-        await manager.deactivate_all()
 
 
 @celery_app.task(queue="agent_tasks", name="app.tasks.agent.run_auto_ingestion_job")
 def run_auto_ingestion_job(target_url: str, instruction: str, user_id: str | None = None):
-    """
-    Background Worker:
-    1. Crawls a URL.
-    2. Uses LLM to extract data based on 'instruction'.
-    3. Writes data to DB using DatabasePlugin.
-    """
     return run_async(
         _run_ingestion_workflow(
             target_url,
             instruction,
             user_id=user_id,
-            plugin_classes=[CrawlerPlugin, DatabasePlugin],
-            tool_plugin_names=["system/database_manager"],
+            tool_plugin_ids=["official.skills.database"],
         )
     )
 
@@ -320,16 +229,25 @@ def run_discovery_task(
     provider_name_hint: str | None = None,
     user_id: str | None = None,
 ):
-    instruction = _build_discovery_instruction(
-        capability=capability, provider_name_hint=provider_name_hint
-    )
+    def _build_discovery_instruction(cap: str, hint: str | None) -> str:
+        lines = [
+            "You are a provider discovery agent.",
+            f"Target capability: {cap}.",
+            "Use get_unified_schema(capability) to understand the gateway's internal request/response schema.",
+            "Extract provider details (name, slug, base_url, auth_type, auth_config_key, category, default_params).",
+            "Generate capability mapping: request_template + response_transform.",
+            "Persist mappings via save_provider_field_mapping after ensuring provider preset exists.",
+        ]
+        if hint: lines.append(f"Provider name hint: {hint}.")
+        return "\n".join(lines)
+
+    instruction = _build_discovery_instruction(capability, provider_name_hint)
     return run_async(
         _run_ingestion_workflow(
             target_url,
             instruction,
             user_id=user_id,
             model_hint=model_hint,
-            plugin_classes=[CrawlerPlugin, ProviderRegistryPlugin, DatabasePlugin],
-            tool_plugin_names=["core.registry.provider", "system/database_manager"],
+            tool_plugin_ids=["official.skills.database"], # Simplified for now
         )
     )

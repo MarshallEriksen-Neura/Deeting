@@ -5,6 +5,7 @@
 ## 范围
 - 本文档描述桌面端 SQLite 的离线知识库基础能力：`knowledge_folder`、`user_document`、`knowledge_chunk`。
 - 当前阶段已接入本地 tree/stats、文件夹 CRUD、文档 list/create/get/update/delete/retry、chunk 分页查询。
+- 新增：桌面端本地文本文件上传后会自动分块并写入 `knowledge_chunk`，并将文档状态更新为 `indexed`。
 
 ## knowledge_folder
 字段：
@@ -117,3 +118,20 @@
 - `deleteFile`
 - `retryFile`
 - `fetchFileChunks`
+
+## 本地上传与分块（Tauri）
+- `uploadFile` 在桌面端会走本地分支，不再调用云端 `/api/v1/documents/files` 上传接口。
+- 支持本地离线解析的文本类型：`txt`、`md`、`csv`、`html`、`json`。
+- 以上文本类型会将 `raw_text` 写入 `meta_info`，由桌面端自动切块并写入 `knowledge_chunk`，随后将文档状态置为 `indexed`。
+- 非文本类型（如 `pdf`、`docx`、`xlsx`）当前会在本地创建 `failed` 文档记录，并返回错误提示（便于用户在列表中看到失败状态）。
+- 本地离线文本解析大小上限为 `2MB`（超限将直接标记失败）。
+
+## 本地召回（聊天注入）
+- `send_local_conversation_message` / `regenerate_local_conversation_reply` 会根据最后一条用户消息执行本地混合召回（仅 `indexed` 文档）：
+  - SQLite `knowledge_chunk` 词法检索
+  - LanceDB 向量检索（基于 chunk embedding）
+- 两路结果会做去重和重排后注入系统上下文（最多 4 条），供模型回答时参考。
+- 本地向量索引采用异步维护：
+  - 新建/重试文档后后台增量索引
+  - 删除文档时清理对应向量条目
+  - 桌面端启动时会自动重建一次 `indexed` 文档向量索引

@@ -16,11 +16,35 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri_plugin_global_shortcut::ShortcutState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let _ = shortcut; // suppress unused warning
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.unminimize();
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(),
+        )
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -136,6 +160,18 @@ pub fn run() {
                     )
                     .await;
                 });
+
+                let app_state_for_knowledge_index = sync_state_for_mcp.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) =
+                        crate::modules::mcp::commands::rebuild_local_knowledge_vector_index(
+                            &app_state_for_knowledge_index,
+                        )
+                        .await
+                    {
+                        warn!("local knowledge vector index bootstrap failed: {}", err);
+                    }
+                });
             });
             let sandbox_state = sync_state.sandbox.clone();
             tauri::async_runtime::spawn(async move {
@@ -153,7 +189,67 @@ pub fn run() {
                 crate::modules::mcp::commands::start_local_periodic_worker(periodic_worker_state)
                     .await;
             });
+
+            // ── System Tray ──────────────────────────────────────────
+            let show_i = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit Deeting", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .menu_on_left_click(false)
+                .tooltip("Deeting")
+                .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // ── Global Shortcut: Cmd/Ctrl+Shift+D ────────────────────
+            use tauri_plugin_global_shortcut::GlobalShortcutExt;
+            app.global_shortcut().on_shortcut("CommandOrControl+Shift+D", |app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.unminimize();
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+            })?;
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Prevent default close; let frontend decide (minimize to tray or quit)
+                api.prevent_close();
+                let _ = window.emit("close-requested", ());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // MCP Commands

@@ -1,0 +1,16 @@
+{
+  "id": "official.skills.code_interpreter",
+  "name": "Code Interpreter",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Stateful Python execution for data analysis and math.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "sandbox.execute"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

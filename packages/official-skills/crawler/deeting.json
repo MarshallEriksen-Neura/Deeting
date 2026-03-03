@@ -1,0 +1,16 @@
+{
+  "id": "official.skills.crawler",
+  "name": "Scout Crawler",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Universal web crawling and content extraction skill.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "network.outbound"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

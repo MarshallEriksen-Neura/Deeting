@@ -1,0 +1,18 @@
+tools:
+  - name: get_unified_schema
+    description: "Get the internal standard schema for a specific capability."
+    parameters:
+      type: object
+      properties:
+        capability: { type: string }
+      required: ["capability"]
+
+  - name: verify_provider_template
+    description: "Dry-run a Jinja2 template against a real provider API."
+    parameters:
+      type: object
+      properties:
+        base_url: { type: string }
+        test_api_key: { type: string }
+        request_template: { type: object }
+      required: ["base_url", "test_api_key", "request_template"]

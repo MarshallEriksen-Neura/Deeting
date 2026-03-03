@@ -134,9 +134,14 @@ export function FileUploadDialog({
     await Promise.allSettled(
       files.map(async (f) => {
         try {
-          await uploadFile(f, currentFolderId, (percent) => {
+          const created = await uploadFile(f, currentFolderId, (percent) => {
             setUploadProgress((prev) => ({ ...prev, [f.name]: percent }))
           })
+          if (created.status === "failed") {
+            setUploadStatus((prev) => ({ ...prev, [f.name]: "error" }))
+            errorCount++
+            return
+          }
           setUploadStatus((prev) => ({ ...prev, [f.name]: "success" }))
           setUploadProgress((prev) => ({ ...prev, [f.name]: 100 }))
           successCount++

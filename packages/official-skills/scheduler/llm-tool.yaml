@@ -1,0 +1,17 @@
+tools:
+  - name: submit_background_job
+    description: "Submit a task to be processed in the background."
+    parameters:
+      type: object
+      properties:
+        type: { type: string }
+        payload: { type: object }
+      required: ["type", "payload"]
+
+  - name: check_job_status
+    description: "Check the status of a background job."
+    parameters:
+      type: object
+      properties:
+        job_id: { type: string }
+      required: ["job_id"]

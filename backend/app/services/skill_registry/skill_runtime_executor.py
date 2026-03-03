@@ -13,6 +13,7 @@ from app.services.skill_registry.runtimes.base import (
     BaseRuntimeStrategy,
     RuntimeContext,
 )
+from app.services.skill_registry.runtimes.builtin import BuiltinSkillRuntimeStrategy
 from app.services.skill_registry.runtimes.sandbox import SandboxRuntimeStrategy
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,7 @@ class SkillRuntimeExecutor:
         self.strategies: dict[str, BaseRuntimeStrategy] = {
             "backend_task": BackendTaskRuntimeStrategy(),
             "opensandbox": SandboxRuntimeStrategy(),
-            # Future extensions can be added here
-            # "crawler": CrawlerRuntimeStrategy(),
+            "builtin": BuiltinSkillRuntimeStrategy(),
         }
         # Backward-compatible aliases persisted by ingestion/API.
         self.runtime_aliases: dict[str, str] = {

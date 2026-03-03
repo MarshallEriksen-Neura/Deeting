@@ -9,6 +9,7 @@
   fetchKnowledgeTree,
   listLocalUserDocuments,
   retryFile,
+  uploadFile,
   updateFile,
   updateFolder,
 } from "@/lib/api/knowledge"
@@ -318,6 +319,80 @@ describe("knowledge api", () => {
         offset: 0,
         limit: 20,
       },
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("uploads local text file via tauri document command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    const progress = jest.fn()
+    mockInvoke.mockResolvedValue({
+      id: "d-20",
+      name: "local.txt",
+      file_type: "txt",
+      size: 11,
+      status: "indexed",
+      chunks: 1,
+      error_message: null,
+      folder_id: null,
+      created_at: "2026-03-03T00:00:00Z",
+      updated_at: "2026-03-03T00:00:01Z",
+    } as unknown)
+
+    const file = new File(["hello world"], "local.txt", { type: "text/plain" })
+    const uploaded = await uploadFile(file, null, progress)
+
+    expect(uploaded.id).toBe("d-20")
+    expect(uploaded.status).toBe("active")
+    expect(progress).toHaveBeenNthCalledWith(1, 20)
+    expect(progress).toHaveBeenNthCalledWith(2, 80)
+    expect(progress).toHaveBeenNthCalledWith(3, 100)
+    expect(mockInvoke).toHaveBeenCalledWith("create_local_user_document", {
+      payload: {
+        filename: "local.txt",
+        folder_id: null,
+        media_asset_id: null,
+        status: "processing",
+        error_message: null,
+        chunk_count: null,
+        embedding_model: null,
+        meta_info: {
+          file_type: "txt",
+          size: 11,
+          source: "desktop-local-upload",
+          raw_text: "hello world",
+        },
+      },
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("marks unsupported local file type as failed and throws", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue({
+      id: "d-21",
+      name: "paper.pdf",
+      file_type: "pdf",
+      size: 4,
+      status: "failed",
+      chunks: 0,
+      error_message: "unsupported",
+      folder_id: null,
+      created_at: "2026-03-03T00:00:00Z",
+      updated_at: "2026-03-03T00:00:01Z",
+    } as unknown)
+
+    const file = new File(["%PDF"], "paper.pdf", { type: "application/pdf" })
+
+    await expect(uploadFile(file)).rejects.toThrow("本地离线暂不支持 PDF 解析")
+    expect(mockInvoke).toHaveBeenCalledWith("create_local_user_document", {
+      payload: expect.objectContaining({
+        filename: "paper.pdf",
+        status: "failed",
+        folder_id: null,
+      }),
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })

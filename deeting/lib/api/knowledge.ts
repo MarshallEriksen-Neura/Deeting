@@ -9,6 +9,8 @@ import type {
 } from "@/types/knowledge"
 
 const BASE = "/api/v1/documents"
+const LOCAL_TEXT_FILE_TYPES = new Set(["txt", "md", "csv", "html", "json"])
+const LOCAL_TEXT_MAX_BYTES = 2 * 1024 * 1024
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
   typeof window !== "undefined" &&
@@ -215,6 +217,32 @@ function normalizeFileStatus(value: string): KnowledgeFile["status"] {
   return "processing"
 }
 
+function inferFileTypeFromFilename(filename: string): string {
+  const ext = filename.split(".").pop()?.trim().toLowerCase() ?? ""
+  if (!ext) return "txt"
+  const knownTypes = new Set(["pdf", "txt", "docx", "md", "csv", "xlsx", "html", "json"])
+  if (knownTypes.has(ext)) return ext
+  return ext
+}
+
+function buildLocalUnsupportedFileError(fileType: string): string {
+  return `本地离线暂不支持 ${fileType.toUpperCase()} 解析，请转换为 TXT/MD/CSV/HTML/JSON 后重试`
+}
+
+async function readLocalFileText(file: File): Promise<string> {
+  const maybeText = (file as File & { text?: () => Promise<string> }).text
+  if (typeof maybeText === "function") {
+    return maybeText.call(file)
+  }
+
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
+    reader.onerror = () => reject(reader.error ?? new Error("failed to read local file"))
+    reader.readAsText(file)
+  })
+}
+
 const SORT_FIELD_MAP: Record<KnowledgeSortField, string> = {
   name: "name",
   size: "size",
@@ -418,6 +446,53 @@ export async function uploadFile(
   folderId?: string | null,
   onProgress?: (percent: number) => void
 ): Promise<KnowledgeFile> {
+  if (isTauriRuntime()) {
+    const fileType = inferFileTypeFromFilename(file.name)
+    const baseMeta = {
+      file_type: fileType,
+      size: file.size,
+      source: "desktop-local-upload",
+    }
+    if (!LOCAL_TEXT_FILE_TYPES.has(fileType)) {
+      await createLocalUserDocument({
+        filename: file.name,
+        folderId,
+        status: "failed",
+        errorMessage: buildLocalUnsupportedFileError(fileType),
+        metaInfo: baseMeta,
+      })
+      throw new Error(buildLocalUnsupportedFileError(fileType))
+    }
+    if (file.size > LOCAL_TEXT_MAX_BYTES) {
+      const errorMessage = `本地离线文本解析大小上限为 ${Math.floor(
+        LOCAL_TEXT_MAX_BYTES / 1024 / 1024
+      )}MB`
+      await createLocalUserDocument({
+        filename: file.name,
+        folderId,
+        status: "failed",
+        errorMessage,
+        metaInfo: baseMeta,
+      })
+      throw new Error(errorMessage)
+    }
+
+    onProgress?.(20)
+    const rawText = await readLocalFileText(file)
+    onProgress?.(80)
+    const created = await createLocalUserDocument({
+      filename: file.name,
+      folderId,
+      status: "processing",
+      metaInfo: {
+        ...baseMeta,
+        raw_text: rawText,
+      },
+    })
+    onProgress?.(100)
+    return created
+  }
+
   const formData = new FormData()
   formData.append("file", file)
   if (folderId) formData.append("folder_id", folderId)

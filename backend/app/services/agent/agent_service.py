@@ -5,8 +5,11 @@ import uuid
 from typing import Any
 
 from app.agent_plugins.core.manager import PluginManager
+from app.core.database import AsyncSessionLocal
 from app.core.plugin_config import plugin_config_loader
+from app.repositories.skill_registry_repository import SkillRegistryRepository
 from app.schemas.tool import ToolDefinition
+from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -192,11 +195,7 @@ class AgentService:
                 # Execute Tools
                 for tool_call in response:
                     func = self.tool_map.get(tool_call.name)
-                    if not func:
-                        res_str = (
-                            f"Error: Tool '{tool_call.name}' implementation not found."
-                        )
-                    else:
+                    if func:
                         try:
                             if isinstance(tool_call.arguments, dict):
                                 res = await func(**tool_call.arguments)
@@ -206,6 +205,33 @@ class AgentService:
                         except Exception as e:
                             logger.exception(f"Tool Execution Error {tool_call.name}")
                             res_str = f"Error executing {tool_call.name}: {e!s}"
+                    else:
+                        # Fallback to Skill Registry
+                        try:
+                            async with AsyncSessionLocal() as session:
+                                skill_repo = SkillRegistryRepository(session)
+                                skill = await skill_repo.get_by_tool_name(tool_call.name)
+                                if skill:
+                                    executor = SkillRuntimeExecutor(skill_repo)
+                                    inputs = dict(tool_call.arguments or {})
+                                    inputs["__tool_name__"] = tool_call.name
+                                    
+                                    exec_result = await executor.execute(
+                                        skill_id=skill.id,
+                                        session_id="agent_service_chat",
+                                        user_id=user_id,
+                                        inputs=inputs,
+                                        intent=tool_call.name
+                                    )
+                                    if exec_result.get("status") == "ok":
+                                        res_str = json.dumps(exec_result.get("result"), default=str)
+                                    else:
+                                        res_str = f"Error: {exec_result.get('error', 'Skill execution failed')}"
+                                else:
+                                    res_str = f"Error: Tool '{tool_call.name}' implementation not found."
+                        except Exception as e:
+                            logger.exception(f"Skill Fallback Error {tool_call.name}")
+                            res_str = f"Error: {e!s}"
 
                     # Add Tool Result to history
                     messages.append(

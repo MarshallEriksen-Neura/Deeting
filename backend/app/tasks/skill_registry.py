@@ -190,77 +190,144 @@ def seed_builtin_plugins_to_registry_task() -> dict[str, int]:
         return {"created": 0, "updated": 0}
 
 async def _run_seed_builtins() -> dict[str, int]:
-    plugins_yaml_path = Path(settings.PROJECT_ROOT) / "app" / "core" / "plugins.yaml"
-    if not plugins_yaml_path.exists():
-        logger.warning(f"plugins.yaml not found at {plugins_yaml_path}")
-        return {"created": 0, "updated": 0}
-
-    with open(plugins_yaml_path, "r") as f:
-        config = yaml.safe_load(f)
+    project_root = Path(settings.PROJECT_ROOT).parent
+    official_skills_path = project_root / "packages" / "official-skills"
     
-    plugin_defs = config.get("plugins", [])
-    from app.models.skill_registry import SkillRegistry
-    from importlib import import_module
-
     stats = {"created": 0, "updated": 0}
     
     async with AsyncSessionLocal() as session:
         repo = SkillRegistryRepository(session)
-        for p_def in plugin_defs:
-            p_id = p_def.get("id")
-            module_path = p_def.get("module")
-            class_name = p_def.get("class_name")
+        
+        # 1. Seed from official-skills packages
+        if official_skills_path.exists():
+            for skill_dir in official_skills_path.iterdir():
+                if not skill_dir.is_dir(): continue
+                deeting_json = skill_dir / "deeting.json"
+                if not deeting_json.exists(): continue
+                
+                try:
+                    with open(deeting_json, "r") as f:
+                        manifest = json.load(f)
+                    
+                    skill_id = manifest.get("id")
+                    if not skill_id: continue
+                    
+                    # Read llm-tool.yaml if exists
+                    llm_tool_path = skill_dir / "llm-tool.yaml"
+                    tools = []
+                    if llm_tool_path.exists():
+                        with open(llm_tool_path, "r") as f:
+                            tool_config = yaml.safe_load(f)
+                            tools = tool_config.get("tools", [])
+                    
+                    manifest["tools"] = tools
+                    
+                    existing = await repo.get_by_id(skill_id)
+                    if existing:
+                        await repo.update(existing, {
+                            "name": manifest.get("name"),
+                            "description": manifest.get("description"),
+                            "manifest_json": manifest,
+                            "status": "active",
+                            "runtime": "builtin"
+                        })
+                        stats["updated"] += 1
+                    else:
+                        new_skill = SkillRegistry(
+                            id=skill_id,
+                            name=manifest.get("name"),
+                            description=manifest.get("description"),
+                            type="SKILL",
+                            runtime="builtin",
+                            version=manifest.get("version", "1.0.0"),
+                            manifest_json=manifest,
+                            status="active"
+                        )
+                        session.add(new_skill)
+                        stats["created"] += 1
+                    
+                    await session.flush()
+                    await _run_sync_skill(skill_id)
+                except Exception as e:
+                    logger.error(f"Failed to seed official skill {skill_dir.name}: {e}")
+
+        # 2. Legacy seeding from plugins.yaml (for remaining plugins)
+        plugins_yaml_path = Path(settings.PROJECT_ROOT) / "app" / "core" / "plugins.yaml"
+        if plugins_yaml_path.exists():
+            with open(plugins_yaml_path, "r") as f:
+                config = yaml.safe_load(f)
             
-            if not all([p_id, module_path, class_name]):
-                continue
+            plugin_defs = config.get("plugins", [])
+            from importlib import import_module
 
-            try:
-                # Dynamically load the plugin to get tool definitions
-                mod = import_module(module_path)
-                cls = getattr(mod, class_name)
-                # Note: We create a dummy instance to call get_tools() 
-                # This assumes AgentPlugin doesn't require heavy init for metadata
-                plugin_inst = cls()
-                tools = plugin_inst.get_tools()
-                metadata = plugin_inst.metadata
+            for p_def in plugin_defs:
+                p_id = p_def.get("id")
+                # Skip if already migrated to official-skills
+                if p_id in [
+                    "core.tools.crawler", 
+                    "system.code_interpreter", 
+                    "system.planner",
+                    "system.image_generation",
+                    "system/vector_store",
+                    "system.expert_network",
+                    "system/database_manager",
+                    "system/monitor",
+                    "system/task_scheduler",
+                    "core.registry.provider",
+                    "core.tools.provider_probe",
+                    "core.execution.skill_runner"
+                ]:
+                    continue
+                    
+                module_path = p_def.get("module")
+                class_name = p_def.get("class_name")
                 
-                manifest = {
-                    "capabilities": p_def.get("tools", []),
-                    "description": p_def.get("description", metadata.description),
-                    "version": metadata.version,
-                    "author": metadata.author,
-                    "tools": tools
-                }
+                if not all([p_id, module_path, class_name]):
+                    continue
 
-                existing = await repo.get_by_id(p_id)
-                if existing:
-                    await repo.update(existing, {
-                        "name": p_def.get("name", metadata.name),
+                try:
+                    # ... (rest of the legacy logic)
+                    mod = import_module(module_path)
+                    cls = getattr(mod, class_name)
+                    plugin_inst = cls()
+                    tools = plugin_inst.get_tools()
+                    metadata = plugin_inst.metadata
+                    
+                    manifest = {
+                        "capabilities": p_def.get("tools", []),
                         "description": p_def.get("description", metadata.description),
-                        "manifest_json": manifest,
-                        "status": "active"
-                    })
-                    stats["updated"] += 1
-                else:
-                    new_skill = SkillRegistry(
-                        id=p_id,
-                        name=p_def.get("name", metadata.name),
-                        description=p_def.get("description", metadata.description),
-                        type="SKILL",
-                        runtime="builtin",
-                        version=metadata.version,
-                        manifest_json=manifest,
-                        status="active"
-                    )
-                    session.add(new_skill)
-                    stats["created"] += 1
-                
-                await session.flush()
-                # Trigger Qdrant sync for each plugin
-                await _run_sync_skill(p_id)
-                
-            except Exception as e:
-                logger.error(f"Failed to seed plugin {p_id}: {e}")
+                        "version": metadata.version,
+                        "author": metadata.author,
+                        "tools": tools
+                    }
+
+                    existing = await repo.get_by_id(p_id)
+                    if existing:
+                        await repo.update(existing, {
+                            "name": p_def.get("name", metadata.name),
+                            "description": p_def.get("description", metadata.description),
+                            "manifest_json": manifest,
+                            "status": "active"
+                        })
+                        stats["updated"] += 1
+                    else:
+                        new_skill = SkillRegistry(
+                            id=p_id,
+                            name=p_def.get("name", metadata.name),
+                            description=p_def.get("description", metadata.description),
+                            type="SKILL",
+                            runtime="builtin",
+                            version=metadata.version,
+                            manifest_json=manifest,
+                            status="active"
+                        )
+                        session.add(new_skill)
+                        stats["created"] += 1
+                    
+                    await session.flush()
+                    await _run_sync_skill(p_id)
+                except Exception as e:
+                    logger.error(f"Failed to seed legacy plugin {p_id}: {e}")
         
         await session.commit()
     return stats

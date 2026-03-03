@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use arrow_array::{Array, BooleanArray, RecordBatch, RecordBatchIterator, StringArray};
+use arrow_array::{
+    Array, BooleanArray, Float32Array, Float64Array, Int64Array, RecordBatch, RecordBatchIterator,
+    StringArray,
+};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use futures_util::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
@@ -16,6 +19,7 @@ use crate::modules::memory::types::{
 const LOCAL_MEMORY_TABLE: &str = "local_memories";
 const LOCAL_TOOL_TABLE: &str = "local_tools";
 const LOCAL_ASSISTANT_TABLE: &str = "local_assistants";
+const LOCAL_KNOWLEDGE_CHUNK_TABLE: &str = "local_knowledge_chunks";
 
 pub struct MemoryStore {
     conn: Connection,
@@ -54,6 +58,17 @@ impl MemoryStore {
             let schema = local_assistant_schema();
             self.conn
                 .create_empty_table(LOCAL_ASSISTANT_TABLE, schema)
+                .execute()
+                .await?;
+        }
+
+        if !table_names
+            .iter()
+            .any(|name| name == LOCAL_KNOWLEDGE_CHUNK_TABLE)
+        {
+            let schema = local_knowledge_chunk_schema();
+            self.conn
+                .create_empty_table(LOCAL_KNOWLEDGE_CHUNK_TABLE, schema)
                 .execute()
                 .await?;
         }
@@ -129,6 +144,135 @@ impl MemoryStore {
             .execute()
             .await?;
         Ok(())
+    }
+
+    pub async fn append_knowledge_chunk(
+        &self,
+        chunk_id: String,
+        file_id: String,
+        file_name: String,
+        chunk_index: i64,
+        content: String,
+        token_count: i64,
+        vector: Vec<f32>,
+    ) -> Result<(), MemoryError> {
+        let now = now_rfc3339()?;
+        let batch = RecordBatch::try_new(
+            local_knowledge_chunk_schema(),
+            vec![
+                Arc::new(StringArray::from(vec![Some(chunk_id.clone())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(chunk_id)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(file_id)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(file_name)])) as Arc<dyn Array>,
+                Arc::new(Int64Array::from(vec![chunk_index])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(content)])) as Arc<dyn Array>,
+                Arc::new(Int64Array::from(vec![token_count.max(0)])) as Arc<dyn Array>,
+                Arc::new(build_fixed_size_vector_array(vector)) as Arc<dyn Array>,
+                Arc::new(BooleanArray::from(vec![false])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now)])) as Arc<dyn Array>,
+            ],
+        )?;
+
+        let table = self
+            .conn
+            .open_table(LOCAL_KNOWLEDGE_CHUNK_TABLE)
+            .execute()
+            .await?;
+        table
+            .add(RecordBatchIterator::new(
+                vec![Ok(batch)],
+                local_knowledge_chunk_schema(),
+            ))
+            .execute()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn clear_knowledge_chunks_for_file(&self, file_id: &str) -> Result<(), MemoryError> {
+        let normalized_file_id = file_id.trim().to_string();
+        if normalized_file_id.is_empty() {
+            return Err(MemoryError::validation("file_id is required"));
+        }
+        let now = now_rfc3339()?;
+        let table = self
+            .conn
+            .open_table(LOCAL_KNOWLEDGE_CHUNK_TABLE)
+            .execute()
+            .await?;
+        let _ = table
+            .update()
+            .only_if(format!(
+                "file_id = '{}' AND is_deleted = false",
+                sql_escape(&normalized_file_id)
+            ))
+            .column("is_deleted", "true")
+            .column("updated_at", format!("'{}'", sql_escape(&now)))
+            .execute()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn search_knowledge_chunks(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let table = self
+            .conn
+            .open_table(LOCAL_KNOWLEDGE_CHUNK_TABLE)
+            .execute()
+            .await?;
+        let batches = table
+            .vector_search(vector)?
+            .column("vector")
+            .only_if("is_deleted = false".to_string())
+            .limit(limit)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let mut results = Vec::new();
+        for batch in batches {
+            let chunk_id_col = as_string_col(&batch, "chunk_id")?;
+            let file_id_col = as_string_col(&batch, "file_id")?;
+            let file_name_col = as_string_col(&batch, "file_name")?;
+            let chunk_index_col = as_i64_col(&batch, "chunk_index")?;
+            let content_col = as_string_col(&batch, "content")?;
+            let token_count_col = as_i64_col(&batch, "token_count")?;
+
+            for row in 0..batch.num_rows() {
+                let distance = as_f32_col(&batch, "_distance")
+                    .ok()
+                    .and_then(|col| {
+                        if col.is_null(row) {
+                            None
+                        } else {
+                            Some(col.value(row) as f64)
+                        }
+                    })
+                    .or_else(|| {
+                        as_f64_col(&batch, "_distance").ok().and_then(|col| {
+                            if col.is_null(row) {
+                                None
+                            } else {
+                                Some(col.value(row))
+                            }
+                        })
+                    });
+                results.push(serde_json::json!({
+                    "chunk_id": chunk_id_col.value(row),
+                    "file_id": file_id_col.value(row),
+                    "file_name": file_name_col.value(row),
+                    "index": chunk_index_col.value(row),
+                    "content": content_col.value(row),
+                    "token_count": token_count_col.value(row),
+                    "distance": distance,
+                }));
+            }
+        }
+        Ok(results)
     }
 
     pub async fn search_tools(
@@ -402,6 +546,26 @@ fn local_assistant_schema() -> SchemaRef {
     ]))
 }
 
+fn local_knowledge_chunk_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("chunk_id", DataType::Utf8, false),
+        Field::new("file_id", DataType::Utf8, false),
+        Field::new("file_name", DataType::Utf8, false),
+        Field::new("chunk_index", DataType::Int64, false),
+        Field::new("content", DataType::Utf8, false),
+        Field::new("token_count", DataType::Int64, false),
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 1536),
+            false,
+        ),
+        Field::new("is_deleted", DataType::Boolean, false),
+        Field::new("created_at", DataType::Utf8, false),
+        Field::new("updated_at", DataType::Utf8, false),
+    ]))
+}
+
 fn build_filter_sql(
     session_id: Option<&str>,
     assistant_id: Option<&str>,
@@ -480,6 +644,36 @@ fn as_bool_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a BooleanArra
         .as_any()
         .downcast_ref::<BooleanArray>()
         .ok_or_else(|| MemoryError::Storage(format!("invalid bool column: {name}")))
+}
+
+fn as_i64_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Int64Array, MemoryError> {
+    let column = batch
+        .column_by_name(name)
+        .ok_or_else(|| MemoryError::Storage(format!("missing column: {name}")))?;
+    column
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .ok_or_else(|| MemoryError::Storage(format!("invalid int64 column: {name}")))
+}
+
+fn as_f32_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float32Array, MemoryError> {
+    let column = batch
+        .column_by_name(name)
+        .ok_or_else(|| MemoryError::Storage(format!("missing column: {name}")))?;
+    column
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .ok_or_else(|| MemoryError::Storage(format!("invalid float32 column: {name}")))
+}
+
+fn as_f64_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float64Array, MemoryError> {
+    let column = batch
+        .column_by_name(name)
+        .ok_or_else(|| MemoryError::Storage(format!("missing column: {name}")))?;
+    column
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .ok_or_else(|| MemoryError::Storage(format!("invalid float64 column: {name}")))
 }
 
 fn required_string(col: &StringArray, index: usize, name: &str) -> Result<String, MemoryError> {

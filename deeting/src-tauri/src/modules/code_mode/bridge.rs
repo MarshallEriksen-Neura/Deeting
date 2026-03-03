@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,6 +10,7 @@ use axum::{Json, Router};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
@@ -457,10 +459,79 @@ async fn dispatch_tool_call(
             serde_json::to_value(instances)
                 .map_err(|err| ("PROVIDER_ERROR".to_string(), err.to_string()))
         }
-        _ => Err((
-            "CODE_MODE_BRIDGE_TOOL_NOT_ALLOWED".to_string(),
-            format!("tool '{}' is not supported by local bridge", tool_name),
-        )),
+        _ => {
+            // Attempt to resolve as an MCP or System Plugin tool
+            let tool = state
+                .deps
+                .mcp
+                .store
+                .get_tool_by_name(tool_name)
+                .await
+                .map_err(|err| ("MCP_STORE_ERROR".to_string(), err.to_string()))?;
+
+            if let Some(tool) = tool {
+                if let Some(command) = tool.command {
+                    let mut cmd = tokio::process::Command::new(command);
+                    if let Some(args) = tool.args {
+                        cmd.args(args);
+                    }
+                    if let Some(env) = tool.env {
+                        cmd.envs(env);
+                    }
+                    cmd.stdin(Stdio::piped());
+                    cmd.stdout(Stdio::piped());
+                    cmd.stderr(Stdio::piped());
+
+                    let mut child = cmd
+                        .spawn()
+                        .map_err(|err| ("PROCESS_SPAWN_ERROR".to_string(), err.to_string()))?;
+
+                    let mut stdin = child.stdin.take().unwrap();
+                    let payload = json!({
+                        "method": tool_name,
+                        "arguments": arguments,
+                    });
+                    let payload_bytes = serde_json::to_vec(&payload).unwrap();
+
+                    stdin
+                        .write_all(&payload_bytes)
+                        .await
+                        .map_err(|err| ("PROCESS_IO_ERROR".to_string(), err.to_string()))?;
+                    drop(stdin);
+
+                    let output = child
+                        .wait_with_output()
+                        .await
+                        .map_err(|err| ("PROCESS_WAIT_ERROR".to_string(), err.to_string()))?;
+
+                    if !output.status.success() {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        return Err((
+                            "PROCESS_EXECUTION_FAILED".to_string(),
+                            format!("tool execution failed (exit {}): {}", output.status, stderr),
+                        ));
+                    }
+
+                    let result: Value = serde_json::from_slice(&output.stdout).map_err(|err| {
+                        (
+                            "PROCESS_OUTPUT_PARSE_ERROR".to_string(),
+                            format!("failed to parse tool output: {}", err),
+                        )
+                    })?;
+                    Ok(result)
+                } else {
+                    Err((
+                        "CODE_MODE_BRIDGE_TOOL_NOT_RUNNABLE".to_string(),
+                        format!("tool '{}' has no executable command", tool_name),
+                    ))
+                }
+            } else {
+                Err((
+                    "CODE_MODE_BRIDGE_TOOL_NOT_ALLOWED".to_string(),
+                    format!("tool '{}' is not supported by local bridge", tool_name),
+                ))
+            }
+        }
     }
 }
 

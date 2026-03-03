@@ -1,0 +1,13 @@
+{
+  "id": "official.skills.memory",
+  "name": "Knowledge & Memory",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Manage long-term memory and knowledge base search.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "official.skills.planner",
+  "name": "Planner",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Architect capabilities: Design execution plans and manage workflows.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

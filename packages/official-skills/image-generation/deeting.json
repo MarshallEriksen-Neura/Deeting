@@ -1,0 +1,16 @@
+{
+  "id": "official.skills.image_generation",
+  "name": "Image Generation",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Generate images from text descriptions using DALL-E, Midjourney, etc.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "network.outbound"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

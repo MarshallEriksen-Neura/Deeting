@@ -1,0 +1,32 @@
+tools:
+  - name: fetch_web_content
+    description: "Fetch and extract clean content from a single URL. Returns markdown."
+    parameters:
+      type: object
+      properties:
+        url:
+          type: string
+          description: "The URL to fetch."
+        js_mode:
+          type: boolean
+          description: "Whether to render JavaScript."
+          default: true
+      required: ["url"]
+
+  - name: crawl_website
+    description: "Recursively crawl a website starting from a root URL."
+    parameters:
+      type: object
+      properties:
+        url:
+          type: string
+          description: "Root URL to start crawling."
+        max_depth:
+          type: integer
+          description: "How deep to follow links."
+          default: 2
+        max_pages:
+          type: integer
+          description: "Maximum number of pages to fetch."
+          default: 10
+      required: ["url"]

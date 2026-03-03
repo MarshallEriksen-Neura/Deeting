@@ -2,107 +2,119 @@
 # This file defines the "Standard Library" of plugins available to the Agent Runtime.
 # ID must match the 'name' in PluginMetadata.
 
+# NOTE: The following plugins have been migrated to standalone packages in packages/official-skills/
+# They are now dynamically discovered via SkillRegistry and executed via SkillRuntimeExecutor.
+
 plugins:
   # === Core Sensors (Scout) ===
-  - id: "core.tools.crawler"
-    name: "Scout (Web Crawler)"
-    module: "app.agent_plugins.builtins.crawler.plugin"
-    class_name: "CrawlerPlugin"
-    enabled_by_default: true
-    description: "Deep web crawling, site ingestion, and documentation learning."
-    tools:
-      - "fetch_web_content"
-      - "crawl_website"
-      - "submit_repo_ingestion"
-      - "poll_repo_ingestion"
-      - "convert_artifact_to_assistant"
-      - "batch_convert_artifact_to_assistants"
+  # Migrated to packages/official-skills/crawler
+  # - id: "core.tools.crawler"
+  #   name: "Scout (Web Crawler)"
+  #   module: "app.agent_plugins.builtins.crawler.plugin"
+  #   class_name: "CrawlerPlugin"
+  #   enabled_by_default: true
+  #   description: "Deep web crawling, site ingestion, and documentation learning."
+  #   tools:
+  #     - "fetch_web_content"
+  #     - "crawl_website"
+  #     - "submit_repo_ingestion"
+  #     - "poll_repo_ingestion"
+  #     - "convert_artifact_to_assistant"
+  #     - "batch_convert_artifact_to_assistants"
 
   # === Core Memory (Qdrant) ===
-  - id: "system/vector_store"
-    name: "Vector Memory"
-    module: "app.agent_plugins.builtins.vector_store.plugin"
-    class_name: "VectorStorePlugin"
-    enabled_by_default: true
-    is_always_on: true
-    description: "Semantic search and long-term memory management."
-    tools:
-      - "search_knowledge"
-      - "add_knowledge_chunk"
+  # Migrated to packages/official-skills/memory
+  # - id: "system/vector_store"
+  #   name: "Vector Memory"
+  #   module: "app.agent_plugins.builtins.vector_store.plugin"
+  #   class_name: "VectorStorePlugin"
+  #   enabled_by_default: true
+  #   is_always_on: true
+  #   description: "Semantic search and long-term memory management."
+  #   tools:
+  #     - "search_knowledge"
+  #     - "add_knowledge_chunk"
 
   # === Core Administration (Provider) ===
-  - id: "core.registry.provider"
-    name: "Provider Registry"
-    module: "app.agent_plugins.builtins.provider_registry.plugin"
-    class_name: "ProviderRegistryPlugin"
-    enabled_by_default: false
-    restricted: true
-    allowed_roles: ["admin"]
-    description: "Manage AI Provider configurations and schemas."
-    tools:
-      - "get_unified_schema"
-      - "verify_provider_template"
-      - "save_provider_field_mapping"
+  # Migrated to packages/official-skills/provider-registry
+  # - id: "core.registry.provider"
+  #   name: "Provider Registry"
+  #   module: "app.agent_plugins.builtins.provider_registry.plugin"
+  #   class_name: "ProviderRegistryPlugin"
+  #   enabled_by_default: false
+  #   restricted: true
+  #   allowed_roles: ["admin"]
+  #   description: "Manage AI Provider configurations and schemas."
+  #   tools:
+  #     - "get_unified_schema"
+  #     - "verify_provider_template"
+  #     - "save_provider_field_mapping"
 
-  - id: "system/database_manager"
-    name: "Database Manager"
-    module: "app.agent_plugins.builtins.database.plugin"
-    class_name: "DatabasePlugin"
-    enabled_by_default: false
-    restricted: true
-    allowed_roles: ["admin"]
-    description: "Manage Provider Presets metadata and lifecycle."
-    tools:
-      - "check_provider_preset_exists"
-      - "create_provider_preset"
-      - "update_provider_preset"
+  # Migrated to packages/official-skills/database
+  # - id: "system/database_manager"
+  #   name: "Database Manager"
+  #   module: "app.agent_plugins.builtins.database.plugin"
+  #   class_name: "DatabasePlugin"
+  #   enabled_by_default: false
+  #   restricted: true
+  #   allowed_roles: ["admin"]
+  #   description: "Manage Provider Presets metadata and lifecycle."
+  #   tools:
+  #     - "check_provider_preset_exists"
+  #     - "create_provider_preset"
+  #     - "update_provider_preset"
 
   # === Other Utilities ===
-  - id: "system.code_interpreter"
-    name: "Code Interpreter"
-    module: "app.agent_plugins.builtins.code_interpreter.plugin"
-    class_name: "CodeInterpreterPlugin"
-    enabled_by_default: true
-    tools:
-      - "run_python"
+  # Migrated to packages/official-skills/code-interpreter
+  # - id: "system.code_interpreter"
+  #   name: "Code Interpreter"
+  #   module: "app.agent_plugins.builtins.code_interpreter.plugin"
+  #   class_name: "CodeInterpreterPlugin"
+  #   enabled_by_default: true
+  #   tools:
+  #     - "run_python"
 
-  - id: "system.image_generation"
-    name: "Image Generation"
-    module: "app.agent_plugins.builtins.image_generation.plugin"
-    class_name: "ImageGenerationPlugin"
-    enabled_by_default: true
-    tools:
-      - "generate_image"
+  # Migrated to packages/official-skills/image-generation
+  # - id: "system.image_generation"
+  #   name: "Image Generation"
+  #   module: "app.agent_plugins.builtins.image_generation.plugin"
+  #   class_name: "ImageGenerationPlugin"
+  #   enabled_by_default: true
+  #   tools:
+  #     - "generate_image"
 
-  - id: "system.planner"
-    name: "Planner"
-    module: "app.agent_plugins.builtins.planner.plugin"
-    class_name: "PlannerPlugin"
-    enabled_by_default: true
-    tools:
-      - "propose_execution_plan"
-      - "retrieve_similar_plans"
+  # Migrated to packages/official-skills/planner
+  # - id: "system.planner"
+  #   name: "Planner"
+  #   module: "app.agent_plugins.builtins.planner.plugin"
+  #   class_name: "PlannerPlugin"
+  #   enabled_by_default: true
+  #   tools:
+  #     - "propose_execution_plan"
+  #     - "retrieve_similar_plans"
 
   # === Expert Network (JIT Persona Routing) ===
-  - id: "system.expert_network"
-    name: "Expert Network"
-    module: "app.agent_plugins.builtins.expert_network.plugin"
-    class_name: "ExpertNetworkPlugin"
-    enabled_by_default: true
-    is_always_on: true
-    description: "Searches expert assistants for persona routing via Qdrant."
-    tools:
-      - "consult_expert_network"
+  # Migrated to packages/official-skills/expert-network
+  # - id: "system.expert_network"
+  #   name: "Expert Network"
+  #   module: "app.agent_plugins.builtins.expert_network.plugin"
+  #   class_name: "ExpertNetworkPlugin"
+  #   enabled_by_default: true
+  #   is_always_on: true
+  #   description: "Searches expert assistants for persona routing via Qdrant."
+  #   tools:
+  #     - "consult_expert_network"
 
   # === Core Execution (Skill Runner) ===
-  - id: "core.execution.skill_runner"
-    name: "Skill Runner"
-    module: "app.agent_plugins.builtins.skill_runner.plugin"
-    class_name: "SkillRunnerPlugin"
-    enabled_by_default: true
-    is_always_on: true
-    description: "Executes JIT-retrieved skills via OpenSandbox."
-    tools: [] # Dynamic skills
+  # Replaced by SkillRuntimeExecutor
+  # - id: "core.execution.skill_runner"
+  #   name: "Skill Runner"
+  #   module: "app.agent_plugins.builtins.skill_runner.plugin"
+  #   class_name: "SkillRunnerPlugin"
+  #   enabled_by_default: true
+  #   is_always_on: true
+  #   description: "Executes JIT-retrieved skills via OpenSandbox."
+  #   tools: [] # Dynamic skills
 
   # === Code Mode Core SDK ===
   - id: "system.deeting_core_sdk"
@@ -117,13 +129,14 @@ plugins:
       - "execute_code_plan"
 
   # === Monitor Automation ===
-  - id: "system/monitor"
-    name: "Monitor Automation"
-    module: "app.agent_plugins.builtins.monitor.plugin"
-    class_name: "MonitorPlugin"
-    enabled_by_default: true
-    description: "Create and manage proactive monitoring tasks."
-    tools:
-      - "sys_create_monitor"
-      - "sys_list_monitors"
-      - "sys_update_monitor"
+  # Migrated to packages/official-skills/monitor
+  # - id: "system/monitor"
+  #   name: "Monitor Automation"
+  #   module: "app.agent_plugins.builtins.monitor.plugin"
+  #   class_name: "MonitorPlugin"
+  #   enabled_by_default: true
+  #   description: "Create and manage proactive monitoring tasks."
+  #   tools:
+  #     - "sys_create_monitor"
+  #     - "sys_list_monitors"
+  #     - "sys_update_monitor"

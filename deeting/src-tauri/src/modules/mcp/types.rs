@@ -625,6 +625,17 @@ pub struct LocalKnowledgeChunkListResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalKnowledgeSearchHit {
+    pub chunk_id: String,
+    pub file_id: String,
+    pub file_name: String,
+    pub index: i64,
+    pub content: String,
+    pub token_count: i64,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateLocalKnowledgeFolderRequest {
     pub name: String,
     pub parent_id: Option<String>,

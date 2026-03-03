@@ -1,0 +1,13 @@
+{
+  "id": "official.skills.database",
+  "name": "Provider Manager",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Manage LLM Provider Presets and Templates.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

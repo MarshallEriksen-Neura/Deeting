@@ -1,0 +1,13 @@
+{
+  "id": "official.skills.scheduler",
+  "name": "Task Scheduler",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Handle long-running background tasks.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

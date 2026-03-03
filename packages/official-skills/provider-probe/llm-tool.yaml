@@ -1,0 +1,11 @@
+tools:
+  - name: probe_provider
+    description: "Probe a provider to verify connectivity and field mapping."
+    parameters:
+      type: object
+      properties:
+        provider_type: { type: string, enum: ["openai", "gemini"] }
+        base_url: { type: string }
+        api_key: { type: string }
+        model: { type: string }
+      required: ["provider_type", "base_url", "api_key", "model"]
