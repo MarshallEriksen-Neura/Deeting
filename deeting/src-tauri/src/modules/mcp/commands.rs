@@ -10,15 +10,18 @@ use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::{expand_path, ExtractedToolFields, NewSource, ToolUpsert};
 use crate::modules::mcp::types::{
     CreateAssistantMessageRequest, CreateConversationMessageRequest, CreateLocalAssistantRequest,
-    CreateSourceRequest, ImportConfigRequest, LocalAssistant, LocalAssistantEntity, LocalAssistantMessage,
-    LocalAssistantVersion, LocalChatInputMessage, LocalChatRequest, LocalChatResponse, LocalConversationArchiveResponse,
-    LocalConversationClearResponse, LocalConversationCreateRequest, LocalConversationCreateResponse,
-    LocalConversationDeleteResponse, LocalConversationHistoryQuery, LocalConversationHistoryMessage,
-    LocalConversationHistoryResponse, LocalConversationRegenerateRequest,
-    LocalConversationRegenerateResponse, LocalConversationRenameRequest,
-    LocalConversationRenameResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
-    LocalConversationSendRequest, LocalConversationSendResponse, LocalConversationStatus,
-    McpConfigPayload, McpConflictStatus, McpLogEntry, McpSource,
+    CreateSourceRequest, ImportConfigRequest, LocalAssistant, LocalAssistantEntity,
+    LocalAssistantInstallCreateRequest, LocalAssistantInstallItem, LocalAssistantInstallPage,
+    LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest, LocalAssistantMessage,
+    LocalAssistantVersion, LocalChatInputMessage, LocalChatRequest, LocalChatResponse,
+    LocalConversationArchiveResponse, LocalConversationClearResponse,
+    LocalConversationCreateRequest, LocalConversationCreateResponse,
+    LocalConversationDeleteResponse, LocalConversationHistoryMessage,
+    LocalConversationHistoryQuery, LocalConversationHistoryResponse,
+    LocalConversationRegenerateRequest, LocalConversationRegenerateResponse,
+    LocalConversationRenameRequest, LocalConversationRenameResponse, LocalConversationSendRequest,
+    LocalConversationSendResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
+    LocalConversationStatus, McpConfigPayload, McpConflictStatus, McpLogEntry, McpSource,
     McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
     ResolveConflictRequest, SyncSourceRequest, UpdateLocalAssistantRequest, UpdateToolConfigRequest,
 };
@@ -56,10 +59,7 @@ struct CloudSubscriptionItem {
 }
 
 #[tauri::command]
-pub async fn set_cloud_base_url(
-    state: State<'_, AppState>,
-    url: String,
-) -> Result<(), String> {
+pub async fn set_cloud_base_url(state: State<'_, AppState>, url: String) -> Result<(), String> {
     let state = &state.mcp;
     let mut base = state.cloud_base_url.write().await;
     *base = url;
@@ -175,6 +175,69 @@ pub async fn list_local_assistant_versions(
 }
 
 #[tauri::command]
+pub async fn list_local_assistant_installs(
+    state: State<'_, AppState>,
+    query: Option<LocalAssistantInstallQuery>,
+) -> Result<LocalAssistantInstallPage, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_assistant_installs(query.unwrap_or(LocalAssistantInstallQuery {
+            cursor: None,
+            size: None,
+        }))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn install_local_assistant(
+    state: State<'_, AppState>,
+    assistant_id: String,
+    payload: Option<LocalAssistantInstallCreateRequest>,
+) -> Result<LocalAssistantInstallItem, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .install_local_assistant(
+            &assistant_id,
+            payload.unwrap_or(LocalAssistantInstallCreateRequest {
+                follow_latest: None,
+                pinned_version_id: None,
+            }),
+        )
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_assistant_install(
+    state: State<'_, AppState>,
+    assistant_id: String,
+    payload: LocalAssistantInstallUpdateRequest,
+) -> Result<LocalAssistantInstallItem, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_assistant_install(&assistant_id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn uninstall_local_assistant(
+    state: State<'_, AppState>,
+    assistant_id: String,
+) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .uninstall_local_assistant(&assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn create_local_assistant(
     state: State<'_, AppState>,
     payload: CreateLocalAssistantRequest,
@@ -202,10 +265,7 @@ pub async fn update_local_assistant(
 }
 
 #[tauri::command]
-pub async fn delete_local_assistant(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_local_assistant(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let state = &state.mcp;
     state
         .store
@@ -580,14 +640,23 @@ pub async fn start_mcp_tool(
         let message = format!("missing required env: {}", missing.join(", "));
         state
             .store
-            .set_tool_status(&tool_id, McpToolStatus::Pending, None, Some(message.clone()))
+            .set_tool_status(
+                &tool_id,
+                McpToolStatus::Pending,
+                None,
+                Some(message.clone()),
+            )
             .await
             .map_err(to_string)?;
-        app.emit(&format!("mcp-log://{}", tool_id), McpLogEntry {
-            timestamp: now_rfc3339(),
-            stream: crate::modules::mcp::types::McpLogStream::Event,
-            message,
-        }).ok();
+        app.emit(
+            &format!("mcp-log://{}", tool_id),
+            McpLogEntry {
+                timestamp: now_rfc3339(),
+                stream: crate::modules::mcp::types::McpLogStream::Event,
+                message,
+            },
+        )
+        .ok();
         return Err("missing required env".to_string());
     }
 
@@ -606,10 +675,7 @@ pub async fn start_mcp_tool(
 }
 
 #[tauri::command]
-pub async fn stop_mcp_tool(
-    state: State<'_, AppState>,
-    tool_id: String,
-) -> Result<McpTool, String> {
+pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Result<McpTool, String> {
     let state = &state.mcp;
     state
         .process_manager
@@ -632,7 +698,11 @@ pub async fn update_mcp_tool_env(
     env: Option<HashMap<String, String>>,
 ) -> Result<McpTool, String> {
     let state = &state.mcp;
-    state.store.update_tool_env(&tool_id, env).await.map_err(to_string)
+    state
+        .store
+        .update_tool_env(&tool_id, env)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -645,7 +715,9 @@ pub async fn apply_pending_config(
     if !payload.apply_pending {
         return Err("apply_pending must be true".to_string());
     }
-    apply_pending_update(&state, &tool_id).await.map_err(to_string)
+    apply_pending_update(&state, &tool_id)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -656,9 +728,15 @@ pub async fn resolve_mcp_conflict(
 ) -> Result<McpTool, String> {
     let state = &state.mcp;
     match payload.action.as_str() {
-        "update" => apply_pending_update(&state, &tool_id).await.map_err(to_string),
+        "update" => apply_pending_update(&state, &tool_id)
+            .await
+            .map_err(to_string),
         "keep" => {
-            state.store.clear_pending_update(&tool_id).await.map_err(to_string)?;
+            state
+                .store
+                .clear_pending_update(&tool_id)
+                .await
+                .map_err(to_string)?;
             state
                 .store
                 .get_tool(&tool_id)
@@ -680,10 +758,7 @@ pub async fn get_mcp_logs(
 }
 
 #[tauri::command]
-pub async fn clear_mcp_logs(
-    state: State<'_, AppState>,
-    tool_id: String,
-) -> Result<(), String> {
+pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
     let state = &state.mcp;
     state.process_manager.clear_logs(&tool_id).await;
     Ok(())
@@ -697,7 +772,10 @@ pub async fn sync_cloud_subscriptions(
 ) -> Result<Vec<McpTool>, String> {
     let state = &state.mcp;
     let base_url = state.cloud_base_url.read().await.clone();
-    let url = format!("{}/api/v1/mcp/subscriptions", base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/v1/mcp/subscriptions",
+        base_url.trim_end_matches('/')
+    );
     let response = state
         .client
         .get(&url)
@@ -717,7 +795,11 @@ pub async fn sync_cloud_subscriptions(
         .map_err(|err| McpError::Network(err.to_string()))
         .map_err(to_string)?;
 
-    let cloud_source = state.store.ensure_cloud_source(&base_url).await.map_err(to_string)?;
+    let cloud_source = state
+        .store
+        .ensure_cloud_source(&base_url)
+        .await
+        .map_err(to_string)?;
     let mut seen_identifiers = HashSet::new();
 
     for sub in subs.iter() {
@@ -801,24 +883,42 @@ pub async fn sync_cloud_subscriptions(
                     is_read_only: true,
                     is_new: true,
                 };
-                state.store.upsert_tool(tool_upsert).await.map_err(to_string)?;
+                state
+                    .store
+                    .upsert_tool(tool_upsert)
+                    .await
+                    .map_err(to_string)?;
             }
         }
     }
 
     let all_tools = state.store.list_tools().await.map_err(to_string)?;
-    for tool in all_tools.iter().filter(|t| t.source_id.as_deref() == Some(&cloud_source.id)) {
-        let Some(identifier) = tool.identifier.clone() else { continue };
+    for tool in all_tools
+        .iter()
+        .filter(|t| t.source_id.as_deref() == Some(&cloud_source.id))
+    {
+        let Some(identifier) = tool.identifier.clone() else {
+            continue;
+        };
         if !seen_identifiers.contains(&identifier) {
             let _ = state
                 .store
-                .set_tool_status(&tool.id, McpToolStatus::Orphaned, None, Some("cloud subscription removed".to_string()))
+                .set_tool_status(
+                    &tool.id,
+                    McpToolStatus::Orphaned,
+                    None,
+                    Some("cloud subscription removed".to_string()),
+                )
                 .await;
-            app.emit(&format!("mcp-log://{}", tool.id), McpLogEntry {
-                timestamp: now_rfc3339(),
-                stream: crate::modules::mcp::types::McpLogStream::Event,
-                message: "cloud subscription removed".to_string(),
-            }).ok();
+            app.emit(
+                &format!("mcp-log://{}", tool.id),
+                McpLogEntry {
+                    timestamp: now_rfc3339(),
+                    stream: crate::modules::mcp::types::McpLogStream::Event,
+                    message: "cloud subscription removed".to_string(),
+                },
+            )
+            .ok();
         }
     }
 
@@ -877,11 +977,9 @@ async fn apply_config_payload(
         let config_hash = state.store.compute_config_hash(&config_value)?;
         let config_json = serde_json::to_string(&config_value)
             .map_err(|err| McpError::Storage(err.to_string()))?;
-        let extracted: ExtractedToolFields = state.store.extract_tool_fields(&name, &config_payload);
-        let name_conflict = state
-            .store
-            .has_name_conflict(&name, &source.id)
-            .await?;
+        let extracted: ExtractedToolFields =
+            state.store.extract_tool_fields(&name, &config_payload);
+        let name_conflict = state.store.has_name_conflict(&name, &source.id).await?;
 
         let existing = state
             .store
@@ -911,7 +1009,9 @@ async fn apply_config_payload(
                         .store
                         .get_tool(&existing_tool.id)
                         .await?
-                        .ok_or_else(|| McpError::NotFound("tool missing after update".to_string()))?
+                        .ok_or_else(|| {
+                            McpError::NotFound("tool missing after update".to_string())
+                        })?
                 } else {
                     state
                         .store
@@ -944,35 +1044,37 @@ async fn apply_config_payload(
                         .await?
                 }
             }
-            None => state
-                .store
-                .upsert_tool(ToolUpsert {
-                    id: None,
-                    source_id: source.id.clone(),
-                    identifier: None,
-                    name: extracted.name,
-                    source_type: source.source_type.clone(),
-                    status: McpToolStatus::Stopped,
-                    ping_ms: None,
-                    capabilities: extracted.capabilities,
-                    description: extracted.description,
-                    error: None,
-                    command: extracted.command,
-                    args: extracted.args,
-                    env: extracted.env,
-                    config_json,
-                    config_hash,
-                    pending_config_json: None,
-                    pending_config_hash: None,
-                    conflict_status: if name_conflict {
-                        McpConflictStatus::Conflict
-                    } else {
-                        McpConflictStatus::None
-                    },
-                    is_read_only,
-                    is_new: true,
-                })
-                .await?,
+            None => {
+                state
+                    .store
+                    .upsert_tool(ToolUpsert {
+                        id: None,
+                        source_id: source.id.clone(),
+                        identifier: None,
+                        name: extracted.name,
+                        source_type: source.source_type.clone(),
+                        status: McpToolStatus::Stopped,
+                        ping_ms: None,
+                        capabilities: extracted.capabilities,
+                        description: extracted.description,
+                        error: None,
+                        command: extracted.command,
+                        args: extracted.args,
+                        env: extracted.env,
+                        config_json,
+                        config_hash,
+                        pending_config_json: None,
+                        pending_config_hash: None,
+                        conflict_status: if name_conflict {
+                            McpConflictStatus::Conflict
+                        } else {
+                            McpConflictStatus::None
+                        },
+                        is_read_only,
+                        is_new: true,
+                    })
+                    .await?
+            }
         };
 
         tools.push(tool);
@@ -981,10 +1083,7 @@ async fn apply_config_payload(
     Ok(tools)
 }
 
-async fn apply_pending_update(
-    state: &McpRuntimeState,
-    tool_id: &str,
-) -> Result<McpTool, McpError> {
+async fn apply_pending_update(state: &McpRuntimeState, tool_id: &str) -> Result<McpTool, McpError> {
     let tool = state
         .store
         .get_tool(tool_id)
@@ -1002,8 +1101,8 @@ async fn apply_pending_update(
 
     let pending_value: serde_json::Value =
         serde_json::from_str(&pending_json).map_err(|err| McpError::Storage(err.to_string()))?;
-    let pending_payload: McpToolConfigPayload =
-        serde_json::from_value(pending_value.clone()).map_err(|err| McpError::Storage(err.to_string()))?;
+    let pending_payload: McpToolConfigPayload = serde_json::from_value(pending_value.clone())
+        .map_err(|err| McpError::Storage(err.to_string()))?;
     let extracted = state
         .store
         .extract_tool_fields(&tool.name, &pending_payload);
@@ -1040,38 +1139,85 @@ async fn apply_pending_update(
 
 fn build_cloud_config_json(tool: &CloudToolSummary) -> Result<serde_json::Value, String> {
     let mut map = serde_json::Map::new();
-    map.insert("identifier".to_string(), serde_json::Value::String(tool.identifier.clone()));
-    map.insert("name".to_string(), serde_json::Value::String(tool.name.clone()));
-    map.insert("description".to_string(), serde_json::Value::String(tool.description.clone()));
-    map.insert("command".to_string(), serde_json::Value::String(tool.install_manifest.command.clone()));
+    map.insert(
+        "identifier".to_string(),
+        serde_json::Value::String(tool.identifier.clone()),
+    );
+    map.insert(
+        "name".to_string(),
+        serde_json::Value::String(tool.name.clone()),
+    );
+    map.insert(
+        "description".to_string(),
+        serde_json::Value::String(tool.description.clone()),
+    );
+    map.insert(
+        "command".to_string(),
+        serde_json::Value::String(tool.install_manifest.command.clone()),
+    );
     map.insert(
         "args".to_string(),
-        serde_json::Value::Array(tool.install_manifest.args.iter().cloned().map(serde_json::Value::String).collect()),
+        serde_json::Value::Array(
+            tool.install_manifest
+                .args
+                .iter()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
     );
     if let Some(runtime) = &tool.install_manifest.runtime {
-        map.insert("runtime".to_string(), serde_json::Value::String(runtime.clone()));
+        map.insert(
+            "runtime".to_string(),
+            serde_json::Value::String(runtime.clone()),
+        );
     }
     if let Some(env_config) = &tool.install_manifest.env_config {
-        map.insert("env_config".to_string(), serde_json::Value::Array(
-            env_config.iter().cloned().map(serde_json::Value::Object).collect()
-        ));
+        map.insert(
+            "env_config".to_string(),
+            serde_json::Value::Array(
+                env_config
+                    .iter()
+                    .cloned()
+                    .map(serde_json::Value::Object)
+                    .collect(),
+            ),
+        );
     }
     if let Some(tags) = &tool.tags {
-        map.insert("tags".to_string(), serde_json::Value::Array(
-            tags.iter().cloned().map(serde_json::Value::String).collect()
-        ));
+        map.insert(
+            "tags".to_string(),
+            serde_json::Value::Array(
+                tags.iter()
+                    .cloned()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
     }
     if let Some(category) = &tool.category {
-        map.insert("category".to_string(), serde_json::Value::String(category.clone()));
+        map.insert(
+            "category".to_string(),
+            serde_json::Value::String(category.clone()),
+        );
     }
     if let Some(author) = &tool.author {
-        map.insert("author".to_string(), serde_json::Value::String(author.clone()));
+        map.insert(
+            "author".to_string(),
+            serde_json::Value::String(author.clone()),
+        );
     }
     if let Some(is_official) = tool.is_official {
-        map.insert("is_official".to_string(), serde_json::Value::Bool(is_official));
+        map.insert(
+            "is_official".to_string(),
+            serde_json::Value::Bool(is_official),
+        );
     }
     if let Some(avatar_url) = &tool.avatar_url {
-        map.insert("avatar_url".to_string(), serde_json::Value::String(avatar_url.clone()));
+        map.insert(
+            "avatar_url".to_string(),
+            serde_json::Value::String(avatar_url.clone()),
+        );
     }
     Ok(serde_json::Value::Object(map))
 }
@@ -1083,11 +1229,17 @@ fn missing_required_env(tool: &McpTool) -> Option<Vec<String>> {
     let mut missing = Vec::new();
     for item in env_config {
         let key = item.get("key").and_then(|v| v.as_str()).unwrap_or("");
-        let required = item.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
+        let required = item
+            .get("required")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if !required || key.is_empty() {
             continue;
         }
-        let present = env.and_then(|env| env.get(key)).map(|v| !v.is_empty()).unwrap_or(false);
+        let present = env
+            .and_then(|env| env.get(key))
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
         if !present {
             missing.push(key.to_string());
         }
@@ -1128,7 +1280,10 @@ fn build_chat_payload(
         .map(|m| {
             let mut map = serde_json::Map::new();
             map.insert("role".to_string(), serde_json::Value::String(m.role));
-            map.insert("content".to_string(), parse_chat_message_content(&m.content));
+            map.insert(
+                "content".to_string(),
+                parse_chat_message_content(&m.content),
+            );
             serde_json::Value::Object(map)
         })
         .collect();
@@ -1180,13 +1335,9 @@ async fn run_local_chat_complete(
             .store
             .get_local_assistant(assistant_id)
             .await?
-            .ok_or_else(|| {
-                McpError::NotFound(format!("assistant {assistant_id} not found"))
-            })?;
+            .ok_or_else(|| McpError::NotFound(format!("assistant {assistant_id} not found")))?;
         let system_prompt = assistant.system_prompt.trim().to_string();
-        if !system_prompt.is_empty()
-            && !messages.iter().any(|msg| msg.role == "system")
-        {
+        if !system_prompt.is_empty() && !messages.iter().any(|msg| msg.role == "system") {
             messages.insert(
                 0,
                 LocalChatInputMessage {
@@ -1292,7 +1443,9 @@ async fn resolve_local_model_connection(
             .get_instance_connection(&instance.id)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?
-            .ok_or_else(|| McpError::NotFound("provider instance connection missing".to_string()))?;
+            .ok_or_else(|| {
+                McpError::NotFound("provider instance connection missing".to_string())
+            })?;
 
         return Ok((model.model_id, connection.base_url, connection.secret_key));
     }

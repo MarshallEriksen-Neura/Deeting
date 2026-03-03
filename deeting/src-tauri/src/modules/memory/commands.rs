@@ -12,12 +12,7 @@ pub async fn append_local_memory(
     state: State<'_, AppState>,
     payload: CreateLocalMemoryRequest,
 ) -> Result<LocalMemoryItem, String> {
-    state
-        .memory
-        .store
-        .append(payload)
-        .await
-        .map_err(to_string)
+    state.memory.store.append(payload).await.map_err(to_string)
 }
 
 #[tauri::command]

@@ -102,9 +102,7 @@ impl ProcessManager {
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    manager
-                        .emit_log(&tool_id, McpLogStream::Stdout, line)
-                        .await;
+                    manager.emit_log(&tool_id, McpLogStream::Stdout, line).await;
                 }
             });
         }
@@ -116,9 +114,7 @@ impl ProcessManager {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    manager
-                        .emit_log(&tool_id, McpLogStream::Stderr, line)
-                        .await;
+                    manager.emit_log(&tool_id, McpLogStream::Stderr, line).await;
                 }
             });
         }
@@ -297,7 +293,12 @@ impl ProcessManager {
                                 .await;
                             let _ = manager
                                 .store
-                                .set_tool_status(&tool_id, McpToolStatus::Stopped, None, Some(message))
+                                .set_tool_status(
+                                    &tool_id,
+                                    McpToolStatus::Stopped,
+                                    None,
+                                    Some(message),
+                                )
                                 .await;
                             manager.clear_backoff(&tool_id).await;
                             break;
@@ -306,22 +307,30 @@ impl ProcessManager {
                         if uptime <= CRASH_WINDOW {
                             let attempt = {
                                 let mut backoff = manager.backoff.write().await;
-                                let entry = backoff.entry(tool_id.clone()).or_insert(CrashBackoff {
-                                    attempts: 0,
-                                    last_start: Instant::now(),
-                                });
+                                let entry =
+                                    backoff.entry(tool_id.clone()).or_insert(CrashBackoff {
+                                        attempts: 0,
+                                        last_start: Instant::now(),
+                                    });
                                 entry.attempts += 1;
                                 entry.attempts
                             };
 
                             if attempt as usize > BACKOFF_DELAYS.len() {
-                                let message = format!("process exited with code {exit_code}; crash loop detected");
+                                let message = format!(
+                                    "process exited with code {exit_code}; crash loop detected"
+                                );
                                 manager
                                     .emit_log(&tool_id, McpLogStream::Event, message.clone())
                                     .await;
                                 let _ = manager
                                     .store
-                                    .set_tool_status(&tool_id, McpToolStatus::Crashed, None, Some(message.clone()))
+                                    .set_tool_status(
+                                        &tool_id,
+                                        McpToolStatus::Crashed,
+                                        None,
+                                        Some(message.clone()),
+                                    )
                                     .await;
                                 manager.notify_crash(&tool_id, message).await;
                                 manager.clear_backoff(&tool_id).await;
@@ -340,7 +349,12 @@ impl ProcessManager {
                                 .await;
                             let _ = manager
                                 .store
-                                .set_tool_status(&tool_id, McpToolStatus::Starting, None, Some(message))
+                                .set_tool_status(
+                                    &tool_id,
+                                    McpToolStatus::Starting,
+                                    None,
+                                    Some(message),
+                                )
                                 .await;
 
                             let manager_clone = manager.clone();
@@ -352,11 +366,20 @@ impl ProcessManager {
                                 if let Err(err) = manager_clone.restart_tool(&tool_id_clone).await {
                                     let message = format!("restart failed: {err}");
                                     manager_clone
-                                        .emit_log(&tool_id_clone, McpLogStream::Event, message.clone())
+                                        .emit_log(
+                                            &tool_id_clone,
+                                            McpLogStream::Event,
+                                            message.clone(),
+                                        )
                                         .await;
                                     let _ = manager_clone
                                         .store
-                                        .set_tool_status(&tool_id_clone, McpToolStatus::Crashed, None, Some(message.clone()))
+                                        .set_tool_status(
+                                            &tool_id_clone,
+                                            McpToolStatus::Crashed,
+                                            None,
+                                            Some(message.clone()),
+                                        )
                                         .await;
                                     manager_clone.notify_crash(&tool_id_clone, message).await;
                                     manager_clone.clear_backoff(&tool_id_clone).await;
@@ -371,7 +394,12 @@ impl ProcessManager {
                             .await;
                         let _ = manager
                             .store
-                            .set_tool_status(&tool_id, McpToolStatus::Crashed, None, Some(message.clone()))
+                            .set_tool_status(
+                                &tool_id,
+                                McpToolStatus::Crashed,
+                                None,
+                                Some(message.clone()),
+                            )
                             .await;
                         manager.notify_crash(&tool_id, message).await;
                         manager.clear_backoff(&tool_id).await;

@@ -143,7 +143,10 @@ impl ProviderStore {
         Ok(presets)
     }
 
-    pub async fn replace_presets(&self, presets: Vec<ProviderPreset>) -> Result<usize, ProviderError> {
+    pub async fn replace_presets(
+        &self,
+        presets: Vec<ProviderPreset>,
+    ) -> Result<usize, ProviderError> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("DELETE FROM provider_presets")
             .execute(&mut *tx)
@@ -310,13 +313,19 @@ impl ProviderStore {
         for row in credential_rows {
             let credential_id: String = row.try_get("id")?;
             if let Err(err) = self.delete_secret_in_keychain(&credential_id) {
-                warn!("failed to delete keychain secret for credential {}: {}", credential_id, err);
+                warn!(
+                    "failed to delete keychain secret for credential {}: {}",
+                    credential_id, err
+                );
             }
         }
         Ok(())
     }
 
-    pub async fn list_models(&self, instance_id: &Uuid) -> Result<Vec<ProviderModel>, ProviderError> {
+    pub async fn list_models(
+        &self,
+        instance_id: &Uuid,
+    ) -> Result<Vec<ProviderModel>, ProviderError> {
         let rows = sqlx::query(
             "SELECT id, instance_id, model_id, display_name, capabilities, is_active
              FROM provider_models
@@ -347,7 +356,8 @@ impl ProviderStore {
             .await?;
 
         for model in models {
-            let caps = serde_json::to_string(&model.capabilities).unwrap_or_else(|_| "[]".to_string());
+            let caps =
+                serde_json::to_string(&model.capabilities).unwrap_or_else(|_| "[]".to_string());
             sqlx::query(
                 "INSERT INTO provider_models (id, instance_id, model_id, display_name, capabilities, is_active)
                  VALUES (?, ?, ?, ?, ?, ?)",
@@ -471,7 +481,8 @@ impl ProviderStore {
         let is_active = payload.is_active.unwrap_or(existing.is_active);
         let capabilities = resolve_capabilities(&payload, existing.capabilities);
 
-        let caps = serde_json::to_string(&capabilities).map_err(|e| ProviderError::Database(e.to_string()))?;
+        let caps = serde_json::to_string(&capabilities)
+            .map_err(|e| ProviderError::Database(e.to_string()))?;
         sqlx::query(
             "UPDATE provider_models
              SET display_name = ?, capabilities = ?, is_active = ?
@@ -588,7 +599,10 @@ impl ProviderStore {
         }))
     }
 
-    async fn get_instance(&self, instance_id: &str) -> Result<Option<ProviderInstance>, ProviderError> {
+    async fn get_instance(
+        &self,
+        instance_id: &str,
+    ) -> Result<Option<ProviderInstance>, ProviderError> {
         let row = sqlx::query(
             "SELECT id, preset_slug, name, base_url, is_enabled, is_local, credentials_ref, created_at, updated_at
              FROM provider_instances
@@ -724,7 +738,10 @@ impl ProviderStore {
             .map_err(|err| ProviderError::Database(format!("keychain write failed: {err}")))
     }
 
-    fn get_secret_from_keychain(&self, credential_id: &str) -> Result<Option<String>, ProviderError> {
+    fn get_secret_from_keychain(
+        &self,
+        credential_id: &str,
+    ) -> Result<Option<String>, ProviderError> {
         let entry = self.keychain_entry(credential_id)?;
         match entry.get_password() {
             Ok(secret) => {
@@ -736,7 +753,9 @@ impl ProviderStore {
                 }
             }
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(err) => Err(ProviderError::Database(format!("keychain read failed: {err}"))),
+            Err(err) => Err(ProviderError::Database(format!(
+                "keychain read failed: {err}"
+            ))),
         }
     }
 
@@ -744,11 +763,18 @@ impl ProviderStore {
         let entry = self.keychain_entry(credential_id)?;
         match entry.delete_credential() {
             Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(err) => Err(ProviderError::Database(format!("keychain delete failed: {err}"))),
+            Err(err) => Err(ProviderError::Database(format!(
+                "keychain delete failed: {err}"
+            ))),
         }
     }
 
-    async fn ensure_column(&self, table: &str, column: &str, ddl: &str) -> Result<(), ProviderError> {
+    async fn ensure_column(
+        &self,
+        table: &str,
+        column: &str,
+        ddl: &str,
+    ) -> Result<(), ProviderError> {
         let pragma = format!("PRAGMA table_info({table})");
         let rows = sqlx::query(&pragma).fetch_all(&self.pool).await?;
         let exists = rows.iter().any(|row| {
@@ -780,7 +806,10 @@ fn resolve_capabilities(
     }
 
     if let Some(routing_config) = payload.routing_config.clone() {
-        if let Some(array) = routing_config.get("capabilities").and_then(|value| value.as_array()) {
+        if let Some(array) = routing_config
+            .get("capabilities")
+            .and_then(|value| value.as_array())
+        {
             let caps: Vec<String> = array
                 .iter()
                 .filter_map(|item| item.as_str().map(|value| value.trim().to_string()))

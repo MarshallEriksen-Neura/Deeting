@@ -101,11 +101,7 @@ impl MemoryStore {
         let session_id = normalize_optional(query.session_id);
         let assistant_id = normalize_optional(query.assistant_id);
 
-        let where_clause = build_filter_sql(
-            session_id.as_deref(),
-            assistant_id.as_deref(),
-            true,
-        );
+        let where_clause = build_filter_sql(session_id.as_deref(), assistant_id.as_deref(), true);
         let table = self.table().await?;
         let mut stmt = table.query().select(Select::columns(&[
             "id",
@@ -177,11 +173,7 @@ impl MemoryStore {
     pub async fn clear(&self, payload: LocalMemoryClearRequest) -> Result<i64, MemoryError> {
         let session_id = normalize_optional(payload.session_id);
         let assistant_id = normalize_optional(payload.assistant_id);
-        let where_clause = build_filter_sql(
-            session_id.as_deref(),
-            assistant_id.as_deref(),
-            true,
-        );
+        let where_clause = build_filter_sql(session_id.as_deref(), assistant_id.as_deref(), true);
         let now = now_rfc3339()?;
         let table = self.table().await?;
         let mut operation = table
@@ -238,10 +230,7 @@ fn build_filter_sql(
 }
 
 fn now_rfc3339() -> Result<String, MemoryError> {
-    Ok(
-        time::OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)?,
-    )
+    Ok(time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339)?)
 }
 
 fn normalize_optional(value: Option<String>) -> Option<String> {

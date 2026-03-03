@@ -10,17 +10,23 @@ use uuid::Uuid;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::types::{
     CreateAssistantMessageRequest, CreateConversationMessageRequest, CreateLocalAssistantRequest,
-    LocalAssistant, LocalAssistantEntity, LocalAssistantMessage, LocalAssistantVersion, LocalChatInputMessage, LocalConversationArchiveResponse,
-    LocalConversationClearResponse, LocalConversationCreateRequest, LocalConversationCreateResponse,
-    LocalConversationDeleteResponse, LocalConversationHistoryMessage, LocalConversationHistoryQuery,
-    LocalConversationHistoryResponse, LocalConversationRenameResponse, LocalConversationSessionItem,
-    LocalConversationSessionPage, LocalConversationSessionsQuery, LocalConversationStatus,
-    McpConflictStatus, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
-    McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest,
+    LocalAssistant, LocalAssistantEntity, LocalAssistantInstallCreateRequest,
+    LocalAssistantInstallItem, LocalAssistantInstallPage, LocalAssistantInstallQuery,
+    LocalAssistantInstallUpdateRequest, LocalAssistantMessage, LocalAssistantSummary,
+    LocalAssistantSummaryVersion, LocalAssistantVersion, LocalChatInputMessage,
+    LocalConversationArchiveResponse, LocalConversationClearResponse,
+    LocalConversationCreateRequest, LocalConversationCreateResponse,
+    LocalConversationDeleteResponse, LocalConversationHistoryMessage,
+    LocalConversationHistoryQuery, LocalConversationHistoryResponse,
+    LocalConversationRenameResponse, LocalConversationSessionItem, LocalConversationSessionPage,
+    LocalConversationSessionsQuery, LocalConversationStatus, McpConflictStatus, McpSource,
+    McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus, McpTrustLevel,
+    UpdateLocalAssistantRequest,
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
 const DEFAULT_CLOUD_SOURCE_NAME: &str = "Deeting Cloud";
+const LOCAL_DESKTOP_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 
 pub struct McpStore {
     pool: SqlitePool,
@@ -188,6 +194,57 @@ impl McpStore {
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS assistant_install (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              assistant_id TEXT NOT NULL REFERENCES assistant(id) ON DELETE CASCADE,
+              alias TEXT,
+              icon_override TEXT,
+              pinned_version_id TEXT REFERENCES assistant_version(id) ON DELETE SET NULL,
+              follow_latest INTEGER NOT NULL DEFAULT 1,
+              is_enabled INTEGER NOT NULL DEFAULT 1,
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_assistant_install_user_assistant
+            ON assistant_install(user_id, assistant_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_assistant_install_user
+            ON assistant_install(user_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_assistant_install_assistant
+            ON assistant_install(assistant_id);
             "#,
         )
         .execute(&self.pool)
@@ -448,6 +505,7 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         self.migrate_assistant_versions_from_legacy().await?;
+        self.migrate_assistant_installs_from_assistant().await?;
 
         Ok(())
     }
@@ -731,11 +789,7 @@ impl McpStore {
         row.map(|row| row_to_tool(&row)).transpose()
     }
 
-    pub async fn has_name_conflict(
-        &self,
-        name: &str,
-        source_id: &str,
-    ) -> Result<bool, McpError> {
+    pub async fn has_name_conflict(&self, name: &str, source_id: &str) -> Result<bool, McpError> {
         let row = sqlx::query(
             r#"
             SELECT COUNT(*) as count
@@ -920,15 +974,24 @@ impl McpStore {
         payload: &McpToolConfigPayload,
     ) -> Result<serde_json::Value, McpError> {
         let mut map = serde_json::Map::new();
-        map.insert("name".to_string(), serde_json::Value::String(name.to_string()));
+        map.insert(
+            "name".to_string(),
+            serde_json::Value::String(name.to_string()),
+        );
         if let Some(command) = &payload.command {
-            map.insert("command".to_string(), serde_json::Value::String(command.clone()));
+            map.insert(
+                "command".to_string(),
+                serde_json::Value::String(command.clone()),
+            );
         }
         if let Some(args) = &payload.args {
             map.insert(
                 "args".to_string(),
                 serde_json::Value::Array(
-                    args.iter().cloned().map(serde_json::Value::String).collect(),
+                    args.iter()
+                        .cloned()
+                        .map(serde_json::Value::String)
+                        .collect(),
                 ),
             );
         }
@@ -1104,7 +1167,9 @@ impl McpStore {
         Ok(assistants)
     }
 
-    pub async fn list_local_assistant_entities(&self) -> Result<Vec<LocalAssistantEntity>, McpError> {
+    pub async fn list_local_assistant_entities(
+        &self,
+    ) -> Result<Vec<LocalAssistantEntity>, McpError> {
         let rows = sqlx::query(
             r#"
             SELECT id, owner_user_id, visibility, status, share_slug, summary, icon_id,
@@ -1166,10 +1231,408 @@ impl McpStore {
         Ok(versions)
     }
 
-    pub async fn get_local_assistant(
+    pub async fn list_local_assistant_installs(
         &self,
-        id: &str,
-    ) -> Result<Option<LocalAssistant>, McpError> {
+        query: LocalAssistantInstallQuery,
+    ) -> Result<LocalAssistantInstallPage, McpError> {
+        let size = query.size.unwrap_or(50).clamp(1, 200);
+        let offset = query
+            .cursor
+            .as_deref()
+            .unwrap_or("0")
+            .trim()
+            .parse::<i64>()
+            .unwrap_or(0)
+            .max(0);
+
+        let total_row = sqlx::query(
+            r#"
+            SELECT COUNT(1) AS total
+            FROM assistant_install
+            WHERE user_id = ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let total: i64 = total_row.try_get("total")?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              ai.id AS install_id,
+              ai.assistant_id AS install_assistant_id,
+              ai.alias AS install_alias,
+              ai.icon_override AS install_icon_override,
+              ai.pinned_version_id AS install_pinned_version_id,
+              ai.follow_latest AS install_follow_latest,
+              ai.is_enabled AS install_is_enabled,
+              ai.sort_order AS install_sort_order,
+              a.owner_user_id AS assistant_owner_user_id,
+              a.icon_id AS assistant_icon_id,
+              a.share_slug AS assistant_share_slug,
+              a.summary AS assistant_summary,
+              a.published_at AS assistant_published_at,
+              a.current_version_id AS assistant_current_version_id,
+              a.install_count AS assistant_install_count,
+              a.rating_avg AS assistant_rating_avg,
+              a.rating_count AS assistant_rating_count,
+              cv.id AS current_version_id,
+              cv.version AS current_version,
+              cv.name AS current_name,
+              cv.description AS current_description,
+              cv.system_prompt AS current_system_prompt,
+              cv.tags AS current_tags,
+              cv.published_at AS current_published_at,
+              pv.id AS pinned_id,
+              pv.version AS pinned_version,
+              pv.name AS pinned_name,
+              pv.description AS pinned_description,
+              pv.system_prompt AS pinned_system_prompt,
+              pv.tags AS pinned_tags,
+              pv.published_at AS pinned_published_at
+            FROM assistant_install ai
+            INNER JOIN assistant a ON a.id = ai.assistant_id
+            LEFT JOIN assistant_version cv ON cv.id = a.current_version_id
+            LEFT JOIN assistant_version pv ON pv.id = ai.pinned_version_id
+            WHERE ai.user_id = ?
+            ORDER BY ai.sort_order ASC, ai.created_at DESC
+            LIMIT ? OFFSET ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(size)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            items.push(row_to_assistant_install_item(&row)?);
+        }
+
+        let next_offset = offset + size;
+        let next_page = if next_offset < total {
+            Some(next_offset.to_string())
+        } else {
+            None
+        };
+        let previous_page = if offset > 0 {
+            Some((offset - size).max(0).to_string())
+        } else {
+            None
+        };
+
+        Ok(LocalAssistantInstallPage {
+            items,
+            next_page,
+            previous_page,
+        })
+    }
+
+    pub async fn install_local_assistant(
+        &self,
+        assistant_id: &str,
+        payload: LocalAssistantInstallCreateRequest,
+    ) -> Result<LocalAssistantInstallItem, McpError> {
+        let normalized_assistant_id = assistant_id.trim().to_string();
+        if normalized_assistant_id.is_empty() {
+            return Err(McpError::validation("assistant_id is required"));
+        }
+
+        let assistant_row = sqlx::query(
+            r#"
+            SELECT id, current_version_id
+            FROM assistant
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_assistant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let assistant_row =
+            assistant_row.ok_or_else(|| McpError::NotFound("assistant not found".to_string()))?;
+        let assistant_current_version_id: Option<String> =
+            assistant_row.try_get("current_version_id")?;
+
+        let existing_row = sqlx::query(
+            r#"
+            SELECT id
+            FROM assistant_install
+            WHERE user_id = ? AND assistant_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_assistant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        if existing_row.is_some() {
+            let now = now_rfc3339()?;
+            self.refresh_assistant_install_count(&normalized_assistant_id, &now)
+                .await?;
+            return self
+                .get_local_assistant_install_item(&normalized_assistant_id)
+                .await?
+                .ok_or_else(|| McpError::NotFound("assistant install not found".to_string()));
+        }
+
+        let mut pinned_version_id = payload.pinned_version_id.and_then(|raw| {
+            let trimmed = raw.trim().to_string();
+            if trimmed.is_empty() { None } else { Some(trimmed) }
+        });
+        let mut follow_latest = payload.follow_latest.unwrap_or(true);
+
+        if let Some(pinned_id) = pinned_version_id.as_deref() {
+            let version_row = sqlx::query(
+                r#"
+                SELECT id
+                FROM assistant_version
+                WHERE id = ? AND assistant_id = ?
+                LIMIT 1;
+                "#,
+            )
+            .bind(pinned_id)
+            .bind(&normalized_assistant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            if version_row.is_none() {
+                return Err(McpError::validation("pinned_version_id is invalid"));
+            }
+            follow_latest = false;
+        }
+
+        if !follow_latest && pinned_version_id.is_none() {
+            pinned_version_id = assistant_current_version_id;
+        }
+
+        let max_row = sqlx::query(
+            r#"
+            SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort
+            FROM assistant_install
+            WHERE user_id = ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let install_id = Uuid::new_v4().to_string();
+        let sort_order = max_row.try_get::<i64, _>("next_sort").unwrap_or(0);
+        let now = now_rfc3339()?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO assistant_install (
+              id, user_id, assistant_id, alias, icon_override, pinned_version_id,
+              follow_latest, is_enabled, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, NULL, NULL, ?, ?, 1, ?, ?, ?);
+            "#,
+        )
+        .bind(&install_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_assistant_id)
+        .bind(pinned_version_id.as_deref())
+        .bind(if follow_latest { 1 } else { 0 })
+        .bind(sort_order)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.refresh_assistant_install_count(&normalized_assistant_id, &now)
+            .await?;
+
+        self.get_local_assistant_install_item(&normalized_assistant_id)
+            .await?
+            .ok_or_else(|| McpError::NotFound("assistant install not found".to_string()))
+    }
+
+    pub async fn update_local_assistant_install(
+        &self,
+        assistant_id: &str,
+        payload: LocalAssistantInstallUpdateRequest,
+    ) -> Result<LocalAssistantInstallItem, McpError> {
+        let normalized_assistant_id = assistant_id.trim().to_string();
+        if normalized_assistant_id.is_empty() {
+            return Err(McpError::validation("assistant_id is required"));
+        }
+
+        let assistant_row = sqlx::query(
+            r#"
+            SELECT current_version_id
+            FROM assistant
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_assistant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let assistant_current_version_id: Option<String> = assistant_row
+            .ok_or_else(|| McpError::NotFound("assistant not found".to_string()))?
+            .try_get("current_version_id")?;
+
+        let existing_row = sqlx::query(
+            r#"
+            SELECT id, alias, icon_override, pinned_version_id, follow_latest, is_enabled, sort_order
+            FROM assistant_install
+            WHERE user_id = ? AND assistant_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_assistant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .ok_or_else(|| McpError::NotFound("assistant install not found".to_string()))?;
+
+        let install_id: String = existing_row.try_get("id")?;
+        let alias_existing: Option<String> = existing_row.try_get("alias")?;
+        let icon_override_existing: Option<String> = existing_row.try_get("icon_override")?;
+        let pinned_existing: Option<String> = existing_row.try_get("pinned_version_id")?;
+        let follow_latest_existing =
+            existing_row.try_get::<i64, _>("follow_latest").unwrap_or(1) != 0;
+        let is_enabled_existing = existing_row.try_get::<i64, _>("is_enabled").unwrap_or(1) != 0;
+        let sort_order_existing = existing_row.try_get::<i64, _>("sort_order").unwrap_or(0);
+
+        let alias = payload
+            .alias
+            .map(|value| {
+                let trimmed = value.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+            .unwrap_or(alias_existing);
+        let icon_override = payload
+            .icon_override
+            .map(|value| {
+                let trimmed = value.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+            .unwrap_or(icon_override_existing);
+
+        let mut pinned_version_id = payload
+            .pinned_version_id
+            .map(|raw| {
+                let trimmed = raw.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+            .unwrap_or(pinned_existing);
+
+        let mut follow_latest = payload.follow_latest.unwrap_or(follow_latest_existing);
+        if let Some(pinned_id) = pinned_version_id.as_deref() {
+            let version_row = sqlx::query(
+                r#"
+                SELECT id
+                FROM assistant_version
+                WHERE id = ? AND assistant_id = ?
+                LIMIT 1;
+                "#,
+            )
+            .bind(pinned_id)
+            .bind(&normalized_assistant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            if version_row.is_none() {
+                return Err(McpError::validation("pinned_version_id is invalid"));
+            }
+            if payload.follow_latest.is_none() {
+                follow_latest = false;
+            }
+        }
+
+        if payload.follow_latest == Some(true) {
+            pinned_version_id = None;
+        } else if payload.follow_latest == Some(false) && payload.pinned_version_id.is_none() {
+            pinned_version_id = assistant_current_version_id.clone();
+        } else if !follow_latest && pinned_version_id.is_none() {
+            pinned_version_id = assistant_current_version_id;
+        }
+
+        let is_enabled = payload.is_enabled.unwrap_or(is_enabled_existing);
+        let sort_order = payload.sort_order.unwrap_or(sort_order_existing).max(0);
+        let now = now_rfc3339()?;
+
+        sqlx::query(
+            r#"
+            UPDATE assistant_install
+            SET alias = ?, icon_override = ?, pinned_version_id = ?, follow_latest = ?, is_enabled = ?, sort_order = ?, updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(alias.as_deref())
+        .bind(icon_override.as_deref())
+        .bind(pinned_version_id.as_deref())
+        .bind(if follow_latest { 1 } else { 0 })
+        .bind(if is_enabled { 1 } else { 0 })
+        .bind(sort_order)
+        .bind(&now)
+        .bind(&install_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_local_assistant_install_item(&normalized_assistant_id)
+            .await?
+            .ok_or_else(|| McpError::NotFound("assistant install not found".to_string()))
+    }
+
+    pub async fn uninstall_local_assistant(&self, assistant_id: &str) -> Result<(), McpError> {
+        let normalized_assistant_id = assistant_id.trim().to_string();
+        if normalized_assistant_id.is_empty() {
+            return Err(McpError::validation("assistant_id is required"));
+        }
+
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            DELETE FROM assistant_install
+            WHERE user_id = ? AND assistant_id = ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_assistant_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound(
+                "assistant install not found".to_string(),
+            ));
+        }
+
+        self.refresh_assistant_install_count(&normalized_assistant_id, &now)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_local_assistant(&self, id: &str) -> Result<Option<LocalAssistant>, McpError> {
         let row = sqlx::query(
             r#"
             SELECT id, name, description, avatar, system_prompt, model_config, tags,
@@ -1205,9 +1668,7 @@ impl McpStore {
 
         let id = Uuid::new_v4().to_string();
         let now = now_rfc3339()?;
-        let visibility = payload
-            .visibility
-            .unwrap_or_else(|| "private".to_string());
+        let visibility = payload.visibility.unwrap_or_else(|| "private".to_string());
         let source = payload.source.unwrap_or_else(|| "local".to_string());
         let description = payload.description;
         let avatar = payload.avatar;
@@ -1520,16 +1981,14 @@ impl McpStore {
             .unwrap_or(0)
             .max(0);
         let status = query.status.unwrap_or(LocalConversationStatus::Active);
-        let assistant_id = query
-            .assistant_id
-            .and_then(|value| {
-                let trimmed = value.trim().to_string();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed)
-                }
-            });
+        let assistant_id = query.assistant_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
 
         let total: i64 = if let Some(assistant_id) = assistant_id.as_deref() {
             let row = sqlx::query(
@@ -1668,10 +2127,7 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
-        Ok(LocalConversationCreateResponse {
-            session_id,
-            title,
-        })
+        Ok(LocalConversationCreateResponse { session_id, title })
     }
 
     pub async fn update_local_conversation_status(
@@ -1696,7 +2152,9 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         if result.rows_affected() == 0 {
-            return Err(McpError::NotFound("conversation session not found".to_string()));
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
         }
 
         Ok(LocalConversationArchiveResponse {
@@ -1734,7 +2192,9 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         if result.rows_affected() == 0 {
-            return Err(McpError::NotFound("conversation session not found".to_string()));
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
         }
 
         Ok(LocalConversationRenameResponse {
@@ -1772,7 +2232,9 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         if session_exists.is_none() {
-            return Err(McpError::NotFound("conversation session not found".to_string()));
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
         }
 
         let result = sqlx::query(
@@ -1842,7 +2304,9 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         if session_exists.is_none() {
-            return Err(McpError::NotFound("conversation session not found".to_string()));
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
         }
 
         sqlx::query(
@@ -1943,15 +2407,13 @@ impl McpStore {
             .find_map(|(turn, role, _)| if role == "user" { Some(*turn) } else { None })
             .ok_or_else(|| McpError::validation("no user message found"))?;
 
-        let deleted_turn_index = timeline
-            .iter()
-            .find_map(|(turn, role, _)| {
-                if role == "assistant" && *turn > last_user_turn {
-                    Some(*turn)
-                } else {
-                    None
-                }
-            });
+        let deleted_turn_index = timeline.iter().find_map(|(turn, role, _)| {
+            if role == "assistant" && *turn > last_user_turn {
+                Some(*turn)
+            } else {
+                None
+            }
+        });
 
         if let Some(turn) = deleted_turn_index {
             let delete_result = sqlx::query(
@@ -2055,7 +2517,9 @@ impl McpStore {
         let messages = rows
             .into_iter()
             .map(|row| LocalChatInputMessage {
-                role: row.try_get::<String, _>("role").unwrap_or_else(|_| "user".to_string()),
+                role: row
+                    .try_get::<String, _>("role")
+                    .unwrap_or_else(|_| "user".to_string()),
                 content: row
                     .try_get::<Option<String>, _>("content")
                     .ok()
@@ -2129,7 +2593,9 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         if exists.is_none() {
-            return Err(McpError::NotFound("conversation session not found".to_string()));
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
         }
 
         let turn_row = sqlx::query(
@@ -2337,6 +2803,155 @@ impl McpStore {
         }
 
         Ok(())
+    }
+
+    async fn migrate_assistant_installs_from_assistant(&self) -> Result<(), McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, status, created_at
+            FROM assistant
+            ORDER BY created_at ASC, id ASC;
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut sort_order = 0_i64;
+        for row in rows {
+            let assistant_id: String = row.try_get("id")?;
+            let status: String = row.try_get("status")?;
+            let created_at: String = row.try_get("created_at")?;
+            if status == "archived" {
+                continue;
+            }
+
+            let existing = sqlx::query(
+                r#"
+                SELECT id
+                FROM assistant_install
+                WHERE user_id = ? AND assistant_id = ?
+                LIMIT 1;
+                "#,
+            )
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .bind(&assistant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            if existing.is_none() {
+                let install_id = Uuid::new_v4().to_string();
+                sqlx::query(
+                    r#"
+                    INSERT INTO assistant_install (
+                      id, user_id, assistant_id, alias, icon_override, pinned_version_id,
+                      follow_latest, is_enabled, sort_order, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, NULL, NULL, NULL, 1, 1, ?, ?, ?);
+                    "#,
+                )
+                .bind(&install_id)
+                .bind(LOCAL_DESKTOP_USER_ID)
+                .bind(&assistant_id)
+                .bind(sort_order)
+                .bind(&created_at)
+                .bind(&created_at)
+                .execute(&self.pool)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            }
+
+            self.refresh_assistant_install_count(&assistant_id, &created_at)
+                .await?;
+            sort_order += 1;
+        }
+
+        Ok(())
+    }
+
+    async fn refresh_assistant_install_count(
+        &self,
+        assistant_id: &str,
+        updated_at: &str,
+    ) -> Result<(), McpError> {
+        sqlx::query(
+            r#"
+            UPDATE assistant
+            SET install_count = (
+                SELECT COUNT(1)
+                FROM assistant_install
+                WHERE assistant_id = ?
+            ),
+            updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(assistant_id)
+        .bind(updated_at)
+        .bind(assistant_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn get_local_assistant_install_item(
+        &self,
+        assistant_id: &str,
+    ) -> Result<Option<LocalAssistantInstallItem>, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+              ai.id AS install_id,
+              ai.assistant_id AS install_assistant_id,
+              ai.alias AS install_alias,
+              ai.icon_override AS install_icon_override,
+              ai.pinned_version_id AS install_pinned_version_id,
+              ai.follow_latest AS install_follow_latest,
+              ai.is_enabled AS install_is_enabled,
+              ai.sort_order AS install_sort_order,
+              a.owner_user_id AS assistant_owner_user_id,
+              a.icon_id AS assistant_icon_id,
+              a.share_slug AS assistant_share_slug,
+              a.summary AS assistant_summary,
+              a.published_at AS assistant_published_at,
+              a.current_version_id AS assistant_current_version_id,
+              a.install_count AS assistant_install_count,
+              a.rating_avg AS assistant_rating_avg,
+              a.rating_count AS assistant_rating_count,
+              cv.id AS current_version_id,
+              cv.version AS current_version,
+              cv.name AS current_name,
+              cv.description AS current_description,
+              cv.system_prompt AS current_system_prompt,
+              cv.tags AS current_tags,
+              cv.published_at AS current_published_at,
+              pv.id AS pinned_id,
+              pv.version AS pinned_version,
+              pv.name AS pinned_name,
+              pv.description AS pinned_description,
+              pv.system_prompt AS pinned_system_prompt,
+              pv.tags AS pinned_tags,
+              pv.published_at AS pinned_published_at
+            FROM assistant_install ai
+            INNER JOIN assistant a ON a.id = ai.assistant_id
+            LEFT JOIN assistant_version cv ON cv.id = a.current_version_id
+            LEFT JOIN assistant_version pv ON pv.id = ai.pinned_version_id
+            WHERE ai.user_id = ? AND ai.assistant_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(assistant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        match row {
+            Some(row) => Ok(Some(row_to_assistant_install_item(&row)?)),
+            None => Ok(None),
+        }
     }
 
     async fn ensure_assistant_version_synced(
@@ -2701,6 +3316,84 @@ fn row_to_assistant_version(row: &SqliteRow) -> Result<LocalAssistantVersion, Mc
         published_at: row.try_get("published_at")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn row_to_assistant_install_item(row: &SqliteRow) -> Result<LocalAssistantInstallItem, McpError> {
+    let follow_latest = row.try_get::<i64, _>("install_follow_latest").unwrap_or(1) != 0;
+    let pinned_version_id: Option<String> = row.try_get("install_pinned_version_id")?;
+    let use_pinned = !follow_latest
+        && pinned_version_id.is_some()
+        && row.try_get::<Option<String>, _>("pinned_id")?.is_some();
+
+    let version_id = if use_pinned {
+        row.try_get::<Option<String>, _>("pinned_id")?
+    } else {
+        row.try_get::<Option<String>, _>("current_version_id")?
+    }
+    .ok_or_else(|| McpError::validation("assistant version missing"))?;
+
+    let version = LocalAssistantSummaryVersion {
+        id: version_id,
+        version: if use_pinned {
+            row.try_get::<Option<String>, _>("pinned_version")?
+        } else {
+            row.try_get::<Option<String>, _>("current_version")?
+        }
+        .unwrap_or_else(|| "1.0.0".to_string()),
+        name: if use_pinned {
+            row.try_get::<Option<String>, _>("pinned_name")?
+        } else {
+            row.try_get::<Option<String>, _>("current_name")?
+        }
+        .unwrap_or_else(|| "Assistant".to_string()),
+        description: if use_pinned {
+            row.try_get("pinned_description")?
+        } else {
+            row.try_get("current_description")?
+        },
+        system_prompt: if use_pinned {
+            row.try_get("pinned_system_prompt")?
+        } else {
+            row.try_get("current_system_prompt")?
+        },
+        tags: if use_pinned {
+            deserialize_json(row.try_get("pinned_tags")?)?.unwrap_or_default()
+        } else {
+            deserialize_json(row.try_get("current_tags")?)?.unwrap_or_default()
+        },
+        published_at: if use_pinned {
+            row.try_get("pinned_published_at")?
+        } else {
+            row.try_get("current_published_at")?
+        },
+    };
+
+    let assistant = LocalAssistantSummary {
+        assistant_id: row.try_get("install_assistant_id")?,
+        owner_user_id: row.try_get("assistant_owner_user_id")?,
+        icon_id: row.try_get("assistant_icon_id")?,
+        share_slug: row.try_get("assistant_share_slug")?,
+        summary: row.try_get("assistant_summary")?,
+        published_at: row.try_get("assistant_published_at")?,
+        current_version_id: row.try_get("assistant_current_version_id")?,
+        install_count: row.try_get("assistant_install_count").unwrap_or(0),
+        rating_avg: row.try_get("assistant_rating_avg").unwrap_or(0.0),
+        rating_count: row.try_get("assistant_rating_count").unwrap_or(0),
+        tags: version.tags.clone(),
+        version,
+    };
+
+    Ok(LocalAssistantInstallItem {
+        id: row.try_get("install_id")?,
+        assistant_id: assistant.assistant_id.clone(),
+        alias: row.try_get("install_alias")?,
+        icon_override: row.try_get("install_icon_override")?,
+        pinned_version_id,
+        follow_latest,
+        is_enabled: row.try_get::<i64, _>("install_is_enabled").unwrap_or(1) != 0,
+        sort_order: row.try_get("install_sort_order").unwrap_or(0),
+        assistant,
     })
 }
 

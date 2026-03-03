@@ -4,8 +4,8 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use log::warn;
 use serde::Serialize;
-use tokio::sync::{Mutex, RwLock};
 use tauri::Emitter;
+use tokio::sync::{Mutex, RwLock};
 
 #[derive(Default)]
 pub struct McpBridgeState {
@@ -67,9 +67,7 @@ pub async fn start_mcp_log_stream(
     let client = state.client.clone();
     let tool_id_clone = tool_id.clone();
     let handle = tauri::async_runtime::spawn(async move {
-        if let Err(err) =
-            stream_logs(&client, &base_url, &tool_id_clone, &app).await
-        {
+        if let Err(err) = stream_logs(&client, &base_url, &tool_id_clone, &app).await {
             warn!("mcp log stream failed for {}: {}", tool_id_clone, err);
         }
     });
@@ -97,7 +95,11 @@ async fn stream_logs(
     tool_id: &str,
     app: &tauri::AppHandle,
 ) -> Result<(), String> {
-    let url = format!("{}/mcp/tools/{}/logs/stream", base_url.trim_end_matches('/'), tool_id);
+    let url = format!(
+        "{}/mcp/tools/{}/logs/stream",
+        base_url.trim_end_matches('/'),
+        tool_id
+    );
     let response = client
         .get(&url)
         .header("Accept", "text/event-stream")
@@ -147,10 +149,13 @@ fn parse_sse_data(raw_event: &str, tool_id: &str) -> Option<serde_json::Value> {
     let data = data_lines.join("\n");
     match serde_json::from_str(&data) {
         Ok(value) => Some(value),
-        Err(_) => Some(serde_json::to_value(LogFallbackPayload {
-            tool_id: tool_id.to_string(),
-            raw: data,
-        }).ok()?),
+        Err(_) => Some(
+            serde_json::to_value(LogFallbackPayload {
+                tool_id: tool_id.to_string(),
+                raw: data,
+            })
+            .ok()?,
+        ),
     }
 }
 

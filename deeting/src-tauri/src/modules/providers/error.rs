@@ -1,5 +1,5 @@
-use thiserror::Error;
 use serde::Serialize;
+use thiserror::Error;
 
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "type", content = "message")]

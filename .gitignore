@@ -11,7 +11,7 @@ __pycache__/
 .workflow/
 .specify/
 .mcp.json
-
+.tmp/
 .omc/
 backend/__pycache__
 backend/*.py[oc]

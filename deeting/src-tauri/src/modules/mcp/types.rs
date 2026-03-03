@@ -340,6 +340,75 @@ pub struct LocalAssistantVersion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantSummaryVersion {
+    pub id: String,
+    pub version: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub system_prompt: Option<String>,
+    pub tags: Vec<String>,
+    pub published_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantSummary {
+    pub assistant_id: String,
+    pub owner_user_id: Option<String>,
+    pub icon_id: Option<String>,
+    pub share_slug: Option<String>,
+    pub summary: Option<String>,
+    pub published_at: Option<String>,
+    pub current_version_id: Option<String>,
+    pub install_count: i64,
+    pub rating_avg: f64,
+    pub rating_count: i64,
+    pub tags: Vec<String>,
+    pub version: LocalAssistantSummaryVersion,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantInstallItem {
+    pub id: String,
+    pub assistant_id: String,
+    pub alias: Option<String>,
+    pub icon_override: Option<String>,
+    pub pinned_version_id: Option<String>,
+    pub follow_latest: bool,
+    pub is_enabled: bool,
+    pub sort_order: i64,
+    pub assistant: LocalAssistantSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantInstallPage {
+    pub items: Vec<LocalAssistantInstallItem>,
+    pub next_page: Option<String>,
+    pub previous_page: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantInstallQuery {
+    pub cursor: Option<String>,
+    pub size: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantInstallCreateRequest {
+    pub follow_latest: Option<bool>,
+    pub pinned_version_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantInstallUpdateRequest {
+    pub alias: Option<String>,
+    pub icon_override: Option<String>,
+    pub pinned_version_id: Option<String>,
+    pub follow_latest: Option<bool>,
+    pub is_enabled: Option<bool>,
+    pub sort_order: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateLocalAssistantRequest {
     pub name: String,
     pub description: Option<String>,

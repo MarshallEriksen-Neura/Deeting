@@ -4,6 +4,16 @@ import { request } from "@/lib/http"
 
 const ASSISTANTS_BASE = "/api/v1/assistants"
 
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
+
 export const AssistantSummaryVersionSchema = z.object({
   id: z.string().uuid(),
   version: z.string(),
@@ -132,6 +142,16 @@ export async function fetchAssistantMarket(query: AssistantMarketQuery) {
 }
 
 export async function fetchAssistantInstalls(params: { cursor?: string | null; size?: number }) {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<AssistantInstallPage>("list_local_assistant_installs", {
+      query: {
+        cursor: params.cursor ?? null,
+        size: params.size ?? null,
+      },
+    })
+    return AssistantInstallPageSchema.parse(data)
+  }
+
   const data = await request({
     url: `${ASSISTANTS_BASE}/installs`,
     method: "GET",
@@ -164,6 +184,19 @@ export async function installAssistant(
     pinned_version_id?: string | null
   }
 ) {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<AssistantInstallItem>("install_local_assistant", {
+      assistant_id: assistantId,
+      payload: payload
+        ? {
+            follow_latest: payload.follow_latest ?? null,
+            pinned_version_id: payload.pinned_version_id ?? null,
+          }
+        : null,
+    })
+    return AssistantInstallItemSchema.parse(data)
+  }
+
   return request({
     url: `${ASSISTANTS_BASE}/${assistantId}/install`,
     method: "POST",
@@ -172,6 +205,11 @@ export async function installAssistant(
 }
 
 export async function uninstallAssistant(assistantId: string) {
+  if (isTauriRuntime()) {
+    await invokeTauri<void>("uninstall_local_assistant", { assistant_id: assistantId })
+    return
+  }
+
   return request({
     url: `${ASSISTANTS_BASE}/${assistantId}/install`,
     method: "DELETE",
@@ -189,6 +227,21 @@ export async function updateAssistantInstall(
     sort_order?: number | null
   }
 ) {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<AssistantInstallItem>("update_local_assistant_install", {
+      assistant_id: assistantId,
+      payload: {
+        alias: payload.alias ?? null,
+        icon_override: payload.icon_override ?? null,
+        pinned_version_id: payload.pinned_version_id ?? null,
+        follow_latest: payload.follow_latest ?? null,
+        is_enabled: payload.is_enabled ?? null,
+        sort_order: payload.sort_order ?? null,
+      },
+    })
+    return AssistantInstallItemSchema.parse(data)
+  }
+
   return request({
     url: `${ASSISTANTS_BASE}/${assistantId}/install`,
     method: "PATCH",

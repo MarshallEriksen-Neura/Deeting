@@ -116,8 +116,9 @@ pub async fn sync_local_provider_models(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "instance not found".to_string())?;
 
-    let model_ids = fetch_model_ids_from_upstream(&connection.base_url, connection.secret_key.as_deref())
-        .await?;
+    let model_ids =
+        fetch_model_ids_from_upstream(&connection.base_url, connection.secret_key.as_deref())
+            .await?;
     if model_ids.is_empty() {
         return Err("no models discovered from upstream".to_string());
     }
@@ -214,7 +215,8 @@ pub async fn test_local_provider_model(
     let error = if status.is_success() {
         None
     } else {
-        extract_error_message(&body_json).or_else(|| Some(format!("upstream status {}", status.as_u16())))
+        extract_error_message(&body_json)
+            .or_else(|| Some(format!("upstream status {}", status.as_u16())))
     };
 
     Ok(ProviderModelTestResponse {
@@ -273,7 +275,10 @@ fn build_models_endpoints(base_url: &str) -> Vec<String> {
     }
 
     if base.ends_with("/v1") {
-        return vec![format!("{base}/models"), format!("{}/models", base.trim_end_matches("/v1"))];
+        return vec![
+            format!("{base}/models"),
+            format!("{}/models", base.trim_end_matches("/v1")),
+        ];
     }
 
     vec![format!("{base}/v1/models"), format!("{base}/models")]
@@ -325,7 +330,11 @@ fn extract_model_ids(value: &Value) -> Vec<String> {
 }
 
 fn extract_error_message(value: &Value) -> Option<String> {
-    if let Some(message) = value.get("error").and_then(|item| item.get("message")).and_then(|item| item.as_str()) {
+    if let Some(message) = value
+        .get("error")
+        .and_then(|item| item.get("message"))
+        .and_then(|item| item.as_str())
+    {
         let trimmed = message.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_string());
