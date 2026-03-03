@@ -62,6 +62,20 @@ export interface IAppService {
    * Desktop端: shell.open
    */
   openExternal(url: string): Promise<void>;
+
+  /**
+   * 最小化到系统托盘
+   * Web端: 无操作
+   * Desktop端: 隐藏窗口到托盘
+   */
+  minimize(): Promise<void>;
+
+  /**
+   * 发送原生通知
+   * Web端: 使用 Notification API 或忽略
+   * Desktop端: 使用 tauri-plugin-notification
+   */
+  notify(title: string, body: string): Promise<void>;
 }
 
 // 聚合接口

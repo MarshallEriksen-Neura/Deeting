@@ -56,6 +56,23 @@ export const webPlatform: IPlatform = {
     },
     openExternal: async (url) => {
       window.open(url, '_blank');
-    }
+    },
+    minimize: async () => {
+      // Web 端无托盘，忽略
+    },
+    notify: async (title: string, body: string) => {
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, { body });
+        } else if ('Notification' in window && Notification.permission !== 'denied') {
+          const perm = await Notification.requestPermission();
+          if (perm === 'granted') {
+            new Notification(title, { body });
+          }
+        }
+      } catch {
+        // silently ignore
+      }
+    },
   }
 };
