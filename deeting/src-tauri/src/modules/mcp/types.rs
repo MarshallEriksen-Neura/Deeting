@@ -387,6 +387,14 @@ pub struct LocalAssistantInstallPage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantTag {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalAssistantInstallQuery {
     pub cursor: Option<String>,
     pub size: Option<i64>,
@@ -406,6 +414,199 @@ pub struct LocalAssistantInstallUpdateRequest {
     pub follow_latest: Option<bool>,
     pub is_enabled: Option<bool>,
     pub sort_order: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRatingRequest {
+    pub rating: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRatingResponse {
+    pub assistant_id: String,
+    pub rating_avg: f64,
+    pub rating_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRoutingState {
+    pub assistant_id: String,
+    pub total_trials: i64,
+    pub positive_feedback: i64,
+    pub negative_feedback: i64,
+    pub last_used_at: Option<String>,
+    pub last_feedback_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRoutingFeedbackRequest {
+    pub event: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRoutingReportQuery {
+    pub min_trials: Option<i64>,
+    pub min_rating: Option<f64>,
+    pub limit: Option<i64>,
+    pub sort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRoutingReportItem {
+    pub assistant_id: String,
+    pub name: Option<String>,
+    pub summary: Option<String>,
+    pub total_trials: i64,
+    pub positive_feedback: i64,
+    pub negative_feedback: i64,
+    pub rating_score: f64,
+    pub mab_score: f64,
+    pub routing_score: f64,
+    pub exploration_bonus: f64,
+    pub last_used_at: Option<String>,
+    pub last_feedback_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRoutingReportSummary {
+    pub total_assistants: i64,
+    pub total_trials: i64,
+    pub total_positive: i64,
+    pub total_negative: i64,
+    pub overall_rating: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantRoutingReportResponse {
+    pub summary: LocalAssistantRoutingReportSummary,
+    pub items: Vec<LocalAssistantRoutingReportItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTraceFeedbackRequest {
+    pub trace_id: String,
+    pub score: f64,
+    pub comment: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTraceFeedback {
+    pub id: String,
+    pub trace_id: String,
+    pub user_id: Option<String>,
+    pub score: f64,
+    pub comment: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalGatewayLogQuery {
+    pub skip: Option<i64>,
+    pub limit: Option<i64>,
+    pub model: Option<String>,
+    pub status_code: Option<i64>,
+    pub is_cached: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalGatewayLogItem {
+    pub id: String,
+    pub trace_id: Option<String>,
+    pub user_id: Option<String>,
+    pub api_key_id: Option<String>,
+    pub model: String,
+    pub status_code: i64,
+    pub duration_ms: i64,
+    pub ttft_ms: Option<i64>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cost_user: f64,
+    pub is_cached: bool,
+    pub error_code: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalGatewayLogListResponse {
+    pub total: i64,
+    pub skip: i64,
+    pub limit: i64,
+    pub items: Vec<LocalGatewayLogItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalGatewayLogStatsBucket {
+    pub key: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalGatewayLogStatsResponse {
+    pub total: i64,
+    pub success_rate: f64,
+    pub cache_hit_rate: f64,
+    pub error_distribution: Vec<LocalGatewayLogStatsBucket>,
+    pub model_ranking: Vec<LocalGatewayLogStatsBucket>,
+    pub latency_histogram: Vec<LocalGatewayLogStatsBucket>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAdminConversationQuery {
+    pub skip: Option<i64>,
+    pub limit: Option<i64>,
+    pub status: Option<String>,
+    pub channel: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAdminConversationItem {
+    pub id: String,
+    pub title: Option<String>,
+    pub user_id: Option<String>,
+    pub assistant_id: Option<String>,
+    pub channel: String,
+    pub status: String,
+    pub message_count: i64,
+    pub last_active_at: Option<String>,
+    pub last_summary_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAdminConversationListResponse {
+    pub total: i64,
+    pub skip: i64,
+    pub limit: i64,
+    pub items: Vec<LocalAdminConversationItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAdminConversationSummaryItem {
+    pub id: String,
+    pub session_id: String,
+    pub version: i64,
+    pub summary_text: String,
+    pub covered_from_turn: i64,
+    pub covered_to_turn: i64,
+    pub token_estimate: i64,
+    pub summarizer_model: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAdminConversationSummaryListResponse {
+    pub items: Vec<LocalAdminConversationSummaryItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAssistantPreviewRequest {
+    pub message: String,
+    pub stream: Option<bool>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -599,6 +800,14 @@ pub struct LocalConversationHistoryResponse {
     pub messages: Vec<LocalConversationHistoryMessage>,
     pub next_cursor: Option<i64>,
     pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationWindowResponse {
+    pub session_id: String,
+    pub messages: Vec<LocalConversationHistoryMessage>,
+    pub meta: Option<Value>,
+    pub summary: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -125,6 +125,14 @@ export function CreateAgentModal({
   const createLocalAssistant = useMarketStore((state) => state.createLocalAssistant)
   const updateLocalAssistant = useMarketStore((state) => state.updateLocalAssistant)
   const deleteLocalAssistant = useMarketStore((state) => state.deleteLocalAssistant)
+  const isTauriRuntime = React.useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  )
+  const effectiveMode = isTauriRuntime ? "local" : mode
   const isEditMode = Boolean(assistant)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
@@ -167,9 +175,9 @@ export function CreateAgentModal({
       tags: assistant?.tags?.map(stripTagPrefix) ?? [],
       iconId: assistant?.iconId ?? "lucide:bot",
       color: assistant?.color ?? "from-blue-500 to-cyan-500",
-      shareToMarket: assistant?.visibility === "public",
+      shareToMarket: effectiveMode === "cloud" ? assistant?.visibility === "public" : false,
     }),
-    [assistant, stripTagPrefix]
+    [assistant, effectiveMode, stripTagPrefix]
   )
 
   const form = useForm<AssistantFormValues>({
@@ -200,7 +208,7 @@ export function CreateAgentModal({
     })()
     try {
       let createdId: string | undefined
-      if (mode === "local") {
+      if (effectiveMode === "local") {
         if (assistant) {
           await updateLocalAssistant(assistant.id, {
             name: values.name,
@@ -273,7 +281,7 @@ export function CreateAgentModal({
       } else {
         onCreated?.(createdId)
       }
-    } catch (error) {
+    } catch {
       toast.error(t("toast.createFailedTitle"), {
         description: t("toast.createFailedDesc"),
       })
@@ -284,7 +292,7 @@ export function CreateAgentModal({
     if (!assistant) return
     try {
       setIsDeleting(true)
-      if (mode === "local") {
+      if (effectiveMode === "local") {
         await deleteLocalAssistant(assistant.id)
       } else {
         await deleteCloudAssistant(assistant.id)
@@ -295,7 +303,7 @@ export function CreateAgentModal({
       setDeleteDialogOpen(false)
       handleOpenChange(false)
       onDeleted?.(assistant.id)
-    } catch (error) {
+    } catch {
       toast.error(t("toast.deleteFailedTitle"), {
         description: t("toast.deleteFailedDesc"),
       })
@@ -324,7 +332,7 @@ export function CreateAgentModal({
           <SheetDescription>
             {isEditMode
               ? t("edit.description")
-              : mode === "cloud"
+              : effectiveMode === "cloud"
                 ? t("create.descriptionCloud")
                 : t("create.description")}
           </SheetDescription>
@@ -361,7 +369,7 @@ export function CreateAgentModal({
               resetKey={`${currentOpen}-${assistant?.id ?? "new"}`}
             />
 
-            {mode === "cloud" ? (
+            {effectiveMode === "cloud" ? (
               <AssistantShareField form={form} t={t} />
             ) : null}
 
@@ -414,14 +422,14 @@ export function CreateAgentModal({
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {isEditMode
                       ? t("edit.submitting")
-                      : mode === "cloud"
+                      : effectiveMode === "cloud"
                         ? t("create.submittingCloud")
                         : t("create.submitting")}
                   </>
                 ) : (
                   isEditMode
                     ? t("edit.submit")
-                    : mode === "cloud"
+                    : effectiveMode === "cloud"
                       ? t("create.submitCloud")
                       : t("create.submit")
                 )}

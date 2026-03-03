@@ -5,9 +5,10 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::modules::providers::types::{
-    CreateInstanceRequest, ProviderInstance, ProviderModel, ProviderModelTestRequest,
-    ProviderModelTestResponse, ProviderModelUpdateRequest, ProviderModelsQuickAddRequest,
-    ProviderPreset, UpdateInstanceRequest,
+    BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, ProviderInstance, ProviderModel,
+    ProviderModelTestRequest, ProviderModelTestResponse, ProviderModelUpdateRequest,
+    ProviderModelsQuickAddRequest, ProviderPreset, UpdateInstanceRequest, UserSecretary,
+    UserSecretaryUpdateRequest,
 };
 use crate::state::AppState;
 
@@ -19,6 +20,29 @@ pub async fn list_local_provider_presets(
         .providers
         .store
         .list_presets()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_local_user_secretary(state: State<'_, AppState>) -> Result<UserSecretary, String> {
+    state
+        .providers
+        .store
+        .get_or_create_user_secretary()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_local_user_secretary(
+    state: State<'_, AppState>,
+    payload: UserSecretaryUpdateRequest,
+) -> Result<UserSecretary, String> {
+    state
+        .providers
+        .store
+        .update_user_secretary(payload)
         .await
         .map_err(|e| e.to_string())
 }
@@ -227,6 +251,46 @@ pub async fn test_local_provider_model(
         response_body: Some(body_json),
         error,
     })
+}
+
+#[tauri::command]
+pub async fn get_local_bandit_arm_state(
+    state: State<'_, AppState>,
+    scene: String,
+    arm_id: String,
+) -> Result<Option<BanditArmState>, String> {
+    state
+        .providers
+        .store
+        .get_bandit_arm_state(&scene, &arm_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_local_bandit_arm_states(
+    state: State<'_, AppState>,
+    scene: Option<String>,
+) -> Result<Vec<BanditArmState>, String> {
+    state
+        .providers
+        .store
+        .list_bandit_arm_states(scene.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn record_local_bandit_feedback(
+    state: State<'_, AppState>,
+    payload: BanditFeedbackRequest,
+) -> Result<BanditArmState, String> {
+    state
+        .providers
+        .store
+        .record_bandit_feedback(payload)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn fetch_model_ids_from_upstream(

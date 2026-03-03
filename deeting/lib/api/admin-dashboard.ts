@@ -3,6 +3,15 @@ import { z } from "zod"
 import { request } from "@/lib/http"
 
 const ADMIN_BASE = "/api/v1/admin"
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
 
 const OffsetPageMetaSchema = z.object({
   total: z.number().int().nonnegative(),
@@ -134,6 +143,18 @@ export async function fetchAdminConversations(params?: {
   status?: string
   channel?: string
 }): Promise<ConversationList> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("list_local_admin_conversations", {
+      query: {
+        skip: params?.skip ?? 0,
+        limit: params?.limit ?? 100,
+        status: params?.status,
+        channel: params?.channel,
+      },
+    })
+    return ConversationListSchema.parse(data)
+  }
+
   const data = await request<unknown>({
     url: `${ADMIN_BASE}/conversations`,
     method: "GET",
@@ -145,6 +166,42 @@ export async function fetchAdminConversations(params?: {
     },
   })
   return ConversationListSchema.parse(data)
+}
+
+const ConversationSummaryItemSchema = z.object({
+  id: z.string(),
+  session_id: z.string(),
+  version: z.number().int().nonnegative(),
+  summary_text: z.string(),
+  covered_from_turn: z.number().int(),
+  covered_to_turn: z.number().int(),
+  token_estimate: z.number().int().nonnegative().default(0),
+  summarizer_model: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+export const ConversationSummaryListSchema = z.object({
+  items: z.array(ConversationSummaryItemSchema).default([]),
+})
+
+export type ConversationSummaryItem = z.infer<typeof ConversationSummaryItemSchema>
+
+export async function fetchAdminConversationSummaries(
+  sessionId: string
+): Promise<z.infer<typeof ConversationSummaryListSchema>> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("list_local_admin_conversation_summaries", {
+      session_id: sessionId,
+    })
+    return ConversationSummaryListSchema.parse(data)
+  }
+
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/conversations/${sessionId}/summaries`,
+    method: "GET",
+  })
+  return ConversationSummaryListSchema.parse(data)
 }
 
 const SpecPlanItemSchema = z.object({
@@ -332,6 +389,19 @@ export async function fetchAdminGatewayLogs(params?: {
   status_code?: number
   is_cached?: boolean
 }): Promise<z.infer<typeof GatewayLogListSchema>> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("list_local_gateway_logs", {
+      query: {
+        skip: params?.skip ?? 0,
+        limit: params?.limit ?? 100,
+        model: params?.model,
+        status_code: params?.status_code,
+        is_cached: params?.is_cached,
+      },
+    })
+    return GatewayLogListSchema.parse(data)
+  }
+
   const data = await request<unknown>({
     url: `${ADMIN_BASE}/gateway-logs`,
     method: "GET",
@@ -367,6 +437,17 @@ export async function fetchAdminGatewayLogStats(params?: {
   status_code?: number
   is_cached?: boolean
 }): Promise<GatewayLogStats> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("get_local_gateway_log_stats", {
+      query: {
+        model: params?.model,
+        status_code: params?.status_code,
+        is_cached: params?.is_cached,
+      },
+    })
+    return GatewayLogStatsSchema.parse(data)
+  }
+
   const data = await request<unknown>({
     url: `${ADMIN_BASE}/gateway-logs/stats`,
     method: "GET",

@@ -44,6 +44,16 @@ pub struct ProviderModel {
     pub is_active: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserSecretary {
+    pub id: String,
+    pub user_id: String,
+    pub name: String,
+    pub model_name: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateInstanceRequest {
     pub preset_slug: String,
@@ -78,6 +88,48 @@ pub struct ProviderModelUpdateRequest {
 #[derive(Debug, Deserialize)]
 pub struct ProviderModelTestRequest {
     pub prompt: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BanditArmState {
+    pub id: String,
+    pub provider_model_id: Option<String>,
+    pub scene: String,
+    pub arm_id: Option<String>,
+    pub reward_metric_type: Option<String>,
+    pub strategy: String,
+    pub epsilon: f64,
+    pub alpha: f64,
+    pub beta: f64,
+    pub total_trials: i64,
+    pub successes: i64,
+    pub failures: i64,
+    pub total_latency_ms: i64,
+    pub latency_p95_ms: Option<f64>,
+    pub total_cost: f64,
+    pub last_reward: f64,
+    pub cooldown_until: Option<String>,
+    pub version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BanditFeedbackRequest {
+    pub scene: Option<String>,
+    pub arm_id: String,
+    pub success: bool,
+    pub latency_ms: Option<f64>,
+    pub cost: Option<f64>,
+    pub reward: Option<f64>,
+    pub routing_config: Option<Value>,
+    pub reward_metric_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UserSecretaryUpdateRequest {
+    #[serde(default)]
+    pub model_name: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize)]

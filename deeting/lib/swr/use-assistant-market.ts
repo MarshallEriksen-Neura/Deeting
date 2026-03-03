@@ -2,9 +2,13 @@ import * as React from "react"
 import useSWRInfinite from "swr/infinite"
 
 import type { ApiError } from "@/lib/http"
-import { swrFetcher, type SWRResult } from "@/lib/swr/fetcher"
+import type { SWRResult } from "@/lib/swr/fetcher"
 import type { CursorPage } from "@/types/pagination"
-import type { AssistantMarketItem, AssistantMarketQuery } from "@/lib/api/assistants"
+import {
+  fetchAssistantMarket,
+  type AssistantMarketItem,
+  type AssistantMarketQuery,
+} from "@/lib/api/assistants"
 
 type AssistantMarketState = {
   items: AssistantMarketItem[]
@@ -27,17 +31,12 @@ export function useAssistantMarket(query: AssistantMarketQuery): AssistantMarket
         return null
       }
       const cursor = pageIndex === 0 ? null : previousPageData?.next_page
-      return [
-        "/api/v1/assistants/market",
-        {
-          params: {
-            cursor,
-            size: pageSize,
-            q: query.q || undefined,
-            tags: query.tags || undefined,
-          },
-        },
-      ]
+      return {
+        cursor,
+        size: pageSize,
+        q: query.q || undefined,
+        tags: query.tags || undefined,
+      }
     },
     [pageSize, query.q, tagsKey]
   )
@@ -49,9 +48,13 @@ export function useAssistantMarket(query: AssistantMarketQuery): AssistantMarket
     size,
     setSize,
     mutate,
-  } = useSWRInfinite<CursorPage<AssistantMarketItem>, ApiError>(getKey, swrFetcher, {
-    revalidateOnFocus: false,
-  })
+  } = useSWRInfinite<CursorPage<AssistantMarketItem>, ApiError>(
+    getKey,
+    fetchAssistantMarket,
+    {
+      revalidateOnFocus: false,
+    }
+  )
 
   const items = React.useMemo(() => {
     if (!data) return []

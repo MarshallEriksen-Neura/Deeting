@@ -164,7 +164,7 @@ curl -I https://api.openai.com/v1/models
 redis-cli SET "gw:circuit:openai:gpt-4" "OPEN" EX 300
 
 # 3. 切换备用上游
-# 通过调整 provider_preset 权重
+# 通过调整 provider_model.weight / provider_model.priority
 ```
 
 ### 2.4 内存不足
@@ -297,15 +297,17 @@ RATE_LIMIT_EXTERNAL_RPM=100
 ### 4.3 上游配置调整
 
 ```sql
--- 更新 provider_preset 权重
-UPDATE provider_preset_item
+-- 更新 provider_model 权重
+UPDATE provider_model
 SET weight = 100
-WHERE id = 'item-uuid';
+WHERE id = 'provider-model-uuid';
 
--- 禁用某个上游
-UPDATE provider_preset_item
+-- 禁用某个实例下的路由模型
+UPDATE provider_model
 SET is_active = false
-WHERE provider = 'problematic-provider';
+WHERE instance_id = 'provider-instance-uuid'
+  AND capability = 'chat'
+  AND model_id = 'problematic-model';
 ```
 
 ```bash

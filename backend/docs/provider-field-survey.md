@@ -47,6 +47,6 @@
 > - 统一字段集合与 Schema：`backend/app/schemas/gateway_fields.py`（含版本号、字段白名单）。  
 > - `provider_preset` Schema 校验：`backend/app/schemas/provider_preset.py` 在 `request_template.gateway_fields` 上做字段白名单校验，并要求 `pricing_config` 按 capability 补齐图/音/视频定价。  
 > 后续步骤：  
-> 1) 在 `provider_preset_item.pricing_config` 中为新增的图/音/视频维度补充单价与限流字段；  
+> 1) 在 `provider_model.pricing_config` 中为新增的图/音/视频维度补充单价与限流字段；  
 > 2) 路由层按 `capability`+`model` 做字段校验与映射；  
 > 3) 测试覆盖多模态（图/音/视频）请求的字段转换与计费路径。

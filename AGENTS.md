@@ -33,15 +33,15 @@
 
 
 ## 后端重构注意事项（Provider Preset / AI Gateway）
-- 单一真源：所有上游配置必须来自 `provider_preset` / `provider_preset_item`，严禁在 handler/transport/billing 硬编码。
-- 字段约定：item 表需支持 `template_engine`（simple_replace/jinja2）、占位符化 `upstream_path`、`tokenizer_config`、细化的 `pricing_config`（input/output per 1k + currency）与 `limit_config`（rpm/tpm/timeout/retry）。
+- 单一真源：所有上游配置必须来自 `provider_preset` / `provider_instance` / `provider_model`，严禁在 handler/transport/billing 硬编码。
+- 字段约定：`provider_model` 需支持 `template_engine`（simple_replace/jinja2）、占位符化 `upstream_path`、`tokenizer_config`、细化的 `pricing_config`（input/output per 1k + currency）与 `limit_config`（rpm/tpm/timeout/retry）；实例级连接信息放在 `provider_instance`。
 - 鉴权配置：`auth_config` 只存密钥引用 ID（secret_ref_id 等）与位置/前缀信息，禁止存明文；DTO 输出需统一脱敏。
 - 数据流分层：API 只做校验；Service 负责路由/计费/模板渲染；Client 发送上游请求；Repository 统一 DB 访问，不在业务层直接用 Session。
 - ORM 约束：业务层/路由/Depends 不直接写 ORM/SQL；统一通过 Repository 接口访问 DB（权限/策略也用仓库），避免散落 session/query/text。
 - 异步/同步会话：FastAPI 路径使用 Async SQLAlchemy；Celery 任务使用独立的同步 Engine/Session，复用模型但分离会话工厂。
 - 变更流程：新增/调整字段必须同步 Pydantic/Schema、Alembic 迁移、Repository/Service 逻辑和测试；必要时更新相关文档。
 - AI Agent 填充：先落 `provider_metadata`（含 schema hash），再经转换器写入两张表；发现 hash 变化需告警并回归关键用例。
-- 路由唯一性：业务查找以 (capability, model) + is_active + weight/priority 选择；数据库唯一约束保持 (preset_id, capability, model, upstream_path) 防重复。
+- 路由唯一性：业务查找以 (capability, model) + is_active + weight/priority 选择；数据库唯一约束保持 (instance_id, capability, model, upstream_path) 防重复。
 - 测试基线：为模板渲染、路由决策、响应转换、限流/重试写合成测试；提交前请让人类运行 `pytest`。
 
 ## 配置/变量引用规范（重要）

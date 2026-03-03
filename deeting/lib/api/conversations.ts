@@ -21,14 +21,14 @@ export const ConversationMessageSchema = z.object({
   created_at: z.string().nullable().optional(),
   is_truncated: z.boolean().nullable().optional(),
   name: z.string().nullable().optional(),
-  meta_info: z.record(z.any()).nullable().optional(),
+  meta_info: z.record(z.string(), z.any()).nullable().optional(),
 }).passthrough()
 
 export const ConversationWindowSchema = z.object({
   session_id: z.string(),
   messages: z.array(ConversationMessageSchema).default([]),
-  meta: z.record(z.any()).nullable().optional(),
-  summary: z.record(z.any()).nullable().optional(),
+  meta: z.record(z.string(), z.any()).nullable().optional(),
+  summary: z.record(z.string(), z.any()).nullable().optional(),
 })
 
 export type ConversationMessage = z.infer<typeof ConversationMessageSchema>
@@ -36,16 +36,23 @@ export type ConversationWindow = z.infer<typeof ConversationWindowSchema>
 
 export async function fetchConversationWindow(sessionId: string): Promise<ConversationWindow> {
   if (isTauriRuntime()) {
-    const history = await invokeTauri<ConversationHistoryResponse>(
-      "list_local_conversation_history",
-      { session_id: sessionId, query: { limit: 200 } }
-    )
-    return ConversationWindowSchema.parse({
-      session_id: sessionId,
-      messages: history.messages ?? [],
-      meta: null,
-      summary: null,
-    })
+    try {
+      const data = await invokeTauri<ConversationWindow>("get_local_conversation_window", {
+        session_id: sessionId,
+      })
+      return ConversationWindowSchema.parse(data)
+    } catch {
+      const history = await invokeTauri<ConversationHistoryResponse>(
+        "list_local_conversation_history",
+        { session_id: sessionId, query: { limit: 200 } }
+      )
+      return ConversationWindowSchema.parse({
+        session_id: sessionId,
+        messages: history.messages ?? [],
+        meta: null,
+        summary: null,
+      })
+    }
   }
   const data = await request({
     url: `${CONVERSATION_BASE}/${sessionId}`,

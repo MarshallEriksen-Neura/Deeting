@@ -63,9 +63,10 @@ pub fn run() {
 
             let sync_state = state.clone();
             app.manage(state);
+            let sync_state_for_mcp = sync_state.clone();
 
             tauri::async_runtime::spawn(async move {
-                let mcp = &sync_state.mcp;
+                let mcp = &sync_state_for_mcp.mcp;
                 let source = match mcp.store.ensure_local_source().await {
                     Ok(source) => source,
                     Err(err) => {
@@ -103,6 +104,18 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 sandbox_state.manager.start_background_worker().await;
             });
+            let summary_worker_state = sync_state.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::modules::mcp::commands::start_local_conversation_summary_worker(
+                    summary_worker_state,
+                )
+                .await;
+            });
+            let periodic_worker_state = sync_state.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::modules::mcp::commands::start_local_periodic_worker(periodic_worker_state)
+                    .await;
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -115,15 +128,26 @@ pub fn run() {
             crate::modules::mcp::commands::list_local_assistants,
             crate::modules::mcp::commands::list_local_assistant_entities,
             crate::modules::mcp::commands::list_local_assistant_versions,
+            crate::modules::mcp::commands::list_local_assistant_tags,
             crate::modules::mcp::commands::list_local_assistant_installs,
             crate::modules::mcp::commands::install_local_assistant,
             crate::modules::mcp::commands::update_local_assistant_install,
             crate::modules::mcp::commands::uninstall_local_assistant,
+            crate::modules::mcp::commands::rate_local_assistant,
+            crate::modules::mcp::commands::record_local_assistant_routing_trial,
+            crate::modules::mcp::commands::record_local_assistant_routing_feedback,
+            crate::modules::mcp::commands::get_local_assistant_routing_report,
+            crate::modules::mcp::commands::create_local_trace_feedback,
+            crate::modules::mcp::commands::list_local_gateway_logs,
+            crate::modules::mcp::commands::get_local_gateway_log_stats,
+            crate::modules::mcp::commands::list_local_admin_conversations,
+            crate::modules::mcp::commands::list_local_admin_conversation_summaries,
             crate::modules::mcp::commands::create_local_assistant,
             crate::modules::mcp::commands::update_local_assistant,
             crate::modules::mcp::commands::delete_local_assistant,
             crate::modules::mcp::commands::list_assistant_messages,
             crate::modules::mcp::commands::append_assistant_message,
+            crate::modules::mcp::commands::preview_local_assistant,
             crate::modules::mcp::commands::delete_assistant_messages,
             crate::modules::mcp::commands::list_local_conversations,
             crate::modules::mcp::commands::create_local_conversation,
@@ -131,6 +155,7 @@ pub fn run() {
             crate::modules::mcp::commands::unarchive_local_conversation,
             crate::modules::mcp::commands::rename_local_conversation,
             crate::modules::mcp::commands::list_local_conversation_history,
+            crate::modules::mcp::commands::get_local_conversation_window,
             crate::modules::mcp::commands::append_local_conversation_message,
             crate::modules::mcp::commands::delete_local_conversation_message,
             crate::modules::mcp::commands::clear_local_conversation,
@@ -150,6 +175,8 @@ pub fn run() {
             crate::modules::mcp::bridge::stop_mcp_log_stream,
             // Provider Commands
             crate::modules::providers::commands::list_local_provider_presets,
+            crate::modules::providers::commands::get_local_user_secretary,
+            crate::modules::providers::commands::update_local_user_secretary,
             crate::modules::providers::commands::replace_local_provider_presets,
             crate::modules::providers::commands::list_local_provider_instances,
             crate::modules::providers::commands::create_local_provider_instance,
@@ -160,6 +187,9 @@ pub fn run() {
             crate::modules::providers::commands::quick_add_local_provider_models,
             crate::modules::providers::commands::update_local_provider_model,
             crate::modules::providers::commands::test_local_provider_model,
+            crate::modules::providers::commands::get_local_bandit_arm_state,
+            crate::modules::providers::commands::list_local_bandit_arm_states,
+            crate::modules::providers::commands::record_local_bandit_feedback,
             // Local Memory Commands
             crate::modules::memory::commands::append_local_memory,
             crate::modules::memory::commands::list_local_memories,
