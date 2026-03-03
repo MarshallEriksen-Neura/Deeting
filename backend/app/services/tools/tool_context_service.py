@@ -3,6 +3,7 @@ import time
 import uuid
 from collections.abc import Iterable
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -98,10 +99,40 @@ class ToolContextService:
             if plugin.id == "core.execution.skill_runner":
                 skill_runner_enabled = True
 
+        # NEW: Also allow tools from active Builtin skills (migrated to packages/)
+        has_builtin_skills = False
+        try:
+            from app.core.database import AsyncSessionLocal
+            from app.models.skill_registry import SkillRegistry
+            
+            async with AsyncSessionLocal() as db:
+                stmt = select(SkillRegistry).where(
+                    SkillRegistry.status == "active",
+                    SkillRegistry.runtime == "builtin",
+                )
+                res = await db.execute(stmt)
+                builtin_skills = res.scalars().all()
+                if builtin_skills:
+                    has_builtin_skills = True
+                    for skill in builtin_skills:
+                        manifest = skill.manifest_json or {}
+                        tools = manifest.get("tools", [])
+                        for t in tools:
+                            if isinstance(t, dict) and t.get("name"):
+                                allowed_tool_names.add(t.get("name"))
+        except Exception:
+            logger.warning(
+                "ToolContextService: failed to load builtin skills user_id=%s",
+                uid,
+                exc_info=True,
+            )
+
         system_tools = [
             tool for tool in agent_service.tools if tool.name in allowed_tool_names
         ]
+
         core_tools = [tool for tool in system_tools if tool.name in core_tool_names]
+
         non_core_system_tools = [
             tool for tool in system_tools if tool.name not in core_tool_names
         ]
@@ -133,10 +164,10 @@ class ToolContextService:
 
         total_tool_count = len(system_tools) + len(user_tool_payloads)
         threshold = int(getattr(settings, "MCP_TOOL_JIT_THRESHOLD", 15) or 15)
-        # 强制开启 JIT 的条件：Qdrant 已配置 + 有查询 + (工具多 OR 启用了动态技能运行器)
+        # 强制开启 JIT 的条件：Qdrant 已配置 + 有查询 + (工具多 OR 启用了动态技能运行器 OR 有内置技能)
         use_jit = (
             bool(qdrant_is_configured())
-            and (total_tool_count > threshold or skill_runner_enabled)
+            and (total_tool_count > threshold or skill_runner_enabled or has_builtin_skills)
             and bool(query)
         )
         logger.info(

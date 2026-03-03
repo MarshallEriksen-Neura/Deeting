@@ -413,7 +413,39 @@ class ToolSyncService:
             )
 
         final_hits = self._merge_hits(user_hits, sys_hits, skill_hits, total_limit)
-        result = [self._hit_to_def(hit) for hit in final_hits]
+        
+        # New: Expand Skills into individual Tools
+        result: list[ToolDefinition] = []
+        existing_names: set[str] = set()
+        
+        for hit in final_hits:
+            payload = hit.get("payload") or {}
+            if payload.get("is_skill"):
+                skill_id = payload.get("skill_id")
+                # Fetch skill from DB to get all tools
+                async with AsyncSessionLocal() as session:
+                    from app.repositories.skill_registry_repository import SkillRegistryRepository
+                    repo = SkillRegistryRepository(session)
+                    skill_obj = await repo.get_by_id(skill_id)
+                    if skill_obj:
+                        manifest = skill_obj.manifest_json or {}
+                        tools_defs = manifest.get("tools", [])
+                        for t_def in tools_defs:
+                            t_name = t_def.get("name")
+                            if t_name and t_name not in existing_names:
+                                result.append(ToolDefinition(
+                                    name=t_name,
+                                    description=t_def.get("description", ""),
+                                    input_schema=_safe_schema(t_def.get("parameters") or t_def.get("input_schema")),
+                                    output_schema=_safe_schema(t_def.get("output_schema")),
+                                    output_description=t_def.get("output_description")
+                                ))
+                                existing_names.add(t_name)
+            else:
+                tool_def = self._hit_to_def(hit)
+                if tool_def.name not in existing_names:
+                    result.append(tool_def)
+                    existing_names.add(tool_def.name)
         
         # 确保关键引导工具在特定意图下可见，但不截断结果
         result = await self._ensure_onboarding_tools_visibility(result, q, user_id)
@@ -775,6 +807,13 @@ class ToolSyncService:
             skill_id = str(payload.get("skill_id") or "").strip()
             if not skill_id:
                 continue
+            
+            # Builtin skills (official system skills) bypass the installation check
+            runtime = payload.get("runtime")
+            if runtime == "builtin":
+                filtered.append(hit)
+                continue
+
             source_repo = str(payload.get("source_repo") or "").strip()
             # Repo-based marketplace plugins require user installation.
             if source_repo and skill_id not in installed_skill_ids:

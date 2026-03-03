@@ -657,6 +657,85 @@ async def test_execute_code_plan_runtime_call_tool_roundtrip(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_execute_code_plan_bridge_fallback_marker_dispatches_tool(monkeypatch):
+    plugin = _make_plugin()
+    captured = {"codes": [], "dispatch_calls": []}
+
+    async def _fake_issue_runtime_bridge_context(
+        *,
+        workflow_context,
+        runtime_meta,
+        final_session_id,
+    ):
+        return {
+            "endpoint": "http://bridge.local/api/v1/internal/bridge/call",
+            "execution_token": "bridge-token-xyz",
+            "timeout_seconds": 2,
+            "mode": "http_with_marker_fallback",
+        }
+
+    async def _fake_store_context(_token, _context):
+        return None
+
+    async def _fake_dispatch_real_tool(*, tool_name, arguments, workflow_context):
+        captured["dispatch_calls"].append((tool_name, arguments))
+        return {"title": "Demo Doc", "url": arguments.get("url")}
+
+    async def _fake_run_code_stream(session_id, code, language, execution_timeout):
+        captured["codes"].append(code)
+        if len(captured["codes"]) == 1:
+            marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
+                {
+                    "index": 0,
+                    "tool_name": "fetch_web_content",
+                    "arguments": {"url": "https://example.com"},
+                },
+                ensure_ascii=False,
+            )
+            yield {"type": "stdout", "content": marker}
+            yield {"type": "stderr", "content": "runtime interrupted for host tool call"}
+            yield {"type": "exit", "exit_code": 1, "result": []}
+            return
+
+        yield {"type": "stdout", "content": "[deeting.log] Demo Doc"}
+        yield {"type": "exit", "exit_code": 0, "result": []}
+
+    monkeypatch.setattr(
+        plugin,
+        "_issue_runtime_bridge_context",
+        _fake_issue_runtime_bridge_context,
+    )
+    monkeypatch.setattr(
+        sdk_module.runtime_bridge_token_service,
+        "store_context",
+        _fake_store_context,
+    )
+    monkeypatch.setattr(plugin, "_dispatch_real_tool", _fake_dispatch_real_tool)
+    monkeypatch.setattr(
+        sdk_module.sandbox_manager,
+        "run_code_stream",
+        _fake_run_code_stream,
+    )
+
+    result = await plugin.handle_execute_code_plan(
+        code=(
+            "page = deeting.call_tool('fetch_web_content', url='https://example.com')\n"
+            "deeting.log(page.get('title'))"
+        )
+    )
+
+    assert result["status"] == "success"
+    assert "Demo Doc" in result["stdout"]
+    assert len(captured["codes"]) == 2
+    assert len(captured["dispatch_calls"]) == 1
+    assert captured["dispatch_calls"][0][0] == "fetch_web_content"
+    assert "Demo Doc" in captured["codes"][1]
+    assert result["runtime"]["runtime_tool_calls"]["count"] == 1
+    assert result["runtime"]["bridge"]["fallback_to_marker"] is True
+    assert result["runtime"]["bridge"]["fallback_attempt"] == 1
+
+
+@pytest.mark.asyncio
 async def test_execute_code_plan_runtime_call_tool_trace_contains_error_details(monkeypatch):
     plugin = _make_plugin()
 

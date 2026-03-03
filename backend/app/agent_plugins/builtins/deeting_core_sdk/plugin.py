@@ -6,6 +6,7 @@ import keyword
 import logging
 import re
 import uuid
+from pathlib import Path
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
@@ -563,9 +564,11 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         runtime_tool_trace: list[dict[str, Any]] = []
         runtime_render_blocks: list[dict[str, Any]] = []
 
-        # If bridge is active, we only need a single sandbox execution because
-        # tool calls are handled synchronously via the bridge inside the sandbox.
-        max_attempts = 1 if has_bridge else (_MAX_RUNTIME_TOOL_CALLS + 1)
+        # Always keep marker restart attempts available.
+        # Bridge mode should be fast-path (usually one run), but if bridge call
+        # fails inside sandbox and runtime falls back to marker mode, host side
+        # still needs subsequent attempts to dispatch and replay.
+        max_attempts = _MAX_RUNTIME_TOOL_CALLS + 1
 
         for attempt in range(max_attempts):
             is_reexecution = attempt > 0
@@ -640,8 +643,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             # Collect render blocks from this execution
             runtime_render_blocks.extend(self._extract_runtime_render_blocks(result))
 
-            # In bridge mode, we don't extract tool requests from stdout as they already happened via HTTP.
-            runtime_tool_request = self._extract_runtime_tool_request(result) if not has_bridge else None
+            runtime_tool_request = self._extract_runtime_tool_request(result)
+            if runtime_tool_request and has_bridge:
+                bridge_meta = runtime_meta.get("bridge")
+                if not isinstance(bridge_meta, dict):
+                    bridge_meta = {}
+                bridge_meta["fallback_to_marker"] = True
+                bridge_meta["fallback_attempt"] = attempt + 1
+                runtime_meta["bridge"] = bridge_meta
+                has_bridge = False
             
             if not runtime_tool_request:
                 # Execution finished (either naturally or it was a bridge run)
@@ -1216,6 +1226,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         py_lines = [
             "from __future__ import annotations",
             "from typing import Any, TypedDict",
+            "import os",
+            "import sys",
             "",
             "def _runtime():",
             "    import builtins",
@@ -1225,9 +1237,41 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "    return runtime",
             "",
             "def call_tool(name: str, **kwargs: Any) -> dict[str, Any]:",
+            "    # 1. Elegant Local-First execution",
+            "    # Try to find tool implementation in pre-warmed packages",
+            "    try:",
+            "        # Mapping tool names to package modules",
+            "        tool_to_pkg = {",
+            "            'fetch_web_content': 'crawler',",
+            "            'crawl_website': 'crawler',",
+            "            'run_python': 'code_interpreter',",
+            "            'propose_execution_plan': 'planner',",
+            "            'retrieve_similar_plans': 'planner',",
+            "            'generate_image': 'image_generation',",
+            "            'add_knowledge_chunk': 'memory',",
+            "            'search_knowledge': 'memory',",
+            "        }",
+            "        pkg_name = tool_to_pkg.get(name)",
+            "        if pkg_name:",
+            "            import importlib",
+            "            # builtin_skills is the mount point in sandbox",
+            "            module = importlib.import_module(f'builtin_skills.{pkg_name}.main')",
+            "            handler = getattr(module, name, None)",
+            "            if handler:",
+            "                import asyncio",
+            "                # Run in new loop if needed, or just call if synchronous",
+            "                if asyncio.iscoroutinefunction(handler):",
+            "                    return asyncio.run(handler(**kwargs))",
+            "                return handler(**kwargs)",
+            "    except ImportError:",
+            "        pass # Fallback to bridge",
+            "    except Exception as e:",
+            "        print(f'[deeting.sdk] Local execution error for {name}: {e}', file=sys.stderr)",
+            "",
+            "    # 2. Fallback to Bridge (for MCP / Remote tools)",
             "    result = _runtime().call_tool(name, **kwargs)",
             "    if isinstance(result, dict):",
-                "        return result",
+            "        return result",
             "    return {'result': result}",
             "",
         ]
@@ -1530,6 +1574,35 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         local_result = await self._dispatch_local_tool(tool_name, arguments, workflow_context)
         if local_result is not None:
             return local_result
+
+        # Fallback to Skill Registry for standalone/builtin skills (e.g. from packages/)
+        from app.core.database import AsyncSessionLocal
+        from app.repositories.skill_registry_repository import SkillRegistryRepository
+        from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
+
+        try:
+            async with AsyncSessionLocal() as session:
+                skill_repo = SkillRegistryRepository(session)
+                skill = await skill_repo.get_by_tool_name(tool_name)
+                if skill:
+                    executor = SkillRuntimeExecutor(skill_repo)
+                    inputs = dict(arguments or {})
+                    inputs["__tool_name__"] = tool_name
+                    
+                    exec_result = await executor.execute(
+                        skill_id=skill.id,
+                        session_id=str(self.context.session_id or "sandbox_bridge"),
+                        user_id=str(self.context.user_id),
+                        inputs=inputs,
+                        intent=tool_name
+                    )
+                    
+                    if exec_result.get("status") == "ok":
+                        return exec_result.get("result")
+                    return {"error": exec_result.get("error", "Skill execution failed")}
+        except Exception as exc:
+            logger.error("Skill registry fallback failed for tool %s: %s", tool_name, exc)
+
         return await self._dispatch_remote_mcp_tool(tool_name, arguments, workflow_context)
 
     async def _dispatch_local_tool(
@@ -2185,14 +2258,32 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         sdk_module_name = str((runtime_sdk_bundle or {}).get("module_name") or "").strip()
         sdk_tool_count = int((runtime_sdk_bundle or {}).get("tool_count") or 0)
 
+        # Prepare runtime path for official skills
+        # Map the physical packages/official-skills to builtin_skills inside sandbox
+        project_root = Path(__file__).parent.parent.parent.parent.parent
+        official_skills_path = project_root / "packages" / "official-skills"
+        
         runtime_block = (
             "import json\n"
+            "import sys\n"
+            "import os\n"
+            f"sys.path.insert(0, {str(official_skills_path.parent)!r})\n"
+            # Alias 'official-skills' to 'builtin_skills' for clean imports
+            "import importlib.util\n"
+            "try:\n"
+            f"    _spec = importlib.util.spec_from_file_location('builtin_skills', {str(official_skills_path)!r} + '/__init__.py')\n"
+            "    if _spec is None: # Folder without __init__.py\n"
+            "        import types\n"
+            "        _builtin_skills = types.ModuleType('builtin_skills')\n"
+            f"        _builtin_skills.__path__ = [{str(official_skills_path)!r}]\n"
+            "        sys.modules['builtin_skills'] = _builtin_skills\n"
+            "except Exception: pass\n"
+            
             f"RUNTIME_CONTEXT = json.loads({context_json!r})\n"
             f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
             f"RUNTIME_TOOL_RESULTS = json.loads({runtime_tool_results_json!r})\n"
             "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)\n"
             "import types\n"
-            "import sys\n"
             "_deeting_module = types.ModuleType('deeting')\n"
             "for _name in ('log', 'section', 'get_context', 'render', 'call_tool', 'write_file', 'read_file'):\n"
             "    setattr(_deeting_module, _name, getattr(deeting, _name))\n"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+import json
 
 from sqlalchemy import select
 
@@ -27,70 +28,41 @@ def _build_embedding_text(skill) -> str:
     max_manifest_length = 800
     manifest_summary = ""
     manifest = getattr(skill, "manifest_json", None)
+    
+    summary_parts: list[str] = []
+    
     if isinstance(manifest, dict) and manifest:
-        allowed_keys = (
-            "capabilities",
-            "keywords",
-            "tags",
-            "summary",
-            "title",
-            "description",
-        )
-        summary_parts: list[str] = []
-        capabilities = manifest.get("capabilities")
-        if isinstance(capabilities, (list, tuple, set)):
-            capability_items = []
-            for item in capabilities:
-                if item is None:
-                    continue
-                text = str(item).strip()
-                if text:
-                    capability_items.append(text)
-            if capability_items:
-                summary_parts.append(" ".join(capability_items))
-        elif capabilities is not None:
-            text = str(capabilities).strip()
-            if text:
-                summary_parts.append(text)
-
-        for key in allowed_keys:
-            if key == "capabilities":
-                continue
-            value = manifest.get(key)
-            if value is None:
-                continue
-            text = str(value).strip()
-            if not text:
-                continue
-            if len(text) > max_manifest_length:
-                text = text[:max_manifest_length].rstrip()
-            summary_parts.append(f"{key}: {text}")
+        # 1. Basic Metadata
+        for key in ["capabilities", "tags", "description", "summary"]:
+            val = manifest.get(key)
+            if val:
+                summary_parts.append(f"{key}: {val}")
+        
+        # 2. CRITICAL: Include Tool Names and Descriptions
+        tools = manifest.get("tools", [])
+        if isinstance(tools, list):
+            for t in tools:
+                if isinstance(t, dict):
+                    t_name = t.get("name", "")
+                    t_desc = t.get("description", "")
+                    summary_parts.append(f"Tool: {t_name} - {t_desc}")
 
         if summary_parts:
             manifest_summary = "; ".join(summary_parts).strip()
-    elif isinstance(manifest, str) and manifest.strip():
-        manifest_summary = manifest.strip()
 
-    if manifest_summary and len(manifest_summary) > max_manifest_length:
-        manifest_summary = manifest_summary[:max_manifest_length].rstrip()
+    if manifest_summary and len(manifest_summary) > 2000: # Increased budget
+        manifest_summary = manifest_summary[:2000].rstrip()
 
-    description = getattr(skill, "description", None)
-    if description is not None:
-        description = str(description).strip()
-        if len(description) > max_manifest_length:
-            description = description[:max_manifest_length].rstrip()
-
+    description = getattr(skill, "description", None) or ""
+    
     parts = [
         skill.id,
         skill.name,
-        getattr(skill, "source_repo", ""),
-        getattr(skill, "source_subdir", ""),
-        skill.status,
         description,
         manifest_summary,
     ]
     cleaned = [str(part).strip() for part in parts if part]
-    return "\n".join([part for part in cleaned if part])
+    return "\n".join(cleaned)
 
 
 async def _run_sync_skill(skill_id: str) -> str:
@@ -190,9 +162,13 @@ def seed_builtin_plugins_to_registry_task() -> dict[str, int]:
         return {"created": 0, "updated": 0}
 
 async def _run_seed_builtins() -> dict[str, int]:
-    project_root = Path(settings.PROJECT_ROOT).parent
+    # Resolve project root relative to this file: backend/app/tasks/skill_registry.py
+    project_root = Path(__file__).parent.parent.parent.parent
     official_skills_path = project_root / "packages" / "official-skills"
     
+    from app.models.skill_registry import SkillRegistry
+    from importlib import import_module
+
     stats = {"created": 0, "updated": 0}
     
     async with AsyncSessionLocal() as session:
@@ -252,7 +228,7 @@ async def _run_seed_builtins() -> dict[str, int]:
                     logger.error(f"Failed to seed official skill {skill_dir.name}: {e}")
 
         # 2. Legacy seeding from plugins.yaml (for remaining plugins)
-        plugins_yaml_path = Path(settings.PROJECT_ROOT) / "app" / "core" / "plugins.yaml"
+        plugins_yaml_path = project_root / "backend" / "app" / "core" / "plugins.yaml"
         if plugins_yaml_path.exists():
             with open(plugins_yaml_path, "r") as f:
                 config = yaml.safe_load(f)

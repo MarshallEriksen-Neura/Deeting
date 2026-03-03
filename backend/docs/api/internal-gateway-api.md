@@ -355,7 +355,12 @@ Content-Type: application/json
   "session_id": "sess-001",
   "language": "python",
   "status": "success",
-  "runtime_context": {},
+  "runtime_context": {
+    "bridge": {
+      "fallback_to_marker": true,
+      "fallback_attempt": 1
+    }
+  },
   "tool_plan_results": {},
   "runtime_tool_calls": {},
   "render_blocks": {},
@@ -398,6 +403,7 @@ Content-Type: application/json
 - 回放会复用历史 `runtime_context` 中的能力/权限线索，并可通过请求体覆盖 `code/tool_plan/session_id`。
 - 回放本身也会写入新的执行记录。
 - 若同一工作流上下文中存在最近一次 `search_sdk` 的工具快照，`execute_code_plan` 的 `tool_plan` 与运行时 `deeting.call_tool(...)` 仅允许调用该快照中的工具；否则会返回 `CODE_MODE_TOOL_PLAN_INVALID` 或 `CODE_MODE_RUNTIME_TOOL_CALL_INVALID`。快照为空时等价于“本轮不允许任何工具调用”。
+- 当运行时已启用 bridge，但沙箱内 bridge 调用失败并自动回退到 marker 分发时，`runtime_context.bridge` 会附带 `fallback_to_marker=true` 与 `fallback_attempt`（第几次执行发生回退）。
 
 ---
 
@@ -685,6 +691,7 @@ print(response.json())
   - `ui`：工具返回的渲染块数组。
   - `debug`：Code Mode 运行时调试摘要（例如 `runtime_tool_calls`、`render_blocks`、`sdk_stub`）。
     - `runtime_tool_calls.calls[]` 可包含 `tool_name` / `status` / `duration_ms` / `error` / `error_code`，用于前端调试时间线。
+    - `debug.runtime.bridge.fallback_to_marker=true` 表示该次执行发生了 bridge -> marker 自动降级；`fallback_attempt` 表示发生在第几次沙箱执行。
     - 当 `execute_code_plan` 的 `exit_code=0` 但沙箱原始 `result` 为空时，系统会尝试从 `stdout` 最后一条结构化日志（优先 `[deeting.log]` JSON）回填 `result`，并记录 `code_mode_result_recovered` 调试日志。
 
 ---

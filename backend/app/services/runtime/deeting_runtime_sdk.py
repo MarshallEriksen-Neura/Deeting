@@ -96,36 +96,34 @@ def build_runtime_preamble(
                         merged = dict(args[0])
                         merged.update(arguments or {})
                         arguments = merged
-                        self.log("deprecated call_tool positional dict detected; use keyword args")
                     else:
-                        raise TypeError(
-                            "deeting.call_tool expects keyword args, "
-                            "e.g. deeting.call_tool('tavily-search', query='...', max_results=5)"
-                        )
+                        raise TypeError("deeting.call_tool expects keyword args")
+                
                 idx = self._call_index
                 self._call_index += 1
 
+                # 1. Return cached result if available (for re-execution mode)
                 if idx < len(self._tool_results):
                     return self._tool_results[idx]
 
                 if idx >= self._max_tool_calls:
                     raise RuntimeError("runtime tool call limit exceeded")
 
+                # 2. Try HTTP Bridge if available
                 bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}
                 endpoint = str((bridge or {}).get("endpoint") or "").strip()
                 execution_token = str((bridge or {}).get("execution_token") or "").strip()
-                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 120)
+                
                 if endpoint and execution_token:
                     try:
-                        import time
                         import urllib.request
-
+                        import time
+                        
                         request_payload = {
                             "tool_name": str(tool_name or "").strip(),
                             "arguments": arguments or {},
                             "execution_token": execution_token,
                         }
-                        bridge_started = time.perf_counter()
                         req = urllib.request.Request(
                             endpoint,
                             data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
@@ -135,60 +133,29 @@ def build_runtime_preamble(
                             },
                             method="POST",
                         )
-                        with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                        with urllib.request.urlopen(req, timeout=120) as response:
                             body = response.read().decode("utf-8")
                         parsed = json.loads(body) if body else {}
-                        if isinstance(parsed, dict):
-                            if parsed.get("ok") is False:
-                                nested = parsed.get("result") if isinstance(parsed.get("result"), dict) else {}
-                                error_text = nested.get("error")
-                                if error_text is None:
-                                    error_text = nested.get("message")
-                                if error_text is None:
-                                    error_text = parsed.get("error")
-                                if error_text is None:
-                                    error_text = parsed.get("message")
-                                nested_detail = nested.get("detail")
-                                if error_text is None and isinstance(nested_detail, dict):
-                                    error_text = nested_detail.get("message") or nested_detail.get("error")
-                                if error_text is None and isinstance(parsed.get("detail"), dict):
-                                    error_text = parsed.get("detail", {}).get("message") or parsed.get("detail", {}).get("error")
-                                error_code = nested.get("error_code")
-                                if error_code is None:
-                                    error_code = nested.get("code")
-                                if error_code is None and isinstance(nested_detail, dict):
-                                    error_code = nested_detail.get("code")
-                                if error_code is None:
-                                    error_code = parsed.get("error_code")
-                                if error_code is None:
-                                    error_code = parsed.get("code")
-                                if error_code is None and isinstance(parsed.get("detail"), dict):
-                                    error_code = parsed.get("detail", {}).get("code")
-                                normalized = {
-                                    "error": str(error_text or "bridge call failed"),
-                                    "error_code": error_code,
-                                }
-                                if isinstance(parsed.get("meta"), dict):
-                                    normalized["bridge_meta"] = parsed.get("meta")
-                                return normalized
-                            if "result" in parsed:
-                                return parsed.get("result")
-                            return parsed
+                        if isinstance(parsed, dict) and parsed.get("ok"):
+                            return parsed.get("result")
+                        # If HTTP returns error, we don't return it yet, try marker fallback
                     except Exception as exc:
-                        elapsed_ms = int(max(0.0, (time.perf_counter() - bridge_started) * 1000))
-                        self.log(
-                            "bridge call failed, fallback marker mode:",
-                            exc,
-                            f"(tool={str(tool_name or '').strip()}, timeout_seconds={timeout_seconds}, elapsed_ms={elapsed_ms}, endpoint={endpoint})",
-                        )
+                        # Log error to stderr so user can see why bridge failed
+                        import sys
+                        print(f"[deeting.bridge] Warning: HTTP bridge failed: {exc}", file=sys.stderr)
 
+                # 3. ELEGANT FALLBACK: Marker Mode
+                # This works by printing a special token that the host intercepts.
                 payload = {
                     "index": idx,
                     "tool_name": str(tool_name or "").strip(),
                     "arguments": arguments or {},
                 }
-                print("__RUNTIME_TOOL_CALL_MARKER__" + json.dumps(payload, ensure_ascii=False))
-                raise _DeetingHostToolCallSignal(f"pending runtime tool call #{idx}")
+                # Ensure the marker is on its own line
+                print(f"\\n__RUNTIME_TOOL_CALL_MARKER__{json.dumps(payload, ensure_ascii=False)}")
+                
+                # In marker mode, we MUST stop execution because the host will re-run us with the result.
+                raise _DeetingHostToolCallSignal(f"pending tool call: {tool_name}")
 
             def _bridge_info(self):
                 bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}

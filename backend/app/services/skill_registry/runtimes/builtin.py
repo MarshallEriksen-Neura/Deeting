@@ -29,9 +29,15 @@ class BuiltinSkillRuntimeStrategy(BaseRuntimeStrategy):
         # Directory name might be the last part
         skill_id_part = skill.id.split('.')[-1]
         
-        # Resolve package path
-        # Assuming packages/ is at project root
-        project_root = Path(settings.PROJECT_ROOT).parent
+        # Resolve workspace root by scanning parent dirs for packages/.
+        runtime_file = Path(__file__).resolve()
+        project_root = runtime_file.parent.parent.parent.parent.parent
+        for parent in runtime_file.parents:
+            if (parent / "packages" / "official-skills").exists() or (
+                parent / "packages"
+            ).exists():
+                project_root = parent
+                break
         
         # Try both underscore and hyphen versions
         candidates = [
@@ -66,33 +72,62 @@ class BuiltinSkillRuntimeStrategy(BaseRuntimeStrategy):
             "arguments": {k: v for k, v in inputs.items() if k != "__tool_name__"}
         }
 
+        # Resolve python executable: prefer .venv in project root
+        python_exe = sys.executable
+        venv_python = project_root / "backend" / ".venv" / "bin" / "python3"
+        if not venv_python.exists():
+            # Try without 'backend' prefix if running in a different structure
+            venv_python = project_root / ".venv" / "bin" / "python3"
+            
+        if venv_python.exists():
+            python_exe = str(venv_python)
+            logger.info(f"Using VENV python: {python_exe}")
+
+        # Prepare environment
+        env = os.environ.copy()
+        env["SCOUT_SERVICE_URL"] = str(settings.SCOUT_SERVICE_URL)
+        # Add project root to PYTHONPATH so 'deeting' SDK can be found if needed
+        env["PYTHONPATH"] = os.pathsep.join([
+            str(project_root / "packages" / "deeting-sdk"),
+            env.get("PYTHONPATH", "")
+        ])
+
         # Execute subprocess
+        logger.info(f"Executing builtin skill {skill.id} at {main_py} via {python_exe} with env SCOUT_SERVICE_URL={env.get('SCOUT_SERVICE_URL')}")
         try:
             process = await asyncio.create_subprocess_exec(
-                sys.executable,
+                python_exe,
                 str(main_py),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(package_path)
+                cwd=str(package_path),
+                env=env
             )
 
             stdout, stderr = await process.communicate(input=json.dumps(payload).encode())
             
+            stdout_str = stdout.decode().strip()
+            stderr_str = stderr.decode().strip()
+            
+            if stderr_str:
+                logger.warning(f"Builtin skill {skill.id} stderr: {stderr_str}")
+            
             if process.returncode != 0:
+                logger.error(f"Builtin skill {skill.id} failed with exit code {process.returncode}. Stdout: {stdout_str}")
                 return {
                     "status": "error",
                     "error": f"Process exited with {process.returncode}",
-                    "stderr": stderr.decode().strip()
+                    "stderr": stderr_str
                 }
 
             try:
-                result = json.loads(stdout.decode())
+                result = json.loads(stdout_str)
                 return {
                     "status": "ok",
                     "result": result,
-                    "stdout": stdout.decode().strip(),
-                    "stderr": stderr.decode().strip()
+                    "stdout": stdout_str,
+                    "stderr": stderr_str
                 }
             except json.JSONDecodeError:
                 return {

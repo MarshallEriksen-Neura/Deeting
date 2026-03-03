@@ -1987,11 +1987,18 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
             let tool_desc = tool_def["description"].as_str().unwrap();
             let config_json = serde_json::to_string(tool_def).unwrap();
 
+            let mut env = HashMap::new();
+            if id == "official.skills.crawler" {
+                if let Ok(url) = std::env::var("SCOUT_SERVICE_URL") {
+                    env.insert("SCOUT_SERVICE_URL".to_string(), url);
+                }
+            }
+
             let (command, args) = if let Some(path) = package_path {
                 // If it's a standalone package, set up command to run it
                 let full_path = std::env::current_dir().unwrap().join(path).join("main.py");
                 (
-                    Some("python".to_string()),
+                    Some("python3".to_string()),
                     Some(vec![full_path.to_string_lossy().to_string()]),
                 )
             } else {
@@ -2011,7 +2018,7 @@ pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String>
                 error: None,
                 command,
                 args,
-                env: None,
+                env: if env.is_empty() { None } else { Some(env) },
                 config_json,
                 config_hash: "system_builtin".to_string(),
                 pending_config_json: None,
