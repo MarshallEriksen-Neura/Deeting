@@ -665,6 +665,13 @@ class SpecExecutor:
 class SpecAgentService:
     def __init__(self):
         self.plugin_manager = PluginManager()
+        
+        # Explicitly register the core system SDK
+        try:
+            from app.agent_plugins.builtins.deeting_core_sdk.plugin import DeetingCoreSdkPlugin
+            self.plugin_manager.register_class(DeetingCoreSdkPlugin)
+        except ImportError:
+            pass
         self._initialized = False
         self._bound_user_id: uuid.UUID | None = None
 

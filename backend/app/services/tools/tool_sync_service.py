@@ -430,6 +430,8 @@ class ToolSyncService:
                     if skill_obj:
                         manifest = skill_obj.manifest_json or {}
                         tools_defs = manifest.get("tools", [])
+                        pkg_name = skill_obj.id.split('.')[-1] if skill_obj.id else None
+                        
                         for t_def in tools_defs:
                             t_name = t_def.get("name")
                             if t_name and t_name not in existing_names:
@@ -438,7 +440,8 @@ class ToolSyncService:
                                     description=t_def.get("description", ""),
                                     input_schema=_safe_schema(t_def.get("parameters") or t_def.get("input_schema")),
                                     output_schema=_safe_schema(t_def.get("output_schema")),
-                                    output_description=t_def.get("output_description")
+                                    output_description=t_def.get("output_description"),
+                                    extra_meta={"pkg_name": pkg_name} if pkg_name else None
                                 ))
                                 existing_names.add(t_name)
             else:

@@ -13,6 +13,7 @@ class ToolDefinition(BaseModel):
     input_schema: dict[str, Any] = Field(..., description="JSON Schema for arguments")
     output_schema: dict[str, Any] | None = Field(default=None, description="Optional JSON Schema for return value")
     output_description: str | None = Field(default=None, description="Human-readable description of the return value")
+    extra_meta: dict[str, Any] | None = Field(default=None, description="Optional metadata for dynamic routing")
 
 
 class ToolCall(BaseModel):

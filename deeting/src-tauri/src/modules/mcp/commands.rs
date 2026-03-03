@@ -23,7 +23,7 @@ pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[L
             "name: {}\ndescription: {}\ntags: {}",
             assistant.name,
             assistant.description.as_deref().unwrap_or(""),
-            assistant.tags.join(",")
+            assistant.tags.as_deref().unwrap_or("")
         );
         if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
             let _ = app_state
@@ -33,11 +33,7 @@ pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[L
                     assistant.id.clone(),
                     assistant.name.clone(),
                     assistant.description.clone().unwrap_or_default(),
-                    if assistant.tags.is_empty() {
-                        None
-                    } else {
-                        Some(assistant.tags.join(","))
-                    },
+                    assistant.tags.clone(),
                     vector,
                 )
                 .await;
@@ -45,82 +41,175 @@ pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[L
     }
 }
 
-const LOCAL_CONVERSATION_SUMMARY_PROMPT: &str = "Please summarize the multi-turn conversation below.\nRequirements:\n1) Keep user intent, key decisions, and conclusions.\n2) Remove redundancy.\n3) Keep the summary concise and actionable.\n4) Output summary text only.\n\nConversation:\n";
-const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
-const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
-const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
-const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
-const LOCAL_CONVERSATION_SUMMARY_WORKER_RETRY_BASE_DELAY_SECS: i64 = 5;
-const LOCAL_CONVERSATION_SUMMARY_WORKER_RETRY_MAX_DELAY_SECS: i64 = 300;
-const LOCAL_PERIODIC_TASK_WORKER_IDLE_INTERVAL_SECS: u64 = 5;
-const LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_NAME: &str = "conversation_summary_job_gc";
-const LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_INTERVAL_SECS: i64 = 10 * 60;
-const LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_INITIAL_DELAY_SECS: i64 = 120;
-const LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_RETENTION_SECS: i64 = 7 * 24 * 60 * 60;
-const LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_NAME: &str = "conversation_summary_idle_dispatch";
-const LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_INTERVAL_SECS: i64 = 5;
-const LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_INITIAL_DELAY_SECS: i64 = 5;
-const LOCAL_KNOWLEDGE_CONTEXT_MARKER: &str = "Local Knowledge Context (AUTO)";
-const LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS: i64 = 4;
-const LOCAL_KNOWLEDGE_CONTEXT_MAX_CHARS_PER_SNIPPET: usize = 500;
-
-#[derive(Debug, Deserialize)]
-struct CloudToolSummary {
-    id: String,
-    identifier: String,
-    name: String,
-    description: String,
-    avatar_url: Option<String>,
-    category: Option<String>,
-    tags: Option<Vec<String>>,
-    author: Option<String>,
-    is_official: Option<bool>,
-    install_manifest: CloudInstallManifest,
-}
-
-#[derive(Debug, Deserialize)]
-struct CloudInstallManifest {
-    runtime: Option<String>,
-    command: String,
-    args: Vec<String>,
-    env_config: Option<Vec<serde_json::Map<String, serde_json::Value>>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CloudSubscriptionItem {
-    id: String,
-    market_tool_id: String,
-    config_hash_snapshot: Option<String>,
-    tool: CloudToolSummary,
-}
-
-#[derive(Debug, Clone)]
-struct LocalModelConnection {
-    provider_model_id: String,
-    model_id: String,
-    base_url: String,
-    secret_key: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct TraceToolCall {
-    name: String,
-    success: bool,
-}
-
-#[derive(Debug, Clone)]
-struct LocalChatExecutionResult {
-    content: String,
-    tool_calls_meta: Vec<serde_json::Value>,
-    code_mode_meta: serde_json::Value,
+fn to_string<T: std::fmt::Display>(err: T) -> String {
+    err.to_string()
 }
 
 #[tauri::command]
-pub async fn set_cloud_base_url(state: State<'_, AppState>, url: String) -> Result<(), String> {
-    let state = &state.mcp;
-    let mut base = state.cloud_base_url.write().await;
-    *base = url;
+pub async fn register_system_plugins(app_state: State<'_, AppState>) -> Result<(), String> {
+    let project_root = std::env::current_dir().unwrap();
+    let official_skills_dir = project_root.join("packages/official-skills");
+
+    if !official_skills_dir.exists() {
+        return Ok(());
+    }
+
+    let mcp = &app_state.mcp;
+    let store = &mcp.store;
+
+    for entry in std::fs::read_dir(official_skills_dir).map_err(to_string)? {
+        let skill_path = entry.map_err(to_string)?.path();
+        if !skill_path.is_dir() {
+            continue;
+        }
+
+        let deeting_json_path = skill_path.join("deeting.json");
+        if !deeting_json_path.exists() {
+            continue;
+        }
+
+        let deeting_json_str = std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
+        let manifest: serde_json::Value =
+            serde_json::from_str(&deeting_json_str).map_err(to_string)?;
+
+        let id = manifest["id"].as_str().unwrap_or("");
+        let name = manifest["name"].as_str().unwrap_or(id);
+        let description = manifest["description"].as_str().unwrap_or("");
+        let source_id = format!("system_plugin_{}", id);
+
+        // Extract tools from llm-tool.yaml
+        let llm_tool_path = skill_path.join("llm-tool.yaml");
+        if !llm_tool_path.exists() {
+            continue;
+        }
+        let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
+        let llm_tools: serde_json::Value =
+            serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
+
+        // Prepare generic environment variables based on manifest
+        let mut env = HashMap::new();
+        if let Some(reqs) = manifest.get("env_requirements").and_then(|v| v.as_array()) {
+            for req in reqs {
+                if let Some(env_name) = req.as_str() {
+                    if let Ok(val) = std::env::var(env_name) {
+                        env.insert(env_name.to_string(), val);
+                    }
+                }
+            }
+        }
+
+        if let Some(tools_array) = llm_tools.get("tools").and_then(|v| v.as_array()) {
+            for tool_def in tools_array {
+                let tool_name = tool_def["name"].as_str().unwrap();
+                let tool_desc = tool_def["description"].as_str().unwrap_or("");
+                let config_json = serde_json::to_string(tool_def).unwrap();
+
+                let full_main_path = skill_path.join("main.py");
+
+                let upsert = ToolUpsert {
+                    id: None,
+                    source_id: source_id.clone(),
+                    identifier: Some(format!("{}/{}", id, tool_name)),
+                    name: tool_name.to_string(),
+                    source_type: McpSourceType::Local,
+                    status: McpToolStatus::Healthy,
+                    ping_ms: None,
+                    capabilities: vec!["system_plugin".to_string()],
+                    description: tool_desc.to_string(),
+                    error: None,
+                    command: Some("python3".to_string()),
+                    args: Some(vec![full_main_path.to_string_lossy().to_string()]),
+                    env: if env.is_empty() {
+                        None
+                    } else {
+                        Some(env.clone())
+                    },
+                    config_json,
+                    config_hash: "system_builtin".to_string(),
+                    pending_config_json: None,
+                    pending_config_hash: None,
+                    conflict_status: McpConflictStatus::None,
+                    is_read_only: true,
+                    is_new: false,
+                };
+
+                if let Ok(tool) = store.upsert_tool(upsert).await {
+                    let app_state_clone = app_state.inner().clone();
+                    tauri::async_runtime::spawn(async move {
+                        index_mcp_tools(&app_state_clone, &[tool]).await;
+                    });
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_cloud_subscriptions(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    access_token: String,
+) -> Result<Vec<McpTool>, String> {
+    let state = &state.mcp;
+    let base_url = state.cloud_base_url.read().await.clone();
+    let url = format!(
+        "{}/api/v1/mcp/subscriptions",
+        base_url.trim_end_matches('/')
+    );
+    let response = state
+        .client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .map_err(to_string)?;
+
+    if !response.status().is_success() {
+        return Err(format!("failed to sync subscriptions: {}", response.status()));
+    }
+
+    let subscriptions: Vec<McpSubscriptionItem> = response.json().await.map_err(to_string)?;
+    let mut synced_tools = Vec::new();
+
+    for sub in subscriptions {
+        let cloud_source = state
+            .store
+            .ensure_cloud_source(&sub.tool.source_name, &sub.tool.source_url)
+            .await
+            .map_err(to_string)?;
+
+        let tool = sub.tool;
+        let upsert = ToolUpsert {
+            id: None,
+            source_id: cloud_source.id.clone(),
+            identifier: Some(tool.identifier.clone()),
+            name: tool.name.clone(),
+            source_type: McpSourceType::Cloud,
+            status: McpToolStatus::Healthy,
+            ping_ms: None,
+            capabilities: tool.capabilities.clone(),
+            description: tool.description.clone(),
+            error: None,
+            command: None,
+            args: None,
+            env: None,
+            config_json: tool.config_json.clone(),
+            config_hash: tool.config_hash.clone(),
+            pending_config_json: None,
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: false,
+            is_new: false,
+        };
+
+        if let Ok(synced) = state.store.upsert_tool(upsert).await {
+            synced_tools.push(synced);
+        }
+    }
+
+    Ok(synced_tools)
 }
 
 #[tauri::command]
@@ -135,20 +224,13 @@ pub async fn create_mcp_source(
     payload: CreateSourceRequest,
 ) -> Result<McpSource, String> {
     let state = &state.mcp;
-    let source = state
-        .store
-        .insert_source(NewSource {
-            name: payload.name,
-            source_type: payload.source_type,
-            path_or_url: payload.path_or_url,
-            trust_level: payload.trust_level,
-            status: McpSourceStatus::Active,
-            last_synced_at: None,
-            is_read_only: payload.is_read_only.unwrap_or(false),
-        })
-        .await
-        .map_err(to_string)?;
-    Ok(source)
+    let source = NewSource {
+        name: payload.name,
+        source_type: payload.source_type,
+        path_or_url: payload.path_or_url,
+        trust_level: payload.trust_level,
+    };
+    state.store.create_source(source).await.map_err(to_string)
 }
 
 #[tauri::command]
@@ -227,19 +309,6 @@ pub async fn list_local_assistant_entities(
 }
 
 #[tauri::command]
-pub async fn list_local_assistant_versions(
-    state: State<'_, AppState>,
-    assistant_id: Option<String>,
-) -> Result<Vec<LocalAssistantVersion>, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_assistant_versions(assistant_id.as_deref())
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
 pub async fn list_local_assistant_tags(
     state: State<'_, AppState>,
 ) -> Result<Vec<LocalAssistantTag>, String> {
@@ -247,574 +316,6 @@ pub async fn list_local_assistant_tags(
     state
         .store
         .list_local_assistant_tags()
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_assistant_installs(
-    state: State<'_, AppState>,
-    query: Option<LocalAssistantInstallQuery>,
-) -> Result<LocalAssistantInstallPage, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_assistant_installs(query.unwrap_or(LocalAssistantInstallQuery {
-            cursor: None,
-            size: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn install_local_assistant(
-    state: State<'_, AppState>,
-    assistant_id: String,
-    payload: Option<LocalAssistantInstallCreateRequest>,
-) -> Result<LocalAssistantInstallItem, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .install_local_assistant(
-            &assistant_id,
-            payload.unwrap_or(LocalAssistantInstallCreateRequest {
-                follow_latest: None,
-                pinned_version_id: None,
-            }),
-        )
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn update_local_assistant_install(
-    state: State<'_, AppState>,
-    assistant_id: String,
-    payload: LocalAssistantInstallUpdateRequest,
-) -> Result<LocalAssistantInstallItem, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .update_local_assistant_install(&assistant_id, payload)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn uninstall_local_assistant(
-    state: State<'_, AppState>,
-    assistant_id: String,
-) -> Result<(), String> {
-    let state = &state.mcp;
-    state
-        .store
-        .uninstall_local_assistant(&assistant_id)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn rate_local_assistant(
-    state: State<'_, AppState>,
-    assistant_id: String,
-    payload: LocalAssistantRatingRequest,
-) -> Result<LocalAssistantRatingResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .rate_local_assistant(&assistant_id, payload)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn record_local_assistant_routing_trial(
-    state: State<'_, AppState>,
-    assistant_id: String,
-) -> Result<LocalAssistantRoutingState, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .record_local_assistant_routing_trial(&assistant_id)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn record_local_assistant_routing_feedback(
-    state: State<'_, AppState>,
-    assistant_id: String,
-    payload: LocalAssistantRoutingFeedbackRequest,
-) -> Result<LocalAssistantRoutingState, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .record_local_assistant_routing_feedback(&assistant_id, payload)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn get_local_assistant_routing_report(
-    state: State<'_, AppState>,
-    query: Option<LocalAssistantRoutingReportQuery>,
-) -> Result<LocalAssistantRoutingReportResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_assistant_routing_report(query.unwrap_or(LocalAssistantRoutingReportQuery {
-            min_trials: None,
-            min_rating: None,
-            limit: None,
-            sort: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn create_local_trace_feedback(
-    state: State<'_, AppState>,
-    payload: LocalTraceFeedbackRequest,
-) -> Result<LocalTraceFeedback, String> {
-    let app_state = state.inner();
-    let mcp_state = &app_state.mcp;
-    let feedback = mcp_state
-        .store
-        .create_local_trace_feedback(payload)
-        .await
-        .map_err(to_string)?;
-
-    let trace_meta = mcp_state
-        .store
-        .get_local_trace_feedback_meta_by_trace_id(&feedback.trace_id)
-        .await
-        .map_err(to_string)?;
-
-    if let Some(meta) = trace_meta {
-        if let Some(tool_calls) = extract_tool_calls_from_trace_meta(&meta) {
-            process_trace_feedback_tool_calls(app_state, feedback.score, tool_calls).await;
-        } else {
-            process_trace_feedback_assistant_routing(mcp_state, feedback.score, &meta).await;
-        }
-    }
-
-    Ok(feedback)
-}
-
-#[tauri::command]
-pub async fn list_local_gateway_logs(
-    state: State<'_, AppState>,
-    query: Option<LocalGatewayLogQuery>,
-) -> Result<LocalGatewayLogListResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_gateway_logs(query.unwrap_or(LocalGatewayLogQuery {
-            skip: None,
-            limit: None,
-            model: None,
-            status_code: None,
-            is_cached: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn get_local_gateway_log_stats(
-    state: State<'_, AppState>,
-    query: Option<LocalGatewayLogQuery>,
-) -> Result<LocalGatewayLogStatsResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_gateway_log_stats(query.unwrap_or(LocalGatewayLogQuery {
-            skip: None,
-            limit: None,
-            model: None,
-            status_code: None,
-            is_cached: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn get_local_knowledge_tree(
-    state: State<'_, AppState>,
-    query: Option<LocalKnowledgeTreeQuery>,
-) -> Result<LocalKnowledgeTreeResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_knowledge_tree(query.unwrap_or(LocalKnowledgeTreeQuery {
-            parent_id: None,
-            q: None,
-            sort_field: None,
-            sort_direction: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn get_local_knowledge_stats(
-    state: State<'_, AppState>,
-) -> Result<LocalKnowledgeStatsResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_knowledge_stats()
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn create_local_knowledge_folder(
-    state: State<'_, AppState>,
-    payload: CreateLocalKnowledgeFolderRequest,
-) -> Result<LocalKnowledgeFolder, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .create_local_knowledge_folder(payload)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn update_local_knowledge_folder(
-    state: State<'_, AppState>,
-    folder_id: String,
-    payload: UpdateLocalKnowledgeFolderRequest,
-) -> Result<LocalKnowledgeFolder, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .update_local_knowledge_folder(&folder_id, payload)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn delete_local_knowledge_folder(
-    state: State<'_, AppState>,
-    folder_id: String,
-    recursive: Option<bool>,
-) -> Result<(), String> {
-    let state = &state.mcp;
-    state
-        .store
-        .delete_local_knowledge_folder(&folder_id, recursive.unwrap_or(false))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_user_documents(
-    state: State<'_, AppState>,
-    query: Option<LocalUserDocumentListQuery>,
-) -> Result<Vec<LocalKnowledgeFile>, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_user_documents(query.unwrap_or(LocalUserDocumentListQuery {
-            folder_id: None,
-            status: None,
-            q: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn create_local_user_document(
-    state: State<'_, AppState>,
-    payload: CreateLocalUserDocumentRequest,
-) -> Result<LocalKnowledgeFile, String> {
-    let app_state = state.inner().clone();
-    let mcp_state = &app_state.mcp;
-    let file = mcp_state
-        .store
-        .create_local_user_document(payload)
-        .await
-        .map_err(to_string)?;
-
-    let file_id = file.id.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(err) = sync_local_document_vector_index(&app_state, &file_id).await {
-            warn!(
-                "local knowledge vector indexing failed for file {}: {}",
-                file_id, err
-            );
-        }
-    });
-
-    Ok(file)
-}
-
-#[tauri::command]
-pub async fn get_local_user_document(
-    state: State<'_, AppState>,
-    file_id: String,
-) -> Result<LocalKnowledgeFile, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_user_document(&file_id)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn update_local_user_document(
-    state: State<'_, AppState>,
-    file_id: String,
-    payload: UpdateLocalUserDocumentRequest,
-) -> Result<LocalKnowledgeFile, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .update_local_user_document(&file_id, payload)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn delete_local_user_document(
-    state: State<'_, AppState>,
-    file_id: String,
-) -> Result<(), String> {
-    let app_state = state.inner();
-    let mcp_state = &app_state.mcp;
-    mcp_state
-        .store
-        .delete_local_user_document(&file_id)
-        .await
-        .map_err(to_string)?;
-    if let Err(err) = app_state
-        .memory
-        .store
-        .clear_knowledge_chunks_for_file(&file_id)
-        .await
-    {
-        warn!(
-            "failed to clear local knowledge vector index for deleted file {}: {}",
-            file_id, err
-        );
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn retry_local_user_document(
-    state: State<'_, AppState>,
-    file_id: String,
-) -> Result<LocalKnowledgeFile, String> {
-    let app_state = state.inner().clone();
-    let mcp_state = &app_state.mcp;
-    let file = mcp_state
-        .store
-        .retry_local_user_document(&file_id)
-        .await
-        .map_err(to_string)?;
-
-    let file_id = file.id.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(err) = sync_local_document_vector_index(&app_state, &file_id).await {
-            warn!(
-                "local knowledge vector re-index failed for retried file {}: {}",
-                file_id, err
-            );
-        }
-    });
-
-    Ok(file)
-}
-
-#[tauri::command]
-pub async fn list_local_user_document_chunks(
-    state: State<'_, AppState>,
-    file_id: String,
-    query: Option<LocalUserDocumentChunkListQuery>,
-) -> Result<LocalKnowledgeChunkListResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_user_document_chunks(
-            &file_id,
-            query.unwrap_or(LocalUserDocumentChunkListQuery {
-                offset: Some(0),
-                limit: Some(20),
-            }),
-        )
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_admin_conversations(
-    state: State<'_, AppState>,
-    query: Option<LocalAdminConversationQuery>,
-) -> Result<LocalAdminConversationListResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_admin_conversations(query.unwrap_or(LocalAdminConversationQuery {
-            skip: None,
-            limit: None,
-            status: None,
-            channel: None,
-            user_id: None,
-            assistant_id: None,
-            start_time: None,
-            end_time: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn get_local_admin_conversation(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<LocalAdminConversationItem, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_admin_conversation(&session_id)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_admin_conversation_messages(
-    state: State<'_, AppState>,
-    session_id: String,
-    query: Option<LocalAdminConversationMessageQuery>,
-) -> Result<LocalAdminConversationMessageListResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_admin_conversation_messages(
-            &session_id,
-            query.unwrap_or(LocalAdminConversationMessageQuery {
-                skip: None,
-                limit: None,
-                include_deleted: None,
-            }),
-        )
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_admin_conversation_summaries(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<LocalAdminConversationSummaryListResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_admin_conversation_summaries(&session_id)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_conversation_summary_jobs(
-    state: State<'_, AppState>,
-    query: Option<LocalConversationSummaryJobQuery>,
-) -> Result<LocalConversationSummaryJobListResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_conversation_summary_jobs(query.unwrap_or(LocalConversationSummaryJobQuery {
-            skip: None,
-            limit: None,
-            status: None,
-            session_id: None,
-            error_contains: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_conversation_summary_idle_tasks(
-    state: State<'_, AppState>,
-    query: Option<LocalConversationSummaryIdleTaskQuery>,
-) -> Result<LocalConversationSummaryIdleTaskListResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .list_local_conversation_summary_idle_tasks(query.unwrap_or(
-            LocalConversationSummaryIdleTaskQuery {
-                skip: None,
-                limit: None,
-                session_id: None,
-            },
-        ))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn get_local_conversation_summary_queue_stats(
-    state: State<'_, AppState>,
-) -> Result<LocalConversationSummaryQueueStats, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_conversation_summary_queue_stats()
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn trigger_local_conversation_summary_job(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<LocalConversationSummaryEnqueueResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .trigger_local_conversation_summary_job(&session_id)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn retry_local_conversation_summary_job(
-    state: State<'_, AppState>,
-    job_id: String,
-) -> Result<LocalConversationSummaryEnqueueResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .retry_local_conversation_summary_job(&job_id)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn retry_local_conversation_summary_jobs(
-    state: State<'_, AppState>,
-    payload: Option<LocalConversationSummaryBatchRetryRequest>,
-) -> Result<LocalConversationSummaryBatchRetryResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .retry_local_conversation_summary_jobs(payload.unwrap_or(
-            LocalConversationSummaryBatchRetryRequest {
-                limit: None,
-                status: None,
-                session_id: None,
-                error_contains: None,
-            },
-        ))
         .await
         .map_err(to_string)
 }
@@ -868,11 +369,7 @@ pub async fn update_local_assistant(
 #[tauri::command]
 pub async fn delete_local_assistant(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let state = &state.mcp;
-    state
-        .store
-        .delete_local_assistant(&id)
-        .await
-        .map_err(to_string)
+    state.store.delete_local_assistant(&id).await.map_err(to_string)
 }
 
 #[tauri::command]
@@ -889,227 +386,51 @@ pub async fn list_assistant_messages(
 }
 
 #[tauri::command]
-pub async fn append_assistant_message(
+pub async fn create_assistant_message(
     state: State<'_, AppState>,
     payload: CreateAssistantMessageRequest,
 ) -> Result<LocalAssistantMessage, String> {
     let state = &state.mcp;
     state
         .store
-        .append_assistant_message(payload)
+        .create_assistant_message(payload)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn local_chat_complete(
+pub async fn update_assistant_message(
     state: State<'_, AppState>,
-    payload: LocalChatRequest,
-) -> Result<LocalChatResponse, String> {
-    run_local_chat_complete(&state.mcp, payload)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn preview_local_assistant(
-    state: State<'_, AppState>,
-    assistant_id: String,
-    payload: LocalAssistantPreviewRequest,
-) -> Result<LocalChatResponse, String> {
-    let app_state = state.inner();
-    let mcp_state = &app_state.mcp;
-    let normalized_assistant_id = assistant_id.trim().to_string();
-    if normalized_assistant_id.is_empty() {
-        return Err(to_string(McpError::validation("assistant_id is required")));
-    }
-
-    let message = payload.message.trim().to_string();
-    if message.is_empty() {
-        return Err(to_string(McpError::validation("message is required")));
-    }
-
-    let entities = mcp_state
-        .store
-        .list_local_assistant_entities()
-        .await
-        .map_err(to_string)?;
-    let entity = entities
-        .into_iter()
-        .find(|item| item.id == normalized_assistant_id)
-        .ok_or_else(|| to_string(McpError::NotFound("assistant not found".to_string())))?;
-
-    let versions = mcp_state
-        .store
-        .list_local_assistant_versions(Some(&normalized_assistant_id))
-        .await
-        .map_err(to_string)?;
-    if versions.is_empty() {
-        return Err(to_string(McpError::Validation(
-            "assistant version not found".to_string(),
-        )));
-    }
-    let selected_version = entity
-        .current_version_id
-        .as_deref()
-        .and_then(|version_id| versions.iter().find(|version| version.id == version_id))
-        .or_else(|| versions.first())
-        .ok_or_else(|| {
-            to_string(McpError::Validation(
-                "assistant version not found".to_string(),
-            ))
-        })?;
-
-    let mut messages = Vec::new();
-    let system_prompt = selected_version.system_prompt.trim().to_string();
-    if !system_prompt.is_empty() {
-        messages.push(LocalChatInputMessage {
-            role: "system".to_string(),
-            content: system_prompt,
-        });
-    }
-    messages.push(LocalChatInputMessage {
-        role: "user".to_string(),
-        content: message,
-    });
-
-    let model_connection = resolve_default_local_model_connection(app_state)
-        .await
-        .map_err(to_string)?;
-
-    run_local_chat_complete(
-        mcp_state,
-        LocalChatRequest {
-            assistant_id: None,
-            model: model_connection.model_id,
-            messages,
-            temperature: payload.temperature,
-            top_p: None,
-            max_tokens: payload.max_tokens,
-            base_url: Some(model_connection.base_url),
-            api_key: model_connection.secret_key,
-        },
-    )
-    .await
-    .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn delete_assistant_messages(
-    state: State<'_, AppState>,
-    assistant_id: String,
-) -> Result<(), String> {
+    id: String,
+    content: String,
+) -> Result<LocalAssistantMessage, String> {
     let state = &state.mcp;
     state
         .store
-        .delete_assistant_messages(&assistant_id)
+        .update_assistant_message(&id, &content)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn list_local_conversations(
+pub async fn delete_assistant_message(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .delete_assistant_message(&id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_sessions(
     state: State<'_, AppState>,
-    query: Option<LocalConversationSessionsQuery>,
+    query: LocalConversationSessionsQuery,
 ) -> Result<LocalConversationSessionPage, String> {
     let state = &state.mcp;
     state
         .store
-        .list_local_conversations(query.unwrap_or(LocalConversationSessionsQuery {
-            cursor: None,
-            size: None,
-            assistant_id: None,
-            status: Some(LocalConversationStatus::Active),
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn create_local_conversation(
-    state: State<'_, AppState>,
-    payload: Option<LocalConversationCreateRequest>,
-) -> Result<LocalConversationCreateResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .create_local_conversation(payload.unwrap_or(LocalConversationCreateRequest {
-            assistant_id: None,
-            title: None,
-        }))
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn archive_local_conversation(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<LocalConversationArchiveResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .update_local_conversation_status(&session_id, LocalConversationStatus::Archived)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn close_local_conversation(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<LocalConversationArchiveResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .update_local_conversation_status(&session_id, LocalConversationStatus::Closed)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn unarchive_local_conversation(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<LocalConversationArchiveResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .update_local_conversation_status(&session_id, LocalConversationStatus::Active)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn rename_local_conversation(
-    state: State<'_, AppState>,
-    session_id: String,
-    payload: LocalConversationRenameRequest,
-) -> Result<LocalConversationRenameResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .rename_local_conversation(&session_id, payload.title)
-        .await
-        .map_err(to_string)
-}
-
-#[tauri::command]
-pub async fn list_local_conversation_history(
-    state: State<'_, AppState>,
-    session_id: String,
-    query: Option<LocalConversationHistoryQuery>,
-) -> Result<LocalConversationHistoryResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .get_local_conversation_history(
-            &session_id,
-            query.unwrap_or(LocalConversationHistoryQuery {
-                cursor: None,
-                limit: None,
-            }),
-        )
+        .list_conversation_sessions(query)
         .await
         .map_err(to_string)
 }
@@ -1122,225 +443,143 @@ pub async fn get_local_conversation_window(
     let state = &state.mcp;
     state
         .store
-        .get_local_conversation_window(&session_id)
+        .get_conversation_window(&session_id)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn append_local_conversation_message(
+pub async fn create_local_conversation_session(
     state: State<'_, AppState>,
-    payload: CreateConversationMessageRequest,
-) -> Result<LocalConversationHistoryMessage, String> {
+    payload: LocalConversationCreateRequest,
+) -> Result<LocalConversationCreateResponse, String> {
     let state = &state.mcp;
-    let session_id = payload.session_id.clone();
-    let message = state
+    state
         .store
-        .append_local_conversation_message(payload)
+        .create_conversation_session(payload)
         .await
-        .map_err(to_string)?;
-
-    if let Err(err) = state
-        .store
-        .touch_local_conversation_summary_idle_task(&session_id)
-        .await
-    {
-        warn!(
-            "failed to touch local conversation summary idle task for session {}: {}",
-            session_id, err
-        );
-    }
-
-    if let Err(err) = state
-        .store
-        .try_trigger_local_conversation_summary_flush(&session_id, "flush_threshold")
-        .await
-    {
-        warn!(
-            "failed to trigger local conversation summary flush for session {}: {}",
-            session_id, err
-        );
-    }
-
-    Ok(message)
+        .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn delete_local_conversation_message(
+pub async fn rename_local_conversation_session(
     state: State<'_, AppState>,
     session_id: String,
-    turn_index: i64,
+    payload: LocalConversationRenameRequest,
+) -> Result<LocalConversationRenameResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .rename_conversation_session(&session_id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_conversation_session(
+    state: State<'_, AppState>,
+    session_id: String,
 ) -> Result<LocalConversationDeleteResponse, String> {
     let state = &state.mcp;
     state
         .store
-        .delete_local_conversation_message(&session_id, turn_index)
+        .delete_conversation_session(&session_id)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn clear_local_conversation(
+pub async fn archive_local_conversation_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationArchiveResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .archive_conversation_session(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn clear_local_conversation_session(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<LocalConversationClearResponse, String> {
     let state = &state.mcp;
     state
         .store
-        .clear_local_conversation(&session_id)
+        .clear_conversation_session(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_history(
+    state: State<'_, AppState>,
+    query: LocalConversationHistoryQuery,
+) -> Result<LocalConversationHistoryResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_conversation_history(query)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn send_local_conversation_message(
-    state: State<'_, AppState>,
-    session_id: String,
+    app: AppHandle,
+    app_state: State<'_, AppState>,
     payload: LocalConversationSendRequest,
 ) -> Result<LocalConversationSendResponse, String> {
-    let app_state = state.inner();
-    let mcp_state = &app_state.mcp;
-    let normalized_session_id = session_id.trim().to_string();
-    if normalized_session_id.is_empty() {
-        return Err(to_string(McpError::validation("session_id is required")));
-    }
+    let state = &app_state.mcp;
+    let conversation_repo = &state.store;
 
-    if payload.content.trim().is_empty() {
-        return Err(to_string(McpError::validation("content is required")));
-    }
-
-    let user_message = mcp_state
-        .store
-        .append_local_conversation_message(CreateConversationMessageRequest {
-            session_id: normalized_session_id.clone(),
-            role: "user".to_string(),
-            content: payload.content,
-            name: None,
-            meta_info: None,
-            is_truncated: Some(false),
-            parent_message_id: None,
-        })
-        .await
-        .map_err(to_string)?;
-
-    let chat_ctx = mcp_state
-        .store
-        .get_local_conversation_chat_context(&normalized_session_id)
-        .await
-        .map_err(to_string)?;
-    let chat_session_id = chat_ctx.session_id.clone();
-    let mut request_messages = chat_ctx.messages.clone();
-    if let Err(err) =
-        maybe_inject_local_knowledge_prompt(app_state, mcp_state, &mut request_messages).await
-    {
-        warn!(
-            "failed to inject local knowledge prompt for session {}: {}",
-            normalized_session_id, err
-        );
-    }
-
-    let model_connection = resolve_local_model_connection(
-        app_state,
-        &payload.model,
-        payload.provider_model_id.as_deref(),
-    )
-    .await
-    .map_err(to_string)?;
     let trace_id = Uuid::new_v4().to_string();
-    let input_tokens_est = estimate_local_chat_messages_tokens(&request_messages);
-    let upstream_endpoint = build_chat_endpoint(&model_connection.base_url);
+    let session_id = payload.session_id.clone();
 
-    let chat_started = Instant::now();
-    let chat_result = run_local_chat_complete_with_auto_code_mode(
-        app_state,
-        mcp_state,
-        &normalized_session_id,
-        LocalChatRequest {
-            assistant_id: chat_ctx.assistant_id.clone(),
-            model: model_connection.model_id.clone(),
-            messages: request_messages,
-            temperature: payload.temperature,
-            top_p: payload.top_p,
-            max_tokens: payload.max_tokens,
-            base_url: Some(model_connection.base_url.clone()),
-            api_key: model_connection.secret_key.clone(),
-        },
+    let assistant_id = payload.assistant_id.clone();
+    let chat_ctx = conversation_repo
+        .get_chat_context(&session_id, assistant_id.as_deref())
+        .await
+        .map_err(to_string)?;
+
+    let model_connection = conversation_repo
+        .resolve_chat_model(&chat_ctx)
+        .await
+        .map_err(to_string)?;
+
+    let messages = conversation_repo
+        .prepare_chat_messages(&chat_ctx, &payload.content)
+        .await
+        .map_err(to_string)?;
+
+    let response_json = run_local_chat_complete_with_auto_code_mode(
+        &app_state,
+        &model_connection,
+        messages,
+        &chat_ctx,
     )
-    .await;
-    let chat_latency_ms = chat_started.elapsed().as_millis() as f64;
-    let chat = match chat_result {
-        Ok(value) => {
-            record_local_bandit_feedback_best_effort(
-                app_state,
-                &model_connection.provider_model_id,
-                true,
-                chat_latency_ms,
-            )
-            .await;
-            let output_tokens_est = estimate_local_text_tokens(&value.content);
-            let log_meta = serde_json::json!({
-                "assistant_id": chat_ctx.assistant_id,
-                "session_id": normalized_session_id,
-                "provider_model_id": model_connection.provider_model_id,
-            });
-            record_local_gateway_log_best_effort(
-                mcp_state,
-                Some(&trace_id),
-                &model_connection.model_id,
-                200,
-                chat_latency_ms as i64,
-                Some(chat_latency_ms as i64),
-                Some(upstream_endpoint.as_str()),
-                input_tokens_est,
-                output_tokens_est,
-                input_tokens_est + output_tokens_est,
-                None,
-                Some(&log_meta),
-            )
-            .await;
-            value
-        }
-        Err(err) => {
-            record_local_bandit_feedback_best_effort(
-                app_state,
-                &model_connection.provider_model_id,
-                false,
-                chat_latency_ms,
-            )
-            .await;
-            let log_meta = serde_json::json!({
-                "assistant_id": chat_ctx.assistant_id,
-                "session_id": normalized_session_id,
-                "provider_model_id": model_connection.provider_model_id,
-            });
-            record_local_gateway_log_best_effort(
-                mcp_state,
-                Some(&trace_id),
-                &model_connection.model_id,
-                local_gateway_status_code_from_error(&err),
-                chat_latency_ms as i64,
-                None,
-                Some(upstream_endpoint.as_str()),
-                input_tokens_est,
-                0,
-                input_tokens_est,
-                local_gateway_error_code_from_error(&err),
-                Some(&log_meta),
-            )
-            .await;
-            return Err(to_string(err));
-        }
-    };
+    .await?;
 
-    if let Some(assistant_id) = chat_ctx.assistant_id.as_deref() {
-        if let Err(err) = mcp_state
-            .store
-            .record_local_assistant_routing_trial(assistant_id)
+    let response_text = response_json["content"].as_str().unwrap_or("").to_string();
+    let tool_calls = extract_chat_tool_calls(&response_json);
+
+    let saved_messages = conversation_repo
+        .save_chat_turn(&session_id, &payload.content, &response_text, &tool_calls)
+        .await
+        .map_err(to_string)?;
+
+    let assistant_id = chat_ctx.assistant_id.clone();
+    if let Some(assistant_id) = assistant_id {
+        if let Err(err) = conversation_repo
+            .enqueue_conversation_summary(&session_id, &assistant_id)
             .await
         {
             warn!(
-                "failed to record local assistant routing trial for assistant {}: {}",
-                assistant_id, err
+                "failed to enqueue summary session={} assistant={} error={}",
+                session_id, assistant_id, err
             );
         }
     }
@@ -1349,230 +588,80 @@ pub async fn send_local_conversation_message(
         "trace_id": trace_id,
         "assistant_id": chat_ctx.assistant_id,
         "provider_model_id": model_connection.provider_model_id,
-        "tool_calls": chat.tool_calls_meta,
-        "code_mode": chat.code_mode_meta,
+        "model_id": model_connection.model_id,
     });
 
-    let assistant_message = mcp_state
-        .store
-        .append_local_conversation_message(CreateConversationMessageRequest {
-            session_id: normalized_session_id.clone(),
-            role: "assistant".to_string(),
-            content: chat.content,
-            name: None,
-            meta_info: Some(trace_meta),
-            is_truncated: Some(false),
-            parent_message_id: None,
-        })
-        .await
-        .map_err(to_string)?;
-
-    if let Err(err) = mcp_state
-        .store
-        .touch_local_conversation_summary_idle_task(&normalized_session_id)
-        .await
-    {
-        warn!(
-            "failed to touch local conversation summary idle task for session {}: {}",
-            normalized_session_id, err
-        );
-    }
-
-    if let Err(err) = mcp_state
-        .store
-        .try_trigger_local_conversation_summary_flush(&normalized_session_id, "flush_threshold")
-        .await
-    {
-        warn!(
-            "failed to trigger local conversation summary flush for session {}: {}",
-            normalized_session_id, err
-        );
-    }
-
     Ok(LocalConversationSendResponse {
-        session_id: chat_session_id,
-        user_message,
-        assistant_message,
+        session_id,
+        messages: saved_messages,
+        trace_meta: Some(trace_meta),
     })
 }
 
 #[tauri::command]
 pub async fn regenerate_local_conversation_reply(
-    state: State<'_, AppState>,
-    session_id: String,
+    app_state: State<'_, AppState>,
     payload: LocalConversationRegenerateRequest,
 ) -> Result<LocalConversationRegenerateResponse, String> {
-    let app_state = state.inner();
-    let mcp_state = &app_state.mcp;
-    let regenerate_ctx = mcp_state
-        .store
-        .prepare_local_conversation_regenerate(&session_id)
+    let state = &app_state.mcp;
+    let conversation_repo = &state.store;
+
+    let chat_ctx = conversation_repo
+        .get_chat_context(&payload.session_id, None)
         .await
         .map_err(to_string)?;
 
-    let model_connection = resolve_local_model_connection(
-        app_state,
-        &payload.model,
-        payload.provider_model_id.as_deref(),
-    )
-    .await
-    .map_err(to_string)?;
-    let mut request_messages = regenerate_ctx.messages.clone();
-    if let Err(err) =
-        maybe_inject_local_knowledge_prompt(app_state, mcp_state, &mut request_messages).await
-    {
-        warn!(
-            "failed to inject local knowledge prompt for regenerate session {}: {}",
-            regenerate_ctx.session_id, err
-        );
-    }
-    let trace_id = Uuid::new_v4().to_string();
-    let input_tokens_est = estimate_local_chat_messages_tokens(&request_messages);
-    let upstream_endpoint = build_chat_endpoint(&model_connection.base_url);
+    let model_connection = conversation_repo
+        .resolve_chat_model(&chat_ctx)
+        .await
+        .map_err(to_string)?;
 
-    let chat_started = Instant::now();
-    let chat_result = run_local_chat_complete_with_auto_code_mode(
-        app_state,
-        mcp_state,
-        &regenerate_ctx.session_id,
-        LocalChatRequest {
-            assistant_id: regenerate_ctx.assistant_id.clone(),
-            model: model_connection.model_id.clone(),
-            messages: request_messages.clone(),
-            temperature: payload.temperature,
-            top_p: payload.top_p,
-            max_tokens: payload.max_tokens,
-            base_url: Some(model_connection.base_url.clone()),
-            api_key: model_connection.secret_key.clone(),
-        },
-    )
-    .await;
-    let chat_latency_ms = chat_started.elapsed().as_millis() as f64;
-    let chat = match chat_result {
-        Ok(value) => {
-            record_local_bandit_feedback_best_effort(
-                app_state,
-                &model_connection.provider_model_id,
-                true,
-                chat_latency_ms,
-            )
-            .await;
-            let output_tokens_est = estimate_local_text_tokens(&value.content);
-            let log_meta = serde_json::json!({
-                "assistant_id": regenerate_ctx.assistant_id,
-                "session_id": regenerate_ctx.session_id,
-                "provider_model_id": model_connection.provider_model_id,
-            });
-            record_local_gateway_log_best_effort(
-                mcp_state,
-                Some(&trace_id),
-                &model_connection.model_id,
-                200,
-                chat_latency_ms as i64,
-                Some(chat_latency_ms as i64),
-                Some(upstream_endpoint.as_str()),
-                input_tokens_est,
-                output_tokens_est,
-                input_tokens_est + output_tokens_est,
-                None,
-                Some(&log_meta),
-            )
-            .await;
-            value
-        }
-        Err(err) => {
-            record_local_bandit_feedback_best_effort(
-                app_state,
-                &model_connection.provider_model_id,
-                false,
-                chat_latency_ms,
-            )
-            .await;
-            let log_meta = serde_json::json!({
-                "assistant_id": regenerate_ctx.assistant_id,
-                "session_id": regenerate_ctx.session_id,
-                "provider_model_id": model_connection.provider_model_id,
-            });
-            record_local_gateway_log_best_effort(
-                mcp_state,
-                Some(&trace_id),
-                &model_connection.model_id,
-                local_gateway_status_code_from_error(&err),
-                chat_latency_ms as i64,
-                None,
-                Some(upstream_endpoint.as_str()),
-                input_tokens_est,
-                0,
-                input_tokens_est,
-                local_gateway_error_code_from_error(&err),
-                Some(&log_meta),
-            )
-            .await;
-            return Err(to_string(err));
-        }
-    };
-
-    if let Some(assistant_id) = regenerate_ctx.assistant_id.as_deref() {
-        if let Err(err) = mcp_state
-            .store
-            .record_local_assistant_routing_trial(assistant_id)
-            .await
-        {
-            warn!(
-                "failed to record local assistant routing trial for assistant {}: {}",
-                assistant_id, err
-            );
-        }
-    }
-
-    let trace_meta = serde_json::json!({
-        "trace_id": trace_id,
-        "assistant_id": regenerate_ctx.assistant_id,
-        "provider_model_id": model_connection.provider_model_id,
-        "tool_calls": chat.tool_calls_meta,
-        "code_mode": chat.code_mode_meta,
-    });
-
-    let message = mcp_state
-        .store
-        .append_local_conversation_message(CreateConversationMessageRequest {
-            session_id: regenerate_ctx.session_id.clone(),
-            role: "assistant".to_string(),
-            content: chat.content,
-            name: None,
-            meta_info: Some(trace_meta),
-            is_truncated: Some(false),
-            parent_message_id: None,
+    let history = conversation_repo
+        .list_conversation_history(LocalConversationHistoryQuery {
+            session_id: payload.session_id.clone(),
+            cursor: None,
+            limit: Some(20),
         })
         .await
         .map_err(to_string)?;
 
-    if let Err(err) = mcp_state
-        .store
-        .touch_local_conversation_summary_idle_task(&regenerate_ctx.session_id)
-        .await
-    {
-        warn!(
-            "failed to touch local conversation summary idle task for session {}: {}",
-            regenerate_ctx.session_id, err
-        );
+    let mut messages: Vec<LocalChatInputMessage> = history
+        .messages
+        .into_iter()
+        .map(|m| LocalChatInputMessage {
+            role: m.role,
+            content: m.content,
+            name: None,
+        })
+        .collect();
+
+    if messages.is_empty() {
+        return Err("no message to regenerate".to_string());
     }
 
-    if let Err(err) = mcp_state
-        .store
-        .try_trigger_local_conversation_summary_flush(&regenerate_ctx.session_id, "flush_threshold")
-        .await
-    {
-        warn!(
-            "failed to trigger local conversation summary flush for session {}: {}",
-            regenerate_ctx.session_id, err
-        );
+    if messages.last().map(|m| &m.role) == Some(&LocalConversationStatus::Assistant) {
+        messages.pop();
     }
+
+    let response_json = run_local_chat_complete_with_auto_code_mode(
+        &app_state,
+        &model_connection,
+        messages,
+        &chat_ctx,
+    )
+    .await?;
+
+    let response_text = response_json["content"].as_str().unwrap_or("").to_string();
+    let tool_calls = extract_chat_tool_calls(&response_json);
+
+    let assistant_message = conversation_repo
+        .save_regenerated_reply(&payload.session_id, &response_text, &tool_calls)
+        .await
+        .map_err(to_string)?;
 
     Ok(LocalConversationRegenerateResponse {
-        session_id: regenerate_ctx.session_id,
-        deleted_turn_index: regenerate_ctx.deleted_turn_index,
-        message,
+        session_id: payload.session_id,
+        message: assistant_message,
     })
 }
 
@@ -1612,96 +701,57 @@ pub async fn start_mcp_tool(
     app: AppHandle,
     state: State<'_, AppState>,
     tool_id: String,
-) -> Result<McpTool, String> {
+) -> Result<(), String> {
     let state = &state.mcp;
     let tool = state
         .store
         .get_tool(&tool_id)
         .await
         .map_err(to_string)?
-        .ok_or_else(|| to_string(McpError::NotFound(format!("tool {tool_id} not found"))))?;
+        .ok_or_else(|| format!("tool {} not found", tool_id))?;
 
-    let missing = missing_required_env(&tool).unwrap_or_default();
-    if !missing.is_empty() {
-        let message = format!("missing required env: {}", missing.join(", "));
-        state
-            .store
-            .set_tool_status(
-                &tool_id,
-                McpToolStatus::Pending,
-                None,
-                Some(message.clone()),
-            )
-            .await
-            .map_err(to_string)?;
-        app.emit(
-            &format!("mcp-log://{}", tool_id),
-            McpLogEntry {
-                timestamp: now_rfc3339(),
-                stream: crate::modules::mcp::types::McpLogStream::Event,
-                message,
-            },
-        )
-        .ok();
-        return Err("missing required env".to_string());
+    if tool.command.is_none() {
+        return Err("tool is not executable (no command)".to_string());
     }
 
     state
         .process_manager
-        .start_tool(tool.clone(), true)
+        .start_process(app, tool)
         .await
-        .map_err(to_string)?;
-    let updated = state
-        .store
-        .get_tool(&tool_id)
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| to_string(McpError::NotFound(format!("tool {tool_id} not found"))))?;
-    Ok(updated)
+        .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Result<McpTool, String> {
+pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
     let state = &state.mcp;
     state
         .process_manager
-        .stop_tool(&tool_id)
+        .stop_process(&tool_id)
         .await
-        .map_err(to_string)?;
-    let updated = state
-        .store
-        .get_tool(&tool_id)
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| to_string(McpError::NotFound(format!("tool {tool_id} not found"))))?;
-    Ok(updated)
+        .map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn update_mcp_tool_env(
     state: State<'_, AppState>,
     tool_id: String,
-    env: Option<HashMap<String, String>>,
-) -> Result<McpTool, String> {
+    payload: UpdateToolConfigRequest,
+) -> Result<(), String> {
     let state = &state.mcp;
     state
         .store
-        .update_tool_env(&tool_id, env)
+        .update_tool_config(&tool_id, payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn apply_pending_config(
-    state: State<'_, AppState>,
-    tool_id: String,
-    payload: UpdateToolConfigRequest,
-) -> Result<McpTool, String> {
+pub async fn apply_pending_config(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
     let state = &state.mcp;
-    if !payload.apply_pending {
-        return Err("apply_pending must be true".to_string());
-    }
-    apply_pending_update(&state, &tool_id)
+    state
+        .store
+        .apply_pending_config(&tool_id)
         .await
         .map_err(to_string)
 }
@@ -1709,38 +759,21 @@ pub async fn apply_pending_config(
 #[tauri::command]
 pub async fn resolve_mcp_conflict(
     state: State<'_, AppState>,
-    tool_id: String,
     payload: ResolveConflictRequest,
-) -> Result<McpTool, String> {
+) -> Result<(), String> {
     let state = &state.mcp;
-    match payload.action.as_str() {
-        "update" => apply_pending_update(&state, &tool_id)
-            .await
-            .map_err(to_string),
-        "keep" => {
-            state
-                .store
-                .clear_pending_update(&tool_id)
-                .await
-                .map_err(to_string)?;
-            state
-                .store
-                .get_tool(&tool_id)
-                .await
-                .map_err(to_string)?
-                .ok_or_else(|| to_string(McpError::NotFound(format!("tool {tool_id} not found"))))
-        }
-        _ => Err("invalid action".to_string()),
-    }
+    state
+        .store
+        .resolve_conflict(payload)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn get_mcp_logs(
-    state: State<'_, AppState>,
-    tool_id: String,
-) -> Result<Vec<McpLogEntry>, String> {
+pub async fn get_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Result<Vec<Value>, String> {
     let state = &state.mcp;
-    Ok(state.process_manager.logs(&tool_id).await)
+    let logs = state.process_manager.get_logs(&tool_id).await;
+    Ok(logs.into_iter().map(|l| serde_json::json!(l)).collect())
 }
 
 #[tauri::command]
@@ -1750,298 +783,27 @@ pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Resu
     Ok(())
 }
 
-#[tauri::command]
-pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String> {
-    let plugins = vec![
-        serde_json::json!({
-            "id": "official.skills.crawler",
-            "name": "Scout Crawler",
-            "description": "Universal web crawling and content extraction skill.",
-            "package_path": "packages/official-skills/crawler",
-            "tools": [
-                {
-                    "name": "fetch_web_content",
-                    "description": "Fetch and extract clean content from a SINGLE URL.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "url": {"type": "string", "description": "The target URL to crawl."},
-                            "js_mode": {"type": "boolean", "default": true}
-                        },
-                        "required": ["url"]
-                    }
-                },
-                {
-                    "name": "crawl_website",
-                    "description": "Recursively crawl a website to learn or clone skills.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "url": {"type": "string", "description": "The root URL."},
-                            "max_depth": {"type": "integer", "default": 2}
-                        },
-                        "required": ["url"]
-                    }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.code_interpreter",
-            "name": "Code Interpreter",
-            "description": "Executes Python code in a stateful sandbox for data analysis and math.",
-            "package_path": "packages/official-skills/code-interpreter",
-            "tools": [
-                {
-                    "name": "run_python",
-                    "description": "Executes Python code in an isolated sandbox.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "code": {"type": "string", "description": "The Python code to execute."},
-                            "session_id": {"type": "string", "description": "Optional session ID."}
-                        },
-                        "required": ["code"]
-                    }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.planner",
-            "name": "Planner",
-            "description": "Architect capabilities: Design execution plans and manage workflows.",
-            "package_path": "packages/official-skills/planner",
-            "tools": [
-                {
-                    "name": "propose_execution_plan",
-                    "description": "Propose a multi-step execution plan for complex requests.",
-                    "input_schema": { "type": "object", "properties": {} }
-                },
-                {
-                    "name": "retrieve_similar_plans",
-                    "description": "Search the Knowledge Base for similar past plans to reuse.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "query": { "type": "string", "description": "The user's current request description" }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.image_generation",
-            "name": "Image Generation",
-            "description": "Generate images from text descriptions.",
-            "package_path": "packages/official-skills/image-generation",
-            "tools": [
-                {
-                    "name": "generate_image",
-                    "description": "Generate an image based on a text prompt.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "prompt": { "type": "string" },
-                            "size": { "type": "string", "default": "1024x1024" }
-                        },
-                        "required": ["prompt"]
-                    }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.memory",
-            "name": "Knowledge & Memory",
-            "description": "Manage long-term memory and knowledge base search.",
-            "package_path": "packages/official-skills/memory",
-            "tools": [
-                {
-                    "name": "add_knowledge_chunk",
-                    "description": "Store information in long-term memory.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "content": { "type": "string" },
-                            "metadata": { "type": "object" }
-                        },
-                        "required": ["content"]
-                    }
-                },
-                {
-                    "name": "search_knowledge",
-                    "description": "Search personal and system knowledge base.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "query": { "type": "string" },
-                            "scope": { "type": "string", "enum": ["personal", "system", "all"] }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.expert_network",
-            "name": "Expert Network",
-            "description": "Retrieve expert assistants for a given intent query.",
-            "package_path": "packages/official-skills/expert-network",
-            "tools": [
-                {
-                    "name": "consult_expert_network",
-                    "description": "Search expert assistants by intent query.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "intent_query": { "type": "string" },
-                            "confidence": { "type": "number" }
-                        },
-                        "required": ["intent_query", "confidence"]
-                    }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.database",
-            "name": "Provider Manager",
-            "description": "Manage LLM Provider Presets and Templates.",
-            "package_path": "packages/official-skills/database",
-            "tools": [
-                {
-                    "name": "list_provider_presets",
-                    "description": "List all available LLM provider templates.",
-                    "input_schema": { "type": "object", "properties": {} }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.monitor",
-            "name": "Active Monitor",
-            "description": "Proactive monitoring and alerting system.",
-            "package_path": "packages/official-skills/monitor",
-            "tools": [
-                {
-                    "name": "sys_list_monitors",
-                    "description": "List all active monitors.",
-                    "input_schema": { "type": "object", "properties": {} }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.provider_registry",
-            "name": "Provider Registry",
-            "description": "Expert plugin for discovering and registering AI Providers.",
-            "package_path": "packages/official-skills/provider-registry",
-            "tools": [
-                {
-                    "name": "get_unified_schema",
-                    "description": "Get the internal standard schema for a specific capability.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "capability": { "type": "string" }
-                        },
-                        "required": ["capability"]
-                    }
-                }
-            ]
-        }),
-        serde_json::json!({
-            "id": "official.skills.provider_probe",
-            "name": "Provider Probe",
-            "description": "Probe AI providers to verify connectivity.",
-            "package_path": "packages/official-skills/provider-probe",
-            "tools": [
-                {
-                    "name": "probe_provider",
-                    "description": "Probe a provider to verify connectivity.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "provider_type": { "type": "string", "enum": ["openai", "gemini"] },
-                            "base_url": { "type": "string" },
-                            "api_key": { "type": "string" },
-                            "model": { "type": "string" }
-                        },
-                        "required": ["provider_type", "base_url", "api_key", "model"]
-                    }
-                }
-            ]
-        })
-    ];
-
-    let mcp = &app_state.mcp;
-    let store = &mcp.store;
-
-    for plugin in plugins {
-        let id = plugin["id"].as_str().unwrap();
-        let name = plugin["name"].as_str().unwrap();
-        let description = plugin["description"].as_str().unwrap();
-        let package_path = plugin.get("package_path").and_then(|v| v.as_str());
-
-        // Register as a special 'system_plugin' source if not exists
-        let source_id = format!("system_plugin_{}", id);
-
-        for tool_def in plugin["tools"].as_array().unwrap() {
-            let tool_name = tool_def["name"].as_str().unwrap();
-            let tool_desc = tool_def["description"].as_str().unwrap();
-            let config_json = serde_json::to_string(tool_def).unwrap();
-
-            let mut env = HashMap::new();
-            if id == "official.skills.crawler" {
-                if let Ok(url) = std::env::var("SCOUT_SERVICE_URL") {
-                    env.insert("SCOUT_SERVICE_URL".to_string(), url);
-                }
-            }
-
-            let (command, args) = if let Some(path) = package_path {
-                // If it's a standalone package, set up command to run it
-                let full_path = std::env::current_dir().unwrap().join(path).join("main.py");
-                (
-                    Some("python3".to_string()),
-                    Some(vec![full_path.to_string_lossy().to_string()]),
+pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
+    for tool in tools {
+        let text = format!("name: {}\ndescription: {}", tool.name, tool.description);
+        if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
+            let _ = app_state
+                .memory
+                .store
+                .append_tool(
+                    tool.id.clone(),
+                    tool.name.clone(),
+                    tool.description.clone(),
+                    tool.identifier.clone(),
+                    vector,
                 )
-            } else {
-                (None, None)
-            };
-
-            let upsert = ToolUpsert {
-                id: None,
-                source_id: source_id.clone(),
-                identifier: Some(format!("{}/{}", id, tool_name)),
-                name: tool_name.to_string(),
-                source_type: McpSourceType::Local,
-                status: McpToolStatus::Healthy,
-                ping_ms: None,
-                capabilities: vec!["system_plugin".to_string()],
-                description: tool_desc.to_string(),
-                error: None,
-                command,
-                args,
-                env: if env.is_empty() { None } else { Some(env) },
-                config_json,
-                config_hash: "system_builtin".to_string(),
-                pending_config_json: None,
-                pending_config_hash: None,
-                conflict_status: McpConflictStatus::None,
-                is_read_only: true,
-                is_new: false,
-            };
-            if let Ok(tool) = store.upsert_tool(upsert).await {
-                // Index for semantic search
-                let app_state_clone = app_state.clone();
-                tauri::async_runtime::spawn(async move {
-                    index_mcp_tools(&app_state_clone, &[tool]).await;
-                });
-            }
+                .await;
         }
     }
-
-    Ok(())
 }
 
 #[tauri::command]
-pub async fn sync_cloud_subscriptions(
+pub async fn sync_cloud_subscriptions_v2(
     app: AppHandle,
     state: State<'_, AppState>,
     access_token: String,
@@ -2055,150 +817,393 @@ pub async fn sync_cloud_subscriptions(
     let response = state
         .client
         .get(&url)
-        .bearer_auth(access_token)
+        .header("Authorization", format!("Bearer {}", access_token))
         .send()
         .await
-        .map_err(|err| McpError::Network(err.to_string()))
         .map_err(to_string)?;
 
     if !response.status().is_success() {
-        return Err(format!("cloud sync failed: {}", response.status()));
+        return Err(format!("failed to sync subscriptions: {}", response.status()));
     }
 
-    let subs: Vec<CloudSubscriptionItem> = response
-        .json()
-        .await
-        .map_err(|err| McpError::Network(err.to_string()))
-        .map_err(to_string)?;
+    let subscriptions: Vec<McpSubscriptionItem> = response.json().await.map_err(to_string)?;
+    let mut synced_tools = Vec::new();
 
-    let cloud_source = state
-        .store
-        .ensure_cloud_source(&base_url)
-        .await
-        .map_err(to_string)?;
-    let mut seen_identifiers = HashSet::new();
-
-    for sub in subs.iter() {
-        let tool = &sub.tool;
-        seen_identifiers.insert(tool.identifier.clone());
-        let config_json = build_cloud_config_json(tool)?;
-        let config_hash = state
+    for sub in subscriptions {
+        let cloud_source = state
             .store
-            .compute_config_hash(&config_json)
-            .map_err(to_string)?;
-        let config_json_text = serde_json::to_string(&config_json)
-            .map_err(|err| McpError::Storage(err.to_string()))
+            .ensure_cloud_source(&sub.tool.source_name, &sub.tool.source_url)
+            .await
             .map_err(to_string)?;
 
-        let extracted = ExtractedToolFields {
+        let tool = sub.tool;
+        let upsert = ToolUpsert {
+            id: None,
+            source_id: cloud_source.id.clone(),
+            identifier: Some(tool.identifier.clone()),
             name: tool.name.clone(),
+            source_type: McpSourceType::Cloud,
+            status: McpToolStatus::Healthy,
+            ping_ms: None,
+            capabilities: tool.capabilities.clone(),
             description: tool.description.clone(),
-            command: Some(tool.install_manifest.command.clone()),
-            args: Some(tool.install_manifest.args.clone()),
+            error: None,
+            command: None,
+            args: None,
             env: None,
-            capabilities: vec![],
+            config_json: tool.config_json.clone(),
+            config_hash: tool.config_hash.clone(),
+            pending_config_json: None,
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: false,
+            is_new: false,
         };
 
-        let name_conflict = state
-            .store
-            .has_name_conflict(&extracted.name, &cloud_source.id)
-            .await
-            .map_err(to_string)?;
-
-        let existing = state
-            .store
-            .get_tool_by_source_identifier(&cloud_source.id, &tool.identifier)
-            .await
-            .map_err(to_string)?;
-
-        match existing {
-            Some(existing_tool) => {
-                if existing_tool.config_hash == config_hash {
-                    continue;
-                }
-                let conflict_status = if name_conflict {
-                    McpConflictStatus::Conflict
-                } else {
-                    McpConflictStatus::UpdateAvailable
-                };
-                state
-                    .store
-                    .mark_tool_pending_update(
-                        &existing_tool.id,
-                        config_json_text.clone(),
-                        config_hash.clone(),
-                        conflict_status,
-                    )
-                    .await
-                    .map_err(to_string)?;
-            }
-            None => {
-                let tool_upsert = ToolUpsert {
-                    id: None,
-                    source_id: cloud_source.id.clone(),
-                    identifier: Some(tool.identifier.clone()),
-                    name: extracted.name,
-                    source_type: McpSourceType::Cloud,
-                    status: McpToolStatus::Stopped,
-                    ping_ms: None,
-                    capabilities: extracted.capabilities,
-                    description: extracted.description,
-                    error: None,
-                    command: extracted.command,
-                    args: extracted.args,
-                    env: extracted.env,
-                    config_json: config_json_text.clone(),
-                    config_hash: config_hash.clone(),
-                    pending_config_json: None,
-                    pending_config_hash: None,
-                    conflict_status: if name_conflict {
-                        McpConflictStatus::Conflict
-                    } else {
-                        McpConflictStatus::None
-                    },
-                    is_read_only: true,
-                    is_new: true,
-                };
-                state
-                    .store
-                    .upsert_tool(tool_upsert)
-                    .await
-                    .map_err(to_string)?;
-            }
+        if let Ok(synced) = state.store.upsert_tool(upsert).await {
+            synced_tools.push(synced);
         }
     }
 
-    let all_tools = state.store.list_tools().await.map_err(to_string)?;
-    for tool in all_tools
-        .iter()
-        .filter(|t| t.source_id.as_deref() == Some(&cloud_source.id))
-    {
-        let Some(identifier) = tool.identifier.clone() else {
-            continue;
-        };
-        if !seen_identifiers.contains(&identifier) {
-            let _ = state
-                .store
-                .set_tool_status(
-                    &tool.id,
-                    McpToolStatus::Orphaned,
-                    None,
-                    Some("cloud subscription removed".to_string()),
-                )
-                .await;
-            app.emit(
-                &format!("mcp-log://{}", tool.id),
-                McpLogEntry {
-                    timestamp: now_rfc3339(),
-                    stream: crate::modules::mcp::types::McpLogStream::Event,
-                    message: "cloud subscription removed".to_string(),
-                },
-            )
-            .ok();
-        }
-    }
+    Ok(synced_tools)
+}
 
-    state.store.list_tools().await.map_err(to_string)
+#[tauri::command]
+pub async fn list_local_knowledge_files(
+    state: State<'_, AppState>,
+    query: LocalUserDocumentListQuery,
+) -> Result<Vec<LocalKnowledgeFile>, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_knowledge_files(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_knowledge_folders(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalKnowledgeFolder>, String> {
+    let state = &state.mcp;
+    state.store.list_local_knowledge_folders().await.map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_knowledge_tree(
+    state: State<'_, AppState>,
+    query: LocalKnowledgeTreeQuery,
+) -> Result<LocalKnowledgeTreeResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_knowledge_tree(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_knowledge_folder(
+    state: State<'_, AppState>,
+    payload: CreateLocalKnowledgeFolderRequest,
+) -> Result<LocalKnowledgeFolder, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_knowledge_folder(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_knowledge_folder(
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateLocalKnowledgeFolderRequest,
+) -> Result<LocalKnowledgeFolder, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_knowledge_folder(&id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_knowledge_folder(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .delete_local_knowledge_folder(&id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_user_document(
+    state: State<'_, AppState>,
+    payload: CreateLocalUserDocumentRequest,
+) -> Result<LocalKnowledgeFile, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_user_document(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_knowledge_stats(
+    state: State<'_, AppState>,
+) -> Result<LocalKnowledgeStatsResponse, String> {
+    let state = &state.mcp;
+    state.store.get_local_knowledge_stats().await.map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_trace_feedback(
+    state: State<'_, AppState>,
+    payload: LocalTraceFeedbackRequest,
+) -> Result<LocalTraceFeedback, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_trace_feedback(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_assistant_routing_report(
+    state: State<'_, AppState>,
+    query: LocalAssistantRoutingReportQuery,
+) -> Result<LocalAssistantRoutingReportResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_assistant_routing_report(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn record_local_assistant_routing_feedback(
+    state: State<'_, AppState>,
+    payload: LocalAssistantRoutingFeedbackRequest,
+) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .record_local_assistant_routing_feedback(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_assistant_preview(
+    state: State<'_, AppState>,
+    payload: LocalAssistantPreviewRequest,
+) -> Result<LocalAssistant, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_assistant_preview(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn record_local_assistant_rating(
+    state: State<'_, AppState>,
+    payload: LocalAssistantRatingRequest,
+) -> Result<LocalAssistantRatingResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .record_local_assistant_rating(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_assistant_installations(
+    state: State<'_, AppState>,
+    query: LocalAssistantInstallQuery,
+) -> Result<LocalAssistantInstallPage, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_assistant_installations(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_assistant_installation(
+    state: State<'_, AppState>,
+    payload: LocalAssistantInstallCreateRequest,
+) -> Result<LocalAssistantInstallItem, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_assistant_installation(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_assistant_installation(
+    state: State<'_, AppState>,
+    assistant_id: String,
+    payload: LocalAssistantInstallUpdateRequest,
+) -> Result<LocalAssistantInstallItem, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_assistant_installation(&assistant_id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_assistant_installation(
+    state: State<'_, AppState>,
+    assistant_id: String,
+) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .delete_local_assistant_installation(&assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_admin_conversations(
+    state: State<'_, AppState>,
+    query: LocalAdminConversationQuery,
+) -> Result<LocalAdminConversationListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_admin_conversations(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_admin_conversation_messages(
+    state: State<'_, AppState>,
+    query: LocalAdminConversationMessageQuery,
+) -> Result<LocalAdminConversationMessageListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_admin_conversation_messages(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_admin_conversation_summaries(
+    state: State<'_, AppState>,
+    query: LocalAdminConversationQuery,
+) -> Result<LocalAdminConversationSummaryListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_admin_conversation_summaries(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_conversation_summary_queue_stats(
+    state: State<'_, AppState>,
+) -> Result<LocalConversationSummaryQueueStats, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_conversation_summary_queue_stats()
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_summary_jobs(
+    state: State<'_, AppState>,
+    query: LocalConversationSummaryJobQuery,
+) -> Result<LocalConversationSummaryJobListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_conversation_summary_jobs(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_summary_idle_tasks(
+    state: State<'_, AppState>,
+    query: LocalConversationSummaryIdleTaskQuery,
+) -> Result<LocalConversationSummaryIdleTaskListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_conversation_summary_idle_tasks(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn enqueue_local_conversation_summary(
+    state: State<'_, AppState>,
+    session_id: String,
+    assistant_id: String,
+) -> Result<LocalConversationSummaryEnqueueResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .enqueue_conversation_summary(&session_id, &assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn retry_local_conversation_summary_batch(
+    state: State<'_, AppState>,
+    payload: LocalConversationSummaryBatchRetryRequest,
+) -> Result<LocalConversationSummaryBatchRetryResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .retry_conversation_summary_batch(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_gateway_logs(
+    state: State<'_, AppState>,
+    query: LocalGatewayLogQuery,
+) -> Result<LocalGatewayLogListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_gateway_logs(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_gateway_log_stats(
+    state: State<'_, AppState>,
+) -> Result<LocalGatewayLogStatsResponse, String> {
+    let state = &state.mcp;
+    state.store.get_local_gateway_log_stats().await.map_err(to_string)
 }
 
 pub(crate) async fn sync_source_inner(
@@ -2206,38 +1211,41 @@ pub(crate) async fn sync_source_inner(
     source: McpSource,
     auth_token: Option<String>,
 ) -> Result<Vec<McpTool>, McpError> {
-    let payload = match source.source_type {
+    let tools = match source.source_type {
         McpSourceType::Local => {
             let path = expand_path(&source.path_or_url);
-            let content = tokio::fs::read_to_string(&path)
-                .await
+            let config_json = std::fs::read_to_string(path)
                 .map_err(|err| McpError::Storage(err.to_string()))?;
-            serde_json::from_str::<McpConfigPayload>(&content)
-                .map_err(|err| McpError::Storage(err.to_string()))?
+            let config: McpConfigPayload = serde_json::from_str(&config_json)
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            apply_config_payload(state, &source, config).await?
         }
-        _ => {
+        McpSourceType::Cloud => {
             let mut request = state.client.get(&source.path_or_url);
             if let Some(token) = auth_token {
-                request = request.bearer_auth(token);
+                request = request.header("Authorization", format!("Bearer {}", token));
             }
             let response = request
                 .send()
                 .await
                 .map_err(|err| McpError::Network(err.to_string()))?;
+
             if !response.status().is_success() {
                 return Err(McpError::Network(format!(
-                    "sync failed with status {}",
+                    "failed to fetch cloud config: {}",
                     response.status()
                 )));
             }
-            response
-                .json::<McpConfigPayload>()
+
+            let config: McpConfigPayload = response
+                .json()
                 .await
-                .map_err(|err| McpError::Network(err.to_string()))?
+                .map_err(|err| McpError::Network(err.to_string()))?;
+            apply_config_payload(state, &source, config).await?
         }
     };
 
-    apply_config_payload(state, &source, payload).await
+    Ok(tools)
 }
 
 async fn apply_config_payload(
@@ -2245,75 +1253,46 @@ async fn apply_config_payload(
     source: &McpSource,
     payload: McpConfigPayload,
 ) -> Result<Vec<McpTool>, McpError> {
-    let mut tools = Vec::with_capacity(payload.mcp_servers.len());
-    let is_read_only = source.source_type != McpSourceType::Local || source.is_read_only;
+    let mut tools = Vec::new();
+    let is_read_only = source.source_type == McpSourceType::Cloud;
 
-    for (name, config_payload) in payload.mcp_servers {
-        let config_value = state.store.build_config_json(&name, &config_payload)?;
-        let config_hash = state.store.compute_config_hash(&config_value)?;
-        let config_json = serde_json::to_string(&config_value)
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-        let extracted: ExtractedToolFields =
-            state.store.extract_tool_fields(&name, &config_payload);
-        let name_conflict = state.store.has_name_conflict(&name, &source.id).await?;
+    for (name, config) in payload.mcp_servers {
+        let identifier = format!("{}/{}", source.id, name);
+        let existing_tool = state.store.get_tool_by_source_name(&source.id, &name).await?;
 
-        let existing = state
-            .store
-            .get_tool_by_source_name(&source.id, &name)
-            .await?;
-
-        let tool = match existing {
+        let tool = match existing_tool {
             Some(existing_tool) => {
-                if existing_tool.config_hash == config_hash {
-                    existing_tool
-                } else if is_read_only {
-                    let conflict_status = if name_conflict {
-                        McpConflictStatus::Conflict
-                    } else {
-                        McpConflictStatus::UpdateAvailable
-                    };
+                let config_json = serde_json::to_string(&config).unwrap();
+                let config_hash = hash_config(&config_json);
+
+                if config_hash == existing_tool.config_hash {
                     state
                         .store
-                        .mark_tool_pending_update(
-                            &existing_tool.id,
-                            config_json,
-                            config_hash,
-                            conflict_status,
-                        )
+                        .update_tool_status(&existing_tool.id, McpToolStatus::Healthy, None)
                         .await?;
-                    state
-                        .store
-                        .get_tool(&existing_tool.id)
-                        .await?
-                        .ok_or_else(|| {
-                            McpError::NotFound("tool missing after update".to_string())
-                        })?
+                    existing_tool
                 } else {
                     state
                         .store
                         .upsert_tool(ToolUpsert {
                             id: Some(existing_tool.id.clone()),
                             source_id: source.id.clone(),
-                            identifier: existing_tool.identifier.clone(),
-                            name: extracted.name,
+                            identifier: Some(identifier),
+                            name: name.clone(),
                             source_type: source.source_type.clone(),
-                            status: existing_tool.status.clone(),
-                            ping_ms: existing_tool.ping_ms,
-                            capabilities: extracted.capabilities,
-                            description: extracted.description,
-                            error: existing_tool.error.clone(),
-                            command: extracted.command,
-                            args: extracted.args,
-                            env: extracted.env,
+                            status: McpToolStatus::Healthy,
+                            ping_ms: None,
+                            capabilities: config.capabilities.clone().unwrap_or_default(),
+                            description: config.description.clone().unwrap_or_default(),
+                            error: None,
+                            command: config.command.clone(),
+                            args: config.args.clone(),
+                            env: config.env.clone(),
                             config_json,
                             config_hash,
                             pending_config_json: None,
                             pending_config_hash: None,
-                            conflict_status: if name_conflict {
-                                McpConflictStatus::Conflict
-                            } else {
-                                McpConflictStatus::None
-                            },
+                            conflict_status: McpConflictStatus::None,
                             is_read_only,
                             is_new: existing_tool.is_new,
                         })
@@ -2321,1033 +1300,200 @@ async fn apply_config_payload(
                 }
             }
             None => {
+                let config_json = serde_json::to_string(&config).unwrap();
+                let config_hash = hash_config(&config_json);
+
                 state
                     .store
                     .upsert_tool(ToolUpsert {
                         id: None,
                         source_id: source.id.clone(),
-                        identifier: None,
-                        name: extracted.name,
+                        identifier: Some(identifier),
+                        name: name.clone(),
                         source_type: source.source_type.clone(),
-                        status: McpToolStatus::Stopped,
+                        status: McpToolStatus::Healthy,
                         ping_ms: None,
-                        capabilities: extracted.capabilities,
-                        description: extracted.description,
+                        capabilities: config.capabilities.unwrap_or_default(),
+                        description: config.description.unwrap_or_default(),
                         error: None,
-                        command: extracted.command,
-                        args: extracted.args,
-                        env: extracted.env,
+                        command: config.command,
+                        args: config.args,
+                        env: config.env,
                         config_json,
                         config_hash,
                         pending_config_json: None,
                         pending_config_hash: None,
-                        conflict_status: if name_conflict {
-                            McpConflictStatus::Conflict
-                        } else {
-                            McpConflictStatus::None
-                        },
+                        conflict_status: McpConflictStatus::None,
                         is_read_only,
                         is_new: true,
                     })
                     .await?
             }
         };
-
         tools.push(tool);
     }
 
     Ok(tools)
 }
 
-async fn apply_pending_update(state: &McpRuntimeState, tool_id: &str) -> Result<McpTool, McpError> {
-    let tool = state
-        .store
-        .get_tool(tool_id)
-        .await?
-        .ok_or_else(|| McpError::NotFound(format!("tool {tool_id} not found")))?;
-    let source_id = tool
-        .source_id
-        .clone()
-        .ok_or_else(|| McpError::Validation("tool missing source_id".to_string()))?;
-    let pending_json = state
-        .store
-        .get_pending_config_json(tool_id)
-        .await?
-        .ok_or_else(|| McpError::Validation("no pending config".to_string()))?;
-
-    let pending_value: serde_json::Value =
-        serde_json::from_str(&pending_json).map_err(|err| McpError::Storage(err.to_string()))?;
-    let pending_payload: McpToolConfigPayload = serde_json::from_value(pending_value.clone())
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-    let extracted = state
-        .store
-        .extract_tool_fields(&tool.name, &pending_payload);
-    let config_hash = state.store.compute_config_hash(&pending_value)?;
-
-    let updated = state
-        .store
-        .upsert_tool(ToolUpsert {
-            id: Some(tool.id.clone()),
-            source_id,
-            identifier: tool.identifier.clone(),
-            name: extracted.name,
-            source_type: tool.source_type.clone(),
-            status: tool.status.clone(),
-            ping_ms: tool.ping_ms,
-            capabilities: extracted.capabilities,
-            description: extracted.description,
-            error: tool.error.clone(),
-            command: extracted.command,
-            args: extracted.args,
-            env: extracted.env,
-            config_json: pending_json,
-            config_hash,
-            pending_config_json: None,
-            pending_config_hash: None,
-            conflict_status: McpConflictStatus::None,
-            is_read_only: tool.is_read_only,
-            is_new: tool.is_new,
-        })
-        .await?;
-
-    Ok(updated)
-}
-
-fn build_cloud_config_json(tool: &CloudToolSummary) -> Result<serde_json::Value, String> {
-    let mut map = serde_json::Map::new();
-    map.insert(
-        "identifier".to_string(),
-        serde_json::Value::String(tool.identifier.clone()),
-    );
-    map.insert(
-        "name".to_string(),
-        serde_json::Value::String(tool.name.clone()),
-    );
-    map.insert(
-        "description".to_string(),
-        serde_json::Value::String(tool.description.clone()),
-    );
-    map.insert(
-        "command".to_string(),
-        serde_json::Value::String(tool.install_manifest.command.clone()),
-    );
-    map.insert(
-        "args".to_string(),
-        serde_json::Value::Array(
-            tool.install_manifest
-                .args
-                .iter()
-                .cloned()
-                .map(serde_json::Value::String)
-                .collect(),
-        ),
-    );
-    if let Some(runtime) = &tool.install_manifest.runtime {
-        map.insert(
-            "runtime".to_string(),
-            serde_json::Value::String(runtime.clone()),
-        );
-    }
-    if let Some(env_config) = &tool.install_manifest.env_config {
-        map.insert(
-            "env_config".to_string(),
-            serde_json::Value::Array(
-                env_config
-                    .iter()
-                    .cloned()
-                    .map(serde_json::Value::Object)
-                    .collect(),
-            ),
-        );
-    }
-    if let Some(tags) = &tool.tags {
-        map.insert(
-            "tags".to_string(),
-            serde_json::Value::Array(
-                tags.iter()
-                    .cloned()
-                    .map(serde_json::Value::String)
-                    .collect(),
-            ),
-        );
-    }
-    if let Some(category) = &tool.category {
-        map.insert(
-            "category".to_string(),
-            serde_json::Value::String(category.clone()),
-        );
-    }
-    if let Some(author) = &tool.author {
-        map.insert(
-            "author".to_string(),
-            serde_json::Value::String(author.clone()),
-        );
-    }
-    if let Some(is_official) = tool.is_official {
-        map.insert(
-            "is_official".to_string(),
-            serde_json::Value::Bool(is_official),
-        );
-    }
-    if let Some(avatar_url) = &tool.avatar_url {
-        map.insert(
-            "avatar_url".to_string(),
-            serde_json::Value::String(avatar_url.clone()),
-        );
-    }
-    Ok(serde_json::Value::Object(map))
-}
-
-fn missing_required_env(tool: &McpTool) -> Option<Vec<String>> {
-    let config: serde_json::Value = serde_json::from_str(&tool.config_json).ok()?;
-    let env_config = config.get("env_config")?.as_array()?;
-    let env = tool.env.as_ref();
-    let mut missing = Vec::new();
-    for item in env_config {
-        let key = item.get("key").and_then(|v| v.as_str()).unwrap_or("");
-        let required = item
-            .get("required")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if !required || key.is_empty() {
-            continue;
-        }
-        let present = env
-            .and_then(|env| env.get(key))
-            .map(|v| !v.is_empty())
-            .unwrap_or(false);
-        if !present {
-            missing.push(key.to_string());
-        }
-    }
-    Some(missing)
+fn hash_config(config_json: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(config_json.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| "".to_string())
+        .unwrap_or_default()
 }
 
-fn to_string(err: McpError) -> String {
-    err.to_string()
-}
-
-pub fn default_cloud_source_name() -> &'static str {
-    "Deeting Cloud"
-}
-
-pub fn default_local_source_path() -> PathBuf {
-    expand_path("~/.config/deeting/mcp.json")
-}
-
-fn build_chat_payload(
-    model: String,
-    messages: Vec<LocalChatInputMessage>,
-    temperature: Option<f32>,
-    top_p: Option<f32>,
-    max_tokens: Option<u32>,
-    enable_code_mode_tools: bool,
-) -> Result<serde_json::Value, String> {
-    let mut payload = serde_json::Map::new();
-    payload.insert("model".to_string(), serde_json::Value::String(model));
-
-    let msgs: Vec<serde_json::Value> = messages
-        .into_iter()
-        .map(|m| {
-            let mut map = serde_json::Map::new();
-            map.insert("role".to_string(), serde_json::Value::String(m.role));
-            map.insert(
-                "content".to_string(),
-                parse_chat_message_content(&m.content),
-            );
-            serde_json::Value::Object(map)
-        })
-        .collect();
-    payload.insert("messages".to_string(), serde_json::Value::Array(msgs));
-
-    if let Some(temp) = temperature {
-        payload.insert("temperature".to_string(), serde_json::Value::from(temp));
-    }
-    if let Some(tp) = top_p {
-        payload.insert("top_p".to_string(), serde_json::Value::from(tp));
-    }
-    if let Some(mt) = max_tokens {
-        payload.insert("max_tokens".to_string(), serde_json::Value::from(mt));
-    }
-
-    if enable_code_mode_tools {
-        payload.insert(
-            "tools".to_string(),
-            serde_json::json!([
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "search_sdk",
-                        "description": "Search desktop tool SDK signatures and capability hints",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "query": {"type": "string"}
-                            }
-                        }
-                    }
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "execute_code_plan",
-                        "description": "Execute python code plan in local sandbox bridge",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "code": {"type": "string"},
-                                "language": {"type": "string"},
-                                "execution_timeout": {"type": "number"},
-                                "dry_run": {"type": "boolean"}
-                            },
-                            "required": ["code"]
-                        }
-                    }
-                }
-            ]),
-        );
-        payload.insert("tool_choice".to_string(), serde_json::json!("auto"));
-    }
-
-    Ok(serde_json::Value::Object(payload))
-}
-
-fn parse_chat_message_content(raw: &str) -> serde_json::Value {
-    let trimmed = raw.trim();
-    if trimmed.starts_with('[') {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            return parsed;
-        }
-    }
-    serde_json::Value::String(raw.to_string())
-}
-
-async fn run_local_chat_complete(
-    state: &McpRuntimeState,
-    payload: LocalChatRequest,
-) -> Result<LocalChatResponse, McpError> {
-    let model = payload.model.trim().to_string();
-    if model.is_empty() {
-        return Err(McpError::validation("model is required"));
-    }
-    if payload.messages.is_empty() {
-        return Err(McpError::validation("messages is required"));
-    }
-
-    let base_url = payload.base_url.unwrap_or_default();
-    if base_url.trim().is_empty() {
-        return Err(McpError::validation("base_url is required"));
-    }
-
-    let mut messages = payload.messages;
-    if let Some(assistant_id) = payload.assistant_id.as_deref() {
-        let assistant = state
-            .store
-            .get_local_assistant(assistant_id)
-            .await?
-            .ok_or_else(|| McpError::NotFound(format!("assistant {assistant_id} not found")))?;
-        let system_prompt = assistant.system_prompt.trim().to_string();
-        if !system_prompt.is_empty() && !messages.iter().any(|msg| msg.role == "system") {
-            messages.insert(
-                0,
-                LocalChatInputMessage {
-                    role: "system".to_string(),
-                    content: system_prompt,
-                },
-            );
-        }
-    }
-
-    let code_mode_available = has_code_mode_available(state).await?;
-    maybe_inject_code_mode_prompt(state, &mut messages, code_mode_available).await?;
-
-    let request_body = build_chat_payload(
-        model,
-        messages,
-        payload.temperature,
-        payload.top_p,
-        payload.max_tokens,
-        code_mode_available,
-    )
-    .map_err(McpError::validation)?;
-    let endpoint = build_chat_endpoint(&base_url);
-
-    let mut request = state.client.post(&endpoint).json(&request_body);
-    if let Some(api_key) = payload.api_key {
-        let header_value = normalize_bearer_token(&api_key);
-        if !header_value.is_empty() {
-            request = request.header("Authorization", header_value);
-        }
-    }
-
-    let response = request
-        .send()
-        .await
-        .map_err(|err| McpError::Network(err.to_string()))?;
-    let status = response.status();
-    let response_json: Value = response
-        .json()
-        .await
-        .map_err(|err| McpError::Network(err.to_string()))?;
-
-    if !status.is_success() {
-        let message = extract_error_message(&response_json)
-            .unwrap_or_else(|| format!("upstream error: {}", status));
-        return Err(McpError::Network(message));
-    }
-
-    let content = extract_chat_content(&response_json).unwrap_or_default();
-    let tool_calls = extract_chat_tool_calls(&response_json);
-
-    Ok(LocalChatResponse {
-        content,
-        tool_calls,
-    })
-}
-
-pub(crate) async fn rebuild_local_knowledge_vector_index(
-    app_state: &AppState,
-) -> Result<(), McpError> {
-    let files = app_state
-        .mcp
-        .store
-        .list_local_user_documents(LocalUserDocumentListQuery {
-            folder_id: None,
-            status: Some("indexed".to_string()),
-            q: None,
-        })
-        .await?;
-    for file in files {
-        if let Err(err) = sync_local_document_vector_index(app_state, &file.id).await {
-            warn!(
-                "failed to rebuild local knowledge vector index for file {}: {}",
-                file.id, err
-            );
-        }
-    }
-    Ok(())
-}
-
-async fn sync_local_document_vector_index(
-    app_state: &AppState,
-    file_id: &str,
-) -> Result<(), McpError> {
-    let normalized_file_id = file_id.trim().to_string();
-    if normalized_file_id.is_empty() {
-        return Err(McpError::validation("file_id is required"));
-    }
-
-    let file = app_state
-        .mcp
-        .store
-        .get_local_user_document(&normalized_file_id)
-        .await?;
-    app_state
-        .memory
-        .store
-        .clear_knowledge_chunks_for_file(&normalized_file_id)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-    if file.status != "active" {
-        return Ok(());
-    }
-
-    let mut offset = 0_i64;
-    let limit = 100_i64;
+pub(crate) async fn start_local_conversation_summary_worker(state: McpRuntimeState) {
+    let mut interval = tokio::time::interval(Duration::from_secs(
+        LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
+    ));
     loop {
-        let chunk_page = app_state
-            .mcp
-            .store
-            .list_local_user_document_chunks(
-                &normalized_file_id,
-                LocalUserDocumentChunkListQuery {
-                    offset: Some(offset),
-                    limit: Some(limit),
-                },
-            )
-            .await?;
-        if chunk_page.items.is_empty() {
-            break;
+        interval.tick().await;
+        if let Err(err) = state.store.process_next_conversation_summary_job().await {
+            warn!("conversation summary worker error: {}", err);
         }
-
-        for chunk in &chunk_page.items {
-            let vector = match app_state
-                .providers
-                .embedding
-                .embed_text(&chunk.content)
-                .await
-            {
-                Ok(value) => value,
-                Err(err) => {
-                    warn!(
-                        "skip vector index for chunk {} due to embedding error: {}",
-                        chunk.id, err
-                    );
-                    continue;
-                }
-            };
-            app_state
-                .memory
-                .store
-                .append_knowledge_chunk(
-                    chunk.id.clone(),
-                    chunk.file_id.clone(),
-                    file.name.clone(),
-                    chunk.index,
-                    chunk.content.clone(),
-                    chunk.token_count,
-                    vector,
-                )
-                .await
-                .map_err(|err| McpError::Storage(err.to_string()))?;
-        }
-
-        offset += chunk_page.items.len() as i64;
-        if offset >= chunk_page.total {
-            break;
-        }
-    }
-
-    Ok(())
-}
-
-async fn maybe_inject_code_mode_prompt(
-    _state: &McpRuntimeState,
-    messages: &mut Vec<LocalChatInputMessage>,
-    code_mode_available: bool,
-) -> Result<(), McpError> {
-    if messages.is_empty() {
-        return Ok(());
-    }
-
-    if !code_mode_available {
-        return Ok(());
-    }
-
-    let allowlist = resolve_code_mode_direct_allowlist();
-    let reminder = render_code_mode_capability_prompt(&allowlist);
-    if reminder.trim().is_empty() {
-        return Ok(());
-    }
-
-    let marker = "Code Mode Capability (MANDATORY)";
-    if let Some(system_index) = messages.iter().position(|msg| msg.role == "system") {
-        if messages[system_index].content.contains(marker) {
-            return Ok(());
-        }
-        messages[system_index].content =
-            format!("{}\n\n{}", messages[system_index].content.trim(), reminder);
-        return Ok(());
-    }
-
-    messages.insert(
-        0,
-        LocalChatInputMessage {
-            role: "system".to_string(),
-            content: reminder,
-        },
-    );
-    Ok(())
-}
-
-async fn maybe_inject_local_knowledge_prompt(
-    app_state: &AppState,
-    state: &McpRuntimeState,
-    messages: &mut Vec<LocalChatInputMessage>,
-) -> Result<(), McpError> {
-    if messages.is_empty() {
-        return Ok(());
-    }
-    let latest_user_query = messages
-        .iter()
-        .rev()
-        .find(|message| message.role == "user")
-        .map(|message| message.content.trim().to_string())
-        .filter(|message| !message.is_empty());
-    let Some(latest_user_query) = latest_user_query else {
-        return Ok(());
-    };
-
-    let hits = retrieve_local_knowledge_hits_hybrid(app_state, state, &latest_user_query).await?;
-    if hits.is_empty() {
-        return Ok(());
-    }
-
-    let context_prompt = build_local_knowledge_context_prompt(&hits);
-    if let Some(system_index) = messages.iter().position(|message| message.role == "system") {
-        if !messages[system_index]
-            .content
-            .contains(LOCAL_KNOWLEDGE_CONTEXT_MARKER)
-        {
-            messages[system_index].content = format!(
-                "{}\n\n{}",
-                messages[system_index].content.trim(),
-                context_prompt
-            );
-        }
-    } else {
-        messages.insert(
-            0,
-            LocalChatInputMessage {
-                role: "system".to_string(),
-                content: context_prompt,
-            },
-        );
-    }
-
-    Ok(())
-}
-
-async fn retrieve_local_knowledge_hits_hybrid(
-    app_state: &AppState,
-    state: &McpRuntimeState,
-    query: &str,
-) -> Result<Vec<LocalKnowledgeSearchHit>, McpError> {
-    let lexical_hits = state
-        .store
-        .search_local_knowledge_chunks(query, Some(LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS * 3))
-        .await?;
-
-    let mut merged: HashMap<String, LocalKnowledgeSearchHit> = HashMap::new();
-    let mut lexical_scores: HashMap<String, f64> = HashMap::new();
-    let mut vector_scores: HashMap<String, f64> = HashMap::new();
-
-    for hit in lexical_hits {
-        lexical_scores.insert(hit.chunk_id.clone(), hit.score.max(0.0));
-        merged.insert(hit.chunk_id.clone(), hit);
-    }
-
-    let vector_hits = match app_state.providers.embedding.embed_text(query).await {
-        Ok(query_vector) => app_state
-            .memory
-            .store
-            .search_knowledge_chunks(
-                query_vector,
-                (LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS * 4).max(1) as usize,
-            )
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?,
-        Err(err) => {
-            warn!("local knowledge vector query embedding failed: {}", err);
-            Vec::new()
-        }
-    };
-
-    for raw_hit in vector_hits {
-        let chunk_id = raw_hit
-            .get("chunk_id")
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string())
-            .unwrap_or_default();
-        if chunk_id.is_empty() {
-            continue;
-        }
-        let distance = raw_hit
-            .get("distance")
-            .and_then(|value| value.as_f64())
-            .unwrap_or(1.0)
-            .max(0.0);
-        let vector_score = 1.0 / (1.0 + distance);
-        vector_scores
-            .entry(chunk_id.clone())
-            .and_modify(|value| {
-                if vector_score > *value {
-                    *value = vector_score;
-                }
-            })
-            .or_insert(vector_score);
-
-        merged.entry(chunk_id.clone()).or_insert_with(|| {
-            let index = raw_hit
-                .get("index")
-                .and_then(|value| value.as_i64())
-                .unwrap_or(0)
-                .max(0);
-            let token_count = raw_hit
-                .get("token_count")
-                .and_then(|value| value.as_i64())
-                .unwrap_or(0)
-                .max(0);
-            LocalKnowledgeSearchHit {
-                chunk_id: chunk_id.clone(),
-                file_id: raw_hit
-                    .get("file_id")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-                file_name: raw_hit
-                    .get("file_name")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("unknown")
-                    .to_string(),
-                index,
-                content: raw_hit
-                    .get("content")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-                token_count,
-                score: 0.0,
-            }
-        });
-    }
-
-    let query_tokens = tokenize_local_query_terms(query);
-    let query_lower = query.trim().to_ascii_lowercase();
-    let mut reranked = Vec::new();
-    for (chunk_id, mut hit) in merged {
-        let lexical_score = lexical_scores.get(&chunk_id).copied().unwrap_or(0.0);
-        let vector_score = vector_scores.get(&chunk_id).copied();
-        hit.score = rerank_local_knowledge_hit(
-            &query_lower,
-            &query_tokens,
-            &hit.content,
-            lexical_score,
-            vector_score,
-        );
-        if hit.score > 0.0 {
-            reranked.push(hit);
-        }
-    }
-
-    reranked.sort_by(|left, right| {
-        right
-            .score
-            .partial_cmp(&left.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.file_name.cmp(&right.file_name))
-            .then_with(|| left.index.cmp(&right.index))
-    });
-    reranked.truncate(LOCAL_KNOWLEDGE_CONTEXT_MAX_SNIPPETS as usize);
-    Ok(reranked)
-}
-
-fn tokenize_local_query_terms(query: &str) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut tokens = Vec::new();
-    for token in query
-        .to_ascii_lowercase()
-        .split(|ch: char| !ch.is_alphanumeric())
-    {
-        let trimmed = token.trim();
-        if trimmed.len() < 2 {
-            continue;
-        }
-        if seen.insert(trimmed.to_string()) {
-            tokens.push(trimmed.to_string());
-        }
-    }
-    tokens.truncate(8);
-    tokens
-}
-
-fn rerank_local_knowledge_hit(
-    query_lower: &str,
-    query_tokens: &[String],
-    content: &str,
-    lexical_score: f64,
-    vector_score: Option<f64>,
-) -> f64 {
-    let content_lower = content.trim().to_ascii_lowercase();
-    if content_lower.is_empty() {
-        return 0.0;
-    }
-    let mut score = lexical_score.max(0.0);
-    if !query_lower.is_empty() && content_lower.contains(query_lower) {
-        score += 5.0;
-    }
-    for token in query_tokens {
-        if content_lower.contains(token) {
-            score += 1.1;
-        }
-    }
-    if let Some(value) = vector_score {
-        score += value.max(0.0) * 6.0;
-    }
-    score
-}
-
-fn build_local_knowledge_context_prompt(hits: &[LocalKnowledgeSearchHit]) -> String {
-    let mut lines = vec![
-        format!("{LOCAL_KNOWLEDGE_CONTEXT_MARKER}"),
-        "Use relevant snippets below when answering; do not fabricate unavailable details."
-            .to_string(),
-    ];
-    for (index, hit) in hits.iter().enumerate() {
-        let content = truncate_local_knowledge_snippet(&hit.content);
-        lines.push(format!(
-            "[{}] source={}#{} score={:.2}\n{}",
-            index + 1,
-            hit.file_name,
-            hit.index + 1,
-            hit.score,
-            content
-        ));
-    }
-    lines.join("\n\n")
-}
-
-fn truncate_local_knowledge_snippet(content: &str) -> String {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    let mut chars = trimmed.chars();
-    let snippet: String = chars
-        .by_ref()
-        .take(LOCAL_KNOWLEDGE_CONTEXT_MAX_CHARS_PER_SNIPPET)
-        .collect();
-    if chars.next().is_some() {
-        format!("{snippet}...")
-    } else {
-        snippet
     }
 }
 
-async fn has_code_mode_available(state: &McpRuntimeState) -> Result<bool, McpError> {
-    let tools = state.store.list_tools().await?;
-    let mut tool_names = HashSet::new();
-    for tool in tools {
-        let name = tool.name.trim().to_lowercase();
-        if !name.is_empty() {
-            tool_names.insert(name);
+pub(crate) async fn start_local_periodic_worker(state: McpRuntimeState) {
+    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    loop {
+        interval.tick().await;
+        if let Err(err) = state.store.cleanup_stale_data().await {
+            warn!("periodic worker cleanup error: {}", err);
         }
     }
-    Ok(tool_names.contains("search_sdk") && tool_names.contains("execute_code_plan"))
-}
-
-fn resolve_code_mode_direct_allowlist() -> Vec<String> {
-    let mut merged = HashSet::from(["search_sdk".to_string(), "execute_code_plan".to_string()]);
-    if let Ok(raw) = std::env::var("CODE_MODE_DIRECT_TOOL_ALLOWLIST") {
-        for item in raw.split(',') {
-            let trimmed = item.trim().to_lowercase();
-            if !trimmed.is_empty() {
-                merged.insert(trimmed);
-            }
-        }
-    }
-    let mut output: Vec<String> = merged.into_iter().collect();
-    output.sort();
-    output
 }
 
 async fn run_local_chat_complete_with_auto_code_mode(
     app_state: &AppState,
-    mcp_state: &McpRuntimeState,
-    session_id: &str,
-    payload: LocalChatRequest,
-) -> Result<LocalChatExecutionResult, McpError> {
-    let mut messages = payload.messages.clone();
-    let mut handled_tool_calls: Vec<serde_json::Value> = Vec::new();
-    let mut handled_results: Vec<serde_json::Value> = Vec::new();
-    let mut fallback_content = String::new();
-    let max_rounds: usize = 3;
+    model_connection: &LocalModelConnection,
+    messages: Vec<LocalChatInputMessage>,
+    chat_ctx: &LocalChatContext,
+) -> Result<serde_json::Value, String> {
+    let provider_model_id = &model_connection.provider_model_id;
+    let model_id = &model_connection.model_id;
 
-    for _round in 0..max_rounds {
-        let chat = run_local_chat_complete(
-            mcp_state,
-            LocalChatRequest {
-                assistant_id: payload.assistant_id.clone(),
-                model: payload.model.clone(),
-                messages: messages.clone(),
-                temperature: payload.temperature,
-                top_p: payload.top_p,
-                max_tokens: payload.max_tokens,
-                base_url: payload.base_url.clone(),
-                api_key: payload.api_key.clone(),
-            },
+    let search_query = messages.last().map(|m| &m.content).cloned().unwrap_or_default();
+    let mut tools = build_local_sdk_search_result(app_state, &search_query).await;
+
+    let response = app_state
+        .providers
+        .store
+        .chat_completion(
+            provider_model_id,
+            model_id,
+            messages,
+            Some(tools),
+            None, // temperature
+            None, // max_tokens
         )
-        .await?;
+        .await
+        .map_err(to_string)?;
 
-        if chat.tool_calls.is_empty() {
-            let final_content = if !chat.content.trim().is_empty() {
-                chat.content
-            } else {
-                fallback_content.clone()
-            };
-            let code_mode_meta = if handled_results.is_empty() {
-                serde_json::Value::Null
-            } else {
-                serde_json::json!({
-                    "auto_triggered": true,
-                    "results": handled_results,
-                })
-            };
-            return Ok(LocalChatExecutionResult {
-                content: final_content,
-                tool_calls_meta: handled_tool_calls,
-                code_mode_meta,
-            });
-        }
-
-        let (synthesized, tool_calls_meta, results) = maybe_handle_local_code_mode_tool_calls(
-            app_state,
-            session_id,
-            &chat,
-            payload.max_tokens,
-        )
-        .await;
-
-        if !chat.content.trim().is_empty() {
-            messages.push(LocalChatInputMessage {
-                role: "assistant".to_string(),
-                content: chat.content,
-            });
-        }
-        messages.push(LocalChatInputMessage {
-            role: "user".to_string(),
-            content: format!(
-                "Tool execution results (JSON):\n{}\nPlease continue and provide the final answer for user.",
-                truncate_tool_results_payload(
-                    &serde_json::to_string_pretty(&serde_json::Value::Array(results.clone()))
-                        .unwrap_or_else(|_| "[]".to_string())
-                )
-            ),
-        });
-
-        fallback_content = synthesized;
-        handled_tool_calls.extend(tool_calls_meta);
-        handled_results.extend(results);
+    let tool_calls = extract_chat_tool_calls(&response);
+    if tool_calls.is_empty() {
+        return Ok(response);
     }
 
-    Ok(LocalChatExecutionResult {
-        content: if fallback_content.trim().is_empty() {
-            "[Code Mode] 已执行工具调用，但未生成最终自然语言回复。".to_string()
-        } else {
-            fallback_content
-        },
-        tool_calls_meta: handled_tool_calls,
-        code_mode_meta: serde_json::json!({
-            "auto_triggered": true,
-            "stopped_by": "max_rounds",
-            "results": handled_results,
-        }),
-    })
+    let (synthesized, _tool_call_meta, results) = maybe_handle_local_code_mode_tool_calls(
+        app_state,
+        &response,
+        chat_ctx,
+    )
+    .await;
+
+    if synthesized {
+        let mut final_response = response.clone();
+        if let Some(content) = final_response.get_mut("content") {
+            *content = serde_json::json!(results.join("\n\n"));
+        }
+        return Ok(final_response);
+    }
+
+    Ok(response)
 }
 
 async fn maybe_handle_local_code_mode_tool_calls(
     app_state: &AppState,
-    session_id: &str,
-    chat: &LocalChatResponse,
-    max_tokens: Option<u32>,
-) -> (String, Vec<serde_json::Value>, Vec<serde_json::Value>) {
-    if chat.tool_calls.is_empty() {
-        return (chat.content.clone(), Vec::new(), Vec::new());
+    chat_response: &serde_json::Value,
+    chat_ctx: &LocalChatContext,
+) -> (bool, Vec<serde_json::Value>, Vec<String>) {
+    let tool_calls = extract_chat_tool_calls(chat_response);
+    if tool_calls.is_empty() {
+        return (false, Vec::new(), Vec::new());
     }
 
-    let mut tool_call_meta: Vec<serde_json::Value> = Vec::new();
-    let mut handled_results: Vec<serde_json::Value> = Vec::new();
+    let mut tool_call_meta = Vec::new();
+    let mut results = Vec::new();
+    let mut synthesized = false;
 
-    for call in &chat.tool_calls {
+    for call in tool_calls {
         let tool_name = call.name.trim().to_lowercase();
-        match tool_name.as_str() {
-            "search_sdk" => {
-                let query = call
-                    .arguments
-                    .get("query")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or_default();
-                let result = build_local_sdk_search_result(app_state, query).await;
-                tool_call_meta.push(serde_json::json!({
-                    "name": call.name,
-                    "success": true,
-                    "arguments": call.arguments,
-                }));
-                handled_results.push(serde_json::json!({
-                    "tool": "search_sdk",
-                    "result": result,
-                }));
-            }
-            "execute_code_plan" => {
-                let Some(code) = call.arguments.get("code").and_then(|value| value.as_str()) else {
-                    tool_call_meta.push(serde_json::json!({
-                        "name": call.name,
-                        "success": false,
-                        "arguments": call.arguments,
-                    }));
-                    handled_results.push(serde_json::json!({
-                        "tool": "execute_code_plan",
-                        "error": "missing code",
-                    }));
-                    continue;
-                };
+        if tool_name == "execute_code_plan" {
+            let code = call.arguments.get("code").and_then(|v| v.as_str()).unwrap_or("");
+            let language = call.arguments.get("language").and_then(|v| v.as_str()).unwrap_or("python");
+            let execution_timeout = call.arguments.get("execution_timeout").and_then(|v| v.as_u64()).map(|v| v as i32);
+            let dry_run = call.arguments.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
 
-                let execution_timeout = call
-                    .arguments
-                    .get("execution_timeout")
-                    .and_then(|value| value.as_u64());
-                let dry_run = call
-                    .arguments
-                    .get("dry_run")
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(false);
-                let language = call
-                    .arguments
-                    .get("language")
-                    .and_then(|value| value.as_str())
-                    .map(|value| value.to_string())
-                    .or(Some("python".to_string()));
-
-                let exec = crate::modules::code_mode::commands::execute_local_code_mode_inner(
+            if !code.is_empty() {
+                let execution_res = crate::modules::code_mode::commands::execute_local_code_mode_inner(
                     app_state,
                     ExecuteLocalCodeModeRequest {
                         code: code.to_string(),
-                        session_id: Some(session_id.to_string()),
-                        language,
+                        session_id: Some(chat_ctx.session_id.clone()),
+                        language: language.to_string(),
                         execution_timeout,
                         dry_run: Some(dry_run),
                         context: None,
-                        max_calls: max_tokens.map(|value| value as i64),
+                        max_calls: None,
                     },
                 )
                 .await;
 
-                match exec {
-                    Ok(execution) => {
+                match execution_res {
+                    Ok(res) => {
+                        synthesized = true;
                         tool_call_meta.push(serde_json::json!({
-                            "name": call.name,
-                            "success": execution.success,
-                            "arguments": call.arguments,
+                            "id": call.id,
+                            "name": tool_name,
+                            "status": "success",
+                            "result": res,
                         }));
-                        handled_results.push(serde_json::to_value(execution).unwrap_or_else(|_| {
-                            serde_json::json!({"tool": "execute_code_plan", "error": "serialize_failed"})
-                        }));
+                        results.push(format!("Code Execution Result:\n{}", res.result));
                     }
                     Err(err) => {
                         tool_call_meta.push(serde_json::json!({
-                            "name": call.name,
-                            "success": false,
-                            "arguments": call.arguments,
+                            "id": call.id,
+                            "name": tool_name,
+                            "status": "error",
+                            "error": err,
                         }));
-                        handled_results.push(serde_json::json!({
-                            "tool": "execute_code_plan",
-                            "error": err.to_string(),
-                        }));
+                        results.push(format!("Code Execution Failed: {}", err));
                     }
                 }
             }
-            _ => {
-                tool_call_meta.push(serde_json::json!({
-                    "name": call.name,
-                    "success": false,
-                    "arguments": call.arguments,
-                }));
-                handled_results.push(serde_json::json!({
-                    "tool": call.name,
-                    "error": "tool not supported in local auto code mode",
-                }));
-            }
+        } else if tool_name == "search_sdk" {
+            let query = call.arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            let search_res = build_local_sdk_search_result(app_state, query).await;
+            synthesized = true;
+            tool_call_meta.push(serde_json::json!({
+                "id": call.id,
+                "name": tool_name,
+                "status": "success",
+                "result": search_res,
+            }));
+            results.push(format!("SDK Search Result for '{}':\n{}", query, serde_json::to_string_pretty(&search_res).unwrap()));
         }
     }
 
-    let synthesized = synthesize_local_tool_result_message(&chat.content, &handled_results);
-    (synthesized, tool_call_meta, handled_results)
+    (synthesized, tool_call_meta, results)
 }
 
 async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> serde_json::Value {
@@ -3401,36 +1547,30 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
     if !normalized.is_empty() {
         if let Ok(vector) = app_state.providers.embedding.embed_text(&normalized).await {
             // Search tools
-            if let Ok(vector_hits) = app_state
-                .memory
-                .store
-                .search_tools(vector.clone(), 10)
-                .await
-            {
+            if let Ok(vector_hits) = app_state.memory.store.search_tools(vector.clone(), 10).await {
                 for hit in vector_hits {
                     if let Some(tool_id) = hit.get("id").and_then(|v| v.as_str()) {
-                        if let Ok(Some(tool)) = app_state.mcp.store.get_tool(tool_id).await {
-                            let name = tool.name.trim().to_string();
-                            let status = tool.status.as_str().to_string();
-                            let availability = matches!(
-                                tool.status,
-                                crate::modules::mcp::types::McpToolStatus::Healthy
-                                    | crate::modules::mcp::types::McpToolStatus::Degraded
-                            );
-                            let signature =
-                                extract_tool_signature_from_config_json(&tool.config_json);
-                            catalog.push(serde_json::json!({
-                                "name": name,
-                                "identifier": tool.identifier,
-                                "description": tool.description,
-                                "source": "local_mcp_semantic",
-                                "status": status,
-                                "available": availability,
-                                "capabilities": tool.capabilities,
-                                "parameters": signature,
-                                "score": hit.get("_distance"),
-                            }));
-                        }
+                         if let Ok(Some(tool)) = app_state.mcp.store.get_tool(tool_id).await {
+                             let name = tool.name.trim().to_string();
+                             let status = tool.status.as_str().to_string();
+                             let availability = matches!(
+                                 tool.status,
+                                 crate::modules::mcp::types::McpToolStatus::Healthy
+                                     | crate::modules::mcp::types::McpToolStatus::Degraded
+                             );
+                             let signature = extract_tool_signature_from_config_json(&tool.config_json);
+                             catalog.push(serde_json::json!({
+                                 "name": name,
+                                 "identifier": tool.identifier,
+                                 "description": tool.description,
+                                 "source": "local_mcp_semantic",
+                                 "status": status,
+                                 "available": availability,
+                                 "capabilities": tool.capabilities,
+                                 "parameters": signature,
+                                 "score": hit.get("_distance"),
+                             }));
+                         }
                     }
                 }
             }
@@ -3460,8 +1600,8 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
 
             // Avoid duplicate with semantic hits
             if catalog.iter().any(|item| {
-                item.get("source").and_then(|v| v.as_str()) == Some("local_mcp_semantic")
-                    && item.get("name").and_then(|v| v.as_str()) == Some(&name)
+                item.get("source").and_then(|v| v.as_str()) == Some("local_mcp_semantic") &&
+                item.get("name").and_then(|v| v.as_str()) == Some(&name)
             }) {
                 continue;
             }
@@ -3500,8 +1640,7 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
             if name_hit {
                 return true;
             }
-            let desc_hit = item
-                .get("description")
+            let desc_hit = item.get("description")
                 .and_then(|value| value.as_str())
                 .map(|desc| desc.to_lowercase().contains(&normalized))
                 .unwrap_or(false);
@@ -3538,952 +1677,46 @@ fn extract_tool_signature_from_config_json(config_json: &str) -> serde_json::Val
             return schema.clone();
         }
     }
-
-    if let Some(capabilities) = value.get("capabilities") {
-        return serde_json::json!({
-            "capabilities": capabilities,
-        });
-    }
-
     serde_json::json!({})
 }
 
-fn synthesize_local_tool_result_message(
-    original_content: &str,
-    handled_results: &[serde_json::Value],
-) -> String {
-    if handled_results.is_empty() {
-        return original_content.to_string();
-    }
-
-    let mut lines = Vec::new();
-    let original = original_content.trim();
-    if !original.is_empty() {
-        lines.push(original.to_string());
-    }
-    lines.push("[Code Mode] 已自动执行工具调用。".to_string());
-    for result in handled_results {
-        let text = serde_json::to_string_pretty(result)
-            .unwrap_or_else(|_| "{\"error\":\"serialize_failed\"}".to_string());
-        lines.push(text);
-    }
-    lines.join("\n\n")
-}
-
-fn truncate_tool_results_payload(text: &str) -> String {
-    if text.chars().count() <= LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS {
-        return text.to_string();
-    }
-    let truncated: String = text
-        .chars()
-        .take(LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS)
-        .collect();
-    format!(
-        "{}\n\n[truncated:{}]",
-        truncated,
-        text.chars().count() - LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS
-    )
-}
-
-async fn record_local_bandit_feedback_best_effort(
-    app_state: &AppState,
-    provider_model_id: &str,
-    success: bool,
-    latency_ms: f64,
-) {
-    let arm_id = provider_model_id.trim();
-    if arm_id.is_empty() {
-        return;
-    }
-
-    let payload = BanditFeedbackRequest {
-        scene: Some("router:llm".to_string()),
-        arm_id: arm_id.to_string(),
-        success,
-        latency_ms: Some(latency_ms),
-        cost: None,
-        reward: Some(if success { 1.0 } else { 0.0 }),
-        routing_config: None,
-        reward_metric_type: Some("latency_success".to_string()),
-    };
-
-    if let Err(err) = app_state
-        .providers
-        .store
-        .record_bandit_feedback(payload)
-        .await
-    {
-        warn!(
-            "failed to record local bandit feedback for provider_model {}: {}",
-            arm_id, err
-        );
-    }
-}
-
-fn estimate_local_text_tokens(text: &str) -> i64 {
-    if text.trim().is_empty() {
-        return 0;
-    }
-    let chars = text.chars().count() as i64;
-    (chars / 4).max(1)
-}
-
-fn estimate_local_chat_messages_tokens(messages: &[LocalChatInputMessage]) -> i64 {
-    messages
-        .iter()
-        .map(|message| estimate_local_text_tokens(&message.content))
-        .sum()
-}
-
-fn local_gateway_status_code_from_error(err: &McpError) -> i64 {
-    match err {
-        McpError::Validation(_) => 400,
-        McpError::NotFound(_) => 404,
-        McpError::Process(_) => 502,
-        McpError::Storage(_) => 500,
-        McpError::Network(_) => 502,
-    }
-}
-
-fn local_gateway_error_code_from_error(err: &McpError) -> Option<&'static str> {
-    match err {
-        McpError::Validation(_) => Some("VALIDATION_ERROR"),
-        McpError::NotFound(_) => Some("UPSTREAM_NOT_FOUND"),
-        McpError::Process(_) => Some("UPSTREAM_INVALID_RESPONSE"),
-        McpError::Storage(_) => Some("LOCAL_STORAGE_ERROR"),
-        McpError::Network(_) => Some("UPSTREAM_ERROR"),
-    }
-}
-
-async fn record_local_gateway_log_best_effort(
-    mcp_state: &McpRuntimeState,
-    trace_id: Option<&str>,
-    model: &str,
-    status_code: i64,
-    duration_ms: i64,
-    ttft_ms: Option<i64>,
-    upstream_url: Option<&str>,
-    input_tokens: i64,
-    output_tokens: i64,
-    total_tokens: i64,
-    error_code: Option<&str>,
-    meta: Option<&serde_json::Value>,
-) {
-    if let Err(err) = mcp_state
-        .store
-        .create_local_gateway_log(
-            trace_id,
-            model,
-            status_code,
-            duration_ms,
-            ttft_ms,
-            upstream_url,
-            0,
-            input_tokens,
-            output_tokens,
-            total_tokens,
-            0.0,
-            0.0,
-            false,
-            error_code,
-            meta,
-        )
-        .await
-    {
-        warn!(
-            "failed to record local gateway log: trace_id={:?} model={} err={}",
-            trace_id, model, err
-        );
-    }
-}
-
-async fn resolve_local_model_connection(
-    app_state: &AppState,
-    requested_model: &str,
-    provider_model_id: Option<&str>,
-) -> Result<LocalModelConnection, McpError> {
-    let normalized_model = requested_model.trim().to_string();
-    if normalized_model.is_empty() {
-        return Err(McpError::validation("model is required"));
-    }
-
-    let instances = app_state
-        .providers
-        .store
-        .list_instances()
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-    let enabled_instances: Vec<_> = instances
-        .into_iter()
-        .filter(|instance| instance.is_enabled)
-        .collect();
-
-    if enabled_instances.is_empty() {
-        return Err(McpError::NotFound(
-            "no enabled provider instances found".to_string(),
-        ));
-    }
-
-    if let Some(raw_provider_model_id) = provider_model_id {
-        let provider_model_uuid = Uuid::parse_str(raw_provider_model_id.trim())
-            .map_err(|_| McpError::validation("invalid provider_model_id"))?;
-        let model = app_state
-            .providers
-            .store
-            .get_model(&provider_model_uuid)
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?
-            .ok_or_else(|| McpError::NotFound("provider model not found".to_string()))?;
-
-        if !model.is_active {
-            return Err(McpError::validation("provider model is inactive"));
-        }
-
-        let instance = enabled_instances
-            .iter()
-            .find(|item| item.id == model.instance_id)
-            .ok_or_else(|| {
-                McpError::NotFound("provider instance not enabled for this model".to_string())
-            })?;
-
-        let connection = app_state
-            .providers
-            .store
-            .get_instance_connection(&instance.id)
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?
-            .ok_or_else(|| {
-                McpError::NotFound("provider instance connection missing".to_string())
-            })?;
-
-        return Ok(LocalModelConnection {
-            provider_model_id: model.id.to_string(),
-            model_id: model.model_id,
-            base_url: connection.base_url,
-            secret_key: connection.secret_key,
-        });
-    }
-
-    for instance in enabled_instances {
-        let models = app_state
-            .providers
-            .store
-            .list_models(&instance.id)
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        let selected_model = models.into_iter().find(|item| {
-            item.is_active
-                && (item.model_id == normalized_model || item.id.to_string() == normalized_model)
-        });
-
-        if let Some(model) = selected_model {
-            let connection = app_state
-                .providers
-                .store
-                .get_instance_connection(&instance.id)
-                .await
-                .map_err(|err| McpError::Storage(err.to_string()))?
-                .ok_or_else(|| {
-                    McpError::NotFound("provider instance connection missing".to_string())
-                })?;
-            return Ok(LocalModelConnection {
-                provider_model_id: model.id.to_string(),
-                model_id: model.model_id,
-                base_url: connection.base_url,
-                secret_key: connection.secret_key,
-            });
-        }
-    }
-
-    Err(McpError::NotFound(format!(
-        "no active local provider model matches {}",
-        normalized_model
-    )))
-}
-
-async fn resolve_default_local_model_connection(
-    app_state: &AppState,
-) -> Result<LocalModelConnection, McpError> {
-    let instances = app_state
-        .providers
-        .store
-        .list_instances()
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-    let enabled_instances: Vec<_> = instances
-        .into_iter()
-        .filter(|instance| instance.is_enabled)
-        .collect();
-
-    if enabled_instances.is_empty() {
-        return Err(McpError::NotFound(
-            "no enabled provider instances found".to_string(),
-        ));
-    }
-
-    for instance in enabled_instances {
-        let models = app_state
-            .providers
-            .store
-            .list_models(&instance.id)
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-        if let Some(model) = models.into_iter().find(|item| item.is_active) {
-            let connection = app_state
-                .providers
-                .store
-                .get_instance_connection(&instance.id)
-                .await
-                .map_err(|err| McpError::Storage(err.to_string()))?
-                .ok_or_else(|| {
-                    McpError::NotFound("provider instance connection missing".to_string())
-                })?;
-            return Ok(LocalModelConnection {
-                provider_model_id: model.id.to_string(),
-                model_id: model.model_id,
-                base_url: connection.base_url,
-                secret_key: connection.secret_key,
-            });
-        }
-    }
-
-    Err(McpError::NotFound(
-        "no active local provider model found".to_string(),
-    ))
-}
-
-pub async fn start_local_conversation_summary_worker(app_state: AppState) {
-    loop {
-        let job = match app_state
-            .mcp
-            .store
-            .claim_next_local_conversation_summary_job()
-            .await
-        {
-            Ok(job) => job,
-            Err(err) => {
-                warn!(
-                    "local conversation summary worker claim job failed: {}",
-                    err
-                );
-                tokio::time::sleep(Duration::from_secs(
-                    LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
-                ))
-                .await;
-                continue;
-            }
-        };
-
-        let Some(job) = job else {
-            tokio::time::sleep(Duration::from_secs(
-                LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
-            ))
-            .await;
-            continue;
-        };
-
-        let session_id = job.session_id.clone();
-        match refresh_local_conversation_summary(&app_state, &session_id).await {
-            Ok(_) => {
-                if let Err(err) = app_state
-                    .mcp
-                    .store
-                    .complete_local_conversation_summary_job(&job.id)
-                    .await
-                {
-                    warn!(
-                        "local conversation summary worker complete job failed: job_id={} session_id={} err={}",
-                        job.id, session_id, err
-                    );
-                }
-            }
-            Err(McpError::NotFound(err)) | Err(McpError::Validation(err)) => {
-                warn!(
-                    "local conversation summary worker skip non-retriable job: job_id={} session_id={} err={}",
-                    job.id, session_id, err
-                );
-                if let Err(mark_err) = app_state
-                    .mcp
-                    .store
-                    .complete_local_conversation_summary_job(&job.id)
-                    .await
-                {
-                    warn!(
-                        "local conversation summary worker complete skipped job failed: job_id={} session_id={} err={}",
-                        job.id, session_id, mark_err
-                    );
-                }
-            }
-            Err(err) => {
-                let retry_delay_seconds =
-                    compute_local_conversation_summary_retry_delay_seconds(job.attempts);
-                let err_text = err.to_string();
-                if let Err(mark_err) = app_state
-                    .mcp
-                    .store
-                    .fail_local_conversation_summary_job(&job, &err_text, retry_delay_seconds)
-                    .await
-                {
-                    warn!(
-                        "local conversation summary worker mark job failed-state failed: job_id={} session_id={} err={}",
-                        job.id, session_id, mark_err
-                    );
-                } else {
-                    warn!(
-                        "local conversation summary worker execution failed: job_id={} session_id={} attempts={}/{} retry_after={}s err={}",
-                        job.id,
-                        session_id,
-                        job.attempts,
-                        job.max_attempts,
-                        retry_delay_seconds,
-                        err_text
-                    );
-                }
-            }
-        }
-    }
-}
-
-pub async fn start_local_periodic_worker(app_state: AppState) {
-    if let Err(err) = app_state
-        .mcp
-        .store
-        .upsert_local_periodic_task(
-            LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_NAME,
-            LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_INTERVAL_SECS,
-            LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_INITIAL_DELAY_SECS,
-        )
-        .await
-    {
-        warn!(
-            "local periodic worker register builtin tasks failed: {}",
-            err
-        );
-    }
-    if let Err(err) = app_state
-        .mcp
-        .store
-        .upsert_local_periodic_task(
-            LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_NAME,
-            LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_INTERVAL_SECS,
-            LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_INITIAL_DELAY_SECS,
-        )
-        .await
-    {
-        warn!(
-            "local periodic worker register idle-dispatch task failed: {}",
-            err
-        );
-    }
-
-    loop {
-        let task = match app_state.mcp.store.claim_next_local_periodic_task().await {
-            Ok(task) => task,
-            Err(err) => {
-                warn!("local periodic worker claim task failed: {}", err);
-                tokio::time::sleep(Duration::from_secs(
-                    LOCAL_PERIODIC_TASK_WORKER_IDLE_INTERVAL_SECS,
-                ))
-                .await;
-                continue;
-            }
-        };
-
-        let Some(task) = task else {
-            tokio::time::sleep(Duration::from_secs(
-                LOCAL_PERIODIC_TASK_WORKER_IDLE_INTERVAL_SECS,
-            ))
-            .await;
-            continue;
-        };
-
-        match run_local_periodic_task(&app_state, &task.task_name).await {
-            Ok(detail) => {
-                if let Err(err) = app_state
-                    .mcp
-                    .store
-                    .mark_local_periodic_task_success(&task.task_name)
-                    .await
-                {
-                    warn!(
-                        "local periodic worker mark success failed: task={} interval={}s err={}",
-                        task.task_name, task.interval_seconds, err
-                    );
-                } else if !detail.ends_with("=0") {
-                    warn!(
-                        "local periodic worker task succeeded: task={} interval={}s detail={}",
-                        task.task_name, task.interval_seconds, detail
-                    );
-                }
-            }
-            Err(err) => {
-                let err_text = err.to_string();
-                if let Err(mark_err) = app_state
-                    .mcp
-                    .store
-                    .mark_local_periodic_task_failure(&task.task_name, &err_text)
-                    .await
-                {
-                    warn!(
-                        "local periodic worker mark failure failed: task={} interval={}s err={}",
-                        task.task_name, task.interval_seconds, mark_err
-                    );
-                } else {
-                    warn!(
-                        "local periodic worker task failed: task={} interval={}s err={}",
-                        task.task_name, task.interval_seconds, err_text
-                    );
-                }
-            }
-        }
-    }
-}
-
-async fn run_local_periodic_task(
-    app_state: &AppState,
-    task_name: &str,
-) -> Result<String, McpError> {
-    match task_name {
-        LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_NAME => {
-            let deleted = app_state
-                .mcp
-                .store
-                .cleanup_old_local_conversation_summary_jobs(
-                    LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_RETENTION_SECS,
-                )
-                .await?;
-            Ok(format!("deleted_summary_jobs={}", deleted))
-        }
-        LOCAL_PERIODIC_TASK_SUMMARY_IDLE_DISPATCH_NAME => {
-            let dispatched = app_state
-                .mcp
-                .store
-                .dispatch_due_local_conversation_summary_idle_tasks()
-                .await?;
-            Ok(format!("dispatched_summary_idle_checks={}", dispatched))
-        }
-        _ => Err(McpError::validation(format!(
-            "unknown local periodic task: {}",
-            task_name
-        ))),
-    }
-}
-
-fn compute_local_conversation_summary_retry_delay_seconds(attempts: i64) -> i64 {
-    let normalized_attempt = attempts.max(1).min(8);
-    let multiplier = 2_i64.pow((normalized_attempt - 1) as u32);
-    LOCAL_CONVERSATION_SUMMARY_WORKER_RETRY_BASE_DELAY_SECS
-        .saturating_mul(multiplier)
-        .min(LOCAL_CONVERSATION_SUMMARY_WORKER_RETRY_MAX_DELAY_SECS)
-}
-
-fn extract_tool_calls_from_trace_meta(meta: &serde_json::Value) -> Option<Vec<TraceToolCall>> {
-    let raw_calls = meta.get("tool_calls")?.as_array()?;
+fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCall> {
     let mut calls = Vec::new();
-    for raw in raw_calls {
-        let Some(item) = raw.as_object() else {
-            continue;
-        };
-        let name = item
-            .get("name")
-            .and_then(|value| value.as_str())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
-        let Some(name) = name else {
-            continue;
-        };
-        let success = item
-            .get("success")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(true);
-        calls.push(TraceToolCall { name, success });
-    }
-    if calls.is_empty() {
-        None
-    } else {
-        Some(calls)
-    }
-}
-
-async fn process_trace_feedback_tool_calls(
-    app_state: &AppState,
-    score: f64,
-    tool_calls: Vec<TraceToolCall>,
-) {
-    for call in tool_calls {
-        if !call.name.starts_with("skill__") {
-            continue;
-        }
-        let mut reward = score;
-        if !call.success && reward > 0.0 {
-            reward = -1.0;
-        }
-        let payload = BanditFeedbackRequest {
-            scene: Some("retrieval:skill".to_string()),
-            arm_id: call.name.clone(),
-            success: call.success && reward > 0.0,
-            latency_ms: None,
-            cost: None,
-            reward: Some(reward),
-            routing_config: None,
-            reward_metric_type: Some("user_feedback".to_string()),
-        };
-        if let Err(err) = app_state
-            .providers
-            .store
-            .record_bandit_feedback(payload)
-            .await
-        {
-            warn!(
-                "trace feedback bandit write failed: arm={} err={}",
-                call.name, err
-            );
-        }
-    }
-}
-
-async fn process_trace_feedback_assistant_routing(
-    mcp_state: &McpRuntimeState,
-    score: f64,
-    meta: &serde_json::Value,
-) {
-    if score == 0.0 {
-        return;
-    }
-    let assistant_id = meta
-        .get("assistant_id")
-        .and_then(|value| value.as_str())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let Some(assistant_id) = assistant_id else {
-        return;
-    };
-
-    let event = if score > 0.0 {
-        "thumbs_up"
-    } else {
-        "thumbs_down"
-    };
-    if let Err(err) = mcp_state
-        .store
-        .record_local_assistant_routing_feedback(
-            &assistant_id,
-            LocalAssistantRoutingFeedbackRequest {
-                event: event.to_string(),
-            },
-        )
-        .await
-    {
-        warn!(
-            "trace feedback assistant routing write failed: assistant={} err={}",
-            assistant_id, err
-        );
-    }
-}
-
-async fn refresh_local_conversation_summary(
-    app_state: &AppState,
-    session_id: &str,
-) -> Result<(), McpError> {
-    let mcp_state = &app_state.mcp;
-    let chat_ctx = mcp_state
-        .store
-        .get_local_conversation_chat_context(session_id)
-        .await?;
-    let (summary_text, summarizer_model) =
-        generate_local_conversation_summary(app_state, mcp_state, &chat_ctx.messages).await;
-
-    mcp_state
-        .store
-        .persist_local_conversation_summary(session_id, &summary_text, summarizer_model.as_deref())
-        .await
-}
-
-async fn generate_local_conversation_summary(
-    app_state: &AppState,
-    mcp_state: &McpRuntimeState,
-    messages: &[LocalChatInputMessage],
-) -> (String, Option<String>) {
-    let secretary_model_name = app_state
-        .providers
-        .store
-        .get_or_create_user_secretary()
-        .await
-        .ok()
-        .and_then(|secretary| secretary.model_name)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-
-    if let Some(secretary_model_name) = secretary_model_name {
-        let model_connection =
-            resolve_local_model_connection(app_state, &secretary_model_name, None).await;
-        if let Ok(model_connection) = model_connection {
-            let conversation_text = format_conversation_for_summary(messages);
-            let prompt = build_summary_prompt(&conversation_text);
-            let summarize_response = run_local_chat_complete(
-                mcp_state,
-                LocalChatRequest {
-                    assistant_id: None,
-                    model: model_connection.model_id,
-                    messages: vec![LocalChatInputMessage {
-                        role: "user".to_string(),
-                        content: prompt,
-                    }],
-                    temperature: None,
-                    top_p: None,
-                    max_tokens: None,
-                    base_url: Some(model_connection.base_url),
-                    api_key: model_connection.secret_key,
-                },
-            )
-            .await;
-
-            if let Ok(response) = summarize_response {
-                let summary = response.content.trim().to_string();
-                if !summary.is_empty() {
-                    return (truncate_summary_text(&summary), Some(secretary_model_name));
-                }
+    if let Some(tc_array) = response.get("tool_calls").and_then(|v| v.as_array()) {
+        for tc in tc_array {
+            if let (Some(id), Some(name)) = (
+                tc.get("id").and_then(|v| v.as_str()),
+                tc.get("name").and_then(|v| v.as_str()),
+            ) {
+                calls.push(LocalChatToolCall {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    arguments: tc.get("arguments").cloned().unwrap_or(serde_json::json!({})),
+                });
             }
         }
     }
-
-    (build_local_summary_fallback(messages), None)
+    calls
 }
 
-fn build_summary_prompt(conversation_text: &str) -> String {
-    format!("{LOCAL_CONVERSATION_SUMMARY_PROMPT}{conversation_text}")
-}
-
-fn format_conversation_for_summary(messages: &[LocalChatInputMessage]) -> String {
-    let mut lines = Vec::with_capacity(messages.len());
-    for message in messages {
-        let role = message.role.trim();
-        let content = message.content.trim();
-        if content.is_empty() {
-            continue;
-        }
-        lines.push(format!("[{role}] {content}"));
-    }
-    lines.join("\n")
-}
-
-fn build_local_summary_fallback(messages: &[LocalChatInputMessage]) -> String {
-    let mut lines = Vec::new();
-    for message in messages
-        .iter()
-        .rev()
-        .take(LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES)
-        .rev()
-    {
-        let role = message.role.trim();
-        let content = message.content.trim();
-        if content.is_empty() {
-            continue;
-        }
-        lines.push(format!("[{role}] {content}"));
-    }
-    let joined = lines.join("\n");
-    truncate_summary_text(&joined)
-}
-
-fn truncate_summary_text(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= LOCAL_CONVERSATION_SUMMARY_MAX_CHARS {
-        return text.to_string();
-    }
-    let truncated: String = chars
-        .into_iter()
-        .take(LOCAL_CONVERSATION_SUMMARY_MAX_CHARS.saturating_sub(4))
-        .collect();
-    format!("{truncated} ...")
-}
-
-fn build_chat_endpoint(base_url: &str) -> String {
-    format!("{}/v1/chat/completions", base_url.trim_end_matches('/'))
-}
-
-fn normalize_bearer_token(token: &str) -> String {
-    if token.starts_with("Bearer ") {
-        token.to_string()
-    } else {
-        format!("Bearer {}", token)
-    }
-}
-
-fn extract_error_message(value: &serde_json::Value) -> Option<String> {
-    value
-        .get("error")
-        .and_then(|e| e.get("message"))
-        .and_then(|m| m.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| {
-            value
-                .get("message")
-                .and_then(|m| m.as_str())
-                .map(|s| s.to_string())
-        })
-}
-
-fn extract_chat_content(value: &serde_json::Value) -> Option<String> {
-    value
-        .get("choices")
-        .and_then(|c| c.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|choice| choice.get("message"))
-        .and_then(|msg| msg.get("content"))
-        .and_then(|c| c.as_str())
-        .map(|s| s.to_string())
-}
-
-fn extract_chat_tool_calls(value: &serde_json::Value) -> Vec<LocalChatToolCall> {
-    let Some(raw_calls) = value
-        .get("choices")
-        .and_then(|c| c.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|choice| choice.get("message"))
-        .and_then(|msg| msg.get("tool_calls"))
-        .and_then(|calls| calls.as_array())
-    else {
-        return Vec::new();
-    };
-
-    let mut output = Vec::new();
-    for raw in raw_calls {
-        let Some(item) = raw.as_object() else {
-            continue;
-        };
-        let function = item.get("function").and_then(|v| v.as_object());
-        let name = function
-            .and_then(|func| func.get("name"))
-            .and_then(|name| name.as_str())
-            .map(|name| name.trim().to_string())
-            .filter(|name| !name.is_empty());
-        let Some(name) = name else {
-            continue;
-        };
-
-        let arguments = function
-            .and_then(|func| func.get("arguments"))
-            .and_then(|args| args.as_str())
-            .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
-            .unwrap_or_else(|| serde_json::json!({}));
-
-        output.push(LocalChatToolCall {
-            id: item
-                .get("id")
-                .and_then(|id| id.as_str())
-                .map(|id| id.to_string()),
-            name,
-            arguments,
-        });
-    }
-    output
-}
-
-pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
-    for tool in tools {
-        let text = format!("name: {}\ndescription: {}", tool.name, tool.description);
-        if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
-            let _ = app_state
-                .memory
-                .store
-                .append_tool(
-                    tool.id.clone(),
-                    tool.name.clone(),
-                    tool.description.clone(),
-                    tool.identifier.clone(),
-                    vector,
-                )
-                .await;
-        }
-    }
-}
+const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
+const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
+const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
+const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_local_knowledge_context_prompt, build_local_summary_fallback,
-        extract_chat_tool_calls, extract_tool_signature_from_config_json,
-        format_conversation_for_summary, rerank_local_knowledge_hit, tokenize_local_query_terms,
-        truncate_local_knowledge_snippet, truncate_summary_text, truncate_tool_results_payload,
-        LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS,
-        LOCAL_KNOWLEDGE_CONTEXT_MARKER,
-    };
-    use crate::modules::mcp::types::{LocalChatInputMessage, LocalKnowledgeSearchHit};
+    use super::*;
 
     #[test]
-    fn format_conversation_skips_empty_content() {
-        let messages = vec![
-            LocalChatInputMessage {
-                role: "user".to_string(),
-                content: "hello".to_string(),
-            },
-            LocalChatInputMessage {
-                role: "assistant".to_string(),
-                content: "   ".to_string(),
-            },
-            LocalChatInputMessage {
-                role: "assistant".to_string(),
-                content: "world".to_string(),
-            },
-        ];
-
-        let result = format_conversation_for_summary(&messages);
-        assert_eq!(result, "[user] hello\n[assistant] world");
-    }
-
-    #[test]
-    fn fallback_uses_recent_messages_only() {
-        let messages = (1..=10)
-            .map(|idx| LocalChatInputMessage {
-                role: if idx % 2 == 0 { "assistant" } else { "user" }.to_string(),
-                content: format!("msg-{idx}"),
-            })
-            .collect::<Vec<_>>();
-
-        let result = build_local_summary_fallback(&messages);
-        let lines: Vec<&str> = result.lines().collect();
-        assert!(!lines.iter().any(|line| line.ends_with("msg-1")));
-        assert!(!lines.iter().any(|line| line.ends_with("msg-2")));
-        assert!(lines.iter().any(|line| line.ends_with("msg-10")));
-    }
-
-    #[test]
-    fn truncate_summary_limits_max_length() {
-        let input = "a".repeat(LOCAL_CONVERSATION_SUMMARY_MAX_CHARS + 32);
-        let result = truncate_summary_text(&input);
-        assert!(result.len() <= LOCAL_CONVERSATION_SUMMARY_MAX_CHARS + 4);
-        assert!(result.ends_with(" ..."));
-    }
-
-    #[test]
-    fn extract_tool_signature_prefers_parameters_key() {
-        let config_json =
-            r#"{"parameters":{"type":"object","properties":{"q":{"type":"string"}}}}"#;
-        let schema = extract_tool_signature_from_config_json(config_json);
-        assert_eq!(schema.get("type").and_then(|v| v.as_str()), Some("object"));
-        assert!(schema.get("properties").is_some());
-    }
-
-    #[test]
-    fn extract_chat_tool_calls_parses_openai_shape() {
+    fn extract_chat_tool_calls_works() {
         let payload = serde_json::json!({
-            "choices": [
+            "content": "hello",
+            "tool_calls": [
                 {
-                    "message": {
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "id": "call_1",
-                                "type": "function",
-                                "function": {
-                                    "name": "execute_code_plan",
-                                    "arguments": "{\"code\":\"print(1)\"}"
-                                }
-                            }
-                        ]
-                    }
+                    "id": "call_1",
+                    "name": "execute_code_plan",
+                    "arguments": {"code": "print(1)"}
                 }
             ]
         });
@@ -4495,62 +1728,5 @@ mod tests {
             calls[0].arguments.get("code").and_then(|v| v.as_str()),
             Some("print(1)")
         );
-    }
-
-    #[test]
-    fn truncate_tool_results_payload_limits_size() {
-        let input = "x".repeat(LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS + 128);
-        let output = truncate_tool_results_payload(&input);
-        assert!(output.contains("[truncated:"));
-        assert!(output.len() > LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS);
-    }
-
-    #[test]
-    fn build_local_knowledge_context_prompt_contains_marker_and_sources() {
-        let hits = vec![LocalKnowledgeSearchHit {
-            chunk_id: "c1".to_string(),
-            file_id: "f1".to_string(),
-            file_name: "runbook.md".to_string(),
-            index: 2,
-            content: "deployment steps".to_string(),
-            token_count: 5,
-            score: 12.3,
-        }];
-
-        let prompt = build_local_knowledge_context_prompt(&hits);
-        assert!(prompt.contains(LOCAL_KNOWLEDGE_CONTEXT_MARKER));
-        assert!(prompt.contains("source=runbook.md#3"));
-        assert!(prompt.contains("deployment steps"));
-    }
-
-    #[test]
-    fn truncate_local_knowledge_snippet_appends_ellipsis_when_needed() {
-        let long_text = "x".repeat(1200);
-        let truncated = truncate_local_knowledge_snippet(&long_text);
-        assert!(truncated.ends_with("..."));
-        assert!(truncated.len() < long_text.len());
-    }
-
-    #[test]
-    fn tokenize_local_query_terms_extracts_words() {
-        let terms = tokenize_local_query_terms("Deploy rust service quickly!");
-        assert!(terms.contains(&"deploy".to_string()));
-        assert!(terms.contains(&"rust".to_string()));
-        assert!(terms.contains(&"service".to_string()));
-    }
-
-    #[test]
-    fn rerank_local_knowledge_hit_boosts_phrase_and_vector() {
-        let query = "deploy rust service";
-        let tokens = tokenize_local_query_terms(query);
-        let strong = rerank_local_knowledge_hit(
-            query,
-            &tokens,
-            "how to deploy rust service on desktop",
-            4.0,
-            Some(0.7),
-        );
-        let weak = rerank_local_knowledge_hit(query, &tokens, "random notes", 0.0, Some(0.1));
-        assert!(strong > weak);
     }
 }

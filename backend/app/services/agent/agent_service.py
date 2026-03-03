@@ -22,6 +22,13 @@ class AgentService:
 
     def __init__(self):
         self.plugin_manager = PluginManager()
+        
+        # Explicitly register the core system SDK
+        try:
+            from app.agent_plugins.builtins.deeting_core_sdk.plugin import DeetingCoreSdkPlugin
+            self.plugin_manager.register_class(DeetingCoreSdkPlugin)
+        except ImportError:
+            logger.warning("DeetingCoreSdkPlugin not found, core SDK features may be limited.")
 
         # 1. Register ALL available capabilities from Configuration
         # This replaces the hardcoded register_class calls.

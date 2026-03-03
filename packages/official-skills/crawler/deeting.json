@@ -10,6 +10,9 @@
   "permissions": [
     "network.outbound"
   ],
+  "env_requirements": [
+    "SCOUT_SERVICE_URL"
+  ],
   "capabilities": {
     "llm_tools": "llm-tool.yaml"
   }

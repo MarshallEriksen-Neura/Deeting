@@ -1201,8 +1201,17 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         if not selected:
             return "", "", 0
 
+        # Build dynamic tool -> pkg mapping from extra_meta
+        tool_to_pkg = {}
+        for t in selected:
+            if t.extra_meta and "pkg_name" in t.extra_meta:
+                tool_to_pkg[t.name] = t.extra_meta["pkg_name"]
+
         while selected:
-            pyi_content, py_content = self._build_runtime_sdk_module_content(selected)
+            pyi_content, py_content = self._build_runtime_sdk_module_content(
+                selected, 
+                tool_to_pkg=tool_to_pkg
+            )
             if (
                 len(pyi_content) <= _MAX_RUNTIME_SDK_STUB_CHARS
                 and len(py_content) <= _MAX_RUNTIME_SDK_STUB_CHARS
@@ -1215,6 +1224,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
     def _build_runtime_sdk_module_content(
         self,
         tools: list[ToolDefinition],
+        tool_to_pkg: dict[str, str] | None = None,
     ) -> tuple[str, str]:
         pyi_lines = [
             "from typing import Any, TypedDict",
@@ -1223,11 +1233,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "def available_tools() -> list[str]: ...",
             "",
         ]
+        
+        tool_to_pkg_json = json.dumps(tool_to_pkg or {}, ensure_ascii=False)
+        
         py_lines = [
             "from __future__ import annotations",
             "from typing import Any, TypedDict",
             "import os",
             "import sys",
+            "import json",
             "",
             "def _runtime():",
             "    import builtins",
@@ -1236,34 +1250,24 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "        raise RuntimeError('deeting runtime is not available')",
             "    return runtime",
             "",
+            f"TOOL_TO_PKG = json.loads({tool_to_pkg_json!r})",
+            "",
             "def call_tool(name: str, **kwargs: Any) -> dict[str, Any]:",
             "    # 1. Elegant Local-First execution",
             "    # Try to find tool implementation in pre-warmed packages",
             "    try:",
-            "        # Mapping tool names to package modules",
-            "        tool_to_pkg = {",
-            "            'fetch_web_content': 'crawler',",
-            "            'crawl_website': 'crawler',",
-            "            'run_python': 'code_interpreter',",
-            "            'propose_execution_plan': 'planner',",
-            "            'retrieve_similar_plans': 'planner',",
-            "            'generate_image': 'image_generation',",
-            "            'add_knowledge_chunk': 'memory',",
-            "            'search_knowledge': 'memory',",
-            "        }",
-            "        pkg_name = tool_to_pkg.get(name)",
+            "        pkg_name = TOOL_TO_PKG.get(name)",
             "        if pkg_name:",
             "            import importlib",
             "            # builtin_skills is the mount point in sandbox",
             "            module = importlib.import_module(f'builtin_skills.{pkg_name}.main')",
             "            handler = getattr(module, name, None)",
             "            if handler:",
-            "                import asyncio",
-            "                # Run in new loop if needed, or just call if synchronous",
-            "                if asyncio.iscoroutinefunction(handler):",
-            "                    return asyncio.run(handler(**kwargs))",
-            "                return handler(**kwargs)",
-            "    except ImportError:",
+                "                import asyncio",
+                "                if asyncio.iscoroutinefunction(handler):",
+                "                    return asyncio.run(handler(**kwargs))",
+                "                return handler(**kwargs)",
+            "    except (ImportError, AttributeError):",
             "        pass # Fallback to bridge",
             "    except Exception as e:",
             "        print(f'[deeting.sdk] Local execution error for {name}: {e}', file=sys.stderr)",

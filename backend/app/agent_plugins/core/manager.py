@@ -1,209 +1,91 @@
-import importlib
-import sys
 import uuid
+from typing import Any
 
 from loguru import logger
-from sqlalchemy import select
 
 from app.agent_plugins.core.context import ConcretePluginContext
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginContext
-from app.core.database import AsyncSessionLocal
-from app.models.agent_plugin import AgentPlugin as AgentPluginModel
 
 
 class PluginManager:
     """
-    Plugin Manager.
-    Handles plugin registration (class discovery) and instantiation.
-    Refactored to support DB-backed plugin discovery.
+    Lightweight Core Plugin Manager.
+    Only handles essential system plugins (like deeting_core_sdk).
+    Business skills are now handled by SkillRegistry.
     """
 
     def __init__(self):
-        # Registry of plugin classes: "official/weather" -> WeatherPlugin class
+        # Registry of core plugin classes: "name" -> Class
         self._plugin_classes: dict[str, type[AgentPlugin]] = {}
-        # Runtime activated plugin instances
+        # Runtime activated core plugin instances
         self._plugins: dict[str, AgentPlugin] = {}
-        # Cache of initialized system plugins (singletons) - Optional optimization
-        self._system_plugins: dict[str, AgentPlugin] = {}
 
     @property
     def plugins(self) -> dict[str, AgentPlugin]:
-        """Expose active plugins."""
+        """Expose active plugin instances."""
         return self._plugins
 
     def register_class(self, plugin_cls: type[AgentPlugin]) -> None:
-        """
-        Register a plugin class.
-        """
+        """Register a core plugin class."""
         try:
-            # We instantiate to read metadata (Name, Version)
-            # This requires the plugin __init__ to be lightweight.
+            # We instantiate briefly to read metadata
             temp_instance = plugin_cls()
-            name = temp_instance.metadata.name
-
-            if name in self._plugin_classes:
-                logger.warning(f"Plugin class {name} already registered, overwriting.")
+            name = temp_instance.metadata.id # Use ID as unique key
 
             self._plugin_classes[name] = plugin_cls
-            logger.info(f"Registered plugin class: {name}")
+            logger.info(f"Registered core plugin class: {name}")
         except Exception as e:
-            logger.exception(f"Failed to register plugin class {plugin_cls}: {e}")
-
-    async def load_plugins_from_db(self) -> None:
-        """
-        Scan 'agent_plugin' table and import referenced modules.
-        This allows the manager to know about all available plugins.
-        """
-        async with AsyncSessionLocal() as session:
-            stmt = select(AgentPluginModel)
-            result = await session.execute(stmt)
-            db_plugins = result.scalars().all()
-
-        for db_plugin in db_plugins:
-            try:
-                # module_path e.g. "app.agent_plugins.builtins.weather"
-                module_path = db_plugin.module_path
-                if not module_path:
-                    continue
-
-                # Import the module
-                if module_path not in sys.modules:
-                    module = importlib.import_module(module_path)
-                else:
-                    module = sys.modules[module_path]
-
-                # Look for an 'Plugin' class or 'plugins' list in the module
-                # Convention: The module should export a class named 'Plugin' inheriting from AgentPlugin
-                # OR have a global variable 'PLUGINS' list.
-
-                # Strategy 1: Search for subclasses in the module
-                found = False
-                for attr_name in dir(module):
-                    attr = getattr(module, attr_name)
-                    if (
-                        isinstance(attr, type)
-                        and issubclass(attr, AgentPlugin)
-                        and attr is not AgentPlugin
-                    ):
-                        self.register_class(attr)
-                        found = True
-
-                if not found:
-                    logger.warning(f"No AgentPlugin subclass found in {module_path}")
-
-            except Exception as e:
-                logger.error(f"Failed to load plugin from {db_plugin.module_path}: {e}")
-
-    async def instantiate_plugin(
-        self, name: str, context: PluginContext
-    ) -> AgentPlugin:
-        """
-        Create an instance of a plugin for a specific context (User/Session).
-        """
-        cls = self._plugin_classes.get(name)
-        if not cls:
-            raise ValueError(f"Plugin {name} not found in registry.")
-
-        plugin = cls()
-        await plugin.initialize(context)
-        return plugin
-
-    def get_plugin_class(self, name: str) -> type[AgentPlugin] | None:
-        return self._plugin_classes.get(name)
-
-    # ===== Runtime lifecycle =====
+            logger.exception(f"Failed to register core plugin class {plugin_cls}: {e}")
 
     async def activate_all(
         self, user_id: uuid.UUID | None = None, session_id: str | None = None
     ) -> None:
-        """
-        实例化并激活所有已注册的插件。
-        要求必须传入真实 user_id，避免插件上下文漂移到非用户身份。
-        """
-        if user_id is None:
-            raise ValueError("PluginManager.activate_all requires a real user_id")
-
+        """Instantiate and initialize all registered core plugins."""
         self._plugins.clear()
-        uid = user_id
-
         for name, cls in self._plugin_classes.items():
             try:
                 plugin = cls()
-                plugin_id = name  # 简化：使用插件名作为 plugin_id
                 context = ConcretePluginContext(
                     plugin_name=name,
-                    plugin_id=plugin_id,
-                    user_id=uid,
+                    plugin_id=name,
+                    user_id=user_id,
                     session_id=session_id,
                 )
                 await plugin.initialize(context)
                 self._plugins[name] = plugin
-                logger.info(f"Activated plugin {name} (session={session_id})")
+                logger.debug(f"Activated core plugin: {name}")
             except Exception as exc:
-                logger.exception(f"Failed to activate plugin {name}: {exc}")
-
+                logger.exception(f"Failed to activate core plugin {name}: {exc}")
 
     async def deactivate_all(self) -> None:
-        """关闭并清理所有已激活的插件实例。"""
+        """Shutdown and clear all active core plugins."""
         for name, plugin in list(self._plugins.items()):
             try:
                 await plugin.shutdown()
-                logger.info(f"Deactivated plugin {name}")
             except Exception as exc:
-                logger.warning(f"Failed to deactivate plugin {name}: {exc}")
+                logger.warning(f"Failed to deactivate core plugin {name}: {exc}")
         self._plugins.clear()
 
     def get_plugin(self, name: str) -> AgentPlugin | None:
-        """获取已激活的插件实例。"""
+        """Get an active core plugin instance."""
         return self._plugins.get(name)
 
     def get_plugin_for_tool(self, tool_name: str) -> AgentPlugin | None:
-        """Find the plugin instance that owns the given tool."""
-        # 1. Check dynamic handlers first (Priority)
+        """Find the core plugin instance that owns the given tool."""
         for plugin in self._plugins.values():
-            if hasattr(plugin, "can_handle_tool") and plugin.can_handle_tool(tool_name):
-                return plugin
-
-        # 2. Check static tool definitions
-        for plugin in self._plugins.values():
-            try:
-                tools = plugin.get_tools() or []
-                for tool in tools:
-                    func_def = tool.get("function", {})
-                    if func_def.get("name") == tool_name:
-                        return plugin
-            except Exception as exc:
-                logger.warning(f"get_tools failed for {plugin}: {exc}")
-        return None
-
-    def get_plugin_name_for_tool_from_registry(self, tool_name: str) -> str | None:
-        """Resolve owning plugin name by scanning registered plugin classes."""
-        for name, cls in self._plugin_classes.items():
-            try:
-                plugin = cls()
-            except Exception as exc:
-                logger.warning("plugin class init failed for %s: %s", name, exc)
-                continue
-
-            try:
-                if hasattr(plugin, "can_handle_tool") and plugin.can_handle_tool(tool_name):
-                    return name
-            except Exception as exc:
-                logger.warning("can_handle_tool failed for %s: %s", name, exc)
-
             try:
                 for tool in plugin.get_tools() or []:
-                    func_def = tool.get("function", {}) if isinstance(tool, dict) else {}
-                    if func_def.get("name") == tool_name:
-                        return name
-            except Exception as exc:
-                logger.warning("get_tools failed for %s: %s", name, exc)
-
+                    # Handle both OpenAI function style and flat name
+                    name = tool.get("function", {}).get("name") or tool.get("name")
+                    if name == tool_name:
+                        return plugin
+            except Exception:
+                continue
         return None
 
-    def get_all_tools(self) -> list[dict]:
-        """汇总所有插件暴露的工具。"""
-        tools: list[dict] = []
+    def get_all_tools(self) -> list[dict[str, Any]]:
+        """Summarize all tools exposed by core plugins."""
+        tools = []
         for plugin in self._plugins.values():
             try:
                 tools.extend(plugin.get_tools() or [])
@@ -212,5 +94,5 @@ class PluginManager:
         return tools
 
 
-# Global singleton
+# Global singleton for core system plugins
 global_plugin_manager = PluginManager()
