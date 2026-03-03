@@ -36,11 +36,12 @@ use crate::modules::mcp::types::{
     LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
     LocalConversationWindowResponse, LocalGatewayLogItem, LocalGatewayLogListResponse,
     LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse,
-    LocalKnowledgeBreadcrumbItem, LocalKnowledgeFile, LocalKnowledgeFolder,
-    LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse,
-    LocalTraceFeedback, LocalTraceFeedbackRequest, LocalUserDocumentListQuery, McpConflictStatus,
-    McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
-    McpTrustLevel, UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest,
+    LocalKnowledgeBreadcrumbItem, LocalKnowledgeChunk, LocalKnowledgeChunkListResponse,
+    LocalKnowledgeFile, LocalKnowledgeFolder, LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery,
+    LocalKnowledgeTreeResponse, LocalTraceFeedback, LocalTraceFeedbackRequest,
+    LocalUserDocumentChunkListQuery, LocalUserDocumentListQuery, McpConflictStatus, McpSource,
+    McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus, McpTrustLevel,
+    UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest, UpdateLocalUserDocumentRequest,
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
@@ -259,6 +260,55 @@ impl McpStore {
             r#"
             CREATE INDEX IF NOT EXISTS ix_user_document_folder_id
             ON user_document(folder_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS knowledge_chunk (
+              id TEXT PRIMARY KEY,
+              document_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              chunk_index INTEGER NOT NULL,
+              text_content TEXT NOT NULL,
+              token_count INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (document_id) REFERENCES user_document(id) ON DELETE CASCADE
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_chunk_document_index
+            ON knowledge_chunk(document_id, chunk_index);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_knowledge_chunk_document_id
+            ON knowledge_chunk(document_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_knowledge_chunk_user_id
+            ON knowledge_chunk(user_id);
             "#,
         )
         .execute(&self.pool)
@@ -3767,6 +3817,303 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         row_to_local_knowledge_file(&row)
+    }
+
+    pub async fn get_local_user_document(
+        &self,
+        file_id: &str,
+    ) -> Result<LocalKnowledgeFile, McpError> {
+        let normalized_id = file_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("file_id is required"));
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT
+              id, filename, folder_id, status, error_message, chunk_count,
+              meta_info, created_at, updated_at
+            FROM user_document
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let Some(row) = row else {
+            return Err(McpError::NotFound(
+                "local user document not found".to_string(),
+            ));
+        };
+        row_to_local_knowledge_file(&row)
+    }
+
+    pub async fn update_local_user_document(
+        &self,
+        file_id: &str,
+        payload: UpdateLocalUserDocumentRequest,
+    ) -> Result<LocalKnowledgeFile, McpError> {
+        let normalized_id = file_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("file_id is required"));
+        }
+
+        let current_row = sqlx::query(
+            r#"
+            SELECT filename, folder_id
+            FROM user_document
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let Some(current_row) = current_row else {
+            return Err(McpError::NotFound(
+                "local user document not found".to_string(),
+            ));
+        };
+
+        let mut target_filename: String = current_row.try_get("filename")?;
+        if let Some(name) = payload.name {
+            let normalized_name = name.trim().to_string();
+            if normalized_name.is_empty() {
+                return Err(McpError::validation("file name is required"));
+            }
+            target_filename = normalized_name;
+        }
+
+        let mut target_folder_id: Option<String> = current_row.try_get("folder_id")?;
+        let folder_id_provided = payload.folder_id_provided.unwrap_or(false);
+        if folder_id_provided {
+            let normalized_folder_id = payload.folder_id.and_then(|value| {
+                let trimmed = value.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            });
+            if let Some(folder_id) = normalized_folder_id.as_deref() {
+                let folder_row = sqlx::query(
+                    r#"
+                    SELECT id
+                    FROM knowledge_folder
+                    WHERE id = ? AND user_id = ?
+                    LIMIT 1;
+                    "#,
+                )
+                .bind(folder_id)
+                .bind(LOCAL_DESKTOP_USER_ID)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+                if folder_row.is_none() {
+                    return Err(McpError::NotFound("folder not found".to_string()));
+                }
+            }
+            target_folder_id = normalized_folder_id;
+        }
+
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE user_document
+            SET filename = ?, folder_id = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(target_filename)
+        .bind(target_folder_id.as_deref())
+        .bind(&now)
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_local_user_document(&normalized_id).await
+    }
+
+    pub async fn delete_local_user_document(&self, file_id: &str) -> Result<(), McpError> {
+        let normalized_id = file_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("file_id is required"));
+        }
+
+        sqlx::query(
+            r#"
+            DELETE FROM knowledge_chunk
+            WHERE document_id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let result = sqlx::query(
+            r#"
+            DELETE FROM user_document
+            WHERE id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound(
+                "local user document not found".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub async fn retry_local_user_document(
+        &self,
+        file_id: &str,
+    ) -> Result<LocalKnowledgeFile, McpError> {
+        let normalized_id = file_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("file_id is required"));
+        }
+
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE user_document
+            SET status = 'processing',
+                error_message = NULL,
+                chunk_count = 0,
+                embedding_model = NULL,
+                updated_at = ?
+            WHERE id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(&now)
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound(
+                "local user document not found".to_string(),
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            DELETE FROM knowledge_chunk
+            WHERE document_id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_local_user_document(&normalized_id).await
+    }
+
+    pub async fn list_local_user_document_chunks(
+        &self,
+        file_id: &str,
+        query: LocalUserDocumentChunkListQuery,
+    ) -> Result<LocalKnowledgeChunkListResponse, McpError> {
+        let normalized_id = file_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("file_id is required"));
+        }
+        let offset = query.offset.unwrap_or(0).max(0);
+        let limit = query.limit.unwrap_or(20).clamp(1, 100);
+
+        let file_row = sqlx::query(
+            r#"
+            SELECT id, chunk_count
+            FROM user_document
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let Some(file_row) = file_row else {
+            return Err(McpError::NotFound(
+                "local user document not found".to_string(),
+            ));
+        };
+        let expected_count = file_row
+            .try_get::<i64, _>("chunk_count")
+            .unwrap_or(0)
+            .max(0);
+
+        let total_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM knowledge_chunk
+            WHERE user_id = ? AND document_id = ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let stored_total = total_row.try_get::<i64, _>("total").unwrap_or(0).max(0);
+        let total = stored_total.max(expected_count);
+
+        let rows = sqlx::query(
+            r#"
+            SELECT id, document_id, chunk_index, text_content, token_count
+            FROM knowledge_chunk
+            WHERE user_id = ? AND document_id = ?
+            ORDER BY chunk_index ASC, id ASC
+            LIMIT ? OFFSET ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            let content: String = row.try_get("text_content")?;
+            let token_count = row
+                .try_get::<i64, _>("token_count")
+                .unwrap_or_else(|_| estimate_local_tokens(&content));
+            items.push(LocalKnowledgeChunk {
+                id: row.try_get("id")?,
+                file_id: row.try_get("document_id")?,
+                index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
+                content,
+                token_count: token_count.max(0),
+            });
+        }
+
+        Ok(LocalKnowledgeChunkListResponse {
+            items,
+            total,
+            offset,
+            limit,
+        })
     }
 
     async fn get_local_knowledge_folder_by_id(
@@ -7730,6 +8077,14 @@ fn normalize_storage_document_status(status: Option<&str>) -> &'static str {
         "processing" | "pending" | "running" => "processing",
         _ => "processing",
     }
+}
+
+fn estimate_local_tokens(text: &str) -> i64 {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return 0;
+    }
+    trimmed.split_whitespace().count() as i64
 }
 
 fn sort_local_knowledge_folders(

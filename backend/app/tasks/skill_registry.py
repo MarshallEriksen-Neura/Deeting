@@ -177,6 +177,94 @@ async def _run_sync_skill(skill_id: str) -> str:
         return "upserted"
 
 
+import yaml
+from pathlib import Path
+from app.core.config import settings
+
+@celery_app.task(name="skill_registry.seed_builtins")
+def seed_builtin_plugins_to_registry_task() -> dict[str, int]:
+    try:
+        return run_async(_run_seed_builtins())
+    except Exception as exc:
+        logger.exception("skill_registry_seed_builtins_failed: %s", exc)
+        return {"created": 0, "updated": 0}
+
+async def _run_seed_builtins() -> dict[str, int]:
+    plugins_yaml_path = Path(settings.PROJECT_ROOT) / "app" / "core" / "plugins.yaml"
+    if not plugins_yaml_path.exists():
+        logger.warning(f"plugins.yaml not found at {plugins_yaml_path}")
+        return {"created": 0, "updated": 0}
+
+    with open(plugins_yaml_path, "r") as f:
+        config = yaml.safe_load(f)
+    
+    plugin_defs = config.get("plugins", [])
+    from app.models.skill_registry import SkillRegistry
+    from importlib import import_module
+
+    stats = {"created": 0, "updated": 0}
+    
+    async with AsyncSessionLocal() as session:
+        repo = SkillRegistryRepository(session)
+        for p_def in plugin_defs:
+            p_id = p_def.get("id")
+            module_path = p_def.get("module")
+            class_name = p_def.get("class_name")
+            
+            if not all([p_id, module_path, class_name]):
+                continue
+
+            try:
+                # Dynamically load the plugin to get tool definitions
+                mod = import_module(module_path)
+                cls = getattr(mod, class_name)
+                # Note: We create a dummy instance to call get_tools() 
+                # This assumes AgentPlugin doesn't require heavy init for metadata
+                plugin_inst = cls()
+                tools = plugin_inst.get_tools()
+                metadata = plugin_inst.metadata
+                
+                manifest = {
+                    "capabilities": p_def.get("tools", []),
+                    "description": p_def.get("description", metadata.description),
+                    "version": metadata.version,
+                    "author": metadata.author,
+                    "tools": tools
+                }
+
+                existing = await repo.get_by_id(p_id)
+                if existing:
+                    await repo.update(existing, {
+                        "name": p_def.get("name", metadata.name),
+                        "description": p_def.get("description", metadata.description),
+                        "manifest_json": manifest,
+                        "status": "active"
+                    })
+                    stats["updated"] += 1
+                else:
+                    new_skill = SkillRegistry(
+                        id=p_id,
+                        name=p_def.get("name", metadata.name),
+                        description=p_def.get("description", metadata.description),
+                        type="SKILL",
+                        runtime="builtin",
+                        version=metadata.version,
+                        manifest_json=manifest,
+                        status="active"
+                    )
+                    session.add(new_skill)
+                    stats["created"] += 1
+                
+                await session.flush()
+                # Trigger Qdrant sync for each plugin
+                await _run_sync_skill(p_id)
+                
+            except Exception as e:
+                logger.error(f"Failed to seed plugin {p_id}: {e}")
+        
+        await session.commit()
+    return stats
+
 async def _run_sync_all_active_skills() -> int:
     if not qdrant_is_configured():
         return 0

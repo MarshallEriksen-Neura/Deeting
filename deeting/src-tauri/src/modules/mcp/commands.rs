@@ -12,41 +12,38 @@ use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
 use crate::modules::code_mode::types::ExecuteLocalCodeModeRequest;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::{expand_path, ExtractedToolFields, NewSource, ToolUpsert};
-use crate::modules::mcp::types::{
-    CreateAssistantMessageRequest, CreateConversationMessageRequest, CreateLocalAssistantRequest,
-    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, CreateSourceRequest,
-    ImportConfigRequest, LocalAdminConversationItem, LocalAdminConversationListResponse,
-    LocalAdminConversationMessageListResponse, LocalAdminConversationMessageQuery,
-    LocalAdminConversationQuery, LocalAdminConversationSummaryListResponse, LocalAssistant,
-    LocalAssistantEntity, LocalAssistantInstallCreateRequest, LocalAssistantInstallItem,
-    LocalAssistantInstallPage, LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest,
-    LocalAssistantMessage, LocalAssistantPreviewRequest, LocalAssistantRatingRequest,
-    LocalAssistantRatingResponse, LocalAssistantRoutingFeedbackRequest,
-    LocalAssistantRoutingReportQuery, LocalAssistantRoutingReportResponse,
-    LocalAssistantRoutingState, LocalAssistantTag, LocalAssistantVersion, LocalChatInputMessage,
-    LocalChatRequest, LocalChatResponse, LocalChatToolCall, LocalConversationArchiveResponse,
-    LocalConversationClearResponse, LocalConversationCreateRequest,
-    LocalConversationCreateResponse, LocalConversationDeleteResponse,
-    LocalConversationHistoryMessage, LocalConversationHistoryQuery,
-    LocalConversationHistoryResponse, LocalConversationRegenerateRequest,
-    LocalConversationRegenerateResponse, LocalConversationRenameRequest,
-    LocalConversationRenameResponse, LocalConversationSendRequest, LocalConversationSendResponse,
-    LocalConversationSessionPage, LocalConversationSessionsQuery, LocalConversationStatus,
-    LocalConversationSummaryBatchRetryRequest, LocalConversationSummaryBatchRetryResponse,
-    LocalConversationSummaryEnqueueResponse, LocalConversationSummaryIdleTaskListResponse,
-    LocalConversationSummaryIdleTaskQuery, LocalConversationSummaryJobListResponse,
-    LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
-    LocalConversationWindowResponse, LocalGatewayLogListResponse, LocalGatewayLogQuery,
-    LocalGatewayLogStatsResponse, LocalKnowledgeFile, LocalKnowledgeFolder,
-    LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse,
-    LocalTraceFeedback, LocalTraceFeedbackRequest, LocalUserDocumentListQuery, McpConfigPayload,
-    McpConflictStatus, McpLogEntry, McpSource, McpSourceStatus, McpSourceType, McpTool,
-    McpToolConfigPayload, McpToolStatus, ResolveConflictRequest, SyncSourceRequest,
-    UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest, UpdateToolConfigRequest,
-};
+use crate::modules::mcp::types::*;
 use crate::modules::mcp::McpRuntimeState;
 use crate::modules::providers::types::BanditFeedbackRequest;
 use crate::state::AppState;
+
+pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[LocalAssistant]) {
+    for assistant in assistants {
+        let text = format!(
+            "name: {}\ndescription: {}\ntags: {}",
+            assistant.name,
+            assistant.description.as_deref().unwrap_or(""),
+            assistant.tags.join(",")
+        );
+        if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
+            let _ = app_state
+                .memory
+                .store
+                .append_assistant(
+                    assistant.id.clone(),
+                    assistant.name.clone(),
+                    assistant.description.clone().unwrap_or_default(),
+                    if assistant.tags.is_empty() {
+                        None
+                    } else {
+                        Some(assistant.tags.join(","))
+                    },
+                    vector,
+                )
+                .await;
+        }
+    }
+}
 
 const LOCAL_CONVERSATION_SUMMARY_PROMPT: &str = "Please summarize the multi-turn conversation below.\nRequirements:\n1) Keep user intent, key decisions, and conclusions.\n2) Remove redundancy.\n3) Keep the summary concise and actionable.\n4) Output summary text only.\n\nConversation:\n";
 const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
@@ -153,11 +150,11 @@ pub async fn create_mcp_source(
 
 #[tauri::command]
 pub async fn sync_mcp_source(
-    state: State<'_, AppState>,
+    app_state: State<'_, AppState>,
     source_id: String,
     payload: SyncSourceRequest,
 ) -> Result<Vec<McpTool>, String> {
-    let state = &state.mcp;
+    let state = &app_state.mcp;
     let source = state
         .store
         .get_source(&source_id)
@@ -179,6 +176,14 @@ pub async fn sync_mcp_source(
                 .update_source_status(&source_id, McpSourceStatus::Active, Some(now_rfc3339()))
                 .await
                 .map_err(to_string)?;
+
+            // Background indexing for semantic search
+            let app_state_clone = app_state.inner().clone();
+            let tools_clone = tools.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = index_mcp_tools(&app_state_clone, &tools_clone).await;
+            });
+
             Ok(tools)
         }
         Err(err) => {
@@ -535,6 +540,79 @@ pub async fn create_local_user_document(
 }
 
 #[tauri::command]
+pub async fn get_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<LocalKnowledgeFile, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_user_document(&file_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+    payload: UpdateLocalUserDocumentRequest,
+) -> Result<LocalKnowledgeFile, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_user_document(&file_id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .delete_local_user_document(&file_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn retry_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<LocalKnowledgeFile, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .retry_local_user_document(&file_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_user_document_chunks(
+    state: State<'_, AppState>,
+    file_id: String,
+    query: Option<LocalUserDocumentChunkListQuery>,
+) -> Result<LocalKnowledgeChunkListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_user_document_chunks(
+            &file_id,
+            query.unwrap_or(LocalUserDocumentChunkListQuery {
+                offset: Some(0),
+                limit: Some(20),
+            }),
+        )
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn list_local_admin_conversations(
     state: State<'_, AppState>,
     query: Option<LocalAdminConversationQuery>,
@@ -701,29 +779,48 @@ pub async fn retry_local_conversation_summary_jobs(
 
 #[tauri::command]
 pub async fn create_local_assistant(
-    state: State<'_, AppState>,
+    app_state: State<'_, AppState>,
     payload: CreateLocalAssistantRequest,
 ) -> Result<String, String> {
-    let state = &state.mcp;
-    state
+    let state = &app_state.mcp;
+    let assistant_id = state
         .store
         .create_local_assistant(payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    // Index for semantic search
+    if let Ok(Some(assistant)) = state.store.get_local_assistant(&assistant_id).await {
+        let app_state_clone = app_state.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            index_local_assistants(&app_state_clone, &[assistant]).await;
+        });
+    }
+
+    Ok(assistant_id)
 }
 
 #[tauri::command]
 pub async fn update_local_assistant(
-    state: State<'_, AppState>,
+    app_state: State<'_, AppState>,
     id: String,
     payload: UpdateLocalAssistantRequest,
 ) -> Result<LocalAssistant, String> {
-    let state = &state.mcp;
-    state
+    let state = &app_state.mcp;
+    let assistant = state
         .store
         .update_local_assistant(&id, payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    // Update index
+    let app_state_clone = app_state.inner().clone();
+    let assistant_clone = assistant.clone();
+    tauri::async_runtime::spawn(async move {
+        index_local_assistants(&app_state_clone, &[assistant_clone]).await;
+    });
+
+    Ok(assistant)
 }
 
 #[tauri::command]
@@ -1421,10 +1518,10 @@ pub async fn regenerate_local_conversation_reply(
 
 #[tauri::command]
 pub async fn import_mcp_config(
-    state: State<'_, AppState>,
+    app_state: State<'_, AppState>,
     payload: ImportConfigRequest,
 ) -> Result<Vec<McpTool>, String> {
-    let state = &state.mcp;
+    let state = &app_state.mcp;
     let source = if let Some(source_id) = payload.source_id {
         state
             .store
@@ -1436,9 +1533,18 @@ pub async fn import_mcp_config(
         state.store.ensure_local_source().await.map_err(to_string)?
     };
 
-    apply_config_payload(&state, &source, payload.config)
+    let tools = apply_config_payload(&state, &source, payload.config)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    // Background indexing for semantic search
+    let app_state_clone = app_state.inner().clone();
+    let tools_clone = tools.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = index_mcp_tools(&app_state_clone, &tools_clone).await;
+    });
+
+    Ok(tools)
 }
 
 #[tauri::command]
@@ -1581,6 +1687,124 @@ pub async fn get_mcp_logs(
 pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
     let state = &state.mcp;
     state.process_manager.clear_logs(&tool_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn register_system_plugins(app_state: &AppState) -> Result<(), String> {
+    let plugins = vec![
+        serde_json::json!({
+            "id": "core.tools.crawler",
+            "name": "Scout (Web Crawler)",
+            "description": "Deep web crawling, site ingestion, and documentation learning.",
+            "tools": [
+                {
+                    "name": "fetch_web_content",
+                    "description": "Fetch and extract content from a SINGLE URL.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "The target URL to crawl."},
+                            "js_mode": {"type": "boolean", "default": true}
+                        },
+                        "required": ["url"]
+                    }
+                },
+                {
+                    "name": "crawl_website",
+                    "description": "Recursively crawl a website to learn or clone skills.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "The root URL."},
+                            "max_depth": {"type": "integer", "default": 2}
+                        },
+                        "required": ["url"]
+                    }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "system.code_interpreter",
+            "name": "Code Interpreter",
+            "description": "Executes Python code in a stateful sandbox for data analysis and math.",
+            "tools": [
+                {
+                    "name": "run_python",
+                    "description": "Executes Python code in an isolated sandbox.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string", "description": "The Python code to execute."}
+                        },
+                        "required": ["code"]
+                    }
+                }
+            ]
+        }),
+        serde_json::json!({
+            "id": "system.planner",
+            "name": "Planner",
+            "description": "Architect capabilities: Design execution plans and manage workflows.",
+            "tools": [
+                {
+                    "name": "propose_execution_plan",
+                    "description": "Propose a multi-step execution plan for complex requests.",
+                    "input_schema": { "type": "object", "properties": {} }
+                }
+            ]
+        }),
+    ];
+
+    let mcp = &app_state.mcp;
+    let store = &mcp.store;
+
+    for plugin in plugins {
+        let id = plugin["id"].as_str().unwrap();
+        let name = plugin["name"].as_str().unwrap();
+        let description = plugin["description"].as_str().unwrap();
+
+        // Register as a special 'system_plugin' source if not exists
+        let source_id = format!("system_plugin_{}", id);
+
+        for tool_def in plugin["tools"].as_array().unwrap() {
+            let tool_name = tool_def["name"].as_str().unwrap();
+            let tool_desc = tool_def["description"].as_str().unwrap();
+            let config_json = serde_json::to_string(tool_def).unwrap();
+
+            let upsert = ToolUpsert {
+                id: None,
+                source_id: source_id.clone(),
+                identifier: Some(format!("{}/{}", id, tool_name)),
+                name: tool_name.to_string(),
+                source_type: McpSourceType::Local,
+                status: McpToolStatus::Healthy,
+                ping_ms: None,
+                capabilities: vec!["system_plugin".to_string()],
+                description: tool_desc.to_string(),
+                error: None,
+                command: None,
+                args: None,
+                env: None,
+                config_json,
+                config_hash: "system_builtin".to_string(),
+                pending_config_json: None,
+                pending_config_hash: None,
+                conflict_status: McpConflictStatus::None,
+                is_read_only: true,
+                is_new: false,
+            };
+
+            if let Ok(tool) = store.upsert_tool(upsert).await {
+                // Index for semantic search
+                let app_state_clone = app_state.clone();
+                tauri::async_runtime::spawn(async move {
+                    index_mcp_tools(&app_state_clone, &[tool]).await;
+                });
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -2581,12 +2805,75 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
         }),
     ];
 
+    // Semantic search for tools and assistants via LanceDB
+    if !normalized.is_empty() {
+        if let Ok(vector) = app_state.providers.embedding.embed_text(&normalized).await {
+            // Search tools
+            if let Ok(vector_hits) = app_state
+                .memory
+                .store
+                .search_tools(vector.clone(), 10)
+                .await
+            {
+                for hit in vector_hits {
+                    if let Some(tool_id) = hit.get("id").and_then(|v| v.as_str()) {
+                        if let Ok(Some(tool)) = app_state.mcp.store.get_tool(tool_id).await {
+                            let name = tool.name.trim().to_string();
+                            let status = tool.status.as_str().to_string();
+                            let availability = matches!(
+                                tool.status,
+                                crate::modules::mcp::types::McpToolStatus::Healthy
+                                    | crate::modules::mcp::types::McpToolStatus::Degraded
+                            );
+                            let signature =
+                                extract_tool_signature_from_config_json(&tool.config_json);
+                            catalog.push(serde_json::json!({
+                                "name": name,
+                                "identifier": tool.identifier,
+                                "description": tool.description,
+                                "source": "local_mcp_semantic",
+                                "status": status,
+                                "available": availability,
+                                "capabilities": tool.capabilities,
+                                "parameters": signature,
+                                "score": hit.get("_distance"),
+                            }));
+                        }
+                    }
+                }
+            }
+
+            // Search assistants (Skills)
+            if let Ok(assistant_hits) = app_state.memory.store.search_assistants(vector, 10).await {
+                for hit in assistant_hits {
+                    catalog.push(serde_json::json!({
+                        "name": hit.get("name"),
+                        "description": hit.get("description"),
+                        "identifier": hit.get("id"),
+                        "source": "local_assistant_semantic",
+                        "tags": hit.get("tags"),
+                        "score": hit.get("_distance"),
+                    }));
+                }
+            }
+        }
+    }
+
     if let Ok(tools) = app_state.mcp.store.list_tools().await {
         for tool in tools {
             let name = tool.name.trim().to_string();
             if name.is_empty() {
                 continue;
             }
+
+            // Avoid duplicate with semantic hits
+            if catalog.iter().any(|item| {
+                item.get("source").and_then(|v| v.as_str()) == Some("local_mcp_semantic")
+                    && item.get("name").and_then(|v| v.as_str()) == Some(&name)
+            }) {
+                continue;
+            }
+
             let status = tool.status.as_str().to_string();
             let availability = matches!(
                 tool.status,
@@ -2616,15 +2903,21 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
             let name_hit = item
                 .get("name")
                 .and_then(|value| value.as_str())
-                .map(|name| name.contains(&normalized))
+                .map(|name| name.to_lowercase().contains(&normalized))
                 .unwrap_or(false);
             if name_hit {
                 return true;
             }
-            item.get("description")
+            let desc_hit = item
+                .get("description")
                 .and_then(|value| value.as_str())
                 .map(|desc| desc.to_lowercase().contains(&normalized))
-                .unwrap_or(false)
+                .unwrap_or(false);
+            if desc_hit {
+                return true;
+            }
+            let source = item.get("source").and_then(|v| v.as_str()).unwrap_or("");
+            source == "local_mcp_semantic" || source == "local_assistant_semantic"
         })
         .collect::<Vec<serde_json::Value>>();
 
@@ -3494,6 +3787,25 @@ fn extract_chat_tool_calls(value: &serde_json::Value) -> Vec<LocalChatToolCall> 
         });
     }
     output
+}
+
+pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
+    for tool in tools {
+        let text = format!("name: {}\ndescription: {}", tool.name, tool.description);
+        if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
+            let _ = app_state
+                .memory
+                .store
+                .append_tool(
+                    tool.id.clone(),
+                    tool.name.clone(),
+                    tool.description.clone(),
+                    tool.identifier.clone(),
+                    vector,
+                )
+                .await;
+        }
+    }
 }
 
 #[cfg(test)]

@@ -49,6 +49,14 @@ interface LocalKnowledgeFile {
   updated_at: string
 }
 
+interface LocalKnowledgeChunk {
+  id: string
+  file_id: string
+  index: number
+  content: string
+  token_count: number
+}
+
 interface ApiFolder {
   id: string
   name: string
@@ -106,6 +114,13 @@ interface LocalKnowledgeStatsResponse {
   total_folders: number
 }
 
+interface LocalKnowledgeChunkListResponse {
+  items: LocalKnowledgeChunk[]
+  total: number
+  offset: number
+  limit: number
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Mappers (snake_case -> camelCase)                                         */
 /* -------------------------------------------------------------------------- */
@@ -125,6 +140,21 @@ function mapFile(f: ApiFile): KnowledgeFile {
     createdAt: f.created_at,
     updatedAt: f.updated_at,
   }
+}
+
+function mapLocalFile(file: LocalKnowledgeFile): KnowledgeFile {
+  return mapFile({
+    id: file.id,
+    name: file.name,
+    type: file.file_type,
+    size: file.size,
+    status: file.status,
+    chunks: file.chunks,
+    error_message: file.error_message,
+    folder_id: file.folder_id,
+    created_at: file.created_at,
+    updated_at: file.updated_at,
+  })
 }
 
 function mapFolder(f: ApiFolder): KnowledgeFolder {
@@ -348,20 +378,7 @@ export async function listLocalUserDocuments(params: {
       q: params.q ?? null,
     },
   })
-  return data.map((file) =>
-    mapFile({
-      id: file.id,
-      name: file.name,
-      type: file.file_type,
-      size: file.size,
-      status: file.status,
-      chunks: file.chunks,
-      error_message: file.error_message,
-      folder_id: file.folder_id,
-      created_at: file.created_at,
-      updated_at: file.updated_at,
-    })
-  )
+  return data.map(mapLocalFile)
 }
 
 export async function createLocalUserDocument(params: {
@@ -389,18 +406,7 @@ export async function createLocalUserDocument(params: {
       meta_info: params.metaInfo ?? null,
     },
   })
-  return mapFile({
-    id: file.id,
-    name: file.name,
-    type: file.file_type,
-    size: file.size,
-    status: file.status,
-    chunks: file.chunks,
-    error_message: file.error_message,
-    folder_id: file.folder_id,
-    created_at: file.created_at,
-    updated_at: file.updated_at,
-  })
+  return mapLocalFile(file)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -433,6 +439,13 @@ export async function uploadFile(
 /* -------------------------------------------------------------------------- */
 
 export async function getFile(fileId: string): Promise<KnowledgeFile> {
+  if (isTauriRuntime()) {
+    const file = await invokeTauri<LocalKnowledgeFile>("get_local_user_document", {
+      file_id: fileId,
+    })
+    return mapLocalFile(file)
+  }
+
   const data = await request<ApiFile>({ url: `${BASE}/files/${fileId}` })
   return mapFile(data)
 }
@@ -441,6 +454,18 @@ export async function updateFile(
   fileId: string,
   params: { name?: string; folderId?: string | null }
 ): Promise<KnowledgeFile> {
+  if (isTauriRuntime()) {
+    const file = await invokeTauri<LocalKnowledgeFile>("update_local_user_document", {
+      file_id: fileId,
+      payload: {
+        name: params.name ?? null,
+        folder_id: params.folderId ?? null,
+        folder_id_provided: params.folderId !== undefined,
+      },
+    })
+    return mapLocalFile(file)
+  }
+
   const body: Record<string, unknown> = {}
   if (params.name !== undefined) body.name = params.name
   if (params.folderId !== undefined) body.folder_id = params.folderId
@@ -454,6 +479,13 @@ export async function updateFile(
 }
 
 export async function deleteFile(fileId: string): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauri<void>("delete_local_user_document", {
+      file_id: fileId,
+    })
+    return
+  }
+
   await request({
     url: `${BASE}/files/${fileId}`,
     method: "DELETE",
@@ -475,6 +507,13 @@ export async function copyFile(
 }
 
 export async function retryFile(fileId: string): Promise<KnowledgeFile> {
+  if (isTauriRuntime()) {
+    const file = await invokeTauri<LocalKnowledgeFile>("retry_local_user_document", {
+      file_id: fileId,
+    })
+    return mapLocalFile(file)
+  }
+
   const data = await request<ApiFile>({
     url: `${BASE}/files/${fileId}/retry`,
     method: "POST",
@@ -490,6 +529,31 @@ export async function fetchFileChunks(
   fileId: string,
   params?: { offset?: number; limit?: number }
 ): Promise<{ items: KnowledgeChunk[]; total: number }> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<LocalKnowledgeChunkListResponse>(
+      "list_local_user_document_chunks",
+      {
+        file_id: fileId,
+        query: {
+          offset: params?.offset ?? 0,
+          limit: params?.limit ?? 20,
+        },
+      }
+    )
+    return {
+      items: data.items.map((item) =>
+        mapChunk({
+          id: item.id,
+          file_id: item.file_id,
+          index: item.index,
+          content: item.content,
+          token_count: item.token_count,
+        })
+      ),
+      total: data.total,
+    }
+  }
+
   const data = await request<ApiChunkListResponse>({
     url: `${BASE}/files/${fileId}/chunks`,
     params,

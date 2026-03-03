@@ -7,8 +7,8 @@ use uuid::Uuid;
 use crate::modules::providers::types::{
     BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, ProviderInstance, ProviderModel,
     ProviderModelTestRequest, ProviderModelTestResponse, ProviderModelUpdateRequest,
-    ProviderModelsQuickAddRequest, ProviderPreset, UpdateInstanceRequest, UserSecretary,
-    UserSecretaryUpdateRequest,
+    ProviderModelsQuickAddRequest, ProviderPreset, UpdateInstanceRequest, UserEmbeddingConfig,
+    UserEmbeddingConfigUpdateRequest, UserSecretary, UserSecretaryUpdateRequest,
 };
 use crate::state::AppState;
 
@@ -43,6 +43,31 @@ pub async fn update_local_user_secretary(
         .providers
         .store
         .update_user_secretary(payload)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_local_user_embedding_config(
+    state: State<'_, AppState>,
+) -> Result<UserEmbeddingConfig, String> {
+    state
+        .providers
+        .store
+        .get_or_create_user_embedding_config()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_local_user_embedding_config(
+    state: State<'_, AppState>,
+    payload: UserEmbeddingConfigUpdateRequest,
+) -> Result<UserEmbeddingConfig, String> {
+    state
+        .providers
+        .store
+        .update_user_embedding_config(payload)
         .await
         .map_err(|e| e.to_string())
 }

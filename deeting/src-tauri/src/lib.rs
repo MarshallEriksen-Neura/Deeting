@@ -86,7 +86,7 @@ pub fn run() {
                 match crate::modules::mcp::commands::sync_source_inner(mcp, source.clone(), None)
                     .await
                 {
-                    Ok(_) => {
+                    Ok(tools) => {
                         let _ = mcp
                             .store
                             .update_source_status(
@@ -95,6 +95,17 @@ pub fn run() {
                                 Some(now_rfc3339()),
                             )
                             .await;
+
+                        // Index tools for semantic search
+                        let app_state_clone = sync_state_for_mcp.clone();
+                        let tools_clone = tools.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = crate::modules::mcp::commands::index_mcp_tools(
+                                &app_state_clone,
+                                &tools_clone,
+                            )
+                            .await;
+                        });
                     }
                     Err(err) => {
                         let _ = mcp
@@ -104,6 +115,27 @@ pub fn run() {
                         warn!("mcp auto sync failed: {}", err);
                     }
                 }
+
+                // Index existing assistants for semantic search
+                if let Ok(assistants) = sync_state_for_mcp.mcp.store.list_local_assistants().await {
+                    let app_state_clone = sync_state_for_mcp.clone();
+                    tauri::async_runtime::spawn(async move {
+                        crate::modules::mcp::commands::index_local_assistants(
+                            &app_state_clone,
+                            &assistants,
+                        )
+                        .await;
+                    });
+                }
+
+                // Register and index system builtin plugins (Crawler, Code Interpreter, etc.)
+                let app_state_for_plugins = sync_state_for_mcp.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::modules::mcp::commands::register_system_plugins(
+                        &app_state_for_plugins,
+                    )
+                    .await;
+                });
             });
             let sandbox_state = sync_state.sandbox.clone();
             tauri::async_runtime::spawn(async move {
@@ -152,6 +184,11 @@ pub fn run() {
             crate::modules::mcp::commands::delete_local_knowledge_folder,
             crate::modules::mcp::commands::list_local_user_documents,
             crate::modules::mcp::commands::create_local_user_document,
+            crate::modules::mcp::commands::get_local_user_document,
+            crate::modules::mcp::commands::update_local_user_document,
+            crate::modules::mcp::commands::delete_local_user_document,
+            crate::modules::mcp::commands::retry_local_user_document,
+            crate::modules::mcp::commands::list_local_user_document_chunks,
             crate::modules::mcp::commands::list_local_admin_conversations,
             crate::modules::mcp::commands::get_local_admin_conversation,
             crate::modules::mcp::commands::list_local_admin_conversation_messages,
@@ -198,6 +235,8 @@ pub fn run() {
             crate::modules::providers::commands::list_local_provider_presets,
             crate::modules::providers::commands::get_local_user_secretary,
             crate::modules::providers::commands::update_local_user_secretary,
+            crate::modules::providers::commands::get_local_user_embedding_config,
+            crate::modules::providers::commands::update_local_user_embedding_config,
             crate::modules::providers::commands::replace_local_provider_presets,
             crate::modules::providers::commands::list_local_provider_instances,
             crate::modules::providers::commands::create_local_provider_instance,

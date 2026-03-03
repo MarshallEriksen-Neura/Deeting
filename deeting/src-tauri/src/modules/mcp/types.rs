@@ -586,6 +586,15 @@ pub struct LocalKnowledgeFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalKnowledgeChunk {
+    pub id: String,
+    pub file_id: String,
+    pub index: i64,
+    pub content: String,
+    pub token_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalKnowledgeBreadcrumbItem {
     pub id: Option<String>,
     pub name: String,
@@ -605,6 +614,14 @@ pub struct LocalKnowledgeStatsResponse {
     pub total_vectors: i64,
     pub total_files: i64,
     pub total_folders: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalKnowledgeChunkListResponse {
+    pub items: Vec<LocalKnowledgeChunk>,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -631,10 +648,23 @@ pub struct CreateLocalUserDocumentRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateLocalUserDocumentRequest {
+    pub name: Option<String>,
+    pub folder_id: Option<String>,
+    pub folder_id_provided: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalUserDocumentListQuery {
     pub folder_id: Option<String>,
     pub status: Option<String>,
     pub q: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalUserDocumentChunkListQuery {
+    pub offset: Option<i64>,
+    pub limit: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

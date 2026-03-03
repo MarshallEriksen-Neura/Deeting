@@ -37,6 +37,7 @@ export function SettingsClient() {
 
       <SettingsForm
         isAuthenticated={isAuthenticated}
+        isTauriRuntime={isTauri}
       />
     </Container>
   )

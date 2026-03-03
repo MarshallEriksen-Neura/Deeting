@@ -8,8 +8,8 @@ use uuid::Uuid;
 use crate::modules::providers::error::ProviderError;
 use crate::modules::providers::types::{
     BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, ProviderInstance, ProviderModel,
-    ProviderModelUpdateRequest, ProviderPreset, UpdateInstanceRequest, UserSecretary,
-    UserSecretaryUpdateRequest,
+    ProviderModelUpdateRequest, ProviderPreset, UpdateInstanceRequest, UserEmbeddingConfig,
+    UserEmbeddingConfigUpdateRequest, UserSecretary, UserSecretaryUpdateRequest,
 };
 
 #[derive(Debug, Clone)]
@@ -154,6 +154,18 @@ impl ProviderStore {
                 user_id TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 model_name TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS user_embedding_config (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL UNIQUE,
+                provider_model_id TEXT REFERENCES provider_models(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
@@ -520,6 +532,92 @@ impl ProviderStore {
         self.get_user_secretary_by_id(&existing.id)
             .await?
             .ok_or_else(|| ProviderError::NotFound("secretary missing after update".to_string()))
+    }
+
+    pub async fn get_or_create_user_embedding_config(
+        &self,
+    ) -> Result<UserEmbeddingConfig, ProviderError> {
+        if let Some(config) = self
+            .get_user_embedding_config_by_user_id(LOCAL_DESKTOP_USER_ID)
+            .await?
+        {
+            return Ok(config);
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let now = now_rfc3339()?;
+        sqlx::query(
+            "INSERT INTO user_embedding_config (id, user_id, provider_model_id, created_at, updated_at)
+             VALUES (?, ?, NULL, ?, ?)",
+        )
+        .bind(&id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_user_embedding_config_by_id(&id)
+            .await?
+            .ok_or_else(|| {
+                ProviderError::NotFound("embedding config missing after create".to_string())
+            })
+    }
+
+    pub async fn update_user_embedding_config(
+        &self,
+        payload: UserEmbeddingConfigUpdateRequest,
+    ) -> Result<UserEmbeddingConfig, ProviderError> {
+        let existing = self.get_or_create_user_embedding_config().await?;
+        let Some(next_provider_model_id) = payload.provider_model_id else {
+            return Ok(existing);
+        };
+
+        let normalized_provider_model_id = next_provider_model_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+
+        if let Some(provider_model_id) = normalized_provider_model_id.as_deref() {
+            let provider_model_uuid = Uuid::parse_str(provider_model_id)
+                .map_err(|_| ProviderError::Validation("invalid provider_model_id".to_string()))?;
+            let model = self
+                .get_model(&provider_model_uuid)
+                .await?
+                .ok_or_else(|| ProviderError::NotFound("provider model not found".to_string()))?;
+            if !model.is_active {
+                return Err(ProviderError::Validation(
+                    "provider model is inactive".to_string(),
+                ));
+            }
+            if !has_embedding_capability(&model.capabilities) {
+                return Err(ProviderError::Validation(
+                    "provider model does not support embedding".to_string(),
+                ));
+            }
+        }
+
+        let now = now_rfc3339()?;
+        sqlx::query(
+            "UPDATE user_embedding_config
+             SET provider_model_id = ?, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(normalized_provider_model_id.as_deref())
+        .bind(&now)
+        .bind(&existing.id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_user_embedding_config_by_id(&existing.id)
+            .await?
+            .ok_or_else(|| {
+                ProviderError::NotFound("embedding config missing after update".to_string())
+            })
     }
 
     pub async fn replace_presets(
@@ -1310,6 +1408,25 @@ impl ProviderStore {
         row_to_bandit_arm_state(&updated_row)
     }
 
+    pub async fn list_active_models(&self) -> Result<Vec<ProviderModel>, ProviderError> {
+        let rows = sqlx::query(
+            "SELECT id, instance_id, model_id, unified_model_id, display_name, capabilities,
+                    upstream_path, pricing_config, limit_config, tokenizer_config,
+                    routing_config, config_override, source, extra_meta, weight,
+                    priority, is_active, synced_at, created_at, updated_at
+             FROM provider_models
+             WHERE is_active = 1",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut models = Vec::with_capacity(rows.len());
+        for row in rows {
+            models.push(row_to_model(&row)?);
+        }
+        Ok(models)
+    }
+
     pub async fn get_instance_connection(
         &self,
         instance_id: &Uuid,
@@ -1420,6 +1537,46 @@ impl ProviderStore {
 
         match row {
             Some(value) => Ok(Some(row_to_user_secretary(&value)?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn get_user_embedding_config_by_id(
+        &self,
+        id: &str,
+    ) -> Result<Option<UserEmbeddingConfig>, ProviderError> {
+        let row = sqlx::query(
+            "SELECT id, user_id, provider_model_id, created_at, updated_at
+             FROM user_embedding_config
+             WHERE id = ?
+             LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(value) => Ok(Some(row_to_user_embedding_config(&value)?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn get_user_embedding_config_by_user_id(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<UserEmbeddingConfig>, ProviderError> {
+        let row = sqlx::query(
+            "SELECT id, user_id, provider_model_id, created_at, updated_at
+             FROM user_embedding_config
+             WHERE user_id = ?
+             LIMIT 1",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(value) => Ok(Some(row_to_user_embedding_config(&value)?)),
             None => Ok(None),
         }
     }
@@ -1945,6 +2102,22 @@ fn row_to_user_secretary(row: &SqliteRow) -> Result<UserSecretary, ProviderError
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
+}
+
+fn row_to_user_embedding_config(row: &SqliteRow) -> Result<UserEmbeddingConfig, ProviderError> {
+    Ok(UserEmbeddingConfig {
+        id: row.try_get("id")?,
+        user_id: row.try_get("user_id")?,
+        provider_model_id: row.try_get("provider_model_id")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn has_embedding_capability(capabilities: &[String]) -> bool {
+    capabilities
+        .iter()
+        .any(|capability| capability.eq_ignore_ascii_case("embedding"))
 }
 
 fn now_rfc3339() -> Result<String, ProviderError> {

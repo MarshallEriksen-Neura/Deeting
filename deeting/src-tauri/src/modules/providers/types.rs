@@ -88,6 +88,15 @@ pub struct UserSecretary {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserEmbeddingConfig {
+    pub id: String,
+    pub user_id: String,
+    pub provider_model_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateInstanceRequest {
     pub preset_slug: String,
@@ -196,6 +205,12 @@ pub struct BanditFeedbackRequest {
 pub struct UserSecretaryUpdateRequest {
     #[serde(default)]
     pub model_name: Option<Option<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UserEmbeddingConfigUpdateRequest {
+    #[serde(default)]
+    pub provider_model_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize)]

@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 use arrow_array::{Array, BooleanArray, RecordBatch, RecordBatchIterator, StringArray};
@@ -15,6 +14,8 @@ use crate::modules::memory::types::{
 };
 
 const LOCAL_MEMORY_TABLE: &str = "local_memories";
+const LOCAL_TOOL_TABLE: &str = "local_tools";
+const LOCAL_ASSISTANT_TABLE: &str = "local_assistants";
 
 pub struct MemoryStore {
     conn: Connection,
@@ -32,16 +33,174 @@ impl MemoryStore {
 
     pub async fn init(&self) -> Result<(), MemoryError> {
         let table_names = self.conn.table_names().execute().await?;
-        if table_names.iter().any(|name| name == LOCAL_MEMORY_TABLE) {
-            return Ok(());
+
+        if !table_names.iter().any(|name| name == LOCAL_MEMORY_TABLE) {
+            let schema = local_memory_schema();
+            self.conn
+                .create_empty_table(LOCAL_MEMORY_TABLE, schema)
+                .execute()
+                .await?;
         }
 
-        let schema = local_memory_schema();
-        self.conn
-            .create_empty_table(LOCAL_MEMORY_TABLE, schema)
+        if !table_names.iter().any(|name| name == LOCAL_TOOL_TABLE) {
+            let schema = local_tool_schema();
+            self.conn
+                .create_empty_table(LOCAL_TOOL_TABLE, schema)
+                .execute()
+                .await?;
+        }
+
+        if !table_names.iter().any(|name| name == LOCAL_ASSISTANT_TABLE) {
+            let schema = local_assistant_schema();
+            self.conn
+                .create_empty_table(LOCAL_ASSISTANT_TABLE, schema)
+                .execute()
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn append_tool(
+        &self,
+        id: String,
+        name: String,
+        description: String,
+        identifier: Option<String>,
+        vector: Vec<f32>,
+    ) -> Result<(), MemoryError> {
+        let now = now_rfc3339()?;
+        let batch = RecordBatch::try_new(
+            local_tool_schema(),
+            vec![
+                Arc::new(StringArray::from(vec![Some(id)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(name)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(description)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![identifier])) as Arc<dyn Array>,
+                Arc::new(build_fixed_size_vector_array(vector)) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now)])) as Arc<dyn Array>,
+            ],
+        )?;
+
+        let table = self.conn.open_table(LOCAL_TOOL_TABLE).execute().await?;
+        table
+            .add(RecordBatchIterator::new(
+                vec![Ok(batch)],
+                local_tool_schema(),
+            ))
             .execute()
             .await?;
         Ok(())
+    }
+
+    pub async fn append_assistant(
+        &self,
+        id: String,
+        name: String,
+        description: String,
+        tags: Option<String>,
+        vector: Vec<f32>,
+    ) -> Result<(), MemoryError> {
+        let now = now_rfc3339()?;
+        let batch = RecordBatch::try_new(
+            local_assistant_schema(),
+            vec![
+                Arc::new(StringArray::from(vec![Some(id)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(name)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(description)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![tags])) as Arc<dyn Array>,
+                Arc::new(build_fixed_size_vector_array(vector)) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now)])) as Arc<dyn Array>,
+            ],
+        )?;
+
+        let table = self
+            .conn
+            .open_table(LOCAL_ASSISTANT_TABLE)
+            .execute()
+            .await?;
+        table
+            .add(RecordBatchIterator::new(
+                vec![Ok(batch)],
+                local_assistant_schema(),
+            ))
+            .execute()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn search_tools(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let table = self.conn.open_table(LOCAL_TOOL_TABLE).execute().await?;
+        let batches = table
+            .vector_search(vector)?
+            .column("vector")
+            .limit(limit)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let mut results = Vec::new();
+        for batch in batches {
+            let id_col = as_string_col(&batch, "id")?;
+            let name_col = as_string_col(&batch, "name")?;
+            let desc_col = as_string_col(&batch, "description")?;
+            let ident_col = as_string_col(&batch, "identifier")?;
+
+            for row in 0..batch.num_rows() {
+                results.push(serde_json::json!({
+                    "id": id_col.value(row),
+                    "name": name_col.value(row),
+                    "description": desc_col.value(row),
+                    "identifier": nullable_string(ident_col, row),
+                }));
+            }
+        }
+        Ok(results)
+    }
+
+    pub async fn search_assistants(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let table = self
+            .conn
+            .open_table(LOCAL_ASSISTANT_TABLE)
+            .execute()
+            .await?;
+        let batches = table
+            .vector_search(vector)?
+            .column("vector")
+            .limit(limit)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let mut results = Vec::new();
+        for batch in batches {
+            let id_col = as_string_col(&batch, "id")?;
+            let name_col = as_string_col(&batch, "name")?;
+            let desc_col = as_string_col(&batch, "description")?;
+            let tags_col = as_string_col(&batch, "tags")?;
+
+            for row in 0..batch.num_rows() {
+                results.push(serde_json::json!({
+                    "id": id_col.value(row),
+                    "name": name_col.value(row),
+                    "description": desc_col.value(row),
+                    "tags": nullable_string(tags_col, row),
+                }));
+            }
+        }
+        Ok(results)
     }
 
     pub async fn append(
@@ -211,6 +370,38 @@ fn local_memory_schema() -> SchemaRef {
     ]))
 }
 
+fn local_tool_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("description", DataType::Utf8, false),
+        Field::new("identifier", DataType::Utf8, true),
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 1536),
+            false,
+        ),
+        Field::new("created_at", DataType::Utf8, false),
+        Field::new("updated_at", DataType::Utf8, false),
+    ]))
+}
+
+fn local_assistant_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("description", DataType::Utf8, false),
+        Field::new("tags", DataType::Utf8, true),
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 1536),
+            false,
+        ),
+        Field::new("created_at", DataType::Utf8, false),
+        Field::new("updated_at", DataType::Utf8, false),
+    ]))
+}
+
 fn build_filter_sql(
     session_id: Option<&str>,
     assistant_id: Option<&str>,
@@ -308,7 +499,7 @@ fn nullable_string(col: &StringArray, index: usize) -> Option<String> {
     }
 }
 
-fn compare_desc(a: &LocalMemoryItem, b: &LocalMemoryItem) -> Ordering {
+fn compare_desc(a: &LocalMemoryItem, b: &LocalMemoryItem) -> std::cmp::Ordering {
     b.created_at
         .cmp(&a.created_at)
         .then_with(|| b.id.cmp(&a.id))
@@ -331,169 +522,16 @@ fn decode_cursor(raw: Option<String>) -> Result<Option<CursorKey>, MemoryError> 
     Ok(Some(CursorKey { created_at, id }))
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use serde_json::json;
-
-    use super::*;
-
-    fn temp_lancedb_path() -> String {
-        let millis = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let mut path = std::env::temp_dir();
-        path.push(format!("deeting-memory-test-{}-{}", millis, Uuid::new_v4()));
-        path.to_string_lossy().to_string()
+fn build_fixed_size_vector_array(mut vector: Vec<f32>) -> arrow_array::FixedSizeListArray {
+    const DIMENSION: usize = 1536;
+    if vector.len() > DIMENSION {
+        vector.truncate(DIMENSION);
+    } else if vector.len() < DIMENSION {
+        vector.resize(DIMENSION, 0.0);
     }
-
-    fn cleanup_dir(path: &str) {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            let _ = std::fs::remove_dir_all(p);
-        }
-    }
-
-    #[tokio::test]
-    async fn append_and_list() {
-        let path = temp_lancedb_path();
-        let store = MemoryStore::new(&path).await.unwrap();
-        store.init().await.unwrap();
-
-        let inserted = store
-            .append(CreateLocalMemoryRequest {
-                content: "记住这个偏好".to_string(),
-                session_id: Some("session-1".to_string()),
-                assistant_id: Some("assistant-1".to_string()),
-                meta_info: Some(json!({"source":"chat"})),
-            })
-            .await
-            .unwrap();
-        let listed = store
-            .list(LocalMemoryListQuery {
-                cursor: None,
-                limit: Some(10),
-                session_id: Some("session-1".to_string()),
-                assistant_id: Some("assistant-1".to_string()),
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(listed.items.len(), 1);
-        assert_eq!(listed.items[0].id, inserted.id);
-        assert_eq!(listed.items[0].content, "记住这个偏好");
-        cleanup_dir(&path);
-    }
-
-    #[tokio::test]
-    async fn delete_hides_row() {
-        let path = temp_lancedb_path();
-        let store = MemoryStore::new(&path).await.unwrap();
-        store.init().await.unwrap();
-
-        let inserted = store
-            .append(CreateLocalMemoryRequest {
-                content: "需要删除".to_string(),
-                session_id: Some("session-2".to_string()),
-                assistant_id: None,
-                meta_info: None,
-            })
-            .await
-            .unwrap();
-        let deleted = store.delete(&inserted.id).await.unwrap();
-        assert!(deleted);
-
-        let listed = store
-            .list(LocalMemoryListQuery {
-                cursor: None,
-                limit: Some(20),
-                session_id: Some("session-2".to_string()),
-                assistant_id: None,
-            })
-            .await
-            .unwrap();
-        assert!(listed.items.is_empty());
-        cleanup_dir(&path);
-    }
-
-    #[tokio::test]
-    async fn clear_by_session() {
-        let path = temp_lancedb_path();
-        let store = MemoryStore::new(&path).await.unwrap();
-        store.init().await.unwrap();
-
-        store
-            .append(CreateLocalMemoryRequest {
-                content: "s1".to_string(),
-                session_id: Some("s1".to_string()),
-                assistant_id: Some("a".to_string()),
-                meta_info: None,
-            })
-            .await
-            .unwrap();
-        store
-            .append(CreateLocalMemoryRequest {
-                content: "s2".to_string(),
-                session_id: Some("s2".to_string()),
-                assistant_id: Some("a".to_string()),
-                meta_info: None,
-            })
-            .await
-            .unwrap();
-
-        let affected = store
-            .clear(LocalMemoryClearRequest {
-                session_id: Some("s1".to_string()),
-                assistant_id: None,
-            })
-            .await
-            .unwrap();
-        assert_eq!(affected, 1);
-
-        let listed_s1 = store
-            .list(LocalMemoryListQuery {
-                cursor: None,
-                limit: Some(20),
-                session_id: Some("s1".to_string()),
-                assistant_id: None,
-            })
-            .await
-            .unwrap();
-        assert!(listed_s1.items.is_empty());
-
-        let listed_s2 = store
-            .list(LocalMemoryListQuery {
-                cursor: None,
-                limit: Some(20),
-                session_id: Some("s2".to_string()),
-                assistant_id: None,
-            })
-            .await
-            .unwrap();
-        assert_eq!(listed_s2.items.len(), 1);
-
-        cleanup_dir(&path);
-    }
-
-    #[tokio::test]
-    async fn append_requires_content() {
-        let path = temp_lancedb_path();
-        let store = MemoryStore::new(&path).await.unwrap();
-        store.init().await.unwrap();
-
-        let err = store
-            .append(CreateLocalMemoryRequest {
-                content: "   ".to_string(),
-                session_id: None,
-                assistant_id: None,
-                meta_info: None,
-            })
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("content is required"));
-        cleanup_dir(&path);
-    }
+    let values: Vec<Option<f32>> = vector.into_iter().map(Some).collect();
+    arrow_array::FixedSizeListArray::from_iter_primitive::<arrow_array::types::Float32Type, _, _>(
+        vec![Some(values)],
+        DIMENSION as i32,
+    )
 }

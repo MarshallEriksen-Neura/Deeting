@@ -1,5 +1,6 @@
 export interface SettingsFormValues {
   secretaryModel: string
+  desktopEmbeddingProviderModelId: string
 }
 
 export interface ModelGroup {

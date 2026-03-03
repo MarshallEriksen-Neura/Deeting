@@ -59,6 +59,27 @@ Supported by `update_local_provider_model`:
 - `pricing_config`, `limit_config`, `tokenizer_config`, `routing_config`, `config_override`
 - `source`, `extra_meta`
 
+## user_embedding_config
+### Response fields
+- `id`
+- `user_id`
+- `provider_model_id` (nullable, references `provider_models.id`)
+- `created_at`
+- `updated_at`
+
+### Request fields
+Supported by `update_local_user_embedding_config`:
+- `provider_model_id` (nullable)
+
+### Behavior
+- If `provider_model_id` is set, desktop embedding routing uses this exact `provider_model_id` first.
+- If configured model is unavailable or lacks `embedding` capability, runtime falls back to first active model with `embedding` capability.
+- `provider_model_id` must reference an active model that includes `embedding` in `capabilities`.
+
 ## Compatibility notes
 - Missing legacy columns are added during init and backfilled with defaults.
 - Legacy unique index `idx_provider_models_instance_model` is replaced by `(instance_id, model_id, upstream_path)`.
+
+## Tauri Commands (Embedding Config)
+- `get_local_user_embedding_config`
+- `update_local_user_embedding_config`

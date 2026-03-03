@@ -1,10 +1,15 @@
 ﻿import {
   createFolder,
   createLocalUserDocument,
+  deleteFile,
   deleteFolder,
+  fetchFileChunks,
+  getFile,
   fetchKnowledgeStats,
   fetchKnowledgeTree,
   listLocalUserDocuments,
+  retryFile,
+  updateFile,
   updateFolder,
 } from "@/lib/api/knowledge"
 import { request } from "@/lib/http"
@@ -221,5 +226,99 @@ describe("knowledge api", () => {
       data: { name: "Web", parent_id: null },
     })
     expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it("routes file operations to tauri commands in desktop runtime", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        id: "d-10",
+        name: "note.md",
+        file_type: "md",
+        size: 512,
+        status: "indexed",
+        chunks: 2,
+        error_message: null,
+        folder_id: null,
+        created_at: "2026-03-03T00:00:00Z",
+        updated_at: "2026-03-03T00:00:00Z",
+      } as unknown)
+      .mockResolvedValueOnce({
+        id: "d-10",
+        name: "note-renamed.md",
+        file_type: "md",
+        size: 512,
+        status: "indexed",
+        chunks: 2,
+        error_message: null,
+        folder_id: "f-1",
+        created_at: "2026-03-03T00:00:00Z",
+        updated_at: "2026-03-03T00:01:00Z",
+      } as unknown)
+      .mockResolvedValueOnce(undefined as unknown)
+      .mockResolvedValueOnce({
+        id: "d-10",
+        name: "note-renamed.md",
+        file_type: "md",
+        size: 512,
+        status: "processing",
+        chunks: null,
+        error_message: null,
+        folder_id: "f-1",
+        created_at: "2026-03-03T00:00:00Z",
+        updated_at: "2026-03-03T00:02:00Z",
+      } as unknown)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "c-1",
+            file_id: "d-10",
+            index: 0,
+            content: "chunk content",
+            token_count: 2,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 20,
+      } as unknown)
+
+    const file = await getFile("d-10")
+    const updated = await updateFile("d-10", { name: "note-renamed.md", folderId: "f-1" })
+    await deleteFile("d-10")
+    const retried = await retryFile("d-10")
+    const chunks = await fetchFileChunks("d-10")
+
+    expect(file.id).toBe("d-10")
+    expect(updated.name).toBe("note-renamed.md")
+    expect(retried.status).toBe("processing")
+    expect(chunks.total).toBe(1)
+    expect(chunks.items[0]?.id).toBe("c-1")
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_local_user_document", {
+      file_id: "d-10",
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "update_local_user_document", {
+      file_id: "d-10",
+      payload: {
+        name: "note-renamed.md",
+        folder_id: "f-1",
+        folder_id_provided: true,
+      },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(3, "delete_local_user_document", {
+      file_id: "d-10",
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(4, "retry_local_user_document", {
+      file_id: "d-10",
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(5, "list_local_user_document_chunks", {
+      file_id: "d-10",
+      query: {
+        offset: 0,
+        limit: 20,
+      },
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
   })
 })
