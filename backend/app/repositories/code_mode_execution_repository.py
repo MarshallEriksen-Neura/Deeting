@@ -27,6 +27,24 @@ class CodeModeExecutionRepository(BaseRepository[CodeModeExecution]):
             await self.session.flush()
         return record
 
+    async def get_by_execution_id(
+        self,
+        *,
+        user_id: UUID,
+        execution_id: str,
+    ) -> CodeModeExecution | None:
+        token = str(execution_id or "").strip()
+        if not token:
+            return None
+        stmt = (
+            select(CodeModeExecution)
+            .where(CodeModeExecution.user_id == user_id)
+            .where(CodeModeExecution.execution_id == token)
+            .order_by(CodeModeExecution.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def get_by_identifier(
         self,
         identifier: str,

@@ -1,0 +1,17 @@
+{
+  "runtime_protocol_version": "v1",
+  "execution_format_version": "code_mode.v1",
+  "markers": {
+    "runtime_tool_call": "__DEETING_TOOL_CALL_REQUEST__",
+    "runtime_render_block": "__DEETING_RENDER_BLOCK__"
+  },
+  "headers": {
+    "execution_token": "X-Code-Mode-Execution-Token"
+  },
+  "bridge_paths": {
+    "context": "/context",
+    "call": "/call",
+    "file_write": "/file/write",
+    "file_read": "/file/read"
+  }
+}

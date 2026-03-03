@@ -9,6 +9,12 @@ pub struct ProviderPreset {
     pub provider: String,
     pub base_url: String,
     pub icon: Option<String>,
+    #[serde(default)]
+    pub theme_color: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub url_template: Option<String>,
     pub is_active: bool,
 }
 
@@ -18,6 +24,12 @@ pub struct ProviderInstance {
     pub preset_slug: String,
     pub name: String,
     pub base_url: String,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub priority: i64,
+    #[serde(default)]
+    pub meta: Value,
     pub is_enabled: bool,
     pub is_local: bool,
     pub credentials_ref: String,
@@ -39,9 +51,31 @@ pub struct ProviderModel {
     pub id: Uuid,
     pub instance_id: Uuid,
     pub model_id: String,
+    pub unified_model_id: Option<String>,
     pub display_name: Option<String>,
     pub capabilities: Vec<String>,
+    pub upstream_path: String,
+    #[serde(default)]
+    pub pricing_config: Value,
+    #[serde(default)]
+    pub limit_config: Value,
+    #[serde(default)]
+    pub tokenizer_config: Value,
+    #[serde(default)]
+    pub routing_config: Value,
+    #[serde(default)]
+    pub config_override: Value,
+    pub source: String,
+    #[serde(default)]
+    pub extra_meta: Value,
+    #[serde(default)]
+    pub weight: i64,
+    #[serde(default)]
+    pub priority: i64,
     pub is_active: bool,
+    pub synced_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,6 +93,17 @@ pub struct CreateInstanceRequest {
     pub preset_slug: String,
     pub name: String,
     pub base_url: String,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub priority: Option<i64>,
+    pub protocol: Option<String>,
+    pub model_prefix: Option<String>,
+    pub auto_append_v1: Option<bool>,
+    pub resource_name: Option<String>,
+    pub deployment_name: Option<String>,
+    pub api_version: Option<String>,
+    pub project_id: Option<String>,
+    pub region: Option<String>,
     pub is_local: Option<bool>,
     pub secret_key: Option<String>,
 }
@@ -67,6 +112,17 @@ pub struct CreateInstanceRequest {
 pub struct UpdateInstanceRequest {
     pub name: Option<String>,
     pub base_url: Option<String>,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub priority: Option<i64>,
+    pub protocol: Option<String>,
+    pub model_prefix: Option<String>,
+    pub auto_append_v1: Option<bool>,
+    pub resource_name: Option<String>,
+    pub deployment_name: Option<String>,
+    pub api_version: Option<String>,
+    pub project_id: Option<String>,
+    pub region: Option<String>,
     pub is_enabled: Option<bool>,
     pub secret_key: Option<String>,
 }
@@ -82,7 +138,17 @@ pub struct ProviderModelUpdateRequest {
     pub display_name: Option<String>,
     pub is_active: Option<bool>,
     pub capabilities: Option<Vec<String>>,
+    pub unified_model_id: Option<Option<String>>,
+    pub upstream_path: Option<String>,
+    pub weight: Option<i64>,
+    pub priority: Option<i64>,
+    pub pricing_config: Option<Value>,
+    pub limit_config: Option<Value>,
+    pub tokenizer_config: Option<Value>,
     pub routing_config: Option<Value>,
+    pub config_override: Option<Value>,
+    pub source: Option<String>,
+    pub extra_meta: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]

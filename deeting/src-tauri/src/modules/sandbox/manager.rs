@@ -124,11 +124,7 @@ impl SandboxRuntimeManager {
             loop {
                 tokio::time::sleep(Duration::from_secs(REAPER_INTERVAL_SECS)).await;
                 if let Err(err) = manager.reap_zombies().await {
-                    log::warn!(
-                        "sandbox reaper failed: code={} detail={}",
-                        err.code(),
-                        err
-                    );
+                    log::warn!("sandbox reaper failed: code={} detail={}", err.code(), err);
                 }
             }
         });
@@ -242,7 +238,9 @@ impl SandboxRuntimeManager {
         }
 
         let lock = self.session_run_lock(&normalized_session).await;
-        let timeout_secs = execution_timeout_secs.unwrap_or(30).max(MIN_EXEC_TIMEOUT_SECS);
+        let timeout_secs = execution_timeout_secs
+            .unwrap_or(30)
+            .max(MIN_EXEC_TIMEOUT_SECS);
         let lock_wait_secs = timeout_secs.saturating_add(5).max(1);
         let _guard = tokio::time::timeout(Duration::from_secs(lock_wait_secs), lock.lock())
             .await
@@ -275,8 +273,7 @@ impl SandboxRuntimeManager {
                     });
                 }
                 Err(err)
-                    if is_session_busy_error(&err)
-                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                    if is_session_busy_error(&err) && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
                 {
                     log::warn!(
                         "sandbox session busy for session {} (attempt {}/{}), recreating sandbox",
@@ -326,11 +323,7 @@ impl SandboxRuntimeManager {
         self.backend_shutdown().await
     }
 
-    async fn get_valid_lease(
-        &self,
-        session_id: &str,
-        now_ms: i64,
-    ) -> Option<SandboxLeaseInfo> {
+    async fn get_valid_lease(&self, session_id: &str, now_ms: i64) -> Option<SandboxLeaseInfo> {
         let mut stale_sandbox: Option<String> = None;
         let mut output = None;
 
@@ -338,7 +331,8 @@ impl SandboxRuntimeManager {
             let mut leases = self.session_leases.write().await;
             if let Some(lease) = leases.get_mut(session_id) {
                 if lease.expires_at_unix_ms > now_ms {
-                    lease.expires_at_unix_ms = now_ms + self.options.default_timeout.as_millis() as i64;
+                    lease.expires_at_unix_ms =
+                        now_ms + self.options.default_timeout.as_millis() as i64;
                     output = Some(SandboxLeaseInfo {
                         session_id: session_id.to_string(),
                         sandbox_id: lease.sandbox_id.clone(),
@@ -443,20 +437,19 @@ impl SandboxRuntimeManager {
         {
             let _ = options;
             return Err(SandboxError::Unavailable(
-                "native boxlite backend is not linked in this desktop package; use WSL bridge".to_string(),
+                "native boxlite backend is not linked in this desktop package; use WSL bridge"
+                    .to_string(),
             ));
         }
 
         #[cfg(target_os = "windows")]
         {
-            let bridge_url = options
-                .bridge_url
-                .clone()
-                .ok_or_else(|| {
-                    SandboxError::Unavailable(
-                        "BOXLITE_REST_URL is required when running desktop on Windows with WSL bridge".to_string(),
-                    )
-                })?;
+            let bridge_url = options.bridge_url.clone().ok_or_else(|| {
+                SandboxError::Unavailable(
+                    "BOXLITE_REST_URL is required when running desktop on Windows with WSL bridge"
+                        .to_string(),
+                )
+            })?;
             let backend = WslBoxliteBackend::new(WslBackendOptions {
                 base_url: bridge_url,
                 api_prefix: options.bridge_prefix.clone(),
@@ -524,7 +517,9 @@ impl SandboxRuntimeManager {
 fn normalize_session_id(raw: &str) -> Result<String, SandboxError> {
     let session = raw.trim();
     if session.is_empty() {
-        return Err(SandboxError::Validation("session_id is required".to_string()));
+        return Err(SandboxError::Validation(
+            "session_id is required".to_string(),
+        ));
     }
     Ok(session.to_string())
 }
@@ -579,7 +574,9 @@ mod tests {
         let session = "user:abc/123";
         let box_name = session_to_box_name(session);
         assert!(box_name.starts_with("deeting-"));
-        assert!(box_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'));
+        assert!(box_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'));
     }
 
     #[test]

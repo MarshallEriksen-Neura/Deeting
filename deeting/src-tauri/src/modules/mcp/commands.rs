@@ -8,11 +8,15 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
+use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
+use crate::modules::code_mode::types::ExecuteLocalCodeModeRequest;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::{expand_path, ExtractedToolFields, NewSource, ToolUpsert};
 use crate::modules::mcp::types::{
     CreateAssistantMessageRequest, CreateConversationMessageRequest, CreateLocalAssistantRequest,
-    CreateSourceRequest, ImportConfigRequest, LocalAdminConversationListResponse,
+    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, CreateSourceRequest,
+    ImportConfigRequest, LocalAdminConversationItem, LocalAdminConversationListResponse,
+    LocalAdminConversationMessageListResponse, LocalAdminConversationMessageQuery,
     LocalAdminConversationQuery, LocalAdminConversationSummaryListResponse, LocalAssistant,
     LocalAssistantEntity, LocalAssistantInstallCreateRequest, LocalAssistantInstallItem,
     LocalAssistantInstallPage, LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest,
@@ -20,27 +24,33 @@ use crate::modules::mcp::types::{
     LocalAssistantRatingResponse, LocalAssistantRoutingFeedbackRequest,
     LocalAssistantRoutingReportQuery, LocalAssistantRoutingReportResponse,
     LocalAssistantRoutingState, LocalAssistantTag, LocalAssistantVersion, LocalChatInputMessage,
-    LocalChatRequest, LocalChatResponse,
-    LocalConversationArchiveResponse, LocalConversationClearResponse,
-    LocalConversationCreateRequest, LocalConversationCreateResponse,
-    LocalConversationDeleteResponse, LocalConversationHistoryMessage,
-    LocalConversationHistoryQuery, LocalConversationHistoryResponse,
-    LocalConversationRegenerateRequest, LocalConversationRegenerateResponse,
-    LocalConversationRenameRequest, LocalConversationRenameResponse,
-    LocalConversationSendRequest, LocalConversationSendResponse, LocalConversationSessionPage,
-    LocalConversationSessionsQuery, LocalConversationStatus, LocalConversationWindowResponse,
-    LocalGatewayLogListResponse, LocalGatewayLogQuery, LocalGatewayLogStatsResponse,
-    LocalTraceFeedback, LocalTraceFeedbackRequest,
-    McpConfigPayload, McpConflictStatus, McpLogEntry, McpSource, McpSourceStatus, McpSourceType,
-    McpTool, McpToolConfigPayload, McpToolStatus, ResolveConflictRequest, SyncSourceRequest,
-    UpdateLocalAssistantRequest, UpdateToolConfigRequest,
+    LocalChatRequest, LocalChatResponse, LocalChatToolCall, LocalConversationArchiveResponse,
+    LocalConversationClearResponse, LocalConversationCreateRequest,
+    LocalConversationCreateResponse, LocalConversationDeleteResponse,
+    LocalConversationHistoryMessage, LocalConversationHistoryQuery,
+    LocalConversationHistoryResponse, LocalConversationRegenerateRequest,
+    LocalConversationRegenerateResponse, LocalConversationRenameRequest,
+    LocalConversationRenameResponse, LocalConversationSendRequest, LocalConversationSendResponse,
+    LocalConversationSessionPage, LocalConversationSessionsQuery, LocalConversationStatus,
+    LocalConversationSummaryBatchRetryRequest, LocalConversationSummaryBatchRetryResponse,
+    LocalConversationSummaryEnqueueResponse, LocalConversationSummaryIdleTaskListResponse,
+    LocalConversationSummaryIdleTaskQuery, LocalConversationSummaryJobListResponse,
+    LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
+    LocalConversationWindowResponse, LocalGatewayLogListResponse, LocalGatewayLogQuery,
+    LocalGatewayLogStatsResponse, LocalKnowledgeFile, LocalKnowledgeFolder,
+    LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse,
+    LocalTraceFeedback, LocalTraceFeedbackRequest, LocalUserDocumentListQuery, McpConfigPayload,
+    McpConflictStatus, McpLogEntry, McpSource, McpSourceStatus, McpSourceType, McpTool,
+    McpToolConfigPayload, McpToolStatus, ResolveConflictRequest, SyncSourceRequest,
+    UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest, UpdateToolConfigRequest,
 };
-use crate::modules::providers::types::BanditFeedbackRequest;
 use crate::modules::mcp::McpRuntimeState;
+use crate::modules::providers::types::BanditFeedbackRequest;
 use crate::state::AppState;
 
 const LOCAL_CONVERSATION_SUMMARY_PROMPT: &str = "Please summarize the multi-turn conversation below.\nRequirements:\n1) Keep user intent, key decisions, and conclusions.\n2) Remove redundancy.\n3) Keep the summary concise and actionable.\n4) Output summary text only.\n\nConversation:\n";
 const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
+const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
 const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
 const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
 const LOCAL_CONVERSATION_SUMMARY_WORKER_RETRY_BASE_DELAY_SECS: i64 = 5;
@@ -96,6 +106,13 @@ struct LocalModelConnection {
 struct TraceToolCall {
     name: String,
     success: bool,
+}
+
+#[derive(Debug, Clone)]
+struct LocalChatExecutionResult {
+    content: String,
+    tool_calls_meta: Vec<serde_json::Value>,
+    code_mode_meta: serde_json::Value,
 }
 
 #[tauri::command]
@@ -219,7 +236,11 @@ pub async fn list_local_assistant_tags(
     state: State<'_, AppState>,
 ) -> Result<Vec<LocalAssistantTag>, String> {
     let state = &state.mcp;
-    state.store.list_local_assistant_tags().await.map_err(to_string)
+    state
+        .store
+        .list_local_assistant_tags()
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -413,6 +434,107 @@ pub async fn get_local_gateway_log_stats(
 }
 
 #[tauri::command]
+pub async fn get_local_knowledge_tree(
+    state: State<'_, AppState>,
+    query: Option<LocalKnowledgeTreeQuery>,
+) -> Result<LocalKnowledgeTreeResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_knowledge_tree(query.unwrap_or(LocalKnowledgeTreeQuery {
+            parent_id: None,
+            q: None,
+            sort_field: None,
+            sort_direction: None,
+        }))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_knowledge_stats(
+    state: State<'_, AppState>,
+) -> Result<LocalKnowledgeStatsResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_knowledge_stats()
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_knowledge_folder(
+    state: State<'_, AppState>,
+    payload: CreateLocalKnowledgeFolderRequest,
+) -> Result<LocalKnowledgeFolder, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_knowledge_folder(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_knowledge_folder(
+    state: State<'_, AppState>,
+    folder_id: String,
+    payload: UpdateLocalKnowledgeFolderRequest,
+) -> Result<LocalKnowledgeFolder, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_knowledge_folder(&folder_id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_knowledge_folder(
+    state: State<'_, AppState>,
+    folder_id: String,
+    recursive: Option<bool>,
+) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .delete_local_knowledge_folder(&folder_id, recursive.unwrap_or(false))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_user_documents(
+    state: State<'_, AppState>,
+    query: Option<LocalUserDocumentListQuery>,
+) -> Result<Vec<LocalKnowledgeFile>, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_user_documents(query.unwrap_or(LocalUserDocumentListQuery {
+            folder_id: None,
+            status: None,
+            q: None,
+        }))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_user_document(
+    state: State<'_, AppState>,
+    payload: CreateLocalUserDocumentRequest,
+) -> Result<LocalKnowledgeFile, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_user_document(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn list_local_admin_conversations(
     state: State<'_, AppState>,
     query: Option<LocalAdminConversationQuery>,
@@ -425,7 +547,45 @@ pub async fn list_local_admin_conversations(
             limit: None,
             status: None,
             channel: None,
+            user_id: None,
+            assistant_id: None,
+            start_time: None,
+            end_time: None,
         }))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_admin_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalAdminConversationItem, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_admin_conversation(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_admin_conversation_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+    query: Option<LocalAdminConversationMessageQuery>,
+) -> Result<LocalAdminConversationMessageListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_admin_conversation_messages(
+            &session_id,
+            query.unwrap_or(LocalAdminConversationMessageQuery {
+                skip: None,
+                limit: None,
+                include_deleted: None,
+            }),
+        )
         .await
         .map_err(to_string)
 }
@@ -439,6 +599,102 @@ pub async fn list_local_admin_conversation_summaries(
     state
         .store
         .list_local_admin_conversation_summaries(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_summary_jobs(
+    state: State<'_, AppState>,
+    query: Option<LocalConversationSummaryJobQuery>,
+) -> Result<LocalConversationSummaryJobListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_conversation_summary_jobs(query.unwrap_or(LocalConversationSummaryJobQuery {
+            skip: None,
+            limit: None,
+            status: None,
+            session_id: None,
+            error_contains: None,
+        }))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_summary_idle_tasks(
+    state: State<'_, AppState>,
+    query: Option<LocalConversationSummaryIdleTaskQuery>,
+) -> Result<LocalConversationSummaryIdleTaskListResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .list_local_conversation_summary_idle_tasks(query.unwrap_or(
+            LocalConversationSummaryIdleTaskQuery {
+                skip: None,
+                limit: None,
+                session_id: None,
+            },
+        ))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_conversation_summary_queue_stats(
+    state: State<'_, AppState>,
+) -> Result<LocalConversationSummaryQueueStats, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .get_local_conversation_summary_queue_stats()
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn trigger_local_conversation_summary_job(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationSummaryEnqueueResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .trigger_local_conversation_summary_job(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn retry_local_conversation_summary_job(
+    state: State<'_, AppState>,
+    job_id: String,
+) -> Result<LocalConversationSummaryEnqueueResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .retry_local_conversation_summary_job(&job_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn retry_local_conversation_summary_jobs(
+    state: State<'_, AppState>,
+    payload: Option<LocalConversationSummaryBatchRetryRequest>,
+) -> Result<LocalConversationSummaryBatchRetryResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .retry_local_conversation_summary_jobs(payload.unwrap_or(
+            LocalConversationSummaryBatchRetryRequest {
+                limit: None,
+                status: None,
+                session_id: None,
+                error_contains: None,
+            },
+        ))
         .await
         .map_err(to_string)
 }
@@ -559,7 +815,11 @@ pub async fn preview_local_assistant(
         .as_deref()
         .and_then(|version_id| versions.iter().find(|version| version.id == version_id))
         .or_else(|| versions.first())
-        .ok_or_else(|| to_string(McpError::Validation("assistant version not found".to_string())))?;
+        .ok_or_else(|| {
+            to_string(McpError::Validation(
+                "assistant version not found".to_string(),
+            ))
+        })?;
 
     let mut messages = Vec::new();
     let system_prompt = selected_version.system_prompt.trim().to_string();
@@ -651,6 +911,19 @@ pub async fn archive_local_conversation(
     state
         .store
         .update_local_conversation_status(&session_id, LocalConversationStatus::Archived)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn close_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationArchiveResponse, String> {
+    let state = &state.mcp;
+    state
+        .store
+        .update_local_conversation_status(&session_id, LocalConversationStatus::Closed)
         .await
         .map_err(to_string)
 }
@@ -830,8 +1103,10 @@ pub async fn send_local_conversation_message(
     let upstream_endpoint = build_chat_endpoint(&model_connection.base_url);
 
     let chat_started = Instant::now();
-    let chat_result = run_local_chat_complete(
+    let chat_result = run_local_chat_complete_with_auto_code_mode(
+        app_state,
         mcp_state,
+        &normalized_session_id,
         LocalChatRequest {
             assistant_id: chat_ctx.assistant_id.clone(),
             model: model_connection.model_id.clone(),
@@ -926,6 +1201,8 @@ pub async fn send_local_conversation_message(
         "trace_id": trace_id,
         "assistant_id": chat_ctx.assistant_id,
         "provider_model_id": model_connection.provider_model_id,
+        "tool_calls": chat.tool_calls_meta,
+        "code_mode": chat.code_mode_meta,
     });
 
     let assistant_message = mcp_state
@@ -997,8 +1274,10 @@ pub async fn regenerate_local_conversation_reply(
     let upstream_endpoint = build_chat_endpoint(&model_connection.base_url);
 
     let chat_started = Instant::now();
-    let chat_result = run_local_chat_complete(
+    let chat_result = run_local_chat_complete_with_auto_code_mode(
+        app_state,
         mcp_state,
+        &regenerate_ctx.session_id,
         LocalChatRequest {
             assistant_id: regenerate_ctx.assistant_id.clone(),
             model: model_connection.model_id.clone(),
@@ -1093,6 +1372,8 @@ pub async fn regenerate_local_conversation_reply(
         "trace_id": trace_id,
         "assistant_id": regenerate_ctx.assistant_id,
         "provider_model_id": model_connection.provider_model_id,
+        "tool_calls": chat.tool_calls_meta,
+        "code_mode": chat.code_mode_meta,
     });
 
     let message = mcp_state
@@ -1122,10 +1403,7 @@ pub async fn regenerate_local_conversation_reply(
 
     if let Err(err) = mcp_state
         .store
-        .try_trigger_local_conversation_summary_flush(
-            &regenerate_ctx.session_id,
-            "flush_threshold",
-        )
+        .try_trigger_local_conversation_summary_flush(&regenerate_ctx.session_id, "flush_threshold")
         .await
     {
         warn!(
@@ -1813,6 +2091,7 @@ fn build_chat_payload(
     temperature: Option<f32>,
     top_p: Option<f32>,
     max_tokens: Option<u32>,
+    enable_code_mode_tools: bool,
 ) -> Result<serde_json::Value, String> {
     let mut payload = serde_json::Map::new();
     payload.insert("model".to_string(), serde_json::Value::String(model));
@@ -1839,6 +2118,45 @@ fn build_chat_payload(
     }
     if let Some(mt) = max_tokens {
         payload.insert("max_tokens".to_string(), serde_json::Value::from(mt));
+    }
+
+    if enable_code_mode_tools {
+        payload.insert(
+            "tools".to_string(),
+            serde_json::json!([
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_sdk",
+                        "description": "Search desktop tool SDK signatures and capability hints",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {"type": "string"}
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "execute_code_plan",
+                        "description": "Execute python code plan in local sandbox bridge",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "code": {"type": "string"},
+                                "language": {"type": "string"},
+                                "execution_timeout": {"type": "number"},
+                                "dry_run": {"type": "boolean"}
+                            },
+                            "required": ["code"]
+                        }
+                    }
+                }
+            ]),
+        );
+        payload.insert("tool_choice".to_string(), serde_json::json!("auto"));
     }
 
     Ok(serde_json::Value::Object(payload))
@@ -1890,12 +2208,16 @@ async fn run_local_chat_complete(
         }
     }
 
+    let code_mode_available = has_code_mode_available(state).await?;
+    maybe_inject_code_mode_prompt(state, &mut messages, code_mode_available).await?;
+
     let request_body = build_chat_payload(
         model,
         messages,
         payload.temperature,
         payload.top_p,
         payload.max_tokens,
+        code_mode_available,
     )
     .map_err(McpError::validation)?;
     let endpoint = build_chat_endpoint(&base_url);
@@ -1924,10 +2246,458 @@ async fn run_local_chat_complete(
         return Err(McpError::Network(message));
     }
 
-    let content = extract_chat_content(&response_json)
-        .ok_or_else(|| McpError::Process("empty response content".to_string()))?;
+    let content = extract_chat_content(&response_json).unwrap_or_default();
+    let tool_calls = extract_chat_tool_calls(&response_json);
 
-    Ok(LocalChatResponse { content })
+    Ok(LocalChatResponse {
+        content,
+        tool_calls,
+    })
+}
+
+async fn maybe_inject_code_mode_prompt(
+    _state: &McpRuntimeState,
+    messages: &mut Vec<LocalChatInputMessage>,
+    code_mode_available: bool,
+) -> Result<(), McpError> {
+    if messages.is_empty() {
+        return Ok(());
+    }
+
+    if !code_mode_available {
+        return Ok(());
+    }
+
+    let allowlist = resolve_code_mode_direct_allowlist();
+    let reminder = render_code_mode_capability_prompt(&allowlist);
+    if reminder.trim().is_empty() {
+        return Ok(());
+    }
+
+    let marker = "Code Mode Capability (MANDATORY)";
+    if let Some(system_index) = messages.iter().position(|msg| msg.role == "system") {
+        if messages[system_index].content.contains(marker) {
+            return Ok(());
+        }
+        messages[system_index].content =
+            format!("{}\n\n{}", messages[system_index].content.trim(), reminder);
+        return Ok(());
+    }
+
+    messages.insert(
+        0,
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: reminder,
+        },
+    );
+    Ok(())
+}
+
+async fn has_code_mode_available(state: &McpRuntimeState) -> Result<bool, McpError> {
+    let tools = state.store.list_tools().await?;
+    let mut tool_names = HashSet::new();
+    for tool in tools {
+        let name = tool.name.trim().to_lowercase();
+        if !name.is_empty() {
+            tool_names.insert(name);
+        }
+    }
+    Ok(tool_names.contains("search_sdk") && tool_names.contains("execute_code_plan"))
+}
+
+fn resolve_code_mode_direct_allowlist() -> Vec<String> {
+    let mut merged = HashSet::from(["search_sdk".to_string(), "execute_code_plan".to_string()]);
+    if let Ok(raw) = std::env::var("CODE_MODE_DIRECT_TOOL_ALLOWLIST") {
+        for item in raw.split(',') {
+            let trimmed = item.trim().to_lowercase();
+            if !trimmed.is_empty() {
+                merged.insert(trimmed);
+            }
+        }
+    }
+    let mut output: Vec<String> = merged.into_iter().collect();
+    output.sort();
+    output
+}
+
+async fn run_local_chat_complete_with_auto_code_mode(
+    app_state: &AppState,
+    mcp_state: &McpRuntimeState,
+    session_id: &str,
+    payload: LocalChatRequest,
+) -> Result<LocalChatExecutionResult, McpError> {
+    let mut messages = payload.messages.clone();
+    let mut handled_tool_calls: Vec<serde_json::Value> = Vec::new();
+    let mut handled_results: Vec<serde_json::Value> = Vec::new();
+    let mut fallback_content = String::new();
+    let max_rounds: usize = 3;
+
+    for _round in 0..max_rounds {
+        let chat = run_local_chat_complete(
+            mcp_state,
+            LocalChatRequest {
+                assistant_id: payload.assistant_id.clone(),
+                model: payload.model.clone(),
+                messages: messages.clone(),
+                temperature: payload.temperature,
+                top_p: payload.top_p,
+                max_tokens: payload.max_tokens,
+                base_url: payload.base_url.clone(),
+                api_key: payload.api_key.clone(),
+            },
+        )
+        .await?;
+
+        if chat.tool_calls.is_empty() {
+            let final_content = if !chat.content.trim().is_empty() {
+                chat.content
+            } else {
+                fallback_content.clone()
+            };
+            let code_mode_meta = if handled_results.is_empty() {
+                serde_json::Value::Null
+            } else {
+                serde_json::json!({
+                    "auto_triggered": true,
+                    "results": handled_results,
+                })
+            };
+            return Ok(LocalChatExecutionResult {
+                content: final_content,
+                tool_calls_meta: handled_tool_calls,
+                code_mode_meta,
+            });
+        }
+
+        let (synthesized, tool_calls_meta, results) = maybe_handle_local_code_mode_tool_calls(
+            app_state,
+            session_id,
+            &chat,
+            payload.max_tokens,
+        )
+        .await;
+
+        if !chat.content.trim().is_empty() {
+            messages.push(LocalChatInputMessage {
+                role: "assistant".to_string(),
+                content: chat.content,
+            });
+        }
+        messages.push(LocalChatInputMessage {
+            role: "user".to_string(),
+            content: format!(
+                "Tool execution results (JSON):\n{}\nPlease continue and provide the final answer for user.",
+                truncate_tool_results_payload(
+                    &serde_json::to_string_pretty(&serde_json::Value::Array(results.clone()))
+                        .unwrap_or_else(|_| "[]".to_string())
+                )
+            ),
+        });
+
+        fallback_content = synthesized;
+        handled_tool_calls.extend(tool_calls_meta);
+        handled_results.extend(results);
+    }
+
+    Ok(LocalChatExecutionResult {
+        content: if fallback_content.trim().is_empty() {
+            "[Code Mode] 已执行工具调用，但未生成最终自然语言回复。".to_string()
+        } else {
+            fallback_content
+        },
+        tool_calls_meta: handled_tool_calls,
+        code_mode_meta: serde_json::json!({
+            "auto_triggered": true,
+            "stopped_by": "max_rounds",
+            "results": handled_results,
+        }),
+    })
+}
+
+async fn maybe_handle_local_code_mode_tool_calls(
+    app_state: &AppState,
+    session_id: &str,
+    chat: &LocalChatResponse,
+    max_tokens: Option<u32>,
+) -> (String, Vec<serde_json::Value>, Vec<serde_json::Value>) {
+    if chat.tool_calls.is_empty() {
+        return (chat.content.clone(), Vec::new(), Vec::new());
+    }
+
+    let mut tool_call_meta: Vec<serde_json::Value> = Vec::new();
+    let mut handled_results: Vec<serde_json::Value> = Vec::new();
+
+    for call in &chat.tool_calls {
+        let tool_name = call.name.trim().to_lowercase();
+        match tool_name.as_str() {
+            "search_sdk" => {
+                let query = call
+                    .arguments
+                    .get("query")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+                let result = build_local_sdk_search_result(app_state, query).await;
+                tool_call_meta.push(serde_json::json!({
+                    "name": call.name,
+                    "success": true,
+                    "arguments": call.arguments,
+                }));
+                handled_results.push(serde_json::json!({
+                    "tool": "search_sdk",
+                    "result": result,
+                }));
+            }
+            "execute_code_plan" => {
+                let Some(code) = call.arguments.get("code").and_then(|value| value.as_str()) else {
+                    tool_call_meta.push(serde_json::json!({
+                        "name": call.name,
+                        "success": false,
+                        "arguments": call.arguments,
+                    }));
+                    handled_results.push(serde_json::json!({
+                        "tool": "execute_code_plan",
+                        "error": "missing code",
+                    }));
+                    continue;
+                };
+
+                let execution_timeout = call
+                    .arguments
+                    .get("execution_timeout")
+                    .and_then(|value| value.as_u64());
+                let dry_run = call
+                    .arguments
+                    .get("dry_run")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false);
+                let language = call
+                    .arguments
+                    .get("language")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string())
+                    .or(Some("python".to_string()));
+
+                let exec = crate::modules::code_mode::commands::execute_local_code_mode_inner(
+                    app_state,
+                    ExecuteLocalCodeModeRequest {
+                        code: code.to_string(),
+                        session_id: Some(session_id.to_string()),
+                        language,
+                        execution_timeout,
+                        dry_run: Some(dry_run),
+                        context: None,
+                        max_calls: max_tokens.map(|value| value as i64),
+                    },
+                )
+                .await;
+
+                match exec {
+                    Ok(execution) => {
+                        tool_call_meta.push(serde_json::json!({
+                            "name": call.name,
+                            "success": execution.success,
+                            "arguments": call.arguments,
+                        }));
+                        handled_results.push(serde_json::to_value(execution).unwrap_or_else(|_| {
+                            serde_json::json!({"tool": "execute_code_plan", "error": "serialize_failed"})
+                        }));
+                    }
+                    Err(err) => {
+                        tool_call_meta.push(serde_json::json!({
+                            "name": call.name,
+                            "success": false,
+                            "arguments": call.arguments,
+                        }));
+                        handled_results.push(serde_json::json!({
+                            "tool": "execute_code_plan",
+                            "error": err.to_string(),
+                        }));
+                    }
+                }
+            }
+            _ => {
+                tool_call_meta.push(serde_json::json!({
+                    "name": call.name,
+                    "success": false,
+                    "arguments": call.arguments,
+                }));
+                handled_results.push(serde_json::json!({
+                    "tool": call.name,
+                    "error": "tool not supported in local auto code mode",
+                }));
+            }
+        }
+    }
+
+    let synthesized = synthesize_local_tool_result_message(&chat.content, &handled_results);
+    (synthesized, tool_call_meta, handled_results)
+}
+
+async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> serde_json::Value {
+    let normalized = query.trim().to_lowercase();
+    let mut catalog = vec![
+        serde_json::json!({
+            "name": "execute_code_plan",
+            "description": "Execute python code in local sandbox and bridge",
+            "source": "code_mode_core",
+            "parameters": {
+                "code": "string(required)",
+                "language": "string(optional, default=python)",
+                "execution_timeout": "number(optional)",
+                "dry_run": "boolean(optional)",
+            }
+        }),
+        serde_json::json!({
+            "name": "search_sdk",
+            "description": "Search tool signatures in local desktop runtime",
+            "source": "code_mode_core",
+            "parameters": {
+                "query": "string(optional)",
+            }
+        }),
+        serde_json::json!({
+            "name": "list_user_memories",
+            "description": "List local memories for current desktop session",
+            "source": "code_mode_bridge",
+            "parameters": {
+                "session_id": "string(optional)",
+                "assistant_id": "string(optional)",
+                "cursor": "string(optional)",
+                "limit": "number(optional)",
+            }
+        }),
+        serde_json::json!({
+            "name": "add_knowledge_chunk",
+            "description": "Append local memory chunk",
+            "source": "code_mode_bridge",
+            "parameters": {
+                "content": "string(optional)",
+                "chunk": "string(optional)",
+                "text": "string(optional)",
+                "session_id": "string(optional)",
+                "assistant_id": "string(optional)",
+            }
+        }),
+    ];
+
+    if let Ok(tools) = app_state.mcp.store.list_tools().await {
+        for tool in tools {
+            let name = tool.name.trim().to_string();
+            if name.is_empty() {
+                continue;
+            }
+            let status = tool.status.as_str().to_string();
+            let availability = matches!(
+                tool.status,
+                crate::modules::mcp::types::McpToolStatus::Healthy
+                    | crate::modules::mcp::types::McpToolStatus::Degraded
+            );
+            let signature = extract_tool_signature_from_config_json(&tool.config_json);
+            catalog.push(serde_json::json!({
+                "name": name,
+                "identifier": tool.identifier,
+                "description": tool.description,
+                "source": "local_mcp",
+                "status": status,
+                "available": availability,
+                "capabilities": tool.capabilities,
+                "parameters": signature,
+            }));
+        }
+    }
+
+    let matches = catalog
+        .into_iter()
+        .filter(|item| {
+            if normalized.is_empty() {
+                return true;
+            }
+            let name_hit = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .map(|name| name.contains(&normalized))
+                .unwrap_or(false);
+            if name_hit {
+                return true;
+            }
+            item.get("description")
+                .and_then(|value| value.as_str())
+                .map(|desc| desc.to_lowercase().contains(&normalized))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<serde_json::Value>>();
+
+    serde_json::json!({
+        "query": query,
+        "mode": "dynamic_local_scan",
+        "items": matches,
+    })
+}
+
+fn extract_tool_signature_from_config_json(config_json: &str) -> serde_json::Value {
+    let parsed: Result<serde_json::Value, _> = serde_json::from_str(config_json);
+    let Ok(value) = parsed else {
+        return serde_json::json!({});
+    };
+
+    for key in [
+        "parameters",
+        "input_schema",
+        "inputSchema",
+        "tool_schema",
+        "schema",
+        "args_schema",
+    ] {
+        if let Some(schema) = value.get(key) {
+            return schema.clone();
+        }
+    }
+
+    if let Some(capabilities) = value.get("capabilities") {
+        return serde_json::json!({
+            "capabilities": capabilities,
+        });
+    }
+
+    serde_json::json!({})
+}
+
+fn synthesize_local_tool_result_message(
+    original_content: &str,
+    handled_results: &[serde_json::Value],
+) -> String {
+    if handled_results.is_empty() {
+        return original_content.to_string();
+    }
+
+    let mut lines = Vec::new();
+    let original = original_content.trim();
+    if !original.is_empty() {
+        lines.push(original.to_string());
+    }
+    lines.push("[Code Mode] 已自动执行工具调用。".to_string());
+    for result in handled_results {
+        let text = serde_json::to_string_pretty(result)
+            .unwrap_or_else(|_| "{\"error\":\"serialize_failed\"}".to_string());
+        lines.push(text);
+    }
+    lines.join("\n\n")
+}
+
+fn truncate_tool_results_payload(text: &str) -> String {
+    if text.chars().count() <= LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS {
+        return text.to_string();
+    }
+    let truncated: String = text
+        .chars()
+        .take(LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS)
+        .collect();
+    format!(
+        "{}\n\n[truncated:{}]",
+        truncated,
+        text.chars().count() - LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS
+    )
 }
 
 async fn record_local_bandit_feedback_best_effort(
@@ -1952,7 +2722,12 @@ async fn record_local_bandit_feedback_best_effort(
         reward_metric_type: Some("latency_success".to_string()),
     };
 
-    if let Err(err) = app_state.providers.store.record_bandit_feedback(payload).await {
+    if let Err(err) = app_state
+        .providers
+        .store
+        .record_bandit_feedback(payload)
+        .await
+    {
         warn!(
             "failed to record local bandit feedback for provider_model {}: {}",
             arm_id, err
@@ -2203,7 +2978,10 @@ pub async fn start_local_conversation_summary_worker(app_state: AppState) {
         {
             Ok(job) => job,
             Err(err) => {
-                warn!("local conversation summary worker claim job failed: {}", err);
+                warn!(
+                    "local conversation summary worker claim job failed: {}",
+                    err
+                );
                 tokio::time::sleep(Duration::from_secs(
                     LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
                 ))
@@ -2293,7 +3071,10 @@ pub async fn start_local_periodic_worker(app_state: AppState) {
         )
         .await
     {
-        warn!("local periodic worker register builtin tasks failed: {}", err);
+        warn!(
+            "local periodic worker register builtin tasks failed: {}",
+            err
+        );
     }
     if let Err(err) = app_state
         .mcp
@@ -2305,7 +3086,10 @@ pub async fn start_local_periodic_worker(app_state: AppState) {
         )
         .await
     {
-        warn!("local periodic worker register idle-dispatch task failed: {}", err);
+        warn!(
+            "local periodic worker register idle-dispatch task failed: {}",
+            err
+        );
     }
 
     loop {
@@ -2313,15 +3097,19 @@ pub async fn start_local_periodic_worker(app_state: AppState) {
             Ok(task) => task,
             Err(err) => {
                 warn!("local periodic worker claim task failed: {}", err);
-                tokio::time::sleep(Duration::from_secs(LOCAL_PERIODIC_TASK_WORKER_IDLE_INTERVAL_SECS))
-                    .await;
+                tokio::time::sleep(Duration::from_secs(
+                    LOCAL_PERIODIC_TASK_WORKER_IDLE_INTERVAL_SECS,
+                ))
+                .await;
                 continue;
             }
         };
 
         let Some(task) = task else {
-            tokio::time::sleep(Duration::from_secs(LOCAL_PERIODIC_TASK_WORKER_IDLE_INTERVAL_SECS))
-                .await;
+            tokio::time::sleep(Duration::from_secs(
+                LOCAL_PERIODIC_TASK_WORKER_IDLE_INTERVAL_SECS,
+            ))
+            .await;
             continue;
         };
 
@@ -2367,7 +3155,10 @@ pub async fn start_local_periodic_worker(app_state: AppState) {
     }
 }
 
-async fn run_local_periodic_task(app_state: &AppState, task_name: &str) -> Result<String, McpError> {
+async fn run_local_periodic_task(
+    app_state: &AppState,
+    task_name: &str,
+) -> Result<String, McpError> {
     match task_name {
         LOCAL_PERIODIC_TASK_SUMMARY_JOB_GC_NAME => {
             let deleted = app_state
@@ -2453,7 +3244,12 @@ async fn process_trace_feedback_tool_calls(
             routing_config: None,
             reward_metric_type: Some("user_feedback".to_string()),
         };
-        if let Err(err) = app_state.providers.store.record_bandit_feedback(payload).await {
+        if let Err(err) = app_state
+            .providers
+            .store
+            .record_bandit_feedback(payload)
+            .await
+        {
             warn!(
                 "trace feedback bandit write failed: arm={} err={}",
                 call.name, err
@@ -2501,7 +3297,10 @@ async fn process_trace_feedback_assistant_routing(
     }
 }
 
-async fn refresh_local_conversation_summary(app_state: &AppState, session_id: &str) -> Result<(), McpError> {
+async fn refresh_local_conversation_summary(
+    app_state: &AppState,
+    session_id: &str,
+) -> Result<(), McpError> {
     let mcp_state = &app_state.mcp;
     let chat_ctx = mcp_state
         .store
@@ -2512,11 +3311,7 @@ async fn refresh_local_conversation_summary(app_state: &AppState, session_id: &s
 
     mcp_state
         .store
-        .persist_local_conversation_summary(
-            session_id,
-            &summary_text,
-            summarizer_model.as_deref(),
-        )
+        .persist_local_conversation_summary(session_id, &summary_text, summarizer_model.as_deref())
         .await
 }
 
@@ -2536,7 +3331,8 @@ async fn generate_local_conversation_summary(
         .filter(|value| !value.is_empty());
 
     if let Some(secretary_model_name) = secretary_model_name {
-        let model_connection = resolve_local_model_connection(app_state, &secretary_model_name, None).await;
+        let model_connection =
+            resolve_local_model_connection(app_state, &secretary_model_name, None).await;
         if let Ok(model_connection) = model_connection {
             let conversation_text = format_conversation_for_summary(messages);
             let prompt = build_summary_prompt(&conversation_text);
@@ -2571,9 +3367,7 @@ async fn generate_local_conversation_summary(
 }
 
 fn build_summary_prompt(conversation_text: &str) -> String {
-    format!(
-        "{LOCAL_CONVERSATION_SUMMARY_PROMPT}{conversation_text}"
-    )
+    format!("{LOCAL_CONVERSATION_SUMMARY_PROMPT}{conversation_text}")
 }
 
 fn format_conversation_for_summary(messages: &[LocalChatInputMessage]) -> String {
@@ -2657,11 +3451,58 @@ fn extract_chat_content(value: &serde_json::Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+fn extract_chat_tool_calls(value: &serde_json::Value) -> Vec<LocalChatToolCall> {
+    let Some(raw_calls) = value
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|msg| msg.get("tool_calls"))
+        .and_then(|calls| calls.as_array())
+    else {
+        return Vec::new();
+    };
+
+    let mut output = Vec::new();
+    for raw in raw_calls {
+        let Some(item) = raw.as_object() else {
+            continue;
+        };
+        let function = item.get("function").and_then(|v| v.as_object());
+        let name = function
+            .and_then(|func| func.get("name"))
+            .and_then(|name| name.as_str())
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty());
+        let Some(name) = name else {
+            continue;
+        };
+
+        let arguments = function
+            .and_then(|func| func.get("arguments"))
+            .and_then(|args| args.as_str())
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+
+        output.push(LocalChatToolCall {
+            id: item
+                .get("id")
+                .and_then(|id| id.as_str())
+                .map(|id| id.to_string()),
+            name,
+            arguments,
+        });
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_local_summary_fallback, format_conversation_for_summary, truncate_summary_text,
-        LOCAL_CONVERSATION_SUMMARY_MAX_CHARS,
+        build_local_summary_fallback, extract_chat_tool_calls,
+        extract_tool_signature_from_config_json, format_conversation_for_summary,
+        truncate_summary_text, truncate_tool_results_payload,
+        LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS,
     };
     use crate::modules::mcp::types::LocalChatInputMessage;
 
@@ -2708,5 +3549,53 @@ mod tests {
         let result = truncate_summary_text(&input);
         assert!(result.len() <= LOCAL_CONVERSATION_SUMMARY_MAX_CHARS + 4);
         assert!(result.ends_with(" ..."));
+    }
+
+    #[test]
+    fn extract_tool_signature_prefers_parameters_key() {
+        let config_json =
+            r#"{"parameters":{"type":"object","properties":{"q":{"type":"string"}}}}"#;
+        let schema = extract_tool_signature_from_config_json(config_json);
+        assert_eq!(schema.get("type").and_then(|v| v.as_str()), Some("object"));
+        assert!(schema.get("properties").is_some());
+    }
+
+    #[test]
+    fn extract_chat_tool_calls_parses_openai_shape() {
+        let payload = serde_json::json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "execute_code_plan",
+                                    "arguments": "{\"code\":\"print(1)\"}"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let calls = extract_chat_tool_calls(&payload);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "execute_code_plan");
+        assert_eq!(
+            calls[0].arguments.get("code").and_then(|v| v.as_str()),
+            Some("print(1)")
+        );
+    }
+
+    #[test]
+    fn truncate_tool_results_payload_limits_size() {
+        let input = "x".repeat(LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS + 128);
+        let output = truncate_tool_results_payload(&input);
+        assert!(output.contains("[truncated:"));
+        assert!(output.len() > LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS);
     }
 }

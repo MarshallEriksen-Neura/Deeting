@@ -129,8 +129,11 @@ const ConversationItemSchema = z.object({
   channel: z.string(),
   status: z.string(),
   message_count: z.number().int().nonnegative().default(0),
+  first_message_at: z.string().nullable().optional(),
   last_active_at: z.string().nullable().optional(),
   last_summary_version: z.number().int().nonnegative().default(0),
+  created_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
 }).passthrough()
 
 export const ConversationListSchema = createOffsetPageSchema(ConversationItemSchema)
@@ -142,6 +145,10 @@ export async function fetchAdminConversations(params?: {
   limit?: number
   status?: string
   channel?: string
+  user_id?: string
+  assistant_id?: string
+  start_time?: string
+  end_time?: string
 }): Promise<ConversationList> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<unknown>("list_local_admin_conversations", {
@@ -150,6 +157,10 @@ export async function fetchAdminConversations(params?: {
         limit: params?.limit ?? 100,
         status: params?.status,
         channel: params?.channel,
+        user_id: params?.user_id,
+        assistant_id: params?.assistant_id,
+        start_time: params?.start_time,
+        end_time: params?.end_time,
       },
     })
     return ConversationListSchema.parse(data)
@@ -163,9 +174,109 @@ export async function fetchAdminConversations(params?: {
       limit: params?.limit ?? 100,
       status: params?.status,
       channel: params?.channel,
+      user_id: params?.user_id,
+      assistant_id: params?.assistant_id,
+      start_time: params?.start_time,
+      end_time: params?.end_time,
     },
   })
   return ConversationListSchema.parse(data)
+}
+
+export async function fetchAdminConversation(sessionId: string): Promise<ConversationItem> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("get_local_admin_conversation", {
+      session_id: sessionId,
+    })
+    return ConversationItemSchema.parse(data)
+  }
+
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/conversations/${sessionId}`,
+    method: "GET",
+  })
+  return ConversationItemSchema.parse(data)
+}
+
+export async function archiveAdminConversation(sessionId: string): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauri("archive_local_conversation", {
+      session_id: sessionId,
+    })
+    return
+  }
+
+  await request<void>({
+    url: `${ADMIN_BASE}/conversations/${sessionId}/archive`,
+    method: "POST",
+  })
+}
+
+export async function closeAdminConversation(sessionId: string): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauri("close_local_conversation", {
+      session_id: sessionId,
+    })
+    return
+  }
+
+  await request<void>({
+    url: `${ADMIN_BASE}/conversations/${sessionId}/close`,
+    method: "POST",
+  })
+}
+
+const ConversationMessageItemSchema = z.object({
+  id: z.string(),
+  session_id: z.string(),
+  turn_index: z.number().int(),
+  role: z.string(),
+  content: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  token_estimate: z.number().int().nonnegative().default(0),
+  meta_info: z.record(z.string(), z.unknown()).nullable().optional(),
+  used_persona_id: z.string().nullable().optional(),
+  is_deleted: z.boolean().default(false),
+  parent_message_id: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+export const ConversationMessageListSchema = createOffsetPageSchema(
+  ConversationMessageItemSchema
+)
+export type ConversationMessageItem = z.infer<typeof ConversationMessageItemSchema>
+
+export async function fetchAdminConversationMessages(
+  sessionId: string,
+  params?: {
+    skip?: number
+    limit?: number
+    include_deleted?: boolean
+  }
+): Promise<z.infer<typeof ConversationMessageListSchema>> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("list_local_admin_conversation_messages", {
+      session_id: sessionId,
+      query: {
+        skip: params?.skip ?? 0,
+        limit: params?.limit ?? 50,
+        include_deleted: params?.include_deleted ?? true,
+      },
+    })
+    return ConversationMessageListSchema.parse(data)
+  }
+
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/conversations/${sessionId}/messages`,
+    method: "GET",
+    params: {
+      skip: params?.skip ?? 0,
+      limit: params?.limit ?? 50,
+      include_deleted: params?.include_deleted ?? true,
+    },
+  })
+  return ConversationMessageListSchema.parse(data)
 }
 
 const ConversationSummaryItemSchema = z.object({
@@ -202,6 +313,159 @@ export async function fetchAdminConversationSummaries(
     method: "GET",
   })
   return ConversationSummaryListSchema.parse(data)
+}
+
+const ConversationSummaryJobItemSchema = z.object({
+  id: z.string(),
+  session_id: z.string(),
+  status: z.string(),
+  trigger_source: z.string().nullable().optional(),
+  attempts: z.number().int().nonnegative().default(0),
+  max_attempts: z.number().int().nonnegative().default(0),
+  available_after_epoch: z.number().int(),
+  last_error: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+export const ConversationSummaryJobListSchema = createOffsetPageSchema(
+  ConversationSummaryJobItemSchema
+)
+
+export type ConversationSummaryJobItem = z.infer<typeof ConversationSummaryJobItemSchema>
+
+const ConversationSummaryIdleTaskItemSchema = z.object({
+  session_id: z.string(),
+  last_active_epoch: z.number().int(),
+  run_after_epoch: z.number().int(),
+  is_due: z.boolean().default(false),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+export const ConversationSummaryIdleTaskListSchema = createOffsetPageSchema(
+  ConversationSummaryIdleTaskItemSchema
+)
+
+export type ConversationSummaryIdleTaskItem = z.infer<typeof ConversationSummaryIdleTaskItemSchema>
+
+export const ConversationSummaryQueueStatsSchema = z.object({
+  pending_jobs: z.number().int().nonnegative().default(0),
+  running_jobs: z.number().int().nonnegative().default(0),
+  completed_jobs: z.number().int().nonnegative().default(0),
+  failed_jobs: z.number().int().nonnegative().default(0),
+  idle_due_tasks: z.number().int().nonnegative().default(0),
+  idle_total_tasks: z.number().int().nonnegative().default(0),
+})
+
+export type ConversationSummaryQueueStats = z.infer<typeof ConversationSummaryQueueStatsSchema>
+
+const ConversationSummaryEnqueueResponseSchema = z.object({
+  session_id: z.string(),
+  queued: z.boolean(),
+})
+
+export const ConversationSummaryBatchRetryResponseSchema = z.object({
+  matched_count: z.number().int().nonnegative().default(0),
+  queued_count: z.number().int().nonnegative().default(0),
+})
+
+export async function fetchLocalConversationSummaryJobs(params?: {
+  skip?: number
+  limit?: number
+  status?: string
+  session_id?: string
+  error_contains?: string
+}): Promise<z.infer<typeof ConversationSummaryJobListSchema>> {
+  if (!isTauriRuntime()) {
+    throw new Error("fetchLocalConversationSummaryJobs is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("list_local_conversation_summary_jobs", {
+    query: {
+      skip: params?.skip ?? 0,
+      limit: params?.limit ?? 100,
+      status: params?.status,
+      session_id: params?.session_id,
+      error_contains: params?.error_contains,
+    },
+  })
+  return ConversationSummaryJobListSchema.parse(data)
+}
+
+export async function fetchLocalConversationSummaryIdleTasks(params?: {
+  skip?: number
+  limit?: number
+  session_id?: string
+}): Promise<z.infer<typeof ConversationSummaryIdleTaskListSchema>> {
+  if (!isTauriRuntime()) {
+    throw new Error("fetchLocalConversationSummaryIdleTasks is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("list_local_conversation_summary_idle_tasks", {
+    query: {
+      skip: params?.skip ?? 0,
+      limit: params?.limit ?? 100,
+      session_id: params?.session_id,
+    },
+  })
+  return ConversationSummaryIdleTaskListSchema.parse(data)
+}
+
+export async function fetchLocalConversationSummaryQueueStats(): Promise<ConversationSummaryQueueStats> {
+  if (!isTauriRuntime()) {
+    throw new Error("fetchLocalConversationSummaryQueueStats is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("get_local_conversation_summary_queue_stats")
+  return ConversationSummaryQueueStatsSchema.parse(data)
+}
+
+export async function triggerLocalConversationSummary(
+  sessionId: string
+): Promise<z.infer<typeof ConversationSummaryEnqueueResponseSchema>> {
+  if (!isTauriRuntime()) {
+    throw new Error("triggerLocalConversationSummary is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("trigger_local_conversation_summary_job", {
+    session_id: sessionId,
+  })
+  return ConversationSummaryEnqueueResponseSchema.parse(data)
+}
+
+export async function retryLocalConversationSummaryJob(
+  jobId: string
+): Promise<z.infer<typeof ConversationSummaryEnqueueResponseSchema>> {
+  if (!isTauriRuntime()) {
+    throw new Error("retryLocalConversationSummaryJob is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("retry_local_conversation_summary_job", {
+    job_id: jobId,
+  })
+  return ConversationSummaryEnqueueResponseSchema.parse(data)
+}
+
+export async function retryLocalConversationSummaryJobs(params?: {
+  limit?: number
+  status?: string
+  session_id?: string
+  error_contains?: string
+}): Promise<z.infer<typeof ConversationSummaryBatchRetryResponseSchema>> {
+  if (!isTauriRuntime()) {
+    throw new Error("retryLocalConversationSummaryJobs is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("retry_local_conversation_summary_jobs", {
+    payload: {
+      limit: params?.limit,
+      status: params?.status,
+      session_id: params?.session_id,
+      error_contains: params?.error_contains,
+    },
+  })
+  return ConversationSummaryBatchRetryResponseSchema.parse(data)
 }
 
 const SpecPlanItemSchema = z.object({

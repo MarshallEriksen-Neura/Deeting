@@ -2,14 +2,42 @@ from __future__ import annotations
 
 import json
 import secrets
+from pathlib import Path
 from typing import Any
 
-RUNTIME_PROTOCOL_VERSION = "v1"
 SDK_TOOLCARD_FORMAT_VERSION = "sdk_toolcard.v2"
-EXECUTION_FORMAT_VERSION = f"code_mode.{RUNTIME_PROTOCOL_VERSION}"
 
-RUNTIME_TOOL_CALL_MARKER = "__DEETING_TOOL_CALL_REQUEST__"
-RUNTIME_RENDER_BLOCK_MARKER = "__DEETING_RENDER_BLOCK__"
+
+def _load_contract() -> dict[str, Any]:
+    contract_path = (
+        Path(__file__).resolve().parents[4]
+        / "packages"
+        / "code-mode-contract"
+        / "contract.json"
+    )
+    try:
+        raw = contract_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+_CONTRACT = _load_contract()
+_markers = _CONTRACT.get("markers")
+_CONTRACT_MARKERS: dict[str, Any] = _markers if isinstance(_markers, dict) else {}
+
+RUNTIME_PROTOCOL_VERSION = str(_CONTRACT.get("runtime_protocol_version") or "v1")
+EXECUTION_FORMAT_VERSION = str(
+    _CONTRACT.get("execution_format_version") or f"code_mode.{RUNTIME_PROTOCOL_VERSION}"
+)
+
+RUNTIME_TOOL_CALL_MARKER = str(
+    _CONTRACT_MARKERS.get("runtime_tool_call") or "__DEETING_TOOL_CALL_REQUEST__"
+)
+RUNTIME_RENDER_BLOCK_MARKER = str(
+    _CONTRACT_MARKERS.get("runtime_render_block") or "__DEETING_RENDER_BLOCK__"
+)
 RUNTIME_FILE_REF_MARKER = "__DEETING_FILE_REF__"
 
 _RUNTIME_SIGNAL_KEYS = ("stdout", "stderr", "result")

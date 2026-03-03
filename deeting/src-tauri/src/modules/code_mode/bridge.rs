@@ -1,0 +1,489 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::extract::State;
+use axum::http::HeaderMap;
+use axum::routing::post;
+use axum::{Json, Router};
+use base64::Engine;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use tokio::sync::{Mutex, RwLock};
+use uuid::Uuid;
+
+use crate::modules::code_mode::contract::BRIDGE_EXECUTION_TOKEN_HEADER;
+use crate::modules::code_mode::error::CodeModeError;
+use crate::modules::mcp::McpRuntimeState;
+use crate::modules::memory::types::{
+    CreateLocalMemoryRequest, LocalMemoryClearRequest, LocalMemoryListQuery,
+};
+use crate::modules::memory::MemoryState;
+use crate::modules::providers::ProviderState;
+
+const DEFAULT_TOKEN_TTL_SECONDS: i64 = 600;
+
+#[derive(Clone)]
+pub struct BridgeDeps {
+    pub mcp: McpRuntimeState,
+    pub memory: Arc<MemoryState>,
+    pub providers: Arc<ProviderState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeBridgeClaims {
+    pub user_id: String,
+    pub session_id: String,
+    pub max_calls: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeBridgeIssueResult {
+    pub token: String,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeBridgeEntry {
+    claims: RuntimeBridgeClaims,
+    used_calls: i64,
+    expires_at_unix_ms: i128,
+    context: Value,
+}
+
+#[derive(Debug, Clone)]
+struct StoredFile {
+    meta: Value,
+    content: Vec<u8>,
+}
+
+#[derive(Default)]
+struct RuntimeBridgeStore {
+    tokens: HashMap<String, RuntimeBridgeEntry>,
+    files: HashMap<String, StoredFile>,
+}
+
+#[derive(Clone)]
+pub struct CodeModeBridgeState {
+    inner: Arc<Mutex<Option<BridgeServerHandle>>>,
+}
+
+#[derive(Clone)]
+struct BridgeServerHandle {
+    base_url: String,
+    state: Arc<BridgeServerState>,
+}
+
+#[derive(Clone)]
+struct BridgeServerState {
+    deps: BridgeDeps,
+    store: Arc<RwLock<RuntimeBridgeStore>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodeModeBridgeContextRequest {
+    execution_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodeModeBridgeCallRequest {
+    tool_name: String,
+    #[serde(default)]
+    arguments: HashMap<String, Value>,
+    execution_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodeModeBridgeFileWriteRequest {
+    name: String,
+    content_base64: String,
+    #[serde(default = "default_content_type")]
+    content_type: String,
+    execution_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodeModeBridgeFileReadRequest {
+    ref_id: String,
+    execution_token: Option<String>,
+}
+
+fn default_content_type() -> String {
+    "application/octet-stream".to_string()
+}
+
+impl CodeModeBridgeState {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub async fn ensure_started(&self, deps: BridgeDeps) -> Result<String, CodeModeError> {
+        let mut guard = self.inner.lock().await;
+        if let Some(handle) = guard.as_ref() {
+            return Ok(handle.base_url.clone());
+        }
+
+        let state = Arc::new(BridgeServerState {
+            deps,
+            store: Arc::new(RwLock::new(RuntimeBridgeStore::default())),
+        });
+
+        let app = Router::new()
+            .route("/context", post(code_mode_get_context))
+            .route("/call", post(code_mode_call_tool))
+            .route("/file/write", post(code_mode_file_write))
+            .route("/file/read", post(code_mode_file_read))
+            .with_state(state.clone());
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|err| CodeModeError::Bridge(err.to_string()))?;
+        let addr = listener
+            .local_addr()
+            .map_err(|err| CodeModeError::Bridge(err.to_string()))?;
+        let base_url = format!("http://{}:{}", addr.ip(), addr.port());
+
+        tauri::async_runtime::spawn(async move {
+            if let Err(err) = axum::serve(listener, app).await {
+                log::warn!("code mode bridge stopped: {}", err);
+            }
+        });
+
+        *guard = Some(BridgeServerHandle {
+            base_url: base_url.clone(),
+            state,
+        });
+        Ok(base_url)
+    }
+
+    pub async fn issue_token(
+        &self,
+        claims: RuntimeBridgeClaims,
+        context: Value,
+        ttl_seconds: Option<i64>,
+    ) -> Result<RuntimeBridgeIssueResult, CodeModeError> {
+        let state = self.server_state().await?;
+        let token = Uuid::new_v4().to_string();
+        let ttl = ttl_seconds.unwrap_or(DEFAULT_TOKEN_TTL_SECONDS).max(1);
+        let expires_at_unix_ms = now_unix_ms() + (ttl as i128) * 1000;
+        let expires_at = now_rfc3339_offset_seconds(ttl)?;
+
+        let entry = RuntimeBridgeEntry {
+            claims,
+            used_calls: 0,
+            expires_at_unix_ms,
+            context,
+        };
+        let mut store = state.store.write().await;
+        store.tokens.insert(token.clone(), entry);
+        Ok(RuntimeBridgeIssueResult { token, expires_at })
+    }
+
+    pub async fn get_base_url(&self) -> Option<String> {
+        let guard = self.inner.lock().await;
+        guard.as_ref().map(|item| item.base_url.clone())
+    }
+
+    async fn server_state(&self) -> Result<Arc<BridgeServerState>, CodeModeError> {
+        let guard = self.inner.lock().await;
+        guard
+            .as_ref()
+            .map(|item| item.state.clone())
+            .ok_or_else(|| CodeModeError::Bridge("bridge server not started".to_string()))
+    }
+}
+
+async fn code_mode_get_context(
+    State(state): State<Arc<BridgeServerState>>,
+    headers: HeaderMap,
+    Json(payload): Json<CodeModeBridgeContextRequest>,
+) -> Json<Value> {
+    let token = resolve_token(headers, payload.execution_token);
+    match consume_claims(&state, &token).await {
+        Ok((_, _, _, context)) => Json(json!({"ok": true, "context": context})),
+        Err((error_code, error)) => {
+            Json(json!({"ok": false, "error_code": error_code, "error": error}))
+        }
+    }
+}
+
+async fn code_mode_call_tool(
+    State(state): State<Arc<BridgeServerState>>,
+    headers: HeaderMap,
+    Json(payload): Json<CodeModeBridgeCallRequest>,
+) -> Json<Value> {
+    let token = resolve_token(headers, payload.execution_token);
+    let (claims, call_index, max_calls, _) = match consume_claims(&state, &token).await {
+        Ok(consumed) => consumed,
+        Err((error_code, error)) => {
+            return Json(json!({"ok": false, "error_code": error_code, "error": error}));
+        }
+    };
+
+    if payload.tool_name.trim().is_empty() {
+        return Json(json!({
+            "ok": false,
+            "error_code": "CODE_MODE_BRIDGE_MISSING_TOOL_NAME",
+            "error": "tool_name is required"
+        }));
+    }
+
+    let dispatch = dispatch_tool_call(&state, &claims, &payload.tool_name, payload.arguments).await;
+    match dispatch {
+        Ok(result) => Json(json!({
+            "ok": true,
+            "result": result,
+            "meta": {
+                "call_index": call_index,
+                "max_calls": max_calls,
+                "session_id": claims.session_id,
+            }
+        })),
+        Err((code, error)) => Json(json!({
+            "ok": false,
+            "error_code": code,
+            "error": error,
+        })),
+    }
+}
+
+async fn code_mode_file_write(
+    State(state): State<Arc<BridgeServerState>>,
+    headers: HeaderMap,
+    Json(payload): Json<CodeModeBridgeFileWriteRequest>,
+) -> Json<Value> {
+    let token = resolve_token(headers, payload.execution_token);
+    let consumed = consume_claims(&state, &token).await;
+    if let Err((error_code, error)) = consumed {
+        return Json(json!({"ok": false, "error_code": error_code, "error": error}));
+    }
+
+    let bytes =
+        match base64::engine::general_purpose::STANDARD.decode(payload.content_base64.as_bytes()) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return Json(
+                    json!({"ok": false, "error_code": "INVALID_BASE64", "error": "invalid base64"}),
+                );
+            }
+        };
+    let ref_id = format!("fref_{}", Uuid::new_v4().simple());
+    let file_ref = json!({
+        "__file_ref__": true,
+        "id": ref_id,
+        "name": payload.name,
+        "content_type": payload.content_type,
+        "size": bytes.len(),
+    });
+    let mut store = state.store.write().await;
+    store.files.insert(
+        file_ref["id"].as_str().unwrap_or_default().to_string(),
+        StoredFile {
+            meta: file_ref.clone(),
+            content: bytes,
+        },
+    );
+    Json(json!({"ok": true, "file_ref": file_ref}))
+}
+
+async fn code_mode_file_read(
+    State(state): State<Arc<BridgeServerState>>,
+    headers: HeaderMap,
+    Json(payload): Json<CodeModeBridgeFileReadRequest>,
+) -> Json<Value> {
+    let token = resolve_token(headers, payload.execution_token);
+    let consumed = consume_claims(&state, &token).await;
+    if let Err((error_code, error)) = consumed {
+        return Json(json!({"ok": false, "error_code": error_code, "error": error}));
+    }
+
+    let store = state.store.read().await;
+    let Some(entry) = store.files.get(payload.ref_id.trim()) else {
+        return Json(
+            json!({"ok": false, "error_code": "FILE_NOT_FOUND", "error": "file ref not found"}),
+        );
+    };
+    Json(json!({
+        "ok": true,
+        "file_ref": entry.meta,
+        "content_base64": base64::engine::general_purpose::STANDARD.encode(entry.content.as_slice())
+    }))
+}
+
+fn resolve_token(headers: HeaderMap, body_token: Option<String>) -> String {
+    if let Some(value) = headers.get(BRIDGE_EXECUTION_TOKEN_HEADER) {
+        if let Ok(text) = value.to_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    body_token.unwrap_or_default().trim().to_string()
+}
+
+async fn consume_claims(
+    state: &BridgeServerState,
+    token: &str,
+) -> Result<(RuntimeBridgeClaims, i64, i64, Value), (String, String)> {
+    let normalized = token.trim();
+    if normalized.is_empty() {
+        return Err((
+            "CODE_MODE_BRIDGE_MISSING_TOKEN".to_string(),
+            "missing execution token".to_string(),
+        ));
+    }
+    let now_ms = now_unix_ms();
+    let mut store = state.store.write().await;
+    let Some(entry) = store.tokens.get_mut(normalized) else {
+        return Err((
+            "CODE_MODE_BRIDGE_INVALID_TOKEN".to_string(),
+            "execution token not found".to_string(),
+        ));
+    };
+    if entry.expires_at_unix_ms <= now_ms {
+        store.tokens.remove(normalized);
+        return Err((
+            "CODE_MODE_BRIDGE_TOKEN_EXPIRED".to_string(),
+            "execution token expired".to_string(),
+        ));
+    }
+    if entry.used_calls >= entry.claims.max_calls {
+        return Err((
+            "CODE_MODE_BRIDGE_CALL_LIMIT".to_string(),
+            format!(
+                "runtime bridge call limit exceeded ({})",
+                entry.claims.max_calls
+            ),
+        ));
+    }
+
+    let call_index = entry.used_calls;
+    entry.used_calls += 1;
+    Ok((
+        entry.claims.clone(),
+        call_index,
+        entry.claims.max_calls,
+        entry.context.clone(),
+    ))
+}
+
+async fn dispatch_tool_call(
+    state: &BridgeServerState,
+    claims: &RuntimeBridgeClaims,
+    tool_name: &str,
+    arguments: HashMap<String, Value>,
+) -> Result<Value, (String, String)> {
+    match tool_name.trim() {
+        "list_local_memories" | "list_user_memories" | "search_user_memories" => {
+            let query = LocalMemoryListQuery {
+                cursor: value_to_string(arguments.get("cursor")),
+                limit: value_to_i64(arguments.get("limit")),
+                session_id: value_to_string(arguments.get("session_id"))
+                    .or_else(|| Some(claims.session_id.clone())),
+                assistant_id: value_to_string(arguments.get("assistant_id")),
+            };
+            let result = state
+                .deps
+                .memory
+                .store
+                .list(query)
+                .await
+                .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))?;
+            serde_json::to_value(result)
+                .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))
+        }
+        "append_local_memory" | "add_knowledge_chunk" => {
+            let content = value_to_string(arguments.get("content")).unwrap_or_default();
+            let resolved_content = if content.is_empty() {
+                value_to_string(arguments.get("chunk"))
+                    .or_else(|| value_to_string(arguments.get("text")))
+                    .unwrap_or_default()
+            } else {
+                content
+            };
+            let payload = CreateLocalMemoryRequest {
+                content: resolved_content,
+                session_id: value_to_string(arguments.get("session_id"))
+                    .or_else(|| Some(claims.session_id.clone())),
+                assistant_id: value_to_string(arguments.get("assistant_id")),
+                meta_info: arguments.get("meta_info").cloned(),
+            };
+            let result = state
+                .deps
+                .memory
+                .store
+                .append(payload)
+                .await
+                .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))?;
+            serde_json::to_value(result)
+                .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))
+        }
+        "clear_local_memories" => {
+            let payload = LocalMemoryClearRequest {
+                session_id: value_to_string(arguments.get("session_id"))
+                    .or_else(|| Some(claims.session_id.clone())),
+                assistant_id: value_to_string(arguments.get("assistant_id")),
+            };
+            let cleared = state
+                .deps
+                .memory
+                .store
+                .clear(payload)
+                .await
+                .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))?;
+            Ok(json!({"cleared": cleared}))
+        }
+        "list_mcp_tools" | "list_tools" => {
+            let tools = state
+                .deps
+                .mcp
+                .store
+                .list_tools()
+                .await
+                .map_err(|err| ("MCP_ERROR".to_string(), err.to_string()))?;
+            serde_json::to_value(tools).map_err(|err| ("MCP_ERROR".to_string(), err.to_string()))
+        }
+        "list_local_provider_instances" | "list_provider_instances" => {
+            let instances = state
+                .deps
+                .providers
+                .store
+                .list_instances()
+                .await
+                .map_err(|err| ("PROVIDER_ERROR".to_string(), err.to_string()))?;
+            serde_json::to_value(instances)
+                .map_err(|err| ("PROVIDER_ERROR".to_string(), err.to_string()))
+        }
+        _ => Err((
+            "CODE_MODE_BRIDGE_TOOL_NOT_ALLOWED".to_string(),
+            format!("tool '{}' is not supported by local bridge", tool_name),
+        )),
+    }
+}
+
+fn value_to_string(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(|v| v.as_str())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+fn value_to_i64(value: Option<&Value>) -> Option<i64> {
+    value.and_then(|v| v.as_i64())
+}
+
+fn now_unix_ms() -> i128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_millis(0))
+        .as_millis() as i128
+}
+
+fn now_rfc3339_offset_seconds(offset_seconds: i64) -> Result<String, CodeModeError> {
+    let now = time::OffsetDateTime::now_utc() + time::Duration::seconds(offset_seconds);
+    now.format(&time::format_description::well_known::Rfc3339)
+        .map_err(|err| CodeModeError::Internal(err.to_string()))
+}

@@ -9,6 +9,15 @@ import type {
 } from "@/types/knowledge"
 
 const BASE = "/api/v1/documents"
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
 
 /* -------------------------------------------------------------------------- */
 /*  API response types (snake_case from backend)                              */
@@ -18,6 +27,19 @@ interface ApiFile {
   id: string
   name: string
   type: string
+  size: number
+  status: string
+  chunks: number | null
+  error_message: string | null
+  folder_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface LocalKnowledgeFile {
+  id: string
+  name: string
+  file_type: string
   size: number
   status: string
   chunks: number | null
@@ -63,6 +85,12 @@ interface ApiTreeResponse {
   breadcrumb: ApiBreadcrumbItem[]
 }
 
+interface LocalKnowledgeTreeResponse {
+  folders: ApiFolder[]
+  files: LocalKnowledgeFile[]
+  breadcrumb: ApiBreadcrumbItem[]
+}
+
 interface ApiChunkListResponse {
   items: ApiChunk[]
   total: number
@@ -70,17 +98,27 @@ interface ApiChunkListResponse {
   limit: number
 }
 
+interface LocalKnowledgeStatsResponse {
+  used_bytes: number
+  total_bytes: number
+  total_vectors: number
+  total_files: number
+  total_folders: number
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Mappers (snake_case -> camelCase)                                         */
 /* -------------------------------------------------------------------------- */
 
 function mapFile(f: ApiFile): KnowledgeFile {
+  const normalizedType = normalizeFileType(f.type)
+  const normalizedStatus = normalizeFileStatus(f.status)
   return {
     id: f.id,
     name: f.name,
-    type: f.type as KnowledgeFile["type"],
+    type: normalizedType,
     size: f.size,
-    status: f.status as KnowledgeFile["status"],
+    status: normalizedStatus,
     chunks: f.chunks,
     errorMessage: f.error_message ?? undefined,
     folderId: f.folder_id,
@@ -119,6 +157,34 @@ function mapStats(s: ApiStats): KnowledgeStats {
   }
 }
 
+function normalizeFileType(value: string): KnowledgeFile["type"] {
+  const normalized = (value || "").trim().toLowerCase()
+  switch (normalized) {
+    case "pdf":
+    case "txt":
+    case "docx":
+    case "md":
+    case "csv":
+    case "xlsx":
+    case "html":
+    case "json":
+      return normalized
+    default:
+      return "txt"
+  }
+}
+
+function normalizeFileStatus(value: string): KnowledgeFile["status"] {
+  const normalized = (value || "").trim().toLowerCase()
+  if (normalized === "active" || normalized === "indexed" || normalized === "success") {
+    return "active"
+  }
+  if (normalized === "failed" || normalized === "error") {
+    return "failed"
+  }
+  return "processing"
+}
+
 const SORT_FIELD_MAP: Record<KnowledgeSortField, string> = {
   name: "name",
   size: "size",
@@ -147,6 +213,36 @@ export async function fetchKnowledgeTree(params: {
   sortField?: KnowledgeSortField
   sortDirection?: SortDirection
 }): Promise<KnowledgeTreeResult> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<LocalKnowledgeTreeResponse>("get_local_knowledge_tree", {
+      query: {
+        parent_id: params.parentId ?? null,
+        q: params.q ?? null,
+        sort_field: params.sortField ? SORT_FIELD_MAP[params.sortField] : null,
+        sort_direction: params.sortDirection ?? null,
+      },
+    })
+    const files = data.files.map((file) =>
+      mapFile({
+        id: file.id,
+        name: file.name,
+        type: file.file_type,
+        size: file.size,
+        status: file.status,
+        chunks: file.chunks,
+        error_message: file.error_message,
+        folder_id: file.folder_id,
+        created_at: file.created_at,
+        updated_at: file.updated_at,
+      })
+    )
+    return {
+      folders: data.folders.map(mapFolder),
+      files,
+      breadcrumb: data.breadcrumb,
+    }
+  }
+
   const queryParams: Record<string, string> = {}
   if (params.parentId) queryParams.parent_id = params.parentId
   if (params.q) queryParams.q = params.q
@@ -166,6 +262,11 @@ export async function fetchKnowledgeTree(params: {
 }
 
 export async function fetchKnowledgeStats(): Promise<KnowledgeStats> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<LocalKnowledgeStatsResponse>("get_local_knowledge_stats")
+    return mapStats(data)
+  }
+
   const data = await request<ApiStats>({ url: `${BASE}/stats` })
   return mapStats(data)
 }
@@ -178,6 +279,13 @@ export async function createFolder(params: {
   name: string
   parentId?: string | null
 }): Promise<KnowledgeFolder> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ApiFolder>("create_local_knowledge_folder", {
+      payload: { name: params.name, parent_id: params.parentId ?? null },
+    })
+    return mapFolder(data)
+  }
+
   const data = await request<ApiFolder>({
     url: `${BASE}/folders`,
     method: "POST",
@@ -190,6 +298,14 @@ export async function updateFolder(
   folderId: string,
   params: { name: string }
 ): Promise<KnowledgeFolder> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<ApiFolder>("update_local_knowledge_folder", {
+      folder_id: folderId,
+      payload: { name: params.name },
+    })
+    return mapFolder(data)
+  }
+
   const data = await request<ApiFolder>({
     url: `${BASE}/folders/${folderId}`,
     method: "PATCH",
@@ -202,10 +318,88 @@ export async function deleteFolder(
   folderId: string,
   recursive = false
 ): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauri("delete_local_knowledge_folder", {
+      folder_id: folderId,
+      recursive,
+    })
+    return
+  }
+
   await request({
     url: `${BASE}/folders/${folderId}`,
     method: "DELETE",
     params: { recursive },
+  })
+}
+
+export async function listLocalUserDocuments(params: {
+  folderId?: string | null
+  status?: string
+  q?: string
+} = {}): Promise<KnowledgeFile[]> {
+  if (!isTauriRuntime()) {
+    return []
+  }
+  const data = await invokeTauri<LocalKnowledgeFile[]>("list_local_user_documents", {
+    query: {
+      folder_id: params.folderId ?? null,
+      status: params.status ?? null,
+      q: params.q ?? null,
+    },
+  })
+  return data.map((file) =>
+    mapFile({
+      id: file.id,
+      name: file.name,
+      type: file.file_type,
+      size: file.size,
+      status: file.status,
+      chunks: file.chunks,
+      error_message: file.error_message,
+      folder_id: file.folder_id,
+      created_at: file.created_at,
+      updated_at: file.updated_at,
+    })
+  )
+}
+
+export async function createLocalUserDocument(params: {
+  filename: string
+  folderId?: string | null
+  mediaAssetId?: string | null
+  status?: string | null
+  errorMessage?: string | null
+  chunkCount?: number | null
+  embeddingModel?: string | null
+  metaInfo?: Record<string, unknown> | null
+}): Promise<KnowledgeFile> {
+  if (!isTauriRuntime()) {
+    throw new Error("createLocalUserDocument is only supported in Tauri runtime")
+  }
+  const file = await invokeTauri<LocalKnowledgeFile>("create_local_user_document", {
+    payload: {
+      filename: params.filename,
+      folder_id: params.folderId ?? null,
+      media_asset_id: params.mediaAssetId ?? null,
+      status: params.status ?? null,
+      error_message: params.errorMessage ?? null,
+      chunk_count: params.chunkCount ?? null,
+      embedding_model: params.embeddingModel ?? null,
+      meta_info: params.metaInfo ?? null,
+    },
+  })
+  return mapFile({
+    id: file.id,
+    name: file.name,
+    type: file.file_type,
+    size: file.size,
+    status: file.status,
+    chunks: file.chunks,
+    error_message: file.error_message,
+    folder_id: file.folder_id,
+    created_at: file.created_at,
+    updated_at: file.updated_at,
   })
 }
 

@@ -1,6 +1,16 @@
 import { z } from "zod"
 
-import { request } from "@/lib/http"
+import { getAuthToken, request } from "@/lib/http"
+
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
 
 // ── Constants ────────────────────────────────────────────────
 const INTERNAL_CODE_MODE_BASE = "/api/v1/internal/code-mode"
@@ -35,7 +45,7 @@ export const CodeModeExecutionDetailSchema = z.object({
   runtime_context: z.record(z.any()).default({}),
   tool_plan_results: z.record(z.any()).default({}),
   runtime_tool_calls: z.record(z.any()).default({}),
-  render_blocks: z.record(z.any()).default({}),
+  render_blocks: z.union([z.record(z.any()), z.array(z.any())]).default({}),
   error: z.string().nullable().optional(),
   error_code: z.string().nullable().optional(),
   duration_ms: z.number(),
@@ -57,6 +67,12 @@ export const RuntimeToolTraceSchema = z.object({
 
 export type RuntimeToolTrace = z.infer<typeof RuntimeToolTraceSchema>
 
+const LocalRuntimeToolCallSchema = z.object({
+  index: z.number().optional(),
+  tool_name: z.string().nullable().optional(),
+  arguments: z.record(z.any()).optional(),
+})
+
 // ── Query params ────────────────────────────────────────────
 export type CodeModeExecutionsQuery = {
   cursor?: string | null
@@ -74,11 +90,79 @@ export const CodeModeExecutionPageSchema = z.object({
 
 export type CodeModeExecutionPage = z.infer<typeof CodeModeExecutionPageSchema>
 
+export const LocalCodeModeBridgeStatusSchema = z.object({
+  running: z.boolean(),
+  base_url: z.string().nullable().optional(),
+})
+
+export type LocalCodeModeBridgeStatus = z.infer<typeof LocalCodeModeBridgeStatusSchema>
+
+export const ExecuteLocalCodeModeResponseSchema = z.object({
+  success: z.boolean(),
+  status: z.string(),
+  format_version: z.string(),
+  runtime_protocol_version: z.string(),
+  session_id: z.string(),
+  bridge_endpoint: z.string(),
+  exit_code: z.number(),
+  stdout: z.array(z.string()).default([]),
+  stderr: z.array(z.string()).default([]),
+  result: z.array(z.string()).default([]),
+  runtime_tool_calls: z.array(LocalRuntimeToolCallSchema).default([]),
+  render_blocks: z.array(z.any()).default([]),
+  error: z.string().nullable().optional(),
+})
+
+export type ExecuteLocalCodeModeResponse = z.infer<
+  typeof ExecuteLocalCodeModeResponseSchema
+>
+
+export const CodeModeSyncResultItemSchema = z.object({
+  execution_id: z.string(),
+  status: z.string(),
+  id: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+})
+
+export const CodeModeSyncSummarySchema = z.object({
+  synced: z.number(),
+  exists: z.number(),
+  failed: z.number(),
+})
+
+export const SyncLocalCodeModeExecutionsResponseSchema = z.object({
+  results: z.array(CodeModeSyncResultItemSchema),
+  summary: CodeModeSyncSummarySchema,
+})
+
+export type SyncLocalCodeModeExecutionsResponse = z.infer<
+  typeof SyncLocalCodeModeExecutionsResponseSchema
+>
+
 // ── API functions ───────────────────────────────────────────
 
 export async function fetchCodeModeExecutions(
   query: CodeModeExecutionsQuery = {}
 ): Promise<CodeModeExecutionPage> {
+  if (isTauriRuntime()) {
+    if (!query.cursor) {
+      try {
+        await syncLocalCodeModeExecutions({ limit: query.size ?? 20 })
+      } catch (error) {
+        console.warn("[code-mode] sync local executions failed", error)
+      }
+    }
+    const data = await invokeTauri<unknown>("list_local_code_mode_executions", {
+      query: {
+        cursor: query.cursor ?? null,
+        size: query.size ?? 20,
+        status: query.status ?? null,
+        session_id: query.session_id ?? null,
+      },
+    })
+    return CodeModeExecutionPageSchema.parse(data)
+  }
+
   const data = await request({
     url: `${INTERNAL_CODE_MODE_BASE}/executions`,
     method: "GET",
@@ -90,6 +174,13 @@ export async function fetchCodeModeExecutions(
 export async function fetchCodeModeExecution(
   identifier: string
 ): Promise<CodeModeExecutionDetail> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("get_local_code_mode_execution", {
+      executionIdentifier: identifier,
+    })
+    return CodeModeExecutionDetailSchema.parse(data)
+  }
+
   const data = await request({
     url: `${INTERNAL_CODE_MODE_BASE}/executions/${identifier}`,
     method: "GET",
@@ -108,11 +199,74 @@ export async function replayCodeModeExecution(
     tool_plan?: Array<Record<string, unknown>> | null
   } = {}
 ): Promise<Record<string, unknown>> {
+  if (isTauriRuntime()) {
+    return invokeTauri<Record<string, unknown>>("replay_local_code_mode_execution", {
+      executionIdentifier: identifier,
+      payload,
+    })
+  }
+
   return request({
     url: `${INTERNAL_CODE_MODE_BASE}/executions/${identifier}/replay`,
     method: "POST",
     data: payload,
   })
+}
+
+export async function getLocalCodeModeBridgeStatus(): Promise<LocalCodeModeBridgeStatus> {
+  if (!isTauriRuntime()) {
+    return { running: false, base_url: null }
+  }
+  const data = await invokeTauri<unknown>("get_local_code_mode_bridge_status")
+  return LocalCodeModeBridgeStatusSchema.parse(data)
+}
+
+export async function executeLocalCodeMode(payload: {
+  code: string
+  session_id?: string | null
+  language?: string
+  execution_timeout?: number
+  dry_run?: boolean
+  context?: Record<string, unknown> | null
+  max_calls?: number
+}): Promise<ExecuteLocalCodeModeResponse> {
+  if (!isTauriRuntime()) {
+    throw new Error("executeLocalCodeMode is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("execute_local_code_mode", {
+    payload: {
+      code: payload.code,
+      session_id: payload.session_id ?? null,
+      language: payload.language ?? "python",
+      execution_timeout: payload.execution_timeout ?? 30,
+      dry_run: payload.dry_run ?? false,
+      context: payload.context ?? null,
+      max_calls: payload.max_calls ?? 16,
+    },
+  })
+  return ExecuteLocalCodeModeResponseSchema.parse(data)
+}
+
+export async function syncLocalCodeModeExecutions(options: {
+  accessToken?: string | null
+  limit?: number
+} = {}): Promise<SyncLocalCodeModeExecutionsResponse> {
+  const empty = {
+    results: [],
+    summary: { synced: 0, exists: 0, failed: 0 },
+  }
+  if (!isTauriRuntime()) {
+    return empty
+  }
+  const token = (options.accessToken ?? getAuthToken() ?? "").trim()
+  if (!token) {
+    return empty
+  }
+  const data = await invokeTauri<unknown>("sync_local_code_mode_executions", {
+    accessToken: token,
+    limit: options.limit ?? null,
+  })
+  return SyncLocalCodeModeExecutionsResponseSchema.parse(data)
 }
 
 /**

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.core.config import settings
 from app.prompts.router_base import ROUTER_BASE_PROMPT
+from app.services.code_mode.prompt_contract import render_code_mode_capability_prompt
 from app.services.orchestrator.registry import step_registry
 from app.services.providers.request_renderer import request_renderer
 from app.services.workflow.steps.base import BaseStep, StepResult, StepStatus
@@ -53,7 +54,7 @@ class TemplateRenderStep(BaseStep):
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """执行模板渲染"""
-        upstream_url = ctx.get("routing", "upstream_url") or ctx.selected_upstream
+        upstream_url = (ctx.get("routing", "upstream_url") or ctx.selected_upstream or "")
         template_engine = ctx.get("routing", "template_engine") or "simple_replace"
         request_data = (
             ctx.get("resolve_assets", "request_data")
@@ -167,21 +168,7 @@ class TemplateRenderStep(BaseStep):
                 )
                 lines.append(
                     "\n# Code Mode Capability\n"
-                    "**IMPORTANT: In Code Mode, direct tool calls are blocked for most tools. "
-                    f"Only these tools may be called directly: {allowed_direct}. "
-                    "All other tools (including most MCP tools) can ONLY be invoked inside "
-                    "`execute_code_plan` scripts via `deeting.call_tool()`. Direct calls to blocked tools WILL "
-                    "return an error, wasting a turn.**\n\n"
-                    "Required workflow:\n"
-                    "1) call `search_sdk` to discover exact tool signatures\n"
-                    "2) write one coherent Python script using the discovered tools\n"
-                    "3) execute once with `execute_code_plan`\n"
-                    "Script conventions:\n"
-                    "- Prefer `from deeting_sdk import <tool_name>` when available\n"
-                    "- Or use `deeting.call_tool(name, **kwargs)`\n"
-                    "- Do NOT use positional dict args like `deeting.call_tool(name, {...})`\n"
-                    "- Always emit final structured output with "
-                    "`deeting.log(json.dumps(result, ensure_ascii=False))`\n"
+                    f"{render_code_mode_capability_prompt(allowed_direct)}\n"
                 )
 
             lines.append(
@@ -376,19 +363,8 @@ class TemplateRenderStep(BaseStep):
                     f"`{name}`" for name in self._resolve_code_mode_direct_allowlist()
                 )
                 code_mode_reminder = (
-                    "\n\n**Code Mode Capability (MANDATORY)**:\n"
-                    "**In Code Mode, direct tool calls are blocked for most tools. "
-                    f"Only these tools may be called directly: {allowed_direct}. "
-                    "Direct calls to blocked tools WILL BE BLOCKED and return an error.**\n\n"
-                    "Required workflow:\n"
-                    "1) Use `search_sdk` to discover precise tool signatures.\n"
-                    "2) Produce one coherent Python execution plan using discovered tools.\n"
-                    "3) Execute once with `execute_code_plan`.\n"
-                    "Conventions:\n"
-                    "- Prefer `from deeting_sdk import <tool_name>` when available.\n"
-                    "- Or call tools with `deeting.call_tool(name, **kwargs)`.\n"
-                    "- Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.\n"
-                    "- Always emit final structured output with `deeting.log(json.dumps(result, ensure_ascii=False))`.\n"
+                    "\n\n"
+                    f"{render_code_mode_capability_prompt(allowed_direct)}\n"
                 )
                 enhanced_prompt += code_mode_reminder
 

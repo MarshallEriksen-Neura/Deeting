@@ -1,6 +1,7 @@
 pub mod modules;
 pub mod state;
 
+use crate::modules::code_mode::CodeModeState;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::process::ProcessManager;
 use crate::modules::mcp::store::{expand_path, McpStore};
@@ -51,12 +52,16 @@ pub fn run() {
                     .await
                     .map_err(|e| McpError::Storage(e.to_string()))?;
                 let sandbox_state = SandboxState::new(boxlite_home_dir.clone());
+                let code_mode_state = CodeModeState::new(&database_url)
+                    .await
+                    .map_err(|e| McpError::Storage(e.to_string()))?;
 
                 Ok::<_, McpError>(AppState::new(
                     mcp_state,
                     provider_state,
                     memory_state,
                     sandbox_state,
+                    code_mode_state,
                 ))
             })
             .map_err(|err| Box::<dyn std::error::Error>::from(err))?;
@@ -140,8 +145,23 @@ pub fn run() {
             crate::modules::mcp::commands::create_local_trace_feedback,
             crate::modules::mcp::commands::list_local_gateway_logs,
             crate::modules::mcp::commands::get_local_gateway_log_stats,
+            crate::modules::mcp::commands::get_local_knowledge_tree,
+            crate::modules::mcp::commands::get_local_knowledge_stats,
+            crate::modules::mcp::commands::create_local_knowledge_folder,
+            crate::modules::mcp::commands::update_local_knowledge_folder,
+            crate::modules::mcp::commands::delete_local_knowledge_folder,
+            crate::modules::mcp::commands::list_local_user_documents,
+            crate::modules::mcp::commands::create_local_user_document,
             crate::modules::mcp::commands::list_local_admin_conversations,
+            crate::modules::mcp::commands::get_local_admin_conversation,
+            crate::modules::mcp::commands::list_local_admin_conversation_messages,
             crate::modules::mcp::commands::list_local_admin_conversation_summaries,
+            crate::modules::mcp::commands::list_local_conversation_summary_jobs,
+            crate::modules::mcp::commands::list_local_conversation_summary_idle_tasks,
+            crate::modules::mcp::commands::get_local_conversation_summary_queue_stats,
+            crate::modules::mcp::commands::trigger_local_conversation_summary_job,
+            crate::modules::mcp::commands::retry_local_conversation_summary_job,
+            crate::modules::mcp::commands::retry_local_conversation_summary_jobs,
             crate::modules::mcp::commands::create_local_assistant,
             crate::modules::mcp::commands::update_local_assistant,
             crate::modules::mcp::commands::delete_local_assistant,
@@ -152,6 +172,7 @@ pub fn run() {
             crate::modules::mcp::commands::list_local_conversations,
             crate::modules::mcp::commands::create_local_conversation,
             crate::modules::mcp::commands::archive_local_conversation,
+            crate::modules::mcp::commands::close_local_conversation,
             crate::modules::mcp::commands::unarchive_local_conversation,
             crate::modules::mcp::commands::rename_local_conversation,
             crate::modules::mcp::commands::list_local_conversation_history,
@@ -194,7 +215,14 @@ pub fn run() {
             crate::modules::memory::commands::append_local_memory,
             crate::modules::memory::commands::list_local_memories,
             crate::modules::memory::commands::delete_local_memory,
-            crate::modules::memory::commands::clear_local_memories
+            crate::modules::memory::commands::clear_local_memories,
+            // Local Code Mode Commands
+            crate::modules::code_mode::commands::get_local_code_mode_bridge_status,
+            crate::modules::code_mode::commands::execute_local_code_mode,
+            crate::modules::code_mode::commands::list_local_code_mode_executions,
+            crate::modules::code_mode::commands::get_local_code_mode_execution,
+            crate::modules::code_mode::commands::replay_local_code_mode_execution,
+            crate::modules::code_mode::commands::sync_local_code_mode_executions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

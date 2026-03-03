@@ -133,7 +133,12 @@ impl WslBoxliteBackend {
         };
 
         let create_exec_url = self.url(&format!("/boxes/{}/exec", identity.sandbox_id));
-        let create_response = self.client.post(create_exec_url).json(&request).send().await?;
+        let create_response = self
+            .client
+            .post(create_exec_url)
+            .json(&request)
+            .send()
+            .await?;
         if !create_response.status().is_success() {
             let status = create_response.status();
             let body = create_response.text().await.unwrap_or_default();
@@ -241,9 +246,7 @@ impl WslBoxliteBackend {
         let box_resp: BoxResponse = response.json().await?;
         Ok(Some(SandboxIdentity {
             sandbox_id: box_resp.box_id,
-            sandbox_name: box_resp
-                .name
-                .unwrap_or_else(|| box_id_or_name.to_string()),
+            sandbox_name: box_resp.name.unwrap_or_else(|| box_id_or_name.to_string()),
         }))
     }
 
@@ -329,7 +332,9 @@ fn dispatch_sse_event(
 fn decode_event_data(data: &str) -> Option<String> {
     let parsed: serde_json::Value = serde_json::from_str(data).ok()?;
     let b64 = parsed.get("data")?.as_str()?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .ok()?;
     String::from_utf8(bytes).ok()
 }
 

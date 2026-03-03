@@ -214,7 +214,7 @@ pub async fn test_local_provider_model(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "ping".to_string());
 
-    let endpoint = build_chat_endpoint(&connection.base_url);
+    let endpoint = build_upstream_endpoint(&connection.base_url, &model.upstream_path);
     let body = serde_json::json!({
         "model": model.model_id,
         "messages": [{"role": "user", "content": prompt}],
@@ -348,12 +348,16 @@ fn build_models_endpoints(base_url: &str) -> Vec<String> {
     vec![format!("{base}/v1/models"), format!("{base}/models")]
 }
 
-fn build_chat_endpoint(base_url: &str) -> String {
+fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
     let base = base_url.trim().trim_end_matches('/');
-    if base.ends_with("/v1") {
-        return format!("{base}/chat/completions");
+    let path = upstream_path.trim().trim_start_matches('/').to_string();
+    if path.is_empty() {
+        if base.ends_with("/v1") {
+            return format!("{base}/chat/completions");
+        }
+        return format!("{base}/v1/chat/completions");
     }
-    format!("{base}/v1/chat/completions")
+    format!("{base}/{path}")
 }
 
 fn extract_model_ids(value: &Value) -> Vec<String> {

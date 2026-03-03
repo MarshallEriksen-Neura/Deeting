@@ -44,6 +44,15 @@ impl ProviderStore {
                 provider TEXT NOT NULL,
                 base_url TEXT NOT NULL,
                 icon TEXT,
+                theme_color TEXT,
+                category TEXT,
+                url_template TEXT,
+                auth_type TEXT NOT NULL DEFAULT 'api_key',
+                auth_config TEXT NOT NULL DEFAULT '{}',
+                default_headers TEXT NOT NULL DEFAULT '{}',
+                default_params TEXT NOT NULL DEFAULT '{}',
+                capability_configs TEXT NOT NULL DEFAULT '{}',
+                version INTEGER NOT NULL DEFAULT 1,
                 is_active BOOLEAN DEFAULT 1
             )",
         )
@@ -56,6 +65,10 @@ impl ProviderStore {
                 preset_slug TEXT NOT NULL,
                 name TEXT NOT NULL,
                 base_url TEXT NOT NULL,
+                description TEXT,
+                icon TEXT,
+                priority INTEGER NOT NULL DEFAULT 0,
+                meta TEXT NOT NULL DEFAULT '{}',
                 is_enabled BOOLEAN NOT NULL DEFAULT 1,
                 is_local BOOLEAN DEFAULT 0,
                 credentials_ref TEXT NOT NULL,
@@ -72,6 +85,9 @@ impl ProviderStore {
                 instance_id TEXT NOT NULL REFERENCES provider_instances(id) ON DELETE CASCADE,
                 alias TEXT NOT NULL,
                 secret_key TEXT NOT NULL,
+                weight INTEGER NOT NULL DEFAULT 0,
+                priority INTEGER NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
             )",
         )
@@ -82,10 +98,24 @@ impl ProviderStore {
             "CREATE TABLE IF NOT EXISTS provider_models (
                 id TEXT PRIMARY KEY,
                 instance_id TEXT NOT NULL REFERENCES provider_instances(id) ON DELETE CASCADE,
+                capabilities TEXT NOT NULL DEFAULT '[]',
                 model_id TEXT NOT NULL,
+                unified_model_id TEXT,
                 display_name TEXT,
-                capabilities TEXT NOT NULL,
-                is_active BOOLEAN DEFAULT 1
+                upstream_path TEXT NOT NULL DEFAULT 'v1/chat/completions',
+                pricing_config TEXT NOT NULL DEFAULT '{}',
+                limit_config TEXT NOT NULL DEFAULT '{}',
+                tokenizer_config TEXT NOT NULL DEFAULT '{}',
+                routing_config TEXT NOT NULL DEFAULT '{}',
+                config_override TEXT NOT NULL DEFAULT '{}',
+                source TEXT NOT NULL DEFAULT 'auto',
+                extra_meta TEXT NOT NULL DEFAULT '{}',
+                weight INTEGER NOT NULL DEFAULT 100,
+                priority INTEGER NOT NULL DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                synced_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )",
         )
         .execute(&self.pool)
@@ -131,9 +161,18 @@ impl ProviderStore {
         .execute(&self.pool)
         .await?;
 
+        sqlx::query("DROP INDEX IF EXISTS idx_provider_models_instance_model")
+            .execute(&self.pool)
+            .await?;
         sqlx::query(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_models_instance_model
-             ON provider_models(instance_id, model_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_models_identity
+             ON provider_models(instance_id, model_id, upstream_path)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_provider_models_instance_unified_model
+             ON provider_models(instance_id, unified_model_id)",
         )
         .execute(&self.pool)
         .await?;
@@ -171,12 +210,222 @@ impl ProviderStore {
             "ALTER TABLE provider_instances ADD COLUMN updated_at TEXT",
         )
         .await?;
+        self.ensure_column(
+            "provider_presets",
+            "theme_color",
+            "ALTER TABLE provider_presets ADD COLUMN theme_color TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "category",
+            "ALTER TABLE provider_presets ADD COLUMN category TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "url_template",
+            "ALTER TABLE provider_presets ADD COLUMN url_template TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "auth_type",
+            "ALTER TABLE provider_presets ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'api_key'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "auth_config",
+            "ALTER TABLE provider_presets ADD COLUMN auth_config TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "default_headers",
+            "ALTER TABLE provider_presets ADD COLUMN default_headers TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "default_params",
+            "ALTER TABLE provider_presets ADD COLUMN default_params TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "capability_configs",
+            "ALTER TABLE provider_presets ADD COLUMN capability_configs TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "version",
+            "ALTER TABLE provider_presets ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_instances",
+            "description",
+            "ALTER TABLE provider_instances ADD COLUMN description TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_instances",
+            "icon",
+            "ALTER TABLE provider_instances ADD COLUMN icon TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_instances",
+            "priority",
+            "ALTER TABLE provider_instances ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_instances",
+            "meta",
+            "ALTER TABLE provider_instances ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_credentials",
+            "weight",
+            "ALTER TABLE provider_credentials ADD COLUMN weight INTEGER NOT NULL DEFAULT 0",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_credentials",
+            "priority",
+            "ALTER TABLE provider_credentials ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_credentials",
+            "is_active",
+            "ALTER TABLE provider_credentials ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "capabilities",
+            "ALTER TABLE provider_models ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "unified_model_id",
+            "ALTER TABLE provider_models ADD COLUMN unified_model_id TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "upstream_path",
+            "ALTER TABLE provider_models ADD COLUMN upstream_path TEXT NOT NULL DEFAULT 'v1/chat/completions'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "pricing_config",
+            "ALTER TABLE provider_models ADD COLUMN pricing_config TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "limit_config",
+            "ALTER TABLE provider_models ADD COLUMN limit_config TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "tokenizer_config",
+            "ALTER TABLE provider_models ADD COLUMN tokenizer_config TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "routing_config",
+            "ALTER TABLE provider_models ADD COLUMN routing_config TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "config_override",
+            "ALTER TABLE provider_models ADD COLUMN config_override TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "source",
+            "ALTER TABLE provider_models ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "extra_meta",
+            "ALTER TABLE provider_models ADD COLUMN extra_meta TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "weight",
+            "ALTER TABLE provider_models ADD COLUMN weight INTEGER NOT NULL DEFAULT 100",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "priority",
+            "ALTER TABLE provider_models ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "synced_at",
+            "ALTER TABLE provider_models ADD COLUMN synced_at TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "created_at",
+            "ALTER TABLE provider_models ADD COLUMN created_at TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_models",
+            "updated_at",
+            "ALTER TABLE provider_models ADD COLUMN updated_at TEXT",
+        )
+        .await?;
 
         // Backfill updated_at for existing rows.
+        let backfill_now = now_rfc3339()?;
         sqlx::query(
             "UPDATE provider_instances
-             SET updated_at = COALESCE(NULLIF(updated_at, ''), created_at)",
+             SET created_at = COALESCE(NULLIF(created_at, ''), ?),
+                 updated_at = COALESCE(NULLIF(updated_at, ''), created_at),
+                 priority = COALESCE(priority, 0),
+                 meta = COALESCE(NULLIF(meta, ''), '{}')",
         )
+        .bind(&backfill_now)
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "UPDATE provider_models
+             SET created_at = COALESCE(NULLIF(created_at, ''), ?),
+                 updated_at = COALESCE(NULLIF(updated_at, ''), created_at),
+                 capabilities = COALESCE(NULLIF(capabilities, ''), '[]'),
+                 upstream_path = COALESCE(NULLIF(upstream_path, ''), 'v1/chat/completions'),
+                 pricing_config = COALESCE(NULLIF(pricing_config, ''), '{}'),
+                 limit_config = COALESCE(NULLIF(limit_config, ''), '{}'),
+                 tokenizer_config = COALESCE(NULLIF(tokenizer_config, ''), '{}'),
+                 routing_config = COALESCE(NULLIF(routing_config, ''), '{}'),
+                 config_override = COALESCE(NULLIF(config_override, ''), '{}'),
+                 source = COALESCE(NULLIF(source, ''), 'auto'),
+                 extra_meta = COALESCE(NULLIF(extra_meta, ''), '{}'),
+                 weight = COALESCE(weight, 100),
+                 priority = COALESCE(priority, 0)",
+        )
+        .bind(&backfill_now)
         .execute(&self.pool)
         .await?;
 
@@ -187,7 +436,7 @@ impl ProviderStore {
 
     pub async fn list_presets(&self) -> Result<Vec<ProviderPreset>, ProviderError> {
         let rows = sqlx::query(
-            "SELECT slug, name, provider, base_url, icon, is_active
+            "SELECT slug, name, provider, base_url, icon, theme_color, category, url_template, is_active
              FROM provider_presets
              ORDER BY name ASC",
         )
@@ -202,6 +451,9 @@ impl ProviderStore {
                 provider: row.try_get("provider")?,
                 base_url: row.try_get("base_url")?,
                 icon: row.try_get("icon")?,
+                theme_color: row.try_get("theme_color")?,
+                category: row.try_get("category")?,
+                url_template: row.try_get("url_template")?,
                 is_active: row.try_get::<i64, _>("is_active")? != 0,
             });
         }
@@ -281,14 +533,27 @@ impl ProviderStore {
 
         for preset in &presets {
             sqlx::query(
-                "INSERT INTO provider_presets (slug, name, provider, base_url, icon, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO provider_presets (
+                    slug, name, provider, base_url, icon, theme_color, category, url_template,
+                    auth_type, auth_config, default_headers, default_params, capability_configs,
+                    version, is_active
+                 )
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&preset.slug)
             .bind(&preset.name)
             .bind(&preset.provider)
             .bind(&preset.base_url)
             .bind(&preset.icon)
+            .bind(&preset.theme_color)
+            .bind(&preset.category)
+            .bind(&preset.url_template)
+            .bind("api_key")
+            .bind("{}")
+            .bind("{}")
+            .bind("{}")
+            .bind("{}")
+            .bind(1_i64)
             .bind(if preset.is_active { 1 } else { 0 })
             .execute(&mut *tx)
             .await?;
@@ -300,7 +565,8 @@ impl ProviderStore {
 
     pub async fn list_instances(&self) -> Result<Vec<ProviderInstance>, ProviderError> {
         let rows = sqlx::query(
-            "SELECT id, preset_slug, name, base_url, is_enabled, is_local, credentials_ref, created_at, updated_at
+            "SELECT id, preset_slug, name, base_url, description, icon, priority, meta,
+                    is_enabled, is_local, credentials_ref, created_at, updated_at
              FROM provider_instances
              ORDER BY created_at DESC",
         )
@@ -323,6 +589,19 @@ impl ProviderStore {
         let now = now_rfc3339()?;
         let credentials_ref = format!("db:{credential_id}");
         let is_local = payload.is_local.unwrap_or(false);
+        let priority = payload.priority.unwrap_or(0);
+        let meta = build_instance_meta_json(
+            payload.protocol.as_deref(),
+            payload.model_prefix.as_deref(),
+            payload.auto_append_v1,
+            payload.resource_name.as_deref(),
+            payload.deployment_name.as_deref(),
+            payload.api_version.as_deref(),
+            payload.project_id.as_deref(),
+            payload.region.as_deref(),
+        );
+        let meta_text =
+            serde_json::to_string(&meta).map_err(|e| ProviderError::Database(e.to_string()))?;
         let secret_key = payload
             .secret_key
             .map(|value| value.trim().to_string())
@@ -332,13 +611,18 @@ impl ProviderStore {
 
         sqlx::query(
             "INSERT INTO provider_instances (
-                id, preset_slug, name, base_url, is_enabled, is_local, credentials_ref, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, preset_slug, name, base_url, description, icon, priority, meta,
+                is_enabled, is_local, credentials_ref, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(instance_id.to_string())
         .bind(&payload.preset_slug)
         .bind(&payload.name)
         .bind(&payload.base_url)
+        .bind(payload.description.as_deref())
+        .bind(payload.icon.as_deref())
+        .bind(priority)
+        .bind(&meta_text)
         .bind(1)
         .bind(if is_local { 1 } else { 0 })
         .bind(&credentials_ref)
@@ -383,6 +667,22 @@ impl ProviderStore {
 
         let name = payload.name.unwrap_or(existing.name);
         let base_url = payload.base_url.unwrap_or(existing.base_url);
+        let description = payload.description.or(existing.description);
+        let icon = payload.icon.or(existing.icon);
+        let priority = payload.priority.unwrap_or(existing.priority);
+        let meta = merge_instance_meta_json(
+            existing.meta,
+            payload.protocol.as_deref(),
+            payload.model_prefix.as_deref(),
+            payload.auto_append_v1,
+            payload.resource_name.as_deref(),
+            payload.deployment_name.as_deref(),
+            payload.api_version.as_deref(),
+            payload.project_id.as_deref(),
+            payload.region.as_deref(),
+        );
+        let meta_text =
+            serde_json::to_string(&meta).map_err(|e| ProviderError::Database(e.to_string()))?;
         let is_enabled = payload.is_enabled.unwrap_or(existing.is_enabled);
         let now = now_rfc3339()?;
 
@@ -390,11 +690,16 @@ impl ProviderStore {
 
         sqlx::query(
             "UPDATE provider_instances
-             SET name = ?, base_url = ?, is_enabled = ?, updated_at = ?
+             SET name = ?, base_url = ?, description = ?, icon = ?, priority = ?, meta = ?,
+                 is_enabled = ?, updated_at = ?
              WHERE id = ?",
         )
         .bind(name)
         .bind(base_url)
+        .bind(description.as_deref())
+        .bind(icon.as_deref())
+        .bind(priority)
+        .bind(&meta_text)
         .bind(if is_enabled { 1 } else { 0 })
         .bind(&now)
         .bind(instance_id)
@@ -454,7 +759,10 @@ impl ProviderStore {
         instance_id: &Uuid,
     ) -> Result<Vec<ProviderModel>, ProviderError> {
         let rows = sqlx::query(
-            "SELECT id, instance_id, model_id, display_name, capabilities, is_active
+            "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                    upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                    config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                    created_at, updated_at
              FROM provider_models
              WHERE instance_id = ?
              ORDER BY model_id ASC",
@@ -475,6 +783,7 @@ impl ProviderStore {
         instance_id: &Uuid,
         models: Vec<ProviderModel>,
     ) -> Result<(), ProviderError> {
+        let now = now_rfc3339()?;
         let mut tx = self.pool.begin().await?;
 
         sqlx::query("DELETE FROM provider_models WHERE instance_id = ?")
@@ -485,16 +794,50 @@ impl ProviderStore {
         for model in models {
             let caps =
                 serde_json::to_string(&model.capabilities).unwrap_or_else(|_| "[]".to_string());
+            let pricing_config = serde_json::to_string(&ensure_json_object(model.pricing_config))
+                .map_err(|e| ProviderError::Database(e.to_string()))?;
+            let limit_config = serde_json::to_string(&ensure_json_object(model.limit_config))
+                .map_err(|e| ProviderError::Database(e.to_string()))?;
+            let tokenizer_config =
+                serde_json::to_string(&ensure_json_object(model.tokenizer_config))
+                    .map_err(|e| ProviderError::Database(e.to_string()))?;
+            let routing_config = serde_json::to_string(&ensure_json_object(model.routing_config))
+                .map_err(|e| ProviderError::Database(e.to_string()))?;
+            let config_override = serde_json::to_string(&ensure_json_object(model.config_override))
+                .map_err(|e| ProviderError::Database(e.to_string()))?;
+            let extra_meta = serde_json::to_string(&ensure_json_object(model.extra_meta))
+                .map_err(|e| ProviderError::Database(e.to_string()))?;
             sqlx::query(
-                "INSERT INTO provider_models (id, instance_id, model_id, display_name, capabilities, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO provider_models (
+                    id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                    upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                    config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                    created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(model.id.to_string())
             .bind(instance_id.to_string())
-            .bind(model.model_id)
-            .bind(model.display_name)
             .bind(caps)
+            .bind(model.model_id)
+            .bind(model.unified_model_id)
+            .bind(model.display_name)
+            .bind(
+                normalize_upstream_path(Some(model.upstream_path.as_str()))
+                    .unwrap_or_else(|| "v1/chat/completions".to_string()),
+            )
+            .bind(pricing_config)
+            .bind(limit_config)
+            .bind(tokenizer_config)
+            .bind(routing_config)
+            .bind(config_override)
+            .bind(normalize_source(Some(model.source.as_str())))
+            .bind(extra_meta)
+            .bind(model.weight)
+            .bind(model.priority)
             .bind(if model.is_active { 1 } else { 0 })
+            .bind(model.synced_at)
+            .bind(model.created_at.unwrap_or_else(|| now.clone()))
+            .bind(model.updated_at.unwrap_or_else(|| now.clone()))
             .execute(&mut *tx)
             .await?;
         }
@@ -516,6 +859,7 @@ impl ProviderStore {
         let now = now_rfc3339()?;
         let mut tx = self.pool.begin().await?;
         let mut touched = Vec::new();
+        let default_upstream_path = "v1/chat/completions";
 
         for raw in model_ids {
             let model_id = raw.trim().to_string();
@@ -524,13 +868,17 @@ impl ProviderStore {
             }
 
             let existing_row = sqlx::query(
-                "SELECT id, instance_id, model_id, display_name, capabilities, is_active
+                "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                        upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                        config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                        created_at, updated_at
                  FROM provider_models
-                 WHERE instance_id = ? AND model_id = ?
+                 WHERE instance_id = ? AND model_id = ? AND upstream_path = ?
                  LIMIT 1",
             )
             .bind(instance_id.to_string())
             .bind(&model_id)
+            .bind(default_upstream_path)
             .fetch_optional(&mut *tx)
             .await?;
 
@@ -544,20 +892,41 @@ impl ProviderStore {
                 .map_err(|e| ProviderError::Database(e.to_string()))?;
 
             sqlx::query(
-                "INSERT INTO provider_models (id, instance_id, model_id, display_name, capabilities, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO provider_models (
+                    id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                    upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                    config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                    created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&new_id)
             .bind(instance_id.to_string())
+            .bind(caps)
+            .bind(&model_id)
             .bind(&model_id)
             .bind(model_id.clone())
-            .bind(caps)
+            .bind(default_upstream_path)
+            .bind("{}")
+            .bind("{}")
+            .bind("{}")
+            .bind("{}")
+            .bind("{}")
+            .bind("auto")
+            .bind("{}")
+            .bind(100_i64)
+            .bind(0_i64)
             .bind(1)
+            .bind::<Option<String>>(None)
+            .bind(&now)
+            .bind(&now)
             .execute(&mut *tx)
             .await?;
 
             let row = sqlx::query(
-                "SELECT id, instance_id, model_id, display_name, capabilities, is_active
+                "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                        upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                        config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                        created_at, updated_at
                  FROM provider_models
                  WHERE id = ?",
             )
@@ -590,7 +959,10 @@ impl ProviderStore {
         payload: ProviderModelUpdateRequest,
     ) -> Result<ProviderModel, ProviderError> {
         let existing_row = sqlx::query(
-            "SELECT id, instance_id, model_id, display_name, capabilities, is_active
+            "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                    upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                    config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                    created_at, updated_at
              FROM provider_models
              WHERE id = ?
              LIMIT 1",
@@ -607,23 +979,84 @@ impl ProviderStore {
         let display_name = payload.display_name.clone().or(existing.display_name);
         let is_active = payload.is_active.unwrap_or(existing.is_active);
         let capabilities = resolve_capabilities(&payload, existing.capabilities);
+        let unified_model_id = match payload.unified_model_id {
+            Some(value) => value.and_then(|item| {
+                let trimmed = item.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }),
+            None => existing.unified_model_id,
+        };
+        let upstream_path = normalize_upstream_path(payload.upstream_path.as_deref())
+            .or_else(|| normalize_upstream_path(Some(existing.upstream_path.as_str())))
+            .unwrap_or_else(|| "v1/chat/completions".to_string());
+        let weight = payload.weight.unwrap_or(existing.weight);
+        let priority = payload.priority.unwrap_or(existing.priority);
+        let pricing_config = payload.pricing_config.unwrap_or(existing.pricing_config);
+        let limit_config = payload.limit_config.unwrap_or(existing.limit_config);
+        let tokenizer_config = payload
+            .tokenizer_config
+            .unwrap_or(existing.tokenizer_config);
+        let routing_config = payload.routing_config.unwrap_or(existing.routing_config);
+        let config_override = payload.config_override.unwrap_or(existing.config_override);
+        let source = payload
+            .source
+            .as_deref()
+            .map(|value| normalize_source(Some(value)))
+            .unwrap_or_else(|| existing.source.clone());
+        let extra_meta = payload.extra_meta.unwrap_or(existing.extra_meta);
+        let now = now_rfc3339()?;
 
         let caps = serde_json::to_string(&capabilities)
             .map_err(|e| ProviderError::Database(e.to_string()))?;
+        let pricing_config_text = serde_json::to_string(&ensure_json_object(pricing_config))
+            .map_err(|e| ProviderError::Database(e.to_string()))?;
+        let limit_config_text = serde_json::to_string(&ensure_json_object(limit_config))
+            .map_err(|e| ProviderError::Database(e.to_string()))?;
+        let tokenizer_config_text = serde_json::to_string(&ensure_json_object(tokenizer_config))
+            .map_err(|e| ProviderError::Database(e.to_string()))?;
+        let routing_config_text = serde_json::to_string(&ensure_json_object(routing_config))
+            .map_err(|e| ProviderError::Database(e.to_string()))?;
+        let config_override_text = serde_json::to_string(&ensure_json_object(config_override))
+            .map_err(|e| ProviderError::Database(e.to_string()))?;
+        let extra_meta_text = serde_json::to_string(&ensure_json_object(extra_meta))
+            .map_err(|e| ProviderError::Database(e.to_string()))?;
         sqlx::query(
             "UPDATE provider_models
-             SET display_name = ?, capabilities = ?, is_active = ?
+             SET capabilities = ?, model_id = ?, unified_model_id = ?, display_name = ?,
+                 upstream_path = ?, pricing_config = ?, limit_config = ?, tokenizer_config = ?,
+                 routing_config = ?, config_override = ?, source = ?, extra_meta = ?,
+                 weight = ?, priority = ?, is_active = ?, updated_at = ?
              WHERE id = ?",
         )
-        .bind(display_name)
         .bind(caps)
+        .bind(existing.model_id)
+        .bind(unified_model_id)
+        .bind(display_name)
+        .bind(upstream_path)
+        .bind(pricing_config_text)
+        .bind(limit_config_text)
+        .bind(tokenizer_config_text)
+        .bind(routing_config_text)
+        .bind(config_override_text)
+        .bind(source)
+        .bind(extra_meta_text)
+        .bind(weight)
+        .bind(priority)
         .bind(if is_active { 1 } else { 0 })
+        .bind(now)
         .bind(model_id.to_string())
         .execute(&self.pool)
         .await?;
 
         let updated_row = sqlx::query(
-            "SELECT id, instance_id, model_id, display_name, capabilities, is_active
+            "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                    upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                    config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                    created_at, updated_at
              FROM provider_models
              WHERE id = ?
              LIMIT 1",
@@ -637,7 +1070,10 @@ impl ProviderStore {
 
     pub async fn get_model(&self, model_id: &Uuid) -> Result<Option<ProviderModel>, ProviderError> {
         let row = sqlx::query(
-            "SELECT id, instance_id, model_id, display_name, capabilities, is_active
+            "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                    upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                    config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                    created_at, updated_at
              FROM provider_models
              WHERE id = ?
              LIMIT 1",
@@ -736,7 +1172,8 @@ impl ProviderStore {
 
         let strategy = extract_routing_string(payload.routing_config.as_ref(), "strategy")
             .unwrap_or_else(|| BANDIT_DEFAULT_STRATEGY.to_string());
-        let epsilon = extract_routing_f64(payload.routing_config.as_ref(), "epsilon").unwrap_or(0.1);
+        let epsilon =
+            extract_routing_f64(payload.routing_config.as_ref(), "epsilon").unwrap_or(0.1);
         let alpha = extract_routing_f64(payload.routing_config.as_ref(), "alpha").unwrap_or(1.0);
         let beta = extract_routing_f64(payload.routing_config.as_ref(), "beta").unwrap_or(1.0);
         let failure_cooldown_threshold = extract_routing_i64(
@@ -745,9 +1182,10 @@ impl ProviderStore {
         )
         .unwrap_or(5)
         .max(1);
-        let cooldown_seconds = extract_routing_i64(payload.routing_config.as_ref(), "cooldown_seconds")
-            .unwrap_or(60)
-            .max(1);
+        let cooldown_seconds =
+            extract_routing_i64(payload.routing_config.as_ref(), "cooldown_seconds")
+                .unwrap_or(60)
+                .max(1);
 
         let now = now_rfc3339()?;
         let provider_model_id = if scene == BANDIT_DEFAULT_SCENE {
@@ -991,7 +1429,8 @@ impl ProviderStore {
         instance_id: &str,
     ) -> Result<Option<ProviderInstance>, ProviderError> {
         let row = sqlx::query(
-            "SELECT id, preset_slug, name, base_url, is_enabled, is_local, credentials_ref, created_at, updated_at
+            "SELECT id, preset_slug, name, base_url, description, icon, priority, meta,
+                    is_enabled, is_local, credentials_ref, created_at, updated_at
              FROM provider_instances
              WHERE id = ?
              LIMIT 1",
@@ -1211,11 +1650,166 @@ fn resolve_capabilities(
     fallback
 }
 
+fn ensure_json_object(value: serde_json::Value) -> serde_json::Value {
+    if value.is_object() {
+        value
+    } else {
+        serde_json::json!({})
+    }
+}
+
+fn parse_json_object_text(text: Option<String>) -> serde_json::Value {
+    match text {
+        Some(value) if !value.trim().is_empty() => {
+            serde_json::from_str::<serde_json::Value>(&value)
+                .ok()
+                .filter(|item| item.is_object())
+                .unwrap_or_else(|| serde_json::json!({}))
+        }
+        _ => serde_json::json!({}),
+    }
+}
+
+fn normalize_upstream_path(path: Option<&str>) -> Option<String> {
+    path.map(|value| value.trim().trim_start_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn normalize_source(source: Option<&str>) -> String {
+    source
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "auto".to_string())
+}
+
+fn insert_meta_if_non_empty(
+    target: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    value: Option<&str>,
+) {
+    if let Some(raw) = value {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            target.insert(
+                key.to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+}
+
+fn build_instance_meta_json(
+    protocol: Option<&str>,
+    model_prefix: Option<&str>,
+    auto_append_v1: Option<bool>,
+    resource_name: Option<&str>,
+    deployment_name: Option<&str>,
+    api_version: Option<&str>,
+    project_id: Option<&str>,
+    region: Option<&str>,
+) -> serde_json::Value {
+    let mut meta = serde_json::Map::new();
+    insert_meta_if_non_empty(&mut meta, "protocol", protocol);
+    insert_meta_if_non_empty(&mut meta, "model_prefix", model_prefix);
+    if let Some(value) = auto_append_v1 {
+        meta.insert("auto_append_v1".to_string(), serde_json::Value::Bool(value));
+    }
+    insert_meta_if_non_empty(&mut meta, "resource_name", resource_name);
+    insert_meta_if_non_empty(&mut meta, "deployment_name", deployment_name);
+    insert_meta_if_non_empty(&mut meta, "api_version", api_version);
+    insert_meta_if_non_empty(&mut meta, "project_id", project_id);
+    insert_meta_if_non_empty(&mut meta, "region", region);
+    serde_json::Value::Object(meta)
+}
+
+fn merge_instance_meta_json(
+    existing: serde_json::Value,
+    protocol: Option<&str>,
+    model_prefix: Option<&str>,
+    auto_append_v1: Option<bool>,
+    resource_name: Option<&str>,
+    deployment_name: Option<&str>,
+    api_version: Option<&str>,
+    project_id: Option<&str>,
+    region: Option<&str>,
+) -> serde_json::Value {
+    let mut next = ensure_json_object(existing);
+    let Some(map) = next.as_object_mut() else {
+        return serde_json::json!({});
+    };
+
+    if let Some(value) = protocol {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            map.insert(
+                "protocol".to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+    if let Some(value) = model_prefix {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            map.insert(
+                "model_prefix".to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+    if let Some(value) = auto_append_v1 {
+        map.insert("auto_append_v1".to_string(), serde_json::Value::Bool(value));
+    }
+    if let Some(value) = resource_name {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            map.insert(
+                "resource_name".to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+    if let Some(value) = deployment_name {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            map.insert(
+                "deployment_name".to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+    if let Some(value) = api_version {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            map.insert(
+                "api_version".to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+    if let Some(value) = project_id {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            map.insert(
+                "project_id".to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+    if let Some(value) = region {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            map.insert(
+                "region".to_string(),
+                serde_json::Value::String(trimmed.to_string()),
+            );
+        }
+    }
+
+    serde_json::Value::Object(map.clone())
+}
+
 fn normalize_bandit_scene(scene: Option<&str>) -> Result<String, ProviderError> {
-    let normalized = scene
-        .unwrap_or(BANDIT_DEFAULT_SCENE)
-        .trim()
-        .to_string();
+    let normalized = scene.unwrap_or(BANDIT_DEFAULT_SCENE).trim().to_string();
     if normalized.is_empty() {
         return Err(ProviderError::Validation("scene is required".to_string()));
     }
@@ -1235,7 +1829,9 @@ fn extract_routing_f64(config: Option<&serde_json::Value>, key: &str) -> Option<
     if let Some(number) = value.as_f64() {
         return Some(number);
     }
-    value.as_str().and_then(|raw| raw.trim().parse::<f64>().ok())
+    value
+        .as_str()
+        .and_then(|raw| raw.trim().parse::<f64>().ok())
 }
 
 fn extract_routing_i64(config: Option<&serde_json::Value>, key: &str) -> Option<i64> {
@@ -1246,7 +1842,9 @@ fn extract_routing_i64(config: Option<&serde_json::Value>, key: &str) -> Option<
     if let Some(number) = value.as_u64() {
         return i64::try_from(number).ok();
     }
-    value.as_str().and_then(|raw| raw.trim().parse::<i64>().ok())
+    value
+        .as_str()
+        .and_then(|raw| raw.trim().parse::<i64>().ok())
 }
 
 fn now_plus_seconds_rfc3339(seconds: i64) -> Result<String, ProviderError> {
@@ -1282,12 +1880,17 @@ fn row_to_bandit_arm_state(row: &SqliteRow) -> Result<BanditArmState, ProviderEr
 }
 
 fn row_to_instance(row: &SqliteRow) -> Result<ProviderInstance, ProviderError> {
+    let meta_text: Option<String> = row.try_get("meta")?;
     Ok(ProviderInstance {
         id: Uuid::parse_str(row.try_get::<String, _>("id")?.as_str())
             .map_err(|e| ProviderError::Database(format!("invalid uuid: {e}")))?,
         preset_slug: row.try_get("preset_slug")?,
         name: row.try_get("name")?,
         base_url: row.try_get("base_url")?,
+        description: row.try_get("description")?,
+        icon: row.try_get("icon")?,
+        priority: row.try_get::<i64, _>("priority").unwrap_or(0),
+        meta: parse_json_object_text(meta_text),
         is_enabled: row.try_get::<i64, _>("is_enabled")? != 0,
         is_local: row.try_get::<i64, _>("is_local")? != 0,
         credentials_ref: row.try_get("credentials_ref")?,
@@ -1298,15 +1901,38 @@ fn row_to_instance(row: &SqliteRow) -> Result<ProviderInstance, ProviderError> {
 
 fn row_to_model(row: &SqliteRow) -> Result<ProviderModel, ProviderError> {
     let caps_str: String = row.try_get("capabilities")?;
+    let pricing_config: Option<String> = row.try_get("pricing_config")?;
+    let limit_config: Option<String> = row.try_get("limit_config")?;
+    let tokenizer_config: Option<String> = row.try_get("tokenizer_config")?;
+    let routing_config: Option<String> = row.try_get("routing_config")?;
+    let config_override: Option<String> = row.try_get("config_override")?;
+    let extra_meta: Option<String> = row.try_get("extra_meta")?;
     Ok(ProviderModel {
         id: Uuid::parse_str(row.try_get::<String, _>("id")?.as_str())
             .map_err(|e| ProviderError::Database(format!("invalid model uuid: {e}")))?,
         instance_id: Uuid::parse_str(row.try_get::<String, _>("instance_id")?.as_str())
             .map_err(|e| ProviderError::Database(format!("invalid instance uuid: {e}")))?,
-        model_id: row.try_get("model_id")?,
-        display_name: row.try_get("display_name")?,
         capabilities: serde_json::from_str(&caps_str).unwrap_or_default(),
+        model_id: row.try_get("model_id")?,
+        unified_model_id: row.try_get("unified_model_id")?,
+        display_name: row.try_get("display_name")?,
+        upstream_path: normalize_upstream_path(Some(
+            row.try_get::<String, _>("upstream_path")?.as_str(),
+        ))
+        .unwrap_or_else(|| "v1/chat/completions".to_string()),
+        pricing_config: parse_json_object_text(pricing_config),
+        limit_config: parse_json_object_text(limit_config),
+        tokenizer_config: parse_json_object_text(tokenizer_config),
+        routing_config: parse_json_object_text(routing_config),
+        config_override: parse_json_object_text(config_override),
+        source: normalize_source(Some(row.try_get::<String, _>("source")?.as_str())),
+        extra_meta: parse_json_object_text(extra_meta),
+        weight: row.try_get::<i64, _>("weight").unwrap_or(100),
+        priority: row.try_get::<i64, _>("priority").unwrap_or(0),
         is_active: row.try_get::<i64, _>("is_active")? != 0,
+        synced_at: row.try_get("synced_at")?,
+        created_at: row.try_get("created_at").ok(),
+        updated_at: row.try_get("updated_at").ok(),
     })
 }
 

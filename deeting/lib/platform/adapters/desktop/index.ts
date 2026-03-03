@@ -23,6 +23,9 @@ type LocalProviderPreset = {
   provider: string;
   base_url: string;
   icon?: string | null;
+  theme_color?: string | null;
+  category?: string | null;
+  url_template?: string | null;
   is_active: boolean;
 };
 
@@ -31,6 +34,10 @@ type LocalProviderInstance = {
   preset_slug: string;
   name: string;
   base_url: string;
+  description?: string | null;
+  icon?: string | null;
+  priority?: number;
+  meta?: Record<string, unknown> | null;
   is_enabled: boolean;
   is_local: boolean;
   credentials_ref: string;
@@ -41,11 +48,35 @@ type LocalProviderInstance = {
 type LocalProviderModel = {
   id: string;
   instance_id: string;
-  model_id: string;
-  display_name?: string | null;
   capabilities: string[];
+  model_id: string;
+  unified_model_id?: string | null;
+  display_name?: string | null;
+  upstream_path: string;
+  pricing_config?: Record<string, unknown> | null;
+  limit_config?: Record<string, unknown> | null;
+  tokenizer_config?: Record<string, unknown> | null;
+  routing_config?: Record<string, unknown> | null;
+  config_override?: Record<string, unknown> | null;
+  source: string;
+  extra_meta?: Record<string, unknown> | null;
+  weight?: number;
+  priority?: number;
   is_active: boolean;
+  synced_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
+
+function readMetaString(meta: Record<string, unknown> | null | undefined, key: string): string | null {
+  const raw = meta?.[key];
+  return typeof raw === "string" && raw.trim() ? raw : null;
+}
+
+function readMetaBool(meta: Record<string, unknown> | null | undefined, key: string): boolean | null {
+  const raw = meta?.[key];
+  return typeof raw === "boolean" ? raw : null;
+}
 
 function toInstanceResponse(instance: LocalProviderInstance): ProviderInstanceResponse {
   return {
@@ -53,13 +84,13 @@ function toInstanceResponse(instance: LocalProviderInstance): ProviderInstanceRe
     user_id: null,
     preset_slug: instance.preset_slug,
     name: instance.name,
-    description: null,
+    description: instance.description ?? null,
     base_url: instance.base_url,
-    protocol: null,
-    auto_append_v1: null,
-    icon: null,
+    protocol: readMetaString(instance.meta, "protocol"),
+    auto_append_v1: readMetaBool(instance.meta, "auto_append_v1"),
+    icon: instance.icon ?? null,
     theme_color: null,
-    priority: 0,
+    priority: instance.priority ?? 0,
     is_enabled: instance.is_enabled,
     created_at: instance.created_at,
     updated_at: instance.updated_at,
@@ -77,22 +108,22 @@ function toModelResponse(model: LocalProviderModel): ProviderModelResponse {
     instance_id: model.instance_id,
     capabilities: model.capabilities ?? [],
     model_id: model.model_id,
-    unified_model_id: model.model_id,
+    unified_model_id: model.unified_model_id ?? model.model_id,
     display_name: model.display_name ?? null,
-    upstream_path: "/v1/chat/completions",
-    pricing_config: {},
-    limit_config: {},
-    tokenizer_config: {},
-    routing_config: {},
-    config_override: {},
-    source: "local",
-    extra_meta: {},
-    weight: 100,
-    priority: 0,
+    upstream_path: model.upstream_path,
+    pricing_config: model.pricing_config ?? {},
+    limit_config: model.limit_config ?? {},
+    tokenizer_config: model.tokenizer_config ?? {},
+    routing_config: model.routing_config ?? {},
+    config_override: model.config_override ?? {},
+    source: model.source,
+    extra_meta: model.extra_meta ?? {},
+    weight: model.weight ?? 100,
+    priority: model.priority ?? 0,
     is_active: model.is_active,
-    synced_at: null,
-    created_at: null,
-    updated_at: null,
+    synced_at: model.synced_at ?? null,
+    created_at: model.created_at ?? null,
+    updated_at: model.updated_at ?? null,
   };
 }
 
@@ -261,6 +292,17 @@ export const desktopPlatform: IPlatform = {
             preset_slug: payload.preset_slug,
             name: payload.name,
             base_url: payload.base_url,
+            description: payload.description ?? undefined,
+            icon: payload.icon ?? undefined,
+            priority: payload.priority ?? undefined,
+            protocol: payload.protocol ?? undefined,
+            model_prefix: payload.model_prefix ?? undefined,
+            auto_append_v1: payload.auto_append_v1 ?? undefined,
+            resource_name: payload.resource_name ?? undefined,
+            deployment_name: payload.deployment_name ?? undefined,
+            api_version: payload.api_version ?? undefined,
+            project_id: payload.project_id ?? undefined,
+            region: payload.region ?? undefined,
             is_local: true,
             secret_key: payload.api_key ?? undefined,
           },
@@ -283,6 +325,17 @@ export const desktopPlatform: IPlatform = {
           payload: {
             name: payload.name ?? undefined,
             base_url: payload.base_url ?? undefined,
+            description: payload.description ?? undefined,
+            icon: payload.icon ?? undefined,
+            priority: payload.priority ?? undefined,
+            protocol: payload.protocol ?? undefined,
+            model_prefix: payload.model_prefix ?? undefined,
+            auto_append_v1: payload.auto_append_v1 ?? undefined,
+            resource_name: payload.resource_name ?? undefined,
+            deployment_name: payload.deployment_name ?? undefined,
+            api_version: payload.api_version ?? undefined,
+            project_id: payload.project_id ?? undefined,
+            region: payload.region ?? undefined,
             is_enabled: payload.is_enabled ?? undefined,
             secret_key: payload.api_key ?? undefined,
           },

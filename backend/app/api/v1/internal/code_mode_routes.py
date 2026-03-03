@@ -35,6 +35,41 @@ def _to_iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if isinstance(dt, datetime) else None
 
 
+class CodeModeSyncExecutionInput(BaseModel):
+    execution_id: str
+    session_id: str
+    trace_id: str | None = None
+    language: str = "python"
+    status: str = "failed"
+    format_version: str | None = None
+    runtime_protocol_version: str | None = None
+    code: str | None = None
+    runtime_context: dict[str, Any] = Field(default_factory=dict)
+    tool_plan_results: dict[str, Any] = Field(default_factory=dict)
+    runtime_tool_calls: dict[str, Any] = Field(default_factory=dict)
+    render_blocks: dict[str, Any] | list[Any] = Field(default_factory=dict)
+    error: str | None = None
+    error_code: str | None = None
+    duration_ms: int = 0
+    request_meta: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class CodeModeSyncExecutionsRequest(BaseModel):
+    executions: list[CodeModeSyncExecutionInput] = Field(default_factory=list)
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
 def _serialize_execution(record: CodeModeExecution) -> dict[str, Any]:
     return {
         "id": str(record.id),
@@ -178,6 +213,117 @@ async def get_code_mode_execution(
         identifier=execution_identifier,
     )
     return _serialize_execution(record)
+
+
+@router.post("/executions/sync")
+async def sync_code_mode_executions(
+    payload: CodeModeSyncExecutionsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    repo = CodeModeExecutionRepository(db)
+    user_id = uuid.UUID(str(user.id))
+
+    results: list[dict[str, Any]] = []
+    synced = 0
+    exists = 0
+    failed = 0
+
+    for item in payload.executions:
+        execution_id = item.execution_id.strip()
+        if not execution_id:
+            failed += 1
+            results.append(
+                {
+                    "execution_id": "",
+                    "status": "failed",
+                    "id": None,
+                    "error": "execution_id is required",
+                }
+            )
+            continue
+
+        try:
+            session_id = item.session_id.strip()
+            if not session_id:
+                raise ValueError("session_id is required")
+
+            existing = await repo.get_by_execution_id(
+                user_id=user_id,
+                execution_id=execution_id,
+            )
+            if existing is not None:
+                exists += 1
+                results.append(
+                    {
+                        "execution_id": execution_id,
+                        "status": "exists",
+                        "id": str(existing.id),
+                        "error": None,
+                    }
+                )
+                continue
+
+            code_text = str(item.code or "").strip()
+            if not code_text and isinstance(item.runtime_context, dict):
+                runtime_code = item.runtime_context.get("code")
+                if isinstance(runtime_code, str):
+                    code_text = runtime_code
+            if not code_text:
+                raise ValueError("code is required")
+
+            create_payload: dict[str, Any] = {
+                "user_id": user_id,
+                "session_id": session_id,
+                "execution_id": execution_id,
+                "trace_id": item.trace_id,
+                "language": item.language.strip() or "python",
+                "code": code_text,
+                "status": item.status.strip() or "failed",
+                "format_version": item.format_version,
+                "runtime_protocol_version": item.runtime_protocol_version,
+                "runtime_context": item.runtime_context,
+                "tool_plan_results": item.tool_plan_results,
+                "runtime_tool_calls": item.runtime_tool_calls,
+                "render_blocks": item.render_blocks,
+                "error": item.error,
+                "error_code": item.error_code,
+                "duration_ms": max(0, int(item.duration_ms)),
+                "request_meta": item.request_meta,
+            }
+            created_at = _parse_iso_datetime(item.created_at)
+            if created_at is not None:
+                create_payload["created_at"] = created_at
+
+            created = await repo.create_execution(create_payload)
+            synced += 1
+            results.append(
+                {
+                    "execution_id": execution_id,
+                    "status": "synced",
+                    "id": str(created.id),
+                    "error": None,
+                }
+            )
+        except Exception as exc:
+            failed += 1
+            results.append(
+                {
+                    "execution_id": execution_id,
+                    "status": "failed",
+                    "id": None,
+                    "error": str(exc),
+                }
+            )
+
+    return {
+        "results": results,
+        "summary": {
+            "synced": synced,
+            "exists": exists,
+            "failed": failed,
+        },
+    }
 
 
 @router.post("/executions/{execution_identifier}/replay")

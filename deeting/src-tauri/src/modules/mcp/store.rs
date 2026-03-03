@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -10,11 +11,14 @@ use uuid::Uuid;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::types::{
     CreateAssistantMessageRequest, CreateConversationMessageRequest, CreateLocalAssistantRequest,
-    LocalAdminConversationItem, LocalAdminConversationListResponse, LocalAdminConversationQuery,
-    LocalAdminConversationSummaryItem, LocalAdminConversationSummaryListResponse, LocalAssistant,
-    LocalAssistantEntity, LocalAssistantInstallCreateRequest, LocalAssistantInstallItem,
-    LocalAssistantInstallPage, LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest,
-    LocalAssistantMessage, LocalAssistantRatingRequest, LocalAssistantRatingResponse,
+    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, LocalAdminConversationItem,
+    LocalAdminConversationListResponse, LocalAdminConversationMessageItem,
+    LocalAdminConversationMessageListResponse, LocalAdminConversationMessageQuery,
+    LocalAdminConversationQuery, LocalAdminConversationSummaryItem,
+    LocalAdminConversationSummaryListResponse, LocalAssistant, LocalAssistantEntity,
+    LocalAssistantInstallCreateRequest, LocalAssistantInstallItem, LocalAssistantInstallPage,
+    LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest, LocalAssistantMessage,
+    LocalAssistantRatingRequest, LocalAssistantRatingResponse,
     LocalAssistantRoutingFeedbackRequest, LocalAssistantRoutingReportItem,
     LocalAssistantRoutingReportQuery, LocalAssistantRoutingReportResponse,
     LocalAssistantRoutingReportSummary, LocalAssistantRoutingState, LocalAssistantSummary,
@@ -23,13 +27,20 @@ use crate::modules::mcp::types::{
     LocalConversationCreateRequest, LocalConversationCreateResponse,
     LocalConversationDeleteResponse, LocalConversationHistoryMessage,
     LocalConversationHistoryQuery, LocalConversationHistoryResponse,
-    LocalConversationRenameResponse, LocalConversationSessionItem,
-    LocalConversationSessionPage, LocalConversationSessionsQuery, LocalConversationStatus,
+    LocalConversationRenameResponse, LocalConversationSessionItem, LocalConversationSessionPage,
+    LocalConversationSessionsQuery, LocalConversationStatus,
+    LocalConversationSummaryBatchRetryRequest, LocalConversationSummaryBatchRetryResponse,
+    LocalConversationSummaryEnqueueResponse, LocalConversationSummaryIdleTaskItem,
+    LocalConversationSummaryIdleTaskListResponse, LocalConversationSummaryIdleTaskQuery,
+    LocalConversationSummaryJobItem, LocalConversationSummaryJobListResponse,
+    LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
     LocalConversationWindowResponse, LocalGatewayLogItem, LocalGatewayLogListResponse,
     LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse,
-    LocalTraceFeedback, LocalTraceFeedbackRequest,
-    McpConflictStatus, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
-    McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest,
+    LocalKnowledgeBreadcrumbItem, LocalKnowledgeFile, LocalKnowledgeFolder,
+    LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse,
+    LocalTraceFeedback, LocalTraceFeedbackRequest, LocalUserDocumentListQuery, McpConflictStatus,
+    McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus,
+    McpTrustLevel, UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest,
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
@@ -46,6 +57,7 @@ const LOCAL_CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS: i64 = 120;
 const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
+const LOCAL_KNOWLEDGE_TOTAL_BYTES: i64 = 10 * 1024 * 1024 * 1024;
 
 pub struct McpStore {
     pool: SqlitePool,
@@ -126,6 +138,127 @@ impl McpStore {
               updated_at TEXT NOT NULL,
               FOREIGN KEY (source_id) REFERENCES mcp_sources(id)
             );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS knowledge_folder (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              parent_id TEXT,
+              name TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (parent_id) REFERENCES knowledge_folder(id) ON DELETE CASCADE
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_folder_user_parent_name
+            ON knowledge_folder(user_id, parent_id, name);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_folder_user_root_name
+            ON knowledge_folder(user_id, name)
+            WHERE parent_id IS NULL;
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_knowledge_folder_user_id
+            ON knowledge_folder(user_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_knowledge_folder_parent_id
+            ON knowledge_folder(parent_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS user_document (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              media_asset_id TEXT NOT NULL,
+              filename TEXT NOT NULL,
+              folder_id TEXT,
+              status TEXT NOT NULL DEFAULT 'pending',
+              error_message TEXT,
+              chunk_count INTEGER NOT NULL DEFAULT 0,
+              embedding_model TEXT,
+              meta_info TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (folder_id) REFERENCES knowledge_folder(id) ON DELETE SET NULL
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_user_document_user_id
+            ON user_document(user_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_user_document_status
+            ON user_document(status);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_user_document_media_asset_id
+            ON user_document(media_asset_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS ix_user_document_folder_id
+            ON user_document(folder_id);
             "#,
         )
         .execute(&self.pool)
@@ -1621,11 +1754,31 @@ impl McpStore {
     pub async fn list_local_assistants(&self) -> Result<Vec<LocalAssistant>, McpError> {
         let rows = sqlx::query(
             r#"
-            SELECT id, name, description, avatar, system_prompt, model_config, tags,
-                   visibility, source, cloud_id, is_deleted, created_at, updated_at
-            FROM assistants
-            WHERE is_deleted = 0
-            ORDER BY updated_at DESC;
+            SELECT
+              a.id,
+              COALESCE(av.name, 'Assistant') AS name,
+              COALESCE(av.description, a.summary) AS description,
+              a.icon_id AS avatar,
+              COALESCE(av.system_prompt, '') AS system_prompt,
+              av.model_config AS model_config,
+              av.tags AS tags,
+              a.visibility AS visibility,
+              'local' AS source,
+              NULL AS cloud_id,
+              CASE WHEN a.status = 'archived' THEN 1 ELSE 0 END AS is_deleted,
+              a.created_at AS created_at,
+              a.updated_at AS updated_at
+            FROM assistant a
+            LEFT JOIN assistant_version av
+              ON av.id = (
+                SELECT v.id
+                FROM assistant_version v
+                WHERE v.assistant_id = a.id
+                ORDER BY v.created_at DESC, v.id DESC
+                LIMIT 1
+              )
+            WHERE a.status <> 'archived'
+            ORDER BY a.updated_at DESC;
             "#,
         )
         .fetch_all(&self.pool)
@@ -1880,7 +2033,11 @@ impl McpStore {
 
         let mut pinned_version_id = payload.pinned_version_id.and_then(|raw| {
             let trimmed = raw.trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
         });
         let mut follow_latest = payload.follow_latest.unwrap_or(true);
 
@@ -2225,8 +2382,8 @@ impl McpStore {
                 rating_avg = refreshed.0;
                 rating_count = refreshed.1;
             } else {
-                let new_avg =
-                    (rating_avg * rating_count as f64 - old_rating + payload.rating) / rating_count as f64;
+                let new_avg = (rating_avg * rating_count as f64 - old_rating + payload.rating)
+                    / rating_count as f64;
                 rating_avg = round_to_4(new_avg);
                 sqlx::query(
                     r#"
@@ -2420,7 +2577,13 @@ impl McpStore {
             .unwrap_or("score_desc")
             .trim()
             .to_ascii_lowercase();
-        let allowed_sorts = ["score_desc", "routing_score_desc", "rating_desc", "trials_desc", "recent_desc"];
+        let allowed_sorts = [
+            "score_desc",
+            "routing_score_desc",
+            "rating_desc",
+            "trials_desc",
+            "recent_desc",
+        ];
         if !allowed_sorts.contains(&sort_key.as_str()) {
             return Err(McpError::validation("invalid sort option"));
         }
@@ -2450,15 +2613,21 @@ impl McpStore {
             let total_trials = row.try_get::<i64, _>("total_trials").unwrap_or(0);
             let positive_feedback = row.try_get::<i64, _>("positive_feedback").unwrap_or(0);
             let negative_feedback = row.try_get::<i64, _>("negative_feedback").unwrap_or(0);
-            let rating_score =
-                (positive_feedback as f64 + 1.0) / (positive_feedback as f64 + negative_feedback as f64 + 2.0);
+            let rating_score = (positive_feedback as f64 + 1.0)
+                / (positive_feedback as f64 + negative_feedback as f64 + 2.0);
             let mab_score = rating_score;
             let exploration_bonus = if total_trials < 10 { 0.2 } else { 0.0 };
             let routing_score = (rating_score * 0.75) + (exploration_bonus * 0.25);
             items.push(LocalAssistantRoutingReportItem {
                 assistant_id: row.try_get::<String, _>("assistant_id")?,
-                name: row.try_get::<Option<String>, _>("version_name").ok().flatten(),
-                summary: row.try_get::<Option<String>, _>("assistant_summary").ok().flatten(),
+                name: row
+                    .try_get::<Option<String>, _>("version_name")
+                    .ok()
+                    .flatten(),
+                summary: row
+                    .try_get::<Option<String>, _>("assistant_summary")
+                    .ok()
+                    .flatten(),
                 total_trials,
                 positive_feedback,
                 negative_feedback,
@@ -2466,7 +2635,10 @@ impl McpStore {
                 mab_score,
                 routing_score,
                 exploration_bonus,
-                last_used_at: row.try_get::<Option<String>, _>("last_used_at").ok().flatten(),
+                last_used_at: row
+                    .try_get::<Option<String>, _>("last_used_at")
+                    .ok()
+                    .flatten(),
                 last_feedback_at: row
                     .try_get::<Option<String>, _>("last_feedback_at")
                     .ok()
@@ -2550,7 +2722,10 @@ impl McpStore {
                 total_trials: row.try_get::<i64, _>("total_trials").unwrap_or(0),
                 positive_feedback: row.try_get::<i64, _>("positive_feedback").unwrap_or(0),
                 negative_feedback: row.try_get::<i64, _>("negative_feedback").unwrap_or(0),
-                last_used_at: row.try_get::<Option<String>, _>("last_used_at").ok().flatten(),
+                last_used_at: row
+                    .try_get::<Option<String>, _>("last_used_at")
+                    .ok()
+                    .flatten(),
                 last_feedback_at: row
                     .try_get::<Option<String>, _>("last_feedback_at")
                     .ok()
@@ -2736,7 +2911,9 @@ impl McpStore {
             }
         });
         let status_code = query.status_code.map(|value| value.max(0));
-        let is_cached = query.is_cached.map(|value| if value { 1_i64 } else { 0_i64 });
+        let is_cached = query
+            .is_cached
+            .map(|value| if value { 1_i64 } else { 0_i64 });
 
         let total_row = sqlx::query(
             r#"
@@ -2824,7 +3001,9 @@ impl McpStore {
             }
         });
         let status_code = query.status_code.map(|value| value.max(0));
-        let is_cached = query.is_cached.map(|value| if value { 1_i64 } else { 0_i64 });
+        let is_cached = query
+            .is_cached
+            .map(|value| if value { 1_i64 } else { 0_i64 });
 
         let total_row = sqlx::query(
             r#"
@@ -3003,6 +3182,633 @@ impl McpStore {
         })
     }
 
+    pub async fn get_local_knowledge_tree(
+        &self,
+        query: LocalKnowledgeTreeQuery,
+    ) -> Result<LocalKnowledgeTreeResponse, McpError> {
+        let parent_id = query.parent_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let keyword = query.q.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let sort_field = query
+            .sort_field
+            .unwrap_or_else(|| "created_at".to_string())
+            .trim()
+            .to_string();
+        let sort_direction = query
+            .sort_direction
+            .unwrap_or_else(|| "desc".to_string())
+            .trim()
+            .to_ascii_lowercase();
+        let keyword_like = keyword
+            .as_ref()
+            .map(|value| format!("%{}%", value.replace('%', "\\%").replace('_', "\\_")));
+
+        if let Some(parent) = parent_id.as_deref() {
+            let parent_row = sqlx::query(
+                r#"
+                SELECT id
+                FROM knowledge_folder
+                WHERE id = ? AND user_id = ?
+                LIMIT 1;
+                "#,
+            )
+            .bind(parent)
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            if parent_row.is_none() {
+                return Err(McpError::NotFound("knowledge folder not found".to_string()));
+            }
+        }
+
+        let folder_rows = sqlx::query(
+            r#"
+            SELECT
+              f.id, f.name, f.parent_id, f.created_at, f.updated_at,
+              COALESCE(fc.file_count, 0) AS file_count
+            FROM knowledge_folder f
+            LEFT JOIN (
+              SELECT folder_id, COUNT(*) AS file_count
+              FROM user_document
+              WHERE user_id = ?
+              GROUP BY folder_id
+            ) fc ON fc.folder_id = f.id
+            WHERE f.user_id = ?
+              AND ((? IS NULL AND f.parent_id IS NULL) OR f.parent_id = ?)
+              AND (? IS NULL OR f.name LIKE ? ESCAPE '\')
+            ORDER BY f.created_at DESC, f.id DESC;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(parent_id.as_deref())
+        .bind(parent_id.as_deref())
+        .bind(keyword_like.as_deref())
+        .bind(keyword_like.as_deref())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let file_rows = sqlx::query(
+            r#"
+            SELECT
+              id, filename, folder_id, status, error_message, chunk_count,
+              meta_info, created_at, updated_at
+            FROM user_document
+            WHERE user_id = ?
+              AND ((? IS NULL AND folder_id IS NULL) OR folder_id = ?)
+              AND (? IS NULL OR filename LIKE ? ESCAPE '\')
+            ORDER BY created_at DESC, id DESC;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(parent_id.as_deref())
+        .bind(parent_id.as_deref())
+        .bind(keyword_like.as_deref())
+        .bind(keyword_like.as_deref())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut folders = Vec::with_capacity(folder_rows.len());
+        for row in folder_rows {
+            folders.push(LocalKnowledgeFolder {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                parent_id: row.try_get("parent_id")?,
+                file_count: row.try_get::<i64, _>("file_count").unwrap_or(0),
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
+            });
+        }
+
+        let mut files = Vec::with_capacity(file_rows.len());
+        for row in file_rows {
+            files.push(row_to_local_knowledge_file(&row)?);
+        }
+
+        sort_local_knowledge_folders(&mut folders, &sort_field, &sort_direction);
+        sort_local_knowledge_files(&mut files, &sort_field, &sort_direction);
+
+        let mut breadcrumb = vec![LocalKnowledgeBreadcrumbItem {
+            id: None,
+            name: "All Files".to_string(),
+        }];
+        if let Some(current_parent_id) = parent_id {
+            let mut chain = Vec::new();
+            let mut cursor = Some(current_parent_id);
+            while let Some(folder_id) = cursor {
+                let row = sqlx::query(
+                    r#"
+                    SELECT id, name, parent_id
+                    FROM knowledge_folder
+                    WHERE id = ? AND user_id = ?
+                    LIMIT 1;
+                    "#,
+                )
+                .bind(&folder_id)
+                .bind(LOCAL_DESKTOP_USER_ID)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+                let Some(row) = row else {
+                    break;
+                };
+                let id: String = row.try_get("id")?;
+                chain.push(LocalKnowledgeBreadcrumbItem {
+                    id: Some(id),
+                    name: row.try_get("name")?,
+                });
+                cursor = row.try_get("parent_id")?;
+            }
+            chain.reverse();
+            breadcrumb.extend(chain);
+        }
+
+        Ok(LocalKnowledgeTreeResponse {
+            folders,
+            files,
+            breadcrumb,
+        })
+    }
+
+    pub async fn get_local_knowledge_stats(&self) -> Result<LocalKnowledgeStatsResponse, McpError> {
+        let file_row = sqlx::query(
+            r#"
+            SELECT
+              COUNT(*) AS total_files,
+              COALESCE(SUM(chunk_count), 0) AS total_vectors,
+              COALESCE(SUM(CAST(json_extract(meta_info, '$.size') AS INTEGER)), 0) AS used_bytes
+            FROM user_document
+            WHERE user_id = ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let folder_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total_folders
+            FROM knowledge_folder
+            WHERE user_id = ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let used_bytes = file_row.try_get::<i64, _>("used_bytes").unwrap_or(0).max(0);
+        let total_vectors = file_row
+            .try_get::<i64, _>("total_vectors")
+            .unwrap_or(0)
+            .max(0);
+        let total_files = file_row
+            .try_get::<i64, _>("total_files")
+            .unwrap_or(0)
+            .max(0);
+        let total_folders = folder_row
+            .try_get::<i64, _>("total_folders")
+            .unwrap_or(0)
+            .max(0);
+        let total_bytes = used_bytes.max(LOCAL_KNOWLEDGE_TOTAL_BYTES);
+
+        Ok(LocalKnowledgeStatsResponse {
+            used_bytes,
+            total_bytes,
+            total_vectors,
+            total_files,
+            total_folders,
+        })
+    }
+
+    pub async fn create_local_knowledge_folder(
+        &self,
+        payload: CreateLocalKnowledgeFolderRequest,
+    ) -> Result<LocalKnowledgeFolder, McpError> {
+        let name = payload.name.trim().to_string();
+        if name.is_empty() {
+            return Err(McpError::validation("folder name is required"));
+        }
+        let parent_id = payload.parent_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+
+        if let Some(parent) = parent_id.as_deref() {
+            let parent_row = sqlx::query(
+                r#"
+                SELECT id
+                FROM knowledge_folder
+                WHERE id = ? AND user_id = ?
+                LIMIT 1;
+                "#,
+            )
+            .bind(parent)
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            if parent_row.is_none() {
+                return Err(McpError::NotFound("parent folder not found".to_string()));
+            }
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            INSERT INTO knowledge_folder (id, user_id, parent_id, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(&id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(parent_id.as_deref())
+        .bind(name)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_local_knowledge_folder_by_id(&id).await
+    }
+
+    pub async fn update_local_knowledge_folder(
+        &self,
+        folder_id: &str,
+        payload: UpdateLocalKnowledgeFolderRequest,
+    ) -> Result<LocalKnowledgeFolder, McpError> {
+        let normalized_id = folder_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("folder_id is required"));
+        }
+        let name = payload.name.trim().to_string();
+        if name.is_empty() {
+            return Err(McpError::validation("folder name is required"));
+        }
+
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE knowledge_folder
+            SET name = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(name)
+        .bind(&now)
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound("knowledge folder not found".to_string()));
+        }
+        self.get_local_knowledge_folder_by_id(&normalized_id).await
+    }
+
+    pub async fn delete_local_knowledge_folder(
+        &self,
+        folder_id: &str,
+        recursive: bool,
+    ) -> Result<(), McpError> {
+        let normalized_id = folder_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("folder_id is required"));
+        }
+
+        let exists = sqlx::query(
+            r#"
+            SELECT id
+            FROM knowledge_folder
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        if exists.is_none() {
+            return Err(McpError::NotFound("knowledge folder not found".to_string()));
+        }
+
+        if !recursive {
+            let child_row = sqlx::query(
+                r#"
+                SELECT COUNT(*) AS total
+                FROM knowledge_folder
+                WHERE user_id = ? AND parent_id = ?;
+                "#,
+            )
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .bind(&normalized_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            let child_count = child_row.try_get::<i64, _>("total").unwrap_or(0);
+            if child_count > 0 {
+                return Err(McpError::validation(
+                    "folder has children; use recursive delete".to_string(),
+                ));
+            }
+
+            let file_row = sqlx::query(
+                r#"
+                SELECT COUNT(*) AS total
+                FROM user_document
+                WHERE user_id = ? AND folder_id = ?;
+                "#,
+            )
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .bind(&normalized_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            let file_count = file_row.try_get::<i64, _>("total").unwrap_or(0);
+            if file_count > 0 {
+                return Err(McpError::validation(
+                    "folder contains files; use recursive delete".to_string(),
+                ));
+            }
+
+            sqlx::query(
+                r#"
+                DELETE FROM knowledge_folder
+                WHERE id = ? AND user_id = ?;
+                "#,
+            )
+            .bind(&normalized_id)
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            return Ok(());
+        }
+
+        sqlx::query(
+            r#"
+            DELETE FROM user_document
+            WHERE user_id = ?
+              AND folder_id IN (
+                WITH RECURSIVE subtree(id) AS (
+                  SELECT id FROM knowledge_folder WHERE id = ? AND user_id = ?
+                  UNION ALL
+                  SELECT f.id
+                  FROM knowledge_folder f
+                  INNER JOIN subtree s ON f.parent_id = s.id
+                  WHERE f.user_id = ?
+                )
+                SELECT id FROM subtree
+              );
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            DELETE FROM knowledge_folder
+            WHERE id = ? AND user_id = ?;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(())
+    }
+
+    pub async fn list_local_user_documents(
+        &self,
+        query: LocalUserDocumentListQuery,
+    ) -> Result<Vec<LocalKnowledgeFile>, McpError> {
+        let folder_id = query.folder_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let status = query.status.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let keyword = query.q.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let keyword_like = keyword
+            .as_ref()
+            .map(|value| format!("%{}%", value.replace('%', "\\%").replace('_', "\\_")));
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              id, filename, folder_id, status, error_message, chunk_count,
+              meta_info, created_at, updated_at
+            FROM user_document
+            WHERE user_id = ?
+              AND ((? IS NULL AND folder_id IS NULL) OR folder_id = ?)
+              AND (? IS NULL OR status = ?)
+              AND (? IS NULL OR filename LIKE ? ESCAPE '\')
+            ORDER BY created_at DESC, id DESC;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(folder_id.as_deref())
+        .bind(folder_id.as_deref())
+        .bind(status.as_deref())
+        .bind(status.as_deref())
+        .bind(keyword_like.as_deref())
+        .bind(keyword_like.as_deref())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut files = Vec::with_capacity(rows.len());
+        for row in rows {
+            files.push(row_to_local_knowledge_file(&row)?);
+        }
+        Ok(files)
+    }
+
+    pub async fn create_local_user_document(
+        &self,
+        payload: CreateLocalUserDocumentRequest,
+    ) -> Result<LocalKnowledgeFile, McpError> {
+        let filename = payload.filename.trim().to_string();
+        if filename.is_empty() {
+            return Err(McpError::validation("filename is required"));
+        }
+        let folder_id = payload.folder_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        if let Some(folder) = folder_id.as_deref() {
+            let parent_row = sqlx::query(
+                r#"
+                SELECT id
+                FROM knowledge_folder
+                WHERE id = ? AND user_id = ?
+                LIMIT 1;
+                "#,
+            )
+            .bind(folder)
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            if parent_row.is_none() {
+                return Err(McpError::NotFound("folder not found".to_string()));
+            }
+        }
+
+        let status = normalize_storage_document_status(payload.status.as_deref());
+        let media_asset_id = payload
+            .media_asset_id
+            .and_then(|value| {
+                let trimmed = value.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let chunk_count = payload.chunk_count.unwrap_or(0).max(0);
+        let meta_info = payload.meta_info.unwrap_or_else(|| serde_json::json!({}));
+        let meta_info_text = serde_json::to_string(&meta_info)?;
+        let now = now_rfc3339()?;
+        let id = Uuid::new_v4().to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO user_document (
+              id, user_id, media_asset_id, filename, folder_id, status, error_message,
+              chunk_count, embedding_model, meta_info, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(&id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(media_asset_id)
+        .bind(filename)
+        .bind(folder_id.as_deref())
+        .bind(status)
+        .bind(payload.error_message)
+        .bind(chunk_count)
+        .bind(payload.embedding_model)
+        .bind(meta_info_text)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let row = sqlx::query(
+            r#"
+            SELECT
+              id, filename, folder_id, status, error_message, chunk_count,
+              meta_info, created_at, updated_at
+            FROM user_document
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        row_to_local_knowledge_file(&row)
+    }
+
+    async fn get_local_knowledge_folder_by_id(
+        &self,
+        folder_id: &str,
+    ) -> Result<LocalKnowledgeFolder, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+              f.id, f.name, f.parent_id, f.created_at, f.updated_at,
+              COALESCE(fc.file_count, 0) AS file_count
+            FROM knowledge_folder f
+            LEFT JOIN (
+              SELECT folder_id, COUNT(*) AS file_count
+              FROM user_document
+              WHERE user_id = ?
+              GROUP BY folder_id
+            ) fc ON fc.folder_id = f.id
+            WHERE f.id = ? AND f.user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(folder_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let Some(row) = row else {
+            return Err(McpError::NotFound("knowledge folder not found".to_string()));
+        };
+
+        Ok(LocalKnowledgeFolder {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            parent_id: row.try_get("parent_id")?,
+            file_count: row.try_get::<i64, _>("file_count").unwrap_or(0),
+            created_at: row.try_get("created_at")?,
+            updated_at: row.try_get("updated_at")?,
+        })
+    }
+
     pub async fn list_local_admin_conversations(
         &self,
         query: LocalAdminConversationQuery,
@@ -3025,19 +3831,63 @@ impl McpStore {
                 Some(trimmed)
             }
         });
+        let user_id = query.user_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let assistant_id = query.assistant_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let start_time = query.start_time.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let end_time = query.end_time.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
 
         let total_row = sqlx::query(
             r#"
             SELECT COUNT(*) AS total
             FROM conversation_session
             WHERE (? IS NULL OR status = ?)
-              AND (? IS NULL OR channel = ?);
+              AND (? IS NULL OR channel = ?)
+              AND (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR assistant_id = ?)
+              AND (? IS NULL OR last_active_at >= ?)
+              AND (? IS NULL OR last_active_at <= ?);
             "#,
         )
         .bind(status.as_deref())
         .bind(status.as_deref())
         .bind(channel.as_deref())
         .bind(channel.as_deref())
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(assistant_id.as_deref())
+        .bind(assistant_id.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_one(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -3047,10 +3897,15 @@ impl McpStore {
             r#"
             SELECT
               id, title, user_id, assistant_id, channel, status,
-              message_count, last_active_at, last_summary_version
+              message_count, first_message_at, last_active_at, last_summary_version,
+              created_at, updated_at
             FROM conversation_session
             WHERE (? IS NULL OR status = ?)
               AND (? IS NULL OR channel = ?)
+              AND (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR assistant_id = ?)
+              AND (? IS NULL OR last_active_at >= ?)
+              AND (? IS NULL OR last_active_at <= ?)
             ORDER BY last_active_at DESC, id DESC
             LIMIT ? OFFSET ?;
             "#,
@@ -3059,6 +3914,14 @@ impl McpStore {
         .bind(status.as_deref())
         .bind(channel.as_deref())
         .bind(channel.as_deref())
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(assistant_id.as_deref())
+        .bind(assistant_id.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .bind(limit)
         .bind(skip)
         .fetch_all(&self.pool)
@@ -3075,12 +3938,155 @@ impl McpStore {
                 channel: row.try_get::<String, _>("channel")?,
                 status: row.try_get::<String, _>("status")?,
                 message_count: row.try_get::<i64, _>("message_count").unwrap_or(0),
+                first_message_at: row.try_get("first_message_at")?,
                 last_active_at: row.try_get("last_active_at")?,
                 last_summary_version: row.try_get::<i64, _>("last_summary_version").unwrap_or(0),
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
             });
         }
 
         Ok(LocalAdminConversationListResponse {
+            total,
+            skip,
+            limit,
+            items,
+        })
+    }
+
+    pub async fn get_local_admin_conversation(
+        &self,
+        session_id: &str,
+    ) -> Result<LocalAdminConversationItem, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT
+              id, title, user_id, assistant_id, channel, status,
+              message_count, first_message_at, last_active_at, last_summary_version,
+              created_at, updated_at
+            FROM conversation_session
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .ok_or_else(|| McpError::NotFound("conversation session not found".to_string()))?;
+
+        Ok(LocalAdminConversationItem {
+            id: row.try_get("id")?,
+            title: row.try_get("title")?,
+            user_id: row.try_get("user_id")?,
+            assistant_id: row.try_get("assistant_id")?,
+            channel: row.try_get::<String, _>("channel")?,
+            status: row.try_get::<String, _>("status")?,
+            message_count: row.try_get::<i64, _>("message_count").unwrap_or(0),
+            first_message_at: row.try_get("first_message_at")?,
+            last_active_at: row.try_get("last_active_at")?,
+            last_summary_version: row.try_get::<i64, _>("last_summary_version").unwrap_or(0),
+            created_at: row.try_get("created_at")?,
+            updated_at: row.try_get("updated_at")?,
+        })
+    }
+
+    pub async fn list_local_admin_conversation_messages(
+        &self,
+        session_id: &str,
+        query: LocalAdminConversationMessageQuery,
+    ) -> Result<LocalAdminConversationMessageListResponse, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+        let skip = query.skip.unwrap_or(0).max(0);
+        let limit = query.limit.unwrap_or(50).clamp(1, 200);
+        let include_deleted = query.include_deleted.unwrap_or(true);
+        let include_deleted_flag = if include_deleted { 1_i64 } else { 0_i64 };
+
+        let session_exists = sqlx::query(
+            r#"
+            SELECT id
+            FROM conversation_session
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        if session_exists.is_none() {
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
+        }
+
+        let total_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM conversation_message
+            WHERE session_id = ?
+              AND (? = 1 OR is_deleted = 0);
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .bind(include_deleted_flag)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let total: i64 = total_row.try_get("total")?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              id, session_id, turn_index, role, content, name, token_estimate, meta_info,
+              used_persona_id, is_deleted, parent_message_id, created_at, updated_at
+            FROM conversation_message
+            WHERE session_id = ?
+              AND (? = 1 OR is_deleted = 0)
+            ORDER BY turn_index ASC
+            LIMIT ? OFFSET ?;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .bind(include_deleted_flag)
+        .bind(limit)
+        .bind(skip)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            let meta_info_text: Option<String> = row.try_get("meta_info")?;
+            items.push(LocalAdminConversationMessageItem {
+                id: row.try_get("id")?,
+                session_id: row.try_get("session_id")?,
+                turn_index: row.try_get("turn_index")?,
+                role: row.try_get("role")?,
+                content: row.try_get("content")?,
+                name: row.try_get("name")?,
+                token_estimate: row.try_get::<i64, _>("token_estimate").unwrap_or(0),
+                meta_info: match meta_info_text {
+                    Some(text) if !text.trim().is_empty() => serde_json::from_str(&text).ok(),
+                    _ => None,
+                },
+                used_persona_id: row.try_get("used_persona_id")?,
+                is_deleted: row.try_get::<i64, _>("is_deleted").unwrap_or(0) != 0,
+                parent_message_id: row.try_get("parent_message_id")?,
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
+            });
+        }
+
+        Ok(LocalAdminConversationMessageListResponse {
             total,
             skip,
             limit,
@@ -3149,6 +4155,384 @@ impl McpStore {
         Ok(LocalAdminConversationSummaryListResponse { items })
     }
 
+    pub async fn list_local_conversation_summary_jobs(
+        &self,
+        query: LocalConversationSummaryJobQuery,
+    ) -> Result<LocalConversationSummaryJobListResponse, McpError> {
+        let skip = query.skip.unwrap_or(0).max(0);
+        let limit = query.limit.unwrap_or(100).clamp(1, 1000);
+        let status = query.status.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let session_id = query.session_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let error_contains = query.error_contains.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let error_like = error_contains
+            .as_ref()
+            .map(|value| format!("%{}%", value.replace('%', "\\%").replace('_', "\\_")));
+
+        let total_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM conversation_summary_job
+            WHERE (? IS NULL OR status = ?)
+              AND (? IS NULL OR session_id = ?)
+              AND (? IS NULL OR (last_error IS NOT NULL AND last_error LIKE ? ESCAPE '\'));
+            "#,
+        )
+        .bind(status.as_deref())
+        .bind(status.as_deref())
+        .bind(session_id.as_deref())
+        .bind(session_id.as_deref())
+        .bind(error_like.as_deref())
+        .bind(error_like.as_deref())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let total: i64 = total_row.try_get("total")?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              id, session_id, status, trigger_source, attempts, max_attempts,
+              available_after_epoch, last_error, created_at, updated_at
+            FROM conversation_summary_job
+            WHERE (? IS NULL OR status = ?)
+              AND (? IS NULL OR session_id = ?)
+              AND (? IS NULL OR (last_error IS NOT NULL AND last_error LIKE ? ESCAPE '\'))
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ? OFFSET ?;
+            "#,
+        )
+        .bind(status.as_deref())
+        .bind(status.as_deref())
+        .bind(session_id.as_deref())
+        .bind(session_id.as_deref())
+        .bind(error_like.as_deref())
+        .bind(error_like.as_deref())
+        .bind(limit)
+        .bind(skip)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            items.push(LocalConversationSummaryJobItem {
+                id: row.try_get("id")?,
+                session_id: row.try_get("session_id")?,
+                status: row.try_get("status")?,
+                trigger_source: row.try_get("trigger_source")?,
+                attempts: row.try_get::<i64, _>("attempts").unwrap_or(0),
+                max_attempts: row
+                    .try_get::<i64, _>("max_attempts")
+                    .unwrap_or(CONVERSATION_SUMMARY_JOB_MAX_ATTEMPTS),
+                available_after_epoch: row.try_get::<i64, _>("available_after_epoch").unwrap_or(0),
+                last_error: row.try_get("last_error")?,
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
+            });
+        }
+
+        Ok(LocalConversationSummaryJobListResponse {
+            total,
+            skip,
+            limit,
+            items,
+        })
+    }
+
+    pub async fn list_local_conversation_summary_idle_tasks(
+        &self,
+        query: LocalConversationSummaryIdleTaskQuery,
+    ) -> Result<LocalConversationSummaryIdleTaskListResponse, McpError> {
+        let skip = query.skip.unwrap_or(0).max(0);
+        let limit = query.limit.unwrap_or(100).clamp(1, 1000);
+        let session_id = query.session_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let now_epoch = now_unix_epoch()?;
+
+        let total_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM conversation_summary_idle_task
+            WHERE (? IS NULL OR session_id = ?);
+            "#,
+        )
+        .bind(session_id.as_deref())
+        .bind(session_id.as_deref())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let total: i64 = total_row.try_get("total")?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              session_id, last_active_epoch, run_after_epoch, created_at, updated_at
+            FROM conversation_summary_idle_task
+            WHERE (? IS NULL OR session_id = ?)
+            ORDER BY run_after_epoch ASC, session_id ASC
+            LIMIT ? OFFSET ?;
+            "#,
+        )
+        .bind(session_id.as_deref())
+        .bind(session_id.as_deref())
+        .bind(limit)
+        .bind(skip)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            let run_after_epoch = row.try_get::<i64, _>("run_after_epoch").unwrap_or(0);
+            items.push(LocalConversationSummaryIdleTaskItem {
+                session_id: row.try_get("session_id")?,
+                last_active_epoch: row.try_get::<i64, _>("last_active_epoch").unwrap_or(0),
+                run_after_epoch,
+                is_due: run_after_epoch <= now_epoch,
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
+            });
+        }
+
+        Ok(LocalConversationSummaryIdleTaskListResponse {
+            total,
+            skip,
+            limit,
+            items,
+        })
+    }
+
+    pub async fn get_local_conversation_summary_queue_stats(
+        &self,
+    ) -> Result<LocalConversationSummaryQueueStats, McpError> {
+        let now_epoch = now_unix_epoch()?;
+        let job_row = sqlx::query(
+            r#"
+            SELECT
+              SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending_jobs,
+              SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS running_jobs,
+              SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS completed_jobs,
+              SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed_jobs
+            FROM conversation_summary_job;
+            "#,
+        )
+        .bind(CONVERSATION_SUMMARY_JOB_STATUS_PENDING)
+        .bind(CONVERSATION_SUMMARY_JOB_STATUS_RUNNING)
+        .bind(CONVERSATION_SUMMARY_JOB_STATUS_COMPLETED)
+        .bind(CONVERSATION_SUMMARY_JOB_STATUS_FAILED)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let pending_jobs = job_row
+            .try_get::<Option<i64>, _>("pending_jobs")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+        let running_jobs = job_row
+            .try_get::<Option<i64>, _>("running_jobs")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+        let completed_jobs = job_row
+            .try_get::<Option<i64>, _>("completed_jobs")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+        let failed_jobs = job_row
+            .try_get::<Option<i64>, _>("failed_jobs")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+
+        let idle_row = sqlx::query(
+            r#"
+            SELECT
+              COUNT(*) AS idle_total_tasks,
+              SUM(CASE WHEN run_after_epoch <= ? THEN 1 ELSE 0 END) AS idle_due_tasks
+            FROM conversation_summary_idle_task;
+            "#,
+        )
+        .bind(now_epoch)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let idle_total_tasks = idle_row
+            .try_get::<Option<i64>, _>("idle_total_tasks")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+        let idle_due_tasks = idle_row
+            .try_get::<Option<i64>, _>("idle_due_tasks")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+
+        Ok(LocalConversationSummaryQueueStats {
+            pending_jobs,
+            running_jobs,
+            completed_jobs,
+            failed_jobs,
+            idle_due_tasks,
+            idle_total_tasks,
+        })
+    }
+
+    pub async fn trigger_local_conversation_summary_job(
+        &self,
+        session_id: &str,
+    ) -> Result<LocalConversationSummaryEnqueueResponse, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        self.enqueue_local_conversation_summary_job(&normalized_session_id, "manual_trigger")
+            .await?;
+
+        Ok(LocalConversationSummaryEnqueueResponse {
+            session_id: normalized_session_id,
+            queued: true,
+        })
+    }
+
+    pub async fn retry_local_conversation_summary_job(
+        &self,
+        job_id: &str,
+    ) -> Result<LocalConversationSummaryEnqueueResponse, McpError> {
+        let normalized_job_id = job_id.trim().to_string();
+        if normalized_job_id.is_empty() {
+            return Err(McpError::validation("job_id is required"));
+        }
+
+        let job_row = sqlx::query(
+            r#"
+            SELECT session_id, status
+            FROM conversation_summary_job
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .ok_or_else(|| McpError::NotFound("conversation summary job not found".to_string()))?;
+
+        let session_id: String = job_row.try_get("session_id")?;
+        let status: String = job_row.try_get("status")?;
+        if status == CONVERSATION_SUMMARY_JOB_STATUS_RUNNING {
+            return Err(McpError::validation(
+                "conversation summary job is running and cannot be retried".to_string(),
+            ));
+        }
+
+        self.enqueue_local_conversation_summary_job(&session_id, "manual_retry")
+            .await?;
+
+        Ok(LocalConversationSummaryEnqueueResponse {
+            session_id,
+            queued: true,
+        })
+    }
+
+    pub async fn retry_local_conversation_summary_jobs(
+        &self,
+        payload: LocalConversationSummaryBatchRetryRequest,
+    ) -> Result<LocalConversationSummaryBatchRetryResponse, McpError> {
+        let limit = payload.limit.unwrap_or(200).clamp(1, 1000);
+        let status = payload.status.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let session_id = payload.session_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let error_contains = payload.error_contains.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let error_like = error_contains
+            .as_ref()
+            .map(|value| format!("%{}%", value.replace('%', "\\%").replace('_', "\\_")));
+        let default_status = CONVERSATION_SUMMARY_JOB_STATUS_FAILED;
+        let status_filter = status.as_deref().unwrap_or(default_status);
+
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT session_id
+            FROM conversation_summary_job
+            WHERE status = ?
+              AND (? IS NULL OR session_id = ?)
+              AND (? IS NULL OR (last_error IS NOT NULL AND last_error LIKE ? ESCAPE '\'))
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?;
+            "#,
+        )
+        .bind(status_filter)
+        .bind(session_id.as_deref())
+        .bind(session_id.as_deref())
+        .bind(error_like.as_deref())
+        .bind(error_like.as_deref())
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let matched_count = i64::try_from(rows.len()).unwrap_or(i64::MAX);
+        let mut queued_count = 0_i64;
+        for row in rows {
+            let target_session_id: String = row.try_get("session_id")?;
+            self.enqueue_local_conversation_summary_job(&target_session_id, "manual_retry_batch")
+                .await?;
+            queued_count = queued_count.saturating_add(1);
+        }
+
+        Ok(LocalConversationSummaryBatchRetryResponse {
+            matched_count,
+            queued_count,
+        })
+    }
+
     pub async fn get_local_trace_feedback_meta_by_trace_id(
         &self,
         trace_id: &str,
@@ -3215,10 +4599,30 @@ impl McpStore {
     pub async fn get_local_assistant(&self, id: &str) -> Result<Option<LocalAssistant>, McpError> {
         let row = sqlx::query(
             r#"
-            SELECT id, name, description, avatar, system_prompt, model_config, tags,
-                   visibility, source, cloud_id, is_deleted, created_at, updated_at
-            FROM assistants
-            WHERE id = ?
+            SELECT
+              a.id,
+              COALESCE(av.name, 'Assistant') AS name,
+              COALESCE(av.description, a.summary) AS description,
+              a.icon_id AS avatar,
+              COALESCE(av.system_prompt, '') AS system_prompt,
+              av.model_config AS model_config,
+              av.tags AS tags,
+              a.visibility AS visibility,
+              'local' AS source,
+              NULL AS cloud_id,
+              CASE WHEN a.status = 'archived' THEN 1 ELSE 0 END AS is_deleted,
+              a.created_at AS created_at,
+              a.updated_at AS updated_at
+            FROM assistant a
+            LEFT JOIN assistant_version av
+              ON av.id = (
+                SELECT v.id
+                FROM assistant_version v
+                WHERE v.assistant_id = a.id
+                ORDER BY v.created_at DESC, v.id DESC
+                LIMIT 1
+              )
+            WHERE a.id = ?
             LIMIT 1;
             "#,
         )
@@ -4401,7 +5805,9 @@ impl McpStore {
         .fetch_one(&mut *tx)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
-        let window_tokens = window_tokens_row.try_get::<i64, _>("total_tokens").unwrap_or(0);
+        let window_tokens = window_tokens_row
+            .try_get::<i64, _>("total_tokens")
+            .unwrap_or(0);
 
         sqlx::query(
             r#"
@@ -4501,12 +5907,12 @@ impl McpStore {
             return Err(McpError::validation("conversation has no messages"));
         }
 
-        let first_row = message_rows
-            .first()
-            .ok_or_else(|| McpError::Storage("conversation summary missing first row".to_string()))?;
-        let last_row = message_rows
-            .last()
-            .ok_or_else(|| McpError::Storage("conversation summary missing last row".to_string()))?;
+        let first_row = message_rows.first().ok_or_else(|| {
+            McpError::Storage("conversation summary missing first row".to_string())
+        })?;
+        let last_row = message_rows.last().ok_or_else(|| {
+            McpError::Storage("conversation summary missing last row".to_string())
+        })?;
 
         let start_message_id: String = first_row.try_get("id")?;
         let end_message_id: String = last_row.try_get("id")?;
@@ -4864,7 +6270,10 @@ impl McpStore {
         }))
     }
 
-    pub async fn complete_local_conversation_summary_job(&self, job_id: &str) -> Result<(), McpError> {
+    pub async fn complete_local_conversation_summary_job(
+        &self,
+        job_id: &str,
+    ) -> Result<(), McpError> {
         let normalized_job_id = job_id.trim().to_string();
         if normalized_job_id.is_empty() {
             return Err(McpError::validation("job_id is required"));
@@ -5123,7 +6532,8 @@ impl McpStore {
                 continue;
             }
 
-            if now_epoch.saturating_sub(last_active_epoch) < LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS {
+            if now_epoch.saturating_sub(last_active_epoch) < LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS
+            {
                 continue;
             }
 
@@ -5186,15 +6596,19 @@ impl McpStore {
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
                 if let Some(covered_row) = covered_row {
-                    let covered_to_turn = covered_row.try_get::<i64, _>("covered_to_turn").unwrap_or(0);
+                    let covered_to_turn = covered_row
+                        .try_get::<i64, _>("covered_to_turn")
+                        .unwrap_or(0);
                     if covered_to_turn >= last_turn {
                         continue;
                     }
                 }
             }
 
-            let last_summary_generated_at: Option<String> =
-                session_row.try_get("last_summary_generated_at").ok().flatten();
+            let last_summary_generated_at: Option<String> = session_row
+                .try_get("last_summary_generated_at")
+                .ok()
+                .flatten();
             if let Some(last_summary_generated_at) = last_summary_generated_at {
                 if let Some(last_summary_epoch) =
                     parse_rfc3339_to_unix_epoch(last_summary_generated_at.as_str())
@@ -5226,7 +6640,9 @@ impl McpStore {
             return Err(McpError::validation("task_name is required"));
         }
         if interval_seconds <= 0 {
-            return Err(McpError::validation("interval_seconds must be greater than 0"));
+            return Err(McpError::validation(
+                "interval_seconds must be greater than 0",
+            ));
         }
 
         let now = now_rfc3339()?;
@@ -5291,7 +6707,10 @@ impl McpStore {
         };
 
         let task_name: String = row.try_get("task_name")?;
-        let interval_seconds = row.try_get::<i64, _>("interval_seconds").unwrap_or(60).max(1);
+        let interval_seconds = row
+            .try_get::<i64, _>("interval_seconds")
+            .unwrap_or(60)
+            .max(1);
         let next_run_after_epoch = now_epoch.saturating_add(interval_seconds);
 
         let result = sqlx::query(
@@ -5779,7 +7198,9 @@ impl McpStore {
         updated_at: &str,
     ) -> Result<(), McpError> {
         let raw_tags: Vec<String> = match tags_json {
-            Some(value) if !value.trim().is_empty() => serde_json::from_str(value).unwrap_or_default(),
+            Some(value) if !value.trim().is_empty() => {
+                serde_json::from_str(value).unwrap_or_default()
+            }
             _ => Vec::new(),
         };
         let normalized = normalize_assistant_tag_names(raw_tags);
@@ -6233,6 +7654,138 @@ pub struct LocalConversationChatContext {
     pub session_id: String,
     pub assistant_id: Option<String>,
     pub messages: Vec<LocalChatInputMessage>,
+}
+
+fn row_to_local_knowledge_file(row: &SqliteRow) -> Result<LocalKnowledgeFile, McpError> {
+    let filename: String = row.try_get("filename")?;
+    let status_raw: String = row.try_get("status")?;
+    let chunk_count = row.try_get::<i64, _>("chunk_count").unwrap_or(0).max(0);
+    let meta_info_text: String = row.try_get("meta_info")?;
+    let meta_info = if meta_info_text.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str::<serde_json::Value>(&meta_info_text)
+            .unwrap_or_else(|_| serde_json::json!({}))
+    };
+
+    let file_type = meta_info
+        .get("file_type")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| infer_file_type_from_filename(&filename));
+    let size = meta_info
+        .get("size")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0)
+        .max(0);
+
+    Ok(LocalKnowledgeFile {
+        id: row.try_get("id")?,
+        name: filename,
+        file_type,
+        size,
+        status: normalize_local_document_status(&status_raw).to_string(),
+        chunks: Some(chunk_count),
+        error_message: row.try_get("error_message")?,
+        folder_id: row.try_get("folder_id")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn infer_file_type_from_filename(filename: &str) -> String {
+    let lower = filename.trim().to_ascii_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or_default();
+    match ext {
+        "pdf" => "pdf".to_string(),
+        "docx" => "docx".to_string(),
+        "txt" => "txt".to_string(),
+        "md" => "md".to_string(),
+        "csv" => "csv".to_string(),
+        "xlsx" => "xlsx".to_string(),
+        "html" | "htm" => "html".to_string(),
+        "json" => "json".to_string(),
+        _ => "txt".to_string(),
+    }
+}
+
+fn normalize_local_document_status(status: &str) -> &'static str {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "active" | "indexed" | "success" => "active",
+        "processing" | "pending" | "running" => "processing",
+        "failed" | "error" => "failed",
+        _ => "processing",
+    }
+}
+
+fn normalize_storage_document_status(status: Option<&str>) -> &'static str {
+    match status
+        .map(|value| value.trim().to_ascii_lowercase())
+        .unwrap_or_else(|| "processing".to_string())
+        .as_str()
+    {
+        "active" | "indexed" | "success" => "indexed",
+        "failed" | "error" => "failed",
+        "processing" | "pending" | "running" => "processing",
+        _ => "processing",
+    }
+}
+
+fn sort_local_knowledge_folders(
+    folders: &mut [LocalKnowledgeFolder],
+    sort_field: &str,
+    sort_direction: &str,
+) {
+    folders.sort_by(|left, right| {
+        let base = match sort_field {
+            "name" => left
+                .name
+                .to_ascii_lowercase()
+                .cmp(&right.name.to_ascii_lowercase()),
+            _ => left.created_at.cmp(&right.created_at),
+        };
+        if sort_direction == "asc" {
+            base
+        } else {
+            reverse_ordering(base)
+        }
+    });
+}
+
+fn sort_local_knowledge_files(
+    files: &mut [LocalKnowledgeFile],
+    sort_field: &str,
+    sort_direction: &str,
+) {
+    files.sort_by(|left, right| {
+        let base = match sort_field {
+            "name" => left
+                .name
+                .to_ascii_lowercase()
+                .cmp(&right.name.to_ascii_lowercase()),
+            "size" => left.size.cmp(&right.size),
+            "status" => left
+                .status
+                .to_ascii_lowercase()
+                .cmp(&right.status.to_ascii_lowercase()),
+            "chunks" => left.chunks.unwrap_or(0).cmp(&right.chunks.unwrap_or(0)),
+            _ => left.created_at.cmp(&right.created_at),
+        };
+        if sort_direction == "asc" {
+            base
+        } else {
+            reverse_ordering(base)
+        }
+    });
+}
+
+fn reverse_ordering(value: Ordering) -> Ordering {
+    match value {
+        Ordering::Less => Ordering::Greater,
+        Ordering::Greater => Ordering::Less,
+        Ordering::Equal => Ordering::Equal,
+    }
 }
 
 fn row_to_source(row: &SqliteRow) -> Result<McpSource, McpError> {
