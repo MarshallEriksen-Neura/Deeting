@@ -1,0 +1,17 @@
+{
+  "id": "official.skills.skill_manager",
+  "name": "Skill Manager",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Autonomous skill installer and local environment manager. Supports git clone and symlinking.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "fs.write",
+    "shell.execute"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

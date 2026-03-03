@@ -5,6 +5,7 @@ from sqlalchemy.pool import StaticPool
 from uuid import uuid4
 
 from app.models import Base
+from app.core.config import settings
 from app.models.monitor import MonitorExecutionLog, MonitorStatus, MonitorTask
 from app.models.user import User
 from app.repositories.monitor_repository import MonitorTaskRepository
@@ -87,6 +88,21 @@ async def test_invalid_cron_fails(async_session: AsyncSession):
             title="非法 Cron",
             objective="监控目标",
             cron_expr="not-a-cron",
+        )
+
+
+@pytest.mark.asyncio
+async def test_too_frequent_cron_fails(async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch):
+    user = await _create_user(async_session, "monitor_user_cron_freq@example.com")
+    service = MonitorService(async_session)
+    monkeypatch.setattr(settings, "MONITOR_MIN_CLOUD_INTERVAL_MINUTES", 10, raising=False)
+
+    with pytest.raises(ValueError, match="Cron 频率过高"):
+        await service.create_task(
+            user_id=user.id,
+            title="过高频率 Cron",
+            objective="监控目标",
+            cron_expr="*/1 * * * *",
         )
 
 

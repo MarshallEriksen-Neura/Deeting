@@ -1,4 +1,5 @@
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -124,9 +125,27 @@ async def test_search_tools_reranks_skill_hits(monkeypatch):
 
     monkeypatch.setattr(service, "_search_system", fake_search_system)
     monkeypatch.setattr(service, "_search_skills", fake_search_skills)
+    skill_tools = {"a": "tool_from_a", "b": "tool_from_b"}
+
+    async def fake_get_by_id(_self, skill_id: str):
+        tool_name = skill_tools.get(str(skill_id))
+        if not tool_name:
+            return None
+        return SimpleNamespace(
+            id=str(skill_id),
+            runtime="opensandbox",
+            source_repo="https://github.com/org/repo",
+            manifest_json={"tools": [{"name": tool_name, "description": tool_name}]},
+        )
+
+    monkeypatch.setattr(
+        "app.repositories.skill_registry_repository.SkillRegistryRepository.get_by_id",
+        fake_get_by_id,
+    )
 
     result = await service.search_tools("do something")
-    assert [tool.name for tool in result] == ["skill__b", "skill__a"]
+    assert [tool.name for tool in result] == ["tool_from_b", "tool_from_a"]
+    assert result[0].extra_meta and result[0].extra_meta.get("origin") == "skill"
 
 
 @pytest.mark.asyncio
@@ -187,6 +206,18 @@ async def test_search_tools_rerank_uses_decision_config(monkeypatch):
     monkeypatch.setattr(settings, "DECISION_UCB_MIN_TRIALS", 3)
     monkeypatch.setattr(settings, "DECISION_THOMPSON_PRIOR_ALPHA", 2.0)
     monkeypatch.setattr(settings, "DECISION_THOMPSON_PRIOR_BETA", 3.0)
+    async def fake_get_by_id(_self, skill_id: str):
+        return SimpleNamespace(
+            id=str(skill_id),
+            runtime="opensandbox",
+            source_repo="https://github.com/org/repo",
+            manifest_json={"tools": [{"name": "tool_from_a", "description": "A"}]},
+        )
+
+    monkeypatch.setattr(
+        "app.repositories.skill_registry_repository.SkillRegistryRepository.get_by_id",
+        fake_get_by_id,
+    )
 
     await service.search_tools("do something")
 
@@ -250,10 +281,42 @@ async def test_search_tools_filters_repo_skills_by_installation(monkeypatch):
     monkeypatch.setattr(service, "_search_skills", fake_search_skills)
     monkeypatch.setattr(service, "_rerank_skill_hits", fake_rerank)
     monkeypatch.setattr(service, "_list_user_installed_skill_ids", fake_installed)
+    skill_payloads = {
+        "core.tools.crawler": SimpleNamespace(
+            id="core.tools.crawler",
+            runtime="builtin",
+            source_repo="",
+            manifest_json={
+                "tools": [{"name": "fetch_web_content", "description": "crawler"}]
+            },
+        ),
+        "plugin.a": SimpleNamespace(
+            id="plugin.a",
+            runtime="opensandbox",
+            source_repo="https://github.com/org/a",
+            manifest_json={"tools": [{"name": "plugin_a_tool", "description": "A"}]},
+        ),
+        "plugin.b": SimpleNamespace(
+            id="plugin.b",
+            runtime="opensandbox",
+            source_repo="https://github.com/org/b",
+            manifest_json={"tools": [{"name": "plugin_b_tool", "description": "B"}]},
+        ),
+    }
+
+    async def fake_get_by_id(_self, skill_id: str):
+        return skill_payloads.get(str(skill_id))
+
+    monkeypatch.setattr(
+        "app.repositories.skill_registry_repository.SkillRegistryRepository.get_by_id",
+        fake_get_by_id,
+    )
 
     result = await service.search_tools("find plugin", user_id=uuid.uuid4())
     names = [tool.name for tool in result]
-    assert names == ["skill__core.tools.crawler", "skill__plugin.a"]
+    assert names == ["fetch_web_content", "plugin_a_tool"]
+    assert result[0].extra_meta and result[0].extra_meta.get("install_required") is False
+    assert result[1].extra_meta and result[1].extra_meta.get("install_required") is True
 
 
 @pytest.mark.asyncio

@@ -26,6 +26,17 @@ def extract_last_user_message(messages: Iterable[dict] | None) -> str:
     return ""
 
 
+def _is_skill_tool(tool: ToolDefinition) -> bool:
+    if str(getattr(tool, "name", "") or "").startswith("skill__"):
+        return True
+    meta = getattr(tool, "extra_meta", None)
+    if isinstance(meta, dict):
+        origin = str(meta.get("origin") or "").strip().lower()
+        if origin == "skill":
+            return True
+    return False
+
+
 class ToolContextService:
     async def build_tools(
         self,
@@ -100,12 +111,21 @@ class ToolContextService:
                 skill_runner_enabled = True
 
         # NEW: Also allow tools from active Builtin skills (migrated to packages/)
+        has_active_skills = False
         has_builtin_skills = False
         try:
             from app.core.database import AsyncSessionLocal
             from app.models.skill_registry import SkillRegistry
-            
+
             async with AsyncSessionLocal() as db:
+                active_stmt = (
+                    select(SkillRegistry.id)
+                    .where(SkillRegistry.status == "active")
+                    .limit(1)
+                )
+                active_row = await db.execute(active_stmt)
+                has_active_skills = active_row.scalar_one_or_none() is not None
+
                 stmt = select(SkillRegistry).where(
                     SkillRegistry.status == "active",
                     SkillRegistry.runtime == "builtin",
@@ -164,10 +184,16 @@ class ToolContextService:
 
         total_tool_count = len(system_tools) + len(user_tool_payloads)
         threshold = int(getattr(settings, "MCP_TOOL_JIT_THRESHOLD", 15) or 15)
-        # 强制开启 JIT 的条件：Qdrant 已配置 + 有查询 + (工具多 OR 启用了动态技能运行器 OR 有内置技能)
+        # 强制开启 JIT 的条件：Qdrant 已配置 + 有查询 +
+        # (工具多 OR 启用了动态技能运行器 OR 有内置技能 OR 注册表中存在激活技能)
         use_jit = (
             bool(qdrant_is_configured())
-            and (total_tool_count > threshold or skill_runner_enabled or has_builtin_skills)
+            and (
+                total_tool_count > threshold
+                or skill_runner_enabled
+                or has_builtin_skills
+                or has_active_skills
+            )
             and bool(query)
         )
         logger.info(
@@ -215,9 +241,11 @@ class ToolContextService:
                 # code mode 下过滤掉用户 MCP 工具，避免 LLM 直接调用被阻拦浪费一轮
                 if skip_user_mcp and tool.name in user_mcp_tool_names:
                     continue
-                # skill__ 动态技能必须依赖 skill_runner；否则只允许白名单系统工具
+                is_skill_tool = _is_skill_tool(tool)
+                # 技能工具由检索与执行层继续做安装/权限校验；
+                # 系统工具和用户 MCP 工具仍受白名单控制。
                 if (
-                    (tool.name.startswith("skill__") and skill_runner_enabled)
+                    is_skill_tool
                     or tool.name in allowed_tool_names
                     or tool.name in user_mcp_tool_names
                 ):

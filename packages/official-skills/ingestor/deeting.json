@@ -1,0 +1,18 @@
+{
+  "id": "official.skills.ingestor",
+  "name": "Asset Ingestor",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Smart asset discovery and onboarding. Can turn URLs into structured Assistants or Skills.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "network.outbound",
+    "tools.call",
+    "assistants.write"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}

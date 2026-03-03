@@ -154,13 +154,17 @@ pub fn run() {
                     });
                 }
 
-                // Register and index system builtin plugins (Crawler, Code Interpreter, etc.)
-                let app_state_for_plugins = sync_state_for_mcp.clone();
+                // Register and index all local skills (Official & User)
+                let app_state_for_skills = sync_state_for_mcp.clone();
+                let app_handle_for_skills = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::modules::mcp::commands::register_system_plugins(
-                        &app_state_for_plugins,
+                    let _ = crate::modules::mcp::commands::register_local_skills(
+                        app_handle_for_skills,
+                        tauri::State::from(&app_state_for_skills),
                     )
                     .await;
+                });
+
                 });
 
                 let app_state_for_knowledge_index = sync_state_for_mcp.clone();
@@ -326,6 +330,8 @@ pub fn run() {
             crate::modules::mcp::commands::get_mcp_logs,
             crate::modules::mcp::commands::clear_mcp_logs,
             crate::modules::mcp::commands::sync_cloud_subscriptions,
+            crate::modules::mcp::commands::register_local_skills,
+            crate::modules::mcp::commands::sync_official_skills_index,
             crate::modules::mcp::bridge::set_mcp_backend_url,
             crate::modules::mcp::bridge::start_mcp_log_stream,
             crate::modules::mcp::bridge::stop_mcp_log_stream,

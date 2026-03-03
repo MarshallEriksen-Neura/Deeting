@@ -142,6 +142,12 @@ class Settings(BaseSettings):
     ]  # SSRF 防护黑名单网段（CIDR）
     GATEWAY_MAX_CONCURRENCY: int = 200  # 网关并发上限(每进程)
     GATEWAY_QUEUE_TIMEOUT: float = 0.25  # 排队等待获取并发槽的超时(秒)
+    # Monitor 云端保护（防止定时任务洪峰打满服务器）
+    MONITOR_MIN_CLOUD_INTERVAL_MINUTES: int = 5
+    MONITOR_MAX_TRIGGER_PER_TICK: int = 50
+    MONITOR_MAX_TRIGGER_PER_USER_PER_TICK: int = 3
+    MONITOR_BACKPRESSURE_DELAY_SECONDS: int = 60
+    MONITOR_MANUAL_TRIGGER_COOLDOWN_SECONDS: int = 30
 
     # 内部通道调试信息开关
     INTERNAL_CHANNEL_DEBUG_INFO: bool = True

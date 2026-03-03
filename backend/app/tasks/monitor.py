@@ -149,6 +149,37 @@ def _compute_next_run(task: MonitorTask, from_time) -> tuple[Any, int]:
     return from_time + timedelta(minutes=interval), interval
 
 
+def _max_trigger_per_tick() -> int:
+    raw_value = getattr(settings, "MONITOR_MAX_TRIGGER_PER_TICK", 50)
+    try:
+        configured = 50 if raw_value is None else int(raw_value)
+    except (TypeError, ValueError):
+        configured = 50
+    return max(1, configured)
+
+
+def _max_trigger_per_user_per_tick() -> int:
+    raw_value = getattr(settings, "MONITOR_MAX_TRIGGER_PER_USER_PER_TICK", 3)
+    try:
+        configured = 3 if raw_value is None else int(raw_value)
+    except (TypeError, ValueError):
+        configured = 3
+    return max(1, configured)
+
+
+def _backpressure_delay_seconds() -> int:
+    raw_value = getattr(settings, "MONITOR_BACKPRESSURE_DELAY_SECONDS", 60)
+    try:
+        configured = 60 if raw_value is None else int(raw_value)
+    except (TypeError, ValueError):
+        configured = 60
+    return max(5, configured)
+
+
+def _backpressure_next_run(from_time) -> Any:
+    return from_time + timedelta(seconds=_backpressure_delay_seconds())
+
+
 def _is_final_retry(task_ctx, max_retries: int = RETRY_MAX) -> bool:
     try:
         retries = int(getattr(task_ctx.request, "retries", 0) or 0)
@@ -749,6 +780,8 @@ def scheduler_task(self) -> dict[str, Any]:
 
 async def _scan_and_trigger_tasks() -> dict[str, Any]:
     now = Datetime.now()
+    max_total = _max_trigger_per_tick()
+    max_per_user = _max_trigger_per_user_per_tick()
     async with AsyncSessionLocal() as session:
         redis = _get_redis_client()
         if redis is not None:
@@ -767,6 +800,8 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
                         tasks = (await session.execute(stmt)).scalars().all()
                         task_map = {str(task.id): task for task in tasks}
                         triggered = 0
+                        deferred = 0
+                        per_user_triggered: dict[str, int] = {}
 
                         for task_id in due_task_ids:
                             task = task_map.get(task_id)
@@ -775,15 +810,36 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
                             if not task.is_active or _status_value(task.status) != MonitorStatus.ACTIVE.value:
                                 continue
 
+                            user_key = str(task.user_id)
+                            user_count = per_user_triggered.get(user_key, 0)
+                            over_global_limit = triggered >= max_total
+                            over_user_limit = user_count >= max_per_user
+                            if over_global_limit or over_user_limit:
+                                deferred += 1
+                                delayed_run_at = _backpressure_next_run(now)
+                                task.next_run_at = delayed_run_at
+                                await _zset_add_task(task_id, delayed_run_at)
+                                continue
+
                             trigger_reasoning_task.delay(task_id)
                             next_run_at, interval_minutes = _compute_next_run(task, now)
                             task.current_interval_minutes = interval_minutes
                             task.next_run_at = next_run_at
                             await _zset_add_task(task_id, next_run_at)
                             triggered += 1
+                            per_user_triggered[user_key] = user_count + 1
 
                         await session.commit()
-                        return {"status": "success", "triggered": triggered, "source": "redis_zset"}
+                        return {
+                            "status": "success",
+                            "triggered": triggered,
+                            "deferred": deferred,
+                            "source": "redis_zset",
+                            "limits": {
+                                "max_total": max_total,
+                                "max_per_user": max_per_user,
+                            },
+                        }
 
                 return {"status": "success", "triggered": 0, "source": "redis_zset"}
             except Exception as exc:
@@ -798,13 +854,36 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
             )
         )
         tasks = (await session.execute(stmt)).scalars().all()
+        triggered = 0
+        deferred = 0
+        per_user_triggered: dict[str, int] = {}
         for task in tasks:
+            user_key = str(task.user_id)
+            user_count = per_user_triggered.get(user_key, 0)
+            over_global_limit = triggered >= max_total
+            over_user_limit = user_count >= max_per_user
+            if over_global_limit or over_user_limit:
+                deferred += 1
+                task.next_run_at = _backpressure_next_run(now)
+                continue
+
             trigger_reasoning_task.delay(str(task.id))
             next_run_at, interval_minutes = _compute_next_run(task, now)
             task.current_interval_minutes = interval_minutes
             task.next_run_at = next_run_at
+            triggered += 1
+            per_user_triggered[user_key] = user_count + 1
         await session.commit()
-        return {"status": "success", "triggered": len(tasks), "source": "db_fallback"}
+        return {
+            "status": "success",
+            "triggered": triggered,
+            "deferred": deferred,
+            "source": "db_fallback",
+            "limits": {
+                "max_total": max_total,
+                "max_per_user": max_per_user,
+            },
+        }
 
 
 @celery_app.task(bind=True, name="app.tasks.monitor.bootstrap_schedule", queue="default")

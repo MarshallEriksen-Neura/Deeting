@@ -46,105 +46,145 @@ fn to_string<T: std::fmt::Display>(err: T) -> String {
 }
 
 #[tauri::command]
-pub async fn register_system_plugins(app_state: State<'_, AppState>) -> Result<(), String> {
+pub async fn register_local_skills(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+) -> Result<usize, String> {
     let project_root = std::env::current_dir().unwrap();
+
+    // 1. Official System Skills (Bundled with source)
     let official_skills_dir = project_root.join("packages/official-skills");
 
-    if !official_skills_dir.exists() {
-        return Ok(());
+    // 2. User/Dynamic Skills (Standard App Data Directory)
+    let user_skills_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(to_string)?
+        .join("skills");
+
+    if !user_skills_dir.exists() {
+        let _ = std::fs::create_dir_all(&user_skills_dir);
     }
+
+    let scan_targets = vec![
+        (official_skills_dir, "system_plugin"),
+        (user_skills_dir, "user_skill"),
+    ];
 
     let mcp = &app_state.mcp;
     let store = &mcp.store;
+    let mut total_indexed = 0;
 
-    for entry in std::fs::read_dir(official_skills_dir).map_err(to_string)? {
-        let skill_path = entry.map_err(to_string)?.path();
-        if !skill_path.is_dir() {
+    for (dir_path, source_prefix) in scan_targets {
+        if !dir_path.exists() {
             continue;
         }
 
-        let deeting_json_path = skill_path.join("deeting.json");
-        if !deeting_json_path.exists() {
-            continue;
-        }
+        for entry in std::fs::read_dir(dir_path).map_err(to_string)? {
+            let skill_path = entry.map_err(to_string)?.path();
+            if !skill_path.is_dir() {
+                continue;
+            }
 
-        let deeting_json_str = std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
-        let manifest: serde_json::Value =
-            serde_json::from_str(&deeting_json_str).map_err(to_string)?;
+            let deeting_json_path = skill_path.join("deeting.json");
+            if !deeting_json_path.exists() {
+                continue;
+            }
 
-        let id = manifest["id"].as_str().unwrap_or("");
-        let name = manifest["name"].as_str().unwrap_or(id);
-        let description = manifest["description"].as_str().unwrap_or("");
-        let source_id = format!("system_plugin_{}", id);
+            let deeting_json_str = std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
+            let manifest: serde_json::Value =
+                serde_json::from_str(&deeting_json_str).map_err(to_string)?;
 
-        // Extract tools from llm-tool.yaml
-        let llm_tool_path = skill_path.join("llm-tool.yaml");
-        if !llm_tool_path.exists() {
-            continue;
-        }
-        let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
-        let llm_tools: serde_json::Value =
-            serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
+            let id = manifest["id"].as_str().unwrap_or("");
+            let tool_desc_prefix = manifest["description"].as_str().unwrap_or("");
+            let source_id = format!("{}_{}", source_prefix, id);
 
-        // Prepare generic environment variables based on manifest
-        let mut env = HashMap::new();
-        if let Some(reqs) = manifest.get("env_requirements").and_then(|v| v.as_array()) {
-            for req in reqs {
-                if let Some(env_name) = req.as_str() {
-                    if let Ok(val) = std::env::var(env_name) {
-                        env.insert(env_name.to_string(), val);
+            // Extract tools from llm-tool.yaml
+            let llm_tool_path = skill_path.join("llm-tool.yaml");
+            if !llm_tool_path.exists() {
+                continue;
+            }
+            let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
+            let llm_tools: serde_json::Value =
+                serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
+
+            // Prepare generic environment variables
+            let mut env = HashMap::new();
+            if let Some(reqs) = manifest.get("env_requirements").and_then(|v| v.as_array()) {
+                for req in reqs {
+                    if let Some(env_name) = req.as_str() {
+                        if let Ok(val) = std::env::var(env_name) {
+                            env.insert(env_name.to_string(), val);
+                        }
+                    }
+                }
+            }
+
+            if let Some(tools_array) = llm_tools.get("tools").and_then(|v| v.as_array()) {
+                for tool_def in tools_array {
+                    let tool_name = tool_def["name"].as_str().unwrap();
+                    let tool_desc = tool_def["description"].as_str().unwrap_or(tool_desc_prefix);
+                    let config_json = serde_json::to_string(tool_def).unwrap();
+
+                    let full_main_path = skill_path.join("main.py");
+                    let pkg_name = id.split('.').last().unwrap_or(id);
+
+                    let upsert = ToolUpsert {
+                        id: None,
+                        source_id: source_id.clone(),
+                        identifier: Some(format!("{}/{}", id, tool_name)),
+                        name: tool_name.to_string(),
+                        source_type: McpSourceType::Local,
+                        status: McpToolStatus::Healthy,
+                        ping_ms: None,
+                        capabilities: vec![source_prefix.to_string()],
+                        description: tool_desc.to_string(),
+                        error: None,
+                        command: Some("python3".to_string()),
+                        args: Some(vec![full_main_path.to_string_lossy().to_string()]),
+                        env: if env.is_empty() { None } else { Some(env.clone()) },
+                        config_json,
+                        config_hash: "system_builtin".to_string(),
+                        pending_config_json: None,
+                        pending_config_hash: None,
+                        conflict_status: McpConflictStatus::None,
+                        is_read_only: true,
+                        is_new: false,
+                    };
+
+                    if let Ok(tool) = store.upsert_tool(upsert).await {
+                        total_indexed += 1;
+                        let app_state_clone = app_state.inner().clone();
+                        let tool_id = tool.id.clone();
+                        let tool_name = tool.name.clone();
+                        let tool_desc = tool.description.clone();
+                        let final_pkg_name = pkg_name.to_string();
+                        let final_source_type = if source_prefix == "system_plugin" { "builtin" } else { "user" };
+
+                        tauri::async_runtime::spawn(async move {
+                            let text = format!("name: {}\ndescription: {}", tool_name, tool_desc);
+                            if let Ok(vector) = app_state_clone.providers.embedding.embed_text(&text).await {
+                                let _ = app_state_clone.memory.store.upsert_asset(
+                                    tool_id,
+                                    tool_name,
+                                    tool_desc,
+                                    "tool".to_string(),
+                                    final_source_type.to_string(),
+                                    Some(final_pkg_name),
+                                    vector,
+                                    None
+                                ).await;
+                            }
+                        });
                     }
                 }
             }
         }
-
-        if let Some(tools_array) = llm_tools.get("tools").and_then(|v| v.as_array()) {
-            for tool_def in tools_array {
-                let tool_name = tool_def["name"].as_str().unwrap();
-                let tool_desc = tool_def["description"].as_str().unwrap_or("");
-                let config_json = serde_json::to_string(tool_def).unwrap();
-
-                let full_main_path = skill_path.join("main.py");
-
-                let upsert = ToolUpsert {
-                    id: None,
-                    source_id: source_id.clone(),
-                    identifier: Some(format!("{}/{}", id, tool_name)),
-                    name: tool_name.to_string(),
-                    source_type: McpSourceType::Local,
-                    status: McpToolStatus::Healthy,
-                    ping_ms: None,
-                    capabilities: vec!["system_plugin".to_string()],
-                    description: tool_desc.to_string(),
-                    error: None,
-                    command: Some("python3".to_string()),
-                    args: Some(vec![full_main_path.to_string_lossy().to_string()]),
-                    env: if env.is_empty() {
-                        None
-                    } else {
-                        Some(env.clone())
-                    },
-                    config_json,
-                    config_hash: "system_builtin".to_string(),
-                    pending_config_json: None,
-                    pending_config_hash: None,
-                    conflict_status: McpConflictStatus::None,
-                    is_read_only: true,
-                    is_new: false,
-                };
-
-                if let Ok(tool) = store.upsert_tool(upsert).await {
-                    let app_state_clone = app_state.inner().clone();
-                    tauri::async_runtime::spawn(async move {
-                        index_mcp_tools(&app_state_clone, &[tool]).await;
-                    });
-                }
-            }
-        }
     }
 
-    Ok(())
+    Ok(total_indexed)
 }
+
 
 #[tauri::command]
 pub async fn sync_cloud_subscriptions(
@@ -1206,6 +1246,51 @@ pub async fn get_local_gateway_log_stats(
     state.store.get_local_gateway_log_stats().await.map_err(to_string)
 }
 
+#[tauri::command]
+pub async fn sync_official_skills_index(
+    app_state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let state = &app_state.mcp;
+    let base_url = state.cloud_base_url.read().await.clone();
+    let url = format!(
+        "{}/api/v1/skills/marketplace?limit=100",
+        base_url.trim_end_matches('/')
+    );
+    
+    let response = state.client.get(&url).send().await.map_err(to_string)?;
+    if !response.status().is_success() {
+        return Err("failed to fetch marketplace index".to_string());
+    }
+
+    let skills: Vec<serde_json::Value> = response.json().await.map_err(to_string)?;
+    let count = skills.len();
+
+    for skill in skills {
+        let id = skill["id"].as_str().unwrap_or("").to_string();
+        let name = skill["name"].as_str().unwrap_or("").to_string();
+        let desc = skill["description"].as_str().unwrap_or("").to_string();
+        
+        let app_state_clone = app_state.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            let text = format!("name: {}\ndescription: {}", name, desc);
+            if let Ok(vector) = app_state_clone.providers.embedding.embed_text(&text).await {
+                let _ = app_state_clone.memory.store.upsert_asset(
+                    id,
+                    name,
+                    desc,
+                    "skill".to_string(),
+                    "cloud_mirror".to_string(),
+                    None,
+                    vector,
+                    Some(skill)
+                ).await;
+            }
+        });
+    }
+
+    Ok(count)
+}
+
 pub(crate) async fn sync_source_inner(
     state: &McpRuntimeState,
     source: McpSource,
@@ -1490,6 +1575,35 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 "result": search_res,
             }));
             results.push(format!("SDK Search Result for '{}':\n{}", query, serde_json::to_string_pretty(&search_res).unwrap()));
+        } else if tool_name == "sys_submit_onboarding_request" {
+            let asset_type = call.arguments.get("asset_type").and_then(|v| v.as_str()).unwrap_or("");
+            let payload = call.arguments.get("payload").cloned().unwrap_or(serde_json::json!({}));
+            
+            if asset_type == "assistant" {
+                let create_req: Result<crate::modules::mcp::types::CreateLocalAssistantRequest, _> = serde_json::from_value(payload);
+                if let Ok(req) = create_req {
+                    match app_state.mcp.store.create_local_assistant(req).await {
+                        Ok(id) => {
+                            synthesized = true;
+                            tool_call_meta.push(serde_json::json!({
+                                "id": call.id,
+                                "name": tool_name,
+                                "status": "success",
+                                "result": {"action": "created", "id": id},
+                            }));
+                            results.push(format!("Assistant created successfully with ID: {}", id));
+                        }
+                        Err(err) => {
+                            tool_call_meta.push(serde_json::json!({
+                                "id": call.id,
+                                "name": tool_name,
+                                "status": "error",
+                                "error": err.to_string(),
+                            }));
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1518,143 +1632,52 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
                 "query": "string(optional)",
             }
         }),
-        serde_json::json!({
-            "name": "list_user_memories",
-            "description": "List local memories for current desktop session",
-            "source": "code_mode_bridge",
-            "parameters": {
-                "session_id": "string(optional)",
-                "assistant_id": "string(optional)",
-                "cursor": "string(optional)",
-                "limit": "number(optional)",
-            }
-        }),
-        serde_json::json!({
-            "name": "add_knowledge_chunk",
-            "description": "Append local memory chunk",
-            "source": "code_mode_bridge",
-            "parameters": {
-                "content": "string(optional)",
-                "chunk": "string(optional)",
-                "text": "string(optional)",
-                "session_id": "string(optional)",
-                "assistant_id": "string(optional)",
-            }
-        }),
     ];
 
-    // Semantic search for tools and assistants via LanceDB
+    // Single Path Local Discovery via Unified Assets
     if !normalized.is_empty() {
         if let Ok(vector) = app_state.providers.embedding.embed_text(&normalized).await {
-            // Search tools
-            if let Ok(vector_hits) = app_state.memory.store.search_tools(vector.clone(), 10).await {
-                for hit in vector_hits {
-                    if let Some(tool_id) = hit.get("id").and_then(|v| v.as_str()) {
-                         if let Ok(Some(tool)) = app_state.mcp.store.get_tool(tool_id).await {
-                             let name = tool.name.trim().to_string();
-                             let status = tool.status.as_str().to_string();
-                             let availability = matches!(
-                                 tool.status,
-                                 crate::modules::mcp::types::McpToolStatus::Healthy
-                                     | crate::modules::mcp::types::McpToolStatus::Degraded
-                             );
-                             let signature = extract_tool_signature_from_config_json(&tool.config_json);
-                             catalog.push(serde_json::json!({
-                                 "name": name,
-                                 "identifier": tool.identifier,
-                                 "description": tool.description,
-                                 "source": "local_mcp_semantic",
-                                 "status": status,
-                                 "available": availability,
-                                 "capabilities": tool.capabilities,
-                                 "parameters": signature,
-                                 "score": hit.get("_distance"),
-                             }));
-                         }
-                    }
-                }
-            }
-
-            // Search assistants (Skills)
-            if let Ok(assistant_hits) = app_state.memory.store.search_assistants(vector, 10).await {
-                for hit in assistant_hits {
+            if let Ok(asset_hits) = app_state.memory.store.search_assets(vector, 15, None).await {
+                for hit in asset_hits {
+                    let source_type = hit.get("source_type").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let name = hit["name"].as_str().unwrap_or("").to_string();
+                    let desc = hit["description"].as_str().unwrap_or("").to_string();
+                    let pkg_name = hit.get("pkg_name").and_then(|v| v.as_str());
+                    
                     catalog.push(serde_json::json!({
-                        "name": hit.get("name"),
-                        "description": hit.get("description"),
-                        "identifier": hit.get("id"),
-                        "source": "local_assistant_semantic",
-                        "tags": hit.get("tags"),
+                        "name": name,
+                        "description": desc,
+                        "source": format!("local_{}", source_type),
+                        "pkg_name": pkg_name,
                         "score": hit.get("_distance"),
+                        "needs_provisioning": source_type == "cloud_mirror",
+                        "asset_type": hit.get("asset_type"),
                     }));
                 }
             }
         }
     }
 
-    if let Ok(tools) = app_state.mcp.store.list_tools().await {
-        for tool in tools {
-            let name = tool.name.trim().to_string();
-            if name.is_empty() {
-                continue;
-            }
-
-            // Avoid duplicate with semantic hits
-            if catalog.iter().any(|item| {
-                item.get("source").and_then(|v| v.as_str()) == Some("local_mcp_semantic") &&
-                item.get("name").and_then(|v| v.as_str()) == Some(&name)
-            }) {
-                continue;
-            }
-
-            let status = tool.status.as_str().to_string();
-            let availability = matches!(
-                tool.status,
-                crate::modules::mcp::types::McpToolStatus::Healthy
-                    | crate::modules::mcp::types::McpToolStatus::Degraded
-            );
-            let signature = extract_tool_signature_from_config_json(&tool.config_json);
-            catalog.push(serde_json::json!({
-                "name": name,
-                "identifier": tool.identifier,
-                "description": tool.description,
-                "source": "local_mcp",
-                "status": status,
-                "available": availability,
-                "capabilities": tool.capabilities,
-                "parameters": signature,
-            }));
-        }
-    }
+    // Keep memory core tools always visible
+    catalog.push(serde_json::json!({
+        "name": "list_user_memories",
+        "description": "List local memories for current desktop session",
+        "source": "code_mode_bridge",
+    }));
 
     let matches = catalog
         .into_iter()
         .filter(|item| {
-            if normalized.is_empty() {
-                return true;
-            }
-            let name_hit = item
-                .get("name")
-                .and_then(|value| value.as_str())
-                .map(|name| name.to_lowercase().contains(&normalized))
-                .unwrap_or(false);
-            if name_hit {
-                return true;
-            }
-            let desc_hit = item.get("description")
-                .and_then(|value| value.as_str())
-                .map(|desc| desc.to_lowercase().contains(&normalized))
-                .unwrap_or(false);
-            if desc_hit {
-                return true;
-            }
-            let source = item.get("source").and_then(|v| v.as_str()).unwrap_or("");
-            source == "local_mcp_semantic" || source == "local_assistant_semantic"
+            if normalized.is_empty() { return true; }
+            let name_hit = item.get("name").and_then(|v| v.as_str()).map(|n| n.to_lowercase().contains(&normalized)).unwrap_or(false);
+            let desc_hit = item.get("description").and_then(|v| v.as_str()).map(|d| d.to_lowercase().contains(&normalized)).unwrap_or(false);
+            name_hit || desc_hit || item.get("score").is_some()
         })
-        .collect::<Vec<serde_json::Value>>();
+        .collect::<Vec<_>>();
 
     serde_json::json!({
         "query": query,
-        "mode": "dynamic_local_scan",
+        "mode": "unified_local_discovery",
         "items": matches,
     })
 }

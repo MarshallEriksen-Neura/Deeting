@@ -203,7 +203,7 @@ async def test_build_tools_jit_allows_dynamic_skill_tools_when_skill_runner_enab
 
 
 @pytest.mark.asyncio
-async def test_build_tools_jit_blocks_dynamic_skill_tools_without_skill_runner(
+async def test_build_tools_jit_allows_dynamic_skill_tools_without_skill_runner(
     monkeypatch,
 ):
     from app.services.agent.agent_service import agent_service
@@ -213,7 +213,14 @@ async def test_build_tools_jit_blocks_dynamic_skill_tools_without_skill_runner(
         return None
 
     async def _fake_search_tools(*_args, **_kwargs):
-        return [ToolDefinition(name="skill__demo", description="demo", input_schema={})]
+        return [
+            ToolDefinition(
+                name="demo_tool",
+                description="demo",
+                input_schema={},
+                extra_meta={"origin": "skill", "skill_id": "demo.skill"},
+            )
+        ]
 
     async def _fake_get_user_tools(*_args, **_kwargs):
         return []
@@ -263,7 +270,71 @@ async def test_build_tools_jit_blocks_dynamic_skill_tools_without_skill_runner(
 
     names = [tool.name for tool in tools]
     assert "consult_expert_network" in names
-    assert "skill__demo" not in names
+    assert "demo_tool" in names
+
+
+@pytest.mark.asyncio
+async def test_build_tools_jit_blocks_unknown_dynamic_tools_without_allowlist(
+    monkeypatch,
+):
+    from app.services.agent.agent_service import agent_service
+    from app.services.tools.tool_context_service import ToolContextService
+
+    async def _fake_initialize(**_kwargs):
+        return None
+
+    async def _fake_search_tools(*_args, **_kwargs):
+        return [ToolDefinition(name="demo_tool", description="demo", input_schema={})]
+
+    async def _fake_get_user_tools(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(agent_service, "initialize", _fake_initialize)
+    monkeypatch.setattr(
+        agent_service,
+        "tools",
+        [
+            ToolDefinition(
+                name="consult_expert_network",
+                description="expert",
+                input_schema={},
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.qdrant_is_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.plugin_config_loader.get_plugins_for_user",
+        lambda *_args, **_kwargs: [
+            _make_plugin(
+                "system.expert_network",
+                enabled_by_default=True,
+                is_always_on=True,
+                tools=["consult_expert_network"],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.tool_sync_service.search_tools",
+        _fake_search_tools,
+    )
+    monkeypatch.setattr(
+        "app.services.tools.tool_context_service.mcp_discovery_service.get_active_tool_payloads",
+        _fake_get_user_tools,
+    )
+    monkeypatch.setattr(settings, "MCP_TOOL_JIT_THRESHOLD", -1)
+
+    tools = await ToolContextService().build_tools(
+        session=None,
+        user_id="5eec3ecf-9bf2-4e27-b245-4c9695f5d4d2",
+        query="run demo skill",
+    )
+
+    names = [tool.name for tool in tools]
+    assert "consult_expert_network" in names
+    assert "demo_tool" not in names
 
 
 @pytest.mark.asyncio

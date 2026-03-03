@@ -30,12 +30,13 @@ class PluginManager:
         try:
             # We instantiate briefly to read metadata
             temp_instance = plugin_cls()
-            name = temp_instance.metadata.id # Use ID as unique key
+            name = temp_instance.metadata.name # Use name as unique key
 
             self._plugin_classes[name] = plugin_cls
             logger.info(f"Registered core plugin class: {name}")
         except Exception as e:
             logger.exception(f"Failed to register core plugin class {plugin_cls}: {e}")
+
 
     async def activate_all(
         self, user_id: uuid.UUID | None = None, session_id: str | None = None
@@ -69,6 +70,33 @@ class PluginManager:
     def get_plugin(self, name: str) -> AgentPlugin | None:
         """Get an active core plugin instance."""
         return self._plugins.get(name)
+
+    def get_plugin_name_for_tool_from_registry(self, tool_name: str) -> str | None:
+        """Resolve owning plugin name by scanning both active instances and registered classes."""
+        # 1. Check active instances first
+        for name, plugin in self._plugins.items():
+            try:
+                for tool in plugin.get_tools() or []:
+                    if isinstance(tool, dict):
+                        name_in_tool = tool.get("function", {}).get("name") or tool.get("name")
+                        if name_in_tool == tool_name:
+                            return name
+            except Exception:
+                continue
+        
+        # 2. Fallback to registered classes (instantiate temporarily to inspect tools)
+        for name, cls in self._plugin_classes.items():
+            try:
+                temp_inst = cls()
+                for tool in temp_inst.get_tools() or []:
+                    if isinstance(tool, dict):
+                        name_in_tool = tool.get("function", {}).get("name") or tool.get("name")
+                        if name_in_tool == tool_name:
+                            return name
+            except Exception:
+                continue
+                
+        return None
 
     def get_plugin_for_tool(self, tool_name: str) -> AgentPlugin | None:
         """Find the core plugin instance that owns the given tool."""

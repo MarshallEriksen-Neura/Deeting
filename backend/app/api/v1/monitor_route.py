@@ -110,6 +110,22 @@ async def _verify_feishu_callback_signature(request: Request, raw_body: bytes) -
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Feishu callback signature")
 
 
+async def _check_manual_trigger_cooldown(user_id: uuid.UUID, task_id: uuid.UUID) -> None:
+    cooldown_seconds = max(1, int(settings.MONITOR_MANUAL_TRIGGER_COOLDOWN_SECONDS or 1))
+    key = f"monitor:manual_trigger:{user_id}:{task_id}"
+    accepted = await cache.set(
+        key,
+        True,
+        ex=cooldown_seconds,
+        nx=True,
+    )
+    if accepted is False and getattr(cache, "_redis", None) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"触发过于频繁，请在 {cooldown_seconds} 秒后重试",
+        )
+
+
 @router.post("/feishu/callback", include_in_schema=False)
 async def handle_feishu_callback(
     request: Request,
@@ -337,6 +353,7 @@ async def trigger_monitor(
     if task.get("status") != "active":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅 active 任务可触发")
 
+    await _check_manual_trigger_cooldown(user.id, task_id)
     trigger_reasoning_task.delay(str(task_id), True)
     return {"task_id": task_id, "message": "已提交执行"}
 

@@ -1,0 +1,17 @@
+tools:
+  - name: ingest_assistant_from_url
+    description: "Crawl a URL and automatically create a structured AI Assistant based on the content."
+    parameters:
+      type: object
+      properties:
+        url: { type: string, description: "The source URL." }
+        instruction: { type: string, description: "Custom guidance for the extraction." }
+      required: ["url"]
+
+  - name: ingest_skill_from_github
+    description: "Discover and onboarding a code-based skill from a GitHub repository."
+    parameters:
+      type: object
+      properties:
+        repo_url: { type: string, description: "HTTPS Git URL." }
+      required: ["repo_url"]

@@ -6,12 +6,17 @@ from pydantic import ValidationError
 from app.services.monitor_cron import next_run_after, validate_cron_expr
 from app.schemas.monitor import MonitorTaskCreate
 from app.tasks.monitor import (
+    _backpressure_delay_seconds,
+    _backpressure_next_run,
     _build_monitor_prompt,
     _extract_notify_channel_ids,
+    _max_trigger_per_tick,
+    _max_trigger_per_user_per_tick,
     _parse_agent_output,
     reasoning_task,
     trigger_reasoning_task,
 )
+from app.core.config import settings
 from app.utils.time_utils import Datetime
 
 
@@ -161,3 +166,20 @@ def test_trigger_reasoning_task_default_force_notify_false(monkeypatch: pytest.M
     assert result["force_notify"] is False
     assert captured["args"] == ["task-2", False]
     assert captured["countdown"] == 3
+
+
+def test_scheduler_limit_helpers_have_safe_floor(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "MONITOR_MAX_TRIGGER_PER_TICK", 0, raising=False)
+    monkeypatch.setattr(settings, "MONITOR_MAX_TRIGGER_PER_USER_PER_TICK", -1, raising=False)
+    monkeypatch.setattr(settings, "MONITOR_BACKPRESSURE_DELAY_SECONDS", 0, raising=False)
+
+    assert _max_trigger_per_tick() == 1
+    assert _max_trigger_per_user_per_tick() == 1
+    assert _backpressure_delay_seconds() == 5
+
+
+def test_backpressure_next_run_uses_delay_setting(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "MONITOR_BACKPRESSURE_DELAY_SECONDS", 75, raising=False)
+    now = Datetime.now()
+    delayed = _backpressure_next_run(now)
+    assert int((delayed - now).total_seconds()) == 75

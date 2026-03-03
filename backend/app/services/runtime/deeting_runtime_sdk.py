@@ -151,7 +151,7 @@ def build_runtime_preamble(
                     "tool_name": str(tool_name or "").strip(),
                     "arguments": arguments or {},
                 }
-                # Ensure the marker is on its own line
+                # Use a clean, simple print to avoid escaping nightmares
                 print(f"\\n__RUNTIME_TOOL_CALL_MARKER__{json.dumps(payload, ensure_ascii=False)}")
                 
                 # In marker mode, we MUST stop execution because the host will re-run us with the result.

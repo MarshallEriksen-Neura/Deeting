@@ -75,6 +75,40 @@ async def _run_sync_skill(skill_id: str) -> str:
         if not skill:
             return "missing_skill"
 
+        # 1. Distillation: Ensure physical code exists in local asset pool
+        # This replaces the need for runtime git pulls.
+        project_root = Path(__file__).parent.parent.parent.parent
+        asset_pool = project_root / "backend" / ".data" / "skills" / "community"
+        
+        # Skill directory name
+        skill_dir_name = skill.id.split('.')[-1].replace('_', '-')
+        target_path = asset_pool / skill_dir_name
+        
+        if skill.source_repo and not target_path.exists():
+            try:
+                import subprocess
+                import shutil
+                logger.info(f"Distilling skill {skill.id} from {skill.source_repo}...")
+                
+                # Temp clone
+                temp_dir = Path(f"/tmp/distill_{uuid.uuid4().hex}")
+                subprocess.run(["git", "clone", "--depth", "1", skill.source_repo, str(temp_dir)], check=True)
+                
+                # Cleanup development junk
+                for junk in [".git", ".github", "tests", "docs", "__pycache__", ".gitignore"]:
+                    junk_path = temp_dir / junk
+                    if junk_path.is_dir(): shutil.rmtree(junk_path)
+                    elif junk_path.is_file(): junk_path.unlink()
+                
+                # Move to pool
+                asset_pool.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(temp_dir), str(target_path))
+                logger.info(f"Skill {skill.id} distilled to {target_path}")
+            except Exception as e:
+                logger.error(f"Failed to distill skill {skill.id}: {e}")
+                # Don't fail the metadata sync, but log the error
+
+        # 2. Vector Indexing (Qdrant)
         text = _build_embedding_text(skill)
         if not text:
             return "empty_text"

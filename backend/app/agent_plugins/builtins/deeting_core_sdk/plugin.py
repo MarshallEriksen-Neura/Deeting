@@ -129,6 +129,37 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             {
                 "type": "function",
                 "function": {
+                    "name": "sys_refine_asset_metadata",
+                    "description": "System-internal: Use LLM to extract structured metadata from raw text for a new asset.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {"type": "string"},
+                            "asset_type": {"type": "string", "enum": ["assistant", "skill"]}
+                        },
+                        "required": ["prompt", "asset_type"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "sys_submit_onboarding_request",
+                    "description": "System-internal: Submit a new asset for onboarding. Host decides to approve or review.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "asset_type": {"type": "string", "enum": ["assistant", "skill"]},
+                            "payload": {"type": "object"},
+                            "source_url": {"type": "string"}
+                        },
+                        "required": ["asset_type", "payload"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "execute_code_plan",
                     "description": (
                         "Execute a Python code plan in sandbox. Runtime exposes "
@@ -570,6 +601,10 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         # still needs subsequent attempts to dispatch and replay.
         max_attempts = _MAX_RUNTIME_TOOL_CALLS + 1
 
+        # Result accumulation
+        all_stdout_chunks = []
+        all_stderr_chunks = []
+
         for attempt in range(max_attempts):
             is_reexecution = attempt > 0
             wrapped_code = self._build_wrapped_code(
@@ -590,13 +625,11 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     "code_mode.execution_mode": "bridge" if has_bridge else "marker",
                 },
             ) as sandbox_span:
-                # 切换到流式执行模式，实现实时日志展示
-                result = {
-                    "stdout": [],
-                    "stderr": [],
-                    "result": [],
-                    "exit_code": 0
-                }
+                # Current attempt state
+                current_stdout = []
+                current_stderr = []
+                current_result = []
+                exit_code = 0
                 
                 async for chunk in sandbox_manager.run_code_stream(
                     final_session_id,
@@ -605,13 +638,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     execution_timeout=timeout_value,
                 ):
                     if "error" in chunk:
-                        result["error"] = chunk["error"]
-                        result["error_code"] = chunk.get("error_code")
-                        break
+                        return await _finalize_response({
+                            "status": "error",
+                            "error": chunk["error"],
+                            "error_code": chunk.get("error_code")
+                        })
                     
                     if chunk["type"] == "stdout":
-                        text = chunk["content"]
-                        result["stdout"].append(text)
+                        text = chunk.get("data") or chunk.get("content") or ""
+                        current_stdout.append(text)
                         # 实时推送 stdout 到前端控制台
                         if __context__ and hasattr(__context__, "emit_blocks"):
                             __context__.emit_blocks([{
@@ -621,8 +656,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                             }])
                     
                     elif chunk["type"] == "stderr":
-                        text = chunk["content"]
-                        result["stderr"].append(text)
+                        text = chunk.get("data") or chunk.get("content") or ""
+                        current_stderr.append(text)
                         # 实时推送 stderr 到前端控制台
                         if __context__ and hasattr(__context__, "emit_blocks"):
                             __context__.emit_blocks([{
@@ -632,42 +667,80 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                             }])
                     
                     elif chunk["type"] == "exit":
-                        result["exit_code"] = chunk.get("exit_code", 0)
-                        result["result"] = chunk.get("result", [])
+                        exit_code = chunk.get("exit_code", 0)
+                        current_result = chunk.get("result", [])
 
-                sandbox_span.set_attribute(
-                    "code_mode.sandbox_exit_code",
-                    int(result.get("exit_code", 0) or 0),
+                # Merge current attempt into total history
+                all_stdout_chunks.extend(current_stdout)
+                all_stderr_chunks.extend(current_stderr)
+
+                # Prepare result dict for marker extraction
+                attempt_result = {
+                    "stdout": current_stdout,
+                    "stderr": current_stderr,
+                    "result": current_result,
+                    "exit_code": exit_code
+                }
+
+                sandbox_span.set_attribute("code_mode.sandbox_exit_code", int(exit_code or 0))
+            
+            # Collect render blocks
+            runtime_render_blocks.extend(self._extract_runtime_render_blocks(attempt_result))
+
+            # Look for tool marker in the CURRENT attempt ONLY
+            runtime_tool_request = self._extract_runtime_tool_request(attempt_result)
+            
+            if runtime_tool_request:
+                # 1. Host-side tool execution
+                if has_bridge:
+                    # Switch to marker mode for subsequent steps
+                    has_bridge = False
+                
+                tool_name = runtime_tool_request.get("tool_name")
+                arguments = runtime_tool_request.get("arguments", {})
+                
+                # Execute the real tool implementation (will use packages/ if applicable)
+                tool_result = await self._dispatch_real_tool(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    workflow_context=__context__
                 )
+                
+                # Feed the result back for the next attempt
+                runtime_tool_results.append(tool_result)
+                runtime_tool_trace.append({
+                    "index": runtime_tool_request.get("index"),
+                    "name": tool_name,
+                    "arguments": arguments,
+                    "result": tool_result
+                })
+                
+                # Continue to the next attempt (re-run sandbox with result)
+                continue
             
-            # Collect render blocks from this execution
-            runtime_render_blocks.extend(self._extract_runtime_render_blocks(result))
-
-            runtime_tool_request = self._extract_runtime_tool_request(result)
-            if runtime_tool_request and has_bridge:
-                bridge_meta = runtime_meta.get("bridge")
-                if not isinstance(bridge_meta, dict):
-                    bridge_meta = {}
-                bridge_meta["fallback_to_marker"] = True
-                bridge_meta["fallback_attempt"] = attempt + 1
-                runtime_meta["bridge"] = bridge_meta
-                has_bridge = False
+            # If no more tool requests, we are DONE
+            final_output = {
+                "stdout": all_stdout_chunks,
+                "stderr": all_stderr_chunks,
+                "result": current_result,
+                "exit_code": exit_code,
+                "truncated": False
+            }
             
-            if not runtime_tool_request:
-                # Execution finished (either naturally or it was a bridge run)
-                if runtime_tool_trace:
-                    runtime_meta["runtime_tool_calls"] = {
-                        "count": len(runtime_tool_trace),
-                        "calls": runtime_tool_trace,
-                    }
-                if runtime_render_blocks:
-                    runtime_meta["render_blocks"] = {
-                        "count": len(runtime_render_blocks),
-                        "blocks": runtime_render_blocks,
-                    }
-                return await _finalize_response(
-                    self._format_execution_result(
-                        result,
+            if runtime_tool_trace:
+                runtime_meta["runtime_tool_calls"] = {
+                    "count": len(runtime_tool_trace),
+                    "calls": runtime_tool_trace,
+                }
+            if runtime_render_blocks:
+                runtime_meta["render_blocks"] = {
+                    "count": len(runtime_render_blocks),
+                    "blocks": runtime_render_blocks,
+                }
+            
+            return await _finalize_response(
+                self._format_execution_result(
+                    final_output,
                         final_session_id,
                         runtime_meta,
                         started_monotonic=started_monotonic,
@@ -1226,6 +1299,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         tools: list[ToolDefinition],
         tool_to_pkg: dict[str, str] | None = None,
     ) -> tuple[str, str]:
+        # 1. Generate PYI Interface
         pyi_lines = [
             "from typing import Any, TypedDict",
             "",
@@ -1233,62 +1307,69 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "def available_tools() -> list[str]: ...",
             "",
         ]
-        
-        tool_to_pkg_json = json.dumps(tool_to_pkg or {}, ensure_ascii=False)
-        
-        py_lines = [
-            "from __future__ import annotations",
-            "from typing import Any, TypedDict",
-            "import os",
-            "import sys",
-            "import json",
-            "",
-            "def _runtime():",
-            "    import builtins",
-            "    runtime = getattr(builtins, '__DEETING_RUNTIME__', None)",
-            "    if runtime is None:",
-            "        raise RuntimeError('deeting runtime is not available')",
-            "    return runtime",
-            "",
-            f"TOOL_TO_PKG = json.loads({tool_to_pkg_json!r})",
-            "",
-            "def call_tool(name: str, **kwargs: Any) -> dict[str, Any]:",
-            "    # 1. Elegant Local-First execution",
-            "    # Try to find tool implementation in pre-warmed packages",
-            "    try:",
-            "        pkg_name = TOOL_TO_PKG.get(name)",
-            "        if pkg_name:",
-            "            import importlib",
-            "            # builtin_skills is the mount point in sandbox",
-            "            module = importlib.import_module(f'builtin_skills.{pkg_name}.main')",
-            "            handler = getattr(module, name, None)",
-            "            if handler:",
-                "                import asyncio",
-                "                if asyncio.iscoroutinefunction(handler):",
-                "                    return asyncio.run(handler(**kwargs))",
-                "                return handler(**kwargs)",
-            "    except (ImportError, AttributeError):",
-            "        pass # Fallback to bridge",
-            "    except Exception as e:",
-            "        print(f'[deeting.sdk] Local execution error for {name}: {e}', file=sys.stderr)",
-            "",
-            "    # 2. Fallback to Bridge (for MCP / Remote tools)",
-            "    result = _runtime().call_tool(name, **kwargs)",
-            "    if isinstance(result, dict):",
-            "        return result",
-            "    return {'result': result}",
-            "",
-        ]
 
+        # 2. Generate PY Implementation
+        import textwrap
+        tool_to_pkg_json = json.dumps(tool_to_pkg or {}, ensure_ascii=False)
+        py_content_head = textwrap.dedent(f"""
+            from __future__ import annotations
+            from typing import Any, TypedDict
+            import os
+            import sys
+            import json
+            import types
+            from pathlib import Path
+
+            def _runtime():
+                import builtins
+                runtime = getattr(builtins, "__DEETING_RUNTIME__", None)
+                if runtime is None:
+                    raise RuntimeError("deeting runtime is not available")
+                return runtime
+
+            TOOL_TO_PKG = json.loads({tool_to_pkg_json!r})
+
+            def call_tool(name: str, **kwargs: Any) -> dict[str, Any]:
+                # 1. Elegant Local-First execution (Two-Tier)
+                try:
+                    pkg_name = TOOL_TO_PKG.get(name)
+                    if pkg_name:
+                        import importlib
+                        module = None
+                        for ns in ["builtin_skills", "user_skills"]:
+                            try:
+                                module = importlib.import_module(f"{{ns}}.{{pkg_name}}.main")
+                                break
+                            except (ImportError, AttributeError):
+                                continue
+                        
+                        if module:
+                            handler = getattr(module, name, None)
+                            if handler:
+                                import asyncio
+                                if asyncio.iscoroutinefunction(handler):
+                                    return asyncio.run(handler(**kwargs))
+                                return handler(**kwargs)
+                except Exception as e:
+                    print(f"[deeting.sdk] Local execution error for {{name}}: {{e}}", file=sys.stderr)
+
+                # 2. Fallback to Bridge (for MCP / Remote tools)
+                result = _runtime().call_tool(name, **kwargs)
+                if isinstance(result, dict):
+                    return result
+                return {{"result": result}}
+        """).strip()
+
+        py_lines = [py_content_head, ""]
         declared_tools: list[str] = []
+
         for tool in tools:
             tool_name = str(tool.name or "").strip()
-            if not tool_name:
-                continue
+            if not tool_name: continue
+            
             parameter_docs = self._build_parameter_docs(tool)
             py_func_name = self._safe_python_identifier(tool_name)
-            if not py_func_name:
-                continue
+            if not py_func_name: continue
 
             declared_tools.append(tool_name)
             typed_dict_code, typed_dict_name = self._build_output_typed_dict(tool)
@@ -1310,15 +1391,9 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         tool_list_literal = json.dumps(declared_tools, ensure_ascii=False)
         pyi_lines.append(f"_AVAILABLE_TOOLS: list[str] = {tool_list_literal}")
-        py_lines.extend(
-            [
-                f"_AVAILABLE_TOOLS: list[str] = {tool_list_literal}",
-                "",
-                "def available_tools() -> list[str]:",
-                "    return list(_AVAILABLE_TOOLS)",
-                "",
-            ]
-        )
+        py_lines.append(f"_AVAILABLE_TOOLS = {tool_list_literal}")
+        py_lines.append("def available_tools() -> list[str]: return list(_AVAILABLE_TOOLS)")
+
         return "\n".join(pyi_lines) + "\n", "\n".join(py_lines) + "\n"
 
     def _render_tool_implementation(
@@ -1415,10 +1490,13 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         normalized = self._to_jsonable(value)
         if normalized is None:
             return "None"
+        if isinstance(normalized, bool):
+            return "True" if normalized else "False"
         try:
-            return json.dumps(normalized, ensure_ascii=False)
-        except Exception:
+            # Use repr for strings and numbers to be safe in Python code
             return repr(normalized)
+        except Exception:
+            return str(normalized)
 
     def _validate_python_code(self, code: str) -> list[str]:
         violations: list[str] = []
@@ -1615,6 +1693,35 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         arguments: dict[str, Any],
         workflow_context: Any | None,
     ) -> Any | None:
+        if tool_name == "sys_refine_asset_metadata":
+            from app.services.assistant.assistant_ingestion_service import AssistantIngestionService
+            from app.repositories.knowledge_repository import KnowledgeRepository
+            async with self.context.get_db_session() as session:
+                service = AssistantIngestionService(None, KnowledgeRepository(session))
+                return await service._extract_assistant_data(arguments.get("prompt", ""), user_id=self.context.user_id)
+
+        if tool_name == "sys_submit_onboarding_request":
+            from app.services.assistant.assistant_market_service import AssistantMarketService
+            from app.repositories import AssistantRepository, AssistantInstallRepository, AssistantMarketRepository
+            from app.repositories.review_repository import ReviewTaskRepository
+            async with self.context.get_db_session() as session:
+                market_service = AssistantMarketService(
+                    AssistantRepository(session),
+                    AssistantInstallRepository(session),
+                    ReviewTaskRepository(session),
+                    AssistantMarketRepository(session)
+                )
+                payload = arguments.get("payload", {})
+                if arguments.get("asset_type") == "assistant":
+                    # For cloud, we trigger the review flow
+                    await market_service.submit_for_review(
+                        user_id=self.context.user_id,
+                        assistant_id=uuid.UUID(payload.get("assistant_id")) if payload.get("assistant_id") else uuid.uuid4(),
+                        payload=payload
+                    )
+                    return {"action": "pending_review", "status": "submitted"}
+                return {"action": "ignored", "status": "unsupported"}
+
         from app.agent_plugins.core.context import ConcretePluginContext
         from app.services.agent.agent_service import agent_service
 
@@ -2262,32 +2369,47 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         sdk_module_name = str((runtime_sdk_bundle or {}).get("module_name") or "").strip()
         sdk_tool_count = int((runtime_sdk_bundle or {}).get("tool_count") or 0)
 
-        # Prepare runtime path for official skills
-        # Map the physical packages/official-skills to builtin_skills inside sandbox
+        # Prepare runtime paths for Official and User skills
         project_root = Path(__file__).parent.parent.parent.parent.parent
         official_skills_path = project_root / "packages" / "official-skills"
+        
+        # Cross-platform App Data resolution (Matches Tauri's app_data_dir)
+        def get_user_skills_path():
+            import platform
+            home = Path.home()
+            if platform.system() == "Windows":
+                # Typical Windows AppData/Roaming/com.deeting.app/skills
+                return home / "AppData" / "Roaming" / "com.deeting.app" / "skills"
+            elif platform.system() == "Darwin":
+                return home / "Library" / "Application Support" / "com.deeting.app" / "skills"
+            else:
+                return home / ".local" / "share" / "com.deeting.app" / "skills"
+
+        user_skills_path = get_user_skills_path()
         
         runtime_block = (
             "import json\n"
             "import sys\n"
             "import os\n"
-            f"sys.path.insert(0, {str(official_skills_path.parent)!r})\n"
-            # Alias 'official-skills' to 'builtin_skills' for clean imports
-            "import importlib.util\n"
-            "try:\n"
-            f"    _spec = importlib.util.spec_from_file_location('builtin_skills', {str(official_skills_path)!r} + '/__init__.py')\n"
-            "    if _spec is None: # Folder without __init__.py\n"
-            "        import types\n"
-            "        _builtin_skills = types.ModuleType('builtin_skills')\n"
-            f"        _builtin_skills.__path__ = [{str(official_skills_path)!r}]\n"
-            "        sys.modules['builtin_skills'] = _builtin_skills\n"
-            "except Exception: pass\n"
+            "import types\n"
+            "from pathlib import Path\n"
+            
+            # Helper to mount a directory as a module alias
+            "def _mount_skill_dir(name, path):\n"
+            "    p = Path(path)\n"
+            "    if not p.exists(): return\n"
+            "    sys.path.insert(0, str(p.parent))\n"
+            "    mod = types.ModuleType(name)\n"
+            "    mod.__path__ = [str(p)]\n"
+            "    sys.modules[name] = mod\n"
+            
+            f"_mount_skill_dir('builtin_skills', {str(official_skills_path)!r})\n"
+            f"_mount_skill_dir('user_skills', {str(user_skills_path)!r})\n"
             
             f"RUNTIME_CONTEXT = json.loads({context_json!r})\n"
             f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
             f"RUNTIME_TOOL_RESULTS = json.loads({runtime_tool_results_json!r})\n"
             "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)\n"
-            "import types\n"
             "_deeting_module = types.ModuleType('deeting')\n"
             "for _name in ('log', 'section', 'get_context', 'render', 'call_tool', 'write_file', 'read_file'):\n"
             "    setattr(_deeting_module, _name, getattr(deeting, _name))\n"

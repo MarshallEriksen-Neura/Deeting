@@ -1,0 +1,25 @@
+tools:
+  - name: install_skill_from_git
+    description: "Install a new skill by cloning a git repository and symlinking it to the local skills directory."
+    parameters:
+      type: object
+      properties:
+        repo_url:
+          type: string
+          description: "The HTTPS URL of the skill repository."
+        skill_name:
+          type: string
+          description: "A short, unique name for the skill (e.g., 'weather-tool')."
+      required: ["repo_url", "skill_name"]
+
+  - name: refresh_skill_index
+    description: "Trigger a rescan of all local skill directories and update the LanceDB semantic index."
+    parameters: { type: object, properties: {} }
+
+  - name: uninstall_skill
+    description: "Remove a locally installed skill by deleting its symlink."
+    parameters:
+      type: object
+      properties:
+        skill_name: { type: string }
+      required: ["skill_name"]

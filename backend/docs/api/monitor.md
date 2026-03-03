@@ -29,6 +29,11 @@
 - `notify_config` object，可选
 - `allowed_tools` array，可选
 
+约束：
+
+- 云端执行模式下，`cron_expr` 频率不能低于系统最小间隔（默认 5 分钟）。
+- 若过于高频，接口返回 `400`，错误信息包含“Cron 频率过高”。
+
 成功响应（201）：
 
 ```json
@@ -100,6 +105,7 @@
 说明：
 
 - `cron_expr` 会做格式校验（非法返回 `400`）。
+- `cron_expr` 还会做最小执行间隔校验（过于高频返回 `400`）。
 - `status/cron_expr` 变更会自动重建调度索引。
 
 ---
@@ -125,6 +131,11 @@
 - 该接口为“手动触发”，会强制发送通知（不受 `is_significant_change` 是否为 `true` 的限制）。
 - 该接口采用即时投递（不加随机抖动），触发后会尽快进入 `reasoning_worker`。
 - 定时调度触发仍保持原行为：仅在检测到显著变化时发送通知。
+- 手动触发受冷却时间保护（默认同一用户同一任务 30 秒内仅允许一次）。
+
+可能错误：
+
+- `429 Too Many Requests`：手动触发过于频繁，请稍后重试。
 
 成功响应：
 
@@ -188,6 +199,7 @@
 - `bootstrap_schedule` 周期扫描 active 任务并重建 Redis 调度索引；仅在 Redis 不可用时降级为 DB 到期扫描。
 - `next_run_at` 统一由 `cron_expr` 计算，并回写到 DB（用于审计与降级兜底）。
 - 触发研判时会自动加入 `0~120s` 随机抖动，平滑并发峰值。
+- 调度器每个 tick 有全局触发上限与单用户上限（默认 `50` / `3`）；超限任务会按背压延后（默认 60 秒）而不是立即触发。
 - 研判输出强制 JSON Schema：
 
 ```json
@@ -203,6 +215,14 @@
 - 若 `is_significant_change=true`，才会进入通知队列。
 - `reasoning_worker` 与 `notification_worker` 均启用指数退避重试（`max_retries=3`）；连续失败超过阈值后任务置为 `failed_suspended`。
 - worker 达到最大重试后会写入 `deeting_monitor_dead_letter`（DLQ 表），并向用户发送系统级告警通知。
+
+调度保护配置（环境变量）：
+
+- `MONITOR_MIN_CLOUD_INTERVAL_MINUTES`：云端最小 Cron 间隔分钟数（默认 `5`）
+- `MONITOR_MAX_TRIGGER_PER_TICK`：每个调度 tick 最多触发任务数（默认 `50`）
+- `MONITOR_MAX_TRIGGER_PER_USER_PER_TICK`：每个调度 tick 单用户最多触发任务数（默认 `3`）
+- `MONITOR_BACKPRESSURE_DELAY_SECONDS`：超限任务的延后秒数（默认 `60`）
+- `MONITOR_MANUAL_TRIGGER_COOLDOWN_SECONDS`：手动触发冷却秒数（默认 `30`）
 
 ---
 

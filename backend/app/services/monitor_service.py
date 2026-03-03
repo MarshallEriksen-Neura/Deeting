@@ -5,6 +5,7 @@ from uuid import UUID
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.monitor import MonitorStatus
 from app.repositories.monitor_repository import (
     MonitorExecutionLogRepository,
@@ -40,6 +41,7 @@ class MonitorService:
         ok, error = validate_cron_expr(cron_expr)
         if not ok:
             raise ValueError(f"Cron 表达式非法: {error}")
+        self._validate_cloud_cron_interval(cron_expr)
 
         existing = await self.task_repo.get_by_title(user_id, title)
         if existing:
@@ -162,6 +164,7 @@ class MonitorService:
             ok, error = validate_cron_expr(str(filtered_updates["cron_expr"]))
             if not ok:
                 raise ValueError(f"Cron 表达式非法: {error}")
+            self._validate_cloud_cron_interval(str(filtered_updates["cron_expr"]))
 
         if "status" in filtered_updates:
             filtered_updates["status"] = MonitorStatus(filtered_updates["status"])
@@ -345,6 +348,28 @@ class MonitorService:
         if len(normalized) > 32:
             raise ValueError("allowed_tools 最多允许 32 个工具")
         return normalized
+
+    @staticmethod
+    def _estimate_cron_interval_minutes(cron_expr: str) -> int:
+        """
+        估算 Cron 的执行间隔（分钟）。
+        采用连续两次 next_run 差值，避免受“当前时刻对齐边界”影响。
+        """
+        now = Datetime.now()
+        first = next_run_after(cron_expr, now)
+        second = next_run_after(cron_expr, first)
+        interval_seconds = int((second - first).total_seconds())
+        return max(1, interval_seconds // 60)
+
+    @classmethod
+    def _validate_cloud_cron_interval(cls, cron_expr: str) -> None:
+        min_minutes = max(1, int(settings.MONITOR_MIN_CLOUD_INTERVAL_MINUTES or 1))
+        interval_minutes = cls._estimate_cron_interval_minutes(cron_expr)
+        if interval_minutes < min_minutes:
+            raise ValueError(
+                f"Cron 频率过高：当前约每 {interval_minutes} 分钟执行一次，"
+                f"云端最小允许间隔为 {min_minutes} 分钟"
+            )
 
     def _serialize_task(self, task: Any) -> dict[str, Any]:
         return {
