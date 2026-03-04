@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 
 import { buildApiWsUrl, getAuthToken, refreshAccessToken } from "@/lib/http/client"
+import { startLocalMonitorWorker, stopLocalMonitorWorker } from "@/lib/api/monitors"
 import { useNotificationActions } from "@/stores/notification-store"
 import { useAuthStore } from "@/store/auth-store"
 import { type NotificationItem, type NotificationType } from "@/components/notifications/notification-center"
@@ -223,6 +224,12 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
       return
     }
 
+    if (process.env.NEXT_PUBLIC_IS_TAURI === "true") {
+      startLocalMonitorWorker({ accessToken: token }).catch((error) => {
+        console.warn("[monitor-worker] start failed", error)
+      })
+    }
+
     // 在生产环境中不将token放在URL中，而是依赖cookies进行认证
     // 只在开发环境中保留URL参数方式以方便调试
     const isProd = process.env.NODE_ENV === 'production';
@@ -295,6 +302,15 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
       ws.close()
     }
   }, [enabled, isAuthenticated, scheduleReconnect, setList, setUnreadCount, startPing, stopPing, upsert])
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") {
+      return
+    }
+    if (!enabled || !isAuthenticated) {
+      void stopLocalMonitorWorker().catch(() => null)
+    }
+  }, [enabled, isAuthenticated])
 
   useEffect(() => {
     if (!enabled || !isAuthenticated) return undefined

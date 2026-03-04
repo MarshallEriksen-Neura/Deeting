@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+from datetime import timedelta
 from uuid import uuid4
 
 from app.models import Base
@@ -9,6 +10,7 @@ from app.core.config import settings
 from app.models.monitor import MonitorExecutionLog, MonitorStatus, MonitorTask
 from app.models.user import User
 from app.repositories.monitor_repository import MonitorTaskRepository
+from app.services.monitor_dispatch import MonitorExecutionTarget
 from app.services.monitor_service import MonitorService
 from app.utils.time_utils import Datetime
 
@@ -355,4 +357,108 @@ async def test_create_task_rejects_invalid_allowed_tools(async_session: AsyncSes
             title="非法工具白名单",
             objective="测试白名单校验",
             allowed_tools=["valid_tool", "bad tool name"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_desktop_task_allows_high_frequency_cron(async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch):
+    user = await _create_user(async_session, "monitor_desktop_cron@example.com")
+    service = MonitorService(async_session)
+    monkeypatch.setattr(settings, "MONITOR_MIN_CLOUD_INTERVAL_MINUTES", 10, raising=False)
+
+    result = await service.create_task(
+        user_id=user.id,
+        title="本地高频任务",
+        objective="本地执行",
+        cron_expr="*/1 * * * *",
+        execution_target=MonitorExecutionTarget.DESKTOP,
+    )
+
+    detail = await service.get_task(result["id"])
+    assert detail is not None
+    assert detail["execution_target"] == "desktop"
+
+
+@pytest.mark.asyncio
+async def test_pull_local_tasks_returns_only_local_targets(async_session: AsyncSession):
+    user = await _create_user(async_session, "monitor_local_pull@example.com")
+    service = MonitorService(async_session)
+
+    cloud_task = await service.create_task(
+        user_id=user.id,
+        title="云端任务",
+        objective="cloud",
+        execution_target=MonitorExecutionTarget.CLOUD,
+    )
+    desktop_task = await service.create_task(
+        user_id=user.id,
+        title="本地任务",
+        objective="desktop",
+        execution_target=MonitorExecutionTarget.DESKTOP,
+    )
+
+    cloud_obj = await service.task_repo.get(cloud_task["id"])
+    desktop_obj = await service.task_repo.get(desktop_task["id"])
+    assert cloud_obj is not None and desktop_obj is not None
+    due_time = Datetime.now() - timedelta(minutes=1)
+    cloud_obj.next_run_at = due_time
+    desktop_obj.next_run_at = due_time
+    async_session.add(cloud_obj)
+    async_session.add(desktop_obj)
+    await async_session.commit()
+
+    pulled = await service.pull_local_tasks(user_id=user.id, agent_id="desktop-1", limit=5)
+    assert pulled["claimed"] == 1
+    assert len(pulled["items"]) == 1
+    assert pulled["items"][0]["task_id"] == desktop_task["id"]
+
+
+@pytest.mark.asyncio
+async def test_report_local_execution_success_updates_task(async_session: AsyncSession):
+    user = await _create_user(async_session, "monitor_local_report@example.com")
+    service = MonitorService(async_session)
+    created = await service.create_task(
+        user_id=user.id,
+        title="本地回传任务",
+        objective="desktop",
+        execution_target=MonitorExecutionTarget.DESKTOP,
+    )
+
+    result = await service.report_local_execution(
+        task_id=created["id"],
+        user_id=user.id,
+        agent_id="desktop-2",
+        status_value="success",
+        is_significant_change=True,
+        change_summary="检测到变化",
+        new_snapshot={"status": "updated"},
+        tokens_used=42,
+        force_notify=False,
+    )
+
+    assert result["status"] == "success"
+    detail = await service.get_task(created["id"])
+    assert detail is not None
+    assert detail["last_snapshot"]["status"] == "updated"
+    assert detail["total_tokens"] == 42
+    assert detail["error_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_report_local_execution_rejects_cloud_target(async_session: AsyncSession):
+    user = await _create_user(async_session, "monitor_local_report_reject@example.com")
+    service = MonitorService(async_session)
+    created = await service.create_task(
+        user_id=user.id,
+        title="云端回传拒绝",
+        objective="cloud",
+        execution_target=MonitorExecutionTarget.CLOUD,
+    )
+
+    with pytest.raises(ValueError, match="cloud"):
+        await service.report_local_execution(
+            task_id=created["id"],
+            user_id=user.id,
+            agent_id="desktop-3",
+            status_value="success",
         )

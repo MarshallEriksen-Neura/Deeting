@@ -8,6 +8,7 @@ use crate::modules::mcp::store::{expand_path, McpStore};
 use crate::modules::mcp::types::McpSourceStatus;
 use crate::modules::mcp::McpRuntimeState;
 use crate::modules::memory::MemoryState;
+use crate::modules::monitor::MonitorState;
 use crate::modules::providers::ProviderState;
 use crate::modules::sandbox::SandboxState;
 use crate::state::AppState;
@@ -15,10 +16,10 @@ use log::warn;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::Manager;
-use tauri::Emitter;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::Emitter;
+use tauri::Manager;
 use tauri_plugin_global_shortcut::ShortcutState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -81,6 +82,10 @@ pub fn run() {
                 let code_mode_state = CodeModeState::new(&database_url)
                     .await
                     .map_err(|e| McpError::Storage(e.to_string()))?;
+                let monitor_state = MonitorState::new(
+                    mcp_state.cloud_base_url.clone(),
+                    provider_state.store.clone(),
+                );
 
                 Ok::<_, McpError>(AppState::new(
                     mcp_state,
@@ -88,6 +93,7 @@ pub fn run() {
                     memory_state,
                     sandbox_state,
                     code_mode_state,
+                    monitor_state,
                 ))
             })
             .map_err(|err| Box::<dyn std::error::Error>::from(err))?;
@@ -165,8 +171,6 @@ pub fn run() {
                     .await;
                 });
 
-                });
-
                 let app_state_for_knowledge_index = sync_state_for_mcp.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(err) =
@@ -238,15 +242,18 @@ pub fn run() {
 
             // ── Global Shortcut: Cmd/Ctrl+Shift+D ────────────────────
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            app.global_shortcut().on_shortcut("CommandOrControl+Shift+D", |app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.unminimize();
-                        let _ = w.show();
-                        let _ = w.set_focus();
+            app.global_shortcut().on_shortcut(
+                "CommandOrControl+Shift+D",
+                |app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.unminimize();
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
                     }
-                }
-            })?;
+                },
+            )?;
 
             Ok(())
         })
@@ -365,7 +372,12 @@ pub fn run() {
             crate::modules::code_mode::commands::list_local_code_mode_executions,
             crate::modules::code_mode::commands::get_local_code_mode_execution,
             crate::modules::code_mode::commands::replay_local_code_mode_execution,
-            crate::modules::code_mode::commands::sync_local_code_mode_executions
+            crate::modules::code_mode::commands::sync_local_code_mode_executions,
+            // Local Monitor Worker Commands
+            crate::modules::monitor::commands::start_local_monitor_worker,
+            crate::modules::monitor::commands::stop_local_monitor_worker,
+            crate::modules::monitor::commands::get_local_monitor_worker_status,
+            crate::modules::monitor::commands::run_local_monitor_worker_once
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

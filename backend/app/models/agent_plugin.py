@@ -1,72 +1,35 @@
-import uuid
+from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import uuid
+from typing import Any
+
+from sqlalchemy import UUID as SA_UUID
+from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from .user import User
+from .provider_preset import JSONBCompat
 
 
 class AgentPlugin(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    轻量兼容模型：用于保持旧导入路径可用。
+    """
+
     __tablename__ = "agent_plugin"
 
-    # Basic Info
-    name: Mapped[str] = mapped_column(
-        String(100),
-        unique=True,
-        index=True,
-        nullable=False,
-        comment="Plugin unique identifier (e.g. 'official/weather')",
-    )
-    display_name: Mapped[str | None] = mapped_column(
-        String(200), nullable=True, comment="Display name"
-    )
-    version: Mapped[str] = mapped_column(
-        String(50), default="0.1.0", nullable=False, comment="Semantic version"
-    )
-    description: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Function description (for vector retrieval)"
-    )
-    icon_url: Mapped[str | None] = mapped_column(
-        String(500), nullable=True, comment="Icon URL"
-    )
-
-    # Code/Execution Reference
-    module_path: Mapped[str] = mapped_column(
-        String(500),
-        nullable=False,
-        comment="Python module import path or code reference",
-    )
-    config_schema: Mapped[dict | None] = mapped_column(
-        JSON, nullable=True, comment="Configuration JSON Schema"
-    )
-    capabilities: Mapped[list[str] | None] = mapped_column(
-        JSON, nullable=True, comment="Capability tags list (e.g. ['search', 'image'])"
-    )
-
-    # Permissions and Ownership
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("user_account.id"),
+        SA_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="SET NULL"),
         nullable=True,
-        comment="Owner ID (Empty for System plugins)",
     )
-    visibility: Mapped[str] = mapped_column(
-        String(20),
-        default="PRIVATE",
-        nullable=False,
-        comment="Visibility: PUBLIC, PRIVATE, SHARED",
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="PUBLIC")
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    capabilities: Mapped[list[str] | dict[str, Any] | None] = mapped_column(
+        JSONBCompat,
+        nullable=True,
     )
-    is_system: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False, comment="Is system built-in"
-    )
-    is_approved: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False, comment="Is approved (Only for Public)"
-    )
-
-    # Relationships
-    owner: Mapped["User"] = relationship(
-        "User", backref="owned_plugins", foreign_keys=[owner_id]
-    )
-
-    def __repr__(self) -> str:
-        return f"<AgentPlugin(name={self.name}, version={self.version})>"

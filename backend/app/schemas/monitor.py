@@ -11,8 +11,13 @@ from pydantic import field_validator
 from app.models.monitor import MonitorStatus
 from app.schemas.base import BaseSchema
 from app.services.monitor_cron import validate_cron_expr
+from app.services.monitor_dispatch import (
+    MonitorExecutionTarget,
+    normalize_monitor_execution_target,
+)
 
 _ALLOWED_TOOL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./:-]{0,63}$")
+_AGENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}$")
 
 
 def _normalize_allowed_tools(values: list[str]) -> list[str]:
@@ -39,6 +44,10 @@ class MonitorTaskCreate(BaseSchema):
     cron_expr: str = Field("0 */6 * * *", description="Cron 表达式")
     notify_config: dict[str, Any] = Field(default_factory=dict, description="触达配置")
     allowed_tools: list[str] = Field(default_factory=list, description="允许的工具列表")
+    execution_target: MonitorExecutionTarget = Field(
+        default=MonitorExecutionTarget.CLOUD,
+        description="执行目标: cloud | desktop | desktop_preferred",
+    )
 
     @field_validator("cron_expr")
     @classmethod
@@ -53,6 +62,11 @@ class MonitorTaskCreate(BaseSchema):
     def _validate_allowed_tools(cls, value: list[str]) -> list[str]:
         return _normalize_allowed_tools(value)
 
+    @field_validator("execution_target", mode="before")
+    @classmethod
+    def _validate_execution_target(cls, value: Any) -> MonitorExecutionTarget:
+        return normalize_monitor_execution_target(value)
+
 
 class MonitorTaskUpdate(BaseSchema):
     title: str | None = Field(None, max_length=200, description="任务名称")
@@ -61,6 +75,10 @@ class MonitorTaskUpdate(BaseSchema):
     status: MonitorStatus | None = Field(None, description="任务状态")
     notify_config: dict[str, Any] | None = Field(None, description="触达配置")
     allowed_tools: list[str] | None = Field(None, description="允许的工具列表")
+    execution_target: MonitorExecutionTarget | None = Field(
+        None,
+        description="执行目标: cloud | desktop | desktop_preferred",
+    )
 
     @field_validator("cron_expr")
     @classmethod
@@ -79,6 +97,15 @@ class MonitorTaskUpdate(BaseSchema):
             return None
         return _normalize_allowed_tools(value)
 
+    @field_validator("execution_target", mode="before")
+    @classmethod
+    def _validate_optional_execution_target(
+        cls, value: Any
+    ) -> MonitorExecutionTarget | None:
+        if value is None:
+            return None
+        return normalize_monitor_execution_target(value)
+
 
 class MonitorTaskResponse(BaseSchema):
     id: UUID = Field(..., description="任务 ID")
@@ -92,6 +119,7 @@ class MonitorTaskResponse(BaseSchema):
     error_count: int = Field(..., description="连续失败次数")
     notify_config: dict[str, Any] = Field(..., description="触达配置")
     allowed_tools: list[str] = Field(..., description="允许的工具")
+    execution_target: MonitorExecutionTarget = Field(..., description="执行目标")
     total_tokens: int = Field(..., description="累计 Token 消耗")
     is_active: bool = Field(..., description="是否有效")
     created_at: datetime = Field(..., description="创建时间")
@@ -135,3 +163,74 @@ class MonitorStatsResponse(BaseSchema):
 
 class MonitorTriggerRequest(BaseSchema):
     task_id: UUID = Field(..., description="任务 ID")
+
+
+def _normalize_agent_id(value: Any) -> str:
+    agent_id = str(value or "").strip()
+    if not _AGENT_ID_PATTERN.match(agent_id):
+        raise ValueError("agent_id 非法，仅支持字母数字及 . _ : -，长度 2~64")
+    return agent_id
+
+
+class MonitorDesktopHeartbeatRequest(BaseSchema):
+    agent_id: str = Field(..., description="桌面实例 ID")
+
+    @field_validator("agent_id")
+    @classmethod
+    def _validate_agent_id(cls, value: str) -> str:
+        return _normalize_agent_id(value)
+
+
+class MonitorDesktopPullRequest(BaseSchema):
+    agent_id: str = Field(..., description="桌面实例 ID")
+    limit: int = Field(5, ge=1, le=20, description="单次拉取任务数量")
+
+    @field_validator("agent_id")
+    @classmethod
+    def _validate_agent_id(cls, value: str) -> str:
+        return _normalize_agent_id(value)
+
+
+class MonitorDesktopTaskPayload(BaseSchema):
+    task_id: UUID = Field(..., description="任务 ID")
+    title: str = Field(..., description="任务标题")
+    objective: str = Field(..., description="任务目标")
+    cron_expr: str = Field(..., description="Cron 表达式")
+    model_id: str | None = Field(None, description="建议模型 ID")
+    allowed_tools: list[str] = Field(default_factory=list, description="允许工具列表")
+    last_snapshot: dict[str, Any] = Field(default_factory=dict, description="最近快照")
+    notify_config: dict[str, Any] = Field(default_factory=dict, description="触达配置（脱敏）")
+    execution_target: MonitorExecutionTarget = Field(..., description="执行目标")
+    claimed_until: datetime = Field(..., description="本次领取租约结束时间")
+
+
+class MonitorDesktopPullResponse(BaseSchema):
+    items: list[MonitorDesktopTaskPayload] = Field(default_factory=list, description="本次领取到的任务")
+    claimed: int = Field(0, ge=0, description="本次领取数量")
+    server_time: datetime = Field(..., description="服务端时间")
+
+
+class MonitorDesktopReportRequest(BaseSchema):
+    agent_id: str = Field(..., description="桌面实例 ID")
+    status: str = Field(..., description="执行状态: success|failure|skipped")
+    is_significant_change: bool = Field(False, description="是否检测到显著变化")
+    change_summary: str = Field("", description="变化摘要")
+    new_snapshot: dict[str, Any] = Field(default_factory=dict, description="新快照")
+    tokens_used: int = Field(0, ge=0, description="本次 token 消耗")
+    error_message: str | None = Field(None, description="失败原因")
+    force_notify: bool = Field(False, description="是否强制触发通知")
+    model_id: str | None = Field(None, description="本地执行使用的模型 ID")
+    strategy: str | None = Field(None, description="本地执行策略标识")
+
+    @field_validator("agent_id")
+    @classmethod
+    def _validate_agent_id(cls, value: str) -> str:
+        return _normalize_agent_id(value)
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: str) -> str:
+        status = str(value or "").strip().lower()
+        if status not in {"success", "failure", "skipped"}:
+            raise ValueError("status 仅支持 success/failure/skipped")
+        return status

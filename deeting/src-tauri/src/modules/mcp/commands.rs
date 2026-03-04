@@ -56,11 +56,7 @@ pub async fn register_local_skills(
     let official_skills_dir = project_root.join("packages/official-skills");
 
     // 2. User/Dynamic Skills (Standard App Data Directory)
-    let user_skills_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(to_string)?
-        .join("skills");
+    let user_skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
 
     if !user_skills_dir.exists() {
         let _ = std::fs::create_dir_all(&user_skills_dir);
@@ -91,7 +87,8 @@ pub async fn register_local_skills(
                 continue;
             }
 
-            let deeting_json_str = std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
+            let deeting_json_str =
+                std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
             let manifest: serde_json::Value =
                 serde_json::from_str(&deeting_json_str).map_err(to_string)?;
 
@@ -142,7 +139,11 @@ pub async fn register_local_skills(
                         error: None,
                         command: Some("python3".to_string()),
                         args: Some(vec![full_main_path.to_string_lossy().to_string()]),
-                        env: if env.is_empty() { None } else { Some(env.clone()) },
+                        env: if env.is_empty() {
+                            None
+                        } else {
+                            Some(env.clone())
+                        },
                         config_json,
                         config_hash: "system_builtin".to_string(),
                         pending_config_json: None,
@@ -159,21 +160,31 @@ pub async fn register_local_skills(
                         let tool_name = tool.name.clone();
                         let tool_desc = tool.description.clone();
                         let final_pkg_name = pkg_name.to_string();
-                        let final_source_type = if source_prefix == "system_plugin" { "builtin" } else { "user" };
+                        let final_source_type = if source_prefix == "system_plugin" {
+                            "builtin"
+                        } else {
+                            "user"
+                        };
 
                         tauri::async_runtime::spawn(async move {
                             let text = format!("name: {}\ndescription: {}", tool_name, tool_desc);
-                            if let Ok(vector) = app_state_clone.providers.embedding.embed_text(&text).await {
-                                let _ = app_state_clone.memory.store.upsert_asset(
-                                    tool_id,
-                                    tool_name,
-                                    tool_desc,
-                                    "tool".to_string(),
-                                    final_source_type.to_string(),
-                                    Some(final_pkg_name),
-                                    vector,
-                                    None
-                                ).await;
+                            if let Ok(vector) =
+                                app_state_clone.providers.embedding.embed_text(&text).await
+                            {
+                                let _ = app_state_clone
+                                    .memory
+                                    .store
+                                    .upsert_asset(
+                                        tool_id,
+                                        tool_name,
+                                        tool_desc,
+                                        "tool".to_string(),
+                                        final_source_type.to_string(),
+                                        Some(final_pkg_name),
+                                        vector,
+                                        None,
+                                    )
+                                    .await;
                             }
                         });
                     }
@@ -184,7 +195,6 @@ pub async fn register_local_skills(
 
     Ok(total_indexed)
 }
-
 
 #[tauri::command]
 pub async fn sync_cloud_subscriptions(
@@ -207,7 +217,10 @@ pub async fn sync_cloud_subscriptions(
         .map_err(to_string)?;
 
     if !response.status().is_success() {
-        return Err(format!("failed to sync subscriptions: {}", response.status()));
+        return Err(format!(
+            "failed to sync subscriptions: {}",
+            response.status()
+        ));
     }
 
     let subscriptions: Vec<McpSubscriptionItem> = response.json().await.map_err(to_string)?;
@@ -409,7 +422,11 @@ pub async fn update_local_assistant(
 #[tauri::command]
 pub async fn delete_local_assistant(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let state = &state.mcp;
-    state.store.delete_local_assistant(&id).await.map_err(to_string)
+    state
+        .store
+        .delete_local_assistant(&id)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -453,7 +470,10 @@ pub async fn update_assistant_message(
 }
 
 #[tauri::command]
-pub async fn delete_assistant_message(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn delete_assistant_message(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
     let state = &state.mcp;
     state
         .store
@@ -787,7 +807,10 @@ pub async fn update_mcp_tool_env(
 }
 
 #[tauri::command]
-pub async fn apply_pending_config(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
+pub async fn apply_pending_config(
+    state: State<'_, AppState>,
+    tool_id: String,
+) -> Result<(), String> {
     let state = &state.mcp;
     state
         .store
@@ -810,7 +833,10 @@ pub async fn resolve_mcp_conflict(
 }
 
 #[tauri::command]
-pub async fn get_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Result<Vec<Value>, String> {
+pub async fn get_mcp_logs(
+    state: State<'_, AppState>,
+    tool_id: String,
+) -> Result<Vec<Value>, String> {
     let state = &state.mcp;
     let logs = state.process_manager.get_logs(&tool_id).await;
     Ok(logs.into_iter().map(|l| serde_json::json!(l)).collect())
@@ -863,7 +889,10 @@ pub async fn sync_cloud_subscriptions_v2(
         .map_err(to_string)?;
 
     if !response.status().is_success() {
-        return Err(format!("failed to sync subscriptions: {}", response.status()));
+        return Err(format!(
+            "failed to sync subscriptions: {}",
+            response.status()
+        ));
     }
 
     let subscriptions: Vec<McpSubscriptionItem> = response.json().await.map_err(to_string)?;
@@ -926,7 +955,11 @@ pub async fn list_local_knowledge_folders(
     state: State<'_, AppState>,
 ) -> Result<Vec<LocalKnowledgeFolder>, String> {
     let state = &state.mcp;
-    state.store.list_local_knowledge_folders().await.map_err(to_string)
+    state
+        .store
+        .list_local_knowledge_folders()
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -1000,7 +1033,11 @@ pub async fn get_local_knowledge_stats(
     state: State<'_, AppState>,
 ) -> Result<LocalKnowledgeStatsResponse, String> {
     let state = &state.mcp;
-    state.store.get_local_knowledge_stats().await.map_err(to_string)
+    state
+        .store
+        .get_local_knowledge_stats()
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -1243,20 +1280,22 @@ pub async fn get_local_gateway_log_stats(
     state: State<'_, AppState>,
 ) -> Result<LocalGatewayLogStatsResponse, String> {
     let state = &state.mcp;
-    state.store.get_local_gateway_log_stats().await.map_err(to_string)
+    state
+        .store
+        .get_local_gateway_log_stats()
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
-pub async fn sync_official_skills_index(
-    app_state: State<'_, AppState>,
-) -> Result<usize, String> {
+pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Result<usize, String> {
     let state = &app_state.mcp;
     let base_url = state.cloud_base_url.read().await.clone();
     let url = format!(
         "{}/api/v1/skills/marketplace?limit=100",
         base_url.trim_end_matches('/')
     );
-    
+
     let response = state.client.get(&url).send().await.map_err(to_string)?;
     if !response.status().is_success() {
         return Err("failed to fetch marketplace index".to_string());
@@ -1269,21 +1308,25 @@ pub async fn sync_official_skills_index(
         let id = skill["id"].as_str().unwrap_or("").to_string();
         let name = skill["name"].as_str().unwrap_or("").to_string();
         let desc = skill["description"].as_str().unwrap_or("").to_string();
-        
+
         let app_state_clone = app_state.inner().clone();
         tauri::async_runtime::spawn(async move {
             let text = format!("name: {}\ndescription: {}", name, desc);
             if let Ok(vector) = app_state_clone.providers.embedding.embed_text(&text).await {
-                let _ = app_state_clone.memory.store.upsert_asset(
-                    id,
-                    name,
-                    desc,
-                    "skill".to_string(),
-                    "cloud_mirror".to_string(),
-                    None,
-                    vector,
-                    Some(skill)
-                ).await;
+                let _ = app_state_clone
+                    .memory
+                    .store
+                    .upsert_asset(
+                        id,
+                        name,
+                        desc,
+                        "skill".to_string(),
+                        "cloud_mirror".to_string(),
+                        None,
+                        vector,
+                        Some(skill),
+                    )
+                    .await;
             }
         });
     }
@@ -1299,8 +1342,8 @@ pub(crate) async fn sync_source_inner(
     let tools = match source.source_type {
         McpSourceType::Local => {
             let path = expand_path(&source.path_or_url);
-            let config_json = std::fs::read_to_string(path)
-                .map_err(|err| McpError::Storage(err.to_string()))?;
+            let config_json =
+                std::fs::read_to_string(path).map_err(|err| McpError::Storage(err.to_string()))?;
             let config: McpConfigPayload = serde_json::from_str(&config_json)
                 .map_err(|err| McpError::Storage(err.to_string()))?;
             apply_config_payload(state, &source, config).await?
@@ -1343,7 +1386,10 @@ async fn apply_config_payload(
 
     for (name, config) in payload.mcp_servers {
         let identifier = format!("{}/{}", source.id, name);
-        let existing_tool = state.store.get_tool_by_source_name(&source.id, &name).await?;
+        let existing_tool = state
+            .store
+            .get_tool_by_source_name(&source.id, &name)
+            .await?;
 
         let tool = match existing_tool {
             Some(existing_tool) => {
@@ -1465,7 +1511,11 @@ async fn run_local_chat_complete_with_auto_code_mode(
     let provider_model_id = &model_connection.provider_model_id;
     let model_id = &model_connection.model_id;
 
-    let search_query = messages.last().map(|m| &m.content).cloned().unwrap_or_default();
+    let search_query = messages
+        .last()
+        .map(|m| &m.content)
+        .cloned()
+        .unwrap_or_default();
     let mut tools = build_local_sdk_search_result(app_state, &search_query).await;
 
     let response = app_state
@@ -1487,12 +1537,8 @@ async fn run_local_chat_complete_with_auto_code_mode(
         return Ok(response);
     }
 
-    let (synthesized, _tool_call_meta, results) = maybe_handle_local_code_mode_tool_calls(
-        app_state,
-        &response,
-        chat_ctx,
-    )
-    .await;
+    let (synthesized, _tool_call_meta, results) =
+        maybe_handle_local_code_mode_tool_calls(app_state, &response, chat_ctx).await;
 
     if synthesized {
         let mut final_response = response.clone();
@@ -1522,25 +1568,42 @@ async fn maybe_handle_local_code_mode_tool_calls(
     for call in tool_calls {
         let tool_name = call.name.trim().to_lowercase();
         if tool_name == "execute_code_plan" {
-            let code = call.arguments.get("code").and_then(|v| v.as_str()).unwrap_or("");
-            let language = call.arguments.get("language").and_then(|v| v.as_str()).unwrap_or("python");
-            let execution_timeout = call.arguments.get("execution_timeout").and_then(|v| v.as_u64()).map(|v| v as i32);
-            let dry_run = call.arguments.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+            let code = call
+                .arguments
+                .get("code")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let language = call
+                .arguments
+                .get("language")
+                .and_then(|v| v.as_str())
+                .unwrap_or("python");
+            let execution_timeout = call
+                .arguments
+                .get("execution_timeout")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as i32);
+            let dry_run = call
+                .arguments
+                .get("dry_run")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
 
             if !code.is_empty() {
-                let execution_res = crate::modules::code_mode::commands::execute_local_code_mode_inner(
-                    app_state,
-                    ExecuteLocalCodeModeRequest {
-                        code: code.to_string(),
-                        session_id: Some(chat_ctx.session_id.clone()),
-                        language: language.to_string(),
-                        execution_timeout,
-                        dry_run: Some(dry_run),
-                        context: None,
-                        max_calls: None,
-                    },
-                )
-                .await;
+                let execution_res =
+                    crate::modules::code_mode::commands::execute_local_code_mode_inner(
+                        app_state,
+                        ExecuteLocalCodeModeRequest {
+                            code: code.to_string(),
+                            session_id: Some(chat_ctx.session_id.clone()),
+                            language: language.to_string(),
+                            execution_timeout,
+                            dry_run: Some(dry_run),
+                            context: None,
+                            max_calls: None,
+                        },
+                    )
+                    .await;
 
                 match execution_res {
                     Ok(res) => {
@@ -1565,7 +1628,11 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 }
             }
         } else if tool_name == "search_sdk" {
-            let query = call.arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            let query = call
+                .arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let search_res = build_local_sdk_search_result(app_state, query).await;
             synthesized = true;
             tool_call_meta.push(serde_json::json!({
@@ -1574,13 +1641,26 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 "status": "success",
                 "result": search_res,
             }));
-            results.push(format!("SDK Search Result for '{}':\n{}", query, serde_json::to_string_pretty(&search_res).unwrap()));
+            results.push(format!(
+                "SDK Search Result for '{}':\n{}",
+                query,
+                serde_json::to_string_pretty(&search_res).unwrap()
+            ));
         } else if tool_name == "sys_submit_onboarding_request" {
-            let asset_type = call.arguments.get("asset_type").and_then(|v| v.as_str()).unwrap_or("");
-            let payload = call.arguments.get("payload").cloned().unwrap_or(serde_json::json!({}));
-            
+            let asset_type = call
+                .arguments
+                .get("asset_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let payload = call
+                .arguments
+                .get("payload")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
+
             if asset_type == "assistant" {
-                let create_req: Result<crate::modules::mcp::types::CreateLocalAssistantRequest, _> = serde_json::from_value(payload);
+                let create_req: Result<crate::modules::mcp::types::CreateLocalAssistantRequest, _> =
+                    serde_json::from_value(payload);
                 if let Ok(req) = create_req {
                     match app_state.mcp.store.create_local_assistant(req).await {
                         Ok(id) => {
@@ -1639,11 +1719,14 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
         if let Ok(vector) = app_state.providers.embedding.embed_text(&normalized).await {
             if let Ok(asset_hits) = app_state.memory.store.search_assets(vector, 15, None).await {
                 for hit in asset_hits {
-                    let source_type = hit.get("source_type").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let source_type = hit
+                        .get("source_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     let name = hit["name"].as_str().unwrap_or("").to_string();
                     let desc = hit["description"].as_str().unwrap_or("").to_string();
                     let pkg_name = hit.get("pkg_name").and_then(|v| v.as_str());
-                    
+
                     catalog.push(serde_json::json!({
                         "name": name,
                         "description": desc,
@@ -1668,9 +1751,19 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
     let matches = catalog
         .into_iter()
         .filter(|item| {
-            if normalized.is_empty() { return true; }
-            let name_hit = item.get("name").and_then(|v| v.as_str()).map(|n| n.to_lowercase().contains(&normalized)).unwrap_or(false);
-            let desc_hit = item.get("description").and_then(|v| v.as_str()).map(|d| d.to_lowercase().contains(&normalized)).unwrap_or(false);
+            if normalized.is_empty() {
+                return true;
+            }
+            let name_hit = item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|n| n.to_lowercase().contains(&normalized))
+                .unwrap_or(false);
+            let desc_hit = item
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|d| d.to_lowercase().contains(&normalized))
+                .unwrap_or(false);
             name_hit || desc_hit || item.get("score").is_some()
         })
         .collect::<Vec<_>>();
@@ -1714,7 +1807,10 @@ fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCal
                 calls.push(LocalChatToolCall {
                     id: id.to_string(),
                     name: name.to_string(),
-                    arguments: tc.get("arguments").cloned().unwrap_or(serde_json::json!({})),
+                    arguments: tc
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or(serde_json::json!({})),
                 });
             }
         }

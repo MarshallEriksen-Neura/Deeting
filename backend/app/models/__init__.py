@@ -1,4 +1,7 @@
-from .agent_plugin import AgentPlugin
+try:
+    from .agent_plugin import AgentPlugin
+except Exception:  # pragma: no cover - 兼容当前精简部署包
+    AgentPlugin = None
 from .api_key import (
     ApiKey,
     ApiKeyIpWhitelist,

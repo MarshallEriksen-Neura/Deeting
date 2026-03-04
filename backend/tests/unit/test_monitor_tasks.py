@@ -9,6 +9,7 @@ from app.tasks.monitor import (
     _backpressure_delay_seconds,
     _backpressure_next_run,
     _build_monitor_prompt,
+    _dispatch_target_is_desktop,
     _extract_notify_channel_ids,
     _max_trigger_per_tick,
     _max_trigger_per_user_per_tick,
@@ -115,6 +116,15 @@ def test_monitor_task_create_rejects_invalid_allowed_tools():
         )
 
 
+def test_monitor_task_create_accepts_execution_target():
+    payload = MonitorTaskCreate(
+        title="test",
+        objective="watch",
+        execution_target="desktop_preferred",
+    )
+    assert payload.execution_target.value == "desktop_preferred"
+
+
 def test_extract_notify_channel_ids_filters_invalid_and_deduplicates():
     c1 = uuid.uuid4()
     c2 = uuid.uuid4()
@@ -183,3 +193,46 @@ def test_backpressure_next_run_uses_delay_setting(monkeypatch: pytest.MonkeyPatc
     now = Datetime.now()
     delayed = _backpressure_next_run(now)
     assert int((delayed - now).total_seconds()) == 75
+
+
+@pytest.mark.asyncio
+async def test_dispatch_target_is_desktop_for_hard_local():
+    class DummyTask:
+        notify_config = {"execution_target": "desktop"}
+
+    assert await _dispatch_target_is_desktop(
+        DummyTask(),  # type: ignore[arg-type]
+        desktop_online_cache={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_target_is_desktop_for_preferred_when_online(monkeypatch: pytest.MonkeyPatch):
+    class DummyTask:
+        user_id = uuid.uuid4()
+        notify_config = {"execution_target": "desktop_preferred"}
+
+    async def _fake_get(_key: str):
+        return {"agent_id": "desktop-1"}
+
+    monkeypatch.setattr("app.tasks.monitor.cache.get", _fake_get)
+    assert await _dispatch_target_is_desktop(
+        DummyTask(),  # type: ignore[arg-type]
+        desktop_online_cache={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_target_is_desktop_for_preferred_when_offline(monkeypatch: pytest.MonkeyPatch):
+    class DummyTask:
+        user_id = uuid.uuid4()
+        notify_config = {"execution_target": "desktop_preferred"}
+
+    async def _fake_get(_key: str):
+        return None
+
+    monkeypatch.setattr("app.tasks.monitor.cache.get", _fake_get)
+    assert not await _dispatch_target_is_desktop(
+        DummyTask(),  # type: ignore[arg-type]
+        desktop_online_cache={},
+    )

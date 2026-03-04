@@ -20,6 +20,12 @@ from app.models.monitor import (
     MonitorStatus,
     MonitorTask,
 )
+from app.services.monitor_dispatch import (
+    MonitorExecutionTarget,
+    desktop_heartbeat_key,
+    is_cloud_scheduled_target,
+    resolve_monitor_execution_target,
+)
 from app.services.monitor_cron import next_run_after
 from app.services.orchestrator.config import INTERNAL_CHAT_WORKFLOW, WorkflowConfig, WorkflowTemplate
 from app.services.orchestrator.context import Channel, WorkflowContext
@@ -178,6 +184,37 @@ def _backpressure_delay_seconds() -> int:
 
 def _backpressure_next_run(from_time) -> Any:
     return from_time + timedelta(seconds=_backpressure_delay_seconds())
+
+
+async def _is_user_desktop_online(
+    user_id: uuid.UUID,
+    cache_by_user: dict[str, bool] | None = None,
+) -> bool:
+    user_key = str(user_id)
+    if cache_by_user is not None and user_key in cache_by_user:
+        return bool(cache_by_user[user_key])
+
+    key = desktop_heartbeat_key(user_key)
+    data = await cache.get(key)
+    online = isinstance(data, dict) and bool(str(data.get("agent_id") or "").strip())
+    if cache_by_user is not None:
+        cache_by_user[user_key] = online
+    return online
+
+
+async def _dispatch_target_is_desktop(
+    task: MonitorTask,
+    *,
+    desktop_online_cache: dict[str, bool],
+) -> bool:
+    target = resolve_monitor_execution_target(
+        task.notify_config if isinstance(task.notify_config, dict) else None
+    )
+    if target == MonitorExecutionTarget.DESKTOP:
+        return True
+    if target == MonitorExecutionTarget.DESKTOP_PREFERRED:
+        return await _is_user_desktop_online(task.user_id, desktop_online_cache)
+    return False
 
 
 def _is_final_retry(task_ctx, max_retries: int = RETRY_MAX) -> bool:
@@ -782,6 +819,7 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
     now = Datetime.now()
     max_total = _max_trigger_per_tick()
     max_per_user = _max_trigger_per_user_per_tick()
+    desktop_online_cache: dict[str, bool] = {}
     async with AsyncSessionLocal() as session:
         redis = _get_redis_client()
         if redis is not None:
@@ -801,6 +839,7 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
                         task_map = {str(task.id): task for task in tasks}
                         triggered = 0
                         deferred = 0
+                        desktop_deferred = 0
                         per_user_triggered: dict[str, int] = {}
 
                         for task_id in due_task_ids:
@@ -808,6 +847,21 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
                             if not task:
                                 continue
                             if not task.is_active or _status_value(task.status) != MonitorStatus.ACTIVE.value:
+                                continue
+                            if task.next_run_at and task.next_run_at > now:
+                                await _zset_add_task(task_id, task.next_run_at)
+                                continue
+                            dispatch_to_desktop = await _dispatch_target_is_desktop(
+                                task,
+                                desktop_online_cache=desktop_online_cache,
+                            )
+                            if dispatch_to_desktop:
+                                desktop_deferred += 1
+                                target = resolve_monitor_execution_target(
+                                    task.notify_config if isinstance(task.notify_config, dict) else None
+                                )
+                                if target == MonitorExecutionTarget.DESKTOP_PREFERRED:
+                                    await _zset_add_task(task_id, _backpressure_next_run(now))
                                 continue
 
                             user_key = str(task.user_id)
@@ -834,6 +888,7 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
                             "status": "success",
                             "triggered": triggered,
                             "deferred": deferred,
+                            "desktop_deferred": desktop_deferred,
                             "source": "redis_zset",
                             "limits": {
                                 "max_total": max_total,
@@ -856,8 +911,17 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
         tasks = (await session.execute(stmt)).scalars().all()
         triggered = 0
         deferred = 0
+        desktop_deferred = 0
         per_user_triggered: dict[str, int] = {}
         for task in tasks:
+            dispatch_to_desktop = await _dispatch_target_is_desktop(
+                task,
+                desktop_online_cache=desktop_online_cache,
+            )
+            if dispatch_to_desktop:
+                desktop_deferred += 1
+                continue
+
             user_key = str(task.user_id)
             user_count = per_user_triggered.get(user_key, 0)
             over_global_limit = triggered >= max_total
@@ -878,6 +942,7 @@ async def _scan_and_trigger_tasks() -> dict[str, Any]:
             "status": "success",
             "triggered": triggered,
             "deferred": deferred,
+            "desktop_deferred": desktop_deferred,
             "source": "db_fallback",
             "limits": {
                 "max_total": max_total,
@@ -917,6 +982,11 @@ async def _bootstrap_schedule() -> dict[str, Any]:
             )
             tasks = (await session.execute(stmt)).scalars().all()
             for task in tasks:
+                target = resolve_monitor_execution_target(
+                    task.notify_config if isinstance(task.notify_config, dict) else None
+                )
+                if not is_cloud_scheduled_target(target):
+                    continue
                 if task.next_run_at is None:
                     next_run_at, interval_minutes = _compute_next_run(task, now)
                     task.current_interval_minutes = interval_minutes

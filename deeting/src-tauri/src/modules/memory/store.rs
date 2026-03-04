@@ -33,7 +33,7 @@ impl MemoryStore {
 
     pub async fn init(&self) -> Result<(), MemoryError> {
         let table_names = self.conn.table_names().execute().await?;
-        
+
         if !table_names.iter().any(|name| name == LOCAL_MEMORY_TABLE) {
             self.conn
                 .create_empty_table(LOCAL_MEMORY_TABLE, local_memory_schema())
@@ -51,7 +51,10 @@ impl MemoryStore {
         Ok(())
     }
 
-    pub async fn get_asset_by_id(&self, id: &str) -> Result<Option<serde_json::Value>, MemoryError> {
+    pub async fn get_asset_by_id(
+        &self,
+        id: &str,
+    ) -> Result<Option<serde_json::Value>, MemoryError> {
         let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
         let batches = table
             .query()
@@ -91,7 +94,7 @@ impl MemoryStore {
         id: String,
         name: String,
         description: String,
-        asset_type: String, // "tool", "assistant"
+        asset_type: String,  // "tool", "assistant"
         source_type: String, // "builtin", "user", "cloud_mirror"
         pkg_name: Option<String>,
         vector: Vec<f32>,
@@ -99,7 +102,7 @@ impl MemoryStore {
     ) -> Result<(), MemoryError> {
         let now = now_rfc3339()?;
         let metadata_str = metadata.map(|v| v.to_string());
-        
+
         let batch = RecordBatch::try_new(
             local_asset_schema(),
             vec![
@@ -110,21 +113,28 @@ impl MemoryStore {
                 Arc::new(StringArray::from(vec![Some(source_type)])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![pkg_name])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![metadata_str])) as Arc<dyn Array>,
-                Arc::new(arrow_array::FixedSizeListArray::from_iter_primitive::<arrow_array::types::Float32Type, _, _>(
-                    vec![Some(vector)],
-                    1536,
-                )) as Arc<dyn Array>,
+                Arc::new(arrow_array::FixedSizeListArray::from_iter_primitive::<
+                    arrow_array::types::Float32Type,
+                    _,
+                    _,
+                >(vec![Some(vector)], 1536)) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now)])) as Arc<dyn Array>,
             ],
         )?;
 
         let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
-        
+
         // Use standard LanceDB merge/upsert if possible, or simple add for now
         // Note: For simplicity in this heavy refactor, we clear old entries with same ID if needed
         // but LanceDB add is cumulative. In a real scenario, we'd use a merge query.
-        table.add(RecordBatchIterator::new(vec![Ok(batch)], local_asset_schema())).execute().await?;
+        table
+            .add(RecordBatchIterator::new(
+                vec![Ok(batch)],
+                local_asset_schema(),
+            ))
+            .execute()
+            .await?;
         Ok(())
     }
 
@@ -136,7 +146,7 @@ impl MemoryStore {
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
         let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
         let mut query = table.search(vector).limit(limit);
-        
+
         if let Some(t) = asset_type {
             query = query.only_if(format!("asset_type = '{}'", t));
         }
@@ -156,7 +166,9 @@ impl MemoryStore {
             let score_col = batch.column_by_name("_distance");
 
             for row in 0..batch.num_rows() {
-                let score = score_col.and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>()).map(|c| c.value(row));
+                let score = score_col
+                    .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
+                    .map(|c| c.value(row));
                 results.push(serde_json::json!({
                     "id": id_col.value(row),
                     "name": name_col.value(row),
@@ -348,7 +360,11 @@ fn local_asset_schema() -> SchemaRef {
         Field::new("source_type", DataType::Utf8, false),
         Field::new("pkg_name", DataType::Utf8, true),
         Field::new("metadata_json", DataType::Utf8, true),
-        Field::new("vector", DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 1536), false),
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 1536),
+            false,
+        ),
         Field::new("created_at", DataType::Utf8, false),
         Field::new("updated_at", DataType::Utf8, false),
     ]))

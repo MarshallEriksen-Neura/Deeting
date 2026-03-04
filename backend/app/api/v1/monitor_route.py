@@ -18,6 +18,10 @@ from app.core.database import get_db
 from app.deps.auth import get_current_active_user
 from app.models import User
 from app.schemas.monitor import (
+    MonitorDesktopHeartbeatRequest,
+    MonitorDesktopPullRequest,
+    MonitorDesktopPullResponse,
+    MonitorDesktopReportRequest,
     MonitorExecutionLogListResponse,
     MonitorStatsResponse,
     MonitorTaskCreate,
@@ -245,6 +249,7 @@ async def create_monitor(
             cron_expr=request.cron_expr,
             notify_config=request.notify_config,
             allowed_tools=request.allowed_tools,
+            execution_target=request.execution_target,
         )
     except ValueError as e:
         raise HTTPException(
@@ -271,6 +276,60 @@ async def get_monitor_stats(
 ) -> dict[str, Any]:
     service = MonitorService(db)
     return await service.get_task_stats(user.id)
+
+
+@router.post("/local/heartbeat", response_model=dict)
+async def monitor_local_heartbeat(
+    request: MonitorDesktopHeartbeatRequest,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    service = MonitorService(db)
+    return await service.record_desktop_heartbeat(user.id, request.agent_id)
+
+
+@router.post("/local/pull", response_model=MonitorDesktopPullResponse)
+async def monitor_local_pull(
+    request: MonitorDesktopPullRequest,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    service = MonitorService(db)
+    return await service.pull_local_tasks(
+        user_id=user.id,
+        agent_id=request.agent_id,
+        limit=request.limit,
+    )
+
+
+@router.post("/local/{task_id}/report", response_model=dict)
+async def monitor_local_report(
+    task_id: uuid.UUID,
+    request: MonitorDesktopReportRequest,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    service = MonitorService(db)
+    try:
+        return await service.report_local_execution(
+            task_id=task_id,
+            user_id=user.id,
+            agent_id=request.agent_id,
+            status_value=request.status,
+            is_significant_change=request.is_significant_change,
+            change_summary=request.change_summary,
+            new_snapshot=request.new_snapshot,
+            tokens_used=request.tokens_used,
+            error_message=request.error_message,
+            force_notify=request.force_notify,
+            model_id=request.model_id,
+            strategy=request.strategy,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/{task_id}", response_model=MonitorTaskResponse)
@@ -354,6 +413,16 @@ async def trigger_monitor(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅 active 任务可触发")
 
     await _check_manual_trigger_cooldown(user.id, task_id)
+    execution_target = str(task.get("execution_target") or "cloud").strip().lower()
+    if execution_target in {"desktop", "desktop_preferred"}:
+        try:
+            return await service.request_local_execution(task_id, user.id)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            ) from e
+
     trigger_reasoning_task.delay(str(task_id), True)
     return {"task_id": task_id, "message": "已提交执行"}
 

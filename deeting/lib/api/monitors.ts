@@ -1,10 +1,11 @@
-import { request } from "@/lib/http"
+import { getAuthToken, request } from "@/lib/http"
 
 // =====================
 // Types
 // =====================
 
 export type MonitorStatus = "active" | "paused" | "failed_suspended"
+export type MonitorExecutionTarget = "cloud" | "desktop" | "desktop_preferred"
 
 export interface MonitorTask {
   id: string
@@ -25,6 +26,7 @@ export interface MonitorTask {
   error_count: number
   notify_config: Record<string, unknown>
   allowed_tools: string[]
+  execution_target: MonitorExecutionTarget
   total_tokens: number
   is_active: boolean
   created_at: string
@@ -80,6 +82,7 @@ export interface MonitorTaskCreateInput {
   cron_expr?: string
   notify_config?: Record<string, unknown>
   allowed_tools?: string[]
+  execution_target?: MonitorExecutionTarget
 }
 
 export interface MonitorTaskUpdateInput {
@@ -89,6 +92,49 @@ export interface MonitorTaskUpdateInput {
   status?: MonitorStatus
   notify_config?: Record<string, unknown>
   allowed_tools?: string[]
+  execution_target?: MonitorExecutionTarget
+}
+
+export interface MonitorLocalTaskPayload {
+  task_id: string
+  title: string
+  objective: string
+  cron_expr: string
+  model_id: string | null
+  allowed_tools: string[]
+  last_snapshot: Record<string, unknown>
+  notify_config: Record<string, unknown>
+  execution_target: MonitorExecutionTarget
+  claimed_until: string
+}
+
+export interface MonitorLocalPullResponse {
+  items: MonitorLocalTaskPayload[]
+  claimed: number
+  server_time: string
+}
+
+export interface MonitorLocalReportInput {
+  agent_id: string
+  status: "success" | "failure" | "skipped"
+  is_significant_change?: boolean
+  change_summary?: string
+  new_snapshot?: Record<string, unknown>
+  tokens_used?: number
+  error_message?: string
+  force_notify?: boolean
+  model_id?: string
+  strategy?: string
+}
+
+export interface LocalMonitorWorkerStatus {
+  running: boolean
+  agent_id?: string | null
+  poll_interval_seconds: number
+  pull_limit: number
+  last_tick_at?: string | null
+  last_error?: string | null
+  last_claimed: number
 }
 
 // =====================
@@ -96,6 +142,15 @@ export interface MonitorTaskUpdateInput {
 // =====================
 
 const MONITORS_BASE = "/api/v1/monitors"
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
 
 export async function fetchMonitorTasks(params?: {
   skip?: number
@@ -193,4 +248,76 @@ export async function submitMonitorFeedback(
     method: "POST",
     data: { task_id: taskId, log_id: logId, score },
   })
+}
+
+export async function monitorLocalHeartbeat(agentId: string): Promise<{
+  status: string
+  agent_id: string
+  server_time: string
+  expires_in_seconds: number
+}> {
+  return request({
+    url: `${MONITORS_BASE}/local/heartbeat`,
+    method: "POST",
+    data: { agent_id: agentId },
+  })
+}
+
+export async function monitorLocalPull(
+  agentId: string,
+  limit = 5
+): Promise<MonitorLocalPullResponse> {
+  return request<MonitorLocalPullResponse>({
+    url: `${MONITORS_BASE}/local/pull`,
+    method: "POST",
+    data: { agent_id: agentId, limit },
+  })
+}
+
+export async function monitorLocalReport(
+  taskId: string,
+  data: MonitorLocalReportInput
+): Promise<{ task_id: string; status: string; message: string }> {
+  return request({
+    url: `${MONITORS_BASE}/local/${taskId}/report`,
+    method: "POST",
+    data,
+  })
+}
+
+export async function getLocalMonitorWorkerStatus(): Promise<LocalMonitorWorkerStatus | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+  return invokeTauri<LocalMonitorWorkerStatus>("get_local_monitor_worker_status")
+}
+
+export async function startLocalMonitorWorker(options: {
+  accessToken?: string | null
+  agentId?: string | null
+  pollIntervalSeconds?: number
+  pullLimit?: number
+} = {}): Promise<LocalMonitorWorkerStatus | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+  const token = (options.accessToken ?? getAuthToken() ?? "").trim()
+  if (!token) {
+    return null
+  }
+  return invokeTauri<LocalMonitorWorkerStatus>("start_local_monitor_worker", {
+    payload: {
+      access_token: token,
+      agent_id: options.agentId ?? null,
+      poll_interval_seconds: options.pollIntervalSeconds ?? null,
+      pull_limit: options.pullLimit ?? null,
+    },
+  })
+}
+
+export async function stopLocalMonitorWorker(): Promise<LocalMonitorWorkerStatus | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+  return invokeTauri<LocalMonitorWorkerStatus>("stop_local_monitor_worker")
 }

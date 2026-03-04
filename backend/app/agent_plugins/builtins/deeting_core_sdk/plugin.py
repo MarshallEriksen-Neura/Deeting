@@ -1694,11 +1694,28 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         workflow_context: Any | None,
     ) -> Any | None:
         if tool_name == "sys_refine_asset_metadata":
-            from app.services.assistant.assistant_ingestion_service import AssistantIngestionService
-            from app.repositories.knowledge_repository import KnowledgeRepository
-            async with self.context.get_db_session() as session:
-                service = AssistantIngestionService(None, KnowledgeRepository(session))
-                return await service._extract_assistant_data(arguments.get("prompt", ""), user_id=self.context.user_id)
+            from app.services.providers.llm import llm_service
+            prompt = arguments.get("prompt", "")
+            asset_type = arguments.get("asset_type", "assistant")
+            
+            # Simple system prompt for refinement
+            system_msg = f"You are a meta-data extractor. Extract structured {asset_type} JSON from the text. Respond ONLY with valid JSON."
+            
+            try:
+                response = await llm_service.chat_completion(
+                    messages=[
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    user_id=self.context.user_id
+                )
+                if isinstance(response, str):
+                    return json.loads(response)
+                return response
+            except Exception as e:
+                logger.error(f"sys_refine_asset_metadata failed: {e}")
+                return {"error": str(e)}
 
         if tool_name == "sys_submit_onboarding_request":
             from app.services.assistant.assistant_market_service import AssistantMarketService
