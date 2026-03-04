@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
 
+const BOXRUN_API_PREFIX: &str = "v1";
+
 #[derive(Debug, Clone)]
 pub struct WslBackendOptions {
     pub base_url: String,
-    pub api_prefix: String,
     pub api_key: Option<String>,
     pub image: String,
     pub cpus: Option<u8>,
@@ -23,12 +24,12 @@ pub struct WslBackendOptions {
 }
 
 #[derive(Clone)]
-pub struct WslBoxliteBackend {
+pub struct WslBoxrunBackend {
     client: Client,
     options: WslBackendOptions,
 }
 
-impl WslBoxliteBackend {
+impl WslBoxrunBackend {
     pub fn new(options: WslBackendOptions) -> Result<Self, SandboxError> {
         ensure_wsl_available()?;
 
@@ -67,7 +68,6 @@ impl WslBoxliteBackend {
         let payload = CreateBoxRequest {
             name: Some(box_name.to_string()),
             image: Some(self.options.image.clone()),
-            rootfs_path: None,
             cpu: self.options.cpus.map(|v| v.to_string()),
             memory: self.options.memory_mib.map(|v| format!("{v}Mi")),
             disk: None,
@@ -89,11 +89,9 @@ impl WslBoxliteBackend {
         }
 
         let created: BoxResponse = response.json().await?;
-        let sandbox_id = created
-            .id()
-            .ok_or_else(|| SandboxError::Internal("create box response missing id".to_string()))?;
+        let sandbox_id = created.id;
         Ok(SandboxIdentity {
-            sandbox_id: sandbox_id.to_string(),
+            sandbox_id,
             sandbox_name: created.name.unwrap_or_else(|| box_name.to_string()),
         })
     }
@@ -156,9 +154,7 @@ impl WslBoxliteBackend {
         }
 
         let exec: ExecResponse = create_response.json().await?;
-        let execution_id = exec.execution_id().ok_or_else(|| {
-            SandboxError::Internal("create execution response missing id".to_string())
-        })?;
+        let execution_id = exec.id;
         let output_url = self.url(&format!(
             "/boxes/{}/exec/{}/events",
             identity.sandbox_id, execution_id
@@ -251,11 +247,9 @@ impl WslBoxliteBackend {
             )));
         }
         let box_resp: BoxResponse = response.json().await?;
-        let sandbox_id = box_resp
-            .id()
-            .ok_or_else(|| SandboxError::Internal("box response missing id".to_string()))?;
+        let sandbox_id = box_resp.id;
         Ok(Some(SandboxIdentity {
-            sandbox_id: sandbox_id.to_string(),
+            sandbox_id,
             sandbox_name: box_resp.name.unwrap_or_else(|| box_id_or_name.to_string()),
         }))
     }
@@ -268,7 +262,7 @@ impl WslBoxliteBackend {
         format!(
             "{}/{}",
             self.options.base_url.trim_end_matches('/'),
-            self.options.api_prefix.trim_matches('/')
+            BOXRUN_API_PREFIX
         )
     }
 
@@ -444,8 +438,6 @@ struct CreateBoxRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    rootfs_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     cpu: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     memory: Option<String>,
@@ -465,8 +457,7 @@ struct CreateBoxRequest {
 
 #[derive(Debug, Deserialize)]
 struct BoxResponse {
-    id: Option<String>,
-    box_id: Option<String>,
+    id: String,
     name: Option<String>,
 }
 
@@ -483,21 +474,5 @@ struct ExecRequest {
 
 #[derive(Debug, Deserialize)]
 struct ExecResponse {
-    id: Option<String>,
-    execution_id: Option<String>,
-}
-
-impl BoxResponse {
-    fn id(&self) -> Option<&str> {
-        self.id.as_deref().or(self.box_id.as_deref())
-    }
-}
-
-impl ExecResponse {
-    fn execution_id(&self) -> Option<&str> {
-        self.execution_id
-            .as_deref()
-            .filter(|v| !v.trim().is_empty())
-            .or(self.id.as_deref())
-    }
+    id: String,
 }

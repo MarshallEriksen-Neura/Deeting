@@ -190,6 +190,25 @@ pub async fn create_local_user_document(
     state: State<'_, AppState>,
     payload: CreateLocalUserDocumentRequest,
 ) -> Result<LocalKnowledgeFile, String> {
+    let requires_model_check = payload
+        .status
+        .as_ref()
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            normalized.is_empty()
+                || normalized == "processing"
+                || normalized == "pending"
+                || normalized == "running"
+        })
+        .unwrap_or(true);
+
+    if requires_model_check {
+        crate::modules::providers::model_guard::ensure_required_local_models_configured(
+            state.inner(),
+        )
+        .await?;
+    }
+
     let state = &state.mcp;
     state
         .store
@@ -683,6 +702,9 @@ pub async fn retry_local_user_document(
     state: State<'_, AppState>,
     file_id: String,
 ) -> Result<LocalKnowledgeFile, String> {
+    crate::modules::providers::model_guard::ensure_required_local_models_configured(state.inner())
+        .await?;
+
     state
         .mcp
         .store
@@ -973,4 +995,3 @@ pub async fn reject_mcp_tool(
     reject_mcp_tool_inner(state.mcp.pending_tool_calls.as_ref(), &token).await;
     Ok(())
 }
-

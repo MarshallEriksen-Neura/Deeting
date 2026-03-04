@@ -59,7 +59,7 @@ pub fn run() {
             let handle = app.handle().clone();
             let cloud_base_url = resolve_cloud_base_url();
             let lancedb_uri = resolve_lancedb_uri(app)?;
-            let boxlite_home_dir = resolve_boxlite_home_dir(app)?;
+            let boxrun_home_dir = resolve_boxrun_home_dir(app)?;
             let state = tauri::async_runtime::block_on(async {
                 let database_url = resolve_database_url(app)?;
 
@@ -78,7 +78,7 @@ pub fn run() {
                 let memory_state = MemoryState::new(&lancedb_uri)
                     .await
                     .map_err(|e| McpError::Storage(e.to_string()))?;
-                let sandbox_state = SandboxState::new(boxlite_home_dir.clone());
+                let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
                 let code_mode_state = CodeModeState::new(&database_url)
                     .await
                     .map_err(|e| McpError::Storage(e.to_string()))?;
@@ -371,6 +371,7 @@ pub fn run() {
             crate::modules::providers::commands::update_local_provider_instance,
             crate::modules::providers::commands::delete_local_provider_instance,
             crate::modules::providers::commands::list_local_provider_models,
+            crate::modules::providers::commands::verify_local_provider,
             crate::modules::providers::commands::sync_local_provider_models,
             crate::modules::providers::commands::quick_add_local_provider_models,
             crate::modules::providers::commands::update_local_provider_model,
@@ -470,8 +471,8 @@ fn resolve_lancedb_uri<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<String,
     Ok(absolute.to_string_lossy().to_string())
 }
 
-fn resolve_boxlite_home_dir<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<PathBuf, McpError> {
-    if let Some(path) = non_empty_env("BOXLITE_HOME") {
+fn resolve_boxrun_home_dir<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<PathBuf, McpError> {
+    if let Some(path) = non_empty_env("BOXRUN_HOME") {
         let expanded = expand_path(&path);
         let absolute = if expanded.is_absolute() {
             expanded
@@ -485,21 +486,21 @@ fn resolve_boxlite_home_dir<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<Pa
     }
 
     if let Ok(app_data_dir) = app.path().app_data_dir() {
-        let path = app_data_dir.join("boxlite");
+        let path = app_data_dir.join("boxrun");
         std::fs::create_dir_all(&path).map_err(|err| McpError::Storage(err.to_string()))?;
         return Ok(path);
     }
     if let Some(home) = non_empty_env("HOME") {
-        let path = PathBuf::from(format!("{home}/.boxlite"));
+        let path = PathBuf::from(format!("{home}/.boxrun"));
         std::fs::create_dir_all(&path).map_err(|err| McpError::Storage(err.to_string()))?;
         return Ok(path);
     }
     if let Some(user_profile) = non_empty_env("USERPROFILE") {
-        let path = PathBuf::from(format!("{user_profile}/.boxlite"));
+        let path = PathBuf::from(format!("{user_profile}/.boxrun"));
         std::fs::create_dir_all(&path).map_err(|err| McpError::Storage(err.to_string()))?;
         return Ok(path);
     }
-    let path = PathBuf::from(".boxlite");
+    let path = PathBuf::from(".boxrun");
     std::fs::create_dir_all(&path).map_err(|err| McpError::Storage(err.to_string()))?;
     Ok(path)
 }

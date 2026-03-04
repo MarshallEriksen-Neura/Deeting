@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { listen, UnlistenFn } from "@tauri-apps/api/event"
 import { useTranslations } from "next-intl"
 import { GlassPillToaster } from "@/components/ui/glass-pill-toaster"
@@ -8,15 +8,36 @@ import { NotificationCenter } from "@/components/notifications/notification-cent
 import { AmbientIndicator } from "@/components/ui/ambient-indicator"
 import { useNotifications } from "@/components/contexts/notification-context"
 import { useNotificationRealtime } from "@/components/notifications/use-notification-realtime"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { usePathname, useRouter } from "@/i18n/routing"
+import { fetchUserSecretary } from "@/lib/api/secretary"
+import { fetchUserEmbeddingConfig } from "@/lib/api/user-embedding-config"
+import {
+  MODEL_CONFIG_REQUIRED_EVENT,
+  type MissingDesktopModelConfig,
+  type ModelConfigRequiredDetail,
+} from "@/lib/model-config-required"
 
 interface NotificationSystemProps {
   // 环境光指示器目标元素ID
   ambientTargetId?: string
 }
 
+const SETTINGS_ROUTE = "/settings"
+
 export function NotificationSystem({ 
   ambientTargetId
 }: NotificationSystemProps) {
+  const router = useRouter()
+  const pathname = usePathname()
   const { 
     notifications, 
     trimNotifications,
@@ -25,6 +46,68 @@ export function NotificationSystem({
   } = useNotifications()
   const { sendMarkRead, sendMarkAllRead, sendClear } = useNotificationRealtime()
   const t = useTranslations("notifications")
+  const startupCheckDoneRef = useRef(false)
+  const lastModelConfigPromptRef = useRef<{ key: string; at: number } | null>(null)
+  const [missingConfigs, setMissingConfigs] = useState<MissingDesktopModelConfig[]>([])
+  const [isModelConfigDialogOpen, setIsModelConfigDialogOpen] = useState(false)
+
+  const goToSettings = useCallback(() => {
+    setIsModelConfigDialogOpen(false)
+    if (pathname !== SETTINGS_ROUTE) {
+      router.push(SETTINGS_ROUTE)
+    }
+  }, [pathname, router])
+
+  const missingConfigLabels = useMemo(
+    () =>
+      missingConfigs.map((key) =>
+        t(`events.modelConfigRequired.requirements.${key}`)
+      ),
+    [missingConfigs, t]
+  )
+
+  const openModelConfigGuard = useCallback(
+    (nextMissing: MissingDesktopModelConfig[]) => {
+      if (nextMissing.length === 0) return
+
+      const missingKey = [...nextMissing].sort().join(",")
+      const now = Date.now()
+      const previous = lastModelConfigPromptRef.current
+      if (previous && previous.key === missingKey && now - previous.at < 5000) {
+        setMissingConfigs(nextMissing)
+        setIsModelConfigDialogOpen(true)
+        if (pathname !== SETTINGS_ROUTE) {
+          router.push(SETTINGS_ROUTE)
+        }
+        return
+      }
+      lastModelConfigPromptRef.current = { key: missingKey, at: now }
+
+      const separator = t("events.modelConfigRequired.separator")
+      const items = nextMissing
+        .map((key) => t(`events.modelConfigRequired.requirements.${key}`))
+        .join(separator)
+
+      addNotification({
+        type: "warning",
+        title: t("events.modelConfigRequired.title"),
+        description: t("events.modelConfigRequired.description", { items }),
+        timestamp: now,
+        action: {
+          label: t("actions.goSettings"),
+          onClick: goToSettings,
+        },
+      })
+
+      setMissingConfigs(nextMissing)
+      setIsModelConfigDialogOpen(true)
+
+      if (pathname !== SETTINGS_ROUTE) {
+        router.push(SETTINGS_ROUTE)
+      }
+    },
+    [addNotification, goToSettings, pathname, router, t]
+  )
 
   // 自动清理旧通知（保留最近50条）
   useEffect(() => {
@@ -52,6 +135,59 @@ export function NotificationSystem({
     }
   }, [addNotification, t])
 
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") return
+    if (startupCheckDoneRef.current) return
+    startupCheckDoneRef.current = true
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [secretary, embedding] = await Promise.all([
+          fetchUserSecretary(),
+          fetchUserEmbeddingConfig(),
+        ])
+        if (cancelled) return
+
+        const nextMissing: MissingDesktopModelConfig[] = []
+        if (!secretary.model_name?.trim()) {
+          nextMissing.push("secretary")
+        }
+        if (!embedding.provider_model_id?.trim()) {
+          nextMissing.push("embedding")
+        }
+        openModelConfigGuard(nextMissing)
+      } catch (error) {
+        console.warn("[notification-system] startup model config check failed", error)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [openModelConfigGuard])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const handleModelConfigRequired = (event: Event) => {
+      const detail = (event as CustomEvent<ModelConfigRequiredDetail>).detail
+      const missing = detail?.missing ?? []
+      if (!Array.isArray(missing) || missing.length === 0) return
+      openModelConfigGuard(missing)
+    }
+
+    window.addEventListener(
+      MODEL_CONFIG_REQUIRED_EVENT,
+      handleModelConfigRequired as EventListener
+    )
+    return () => {
+      window.removeEventListener(
+        MODEL_CONFIG_REQUIRED_EVENT,
+        handleModelConfigRequired as EventListener
+      )
+    }
+  }, [openModelConfigGuard])
+
   const targetElement = ambientTargetId ? document.getElementById(ambientTargetId) : undefined
 
   return (
@@ -74,6 +210,34 @@ export function NotificationSystem({
         onMarkAllRead={sendMarkAllRead}
         onClear={sendClear}
       />
+
+      <AlertDialog
+        open={isModelConfigDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setIsModelConfigDialogOpen(true)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("events.modelConfigRequired.title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("events.modelConfigRequired.dialogDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
+            {missingConfigLabels.map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={goToSettings}>
+              {t("actions.goSettings")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

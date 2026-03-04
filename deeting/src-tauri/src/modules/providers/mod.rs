@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod embedding;
 pub mod error;
+pub mod model_guard;
 pub mod store;
 pub mod types;
 

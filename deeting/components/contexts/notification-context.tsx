@@ -59,7 +59,8 @@ export function useNotifications() {
           type: notification.type,
           title: notification.title,
           description: notification.description,
-          duration: notification.type === "error" ? 6000 : 4000
+          duration: notification.type === "error" ? 6000 : 4000,
+          action: notification.action,
         })
       })
     }

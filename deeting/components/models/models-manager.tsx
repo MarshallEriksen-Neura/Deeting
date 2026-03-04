@@ -37,6 +37,17 @@ interface ModelsManagerProps {
   instanceId: string
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === "string" && error.trim()) return error
+  if (error && typeof error === "object") {
+    const candidate = error as { message?: unknown; detail?: unknown }
+    if (typeof candidate.message === "string" && candidate.message.trim()) return candidate.message
+    if (typeof candidate.detail === "string" && candidate.detail.trim()) return candidate.detail
+  }
+  return ""
+}
+
 export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const t = useTranslations("models")
   
@@ -292,8 +303,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       await sync(instanceId)
       await mutateModels()
       toast.success(t("toast.syncSuccess"))
-    } catch (err) {
-      toast.error(t("toast.syncFailed"))
+    } catch (err: unknown) {
+      const detail = getErrorMessage(err)
+      toast.error(detail ? `${t("toast.syncFailed")}: ${detail}` : t("toast.syncFailed"))
     } finally {
       setIsSyncing(false)
     }
@@ -469,7 +481,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
             slug: instance.preset_slug || "",
             name: instance.preset_slug || "", // This might need mapping back to display name if lost
             type: "custom", // Assuming custom for edit, or need to derive
-            protocol: "openai", // Need to derive
+            protocol: instance.protocol || "openai",
             brand_color: instance.theme_color || "#3b82f6",
             icon_key: instance.icon || "lucide:box",
           }}
@@ -480,6 +492,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
             is_enabled: instance.is_enabled,
             icon: instance.icon,
             theme_color: instance.theme_color,
+            protocol: instance.protocol || undefined,
+            auto_append_v1: instance.auto_append_v1 ?? undefined,
+            has_credentials: instance.has_credentials ?? undefined,
           }}
           onSave={async () => {
             await Promise.all([mutateInstance(), mutateModels()])

@@ -165,6 +165,30 @@ pub struct ProviderModelTestRequest {
     pub prompt: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ProviderVerifyRequest {
+    pub preset_slug: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: Option<String>,
+    pub protocol: Option<String>,
+    pub auto_append_v1: Option<bool>,
+    pub resource_name: Option<String>,
+    pub deployment_name: Option<String>,
+    pub project_id: Option<String>,
+    pub region: Option<String>,
+    pub api_version: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProviderVerifyResponse {
+    pub success: bool,
+    pub message: String,
+    pub latency_ms: i64,
+    pub discovered_models: Vec<String>,
+    pub probe_url: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BanditArmState {
     pub id: String,

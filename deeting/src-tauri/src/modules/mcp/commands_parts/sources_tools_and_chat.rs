@@ -170,7 +170,8 @@ pub async fn send_local_conversation_message(
         .await;
 
         let join_result = task.await;
-        clear_local_chat_task_abort_handle(state.local_chat_tasks.as_ref(), &request_id_value).await;
+        clear_local_chat_task_abort_handle(state.local_chat_tasks.as_ref(), &request_id_value)
+            .await;
         match join_result {
             Ok(result) => result,
             Err(err) if err.is_cancelled() => {
@@ -179,14 +180,8 @@ pub async fn send_local_conversation_message(
             Err(err) => Err(format!("local conversation task join error: {}", err)),
         }
     } else {
-        send_local_conversation_message_inner(
-            &app,
-            app_state.inner(),
-            &payload,
-            &trace_id,
-            None,
-        )
-        .await
+        send_local_conversation_message_inner(&app, app_state.inner(), &payload, &trace_id, None)
+            .await
     };
 
     match execution {
@@ -248,7 +243,8 @@ pub async fn regenerate_local_conversation_reply(
         .await;
 
         let join_result = task.await;
-        clear_local_chat_task_abort_handle(state.local_chat_tasks.as_ref(), &request_id_value).await;
+        clear_local_chat_task_abort_handle(state.local_chat_tasks.as_ref(), &request_id_value)
+            .await;
         match join_result {
             Ok(result) => result,
             Err(err) if err.is_cancelled() => {
@@ -312,6 +308,9 @@ async fn send_local_conversation_message_inner(
     trace_id: &str,
     request_id: Option<&str>,
 ) -> Result<LocalConversationSendResponse, String> {
+    crate::modules::providers::model_guard::ensure_required_local_models_configured(app_state)
+        .await?;
+
     let conversation_repo = &app_state.mcp.store;
     let session_id = payload.session_id.clone();
     let user_message = conversation_repo
@@ -422,6 +421,9 @@ async fn regenerate_local_conversation_reply_inner(
     trace_id: &str,
     request_id: Option<&str>,
 ) -> Result<LocalConversationRegenerateResponse, String> {
+    crate::modules::providers::model_guard::ensure_required_local_models_configured(app_state)
+        .await?;
+
     let conversation_repo = &app_state.mcp.store;
     let regenerate_ctx = conversation_repo
         .prepare_local_conversation_regenerate(&payload.session_id)
@@ -673,4 +675,3 @@ pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Resu
     state.process_manager.clear_logs(&tool_id).await;
     Ok(())
 }
-

@@ -31,14 +31,25 @@
       "imageGenerated": "Image Generated",
       "imageGeneratedDesc": "Completed in {duration} · Click to view result",
       "mcpCrashed": "MCP tool crashed: {name}",
-      "mcpCrashedDesc": "Auto-retry stopped. Check logs. Reason: {error}"
+      "mcpCrashedDesc": "Auto-retry stopped. Check logs. Reason: {error}",
+      "modelConfigRequired": {
+        "title": "Model setup is required",
+        "description": "These required models are not configured: {items}. Redirecting you to Settings.",
+        "dialogDescription": "Desktop startup immediately depends on these models. Configure them before continuing.",
+        "separator": ", ",
+        "requirements": {
+          "secretary": "Secretary model (technical model)",
+          "embedding": "Desktop embedding model"
+        }
+      }
     },
     "actions": {
       "view": "View",
       "recharge": "Recharge",
       "retry": "Retry",
       "dismiss": "Dismiss",
-      "test": "Test Chat"
+      "test": "Test Chat",
+      "goSettings": "Open Settings"
     }
   }
 }

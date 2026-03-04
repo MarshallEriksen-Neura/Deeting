@@ -31,14 +31,25 @@
       "imageGenerated": "图片生成完毕",
       "imageGeneratedDesc": "耗时 {duration} · 点击查看结果",
       "mcpCrashed": "MCP 工具已崩溃：{name}",
-      "mcpCrashedDesc": "已停止自动重试，请检查日志。原因：{error}"
+      "mcpCrashedDesc": "已停止自动重试，请检查日志。原因：{error}",
+      "modelConfigRequired": {
+        "title": "必须先完成模型配置",
+        "description": "检测到以下必填模型未配置：{items}。已为你跳转到设置页。",
+        "dialogDescription": "桌面端启动后会立即使用这些模型，请先完成配置。",
+        "separator": "、",
+        "requirements": {
+          "secretary": "秘书模型（技术模型）",
+          "embedding": "桌面 Embedding 模型"
+        }
+      }
     },
     "actions": {
       "view": "查看",
       "recharge": "去充值",
       "retry": "重试",
       "dismiss": "忽略",
-      "test": "测试对话"
+      "test": "测试对话",
+      "goSettings": "前往设置"
     }
   }
 }

@@ -1,4 +1,5 @@
 import { request, apiClient } from "@/lib/http"
+import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 import type {
   KnowledgeFile,
   KnowledgeFolder,
@@ -18,7 +19,12 @@ const isTauriRuntime = () =>
 
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
-  return invoke<T>(command, args)
+  try {
+    return await invoke<T>(command, args)
+  } catch (error) {
+    handleModelConfigRequiredError(error)
+    throw error
+  }
 }
 
 /* -------------------------------------------------------------------------- */

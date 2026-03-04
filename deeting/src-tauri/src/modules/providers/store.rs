@@ -16,6 +16,8 @@ use crate::modules::providers::types::{
 pub struct ProviderConnection {
     pub base_url: String,
     pub secret_key: Option<String>,
+    pub protocol: Option<String>,
+    pub auto_append_v1: Option<bool>,
 }
 
 pub struct ProviderStore {
@@ -1432,7 +1434,7 @@ impl ProviderStore {
         instance_id: &Uuid,
     ) -> Result<Option<ProviderConnection>, ProviderError> {
         let row = sqlx::query(
-            "SELECT base_url, credentials_ref
+            "SELECT base_url, credentials_ref, meta
              FROM provider_instances
              WHERE id = ?
              LIMIT 1",
@@ -1447,6 +1449,14 @@ impl ProviderStore {
 
         let base_url: String = row.try_get("base_url")?;
         let credentials_ref: String = row.try_get("credentials_ref")?;
+        let raw_meta: String = row.try_get("meta")?;
+        let meta = parse_json_object_text(Some(raw_meta));
+        let protocol = meta
+            .get("protocol")
+            .and_then(|value| value.as_str())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let auto_append_v1 = meta.get("auto_append_v1").and_then(|value| value.as_bool());
 
         let credential_row = if credentials_ref.starts_with("db:") {
             let credential_id = credentials_ref.trim_start_matches("db:").trim();
@@ -1498,6 +1508,8 @@ impl ProviderStore {
         Ok(Some(ProviderConnection {
             base_url,
             secret_key,
+            protocol,
+            auto_append_v1,
         }))
     }
 

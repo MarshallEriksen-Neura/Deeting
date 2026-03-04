@@ -10,22 +10,20 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
 #[cfg(target_os = "windows")]
-use crate::modules::sandbox::backend_host::HostBackendOptions;
-use crate::modules::sandbox::backend_host::HostPythonBackend;
+use crate::modules::sandbox::backend_host::{HostBackendOptions, HostPythonBackend};
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::types::{
     SandboxExecutionOutput, SandboxIdentity, SandboxLeaseInfo, SandboxRunResult,
 };
 
 #[cfg(target_os = "windows")]
-use crate::modules::sandbox::backend_wsl::{WslBackendOptions, WslBoxliteBackend};
+use crate::modules::sandbox::backend_wsl::{WslBackendOptions, WslBoxrunBackend};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30 * 60;
 const DEFAULT_MAX_SANDBOXES: usize = 50;
 const MIN_EXEC_TIMEOUT_SECS: u64 = 5;
 const SESSION_BUSY_RETRY_ATTEMPTS: usize = 2;
 const REAPER_INTERVAL_SECS: u64 = 60;
-const DEFAULT_BRIDGE_PREFIX: &str = "v1";
 const DEFAULT_BOXRUN_PORT: u16 = 9090;
 
 #[cfg(target_os = "windows")]
@@ -45,7 +43,6 @@ pub struct SandboxManagerOptions {
     pub working_dir: Option<String>,
     pub python_bin: String,
     pub bridge_url: Option<String>,
-    pub bridge_prefix: String,
     pub bridge_api_key: Option<String>,
 }
 
@@ -54,11 +51,7 @@ impl SandboxManagerOptions {
         let bridge_url = bridge_url_from_env();
         #[cfg(target_os = "windows")]
         let bridge_url = bridge_url.or_else(discover_bridge_url);
-        let bridge_prefix = non_empty_env("BOXRUN_API_PREFIX")
-            .or_else(|| non_empty_env("BOXLITE_REST_PREFIX"))
-            .unwrap_or_else(|| DEFAULT_BRIDGE_PREFIX.to_string());
-        let bridge_api_key =
-            non_empty_env("BOXRUN_API_KEY").or_else(|| non_empty_env("BOXLITE_REST_API_KEY"));
+        let bridge_api_key = non_empty_env("BOXRUN_API_KEY");
 
         Self {
             home_dir,
@@ -70,7 +63,6 @@ impl SandboxManagerOptions {
             working_dir: Some("/workspace".to_string()),
             python_bin: "python3".to_string(),
             bridge_url,
-            bridge_prefix,
             bridge_api_key,
         }
     }
@@ -96,7 +88,8 @@ struct SessionLease {
 #[derive(Clone)]
 enum BackendRuntime {
     #[cfg(target_os = "windows")]
-    Wsl(WslBoxliteBackend),
+    Wsl(WslBoxrunBackend),
+    #[cfg(target_os = "windows")]
     Host(HostPythonBackend),
     Disabled(String),
 }
@@ -460,9 +453,8 @@ impl SandboxRuntimeManager {
         #[cfg(target_os = "windows")]
         {
             if let Some(bridge_url) = options.bridge_url.clone() {
-                match WslBoxliteBackend::new(WslBackendOptions {
+                match WslBoxrunBackend::new(WslBackendOptions {
                     base_url: bridge_url,
-                    api_prefix: options.bridge_prefix.clone(),
                     api_key: options.bridge_api_key.clone(),
                     image: options.image.clone(),
                     cpus: options.cpus,
@@ -514,6 +506,7 @@ impl SandboxRuntimeManager {
         match &self.backend {
             #[cfg(target_os = "windows")]
             BackendRuntime::Wsl(backend) => backend.get_or_create_box(_box_name).await,
+            #[cfg(target_os = "windows")]
             BackendRuntime::Host(backend) => backend.get_or_create_box(_box_name).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
@@ -523,6 +516,7 @@ impl SandboxRuntimeManager {
         match &self.backend {
             #[cfg(target_os = "windows")]
             BackendRuntime::Wsl(backend) => backend.stop_box(_box_id).await,
+            #[cfg(target_os = "windows")]
             BackendRuntime::Host(backend) => backend.stop_box(_box_id).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
@@ -537,6 +531,7 @@ impl SandboxRuntimeManager {
         match &self.backend {
             #[cfg(target_os = "windows")]
             BackendRuntime::Wsl(backend) => backend.run_python(_box_id, _code, _timeout_secs).await,
+            #[cfg(target_os = "windows")]
             BackendRuntime::Host(backend) => {
                 backend.run_python(_box_id, _code, _timeout_secs).await
             }
@@ -548,6 +543,7 @@ impl SandboxRuntimeManager {
         match &self.backend {
             #[cfg(target_os = "windows")]
             BackendRuntime::Wsl(backend) => backend.shutdown().await,
+            #[cfg(target_os = "windows")]
             BackendRuntime::Host(backend) => backend.shutdown().await,
             BackendRuntime::Disabled(_) => Ok(()),
         }
@@ -564,7 +560,6 @@ fn non_empty_env(key: &str) -> Option<String> {
 fn bridge_url_from_env() -> Option<String> {
     non_empty_env("BOXRUN_BASE_URL")
         .or_else(|| boxrun_url_from_host_port_env())
-        .or_else(|| non_empty_env("BOXLITE_REST_URL"))
 }
 
 fn boxrun_url_from_host_port_env() -> Option<String> {
@@ -613,9 +608,7 @@ fn bridge_url_candidates() -> Vec<String> {
         candidates.push(url);
     }
 
-    if let Some(raw) = non_empty_env("BOXRUN_BASE_URL_CANDIDATES")
-        .or_else(|| non_empty_env("BOXLITE_REST_URL_CANDIDATES"))
-    {
+    if let Some(raw) = non_empty_env("BOXRUN_BASE_URL_CANDIDATES") {
         let parsed = parse_bridge_url_candidates(&raw);
         if !parsed.is_empty() {
             candidates.extend(parsed);

@@ -115,8 +115,9 @@ export const desktopProviderService: IProviderService = {
     // Last fallback: direct cloud fetch.
     return providerApi.fetchProviderDetail(slug);
   },
-  verify: (payload: ProviderVerifyRequest): Promise<ProviderVerifyResponse> =>
-    providerApi.verifyProvider(payload),
+  verify: async (payload: ProviderVerifyRequest): Promise<ProviderVerifyResponse> => {
+    return await invoke<ProviderVerifyResponse>("verify_local_provider", { payload });
+  },
   createInstance: async (payload: ProviderInstanceCreate): Promise<ProviderInstanceResponse> => {
     const created = await invoke<LocalProviderInstance>("create_local_provider_instance", {
       payload: {

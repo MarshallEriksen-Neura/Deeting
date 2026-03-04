@@ -7,8 +7,9 @@ use uuid::Uuid;
 use crate::modules::providers::types::{
     BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, ProviderInstance, ProviderModel,
     ProviderModelTestRequest, ProviderModelTestResponse, ProviderModelUpdateRequest,
-    ProviderModelsQuickAddRequest, ProviderPreset, UpdateInstanceRequest, UserEmbeddingConfig,
-    UserEmbeddingConfigUpdateRequest, UserSecretary, UserSecretaryUpdateRequest,
+    ProviderModelsQuickAddRequest, ProviderPreset, ProviderVerifyRequest, ProviderVerifyResponse,
+    UpdateInstanceRequest, UserEmbeddingConfig, UserEmbeddingConfigUpdateRequest, UserSecretary,
+    UserSecretaryUpdateRequest,
 };
 use crate::state::AppState;
 
@@ -152,6 +153,36 @@ pub async fn list_local_provider_models(
 }
 
 #[tauri::command]
+pub async fn verify_local_provider(
+    payload: ProviderVerifyRequest,
+) -> Result<ProviderVerifyResponse, String> {
+    let protocol = normalize_protocol(payload.protocol.as_deref());
+    let started = Instant::now();
+    let result = fetch_model_ids_from_upstream(
+        &payload.base_url,
+        Some(payload.api_key.as_str()),
+        Some(protocol.as_str()),
+        payload.auto_append_v1,
+    )
+    .await?;
+
+    let latency_ms = started.elapsed().as_millis() as i64;
+    let has_models = !result.ids.is_empty();
+
+    Ok(ProviderVerifyResponse {
+        success: true,
+        message: if has_models {
+            "Verification successful".to_string()
+        } else {
+            "Verification successful, but no models returned".to_string()
+        },
+        latency_ms,
+        discovered_models: result.ids,
+        probe_url: Some(result.endpoint),
+    })
+}
+
+#[tauri::command]
 pub async fn sync_local_provider_models(
     state: State<'_, AppState>,
     instance_id: String,
@@ -165,11 +196,19 @@ pub async fn sync_local_provider_models(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "instance not found".to_string())?;
 
-    let model_ids =
-        fetch_model_ids_from_upstream(&connection.base_url, connection.secret_key.as_deref())
-            .await?;
+    let result = fetch_model_ids_from_upstream(
+        &connection.base_url,
+        connection.secret_key.as_deref(),
+        connection.protocol.as_deref(),
+        connection.auto_append_v1,
+    )
+    .await?;
+    let model_ids = result.ids;
     if model_ids.is_empty() {
-        return Err("no models discovered from upstream".to_string());
+        return Err(format!(
+            "no models discovered from upstream: {}",
+            result.endpoint
+        ));
     }
 
     state
@@ -321,35 +360,36 @@ pub async fn record_local_bandit_feedback(
 async fn fetch_model_ids_from_upstream(
     base_url: &str,
     secret_key: Option<&str>,
-) -> Result<Vec<String>, String> {
+    protocol: Option<&str>,
+    auto_append_v1: Option<bool>,
+) -> Result<UpstreamModelsFetchResult, String> {
     let client = reqwest::Client::new();
-    let candidates = build_models_endpoints(base_url);
+    let normalized_protocol = normalize_protocol(protocol);
+    let candidates = build_models_endpoints(base_url, &normalized_protocol, auto_append_v1);
+    if candidates.is_empty() {
+        return Err("base_url is empty".to_string());
+    }
     let mut last_error = None;
 
     for endpoint in candidates {
         let mut request = client.get(&endpoint);
-        if let Some(key) = secret_key {
-            let value = key.trim();
-            if !value.is_empty() {
-                request = request.bearer_auth(value);
-            }
-        }
+        request = apply_models_auth_headers(request, &normalized_protocol, secret_key);
 
         match request.send().await {
             Ok(response) => {
                 if !response.status().is_success() {
-                    last_error = Some(format!("sync failed: {}", response.status()));
+                    last_error = Some(format!("sync failed: {} ({endpoint})", response.status()));
                     continue;
                 }
-                let body: Value = response.json().await.map_err(|e| e.to_string())?;
+                let body: Value = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("failed to parse model list from {endpoint}: {e}"))?;
                 let ids = extract_model_ids(&body);
-                if !ids.is_empty() {
-                    return Ok(ids);
-                }
-                last_error = Some("upstream returned empty model list".to_string());
+                return Ok(UpstreamModelsFetchResult { ids, endpoint });
             }
             Err(err) => {
-                last_error = Some(err.to_string());
+                last_error = Some(format!("{err} ({endpoint})"));
             }
         }
     }
@@ -357,10 +397,51 @@ async fn fetch_model_ids_from_upstream(
     Err(last_error.unwrap_or_else(|| "failed to sync models from upstream".to_string()))
 }
 
-fn build_models_endpoints(base_url: &str) -> Vec<String> {
+struct UpstreamModelsFetchResult {
+    ids: Vec<String>,
+    endpoint: String,
+}
+
+fn normalize_protocol(protocol: Option<&str>) -> String {
+    protocol
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "openai".to_string())
+}
+
+fn apply_models_auth_headers(
+    request: reqwest::RequestBuilder,
+    protocol: &str,
+    secret_key: Option<&str>,
+) -> reqwest::RequestBuilder {
+    let Some(value) = secret_key.map(str::trim).filter(|item| !item.is_empty()) else {
+        return request;
+    };
+
+    if protocol.contains("anthropic") || protocol.contains("claude") {
+        return request
+            .header("x-api-key", value)
+            .header("anthropic-version", "2023-06-01");
+    }
+
+    request.bearer_auth(value)
+}
+
+fn build_models_endpoints(
+    base_url: &str,
+    protocol: &str,
+    auto_append_v1: Option<bool>,
+) -> Vec<String> {
     let base = base_url.trim().trim_end_matches('/');
     if base.is_empty() {
         return vec![];
+    }
+
+    if protocol.contains("anthropic") || protocol.contains("claude") {
+        if base.ends_with("/v1") {
+            return vec![format!("{base}/models")];
+        }
+        return vec![format!("{base}/v1/models"), format!("{base}/models")];
     }
 
     if base.ends_with("/v1") {
@@ -370,7 +451,11 @@ fn build_models_endpoints(base_url: &str) -> Vec<String> {
         ];
     }
 
-    vec![format!("{base}/v1/models"), format!("{base}/models")]
+    if auto_append_v1.unwrap_or(true) {
+        vec![format!("{base}/v1/models"), format!("{base}/models")]
+    } else {
+        vec![format!("{base}/models"), format!("{base}/v1/models")]
+    }
 }
 
 fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {

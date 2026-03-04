@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use boxlite::{BoxCommand, BoxOptions, BoxliteOptions, BoxliteRuntime, RootfsSpec};
-use boxlite::{BoxliteError as BoxliteSdkError, BoxliteResult as BoxliteSdkResult, NetworkSpec};
+use boxlite::{BoxCommand, BoxOptions, BoxliteOptions as BoxrunOptions, BoxliteRuntime as BoxrunRuntime, RootfsSpec};
+use boxlite::{BoxliteError as BoxrunSdkError, BoxliteResult as BoxrunSdkResult, NetworkSpec};
 use futures_util::StreamExt;
 
 use crate::modules::sandbox::error::SandboxError;
@@ -18,19 +18,19 @@ pub struct NativeBackendOptions {
 }
 
 #[derive(Clone)]
-pub struct NativeBoxliteBackend {
-    runtime: BoxliteRuntime,
+pub struct NativeBoxrunBackend {
+    runtime: BoxrunRuntime,
     options: NativeBackendOptions,
 }
 
-impl NativeBoxliteBackend {
+impl NativeBoxrunBackend {
     pub fn new(home_dir: PathBuf, options: NativeBackendOptions) -> Result<Self, SandboxError> {
         std::fs::create_dir_all(&home_dir)?;
 
-        let mut runtime_options = BoxliteOptions::default();
+        let mut runtime_options = BoxrunOptions::default();
         runtime_options.home_dir = home_dir;
 
-        let runtime = BoxliteRuntime::new(runtime_options).map_err(map_boxlite_error)?;
+        let runtime = BoxrunRuntime::new(runtime_options).map_err(map_boxrun_error)?;
         Ok(Self { runtime, options })
     }
 
@@ -44,26 +44,26 @@ impl NativeBoxliteBackend {
         options.memory_mib = self.options.memory_mib;
         options.working_dir = self.options.working_dir.clone();
 
-        let (litebox, _) = self
+        let (boxrun_box, _) = self
             .runtime
             .get_or_create(options, Some(box_name.to_string()))
             .await
-            .map_err(map_boxlite_error)?;
+            .map_err(map_boxrun_error)?;
 
         Ok(SandboxIdentity {
-            sandbox_id: litebox.id().to_string(),
+            sandbox_id: boxrun_box.id().to_string(),
             sandbox_name: box_name.to_string(),
         })
     }
 
     pub async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
-        let maybe_box = self
+        let maybe_boxrun_box = self
             .runtime
             .get(box_id_or_name)
             .await
-            .map_err(map_boxlite_error)?;
-        if let Some(litebox) = maybe_box {
-            litebox.stop().await.map_err(map_boxlite_error)?;
+            .map_err(map_boxrun_error)?;
+        if let Some(boxrun_box) = maybe_boxrun_box {
+            boxrun_box.stop().await.map_err(map_boxrun_error)?;
         }
         Ok(())
     }
@@ -74,11 +74,11 @@ impl NativeBoxliteBackend {
         code: &str,
         timeout_seconds: u64,
     ) -> Result<SandboxExecutionOutput, SandboxError> {
-        let litebox = self
+        let boxrun_box = self
             .runtime
             .get(box_id_or_name)
             .await
-            .map_err(map_boxlite_error)?
+            .map_err(map_boxrun_error)?
             .ok_or_else(|| SandboxError::NotFound(format!("sandbox {box_id_or_name} not found")))?;
 
         let mut command = BoxCommand::new(self.options.python_bin.clone())
@@ -88,14 +88,14 @@ impl NativeBoxliteBackend {
             command = command.working_dir(working_dir);
         }
 
-        let mut execution = litebox.exec(command).await.map_err(map_boxlite_error)?;
+        let mut execution = boxrun_box.exec(command).await.map_err(map_boxrun_error)?;
         let stdout_stream = execution.stdout();
         let stderr_stream = execution.stderr();
 
         let stdout_task = tokio::spawn(async move { collect_stdout(stdout_stream).await });
         let stderr_task = tokio::spawn(async move { collect_stderr(stderr_stream).await });
 
-        let status = execution.wait().await.map_err(map_boxlite_error)?;
+        let status = execution.wait().await.map_err(map_boxrun_error)?;
         let stdout = stdout_task.await.unwrap_or_default();
         let stderr = stderr_task.await.unwrap_or_default();
 
@@ -108,7 +108,7 @@ impl NativeBoxliteBackend {
     }
 
     pub async fn shutdown(&self) -> Result<(), SandboxError> {
-        self.runtime.shutdown(Some(10)).await.map_err(map_boxlite_error)
+        self.runtime.shutdown(Some(10)).await.map_err(map_boxrun_error)
     }
 }
 
@@ -132,17 +132,17 @@ async fn collect_stderr(mut stream: Option<boxlite::ExecStderr>) -> Vec<String> 
     lines
 }
 
-fn map_boxlite_error(err: BoxliteSdkError) -> SandboxError {
+fn map_boxrun_error(err: BoxrunSdkError) -> SandboxError {
     match err {
-        BoxliteSdkError::NotFound(message) => SandboxError::NotFound(message),
-        BoxliteSdkError::InvalidArgument(message) => SandboxError::Validation(message),
-        BoxliteSdkError::InvalidState(message) => SandboxError::Busy(message),
-        BoxliteSdkError::AlreadyExists(message) => SandboxError::ResourceLimit(message),
-        BoxliteSdkError::Config(message) => SandboxError::Unavailable(message),
-        BoxliteSdkError::Unsupported(message) => SandboxError::Unavailable(message),
+        BoxrunSdkError::NotFound(message) => SandboxError::NotFound(message),
+        BoxrunSdkError::InvalidArgument(message) => SandboxError::Validation(message),
+        BoxrunSdkError::InvalidState(message) => SandboxError::Busy(message),
+        BoxrunSdkError::AlreadyExists(message) => SandboxError::ResourceLimit(message),
+        BoxrunSdkError::Config(message) => SandboxError::Unavailable(message),
+        BoxrunSdkError::Unsupported(message) => SandboxError::Unavailable(message),
         other => SandboxError::Internal(other.to_string()),
     }
 }
 
 #[allow(dead_code)]
-fn _assert_result_type(_: BoxliteSdkResult<()>) {}
+fn _assert_result_type(_: BoxrunSdkResult<()>) {}

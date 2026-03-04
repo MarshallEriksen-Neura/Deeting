@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import { request } from "@/lib/http"
+import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 
 const CONVERSATION_BASE = "/api/v1/internal/conversations"
 
@@ -11,7 +12,12 @@ const isTauriRuntime = () =>
 
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
-  return invoke<T>(command, args)
+  try {
+    return await invoke<T>(command, args)
+  } catch (error) {
+    handleModelConfigRequiredError(error)
+    throw error
+  }
 }
 
 const LOCAL_CHAT_STREAM_EVENT = "local-chat-stream"
