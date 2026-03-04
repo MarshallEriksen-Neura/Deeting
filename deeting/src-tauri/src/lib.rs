@@ -352,6 +352,7 @@ pub fn run() {
             crate::modules::mcp::commands::get_mcp_logs,
             crate::modules::mcp::commands::clear_mcp_logs,
             crate::modules::mcp::commands::sync_cloud_subscriptions,
+            crate::modules::mcp::commands::sync_local_skill_installs_from_cloud,
             crate::modules::mcp::commands::sync_local_system_assistants,
             crate::modules::mcp::commands::register_local_skills,
             crate::modules::mcp::commands::sync_official_skills_index,

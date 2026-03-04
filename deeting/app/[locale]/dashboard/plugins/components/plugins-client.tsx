@@ -13,7 +13,13 @@ import { PluginCard } from "@/components/plugins/plugin-card"
 import { PermissionConfirmDialog } from "@/components/plugins/permission-confirm-dialog"
 import { ImportRepoDialog } from "@/components/plugins/import-repo-dialog"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
-import { installPlugin, uninstallPlugin, submitPluginRepo } from "@/lib/api/plugin-market"
+import {
+  installPlugin,
+  isDesktopRuntime,
+  submitPluginRepo,
+  syncLocalSkillInstallsFromCloud,
+  uninstallPlugin,
+} from "@/lib/api/plugin-market"
 import { useDebounce } from "@/hooks/use-debounce"
 import type { PluginMarketSkillItem } from "@/lib/api/plugin-market"
 
@@ -35,6 +41,8 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [selectedPlugin, setSelectedPlugin] = React.useState<PluginMarketSkillItem | null>(null)
   const [isInstalling, setIsInstalling] = React.useState(false)
+  const [syncMode, setSyncMode] = React.useState<"sync" | "reinstall" | null>(null)
+  const showDesktopSync = isDesktopRuntime()
 
   const handleInstallClick = React.useCallback((plugin: PluginMarketSkillItem) => {
     setSelectedPlugin(plugin)
@@ -97,6 +105,37 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     [mutate, t],
   )
 
+  const handleSyncInstalls = React.useCallback(async (reinstallMissing: boolean) => {
+    setSyncMode(reinstallMissing ? "reinstall" : "sync")
+    try {
+      const syncResult = await syncLocalSkillInstallsFromCloud({
+        reinstallMissing,
+        force: true,
+      })
+      if (syncResult) {
+        toast.success(t("toast.syncSuccessTitle"), {
+          description: t("toast.syncSuccessDesc", {
+            fetched: syncResult.fetched_count,
+            upserted: syncResult.upserted_count,
+            reinstalled: syncResult.reinstalled_count,
+            failed: syncResult.failed_count,
+          }),
+        })
+      } else {
+        toast.success(t("toast.syncSuccessTitle"), {
+          description: t("toast.syncSuccessDescNoop"),
+        })
+      }
+      await mutate()
+    } catch {
+      toast.error(t("toast.syncFailedTitle"), {
+        description: t("toast.syncFailedDesc"),
+      })
+    } finally {
+      setSyncMode(null)
+    }
+  }, [mutate, t])
+
   const installedPlugins = React.useMemo(
     () => plugins.filter((plugin) => plugin.installed),
     [plugins],
@@ -155,14 +194,58 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
 
         {/* Import from GitHub */}
         {isMarketMode ? (
-          <div className="pt-2">
+          <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
             <ImportRepoDialog onSubmit={handleImportRepo} />
+            {showDesktopSync && (
+              <>
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => void handleSyncInstalls(false)}
+                  disabled={syncMode !== null}
+                >
+                  {syncMode === "sync" ? t("page.syncing") : t("page.syncAction")}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => void handleSyncInstalls(true)}
+                  disabled={syncMode !== null}
+                >
+                  {syncMode === "reinstall"
+                    ? t("page.syncing")
+                    : t("page.syncReinstallAction")}
+                </Button>
+              </>
+            )}
           </div>
         ) : (
-          <div className="pt-2">
+          <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
             <Button asChild variant="outline" className="rounded-full">
               <Link href="/plugins/market">{t("page.marketEntry")}</Link>
             </Button>
+            {showDesktopSync && (
+              <>
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => void handleSyncInstalls(false)}
+                  disabled={syncMode !== null}
+                >
+                  {syncMode === "sync" ? t("page.syncing") : t("page.syncAction")}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => void handleSyncInstalls(true)}
+                  disabled={syncMode !== null}
+                >
+                  {syncMode === "reinstall"
+                    ? t("page.syncing")
+                    : t("page.syncReinstallAction")}
+                </Button>
+              </>
+            )}
           </div>
         )}
 

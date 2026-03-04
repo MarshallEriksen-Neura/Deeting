@@ -1,5 +1,11 @@
-use super::*;
 use super::helpers::*;
+use super::*;
+
+fn normalize_optional_text(value: Option<&str>) -> Option<String> {
+    value
+        .map(|raw| raw.trim().to_string())
+        .filter(|raw| !raw.is_empty())
+}
 
 impl McpStore {
     pub async fn list_local_assistants(&self) -> Result<Vec<LocalAssistant>, McpError> {
@@ -105,6 +111,238 @@ impl McpStore {
             versions.push(row_to_assistant_version(&row)?);
         }
         Ok(versions)
+    }
+
+    pub async fn sync_cloud_system_assistants(
+        &self,
+        assistants: &[CloudSystemAssistantSnapshot],
+    ) -> Result<(i64, i64), McpError> {
+        let now = now_rfc3339()?;
+        let mut tx = self.pool.begin().await?;
+        let mut snapshot_ids: HashSet<String> = HashSet::new();
+        let mut upserted_count = 0_i64;
+        let mut tag_jobs: Vec<(String, Option<String>)> = Vec::new();
+
+        for item in assistants {
+            let assistant_id = item.assistant_id.trim().to_string();
+            let version_id = item.version.id.trim().to_string();
+            if assistant_id.is_empty() || version_id.is_empty() {
+                continue;
+            }
+            let version_name = item.version.name.trim().to_string();
+            if version_name.is_empty() {
+                continue;
+            }
+
+            let version_label = {
+                let normalized = item.version.version.trim();
+                if normalized.is_empty() {
+                    "1.0.0".to_string()
+                } else {
+                    normalized.to_string()
+                }
+            };
+
+            let summary = normalize_optional_text(item.summary.as_deref());
+            let icon_id = normalize_optional_text(item.icon_id.as_deref());
+            let share_slug = normalize_optional_text(item.share_slug.as_deref());
+            let published_at = normalize_optional_text(item.published_at.as_deref())
+                .or_else(|| normalize_optional_text(item.version.published_at.as_deref()));
+            let tags = normalize_assistant_tag_names(item.version.tags.clone());
+            let tags_json = serialize_json(&Some(tags))?;
+            let version_description = normalize_optional_text(item.version.description.as_deref())
+                .or_else(|| summary.clone());
+            let system_prompt = item
+                .version
+                .system_prompt
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let install_count = item.install_count.max(0);
+            let rating_count = item.rating_count.max(0);
+            let rating_avg = if item.rating_avg.is_finite() {
+                round_to_4(item.rating_avg.max(0.0))
+            } else {
+                0.0
+            };
+
+            snapshot_ids.insert(assistant_id.clone());
+
+            sqlx::query(
+                r#"
+                INSERT INTO assistant (
+                  id, owner_user_id, visibility, status, share_slug, summary, icon_id,
+                  install_count, rating_avg, rating_count, current_version_id, published_at,
+                  created_at, updated_at
+                )
+                VALUES (?, NULL, 'public', 'published', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  owner_user_id = NULL,
+                  visibility = 'public',
+                  status = 'published',
+                  share_slug = excluded.share_slug,
+                  summary = excluded.summary,
+                  icon_id = excluded.icon_id,
+                  install_count = excluded.install_count,
+                  rating_avg = excluded.rating_avg,
+                  rating_count = excluded.rating_count,
+                  current_version_id = excluded.current_version_id,
+                  published_at = excluded.published_at,
+                  updated_at = excluded.updated_at;
+                "#,
+            )
+            .bind(&assistant_id)
+            .bind(share_slug.as_deref())
+            .bind(summary.as_deref())
+            .bind(icon_id.as_deref())
+            .bind(install_count)
+            .bind(rating_avg)
+            .bind(rating_count)
+            .bind(&version_id)
+            .bind(published_at.as_deref())
+            .bind(&now)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO assistant_version (
+                  id, assistant_id, version, name, description, system_prompt,
+                  model_config, skill_refs, tags, changelog, published_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  assistant_id = excluded.assistant_id,
+                  version = excluded.version,
+                  name = excluded.name,
+                  description = excluded.description,
+                  system_prompt = excluded.system_prompt,
+                  tags = excluded.tags,
+                  published_at = excluded.published_at,
+                  updated_at = excluded.updated_at;
+                "#,
+            )
+            .bind(&version_id)
+            .bind(&assistant_id)
+            .bind(version_label)
+            .bind(version_name)
+            .bind(version_description.as_deref())
+            .bind(system_prompt)
+            .bind(tags_json.as_deref())
+            .bind(published_at.as_deref())
+            .bind(&now)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            tag_jobs.push((assistant_id, tags_json));
+            upserted_count += 1;
+        }
+
+        let archived_count = if snapshot_ids.is_empty() {
+            sqlx::query(
+                r#"
+                UPDATE assistant
+                SET status = 'archived',
+                    published_at = NULL,
+                    updated_at = ?
+                WHERE owner_user_id IS NULL
+                  AND visibility = 'public'
+                  AND status = 'published';
+                "#,
+            )
+            .bind(&now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?
+            .rows_affected() as i64
+        } else {
+            let mut ids: Vec<String> = snapshot_ids.into_iter().collect();
+            ids.sort();
+            let placeholders = vec!["?"; ids.len()].join(", ");
+            let sql = format!(
+                "UPDATE assistant
+                 SET status = 'archived',
+                     published_at = NULL,
+                     updated_at = ?
+                 WHERE owner_user_id IS NULL
+                   AND visibility = 'public'
+                   AND status = 'published'
+                   AND id NOT IN ({placeholders});"
+            );
+            let mut query = sqlx::query(&sql).bind(&now);
+            for id in &ids {
+                query = query.bind(id);
+            }
+            query
+                .execute(&mut *tx)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?
+                .rows_affected() as i64
+        };
+
+        tx.commit().await?;
+
+        for (assistant_id, tags_json) in tag_jobs {
+            self.sync_local_assistant_tags(&assistant_id, tags_json.as_deref(), &now)
+                .await?;
+        }
+
+        Ok((upserted_count, archived_count))
+    }
+
+    pub async fn list_enabled_local_assistant_ids(&self) -> Result<HashSet<String>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT assistant_id
+            FROM assistant_install
+            WHERE user_id = ? AND is_enabled = 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut ids = HashSet::with_capacity(rows.len());
+        for row in rows {
+            let assistant_id = row.try_get::<String, _>("assistant_id")?;
+            let normalized = assistant_id.trim().to_string();
+            if !normalized.is_empty() {
+                ids.insert(normalized);
+            }
+        }
+        Ok(ids)
+    }
+
+    pub async fn is_local_assistant_enabled_install(
+        &self,
+        assistant_id: &str,
+    ) -> Result<bool, McpError> {
+        let normalized_assistant_id = assistant_id.trim().to_string();
+        if normalized_assistant_id.is_empty() {
+            return Ok(false);
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT 1
+            FROM assistant_install
+            WHERE user_id = ? AND assistant_id = ? AND is_enabled = 1
+            LIMIT 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_assistant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(row.is_some())
     }
 
     pub async fn list_local_assistant_tags(&self) -> Result<Vec<LocalAssistantTag>, McpError> {

@@ -10,15 +10,15 @@ use uuid::Uuid;
 
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::types::{
-    CreateAssistantMessageRequest, CreateConversationMessageRequest, CreateLocalAssistantRequest,
-    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, LocalAdminConversationItem,
-    LocalAdminConversationListResponse, LocalAdminConversationMessageItem,
-    LocalAdminConversationMessageListResponse, LocalAdminConversationMessageQuery,
-    LocalAdminConversationQuery, LocalAdminConversationSummaryItem,
-    LocalAdminConversationSummaryListResponse, LocalAssistant, LocalAssistantEntity,
-    LocalAssistantInstallCreateRequest, LocalAssistantInstallItem, LocalAssistantInstallPage,
-    LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest, LocalAssistantMessage,
-    LocalAssistantRatingRequest, LocalAssistantRatingResponse,
+    CloudSystemAssistantSnapshot, CreateAssistantMessageRequest, CreateConversationMessageRequest,
+    CreateLocalAssistantRequest, CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest,
+    LocalAdminConversationItem, LocalAdminConversationListResponse,
+    LocalAdminConversationMessageItem, LocalAdminConversationMessageListResponse,
+    LocalAdminConversationMessageQuery, LocalAdminConversationQuery,
+    LocalAdminConversationSummaryItem, LocalAdminConversationSummaryListResponse, LocalAssistant,
+    LocalAssistantEntity, LocalAssistantInstallCreateRequest, LocalAssistantInstallItem,
+    LocalAssistantInstallPage, LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest,
+    LocalAssistantMessage, LocalAssistantRatingRequest, LocalAssistantRatingResponse,
     LocalAssistantRoutingFeedbackRequest, LocalAssistantRoutingReportItem,
     LocalAssistantRoutingReportQuery, LocalAssistantRoutingReportResponse,
     LocalAssistantRoutingReportSummary, LocalAssistantRoutingState, LocalAssistantSummary,
@@ -81,12 +81,11 @@ pub struct LocalPeriodicTask {
     pub interval_seconds: i64,
 }
 
-
-mod source_tools;
 mod assistants;
-mod knowledge;
 mod conversations;
 mod helpers;
+mod knowledge;
+mod source_tools;
 
 #[cfg(test)]
 mod tests;
@@ -474,6 +473,37 @@ impl McpStore {
             r#"
             CREATE INDEX IF NOT EXISTS idx_assistant_install_assistant
             ON assistant_install(assistant_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS local_skill_install (
+              user_id TEXT NOT NULL,
+              skill_id TEXT NOT NULL,
+              installed_version TEXT NOT NULL,
+              is_enabled INTEGER NOT NULL DEFAULT 1,
+              runtime TEXT,
+              manifest_json TEXT NOT NULL,
+              install_path TEXT NOT NULL,
+              user_settings_json TEXT,
+              installed_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (user_id, skill_id)
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_local_skill_install_user_enabled
+            ON local_skill_install(user_id, is_enabled);
             "#,
         )
         .execute(&self.pool)

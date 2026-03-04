@@ -659,6 +659,23 @@ async fn run_local_chat_complete_with_auto_code_mode(
     }
 }
 
+const LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE: &str =
+    "LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED";
+
+fn build_local_tool_call_install_gate_error_meta(
+    call_id: Option<&str>,
+    tool_name: &str,
+    error: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": call_id.unwrap_or_default(),
+        "name": tool_name,
+        "status": "error",
+        "error": error,
+        "error_code": LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    })
+}
+
 async fn maybe_handle_local_code_mode_tool_calls(
     app_state: &AppState,
     chat_response: &serde_json::Value,
@@ -795,6 +812,21 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     }
                 }
             }
+        } else {
+            synthesized = true;
+            let error = format!(
+                "tool '{}' is not installed or enabled in local desktop runtime",
+                tool_name
+            );
+            tool_call_meta.push(build_local_tool_call_install_gate_error_meta(
+                call.id.as_deref(),
+                &tool_name,
+                &error,
+            ));
+            results.push(format!(
+                "Tool call '{}' failed [{}]: {}",
+                tool_name, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE, error
+            ));
         }
     }
 
@@ -803,6 +835,22 @@ async fn maybe_handle_local_code_mode_tool_calls(
 
 async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> serde_json::Value {
     let normalized = query.trim().to_lowercase();
+    let enabled_assistant_ids = app_state
+        .mcp
+        .store
+        .list_enabled_local_assistant_ids()
+        .await
+        .unwrap_or_else(|_| HashSet::new());
+    let enabled_skill_ids = app_state
+        .mcp
+        .store
+        .list_enabled_local_skill_ids()
+        .await
+        .unwrap_or_else(|_| HashSet::new());
+    let mut install_hints = Vec::new();
+    let mut assistant_install_filtered_count = 0usize;
+    let mut skill_install_filtered_count = 0usize;
+
     let mut catalog = vec![
         serde_json::json!({
             "name": "execute_code_plan",
@@ -834,11 +882,25 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
                         .get("source_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
+                    let asset_type = hit
+                        .get("asset_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     let name = hit["name"].as_str().unwrap_or("").to_string();
                     let desc = hit["description"].as_str().unwrap_or("").to_string();
                     let pkg_name = hit.get("pkg_name").and_then(|v| v.as_str());
+                    let asset_id = hit["id"].as_str().unwrap_or("").trim();
+                    let is_enabled_installed = if asset_type == "assistant" {
+                        !asset_id.is_empty() && enabled_assistant_ids.contains(asset_id)
+                    } else if asset_type == "tool" {
+                        pkg_name
+                            .map(|pkg| enabled_skill_ids.contains(pkg.trim()))
+                            .unwrap_or(true)
+                    } else {
+                        true
+                    };
 
-                    catalog.push(serde_json::json!({
+                    let item = serde_json::json!({
                         "name": name,
                         "description": desc,
                         "source": format!("local_{}", source_type),
@@ -846,7 +908,25 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
                         "score": hit.get("_distance"),
                         "needs_provisioning": source_type == "cloud_mirror",
                         "asset_type": hit.get("asset_type"),
-                    }));
+                        "callable": source_type != "cloud_mirror" && is_enabled_installed,
+                        "assistant_id": if asset_type == "assistant" { Some(asset_id) } else { None::<&str> },
+                    });
+
+                    if source_type == "cloud_mirror" {
+                        install_hints.push(item);
+                        continue;
+                    }
+
+                    if !is_enabled_installed {
+                        if asset_type == "assistant" {
+                            assistant_install_filtered_count += 1;
+                        } else if asset_type == "tool" {
+                            skill_install_filtered_count += 1;
+                        }
+                        continue;
+                    }
+
+                    catalog.push(item);
                 }
             }
         }
@@ -883,6 +963,15 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
         "query": query,
         "mode": "unified_local_discovery",
         "items": matches,
+        "install_hints": install_hints,
+        "assistant_install_gate": {
+            "enabled_installed_count": enabled_assistant_ids.len(),
+            "filtered_out_count": assistant_install_filtered_count,
+        },
+        "skill_install_gate": {
+            "enabled_installed_count": enabled_skill_ids.len(),
+            "filtered_out_count": skill_install_filtered_count,
+        }
     })
 }
 
@@ -1084,4 +1173,3 @@ const LOCAL_CHAT_STREAM_EVENT: &str = "local-chat-stream";
 const LOCAL_CHAT_STREAM_DELTA_CHUNK_CHARS: usize = 64;
 const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
 const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
-

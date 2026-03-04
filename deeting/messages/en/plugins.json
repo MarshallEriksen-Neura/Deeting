@@ -10,6 +10,9 @@
         "description": "Discover and install community plugins to extend your Agent capabilities."
       },
       "marketEntry": "Go To Plugin Market",
+      "syncAction": "Sync State",
+      "syncReinstallAction": "Sync + Reinstall Missing",
+      "syncing": "Syncing...",
       "hero": {
         "titlePrefix": "Explore",
         "titleHighlight": "Plugin Ecosystem",
@@ -67,7 +70,12 @@
       "uninstalledTitle": "Plugin uninstalled",
       "uninstalledDesc": "The plugin has been removed from your environment.",
       "uninstallFailedTitle": "Uninstall failed",
-      "uninstallFailedDesc": "Please try again later."
+      "uninstallFailedDesc": "Please try again later.",
+      "syncSuccessTitle": "Install state synced",
+      "syncSuccessDesc": "Fetched {fetched}, updated {upserted}, reinstalled {reinstalled}, failed {failed}.",
+      "syncSuccessDescNoop": "No desktop sync was needed for current runtime or auth state.",
+      "syncFailedTitle": "Sync failed",
+      "syncFailedDesc": "Could not sync local install state. Please try again."
     },
     "importRepo": {
       "trigger": "Import from GitHub",

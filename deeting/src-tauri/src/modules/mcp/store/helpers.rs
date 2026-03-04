@@ -390,7 +390,9 @@ pub(super) fn row_to_assistant_version(row: &SqliteRow) -> Result<LocalAssistant
     })
 }
 
-pub(super) fn row_to_assistant_install_item(row: &SqliteRow) -> Result<LocalAssistantInstallItem, McpError> {
+pub(super) fn row_to_assistant_install_item(
+    row: &SqliteRow,
+) -> Result<LocalAssistantInstallItem, McpError> {
     let follow_latest = row.try_get::<i64, _>("install_follow_latest").unwrap_or(1) != 0;
     let pinned_version_id: Option<String> = row.try_get("install_pinned_version_id")?;
     let use_pinned = !follow_latest
@@ -578,4 +580,3 @@ pub(super) fn hash_json(value: &serde_json::Value) -> String {
     hasher.update(raw.as_bytes());
     hex::encode(hasher.finalize())
 }
-

@@ -1,7 +1,213 @@
-use super::*;
 use super::helpers::*;
+use super::*;
 
 impl McpStore {
+    pub async fn upsert_local_skill_install(
+        &self,
+        skill_id: &str,
+        installed_version: Option<&str>,
+        runtime: Option<&str>,
+        manifest_json: &str,
+        install_path: &str,
+    ) -> Result<(), McpError> {
+        let normalized_skill_id = skill_id.trim().to_string();
+        if normalized_skill_id.is_empty() {
+            return Err(McpError::validation("skill_id is required"));
+        }
+        let normalized_manifest = manifest_json.trim().to_string();
+        if normalized_manifest.is_empty() {
+            return Err(McpError::validation("manifest_json is required"));
+        }
+        let normalized_path = install_path.trim().to_string();
+        if normalized_path.is_empty() {
+            return Err(McpError::validation("install_path is required"));
+        }
+
+        let normalized_version = installed_version
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty())
+            .unwrap_or_else(|| "0.0.0".to_string());
+        let normalized_runtime = runtime
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty());
+        let now = now_rfc3339()?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO local_skill_install (
+              user_id, skill_id, installed_version, is_enabled, runtime,
+              manifest_json, install_path, user_settings_json, installed_at, updated_at
+            )
+            VALUES (?, ?, ?, 1, ?, ?, ?, NULL, ?, ?)
+            ON CONFLICT(user_id, skill_id) DO UPDATE SET
+              installed_version = excluded.installed_version,
+              runtime = excluded.runtime,
+              manifest_json = excluded.manifest_json,
+              install_path = excluded.install_path,
+              updated_at = excluded.updated_at;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_skill_id)
+        .bind(&normalized_version)
+        .bind(normalized_runtime.as_deref())
+        .bind(&normalized_manifest)
+        .bind(&normalized_path)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(())
+    }
+
+    pub async fn list_enabled_local_skill_ids(&self) -> Result<HashSet<String>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT skill_id
+            FROM local_skill_install
+            WHERE user_id = ? AND is_enabled = 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut ids = HashSet::with_capacity(rows.len());
+        for row in rows {
+            let skill_id = row.try_get::<String, _>("skill_id")?;
+            let normalized = skill_id.trim().to_string();
+            if !normalized.is_empty() {
+                ids.insert(normalized);
+            }
+        }
+        Ok(ids)
+    }
+
+    pub async fn upsert_local_skill_install_state(
+        &self,
+        skill_id: &str,
+        installed_version: Option<&str>,
+        is_enabled: bool,
+        runtime: Option<&str>,
+        manifest_json: &str,
+        install_path: &str,
+        user_settings_json: Option<&serde_json::Value>,
+    ) -> Result<(), McpError> {
+        let normalized_skill_id = skill_id.trim().to_string();
+        if normalized_skill_id.is_empty() {
+            return Err(McpError::validation("skill_id is required"));
+        }
+        let normalized_manifest = manifest_json.trim().to_string();
+        if normalized_manifest.is_empty() {
+            return Err(McpError::validation("manifest_json is required"));
+        }
+        let normalized_path = install_path.trim().to_string();
+        if normalized_path.is_empty() {
+            return Err(McpError::validation("install_path is required"));
+        }
+
+        let normalized_version = installed_version
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty())
+            .unwrap_or_else(|| "0.0.0".to_string());
+        let normalized_runtime = runtime
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty());
+        let normalized_settings = match user_settings_json {
+            Some(value) => Some(
+                serde_json::to_string(value).map_err(|err| McpError::Storage(err.to_string()))?,
+            ),
+            None => None,
+        };
+        let now = now_rfc3339()?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO local_skill_install (
+              user_id, skill_id, installed_version, is_enabled, runtime,
+              manifest_json, install_path, user_settings_json, installed_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, skill_id) DO UPDATE SET
+              installed_version = excluded.installed_version,
+              is_enabled = excluded.is_enabled,
+              runtime = excluded.runtime,
+              manifest_json = excluded.manifest_json,
+              install_path = excluded.install_path,
+              user_settings_json = excluded.user_settings_json,
+              updated_at = excluded.updated_at;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_skill_id)
+        .bind(&normalized_version)
+        .bind(if is_enabled { 1 } else { 0 })
+        .bind(normalized_runtime.as_deref())
+        .bind(&normalized_manifest)
+        .bind(&normalized_path)
+        .bind(normalized_settings.as_deref())
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(())
+    }
+
+    pub async fn disable_missing_cloud_managed_local_skills(
+        &self,
+        installed_skill_ids: &[String],
+    ) -> Result<i64, McpError> {
+        let now = now_rfc3339()?;
+        let cloud_marker = "%\"sync_source\":\"cloud_plugin_market\"%";
+
+        let normalized_skill_ids: Vec<String> = installed_skill_ids
+            .iter()
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty())
+            .collect();
+
+        let mut sql = String::from(
+            r#"
+            UPDATE local_skill_install
+            SET is_enabled = 0, updated_at = ?
+            WHERE user_id = ?
+              AND is_enabled = 1
+              AND user_settings_json LIKE ?
+            "#,
+        );
+
+        if !normalized_skill_ids.is_empty() {
+            sql.push_str(" AND skill_id NOT IN (");
+            for index in 0..normalized_skill_ids.len() {
+                if index > 0 {
+                    sql.push_str(", ");
+                }
+                sql.push('?');
+            }
+            sql.push(')');
+        }
+
+        let mut query = sqlx::query(&sql)
+            .bind(&now)
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .bind(cloud_marker);
+
+        for skill_id in normalized_skill_ids {
+            query = query.bind(skill_id);
+        }
+
+        let result = query
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected() as i64)
+    }
+
     pub async fn ensure_local_source(&self) -> Result<McpSource, McpError> {
         if let Some(source) = self.find_source_by_type(McpSourceType::Local).await? {
             return Ok(source);
@@ -650,5 +856,4 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
     }
-
 }

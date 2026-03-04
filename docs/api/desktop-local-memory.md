@@ -76,12 +76,14 @@
 ### 本地数据模型（最小集）
 - 安装真相源（SQLite，建议）：
   - `local_skill_install`：
+    - `user_id`（与本地账号上下文绑定）
     - `skill_id`（PK）
     - `installed_version`
     - `is_enabled`
     - `runtime`
     - `manifest_json`
     - `install_path`
+    - `user_settings_json`
     - `installed_at / updated_at`
 - 本地索引（LanceDB）：
   - 仅存“已安装+已启用”技能/助手向量。
@@ -103,14 +105,19 @@
   - 聊天态 catalog 中的 `cloud_mirror` 资产只能作为“可安装提示”，不得作为可执行工具暴露。
 - 执行门禁统一：
   - 运行前再次校验本地安装态，防止绕过检索层直接执行。
+  - 未安装/未启用工具调用应返回统一错误码（建议：`LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED`），用于前端与日志观测。
 
 ### 分阶段推进（建议）
 1. Phase 1（1-2 天）
 - 先补“对话层安装门禁”与“catalog 过滤”，不改大 schema。
 2. Phase 2（3-5 天）
 - 建立统一的 `local_skill_install` 与安装目录生命周期管理。
+- 当前进展：已落地 `local_skill_install` 表与扫描写入（`register_local_skills` upsert），并将对话检索接入已启用安装过滤（assistant + skill 双门禁）。
 3. Phase 3（可选）
 - 增加跨设备“安装清单同步 + 自动重装”。
+- 当前进展：已新增桌面命令 `sync_local_skill_installs_from_cloud`（轻同步拉取 `/api/v1/plugin-market/installs`），并支持 `reinstall_missing=true` 时按云端安装清单尝试本地重装（git clone）后落库。
+- 当前进展（前端接入）：桌面端插件市场请求前会自动触发轻同步（失败降级）；安装/卸载后会强制触发一次同步；插件页新增手动入口并拆分为“仅同步”与“同步并重装缺失”两类操作。
+- 当前进展（收敛保障）：同步会将“已标记为 cloud_plugin_market 来源但不在云端安装清单中的本地技能”自动置为禁用，防止卸载后继续进入本地执行链路。
 
 ### 验收标准（Definition of Done）
 - 市场可看到云端全量；对话仅看到本地已安装启用。

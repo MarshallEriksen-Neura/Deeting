@@ -1,5 +1,5 @@
-use super::*;
 use super::helpers::*;
+use super::*;
 
 impl McpStore {
     pub async fn list_local_admin_conversations(
@@ -3384,7 +3384,7 @@ impl McpStore {
         Ok(())
     }
 
-    async fn sync_local_assistant_tags(
+    pub(super) async fn sync_local_assistant_tags(
         &self,
         assistant_id: &str,
         tags_json: Option<&str>,

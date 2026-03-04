@@ -10,6 +10,9 @@
         "description": "发现并安装社区插件，扩展你的 Agent 能力。"
       },
       "marketEntry": "前往插件市场",
+      "syncAction": "仅同步",
+      "syncReinstallAction": "同步并重装缺失",
+      "syncing": "同步中...",
       "hero": {
         "titlePrefix": "探索",
         "titleHighlight": "插件生态",
@@ -67,7 +70,12 @@
       "uninstalledTitle": "插件已卸载",
       "uninstalledDesc": "该插件已从你的环境中移除。",
       "uninstallFailedTitle": "卸载失败",
-      "uninstallFailedDesc": "请稍后重试。"
+      "uninstallFailedDesc": "请稍后重试。",
+      "syncSuccessTitle": "安装状态已同步",
+      "syncSuccessDesc": "共拉取 {fetched} 项，更新 {upserted} 项，重装 {reinstalled} 项，失败 {failed} 项。",
+      "syncSuccessDescNoop": "当前运行时或登录态下无需执行桌面同步。",
+      "syncFailedTitle": "同步失败",
+      "syncFailedDesc": "无法同步本地安装状态，请稍后重试。"
     },
     "importRepo": {
       "trigger": "从 GitHub 导入",

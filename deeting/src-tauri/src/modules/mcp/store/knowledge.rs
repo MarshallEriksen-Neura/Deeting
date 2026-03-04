@@ -1,5 +1,5 @@
-use super::*;
 use super::helpers::*;
+use super::*;
 
 impl McpStore {
     pub async fn get_local_knowledge_tree(
@@ -1165,5 +1165,4 @@ impl McpStore {
             updated_at: row.try_get("updated_at")?,
         })
     }
-
 }

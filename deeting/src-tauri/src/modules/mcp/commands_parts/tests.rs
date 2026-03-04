@@ -1,16 +1,15 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{extract::State as AxumState, routing::get, Json, Router};
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use tokio::net::TcpListener;
     use tokio::sync::RwLock;
 
     async fn create_test_store(test_name: &str) -> crate::modules::mcp::store::McpStore {
         let mut db_path = std::env::temp_dir();
-        db_path.push(format!(
-            "deeting-tauri-{test_name}-{}.db",
-            Uuid::new_v4()
-        ));
+        db_path.push(format!("deeting-tauri-{test_name}-{}.db", Uuid::new_v4()));
         let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
 
         let store = crate::modules::mcp::store::McpStore::new(&database_url)
@@ -71,6 +70,54 @@ mod tests {
             .expect("upsert test tool")
     }
 
+    #[derive(Clone)]
+    struct MockPluginMarketServerState {
+        installs_payload: serde_json::Value,
+        plugins_payload: serde_json::Value,
+    }
+
+    async fn mock_plugin_installs_handler(
+        AxumState(state): AxumState<MockPluginMarketServerState>,
+    ) -> Json<serde_json::Value> {
+        Json(state.installs_payload)
+    }
+
+    async fn mock_plugin_market_handler(
+        AxumState(state): AxumState<MockPluginMarketServerState>,
+    ) -> Json<serde_json::Value> {
+        Json(state.plugins_payload)
+    }
+
+    async fn start_mock_plugin_market_server(
+        installs_payload: serde_json::Value,
+        plugins_payload: serde_json::Value,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock plugin market listener");
+        let addr = listener
+            .local_addr()
+            .expect("read mock plugin market listener addr");
+        let app = Router::new()
+            .route(
+                "/api/v1/plugin-market/installs",
+                get(mock_plugin_installs_handler),
+            )
+            .route(
+                "/api/v1/plugin-market/plugins",
+                get(mock_plugin_market_handler),
+            )
+            .with_state(MockPluginMarketServerState {
+                installs_payload,
+                plugins_payload,
+            });
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        (format!("http://{}", addr), server)
+    }
+
     #[test]
     fn extract_chat_tool_calls_works() {
         let payload = serde_json::json!({
@@ -103,6 +150,39 @@ mod tests {
         assert!(feedback.contains("round 2"));
         assert!(feedback.contains("\"tool_calls\""));
         assert!(feedback.contains("\"results\""));
+    }
+
+    #[test]
+    fn normalize_skill_dir_name_replaces_unsafe_chars() {
+        assert_eq!(normalize_skill_dir_name("demo.skill"), "demo.skill");
+        assert_eq!(
+            normalize_skill_dir_name("demo/skill:alpha"),
+            "demo_skill_alpha"
+        );
+        assert_eq!(normalize_skill_dir_name("   "), "skill");
+    }
+
+    #[test]
+    fn unknown_tool_call_builds_structured_install_gate_error_meta() {
+        let call = LocalChatToolCall {
+            id: Some("call_unknown".to_string()),
+            name: "do_magic".to_string(),
+            arguments: serde_json::json!({}),
+        };
+        let error = "tool 'do_magic' is not installed or enabled in local desktop runtime";
+        let meta =
+            build_local_tool_call_install_gate_error_meta(call.id.as_deref(), "do_magic", error);
+
+        assert_eq!(meta.get("status").and_then(|v| v.as_str()), Some("error"));
+        assert_eq!(
+            meta.get("error_code").and_then(|v| v.as_str()),
+            Some(LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE)
+        );
+        assert!(meta
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .contains("not installed"));
     }
 
     #[test]
@@ -139,7 +219,10 @@ mod tests {
             .cloned()
             .unwrap_or_default();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].get("name").and_then(|v| v.as_str()), Some("search_sdk"));
+        assert_eq!(
+            calls[0].get("name").and_then(|v| v.as_str()),
+            Some("search_sdk")
+        );
         assert_eq!(
             calls[0]
                 .get("arguments")
@@ -267,13 +350,11 @@ mod tests {
             .expect("list summary jobs");
         assert_eq!(jobs.total, 1);
         assert_eq!(jobs.items[0].status, "pending");
-        assert!(
-            jobs.items[0]
-                .last_error
-                .as_deref()
-                .unwrap_or("")
-                .contains("content is empty")
-        );
+        assert!(jobs.items[0]
+            .last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("content is empty"));
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -341,8 +422,7 @@ mod tests {
 
     #[tokio::test]
     async fn abort_local_chat_task_by_request_id_cancels_task() {
-        let local_chat_tasks =
-            RwLock::new(HashMap::<String, tokio::task::AbortHandle>::new());
+        let local_chat_tasks = RwLock::new(HashMap::<String, tokio::task::AbortHandle>::new());
         let task = tokio::spawn(async {
             tokio::time::sleep(Duration::from_secs(10)).await;
             1usize
@@ -355,8 +435,7 @@ mod tests {
         )
         .await;
 
-        let canceled =
-            abort_local_chat_task_by_request_id(&local_chat_tasks, "req-cancel-1").await;
+        let canceled = abort_local_chat_task_by_request_id(&local_chat_tasks, "req-cancel-1").await;
         assert!(canceled);
         assert!(local_chat_tasks.read().await.is_empty());
 
@@ -368,11 +447,273 @@ mod tests {
 
     #[tokio::test]
     async fn abort_local_chat_task_by_request_id_returns_false_when_missing() {
-        let local_chat_tasks =
-            RwLock::new(HashMap::<String, tokio::task::AbortHandle>::new());
-        let canceled =
-            abort_local_chat_task_by_request_id(&local_chat_tasks, "req-missing").await;
+        let local_chat_tasks = RwLock::new(HashMap::<String, tokio::task::AbortHandle>::new());
+        let canceled = abort_local_chat_task_by_request_id(&local_chat_tasks, "req-missing").await;
         assert!(!canceled);
+    }
+
+    #[tokio::test]
+    async fn disable_missing_cloud_managed_local_skills_only_disables_missing_cloud_items() {
+        let store = create_test_store("cloud-install-disable-missing").await;
+
+        let cloud_settings_keep = serde_json::json!({
+            "sync_source": "cloud_plugin_market",
+            "alias": "keep",
+        });
+        let cloud_settings_remove = serde_json::json!({
+            "sync_source": "cloud_plugin_market",
+            "alias": "remove",
+        });
+        let local_settings = serde_json::json!({
+            "sync_source": "manual_local",
+            "alias": "local",
+        });
+
+        store
+            .upsert_local_skill_install_state(
+                "skill.keep",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.keep\"}",
+                "/tmp/skill.keep",
+                Some(&cloud_settings_keep),
+            )
+            .await
+            .expect("insert cloud keep");
+        store
+            .upsert_local_skill_install_state(
+                "skill.remove",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.remove\"}",
+                "/tmp/skill.remove",
+                Some(&cloud_settings_remove),
+            )
+            .await
+            .expect("insert cloud remove");
+        store
+            .upsert_local_skill_install_state(
+                "skill.local",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.local\"}",
+                "/tmp/skill.local",
+                Some(&local_settings),
+            )
+            .await
+            .expect("insert local");
+
+        let disabled = store
+            .disable_missing_cloud_managed_local_skills(&["skill.keep".to_string()])
+            .await
+            .expect("disable missing cloud installs");
+        assert_eq!(disabled, 1);
+
+        let enabled = store
+            .list_enabled_local_skill_ids()
+            .await
+            .expect("list enabled ids");
+        assert!(enabled.contains("skill.keep"));
+        assert!(enabled.contains("skill.local"));
+        assert!(!enabled.contains("skill.remove"));
+    }
+
+    #[tokio::test]
+    async fn sync_local_skill_installs_from_cloud_inner_applies_light_sync_and_disable_missing() {
+        let store = create_test_store("cloud-skill-sync-inner").await;
+        let cloud_settings_stale = serde_json::json!({
+            "sync_source": "cloud_plugin_market",
+            "alias": "stale",
+        });
+        let local_settings = serde_json::json!({
+            "sync_source": "manual_local",
+            "alias": "local-only",
+        });
+
+        store
+            .upsert_local_skill_install_state(
+                "skill.stale",
+                Some("0.9.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.stale\"}",
+                "/tmp/skill.stale",
+                Some(&cloud_settings_stale),
+            )
+            .await
+            .expect("insert stale cloud-managed skill");
+        store
+            .upsert_local_skill_install_state(
+                "skill.local_only",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.local_only\"}",
+                "/tmp/skill.local_only",
+                Some(&local_settings),
+            )
+            .await
+            .expect("insert local-only skill");
+
+        let installs_payload = serde_json::json!([
+            {
+                "skill_id": "skill.keep",
+                "alias": "keep",
+                "config_json": {"temperature": 0.2},
+                "granted_permissions": ["network"],
+                "installed_revision": "rev-keep",
+                "is_enabled": true
+            },
+            {
+                "skill_id": "skill.disabled",
+                "alias": "disabled",
+                "config_json": {},
+                "granted_permissions": [],
+                "installed_revision": "rev-disabled",
+                "is_enabled": false
+            }
+        ]);
+        let plugins_payload = serde_json::json!([
+            {
+                "id": "skill.keep",
+                "name": "Keep Skill",
+                "description": "keep me installed",
+                "version": "1.2.0",
+                "source_repo": null,
+                "source_revision": "main"
+            },
+            {
+                "id": "skill.disabled",
+                "name": "Disabled Skill",
+                "description": "disabled from cloud",
+                "version": "2.0.0",
+                "source_repo": null,
+                "source_revision": "main"
+            }
+        ]);
+        let (mock_base_url, server_handle) =
+            start_mock_plugin_market_server(installs_payload, plugins_payload).await;
+
+        let mut skills_dir = std::env::temp_dir();
+        skills_dir.push(format!("deeting-cloud-sync-inner-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&skills_dir).expect("create temporary skills dir");
+
+        let response = sync_local_skill_installs_from_cloud_inner(
+            &store,
+            &reqwest::Client::new(),
+            &mock_base_url,
+            "test-access-token",
+            &skills_dir,
+            false,
+        )
+        .await
+        .expect("sync local skill installs from cloud");
+
+        assert_eq!(response.fetched_count, 2);
+        assert_eq!(response.upserted_count, 2);
+        assert_eq!(response.reinstalled_count, 0);
+        assert_eq!(response.failed_count, 0);
+        assert_eq!(response.items.len(), 2);
+
+        let mut status_by_skill_id = HashMap::new();
+        for item in response.items {
+            status_by_skill_id.insert(item.skill_id, item.status);
+        }
+        assert_eq!(
+            status_by_skill_id.get("skill.keep").map(String::as_str),
+            Some("metadata_synced")
+        );
+        assert_eq!(
+            status_by_skill_id.get("skill.disabled").map(String::as_str),
+            Some("disabled_synced")
+        );
+
+        let enabled = store
+            .list_enabled_local_skill_ids()
+            .await
+            .expect("list enabled local skill ids");
+        assert!(enabled.contains("skill.keep"));
+        assert!(enabled.contains("skill.local_only"));
+        assert!(!enabled.contains("skill.disabled"));
+        assert!(!enabled.contains("skill.stale"));
+
+        server_handle.abort();
+        let _ = std::fs::remove_dir_all(&skills_dir);
+    }
+
+    #[tokio::test]
+    async fn sync_local_skill_installs_from_cloud_inner_marks_failed_reinstall_when_source_repo_missing(
+    ) {
+        let store = create_test_store("cloud-skill-sync-failed-reinstall").await;
+
+        let installs_payload = serde_json::json!([
+            {
+                "skill_id": "skill.needs_repo",
+                "alias": "repo-missing",
+                "config_json": {},
+                "granted_permissions": [],
+                "installed_revision": "rev-1",
+                "is_enabled": true
+            }
+        ]);
+        let plugins_payload = serde_json::json!([
+            {
+                "id": "skill.needs_repo",
+                "name": "Needs Repo Skill",
+                "description": "cannot reinstall without source repo",
+                "version": "1.0.0",
+                "source_repo": null,
+                "source_revision": "main"
+            }
+        ]);
+        let (mock_base_url, server_handle) =
+            start_mock_plugin_market_server(installs_payload, plugins_payload).await;
+
+        let mut skills_dir = std::env::temp_dir();
+        skills_dir.push(format!(
+            "deeting-cloud-sync-failed-reinstall-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&skills_dir).expect("create temporary skills dir");
+
+        let response = sync_local_skill_installs_from_cloud_inner(
+            &store,
+            &reqwest::Client::new(),
+            &mock_base_url,
+            "test-access-token",
+            &skills_dir,
+            true,
+        )
+        .await
+        .expect("sync local skill installs from cloud");
+
+        assert_eq!(response.fetched_count, 1);
+        assert_eq!(response.upserted_count, 1);
+        assert_eq!(response.reinstalled_count, 0);
+        assert_eq!(response.failed_count, 1);
+        assert_eq!(response.items.len(), 1);
+
+        let item = &response.items[0];
+        assert_eq!(item.skill_id, "skill.needs_repo");
+        assert_eq!(item.status, "failed_reinstall");
+        assert!(!item.reinstalled);
+        assert!(item
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("source_repo is missing"));
+
+        let enabled = store
+            .list_enabled_local_skill_ids()
+            .await
+            .expect("list enabled local skill ids");
+        assert!(enabled.contains("skill.needs_repo"));
+
+        server_handle.abort();
+        let _ = std::fs::remove_dir_all(&skills_dir);
     }
 
     #[test]

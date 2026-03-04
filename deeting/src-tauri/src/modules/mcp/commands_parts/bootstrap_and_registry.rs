@@ -4,7 +4,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use log::warn;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::AsyncWriteExt;
@@ -66,6 +66,48 @@ struct CloudAssistantMarketVersion {
     published_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct CloudPluginInstallItem {
+    skill_id: String,
+    alias: Option<String>,
+    #[serde(default)]
+    config_json: serde_json::Value,
+    #[serde(default)]
+    granted_permissions: Vec<String>,
+    installed_revision: Option<String>,
+    is_enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CloudPluginMarketSkillItem {
+    id: String,
+    name: String,
+    description: Option<String>,
+    version: Option<String>,
+    source_repo: Option<String>,
+    source_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalSkillInstallSyncItem {
+    pub skill_id: String,
+    pub is_enabled: bool,
+    pub installed_revision: Option<String>,
+    pub install_path: String,
+    pub status: String,
+    pub reinstalled: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalSkillInstallSyncResponse {
+    pub fetched_count: i64,
+    pub upserted_count: i64,
+    pub reinstalled_count: i64,
+    pub failed_count: i64,
+    pub items: Vec<LocalSkillInstallSyncItem>,
+}
+
 #[derive(Debug, Clone)]
 struct LocalModelConnection {
     provider_model_id: String,
@@ -73,7 +115,17 @@ struct LocalModelConnection {
 }
 
 pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[LocalAssistant]) {
+    let enabled_assistant_ids = app_state
+        .mcp
+        .store
+        .list_enabled_local_assistant_ids()
+        .await
+        .unwrap_or_default();
+
     for assistant in assistants {
+        if !enabled_assistant_ids.contains(assistant.id.as_str()) {
+            continue;
+        }
         let tags = if assistant.tags.is_empty() {
             String::new()
         } else {
@@ -106,6 +158,282 @@ pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[L
 
 fn to_string<T: std::fmt::Display>(err: T) -> String {
     err.to_string()
+}
+
+fn normalize_skill_dir_name(skill_id: &str) -> String {
+    let mut out = String::with_capacity(skill_id.len());
+    for ch in skill_id.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    let normalized = out.trim_matches('_').trim().to_string();
+    if normalized.is_empty() {
+        "skill".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn read_manifest_json(manifest_path: &Path) -> Option<serde_json::Value> {
+    let raw = std::fs::read_to_string(manifest_path).ok()?;
+    serde_json::from_str::<serde_json::Value>(&raw).ok()
+}
+
+async fn fetch_cloud_plugin_market_skill(
+    client: &reqwest::Client,
+    base_url: &str,
+    access_token: &str,
+    skill_id: &str,
+) -> Result<Option<CloudPluginMarketSkillItem>, String> {
+    let url = format!(
+        "{}/api/v1/plugin-market/plugins",
+        base_url.trim_end_matches('/')
+    );
+    let rows: Vec<CloudPluginMarketSkillItem> = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .query(&[("q", skill_id), ("limit", "20")])
+        .send()
+        .await
+        .map_err(to_string)?
+        .error_for_status()
+        .map_err(to_string)?
+        .json()
+        .await
+        .map_err(to_string)?;
+
+    Ok(rows.into_iter().find(|row| row.id == skill_id))
+}
+
+async fn fetch_cloud_plugin_installs(
+    client: &reqwest::Client,
+    base_url: &str,
+    access_token: &str,
+) -> Result<Vec<CloudPluginInstallItem>, String> {
+    let installs_url = format!(
+        "{}/api/v1/plugin-market/installs",
+        base_url.trim_end_matches('/')
+    );
+    client
+        .get(&installs_url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(to_string)?
+        .error_for_status()
+        .map_err(to_string)?
+        .json()
+        .await
+        .map_err(to_string)
+}
+
+async fn try_clone_skill_repo(
+    target_dir: &Path,
+    repo_url: &str,
+    revision: Option<&str>,
+) -> Result<(), String> {
+    if let Some(parent) = target_dir.parent() {
+        std::fs::create_dir_all(parent).map_err(to_string)?;
+    }
+
+    if target_dir.exists() {
+        return Ok(());
+    }
+
+    let normalized_repo = repo_url.trim();
+    if normalized_repo.is_empty() {
+        return Err("source repo is empty".to_string());
+    }
+
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.arg("clone").arg("--depth").arg("1");
+    if let Some(rev) = revision.map(|raw| raw.trim()).filter(|raw| !raw.is_empty()) {
+        cmd.arg("--branch").arg(rev);
+    }
+    cmd.arg(normalized_repo).arg(target_dir);
+    let output = cmd.output().await.map_err(to_string)?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let _ = std::fs::remove_dir_all(target_dir);
+    Err(if stderr.is_empty() {
+        "git clone failed".to_string()
+    } else {
+        format!("git clone failed: {}", stderr)
+    })
+}
+
+async fn sync_local_skill_installs_from_cloud_inner(
+    store: &crate::modules::mcp::store::McpStore,
+    client: &reqwest::Client,
+    base_url: &str,
+    access_token: &str,
+    skills_dir: &Path,
+    reinstall_missing: bool,
+) -> Result<LocalSkillInstallSyncResponse, String> {
+    let installs = fetch_cloud_plugin_installs(client, base_url, access_token).await?;
+    let enable_reinstall = reinstall_missing;
+
+    let mut upserted_count = 0_i64;
+    let mut reinstalled_count = 0_i64;
+    let mut failed_count = 0_i64;
+    let mut items = Vec::new();
+    let mut cloud_installed_skill_ids = Vec::new();
+
+    for install in installs.iter() {
+        let skill_id = install.skill_id.trim().to_string();
+        if skill_id.is_empty() {
+            continue;
+        }
+        cloud_installed_skill_ids.push(skill_id.clone());
+
+        let install_path = skills_dir.join(normalize_skill_dir_name(&skill_id));
+        let install_path_str = install_path.to_string_lossy().to_string();
+        let mut status = "synced".to_string();
+        let mut reinstalled = false;
+        let mut error: Option<String> = None;
+
+        let market_skill =
+            fetch_cloud_plugin_market_skill(client, base_url, access_token, &skill_id)
+                .await
+                .ok()
+                .flatten();
+
+        if enable_reinstall && install.is_enabled && !install_path.exists() {
+            if let Some(cloud_skill) = market_skill.as_ref() {
+                if let Some(repo_url) = cloud_skill.source_repo.as_deref() {
+                    let revision = install
+                        .installed_revision
+                        .as_deref()
+                        .or(cloud_skill.source_revision.as_deref());
+                    match try_clone_skill_repo(&install_path, repo_url, revision).await {
+                        Ok(_) => {
+                            reinstalled = true;
+                            reinstalled_count += 1;
+                        }
+                        Err(err) => {
+                            status = "failed_reinstall".to_string();
+                            error = Some(err);
+                        }
+                    }
+                } else {
+                    status = "failed_reinstall".to_string();
+                    error = Some("market skill source_repo is missing".to_string());
+                }
+            } else {
+                status = "failed_reinstall".to_string();
+                error = Some("market skill metadata not found".to_string());
+            }
+        }
+
+        let manifest_path = install_path.join("deeting.json");
+        let manifest = read_manifest_json(&manifest_path).unwrap_or_else(|| {
+            serde_json::json!({
+                "id": skill_id,
+                "name": market_skill
+                    .as_ref()
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| install.skill_id.clone()),
+                "description": market_skill
+                    .as_ref()
+                    .and_then(|s| s.description.clone()),
+                "version": market_skill
+                    .as_ref()
+                    .and_then(|s| s.version.clone()),
+                "source_repo": market_skill
+                    .as_ref()
+                    .and_then(|s| s.source_repo.clone()),
+                "source_revision": install
+                    .installed_revision
+                    .clone()
+                    .or_else(|| market_skill.as_ref().and_then(|s| s.source_revision.clone())),
+            })
+        });
+        let manifest_json = serde_json::to_string(&manifest).map_err(to_string)?;
+
+        let runtime = manifest.get("runtime").and_then(|v| v.as_str());
+        let installed_version = install
+            .installed_revision
+            .clone()
+            .or_else(|| {
+                manifest
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string())
+            })
+            .or_else(|| market_skill.as_ref().and_then(|s| s.version.clone()));
+        let user_settings = serde_json::json!({
+            "alias": install.alias,
+            "config_json": install.config_json,
+            "granted_permissions": install.granted_permissions,
+            "sync_source": "cloud_plugin_market",
+        });
+
+        match store
+            .upsert_local_skill_install_state(
+                &skill_id,
+                installed_version.as_deref(),
+                install.is_enabled,
+                runtime,
+                &manifest_json,
+                &install_path_str,
+                Some(&user_settings),
+            )
+            .await
+        {
+            Ok(_) => {
+                upserted_count += 1;
+                if status == "synced" && !install.is_enabled {
+                    status = "disabled_synced".to_string();
+                } else if status == "synced" && reinstalled {
+                    status = "reinstalled".to_string();
+                } else if status == "synced" && !install_path.exists() {
+                    status = "metadata_synced".to_string();
+                }
+            }
+            Err(err) => {
+                status = "failed".to_string();
+                error = Some(err.to_string());
+            }
+        }
+
+        if status.starts_with("failed") {
+            failed_count += 1;
+        }
+
+        items.push(LocalSkillInstallSyncItem {
+            skill_id,
+            is_enabled: install.is_enabled,
+            installed_revision: installed_version,
+            install_path: install_path_str,
+            status,
+            reinstalled,
+            error,
+        });
+    }
+
+    if let Err(err) = store
+        .disable_missing_cloud_managed_local_skills(&cloud_installed_skill_ids)
+        .await
+    {
+        warn!(
+            "sync_local_skill_installs_from_cloud disable missing cloud installs failed: {}",
+            err
+        );
+    }
+
+    Ok(LocalSkillInstallSyncResponse {
+        fetched_count: installs.len() as i64,
+        upserted_count,
+        reinstalled_count,
+        failed_count,
+        items,
+    })
 }
 
 #[tauri::command]
@@ -163,8 +491,24 @@ pub(crate) async fn register_local_skills_inner(
                 serde_json::from_str(&deeting_json_str).map_err(to_string)?;
 
             let id = manifest["id"].as_str().unwrap_or("");
+            if id.trim().is_empty() {
+                continue;
+            }
             let tool_desc_prefix = manifest["description"].as_str().unwrap_or("");
             let source_id = format!("{}_{}", source_prefix, id);
+            let version = manifest.get("version").and_then(|v| v.as_str());
+            let runtime = manifest.get("runtime").and_then(|v| v.as_str());
+
+            store
+                .upsert_local_skill_install(
+                    id,
+                    version,
+                    runtime,
+                    &deeting_json_str,
+                    &skill_path.to_string_lossy(),
+                )
+                .await
+                .map_err(to_string)?;
 
             // Extract tools from llm-tool.yaml
             let llm_tool_path = skill_path.join("llm-tool.yaml");
@@ -194,7 +538,6 @@ pub(crate) async fn register_local_skills_inner(
                     let config_json = serde_json::to_string(tool_def).unwrap();
 
                     let full_main_path = skill_path.join("main.py");
-                    let pkg_name = id.split('.').last().unwrap_or(id);
 
                     let upsert = ToolUpsert {
                         id: None,
@@ -229,7 +572,7 @@ pub(crate) async fn register_local_skills_inner(
                         let tool_id = tool.id.clone();
                         let tool_name = tool.name.clone();
                         let tool_desc = tool.description.clone();
-                        let final_pkg_name = pkg_name.to_string();
+                        let final_pkg_name = id.to_string();
                         let final_source_type = if source_prefix == "system_plugin" {
                             "builtin"
                         } else {
@@ -273,6 +616,43 @@ pub async fn sync_cloud_subscriptions(
     access_token: String,
 ) -> Result<Vec<McpTool>, String> {
     sync_cloud_subscriptions_inner(&state.mcp, access_token).await
+}
+
+#[tauri::command]
+pub async fn sync_local_skill_installs_from_cloud(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    access_token: String,
+    reinstall_missing: Option<bool>,
+) -> Result<LocalSkillInstallSyncResponse, String> {
+    let normalized_token = access_token.trim().to_string();
+    if normalized_token.is_empty() {
+        return Err("access token is required".to_string());
+    }
+
+    let app_state = state.inner();
+    let base_url = app_state.mcp.cloud_base_url.read().await.clone();
+    let enable_reinstall = reinstall_missing.unwrap_or(true);
+    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
+    std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
+    let response = sync_local_skill_installs_from_cloud_inner(
+        app_state.mcp.store.as_ref(),
+        &app_state.mcp.client,
+        &base_url,
+        normalized_token.as_str(),
+        &skills_dir,
+        enable_reinstall,
+    )
+    .await?;
+
+    if let Err(err) = register_local_skills_inner(app, app_state).await {
+        warn!(
+            "sync_local_skill_installs_from_cloud register_local_skills failed: {}",
+            err
+        );
+    }
+
+    Ok(response)
 }
 
 #[tauri::command]
