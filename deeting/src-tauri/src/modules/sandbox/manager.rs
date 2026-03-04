@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+use crate::modules::sandbox::backend_host::{HostBackendOptions, HostPythonBackend};
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::types::{
     SandboxExecutionOutput, SandboxIdentity, SandboxLeaseInfo, SandboxRunResult,
@@ -83,6 +84,7 @@ struct SessionLease {
 enum BackendRuntime {
     #[cfg(target_os = "windows")]
     Wsl(WslBoxliteBackend),
+    Host(HostPythonBackend),
     Disabled(String),
 }
 
@@ -444,35 +446,50 @@ impl SandboxRuntimeManager {
 
         #[cfg(target_os = "windows")]
         {
-            let bridge_url = options.bridge_url.clone().ok_or_else(|| {
-                SandboxError::Unavailable(
-                    "BOXLITE_REST_URL is required when running desktop on Windows with WSL bridge"
-                        .to_string(),
-                )
-            })?;
-            let backend = WslBoxliteBackend::new(WslBackendOptions {
-                base_url: bridge_url,
-                api_prefix: options.bridge_prefix.clone(),
-                image: options.image.clone(),
-                cpus: options.cpus,
-                memory_mib: options.memory_mib,
-                working_dir: options.working_dir.clone(),
-                python_bin: options.python_bin.clone(),
-            })?;
+            if let Some(bridge_url) = options.bridge_url.clone() {
+                match WslBoxliteBackend::new(WslBackendOptions {
+                    base_url: bridge_url,
+                    api_prefix: options.bridge_prefix.clone(),
+                    image: options.image.clone(),
+                    cpus: options.cpus,
+                    memory_mib: options.memory_mib,
+                    working_dir: options.working_dir.clone(),
+                    python_bin: options.python_bin.clone(),
+                }) {
+                    Ok(backend) => {
+                        // Do not block startup: first real call will return actionable errors if probe fails.
+                        let probe_backend = backend.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(err) = probe_backend.probe().await {
+                                log::warn!(
+                                    "boxlite wsl bridge probe failed: code={} detail={}",
+                                    err.code(),
+                                    err
+                                );
+                            }
+                        });
 
-            // Do not block startup: first real call will return actionable errors if probe fails.
-            let probe_backend = backend.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(err) = probe_backend.probe().await {
-                    log::warn!(
-                        "boxlite wsl bridge probe failed: code={} detail={}",
-                        err.code(),
-                        err
-                    );
+                        return Ok(BackendRuntime::Wsl(backend));
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "wsl bridge backend unavailable, fallback to host python runtime: code={} detail={}",
+                            err.code(),
+                            err
+                        );
+                    }
                 }
-            });
+            } else {
+                log::warn!(
+                    "BOXLITE_REST_URL missing on Windows, fallback to host python runtime"
+                );
+            }
 
-            return Ok(BackendRuntime::Wsl(backend));
+            let host_backend = HostPythonBackend::new(HostBackendOptions {
+                python_bin: options.python_bin.clone(),
+                working_dir: options.working_dir.clone(),
+            })?;
+            return Ok(BackendRuntime::Host(host_backend));
         }
     }
 
@@ -483,6 +500,7 @@ impl SandboxRuntimeManager {
         match &self.backend {
             #[cfg(target_os = "windows")]
             BackendRuntime::Wsl(backend) => backend.get_or_create_box(_box_name).await,
+            BackendRuntime::Host(backend) => backend.get_or_create_box(_box_name).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
     }
@@ -491,6 +509,7 @@ impl SandboxRuntimeManager {
         match &self.backend {
             #[cfg(target_os = "windows")]
             BackendRuntime::Wsl(backend) => backend.stop_box(_box_id).await,
+            BackendRuntime::Host(backend) => backend.stop_box(_box_id).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
     }
@@ -506,6 +525,7 @@ impl SandboxRuntimeManager {
             BackendRuntime::Wsl(backend) => {
                 backend.run_python(_box_id, _code, _timeout_secs).await
             }
+            BackendRuntime::Host(backend) => backend.run_python(_box_id, _code, _timeout_secs).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
     }
@@ -514,6 +534,7 @@ impl SandboxRuntimeManager {
         match &self.backend {
             #[cfg(target_os = "windows")]
             BackendRuntime::Wsl(backend) => backend.shutdown().await,
+            BackendRuntime::Host(backend) => backend.shutdown().await,
             BackendRuntime::Disabled(_) => Ok(()),
         }
     }

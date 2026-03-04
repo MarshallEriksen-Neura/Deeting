@@ -242,8 +242,13 @@ pub fn run() {
 
             // ── Global Shortcut: Cmd/Ctrl+Shift+D ────────────────────
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            app.global_shortcut().on_shortcut(
-                "CommandOrControl+Shift+D",
+            const MAIN_WINDOW_SHORTCUT: &str = "CommandOrControl+Shift+D";
+            let shortcut_manager = app.global_shortcut();
+            if shortcut_manager.is_registered(MAIN_WINDOW_SHORTCUT) {
+                let _ = shortcut_manager.unregister(MAIN_WINDOW_SHORTCUT);
+            }
+            if let Err(err) = shortcut_manager.on_shortcut(
+                MAIN_WINDOW_SHORTCUT,
                 |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         if let Some(w) = app.get_webview_window("main") {
@@ -253,7 +258,12 @@ pub fn run() {
                         }
                     }
                 },
-            )?;
+            ) {
+                warn!(
+                    "global shortcut registration skipped ({MAIN_WINDOW_SHORTCUT}): {}",
+                    err
+                );
+            }
 
             Ok(())
         })

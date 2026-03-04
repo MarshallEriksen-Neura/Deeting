@@ -55,7 +55,15 @@ export function Header({
     return null
   }
 
-  const navWithActive = navItems.map((item) => {
+  const visibleNavItems = navItems.filter((item) => {
+    if (!item.href.startsWith("/admin")) {
+      return true
+    }
+
+    return Boolean(profile?.is_superuser)
+  })
+
+  const navWithActive = visibleNavItems.map((item) => {
     const match =
       pathname === item.href ||
       pathname.startsWith(`${item.href}/`)

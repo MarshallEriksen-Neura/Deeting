@@ -21,7 +21,7 @@ export function DownloadAppModal() {
 
   const handleDownload = () => {
     // Replace with your actual download link or logic
-    window.open("https://github.com/AI-Higress-Gateway/deeting/releases", "_blank")
+    window.open("https://github.com/MarshallEriksen-Neura/Deeting/releases", "_blank")
     closeDownloadModal()
   }
 

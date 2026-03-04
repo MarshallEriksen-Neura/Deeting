@@ -8839,12 +8839,55 @@ fn hash_json(value: &serde_json::Value) -> String {
 }
 
 pub fn expand_path(path: &str) -> PathBuf {
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return PathBuf::from(trimmed);
+    }
+
+    if trimmed == "~" {
+        if let Some(home) = home_dir_from_env() {
+            return home;
         }
     }
-    PathBuf::from(path)
+
+    if let Some(stripped) = trimmed
+        .strip_prefix("~/")
+        .or_else(|| trimmed.strip_prefix("~\\"))
+    {
+        if let Some(home) = home_dir_from_env() {
+            return home.join(stripped);
+        }
+    }
+
+    PathBuf::from(trimmed)
+}
+
+fn home_dir_from_env() -> Option<PathBuf> {
+    if let Ok(home) = std::env::var("HOME") {
+        let trimmed = home.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        let trimmed = user_profile.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    let home_drive = std::env::var("HOMEDRIVE").ok();
+    let home_path = std::env::var("HOMEPATH").ok();
+    match (home_drive, home_path) {
+        (Some(drive), Some(path)) => {
+            let combined = format!("{}{}", drive.trim(), path.trim());
+            if combined.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(combined))
+            }
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]

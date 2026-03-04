@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
@@ -23,9 +28,20 @@ jobs:
           - platform: windows-latest
             args: ''
     runs-on: ${{ matrix.platform }}
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate tag format for manual release
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+            echo "tag_name must start with v and follow semver style, got: ${RELEASE_TAG}"
+            exit 1
+          fi
 
       - name: Install Ubuntu system dependencies
         if: startsWith(matrix.platform, 'ubuntu')
@@ -56,6 +72,9 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - name: Setup protoc
+        uses: arduino/setup-protoc@v3
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
@@ -81,10 +100,10 @@ jobs:
           NEXT_PUBLIC_IS_TAURI: 'true'
         with:
           projectPath: deeting
-          tagName: v__VERSION__
-          releaseName: 'Deeting v__VERSION__'
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: 'Deeting ${{ env.RELEASE_TAG }}'
           releaseBody: 'See the assets below to download and install this version.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           generateReleaseNotes: true
           uploadUpdaterJson: true

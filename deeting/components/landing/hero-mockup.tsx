@@ -14,7 +14,7 @@ export function LandingHero() {
       <div className="absolute bottom-[10%] right-[-5%] w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[100px] pointer-events-none" />
       
       {/* Grid Pattern Overlay */}
-      <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" style={{ opacity: 0.05 }} />
+      <div className="absolute inset-0 bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" style={{ opacity: 0.05 }} />
 
       <div className="container mx-auto px-6 relative z-10 pt-20">
         <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
@@ -140,7 +140,7 @@ export function LandingHero() {
                 <div className="ml-16 flex-1 p-6 flex flex-col justify-between h-full relative">
                   
                   {/* 背景网格 */}
-                  <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-[0.03]" />
+                  <div className="absolute inset-0  opacity-[0.03]" />
 
                   <div className="space-y-6 relative z-10">
                     {/* Assistant Message */}

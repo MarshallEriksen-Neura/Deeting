@@ -9,5 +9,5 @@ export const defaultNavItems: NavItem[] = [
   { label: "pluginMarket", href: "/plugins/market" },
   { label: "images", href: "/gallery" },
   { label: "mcp", href: "/mcp" },
-  { label: "admin", href: "/admin" },
+  { label: "dashboard", href: "/dashboard" },
 ]

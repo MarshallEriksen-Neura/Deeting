@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -2372,8 +2373,7 @@ pub(crate) async fn sync_source_inner(
     let tools = match source.source_type {
         McpSourceType::Local => {
             let path = expand_path(&source.path_or_url);
-            let config_json =
-                std::fs::read_to_string(path).map_err(|err| McpError::Storage(err.to_string()))?;
+            let config_json = read_local_mcp_config(&path)?;
             let config: McpConfigPayload = serde_json::from_str(&config_json)
                 .map_err(|err| McpError::Storage(err.to_string()))?;
             apply_config_payload(state, &source, config).await?
@@ -2404,6 +2404,23 @@ pub(crate) async fn sync_source_inner(
     };
 
     Ok(tools)
+}
+
+fn read_local_mcp_config(path: &Path) -> Result<String, McpError> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => Ok(content),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)
+                    .map_err(|create_err| McpError::Storage(create_err.to_string()))?;
+            }
+            let default_config = r#"{"mcpServers":{}}"#;
+            std::fs::write(path, default_config)
+                .map_err(|write_err| McpError::Storage(write_err.to_string()))?;
+            Ok(default_config.to_string())
+        }
+        Err(err) => Err(McpError::Storage(err.to_string())),
+    }
 }
 
 async fn apply_config_payload(
@@ -3163,6 +3180,7 @@ const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::path::PathBuf;
     use tokio::sync::RwLock;
 
     async fn create_test_store(test_name: &str) -> crate::modules::mcp::store::McpStore {
@@ -3533,5 +3551,23 @@ mod tests {
         let canceled =
             abort_local_chat_task_by_request_id(&local_chat_tasks, "req-missing").await;
         assert!(!canceled);
+    }
+
+    #[test]
+    fn read_local_mcp_config_creates_default_when_missing() {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("deeting-mcp-config-{}", Uuid::new_v4()));
+        let path: PathBuf = dir.join("mcp.json");
+
+        let content = read_local_mcp_config(&path).expect("create default local mcp config");
+        assert_eq!(content, r#"{"mcpServers":{}}"#);
+        assert!(path.exists());
+
+        let persisted =
+            std::fs::read_to_string(&path).expect("read persisted default local mcp config");
+        assert_eq!(persisted, r#"{"mcpServers":{}}"#);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

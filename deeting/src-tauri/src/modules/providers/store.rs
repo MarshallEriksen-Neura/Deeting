@@ -173,43 +173,6 @@ impl ProviderStore {
         .execute(&self.pool)
         .await?;
 
-        sqlx::query("DROP INDEX IF EXISTS idx_provider_models_instance_model")
-            .execute(&self.pool)
-            .await?;
-        sqlx::query(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_models_identity
-             ON provider_models(instance_id, model_id, upstream_path)",
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_provider_models_instance_unified_model
-             ON provider_models(instance_id, unified_model_id)",
-        )
-        .execute(&self.pool)
-        .await?;
-
-        sqlx::query(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_bandit_arm_scene
-             ON bandit_arm_state(scene, arm_id)",
-        )
-        .execute(&self.pool)
-        .await?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_bandit_arm_arm_id
-             ON bandit_arm_state(arm_id)",
-        )
-        .execute(&self.pool)
-        .await?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_bandit_arm_provider_model_id
-             ON bandit_arm_state(provider_model_id)",
-        )
-        .execute(&self.pool)
-        .await?;
-
         self.ensure_column(
             "provider_instances",
             "is_enabled",
@@ -407,6 +370,43 @@ impl ProviderStore {
             "updated_at",
             "ALTER TABLE provider_models ADD COLUMN updated_at TEXT",
         )
+        .await?;
+
+        sqlx::query("DROP INDEX IF EXISTS idx_provider_models_instance_model")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_models_identity
+             ON provider_models(instance_id, model_id, upstream_path)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_provider_models_instance_unified_model
+             ON provider_models(instance_id, unified_model_id)",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_bandit_arm_scene
+             ON bandit_arm_state(scene, arm_id)",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_bandit_arm_arm_id
+             ON bandit_arm_state(arm_id)",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_bandit_arm_provider_model_id
+             ON bandit_arm_state(provider_model_id)",
+        )
+        .execute(&self.pool)
         .await?;
 
         // Backfill updated_at for existing rows.
@@ -2124,4 +2124,49 @@ fn now_rfc3339() -> Result<String, ProviderError> {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .map_err(|e| ProviderError::Database(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn init_migrates_legacy_provider_models_before_index_creation() {
+        let store = ProviderStore::new("sqlite::memory:")
+            .await
+            .expect("failed to create provider store");
+
+        // Simulate legacy schema that existed before upstream_path/unified_model_id.
+        sqlx::query(
+            "CREATE TABLE provider_models (
+                id TEXT PRIMARY KEY,
+                instance_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                display_name TEXT,
+                is_active BOOLEAN DEFAULT 1
+            )",
+        )
+        .execute(&store.pool)
+        .await
+        .expect("failed to create legacy provider_models");
+        store.init().await.expect("provider init should migrate legacy schema");
+
+        let columns = sqlx::query("PRAGMA table_info(provider_models)")
+            .fetch_all(&store.pool)
+            .await
+            .expect("failed to inspect provider_models");
+        let names: Vec<String> = columns
+            .iter()
+            .filter_map(|row| row.try_get::<String, _>("name").ok())
+            .collect();
+
+        assert!(
+            names.iter().any(|name| name == "upstream_path"),
+            "expected upstream_path to be added"
+        );
+        assert!(
+            names.iter().any(|name| name == "unified_model_id"),
+            "expected unified_model_id to be added"
+        );
+    }
 }
