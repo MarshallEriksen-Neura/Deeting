@@ -25,6 +25,7 @@ import {
   type MissingDesktopModelConfig,
   type ModelConfigRequiredDetail,
 } from "@/lib/model-config-required"
+import { useAuthStore } from "@/store/auth-store"
 
 interface NotificationSystemProps {
   // 环境光指示器目标元素ID
@@ -38,6 +39,7 @@ export function NotificationSystem({
 }: NotificationSystemProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const { 
     notifications, 
     trimNotifications,
@@ -68,6 +70,7 @@ export function NotificationSystem({
 
   const openModelConfigGuard = useCallback(
     (nextMissing: MissingDesktopModelConfig[]) => {
+      if (!isAuthenticated) return
       if (nextMissing.length === 0) return
 
       const missingKey = [...nextMissing].sort().join(",")
@@ -106,7 +109,7 @@ export function NotificationSystem({
         router.push(SETTINGS_ROUTE)
       }
     },
-    [addNotification, goToSettings, pathname, router, t]
+    [addNotification, goToSettings, isAuthenticated, pathname, router, t]
   )
 
   // 自动清理旧通知（保留最近50条）
@@ -137,6 +140,10 @@ export function NotificationSystem({
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") return
+    if (!isAuthenticated) {
+      startupCheckDoneRef.current = false
+      return
+    }
     if (startupCheckDoneRef.current) return
     startupCheckDoneRef.current = true
 
@@ -165,11 +172,12 @@ export function NotificationSystem({
     return () => {
       cancelled = true
     }
-  }, [openModelConfigGuard])
+  }, [isAuthenticated, openModelConfigGuard])
 
   useEffect(() => {
     if (typeof window === "undefined") return
     const handleModelConfigRequired = (event: Event) => {
+      if (!isAuthenticated) return
       const detail = (event as CustomEvent<ModelConfigRequiredDetail>).detail
       const missing = detail?.missing ?? []
       if (!Array.isArray(missing) || missing.length === 0) return
@@ -186,7 +194,7 @@ export function NotificationSystem({
         handleModelConfigRequired as EventListener
       )
     }
-  }, [openModelConfigGuard])
+  }, [isAuthenticated, openModelConfigGuard])
 
   const targetElement = ambientTargetId ? document.getElementById(ambientTargetId) : undefined
 
@@ -212,7 +220,7 @@ export function NotificationSystem({
       />
 
       <AlertDialog
-        open={isModelConfigDialogOpen}
+        open={isAuthenticated && isModelConfigDialogOpen}
         onOpenChange={(open) => {
           if (open) {
             setIsModelConfigDialogOpen(true)
