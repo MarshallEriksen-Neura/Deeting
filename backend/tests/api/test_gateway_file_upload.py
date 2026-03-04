@@ -3,10 +3,8 @@ import uuid
 import httpx
 import pytest
 
-from app.deps.external_auth import ExternalPrincipal, get_external_principal
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
-from main import app
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -165,68 +163,3 @@ async def test_internal_files_requires_file(client, auth_tokens):
     assert response.status_code == 400
     assert "file is required" in response.json()["detail"]
 
-
-@pytest.mark.asyncio
-async def test_external_files_rejects_model_not_allowed(
-    client, AsyncSessionLocal, test_user
-):
-    user_id = uuid.UUID(test_user["id"])
-    async with AsyncSessionLocal() as session:
-        await _seed_chat_provider(session, user_id)
-
-    previous = app.dependency_overrides.copy()
-    app.dependency_overrides[get_external_principal] = lambda: ExternalPrincipal(
-        user_id=test_user["id"],
-        scopes=[],
-        allowed_models=["gpt-allowed-only"],
-    )
-    try:
-        response = await client.post(
-            "/api/v1/external/files",
-            data={"model": "gpt-4-user", "purpose": "assistants"},
-            files={"file": ("demo.pdf", b"%PDF-1.4 test", "application/pdf")},
-        )
-    finally:
-        app.dependency_overrides.clear()
-        app.dependency_overrides.update(previous)
-
-    assert response.status_code == 403
-    payload = response.json()
-    assert payload["code"] == "MODEL_NOT_ALLOWED"
-
-
-@pytest.mark.asyncio
-async def test_external_files_upload_success(
-    client, AsyncSessionLocal, test_user, monkeypatch
-):
-    user_id = uuid.UUID(test_user["id"])
-    async with AsyncSessionLocal() as session:
-        await _seed_chat_provider(session, user_id)
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == "https://api.openai.com/v1/files"
-        return httpx.Response(
-            status_code=200,
-            json={"id": "file-ext-1", "object": "file", "purpose": "assistants"},
-        )
-
-    _mock_upstream_client(monkeypatch, handler)
-
-    previous = app.dependency_overrides.copy()
-    app.dependency_overrides[get_external_principal] = lambda: ExternalPrincipal(
-        user_id=test_user["id"],
-        scopes=[],
-        allowed_models=["gpt-4-user"],
-    )
-    try:
-        response = await client.post(
-            "/api/v1/external/files",
-            data={"model": "gpt-4-user", "purpose": "assistants"},
-            files={"file": ("demo.pdf", b"%PDF-1.4 test", "application/pdf")},
-        )
-    finally:
-        app.dependency_overrides.clear()
-        app.dependency_overrides.update(previous)
-
-    assert response.status_code == 200
-    assert response.json()["id"] == "file-ext-1"

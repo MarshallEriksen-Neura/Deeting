@@ -1,40 +1,71 @@
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use std::process::Stdio;
+use std::time::Duration;
 
 use log::warn;
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
 use crate::modules::code_mode::types::ExecuteLocalCodeModeRequest;
 use crate::modules::mcp::error::McpError;
-use crate::modules::mcp::store::{expand_path, ExtractedToolFields, NewSource, ToolUpsert};
+use crate::modules::mcp::store::{
+    expand_path, LocalConversationChatContext, NewSource, ToolUpsert,
+};
 use crate::modules::mcp::types::*;
 use crate::modules::mcp::McpRuntimeState;
-use crate::modules::providers::types::BanditFeedbackRequest;
 use crate::state::AppState;
+
+#[derive(Debug, Clone, Deserialize)]
+struct CloudSubscriptionTool {
+    identifier: String,
+    name: String,
+    source_url: Option<String>,
+    capabilities: Vec<String>,
+    description: String,
+    config_json: String,
+    config_hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CloudSubscriptionItem {
+    tool: CloudSubscriptionTool,
+}
+
+#[derive(Debug, Clone)]
+struct LocalModelConnection {
+    provider_model_id: String,
+    model_id: String,
+}
 
 pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[LocalAssistant]) {
     for assistant in assistants {
+        let tags = if assistant.tags.is_empty() {
+            String::new()
+        } else {
+            assistant.tags.join(", ")
+        };
         let text = format!(
             "name: {}\ndescription: {}\ntags: {}",
             assistant.name,
             assistant.description.as_deref().unwrap_or(""),
-            assistant.tags.as_deref().unwrap_or("")
+            tags
         );
         if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
             let _ = app_state
                 .memory
                 .store
-                .append_assistant(
+                .upsert_asset(
                     assistant.id.clone(),
                     assistant.name.clone(),
                     assistant.description.clone().unwrap_or_default(),
-                    assistant.tags.clone(),
+                    "assistant".to_string(),
+                    "local_assistant".to_string(),
+                    None,
                     vector,
+                    None,
                 )
                 .await;
         }
@@ -49,6 +80,13 @@ fn to_string<T: std::fmt::Display>(err: T) -> String {
 pub async fn register_local_skills(
     app: AppHandle,
     app_state: State<'_, AppState>,
+) -> Result<usize, String> {
+    register_local_skills_inner(app, app_state.inner()).await
+}
+
+pub(crate) async fn register_local_skills_inner(
+    app: AppHandle,
+    app_state: &AppState,
 ) -> Result<usize, String> {
     let project_root = std::env::current_dir().unwrap();
 
@@ -155,7 +193,7 @@ pub async fn register_local_skills(
 
                     if let Ok(tool) = store.upsert_tool(upsert).await {
                         total_indexed += 1;
-                        let app_state_clone = app_state.inner().clone();
+                        let app_state_clone = app_state.clone();
                         let tool_id = tool.id.clone();
                         let tool_name = tool.name.clone();
                         let tool_desc = tool.description.clone();
@@ -198,71 +236,11 @@ pub async fn register_local_skills(
 
 #[tauri::command]
 pub async fn sync_cloud_subscriptions(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
     access_token: String,
 ) -> Result<Vec<McpTool>, String> {
-    let state = &state.mcp;
-    let base_url = state.cloud_base_url.read().await.clone();
-    let url = format!(
-        "{}/api/v1/mcp/subscriptions",
-        base_url.trim_end_matches('/')
-    );
-    let response = state
-        .client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", access_token))
-        .send()
-        .await
-        .map_err(to_string)?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "failed to sync subscriptions: {}",
-            response.status()
-        ));
-    }
-
-    let subscriptions: Vec<McpSubscriptionItem> = response.json().await.map_err(to_string)?;
-    let mut synced_tools = Vec::new();
-
-    for sub in subscriptions {
-        let cloud_source = state
-            .store
-            .ensure_cloud_source(&sub.tool.source_name, &sub.tool.source_url)
-            .await
-            .map_err(to_string)?;
-
-        let tool = sub.tool;
-        let upsert = ToolUpsert {
-            id: None,
-            source_id: cloud_source.id.clone(),
-            identifier: Some(tool.identifier.clone()),
-            name: tool.name.clone(),
-            source_type: McpSourceType::Cloud,
-            status: McpToolStatus::Healthy,
-            ping_ms: None,
-            capabilities: tool.capabilities.clone(),
-            description: tool.description.clone(),
-            error: None,
-            command: None,
-            args: None,
-            env: None,
-            config_json: tool.config_json.clone(),
-            config_hash: tool.config_hash.clone(),
-            pending_config_json: None,
-            pending_config_hash: None,
-            conflict_status: McpConflictStatus::None,
-            is_read_only: false,
-            is_new: false,
-        };
-
-        if let Ok(synced) = state.store.upsert_tool(upsert).await {
-            synced_tools.push(synced);
-        }
-    }
-
-    Ok(synced_tools)
+    sync_cloud_subscriptions_inner(&state.mcp, access_token).await
 }
 
 #[tauri::command]
@@ -282,8 +260,11 @@ pub async fn create_mcp_source(
         source_type: payload.source_type,
         path_or_url: payload.path_or_url,
         trust_level: payload.trust_level,
+        status: McpSourceStatus::Active,
+        last_synced_at: None,
+        is_read_only: payload.is_read_only.unwrap_or(false),
     };
-    state.store.create_source(source).await.map_err(to_string)
+    state.store.insert_source(source).await.map_err(to_string)
 }
 
 #[tauri::command]
@@ -450,36 +431,26 @@ pub async fn create_assistant_message(
     let state = &state.mcp;
     state
         .store
-        .create_assistant_message(payload)
+        .append_assistant_message(payload)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn update_assistant_message(
-    state: State<'_, AppState>,
-    id: String,
-    content: String,
+    _state: State<'_, AppState>,
+    _id: String,
+    _content: String,
 ) -> Result<LocalAssistantMessage, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .update_assistant_message(&id, &content)
-        .await
-        .map_err(to_string)
+    Err("update assistant message is not supported in local store".to_string())
 }
 
 #[tauri::command]
 pub async fn delete_assistant_message(
-    state: State<'_, AppState>,
-    id: String,
+    _state: State<'_, AppState>,
+    _id: String,
 ) -> Result<(), String> {
-    let state = &state.mcp;
-    state
-        .store
-        .delete_assistant_message(&id)
-        .await
-        .map_err(to_string)
+    Err("delete assistant message by message id is not supported in local store".to_string())
 }
 
 #[tauri::command]
@@ -490,7 +461,7 @@ pub async fn list_local_conversation_sessions(
     let state = &state.mcp;
     state
         .store
-        .list_conversation_sessions(query)
+        .list_local_conversations(query)
         .await
         .map_err(to_string)
 }
@@ -503,7 +474,7 @@ pub async fn get_local_conversation_window(
     let state = &state.mcp;
     state
         .store
-        .get_conversation_window(&session_id)
+        .get_local_conversation_window(&session_id)
         .await
         .map_err(to_string)
 }
@@ -516,7 +487,7 @@ pub async fn create_local_conversation_session(
     let state = &state.mcp;
     state
         .store
-        .create_conversation_session(payload)
+        .create_local_conversation(payload)
         .await
         .map_err(to_string)
 }
@@ -530,22 +501,20 @@ pub async fn rename_local_conversation_session(
     let state = &state.mcp;
     state
         .store
-        .rename_conversation_session(&session_id, payload)
+        .rename_local_conversation(&session_id, payload.title)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn delete_local_conversation_session(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     session_id: String,
 ) -> Result<LocalConversationDeleteResponse, String> {
-    let state = &state.mcp;
-    state
-        .store
-        .delete_conversation_session(&session_id)
-        .await
-        .map_err(to_string)
+    Err(format!(
+        "delete conversation session is not supported, use close/archive instead: {}",
+        session_id
+    ))
 }
 
 #[tauri::command]
@@ -556,7 +525,7 @@ pub async fn archive_local_conversation_session(
     let state = &state.mcp;
     state
         .store
-        .archive_conversation_session(&session_id)
+        .update_local_conversation_status(&session_id, LocalConversationStatus::Archived)
         .await
         .map_err(to_string)
 }
@@ -569,7 +538,7 @@ pub async fn clear_local_conversation_session(
     let state = &state.mcp;
     state
         .store
-        .clear_conversation_session(&session_id)
+        .clear_local_conversation(&session_id)
         .await
         .map_err(to_string)
 }
@@ -580,9 +549,14 @@ pub async fn list_local_conversation_history(
     query: LocalConversationHistoryQuery,
 ) -> Result<LocalConversationHistoryResponse, String> {
     let state = &state.mcp;
+    let session_id = query
+        .session_id
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "session_id is required".to_string())?;
     state
         .store
-        .list_conversation_history(query)
+        .get_local_conversation_history(&session_id, query)
         .await
         .map_err(to_string)
 }
@@ -614,9 +588,20 @@ pub async fn send_local_conversation_message(
     );
 
     let execution: Result<LocalConversationSendResponse, String> = async {
-        let assistant_id = payload.assistant_id.clone();
+        let user_message = conversation_repo
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session_id.clone(),
+                role: "user".to_string(),
+                content: payload.content.clone(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .map_err(to_string)?;
         let chat_ctx = conversation_repo
-            .get_chat_context(&session_id, assistant_id.as_deref())
+            .get_local_conversation_chat_context(&session_id)
             .await
             .map_err(to_string)?;
 
@@ -626,16 +611,17 @@ pub async fn send_local_conversation_message(
             &trace_id,
             "context_ready",
             "local_send_context_ready",
-            Some(serde_json::json!({ "assistant_id": chat_ctx.assistant_id })),
+            Some(serde_json::json!({
+                "assistant_id": chat_ctx.assistant_id,
+                "provider_model_id": payload.provider_model_id,
+            })),
         );
 
-        let model_connection = conversation_repo
-            .resolve_chat_model(&chat_ctx)
-            .await
-            .map_err(to_string)?;
-
-        let messages = conversation_repo
-            .prepare_chat_messages(&chat_ctx, &payload.content)
+        let model_connection = resolve_local_model_connection(
+            app_state.inner(),
+            &payload.model,
+            payload.provider_model_id.as_deref(),
+        )
             .await
             .map_err(to_string)?;
 
@@ -652,15 +638,14 @@ pub async fn send_local_conversation_message(
         );
 
         let response_json = run_local_chat_complete_with_auto_code_mode(
-            &app_state,
+            app_state.inner(),
             &model_connection,
-            messages,
+            chat_ctx.messages.clone(),
             &chat_ctx,
         )
         .await?;
 
         let response_text = response_json["content"].as_str().unwrap_or("").to_string();
-        let tool_calls = extract_chat_tool_calls(&response_json);
 
         emit_local_chat_stream_status(
             &app,
@@ -685,35 +670,27 @@ pub async fn send_local_conversation_message(
             );
         }
 
-        let saved_messages = conversation_repo
-            .save_chat_turn(&session_id, &payload.content, &response_text, &tool_calls)
+        let assistant_message = conversation_repo
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session_id.clone(),
+                role: "assistant".to_string(),
+                content: response_text.clone(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
             .await
             .map_err(to_string)?;
 
-        let assistant_id = chat_ctx.assistant_id.clone();
-        if let Some(assistant_id) = assistant_id {
-            if let Err(err) = conversation_repo
-                .enqueue_conversation_summary(&session_id, &assistant_id)
-                .await
-            {
-                warn!(
-                    "failed to enqueue summary session={} assistant={} error={}",
-                    session_id, assistant_id, err
-                );
-            }
-        }
-
-        let trace_meta = serde_json::json!({
-            "trace_id": trace_id,
-            "assistant_id": chat_ctx.assistant_id,
-            "provider_model_id": model_connection.provider_model_id,
-            "model_id": model_connection.model_id,
-        });
+        let _ = conversation_repo
+            .touch_local_conversation_summary_idle_task(&session_id)
+            .await;
 
         Ok(LocalConversationSendResponse {
             session_id: session_id.clone(),
-            messages: saved_messages,
-            trace_meta: Some(trace_meta),
+            user_message,
+            assistant_message,
         })
     }
     .await;
@@ -755,42 +732,23 @@ pub async fn regenerate_local_conversation_reply(
     );
 
     let execution: Result<LocalConversationRegenerateResponse, String> = async {
-        let chat_ctx = conversation_repo
-            .get_chat_context(&payload.session_id, None)
+        let regenerate_ctx = conversation_repo
+            .prepare_local_conversation_regenerate(&payload.session_id)
             .await
             .map_err(to_string)?;
 
-        let model_connection = conversation_repo
-            .resolve_chat_model(&chat_ctx)
+        let model_connection = resolve_local_model_connection(
+            app_state.inner(),
+            &payload.model,
+            payload.provider_model_id.as_deref(),
+        )
             .await
             .map_err(to_string)?;
-
-        let history = conversation_repo
-            .list_conversation_history(LocalConversationHistoryQuery {
-                session_id: Some(payload.session_id.clone()),
-                cursor: None,
-                limit: Some(20),
-            })
-            .await
-            .map_err(to_string)?;
-
-        let mut messages: Vec<LocalChatInputMessage> = history
-            .messages
-            .into_iter()
-            .map(|m| LocalChatInputMessage {
-                role: m.role,
-                content: m.content,
-                name: None,
-            })
-            .collect();
-
-        if messages.is_empty() {
-            return Err("no message to regenerate".to_string());
-        }
-
-        if messages.last().map(|m| &m.role) == Some(&LocalConversationStatus::Assistant) {
-            messages.pop();
-        }
+        let chat_ctx = LocalConversationChatContext {
+            session_id: regenerate_ctx.session_id.clone(),
+            assistant_id: regenerate_ctx.assistant_id.clone(),
+            messages: regenerate_ctx.messages.clone(),
+        };
 
         emit_local_chat_stream_status(
             &app,
@@ -805,15 +763,14 @@ pub async fn regenerate_local_conversation_reply(
         );
 
         let response_json = run_local_chat_complete_with_auto_code_mode(
-            &app_state,
+            app_state.inner(),
             &model_connection,
-            messages,
+            regenerate_ctx.messages,
             &chat_ctx,
         )
         .await?;
 
         let response_text = response_json["content"].as_str().unwrap_or("").to_string();
-        let tool_calls = extract_chat_tool_calls(&response_json);
 
         emit_local_chat_stream_status(
             &app,
@@ -839,13 +796,24 @@ pub async fn regenerate_local_conversation_reply(
         }
 
         let assistant_message = conversation_repo
-            .save_regenerated_reply(&payload.session_id, &response_text, &tool_calls)
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: payload.session_id.clone(),
+                role: "assistant".to_string(),
+                content: response_text,
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
             .await
             .map_err(to_string)?;
+        let _ = conversation_repo
+            .touch_local_conversation_summary_idle_task(&payload.session_id)
+            .await;
 
         Ok(LocalConversationRegenerateResponse {
             session_id: payload.session_id.clone(),
-            deleted_turn_index: None,
+            deleted_turn_index: regenerate_ctx.deleted_turn_index,
             message: assistant_message,
         })
     }
@@ -896,7 +864,7 @@ pub async fn import_mcp_config(
 
 #[tauri::command]
 pub async fn start_mcp_tool(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<(), String> {
@@ -914,7 +882,7 @@ pub async fn start_mcp_tool(
 
     state
         .process_manager
-        .start_process(app, tool)
+        .start_tool(tool, true)
         .await
         .map_err(to_string)
 }
@@ -924,39 +892,27 @@ pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Resul
     let state = &state.mcp;
     state
         .process_manager
-        .stop_process(&tool_id)
+        .stop_tool(&tool_id)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn execute_mcp_tool_raw(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
     tool_name: String,
     arguments: Value,
 ) -> Result<Value, String> {
-    let mcp = &state.mcp;
-
-    // 1. Resolve tool by name
-    let tool = mcp
-        .store
-        .get_tool_by_name(&tool_name)
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| format!("tool {} not found", tool_name))?;
-
-    // 2. Ensure process is running or start it
-    mcp.process_manager
-        .ensure_process(app, &tool)
-        .await
-        .map_err(to_string)?;
-
-    // 3. Call tool via process manager
-    mcp.process_manager
-        .call_tool(&tool.id, &tool.name, arguments)
-        .await
-        .map_err(to_string)
+    let require_approval = state.mcp.is_high_risk_tool(&tool_name);
+    execute_or_queue_mcp_tool_call(
+        state.mcp.store.as_ref(),
+        state.mcp.pending_tool_calls.as_ref(),
+        tool_name,
+        arguments,
+        require_approval,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -966,11 +922,13 @@ pub async fn update_mcp_tool_env(
     payload: UpdateToolConfigRequest,
 ) -> Result<(), String> {
     let state = &state.mcp;
-    state
-        .store
-        .update_tool_config(&tool_id, payload)
-        .await
-        .map_err(to_string)?;
+    if payload.apply_pending {
+        state
+            .store
+            .clear_pending_update(&tool_id)
+            .await
+            .map_err(to_string)?;
+    }
     Ok(())
 }
 
@@ -982,22 +940,17 @@ pub async fn apply_pending_config(
     let state = &state.mcp;
     state
         .store
-        .apply_pending_config(&tool_id)
+        .clear_pending_update(&tool_id)
         .await
         .map_err(to_string)
 }
 
 #[tauri::command]
 pub async fn resolve_mcp_conflict(
-    state: State<'_, AppState>,
-    payload: ResolveConflictRequest,
+    _state: State<'_, AppState>,
+    _payload: ResolveConflictRequest,
 ) -> Result<(), String> {
-    let state = &state.mcp;
-    state
-        .store
-        .resolve_conflict(payload)
-        .await
-        .map_err(to_string)
+    Ok(())
 }
 
 #[tauri::command]
@@ -1006,7 +959,7 @@ pub async fn get_mcp_logs(
     tool_id: String,
 ) -> Result<Vec<Value>, String> {
     let state = &state.mcp;
-    let logs = state.process_manager.get_logs(&tool_id).await;
+    let logs = state.process_manager.logs(&tool_id).await;
     Ok(logs.into_iter().map(|l| serde_json::json!(l)).collect())
 }
 
@@ -1024,12 +977,15 @@ pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
             let _ = app_state
                 .memory
                 .store
-                .append_tool(
+                .upsert_asset(
                     tool.id.clone(),
                     tool.name.clone(),
                     tool.description.clone(),
+                    "tool".to_string(),
+                    "mcp".to_string(),
                     tool.identifier.clone(),
                     vector,
+                    None,
                 )
                 .await;
         }
@@ -1038,11 +994,17 @@ pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
 
 #[tauri::command]
 pub async fn sync_cloud_subscriptions_v2(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
     access_token: String,
 ) -> Result<Vec<McpTool>, String> {
-    let state = &state.mcp;
+    sync_cloud_subscriptions_inner(&state.mcp, access_token).await
+}
+
+async fn sync_cloud_subscriptions_inner(
+    state: &McpRuntimeState,
+    access_token: String,
+) -> Result<Vec<McpTool>, String> {
     let base_url = state.cloud_base_url.read().await.clone();
     let url = format!(
         "{}/api/v1/mcp/subscriptions",
@@ -1063,13 +1025,18 @@ pub async fn sync_cloud_subscriptions_v2(
         ));
     }
 
-    let subscriptions: Vec<McpSubscriptionItem> = response.json().await.map_err(to_string)?;
+    let subscriptions: Vec<CloudSubscriptionItem> = response.json().await.map_err(to_string)?;
     let mut synced_tools = Vec::new();
 
     for sub in subscriptions {
+        let source_url = sub
+            .tool
+            .source_url
+            .clone()
+            .unwrap_or_else(|| base_url.clone());
         let cloud_source = state
             .store
-            .ensure_cloud_source(&sub.tool.source_name, &sub.tool.source_url)
+            .ensure_cloud_source(&source_url)
             .await
             .map_err(to_string)?;
 
@@ -1113,7 +1080,7 @@ pub async fn list_local_knowledge_files(
     let state = &state.mcp;
     state
         .store
-        .list_local_knowledge_files(query)
+        .list_local_user_documents(query)
         .await
         .map_err(to_string)
 }
@@ -1123,11 +1090,17 @@ pub async fn list_local_knowledge_folders(
     state: State<'_, AppState>,
 ) -> Result<Vec<LocalKnowledgeFolder>, String> {
     let state = &state.mcp;
-    state
+    let tree = state
         .store
-        .list_local_knowledge_folders()
+        .get_local_knowledge_tree(LocalKnowledgeTreeQuery {
+            parent_id: None,
+            q: None,
+            sort_field: None,
+            sort_direction: None,
+        })
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    Ok(tree.folders)
 }
 
 #[tauri::command]
@@ -1174,11 +1147,12 @@ pub async fn update_local_knowledge_folder(
 pub async fn delete_local_knowledge_folder(
     state: State<'_, AppState>,
     id: String,
+    recursive: Option<bool>,
 ) -> Result<(), String> {
     let state = &state.mcp;
     state
         .store
-        .delete_local_knowledge_folder(&id)
+        .delete_local_knowledge_folder(&id, recursive.unwrap_or(false))
         .await
         .map_err(to_string)
 }
@@ -1237,38 +1211,43 @@ pub async fn get_local_assistant_routing_report(
 #[tauri::command]
 pub async fn record_local_assistant_routing_feedback(
     state: State<'_, AppState>,
+    assistant_id: String,
     payload: LocalAssistantRoutingFeedbackRequest,
 ) -> Result<(), String> {
     let state = &state.mcp;
     state
         .store
-        .record_local_assistant_routing_feedback(payload)
+        .record_local_assistant_routing_feedback(&assistant_id, payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn get_local_assistant_preview(
     state: State<'_, AppState>,
-    payload: LocalAssistantPreviewRequest,
+    assistant_id: String,
+    _payload: LocalAssistantPreviewRequest,
 ) -> Result<LocalAssistant, String> {
     let state = &state.mcp;
     state
         .store
-        .get_local_assistant_preview(payload)
+        .get_local_assistant(&assistant_id)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?
+        .ok_or_else(|| "assistant not found".to_string())
 }
 
 #[tauri::command]
 pub async fn record_local_assistant_rating(
     state: State<'_, AppState>,
+    assistant_id: String,
     payload: LocalAssistantRatingRequest,
 ) -> Result<LocalAssistantRatingResponse, String> {
     let state = &state.mcp;
     state
         .store
-        .record_local_assistant_rating(payload)
+        .rate_local_assistant(&assistant_id, payload)
         .await
         .map_err(to_string)
 }
@@ -1281,7 +1260,7 @@ pub async fn list_local_assistant_installations(
     let state = &state.mcp;
     state
         .store
-        .list_local_assistant_installations(query)
+        .list_local_assistant_installs(query)
         .await
         .map_err(to_string)
 }
@@ -1289,12 +1268,13 @@ pub async fn list_local_assistant_installations(
 #[tauri::command]
 pub async fn create_local_assistant_installation(
     state: State<'_, AppState>,
+    assistant_id: String,
     payload: LocalAssistantInstallCreateRequest,
 ) -> Result<LocalAssistantInstallItem, String> {
     let state = &state.mcp;
     state
         .store
-        .create_local_assistant_installation(payload)
+        .install_local_assistant(&assistant_id, payload)
         .await
         .map_err(to_string)
 }
@@ -1308,7 +1288,7 @@ pub async fn update_local_assistant_installation(
     let state = &state.mcp;
     state
         .store
-        .update_local_assistant_installation(&assistant_id, payload)
+        .update_local_assistant_install(&assistant_id, payload)
         .await
         .map_err(to_string)
 }
@@ -1321,7 +1301,7 @@ pub async fn delete_local_assistant_installation(
     let state = &state.mcp;
     state
         .store
-        .delete_local_assistant_installation(&assistant_id)
+        .uninstall_local_assistant(&assistant_id)
         .await
         .map_err(to_string)
 }
@@ -1342,12 +1322,13 @@ pub async fn list_local_admin_conversations(
 #[tauri::command]
 pub async fn list_local_admin_conversation_messages(
     state: State<'_, AppState>,
+    session_id: String,
     query: LocalAdminConversationMessageQuery,
 ) -> Result<LocalAdminConversationMessageListResponse, String> {
     let state = &state.mcp;
     state
         .store
-        .list_local_admin_conversation_messages(query)
+        .list_local_admin_conversation_messages(&session_id, query)
         .await
         .map_err(to_string)
 }
@@ -1355,12 +1336,12 @@ pub async fn list_local_admin_conversation_messages(
 #[tauri::command]
 pub async fn list_local_admin_conversation_summaries(
     state: State<'_, AppState>,
-    query: LocalAdminConversationQuery,
+    session_id: String,
 ) -> Result<LocalAdminConversationSummaryListResponse, String> {
     let state = &state.mcp;
     state
         .store
-        .list_local_admin_conversation_summaries(query)
+        .list_local_admin_conversation_summaries(&session_id)
         .await
         .map_err(to_string)
 }
@@ -1372,7 +1353,7 @@ pub async fn get_local_conversation_summary_queue_stats(
     let state = &state.mcp;
     state
         .store
-        .get_conversation_summary_queue_stats()
+        .get_local_conversation_summary_queue_stats()
         .await
         .map_err(to_string)
 }
@@ -1385,7 +1366,7 @@ pub async fn list_local_conversation_summary_jobs(
     let state = &state.mcp;
     state
         .store
-        .list_conversation_summary_jobs(query)
+        .list_local_conversation_summary_jobs(query)
         .await
         .map_err(to_string)
 }
@@ -1398,7 +1379,7 @@ pub async fn list_local_conversation_summary_idle_tasks(
     let state = &state.mcp;
     state
         .store
-        .list_conversation_summary_idle_tasks(query)
+        .list_local_conversation_summary_idle_tasks(query)
         .await
         .map_err(to_string)
 }
@@ -1407,12 +1388,12 @@ pub async fn list_local_conversation_summary_idle_tasks(
 pub async fn enqueue_local_conversation_summary(
     state: State<'_, AppState>,
     session_id: String,
-    assistant_id: String,
+    _assistant_id: String,
 ) -> Result<LocalConversationSummaryEnqueueResponse, String> {
     let state = &state.mcp;
     state
         .store
-        .enqueue_conversation_summary(&session_id, &assistant_id)
+        .trigger_local_conversation_summary_job(&session_id)
         .await
         .map_err(to_string)
 }
@@ -1425,7 +1406,7 @@ pub async fn retry_local_conversation_summary_batch(
     let state = &state.mcp;
     state
         .store
-        .retry_conversation_summary_batch(payload)
+        .retry_local_conversation_summary_jobs(payload)
         .await
         .map_err(to_string)
 }
@@ -1451,7 +1432,23 @@ pub async fn create_local_gateway_log(
     let state = &state.mcp;
     state
         .store
-        .create_local_gateway_log(payload)
+        .create_local_gateway_log(
+            payload.trace_id.as_deref(),
+            &payload.model,
+            payload.status_code,
+            payload.duration_ms,
+            payload.ttft_ms,
+            None,
+            0,
+            payload.input_tokens,
+            payload.output_tokens,
+            payload.input_tokens.saturating_add(payload.output_tokens),
+            payload.cost_user,
+            payload.cost_user,
+            payload.is_cached,
+            payload.error_code.as_deref(),
+            None,
+        )
         .await
         .map_err(to_string)
 }
@@ -1463,7 +1460,13 @@ pub async fn get_local_gateway_log_stats(
     let state = &state.mcp;
     state
         .store
-        .get_local_gateway_log_stats()
+        .get_local_gateway_log_stats(LocalGatewayLogQuery {
+            skip: None,
+            limit: None,
+            model: None,
+            status_code: None,
+            is_cached: None,
+        })
         .await
         .map_err(to_string)
 }
@@ -1515,6 +1518,710 @@ pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Resul
     Ok(count)
 }
 
+#[tauri::command]
+pub async fn set_cloud_base_url(state: State<'_, AppState>, url: String) -> Result<(), String> {
+    let normalized = url.trim().trim_end_matches('/').to_string();
+    if normalized.is_empty() {
+        return Err("cloud base url is required".to_string());
+    }
+    *state.mcp.cloud_base_url.write().await = normalized;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_local_assistant_versions(
+    state: State<'_, AppState>,
+    assistant_id: Option<String>,
+) -> Result<Vec<LocalAssistantVersion>, String> {
+    state
+        .mcp
+        .store
+        .list_local_assistant_versions(assistant_id.as_deref())
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_assistant_installs(
+    state: State<'_, AppState>,
+    query: LocalAssistantInstallQuery,
+) -> Result<LocalAssistantInstallPage, String> {
+    list_local_assistant_installations(state, query).await
+}
+
+#[tauri::command]
+pub async fn install_local_assistant(
+    state: State<'_, AppState>,
+    assistant_id: String,
+    payload: LocalAssistantInstallCreateRequest,
+) -> Result<LocalAssistantInstallItem, String> {
+    create_local_assistant_installation(state, assistant_id, payload).await
+}
+
+#[tauri::command]
+pub async fn update_local_assistant_install(
+    state: State<'_, AppState>,
+    assistant_id: String,
+    payload: LocalAssistantInstallUpdateRequest,
+) -> Result<LocalAssistantInstallItem, String> {
+    update_local_assistant_installation(state, assistant_id, payload).await
+}
+
+#[tauri::command]
+pub async fn uninstall_local_assistant(
+    state: State<'_, AppState>,
+    assistant_id: String,
+) -> Result<(), String> {
+    delete_local_assistant_installation(state, assistant_id).await
+}
+
+#[tauri::command]
+pub async fn rate_local_assistant(
+    state: State<'_, AppState>,
+    assistant_id: String,
+    payload: LocalAssistantRatingRequest,
+) -> Result<LocalAssistantRatingResponse, String> {
+    record_local_assistant_rating(state, assistant_id, payload).await
+}
+
+#[tauri::command]
+pub async fn record_local_assistant_routing_trial(
+    state: State<'_, AppState>,
+    assistant_id: String,
+) -> Result<LocalAssistantRoutingState, String> {
+    state
+        .mcp
+        .store
+        .record_local_assistant_routing_trial(&assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_user_documents(
+    state: State<'_, AppState>,
+    query: LocalUserDocumentListQuery,
+) -> Result<Vec<LocalKnowledgeFile>, String> {
+    state
+        .mcp
+        .store
+        .list_local_user_documents(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<LocalKnowledgeFile, String> {
+    state
+        .mcp
+        .store
+        .get_local_user_document(&file_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+    payload: UpdateLocalUserDocumentRequest,
+) -> Result<LocalKnowledgeFile, String> {
+    state
+        .mcp
+        .store
+        .update_local_user_document(&file_id, payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<(), String> {
+    state
+        .mcp
+        .store
+        .delete_local_user_document(&file_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn retry_local_user_document(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<LocalKnowledgeFile, String> {
+    state
+        .mcp
+        .store
+        .retry_local_user_document(&file_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_user_document_chunks(
+    state: State<'_, AppState>,
+    file_id: String,
+    query: LocalUserDocumentChunkListQuery,
+) -> Result<LocalKnowledgeChunkListResponse, String> {
+    state
+        .mcp
+        .store
+        .list_local_user_document_chunks(&file_id, query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_admin_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalAdminConversationItem, String> {
+    state
+        .mcp
+        .store
+        .get_local_admin_conversation(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn trigger_local_conversation_summary_job(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationSummaryEnqueueResponse, String> {
+    state
+        .mcp
+        .store
+        .trigger_local_conversation_summary_job(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn retry_local_conversation_summary_job(
+    state: State<'_, AppState>,
+    job_id: String,
+) -> Result<LocalConversationSummaryEnqueueResponse, String> {
+    state
+        .mcp
+        .store
+        .retry_local_conversation_summary_job(&job_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn retry_local_conversation_summary_jobs(
+    state: State<'_, AppState>,
+    payload: LocalConversationSummaryBatchRetryRequest,
+) -> Result<LocalConversationSummaryBatchRetryResponse, String> {
+    state
+        .mcp
+        .store
+        .retry_local_conversation_summary_jobs(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn append_assistant_message(
+    state: State<'_, AppState>,
+    payload: CreateAssistantMessageRequest,
+) -> Result<LocalAssistantMessage, String> {
+    create_assistant_message(state, payload).await
+}
+
+#[tauri::command]
+pub async fn preview_local_assistant(
+    state: State<'_, AppState>,
+    assistant_id: String,
+    payload: LocalAssistantPreviewRequest,
+) -> Result<serde_json::Value, String> {
+    let assistant = state
+        .mcp
+        .store
+        .get_local_assistant(&assistant_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "assistant not found".to_string())?;
+
+    let model_from_config = assistant
+        .model_config
+        .as_ref()
+        .and_then(|value| value.get("model"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "default".to_string());
+    let provider_model_id = assistant
+        .model_config
+        .as_ref()
+        .and_then(|value| value.get("provider_model_id"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let model_connection = resolve_local_model_connection(
+        state.inner(),
+        &model_from_config,
+        provider_model_id.as_deref(),
+    )
+    .await?;
+
+    let messages = vec![
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: assistant.system_prompt,
+        },
+        LocalChatInputMessage {
+            role: "user".to_string(),
+            content: payload.message,
+        },
+    ];
+    let response = request_provider_chat_completion(
+        state.inner(),
+        &model_connection.provider_model_id,
+        &model_connection.model_id,
+        messages,
+        None,
+        payload.temperature,
+        payload.max_tokens,
+    )
+    .await?;
+    let content = response
+        .get("content")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(serde_json::json!({ "content": content }))
+}
+
+#[tauri::command]
+pub async fn delete_assistant_messages(
+    state: State<'_, AppState>,
+    assistant_id: String,
+) -> Result<(), String> {
+    state
+        .mcp
+        .store
+        .delete_assistant_messages(&assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_conversations(
+    state: State<'_, AppState>,
+    query: LocalConversationSessionsQuery,
+) -> Result<LocalConversationSessionPage, String> {
+    list_local_conversation_sessions(state, query).await
+}
+
+#[tauri::command]
+pub async fn create_local_conversation(
+    state: State<'_, AppState>,
+    payload: LocalConversationCreateRequest,
+) -> Result<LocalConversationCreateResponse, String> {
+    create_local_conversation_session(state, payload).await
+}
+
+#[tauri::command]
+pub async fn archive_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationArchiveResponse, String> {
+    archive_local_conversation_session(state, session_id).await
+}
+
+#[tauri::command]
+pub async fn close_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationArchiveResponse, String> {
+    state
+        .mcp
+        .store
+        .update_local_conversation_status(&session_id, LocalConversationStatus::Closed)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn unarchive_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationArchiveResponse, String> {
+    state
+        .mcp
+        .store
+        .update_local_conversation_status(&session_id, LocalConversationStatus::Active)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn rename_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+    payload: LocalConversationRenameRequest,
+) -> Result<LocalConversationRenameResponse, String> {
+    rename_local_conversation_session(state, session_id, payload).await
+}
+
+#[tauri::command]
+pub async fn append_local_conversation_message(
+    state: State<'_, AppState>,
+    payload: CreateConversationMessageRequest,
+) -> Result<LocalConversationHistoryMessage, String> {
+    state
+        .mcp
+        .store
+        .append_local_conversation_message(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_conversation_message(
+    state: State<'_, AppState>,
+    session_id: String,
+    turn_index: i64,
+) -> Result<LocalConversationDeleteResponse, String> {
+    state
+        .mcp
+        .store
+        .delete_local_conversation_message(&session_id, turn_index)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn clear_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationClearResponse, String> {
+    state
+        .mcp
+        .store
+        .clear_local_conversation(&session_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn approve_mcp_tool(
+    state: State<'_, AppState>,
+    approval_token: Option<String>,
+    #[allow(non_snake_case)] approvalToken: Option<String>,
+) -> Result<Value, String> {
+    let token = approval_token
+        .or(approvalToken)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "approval token is required".to_string())?;
+
+    approve_mcp_tool_inner(
+        state.mcp.store.as_ref(),
+        state.mcp.pending_tool_calls.as_ref(),
+        &token,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn reject_mcp_tool(
+    state: State<'_, AppState>,
+    approval_token: Option<String>,
+    #[allow(non_snake_case)] approvalToken: Option<String>,
+) -> Result<(), String> {
+    let token = approval_token
+        .or(approvalToken)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "approval token is required".to_string())?;
+    reject_mcp_tool_inner(state.mcp.pending_tool_calls.as_ref(), &token).await;
+    Ok(())
+}
+
+pub(crate) async fn rebuild_local_knowledge_vector_index(app_state: &AppState) -> Result<usize, String> {
+    let files = app_state
+        .mcp
+        .store
+        .list_local_user_documents(LocalUserDocumentListQuery {
+            folder_id: None,
+            status: None,
+            q: None,
+        })
+        .await
+        .map_err(to_string)?;
+    let mut indexed = 0usize;
+    for file in files {
+        let text = format!(
+            "name: {}\nstatus: {}\nsize: {}\nchunks: {}",
+            file.name,
+            file.status,
+            file.size,
+            file.chunks.unwrap_or(0)
+        );
+        if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
+            let _ = app_state
+                .memory
+                .store
+                .upsert_asset(
+                    file.id,
+                    file.name,
+                    format!("local knowledge file ({})", file.file_type),
+                    "knowledge_file".to_string(),
+                    "local_knowledge".to_string(),
+                    None,
+                    vector,
+                    None,
+                )
+                .await;
+            indexed = indexed.saturating_add(1);
+        }
+    }
+    Ok(indexed)
+}
+
+async fn resolve_local_model_connection(
+    app_state: &AppState,
+    requested_model: &str,
+    requested_provider_model_id: Option<&str>,
+) -> Result<LocalModelConnection, String> {
+    if let Some(provider_model_id) = requested_provider_model_id {
+        let provider_model_id = provider_model_id.trim();
+        if !provider_model_id.is_empty() {
+            let model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
+            let model = app_state
+                .providers
+                .store
+                .get_model(&model_uuid)
+                .await
+                .map_err(to_string)?
+                .ok_or_else(|| "provider model not found".to_string())?;
+            return Ok(LocalModelConnection {
+                provider_model_id: model.id.to_string(),
+                model_id: model.model_id,
+            });
+        }
+    }
+
+    let models = app_state
+        .providers
+        .store
+        .list_active_models()
+        .await
+        .map_err(to_string)?;
+    if models.is_empty() {
+        return Err("no active provider model configured".to_string());
+    }
+    let requested = requested_model.trim().to_lowercase();
+    let selected = models
+        .iter()
+        .find(|model| {
+            if requested.is_empty() {
+                return false;
+            }
+            model.model_id.eq_ignore_ascii_case(&requested)
+                || model
+                    .unified_model_id
+                    .as_deref()
+                    .map(|value| value.eq_ignore_ascii_case(&requested))
+                    .unwrap_or(false)
+                || model
+                    .display_name
+                    .as_deref()
+                    .map(|value| value.eq_ignore_ascii_case(&requested))
+                    .unwrap_or(false)
+        })
+        .cloned()
+        .unwrap_or_else(|| models[0].clone());
+
+    Ok(LocalModelConnection {
+        provider_model_id: selected.id.to_string(),
+        model_id: selected.model_id,
+    })
+}
+
+async fn request_provider_chat_completion(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tools: Option<serde_json::Value>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
+    let model = app_state
+        .providers
+        .store
+        .get_model(&provider_model_uuid)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider model not found".to_string())?;
+    let connection = app_state
+        .providers
+        .store
+        .get_instance_connection(&model.instance_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider instance not found".to_string())?;
+
+    let endpoint = build_upstream_endpoint(&connection.base_url, &model.upstream_path);
+    let mut body = serde_json::json!({
+        "model": if model_id.trim().is_empty() { model.model_id.clone() } else { model_id.to_string() },
+        "messages": messages,
+        "stream": false
+    });
+    if let Some(temperature) = temperature {
+        body["temperature"] = serde_json::json!(temperature);
+    }
+    if let Some(max_tokens) = max_tokens {
+        body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+    if let Some(tools) = tools {
+        body["tools_catalog"] = tools;
+    }
+
+    let mut request = reqwest::Client::new().post(&endpoint).json(&body);
+    if let Some(secret_key) = connection.secret_key.as_deref() {
+        if !secret_key.trim().is_empty() {
+            request = request.bearer_auth(secret_key.trim());
+        }
+    }
+
+    let response = request.send().await.map_err(to_string)?;
+    let status = response.status();
+    let raw: serde_json::Value = response.json().await.map_err(to_string)?;
+    if !status.is_success() {
+        return Err(
+            raw.get("error")
+                .and_then(|value| value.get("message"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| format!("upstream status {}", status.as_u16())),
+        );
+    }
+    Ok(normalize_chat_completion_response(raw))
+}
+
+fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
+    if raw.get("content").is_some() && raw.get("tool_calls").is_some() {
+        return raw;
+    }
+
+    let mut content = raw
+        .get("content")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mut normalized_tool_calls = Vec::<serde_json::Value>::new();
+
+    if let Some(choice) = raw
+        .get("choices")
+        .and_then(|value| value.as_array())
+        .and_then(|items| items.first())
+    {
+        if let Some(message) = choice.get("message") {
+            if content.is_empty() {
+                content = message
+                    .get("content")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .to_string();
+            }
+            if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
+                for call in tool_calls {
+                    let function_name = call
+                        .get("function")
+                        .and_then(|value| value.get("name"))
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    let arguments = call
+                        .get("function")
+                        .and_then(|value| value.get("arguments"))
+                        .and_then(|value| value.as_str())
+                        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    normalized_tool_calls.push(serde_json::json!({
+                        "id": call.get("id").and_then(|value| value.as_str()).unwrap_or_default(),
+                        "name": function_name,
+                        "arguments": arguments
+                    }));
+                }
+            }
+        }
+    }
+
+    serde_json::json!({
+        "content": content,
+        "tool_calls": normalized_tool_calls
+    })
+}
+
+fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
+    let base = base_url.trim().trim_end_matches('/');
+    let path = upstream_path.trim().trim_start_matches('/').to_string();
+    if path.is_empty() {
+        if base.ends_with("/v1") {
+            return format!("{base}/chat/completions");
+        }
+        return format!("{base}/v1/chat/completions");
+    }
+    format!("{base}/{path}")
+}
+
+async fn execute_local_mcp_tool(tool: &McpTool, arguments: &Value) -> Result<Value, String> {
+    let command = tool
+        .command
+        .clone()
+        .ok_or_else(|| format!("tool {} has no executable command", tool.name))?;
+    let mut cmd = tokio::process::Command::new(command);
+    if let Some(args) = &tool.args {
+        cmd.args(args);
+    }
+    if let Some(env) = &tool.env {
+        cmd.envs(env);
+    }
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(to_string)?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let payload = serde_json::json!({
+            "method": tool.name,
+            "arguments": arguments
+        });
+        let payload_bytes = serde_json::to_vec(&payload).map_err(to_string)?;
+        stdin.write_all(&payload_bytes).await.map_err(to_string)?;
+    }
+
+    let output = child.wait_with_output().await.map_err(to_string)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!(
+            "tool execution failed (exit={}): {}",
+            output.status, stderr
+        ));
+    }
+    if output.stdout.is_empty() {
+        return Ok(serde_json::json!({ "ok": true }));
+    }
+    match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+        Ok(parsed) => Ok(parsed),
+        Err(_) => Ok(serde_json::json!({
+            "ok": true,
+            "raw": String::from_utf8_lossy(&output.stdout).to_string()
+        })),
+    }
+}
+
 pub(crate) async fn sync_source_inner(
     state: &McpRuntimeState,
     source: McpSource,
@@ -1529,7 +2236,7 @@ pub(crate) async fn sync_source_inner(
                 .map_err(|err| McpError::Storage(err.to_string()))?;
             apply_config_payload(state, &source, config).await?
         }
-        McpSourceType::Cloud => {
+        McpSourceType::Cloud | McpSourceType::Modelscope | McpSourceType::Github | McpSourceType::Url => {
             let mut request = state.client.get(&source.path_or_url);
             if let Some(token) = auth_token {
                 request = request.header("Authorization", format!("Bearer {}", token));
@@ -1580,7 +2287,7 @@ async fn apply_config_payload(
                 if config_hash == existing_tool.config_hash {
                     state
                         .store
-                        .update_tool_status(&existing_tool.id, McpToolStatus::Healthy, None)
+                        .set_tool_status(&existing_tool.id, McpToolStatus::Healthy, None, None)
                         .await?;
                     existing_tool
                 } else {
@@ -1667,7 +2374,7 @@ pub(crate) async fn start_local_conversation_summary_worker(state: McpRuntimeSta
     ));
     loop {
         interval.tick().await;
-        if let Err(err) = state.store.process_next_conversation_summary_job().await {
+        if let Err(err) = process_next_local_conversation_summary_job(&state).await {
             warn!("conversation summary worker error: {}", err);
         }
     }
@@ -1677,25 +2384,164 @@ pub(crate) async fn start_local_periodic_worker(state: McpRuntimeState) {
     let mut interval = tokio::time::interval(Duration::from_secs(60));
     loop {
         interval.tick().await;
-        if let Err(err) = state.store.cleanup_stale_data().await {
-            warn!("periodic worker cleanup error: {}", err);
+        if let Err(err) = state.store.dispatch_due_local_conversation_summary_idle_tasks().await {
+            warn!("periodic worker dispatch idle task error: {}", err);
+        }
+        if let Err(err) = state
+            .store
+            .cleanup_old_local_conversation_summary_jobs(7 * 24 * 60 * 60)
+            .await
+        {
+            warn!("periodic worker cleanup old jobs error: {}", err);
         }
     }
+}
+
+async fn process_next_local_conversation_summary_job(state: &McpRuntimeState) -> Result<(), McpError> {
+    process_next_local_conversation_summary_job_with_store(state.store.as_ref()).await
+}
+
+async fn execute_or_queue_mcp_tool_call(
+    store: &crate::modules::mcp::store::McpStore,
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    tool_name: String,
+    arguments: Value,
+    require_approval: bool,
+) -> Result<Value, String> {
+    let tool = store
+        .get_tool_by_name(&tool_name)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_name))?;
+
+    if require_approval {
+        let approval_token = Uuid::new_v4().to_string();
+        pending_tool_calls.write().await.insert(
+            approval_token.clone(),
+            crate::modules::mcp::PendingToolCall {
+                tool_name: tool_name.clone(),
+                arguments: arguments.clone(),
+            },
+        );
+        return Ok(serde_json::json!({
+            "status": "REQUIRES_APPROVAL",
+            "approval_token": approval_token,
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "description": tool.description,
+        }));
+    }
+
+    execute_local_mcp_tool(&tool, &arguments).await
+}
+
+async fn approve_mcp_tool_inner(
+    store: &crate::modules::mcp::store::McpStore,
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    approval_token: &str,
+) -> Result<Value, String> {
+    let pending = pending_tool_calls.write().await.remove(approval_token);
+    let Some(pending) = pending else {
+        return Err("pending tool call not found".to_string());
+    };
+    let tool = store
+        .get_tool_by_name(&pending.tool_name)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", pending.tool_name))?;
+    execute_local_mcp_tool(&tool, &pending.arguments).await
+}
+
+async fn reject_mcp_tool_inner(
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    approval_token: &str,
+) -> bool {
+    pending_tool_calls
+        .write()
+        .await
+        .remove(approval_token)
+        .is_some()
+}
+
+async fn process_next_local_conversation_summary_job_with_store(
+    store: &crate::modules::mcp::store::McpStore,
+) -> Result<(), McpError> {
+    let Some(job) = store.claim_next_local_conversation_summary_job().await? else {
+        return Ok(());
+    };
+
+    let processing = async {
+        let window = store.get_local_conversation_window(&job.session_id).await?;
+        let summary = build_local_summary_from_window(&window.messages);
+        if summary.trim().is_empty() {
+            return Err(McpError::validation("conversation summary content is empty"));
+        }
+        store
+            .persist_local_conversation_summary(&job.session_id, &summary, Some("local-worker"))
+            .await?;
+        Ok::<(), McpError>(())
+    }
+    .await;
+
+    match processing {
+        Ok(()) => store.complete_local_conversation_summary_job(&job.id).await,
+        Err(err) => {
+            let message = err.to_string();
+            let _ = store
+                .fail_local_conversation_summary_job(&job, &message, 30)
+                .await;
+            Err(err)
+        }
+    }
+}
+
+fn build_local_summary_from_window(messages: &[LocalConversationHistoryMessage]) -> String {
+    let mut lines = Vec::new();
+    for message in messages {
+        let role = message.role.trim();
+        let text = message
+            .content
+            .as_ref()
+            .and_then(|value| {
+                if let Some(text) = value.as_str() {
+                    Some(text.to_string())
+                } else {
+                    serde_json::to_string(value).ok()
+                }
+            })
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_default();
+        if text.is_empty() {
+            continue;
+        }
+        lines.push(format!("{}: {}", role, text));
+        if lines.len() >= LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES {
+            break;
+        }
+    }
+
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    let joined = lines.join("\n");
+    truncate_text_chars(&joined, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)
 }
 
 async fn run_local_chat_complete_with_auto_code_mode(
     app_state: &AppState,
     model_connection: &LocalModelConnection,
     messages: Vec<LocalChatInputMessage>,
-    chat_ctx: &LocalChatContext,
+    chat_ctx: &LocalConversationChatContext,
 ) -> Result<serde_json::Value, String> {
     let provider_model_id = &model_connection.provider_model_id;
     let model_id = &model_connection.model_id;
     let mut orchestrated_messages = messages;
-    let mut last_response: Option<serde_json::Value> = None;
-    let mut last_results: Vec<String> = Vec::new();
+    let mut round: usize = 0;
 
-    for round in 0..LOCAL_CHAT_AUTO_CODE_MODE_MAX_ROUNDS {
+    loop {
+        round = round.saturating_add(1);
         let search_query = orchestrated_messages
             .last()
             .map(|m| &m.content)
@@ -1703,17 +2549,15 @@ async fn run_local_chat_complete_with_auto_code_mode(
             .unwrap_or_default();
         let tools = build_local_sdk_search_result(app_state, &search_query).await;
 
-        let response = app_state
-            .providers
-            .store
-            .chat_completion(
-                provider_model_id,
-                model_id,
-                orchestrated_messages.clone(),
-                Some(tools),
-                None, // temperature
-                None, // max_tokens
-            )
+        let response = request_provider_chat_completion(
+            app_state,
+            provider_model_id,
+            model_id,
+            orchestrated_messages.clone(),
+            Some(tools),
+            None,
+            None,
+        )
             .await
             .map_err(to_string)?;
 
@@ -1728,8 +2572,7 @@ async fn run_local_chat_complete_with_auto_code_mode(
             return Ok(response);
         }
 
-        let tool_feedback =
-            build_auto_code_mode_tool_feedback(round + 1, &tool_call_meta, &results);
+        let tool_feedback = build_auto_code_mode_tool_feedback(round, &tool_call_meta, &results);
         let assistant_content = response
             .get("content")
             .and_then(|value| value.as_str())
@@ -1745,31 +2588,13 @@ async fn run_local_chat_complete_with_auto_code_mode(
             role: "user".to_string(),
             content: tool_feedback,
         });
-
-        last_results = results;
-        last_response = Some(response);
     }
-
-    if let Some(mut response) = last_response {
-        let notice = build_auto_code_mode_round_limit_notice(
-            LOCAL_CHAT_AUTO_CODE_MODE_MAX_ROUNDS,
-            &last_results,
-        );
-        if let Some(content) = response.get_mut("content") {
-            *content = serde_json::json!(notice);
-        } else if let Some(obj) = response.as_object_mut() {
-            obj.insert("content".to_string(), serde_json::Value::String(notice));
-        }
-        return Ok(response);
-    }
-
-    Err("local auto code mode orchestration produced no response".to_string())
 }
 
 async fn maybe_handle_local_code_mode_tool_calls(
     app_state: &AppState,
     chat_response: &serde_json::Value,
-    chat_ctx: &LocalChatContext,
+    chat_ctx: &LocalConversationChatContext,
 ) -> (bool, Vec<serde_json::Value>, Vec<String>) {
     let tool_calls = extract_chat_tool_calls(chat_response);
     if tool_calls.is_empty() {
@@ -1797,7 +2622,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .arguments
                 .get("execution_timeout")
                 .and_then(|v| v.as_u64())
-                .map(|v| v as i32);
+                .map(|v| v.max(1));
             let dry_run = call
                 .arguments
                 .get("dry_run")
@@ -1811,7 +2636,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         ExecuteLocalCodeModeRequest {
                             code: code.to_string(),
                             session_id: Some(chat_ctx.session_id.clone()),
-                            language: language.to_string(),
+                            language: Some(language.to_string()),
                             execution_timeout,
                             dry_run: Some(dry_run),
                             context: None,
@@ -1829,14 +2654,17 @@ async fn maybe_handle_local_code_mode_tool_calls(
                             "status": "success",
                             "result": res,
                         }));
-                        results.push(format!("Code Execution Result:\n{}", res.result));
+                        results.push(format!(
+                            "Code Execution Result:\n{}",
+                            res.result.join("\n")
+                        ));
                     }
                     Err(err) => {
                         tool_call_meta.push(serde_json::json!({
                             "id": call.id,
                             "name": tool_name,
                             "status": "error",
-                            "error": err,
+                            "error": err.to_string(),
                         }));
                         results.push(format!("Code Execution Failed: {}", err));
                     }
@@ -1990,27 +2818,6 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
     })
 }
 
-fn extract_tool_signature_from_config_json(config_json: &str) -> serde_json::Value {
-    let parsed: Result<serde_json::Value, _> = serde_json::from_str(config_json);
-    let Ok(value) = parsed else {
-        return serde_json::json!({});
-    };
-
-    for key in [
-        "parameters",
-        "input_schema",
-        "inputSchema",
-        "tool_schema",
-        "schema",
-        "args_schema",
-    ] {
-        if let Some(schema) = value.get(key) {
-            return schema.clone();
-        }
-    }
-    serde_json::json!({})
-}
-
 fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCall> {
     let mut calls = Vec::new();
     if let Some(tc_array) = response.get("tool_calls").and_then(|v| v.as_array()) {
@@ -2020,7 +2827,7 @@ fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCal
                 tc.get("name").and_then(|v| v.as_str()),
             ) {
                 calls.push(LocalChatToolCall {
-                    id: id.to_string(),
+                    id: Some(id.to_string()),
                     name: name.to_string(),
                     arguments: tc
                         .get("arguments")
@@ -2054,19 +2861,6 @@ fn build_auto_code_mode_tool_feedback(
         "Auto tool execution round {} completed. Continue based on these tool results. If all tasks are complete, return the final answer.\n{}",
         round, serialized
     );
-    truncate_text_chars(&content, LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS)
-}
-
-fn build_auto_code_mode_round_limit_notice(max_rounds: usize, latest_results: &[String]) -> String {
-    let mut content = format!(
-        "Auto tool orchestration reached max rounds ({}). Returning latest available results.",
-        max_rounds
-    );
-    if !latest_results.is_empty() {
-        let joined = latest_results.join("\n\n");
-        content.push_str("\n\n");
-        content.push_str(&joined);
-    }
     truncate_text_chars(&content, LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS)
 }
 
@@ -2218,7 +3012,6 @@ fn emit_local_chat_stream_delta_chunks(
 
 const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
 const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
-const LOCAL_CHAT_AUTO_CODE_MODE_MAX_ROUNDS: usize = 30;
 const LOCAL_CHAT_STREAM_EVENT: &str = "local-chat-stream";
 const LOCAL_CHAT_STREAM_DELTA_CHUNK_CHARS: usize = 64;
 const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
@@ -2227,6 +3020,74 @@ const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use tokio::sync::RwLock;
+
+    async fn create_test_store(test_name: &str) -> crate::modules::mcp::store::McpStore {
+        let mut db_path = std::env::temp_dir();
+        db_path.push(format!(
+            "deeting-tauri-{test_name}-{}.db",
+            Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
+
+        let store = crate::modules::mcp::store::McpStore::new(&database_url)
+            .await
+            .expect("create test mcp store");
+        store.init().await.expect("init test mcp store");
+        let _ = store
+            .ensure_cloud_source("http://127.0.0.1:8000")
+            .await
+            .expect("ensure cloud source");
+        let _ = store
+            .ensure_local_source()
+            .await
+            .expect("ensure local source");
+        store
+    }
+
+    async fn upsert_test_tool(
+        store: &crate::modules::mcp::store::McpStore,
+        name: &str,
+        command: &str,
+    ) -> McpTool {
+        let source = store
+            .ensure_local_source()
+            .await
+            .expect("ensure local source for test tool");
+        let config_json = serde_json::json!({
+            "command": command,
+            "args": [],
+            "capabilities": ["test"],
+            "description": "test tool",
+        })
+        .to_string();
+        store
+            .upsert_tool(ToolUpsert {
+                id: None,
+                source_id: source.id.clone(),
+                identifier: Some(format!("test/{name}")),
+                name: name.to_string(),
+                source_type: McpSourceType::Local,
+                status: McpToolStatus::Healthy,
+                ping_ms: None,
+                capabilities: vec!["test".to_string()],
+                description: "test tool".to_string(),
+                error: None,
+                command: Some(command.to_string()),
+                args: None,
+                env: None,
+                config_json: config_json.clone(),
+                config_hash: hash_config(&config_json),
+                pending_config_json: None,
+                pending_config_hash: None,
+                conflict_status: McpConflictStatus::None,
+                is_read_only: false,
+                is_new: false,
+            })
+            .await
+            .expect("upsert test tool")
+    }
 
     #[test]
     fn extract_chat_tool_calls_works() {
@@ -2263,9 +3124,236 @@ mod tests {
     }
 
     #[test]
-    fn build_auto_code_mode_round_limit_notice_contains_limit() {
-        let notice = build_auto_code_mode_round_limit_notice(30, &["result".to_string()]);
-        assert!(notice.contains("30"));
-        assert!(notice.contains("result"));
+    fn normalize_chat_completion_response_supports_openai_shape() {
+        let raw = serde_json::json!({
+            "id": "chatcmpl_xxx",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "hello",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "search_sdk",
+                                    "arguments": "{\"query\":\"sdk\"}"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        });
+        let normalized = normalize_chat_completion_response(raw);
+        assert_eq!(
+            normalized.get("content").and_then(|v| v.as_str()),
+            Some("hello")
+        );
+        let calls = normalized
+            .get("tool_calls")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].get("name").and_then(|v| v.as_str()), Some("search_sdk"));
+        assert_eq!(
+            calls[0]
+                .get("arguments")
+                .and_then(|v| v.get("query"))
+                .and_then(|v| v.as_str()),
+            Some("sdk")
+        );
+    }
+
+    #[test]
+    fn build_upstream_endpoint_uses_v1_default() {
+        assert_eq!(
+            build_upstream_endpoint("https://api.example.com", ""),
+            "https://api.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            build_upstream_endpoint("https://api.example.com/v1", ""),
+            "https://api.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            build_upstream_endpoint("https://api.example.com/", "/custom/path"),
+            "https://api.example.com/custom/path"
+        );
+    }
+
+    #[tokio::test]
+    async fn process_summary_job_persists_summary_and_marks_completed() {
+        let store = create_test_store("summary-ok").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("smoke-summary".to_string()),
+            })
+            .await
+            .expect("create conversation");
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "user".to_string(),
+                content: "请帮我总结一下这次对话".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append user message");
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "assistant".to_string(),
+                content: "已记录你的需求，准备生成摘要".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append assistant message");
+        store
+            .enqueue_local_conversation_summary_job(&session.session_id, "test")
+            .await
+            .expect("enqueue summary job");
+
+        process_next_local_conversation_summary_job_with_store(&store)
+            .await
+            .expect("process summary job");
+
+        let window = store
+            .get_local_conversation_window(&session.session_id)
+            .await
+            .expect("get conversation window");
+        let summary_text = window
+            .summary
+            .as_ref()
+            .and_then(|value| value.get("summary_text"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        assert!(summary_text.contains("user:"));
+        assert!(summary_text.contains("assistant:"));
+
+        let jobs = store
+            .list_local_conversation_summary_jobs(LocalConversationSummaryJobQuery {
+                skip: None,
+                limit: None,
+                status: None,
+                session_id: Some(session.session_id.clone()),
+                error_contains: None,
+            })
+            .await
+            .expect("list summary jobs");
+        assert_eq!(jobs.total, 1);
+        assert_eq!(jobs.items[0].status, "completed");
+    }
+
+    #[tokio::test]
+    async fn process_summary_job_requeues_when_conversation_is_empty() {
+        let store = create_test_store("summary-empty").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("empty-summary".to_string()),
+            })
+            .await
+            .expect("create conversation");
+        store
+            .enqueue_local_conversation_summary_job(&session.session_id, "test")
+            .await
+            .expect("enqueue summary job");
+
+        let err = process_next_local_conversation_summary_job_with_store(&store)
+            .await
+            .expect_err("empty conversation should fail");
+        assert!(err.to_string().contains("content is empty"));
+
+        let jobs = store
+            .list_local_conversation_summary_jobs(LocalConversationSummaryJobQuery {
+                skip: None,
+                limit: None,
+                status: Some("pending".to_string()),
+                session_id: Some(session.session_id.clone()),
+                error_contains: None,
+            })
+            .await
+            .expect("list summary jobs");
+        assert_eq!(jobs.total, 1);
+        assert_eq!(jobs.items[0].status, "pending");
+        assert!(
+            jobs.items[0]
+                .last_error
+                .as_deref()
+                .unwrap_or("")
+                .contains("content is empty")
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn approval_flow_reject_and_approve_execute_paths_work() {
+        let store = create_test_store("approval-flow").await;
+        let _ = upsert_test_tool(&store, "execute_demo", "cat").await;
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+
+        let queued = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "execute_demo".to_string(),
+            serde_json::json!({"x": 1}),
+            true,
+        )
+        .await
+        .expect("queue pending approval");
+        let token = queued
+            .get("approval_token")
+            .and_then(|value| value.as_str())
+            .expect("approval token")
+            .to_string();
+        assert_eq!(
+            queued.get("status").and_then(|value| value.as_str()),
+            Some("REQUIRES_APPROVAL")
+        );
+
+        let removed = reject_mcp_tool_inner(&pending_tool_calls, &token).await;
+        assert!(removed);
+        assert!(pending_tool_calls.read().await.is_empty());
+
+        let queued_again = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "execute_demo".to_string(),
+            serde_json::json!({"x": 2}),
+            true,
+        )
+        .await
+        .expect("queue second pending approval");
+        let token_again = queued_again
+            .get("approval_token")
+            .and_then(|value| value.as_str())
+            .expect("approval token")
+            .to_string();
+
+        let approved = approve_mcp_tool_inner(&store, &pending_tool_calls, &token_again)
+            .await
+            .expect("approve and execute");
+        assert_eq!(
+            approved.get("method").and_then(|value| value.as_str()),
+            Some("execute_demo")
+        );
+        assert_eq!(
+            approved
+                .get("arguments")
+                .and_then(|value| value.get("x"))
+                .and_then(|value| value.as_i64()),
+            Some(2)
+        );
+        assert!(pending_tool_calls.read().await.is_empty());
     }
 }

@@ -189,12 +189,11 @@ ORDER BY date DESC;
 ### 通过 API（计划中）
 
 ```bash
-# 外部通道用户审计查询（计划中）
-GET /external/v1/audit?start_date=2026-01-01&end_date=2026-01-07
-
 # 内部运维审计查询（计划中）
 GET /internal/v1/admin/audit?user_id=xxx&limit=100
 ```
+
+> 注：外部通道已于 `2026-03-04` 下线，不再提供 `/external/v1/*` 审计接口。
 
 ---
 

@@ -189,7 +189,7 @@ LOG_RETENTION=10 days
 {
   "timestamp": "2026-01-06T10:30:00.123456Z",
   "level": "INFO",
-  "logger": "app.api.v1.external.gateway",
+  "logger": "app.api.v1.internal.gateway",
   "message": "request_completed",
   "trace_id": "req-abc123",
   "tenant_id": "tenant-xyz",
@@ -207,7 +207,7 @@ LOG_RETENTION=10 days
 #### 文本格式（开发环境）
 
 ```
-2026-01-06 10:30:00.123 | INFO | app.api.v1.external.gateway | request_completed | trace_id=req-abc123 tenant_id=tenant-xyz
+2026-01-06 10:30:00.123 | INFO | app.api.v1.internal.gateway | request_completed | trace_id=req-abc123 tenant_id=tenant-xyz
 ```
 
 ### 日志级别

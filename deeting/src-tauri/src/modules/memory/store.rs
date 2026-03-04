@@ -82,7 +82,8 @@ impl MemoryStore {
                     "asset_type": a_type_col.value(0),
                     "source_type": s_type_col.value(0),
                     "pkg_name": nullable_string(pkg_col, 0),
-                    "metadata": nullable_string(meta_col, 0).and_then(|s| serde_json::from_str(&s).ok()),
+                    "metadata": nullable_string(meta_col, 0)
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                 })));
             }
         }
@@ -100,8 +101,9 @@ impl MemoryStore {
         vector: Vec<f32>,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), MemoryError> {
-        let now = now_rfc3339()?;
+        let now = now_rfc3339();
         let metadata_str = metadata.map(|v| v.to_string());
+        let vector_opt = vector.into_iter().map(Some).collect::<Vec<Option<f32>>>();
 
         let batch = RecordBatch::try_new(
             local_asset_schema(),
@@ -117,7 +119,7 @@ impl MemoryStore {
                     arrow_array::types::Float32Type,
                     _,
                     _,
-                >(vec![Some(vector)], 1536)) as Arc<dyn Array>,
+                >(vec![Some(vector_opt)], 1536)) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now)])) as Arc<dyn Array>,
             ],
@@ -145,10 +147,10 @@ impl MemoryStore {
         asset_type: Option<&str>,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
         let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
-        let mut query = table.search(vector).limit(limit);
+        let mut query = table.vector_search(vector)?.limit(limit);
 
         if let Some(t) = asset_type {
-            query = query.only_if(format!("asset_type = '{}'", t));
+            query = query.only_if(format!("asset_type = '{}'", sql_escape(t)));
         }
 
         let batches = query.execute().await?.try_collect::<Vec<_>>().await?;
@@ -176,7 +178,8 @@ impl MemoryStore {
                     "asset_type": a_type_col.value(row),
                     "source_type": s_type_col.value(row),
                     "pkg_name": nullable_string(pkg_col, row),
-                    "metadata": nullable_string(meta_col, row).and_then(|s| serde_json::from_str(&s).ok()),
+                    "metadata": nullable_string(meta_col, row)
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                     "_distance": score,
                 }));
             }
@@ -201,7 +204,7 @@ impl MemoryStore {
             .transpose()?;
 
         let id = Uuid::new_v4().to_string();
-        let now = now_rfc3339()?;
+        let now = now_rfc3339();
 
         let batch = RecordBatch::try_new(
             local_memory_schema(),
@@ -295,7 +298,7 @@ impl MemoryStore {
             return Err(MemoryError::validation("id is required"));
         }
 
-        let now = now_rfc3339()?;
+        let now = now_rfc3339();
         let table = self.table().await?;
         let affected = table
             .update()
@@ -314,7 +317,7 @@ impl MemoryStore {
         let session_id = normalize_optional(payload.session_id);
         let assistant_id = normalize_optional(payload.assistant_id);
         let where_clause = build_filter_sql(session_id.as_deref(), assistant_id.as_deref(), true);
-        let now = now_rfc3339()?;
+        let now = now_rfc3339();
         let table = self.table().await?;
         let mut operation = table
             .update()

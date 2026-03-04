@@ -100,6 +100,7 @@ pub fn run() {
             let sync_state = state.clone();
             app.manage(state);
             let sync_state_for_mcp = sync_state.clone();
+            let app_handle_for_mcp_tasks = app.handle().clone();
 
             tauri::async_runtime::spawn(async move {
                 let mcp = &sync_state_for_mcp.mcp;
@@ -161,11 +162,11 @@ pub fn run() {
 
                 // Register and index all local skills (Official & User)
                 let app_state_for_skills = sync_state_for_mcp.clone();
-                let app_handle_for_skills = app.handle().clone();
+                let app_handle_for_skills = app_handle_for_mcp_tasks.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::modules::mcp::commands::register_local_skills(
+                    let _ = crate::modules::mcp::commands::register_local_skills_inner(
                         app_handle_for_skills,
-                        tauri::State::from(&app_state_for_skills),
+                        &app_state_for_skills,
                     )
                     .await;
                 });
@@ -189,13 +190,13 @@ pub fn run() {
             let summary_worker_state = sync_state.clone();
             tauri::async_runtime::spawn(async move {
                 crate::modules::mcp::commands::start_local_conversation_summary_worker(
-                    summary_worker_state,
+                    summary_worker_state.mcp,
                 )
                 .await;
             });
             let periodic_worker_state = sync_state.clone();
             tauri::async_runtime::spawn(async move {
-                crate::modules::mcp::commands::start_local_periodic_worker(periodic_worker_state)
+                crate::modules::mcp::commands::start_local_periodic_worker(periodic_worker_state.mcp)
                     .await;
             });
 
@@ -207,7 +208,7 @@ pub fn run() {
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .menu_on_left_click(false)
+                .show_menu_on_left_click(false)
                 .tooltip("Deeting")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "quit" => {

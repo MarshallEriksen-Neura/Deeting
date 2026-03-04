@@ -54,7 +54,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.api.v1.external.gateway import _stream_billing_callback
 from app.constants.model_capability_map import (
     expand_capabilities,
     normalize_capabilities,
@@ -113,6 +112,7 @@ from app.services.providers.model_file_proxy_service import (
     ModelFileProxyService,
 )
 from app.services.system import CancelService
+from app.services.workflow.stream_billing import stream_billing_callback
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
     stream_with_billing,
@@ -653,7 +653,7 @@ async def _stream_internal_callback(
     ctx: WorkflowContext,
     accumulator: StreamTokenAccumulator,
 ) -> None:
-    await _stream_billing_callback(ctx, accumulator)
+    await stream_billing_callback(ctx, accumulator)
     await _append_stream_conversation(
         ctx,
         assistant_text=accumulator.assistant_text,

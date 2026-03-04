@@ -166,7 +166,6 @@ def register_routes(app: FastAPI) -> None:
         available_models_router,
         credits_router,
         dashboard_router,
-        external_gateway_router,
         feedback_router,
         gateway_logs_router,
         login_sessions_router,
@@ -304,12 +303,7 @@ def register_routes(app: FastAPI) -> None:
         tags=["Admin - Routing MAB"],
     )
 
-    # Gateway 路由
-    app.include_router(
-        external_gateway_router, prefix=f"{api_prefix}/external", tags=["Gateway"]
-    )
-    # 兼容文档与测试所用的外部通道前缀 `/external/v1`
-    app.include_router(external_gateway_router, prefix="/external/v1", tags=["Gateway"])
+    # Gateway 路由（仅内部通道）
     app.include_router(
         internal_gateway_router, prefix=f"{api_prefix}/internal", tags=["Gateway"]
     )

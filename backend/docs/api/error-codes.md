@@ -277,7 +277,7 @@ def log_gateway_error(response):
 
 ```bash
 # 请求示例
-curl -i https://gateway.example.com/external/v1/chat/completions ...
+curl -i https://gateway.example.com/internal/v1/chat/completions ...
 
 # 响应头包含 trace_id
 X-Request-Id: req-abc123def456
@@ -289,6 +289,7 @@ X-Request-Id: req-abc123def456
 - 检查时间戳是否在 ±5 分钟内
 - 确认签名算法实现正确（HMAC-SHA256）
 - 验证请求体 JSON 序列化方式（无空格、键排序）
+- 该错误主要来自历史外部网关签名链路；外部通道已于 `2026-03-04` 下线
 
 **Q: 收到 QUOTA_DAILY_EXCEEDED 但今天没用多少**
 - 检查是否有其他应用共用同一 API Key

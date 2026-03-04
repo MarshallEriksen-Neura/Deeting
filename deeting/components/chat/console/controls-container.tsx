@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Paperclip, X, Square, Clapperboard, Lock, FileText, Bot } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Paperclip, X, Square, Clapperboard, Lock, FileText, Bot, Play } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useRef, useState, useCallback, memo } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -121,7 +121,12 @@ function ControlsContainer() {
     return serviceAssistants;
   }, [isTauriRuntime, installedAgents, serviceAssistants]);
 
-  const { handleSendMessage, cancelActiveRequest } = useChatMessaging({
+  const {
+    handleSendMessage,
+    cancelActiveRequest,
+    hasInterruptedGeneration,
+    continueInterruptedGeneration,
+  } = useChatMessaging({
     agent: activeAssistant ? { id: activeAssistant.id, name: activeAssistant.name } : undefined,
     isTauriRuntime,
   });
@@ -139,6 +144,14 @@ function ControlsContainer() {
   );
   
   const isGenerating = isLoading;
+  const canContinueGeneration = useMemo(
+    () =>
+      !isGenerating &&
+      hasInterruptedGeneration &&
+      input.trim().length === 0 &&
+      attachments.length === 0,
+    [isGenerating, hasInterruptedGeneration, input, attachments.length]
+  );
   
   // 缓存事件处理函数
   const handleParamsOpenChange = useCallback((open: boolean) => {
@@ -323,8 +336,18 @@ function ControlsContainer() {
       void cancelActiveRequest();
       return;
     }
+    if (canContinueGeneration) {
+      void continueInterruptedGeneration();
+      return;
+    }
     handleSend();
-  }, [isGenerating, cancelActiveRequest, handleSend]);
+  }, [
+    isGenerating,
+    canContinueGeneration,
+    cancelActiveRequest,
+    continueInterruptedGeneration,
+    handleSend,
+  ]);
 
   return (
     <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
@@ -687,15 +710,21 @@ function ControlsContainer() {
           <Button
             type="button"
             onClick={handleSendOrCancel}
-            disabled={isGenerating ? false : !canSend}
+            disabled={isGenerating ? false : canContinueGeneration ? false : !canSend}
             className={`
               min-h-[44px] min-w-[44px] size-11 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white
               hover:bg-slate-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
-              ${isGenerating ? 'cursor-pointer' : !canSend ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              ${isGenerating || canContinueGeneration ? 'cursor-pointer' : !canSend ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             `}
-            aria-label={isGenerating ? t("controls.stop") : t("controls.send")}
+            aria-label={isGenerating ? t("controls.stop") : canContinueGeneration ? t("controls.continue") : t("controls.send")}
           >
-            {isGenerating ? <Square className="w-5 h-5" /> : <ArrowUp className="w-5 h-5" />}
+            {isGenerating ? (
+              <Square className="w-5 h-5" />
+            ) : canContinueGeneration ? (
+              <Play className="w-5 h-5" />
+            ) : (
+              <ArrowUp className="w-5 h-5" />
+            )}
           </Button>
         </div>
       </div>

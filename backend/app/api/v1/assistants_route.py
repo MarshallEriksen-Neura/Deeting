@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi_pagination.cursor import CursorPage, CursorParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.external.gateway import _stream_billing_callback
 from app.core.database import AsyncSessionLocal, get_db
 from app.deps.auth import get_current_user
 from app.models import User
@@ -57,6 +56,7 @@ from app.services.assistant.assistant_tag_service import AssistantTagService
 from app.services.orchestrator.config import INTERNAL_PREVIEW_WORKFLOW
 from app.services.orchestrator.context import Channel, WorkflowContext
 from app.services.orchestrator.orchestrator import GatewayOrchestrator
+from app.services.workflow.stream_billing import stream_billing_callback
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
     stream_with_billing,
@@ -339,7 +339,7 @@ async def preview_assistant(
             stream=stream,
             ctx=ctx,
             accumulator=accumulator,
-            on_complete=_stream_billing_callback,
+            on_complete=stream_billing_callback,
         )
         return StreamingResponse(wrapped_stream, media_type="text/event-stream")
 

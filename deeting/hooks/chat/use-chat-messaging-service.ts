@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useRef } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { cancelChatCompletion, streamChatCompletion, type ChatMessage } from "@/lib/api/chat"
 import { buildMessageContent, serializeMessageContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
@@ -240,6 +240,9 @@ const resolveMessageAttachments = async (messages: Message[]) => {
 export function useChatMessagingService() {
   const cancelRef = useRef<(() => void) | null>(null)
   const requestIdRef = useRef<string | null>(null)
+  const activeAssistantMessageIdRef = useRef<string | null>(null)
+  const interruptedMessageIdsRef = useRef<Set<string>>(new Set())
+  const [interruptedAssistantMessageId, setInterruptedAssistantMessageId] = useState<string | null>(null)
   const {
     input,
     attachments,
@@ -360,9 +363,15 @@ export function useChatMessagingService() {
 
   const cancelActiveRequest = useCallback(async () => {
     const requestId = requestIdRef.current
+    const activeAssistantMessageId = activeAssistantMessageIdRef.current
+    if (activeAssistantMessageId) {
+      interruptedMessageIdsRef.current.add(activeAssistantMessageId)
+      setInterruptedAssistantMessageId(activeAssistantMessageId)
+    }
     cancelRef.current?.()
     cancelRef.current = null
     requestIdRef.current = null
+    activeAssistantMessageIdRef.current = null
     setIsLoading(false)
     clearStatus()
     if (!requestId) return
@@ -375,6 +384,9 @@ export function useChatMessagingService() {
 
   const createLocalStreamHandler = useCallback((assistantMessageId: string) => {
     return (event: LocalConversationStreamEvent) => {
+      if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
+        return
+      }
       if (!event || typeof event !== "object") return
 
       if (typeof event.trace_id === "string" && event.trace_id.trim().length > 0) {
@@ -453,6 +465,8 @@ export function useChatMessagingService() {
       content: "",
       createdAt: Date.now(),
     }
+    activeAssistantMessageIdRef.current = assistantMessageId
+    setInterruptedAssistantMessageId(null)
 
     // 更新 UI 状态
     setMessages([...messages, userMessage, assistantMessage])
@@ -489,6 +503,9 @@ export function useChatMessagingService() {
         }, {
           onStreamEvent: createLocalStreamHandler(assistantMessageId),
         })
+        if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
+          return
+        }
         setSessionId(response.session_id || resolvedSessionId)
 
         const normalized = mapConversationMessages([response.assistant_message]).find(
@@ -697,6 +714,8 @@ export function useChatMessagingService() {
       clearStatus()
       cancelRef.current = null
       requestIdRef.current = null
+      activeAssistantMessageIdRef.current = null
+      interruptedMessageIdsRef.current.delete(assistantMessageId)
     }
   }, [
     input,
@@ -757,6 +776,8 @@ export function useChatMessagingService() {
       content: "",
       createdAt: Date.now(),
     }
+    activeAssistantMessageIdRef.current = assistantMessageId
+    setInterruptedAssistantMessageId(null)
 
     setMessages([...messagesBeforeTarget, newAssistantMessage])
     setIsLoading(true)
@@ -789,6 +810,9 @@ export function useChatMessagingService() {
         }, {
           onStreamEvent: createLocalStreamHandler(assistantMessageId),
         })
+        if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
+          return
+        }
         setSessionId(response.session_id || resolvedSessionId)
 
         const normalized = mapConversationMessages([response.message]).find(
@@ -987,6 +1011,8 @@ export function useChatMessagingService() {
       clearStatus()
       cancelRef.current = null
       requestIdRef.current = null
+      activeAssistantMessageIdRef.current = null
+      interruptedMessageIdsRef.current.delete(assistantMessageId)
     }
   }, [
     config,
@@ -1008,6 +1034,31 @@ export function useChatMessagingService() {
     createLocalStreamHandler,
   ])
 
+  const hasInterruptedGeneration = useMemo(() => {
+    if (!interruptedAssistantMessageId) return false
+    return messages.some(
+      (message) =>
+        message.id === interruptedAssistantMessageId && message.role === "assistant"
+    )
+  }, [interruptedAssistantMessageId, messages])
+
+  const continueInterruptedGeneration = useCallback(async () => {
+    const targetMessageId = interruptedAssistantMessageId
+    if (!targetMessageId) return
+    const targetExists = useChatStore
+      .getState()
+      .messages.some(
+        (message) =>
+          message.id === targetMessageId && message.role === "assistant"
+      )
+    if (!targetExists) {
+      setInterruptedAssistantMessageId(null)
+      return
+    }
+    setInterruptedAssistantMessageId(null)
+    await regenerateMessage(targetMessageId)
+  }, [interruptedAssistantMessageId, regenerateMessage])
+
   return {
     sendMessage,
     regenerateMessage,
@@ -1015,5 +1066,7 @@ export function useChatMessagingService() {
     loadMoreHistory,
     resetSession,
     cancelActiveRequest,
+    hasInterruptedGeneration,
+    continueInterruptedGeneration,
   }
 }

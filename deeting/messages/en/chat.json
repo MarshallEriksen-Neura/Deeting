@@ -236,6 +236,7 @@
       "placeholder": "Type a message...",
       "menu": "Actions",
       "stop": "Stop",
+      "continue": "Continue",
       "send": "Send"
     },
     "codeBlock": {

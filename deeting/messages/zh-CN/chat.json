@@ -236,6 +236,7 @@
       "placeholder": "输入消息...",
       "menu": "更多功能",
       "stop": "停止",
+      "continue": "继续生成",
       "send": "发送"
     },
     "codeBlock": {

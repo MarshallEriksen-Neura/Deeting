@@ -476,31 +476,36 @@ impl SandboxRuntimeManager {
         }
     }
 
-    async fn backend_get_or_create(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+    async fn backend_get_or_create(
+        &self,
+        _box_name: &str,
+    ) -> Result<SandboxIdentity, SandboxError> {
         match &self.backend {
             #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => backend.get_or_create_box(box_name).await,
+            BackendRuntime::Wsl(backend) => backend.get_or_create_box(_box_name).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
     }
 
-    async fn backend_stop_box(&self, box_id: &str) -> Result<(), SandboxError> {
+    async fn backend_stop_box(&self, _box_id: &str) -> Result<(), SandboxError> {
         match &self.backend {
             #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => backend.stop_box(box_id).await,
+            BackendRuntime::Wsl(backend) => backend.stop_box(_box_id).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
     }
 
     async fn backend_run_python(
         &self,
-        box_id: &str,
-        code: &str,
-        timeout_secs: u64,
+        _box_id: &str,
+        _code: &str,
+        _timeout_secs: u64,
     ) -> Result<SandboxExecutionOutput, SandboxError> {
         match &self.backend {
             #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => backend.run_python(box_id, code, timeout_secs).await,
+            BackendRuntime::Wsl(backend) => {
+                backend.run_python(_box_id, _code, _timeout_secs).await
+            }
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
     }

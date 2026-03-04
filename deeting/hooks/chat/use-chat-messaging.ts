@@ -24,7 +24,12 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
     sessionId,
     setSessionId,
   } = useChatStore()
-  const { sendMessage: serviceSendMessage, cancelActiveRequest } = useChatMessagingService()
+  const {
+    sendMessage: serviceSendMessage,
+    cancelActiveRequest,
+    hasInterruptedGeneration,
+    continueInterruptedGeneration,
+  } = useChatMessagingService()
 
   const handleSendMessage = useCallback(async () => {
     if (isTauriRuntime && agent) {
@@ -74,5 +79,7 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
     isLoading,
     errorMessage,
     cancelActiveRequest,
+    hasInterruptedGeneration,
+    continueInterruptedGeneration,
   }
 }
