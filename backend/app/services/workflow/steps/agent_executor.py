@@ -874,10 +874,11 @@ class AgentExecutorStep(BaseStep):
                 logger.error(f"Remote MCP call failed: {e!s}")
                 return {"error": f"Remote MCP call failed: {e!s}"}
 
-        # 2. Check Local Plugins (instantiate per-request to avoid shared-state races)
-        from app.agent_plugins.core.context import ConcretePluginContext
-        from app.services.agent.agent_service import agent_service
+        # 2. Dispatch via Skill Registry runtime (single source of truth for skills)
         import uuid as _uuid
+        from app.core.database import AsyncSessionLocal
+        from app.repositories.skill_registry_repository import SkillRegistryRepository
+        from app.services.skill_registry.skill_runtime_executor import SkillRuntimeExecutor
 
         _uid = None
         if ctx.user_id:
@@ -901,71 +902,99 @@ class AgentExecutorStep(BaseStep):
                 )
             }
 
-        plugin_name = agent_service.plugin_manager.get_plugin_name_for_tool_from_registry(
-            tool_name
-        )
-        if plugin_name:
-            try:
-                fresh_ctx = ConcretePluginContext(
-                    plugin_name=plugin_name,
-                    plugin_id=plugin_name,
-                    user_id=_uid,
-                    session_id=ctx.session_id,
-                )
-                plugin = await agent_service.plugin_manager.instantiate_plugin(
-                    plugin_name, fresh_ctx
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Tool '%s' denied: failed to bind user context trace_id=%s err=%s",
-                    tool_name,
-                    ctx.trace_id,
-                    exc,
-                )
+        # 2.1 Core SDK tools are executed by the active core plugin instance.
+        if tool_name in _CODE_MODE_TOOL_NAMES:
+            import inspect
+
+            from app.services.agent.agent_service import agent_service
+
+            core_plugin = agent_service.plugin_manager.get_plugin("system.deeting_core_sdk")
+            if core_plugin is None:
+                try:
+                    await agent_service.initialize(user_id=_uid, session_id=ctx.session_id)
+                    core_plugin = agent_service.plugin_manager.get_plugin(
+                        "system.deeting_core_sdk"
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Tool '%s' core plugin init failed trace_id=%s err=%s",
+                        tool_name,
+                        ctx.trace_id,
+                        exc,
+                    )
+                    core_plugin = None
+
+            if core_plugin:
+                handler = getattr(core_plugin, f"handle_{tool_name}", None)
+                if not handler:
+                    handler = getattr(core_plugin, tool_name, None)
+                if handler:
+                    kwargs = dict(tool_call.arguments or {})
+                    try:
+                        sig = inspect.signature(handler)
+                        if "__context__" in sig.parameters or "kwargs" in sig.parameters:
+                            kwargs["__context__"] = ctx
+                    except Exception:
+                        pass
+                    try:
+                        return await handler(**kwargs)
+                    except TypeError as exc:
+                        return {"error": f"Invalid parameters for tool '{tool_name}': {exc}"}
+                    except Exception as exc:
+                        logger.error(
+                            "Tool '%s' core plugin execution failed trace_id=%s err=%s",
+                            tool_name,
+                            ctx.trace_id,
+                            exc,
+                            exc_info=True,
+                        )
+                        return {"error": f"Tool '{tool_name}' failed: {exc}"}
+
                 return {
                     "error": (
-                        f"Tool '{tool_name}' could not bind user context: {exc}"
+                        f"Core tool '{tool_name}' handler not found in system.deeting_core_sdk."
                     )
                 }
 
-            # 1. Try specific handler (handle_toolname)
-            handler = getattr(plugin, f"handle_{tool_name}", None)
-            if not handler:
-                handler = getattr(plugin, tool_name, None)
-
-            # 2. Try generic handler (handle_tool_call)
-            is_generic = False
-            if not handler and hasattr(plugin, "handle_tool_call"):
-                handler = plugin.handle_tool_call
-                is_generic = True
-
-            if handler:
-                # Introspect handler to see if it accepts context
-                import inspect
-
-                sig = inspect.signature(handler)
-                kwargs = tool_call.arguments.copy()
-                if "__context__" in sig.parameters or "kwargs" in sig.parameters:
-                    kwargs["__context__"] = ctx
-
-                try:
-                    if is_generic:
-                        return await handler(tool_name, **kwargs)
-                    else:
-                        return await handler(**kwargs)
-                except TypeError as e:
-                    logger.warning(
-                        f"Tool '{tool_name}' parameter error: {e}"
+        try:
+            async with AsyncSessionLocal() as session:
+                skill_repo = SkillRegistryRepository(session)
+                skill = await skill_repo.get_by_tool_name(tool_name)
+                if skill:
+                    executor = SkillRuntimeExecutor(skill_repo)
+                    inputs = dict(tool_call.arguments or {})
+                    inputs["__tool_name__"] = tool_name
+                    session_id = str(ctx.session_id) if ctx.session_id else None
+                    exec_result = await executor.execute(
+                        skill_id=skill.id,
+                        session_id=session_id,
+                        user_id=_uid,
+                        inputs=inputs,
+                        intent=tool_name,
+                        trace_id=ctx.trace_id,
                     )
+                    if exec_result.get("status") == "ok":
+                        return exec_result.get("result")
+
                     return {
-                        "error": f"Invalid parameters for tool '{tool_name}': {e}. Check required parameters."
+                        "error": exec_result.get(
+                            "error",
+                            f"Tool '{tool_name}' execution failed in Skill Registry.",
+                        )
                     }
-                except Exception as e:
-                    logger.error(
-                        f"Tool '{tool_name}' execution failed: {e}",
-                        exc_info=True,
-                    )
-                    return {"error": f"Tool '{tool_name}' failed: {e}"}
+        except Exception as exc:
+            logger.error(
+                "Tool '%s' Skill Registry execution failed trace_id=%s err=%s",
+                tool_name,
+                ctx.trace_id,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "error": (
+                    f"Tool '{tool_name}' failed via Skill Registry: {exc}"
+                )
+            }
 
         return {"error": f"Tool '{tool_name}' not found."}
 

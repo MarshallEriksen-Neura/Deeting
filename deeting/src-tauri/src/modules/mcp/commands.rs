@@ -597,132 +597,270 @@ pub async fn send_local_conversation_message(
     let conversation_repo = &state.store;
 
     let trace_id = Uuid::new_v4().to_string();
+    let request_id = payload
+        .request_id
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     let session_id = payload.session_id.clone();
 
-    let assistant_id = payload.assistant_id.clone();
-    let chat_ctx = conversation_repo
-        .get_chat_context(&session_id, assistant_id.as_deref())
-        .await
-        .map_err(to_string)?;
+    emit_local_chat_stream_status(
+        &app,
+        request_id.as_deref(),
+        &trace_id,
+        "request_received",
+        "local_send_start",
+        Some(serde_json::json!({ "session_id": session_id })),
+    );
 
-    let model_connection = conversation_repo
-        .resolve_chat_model(&chat_ctx)
-        .await
-        .map_err(to_string)?;
-
-    let messages = conversation_repo
-        .prepare_chat_messages(&chat_ctx, &payload.content)
-        .await
-        .map_err(to_string)?;
-
-    let response_json = run_local_chat_complete_with_auto_code_mode(
-        &app_state,
-        &model_connection,
-        messages,
-        &chat_ctx,
-    )
-    .await?;
-
-    let response_text = response_json["content"].as_str().unwrap_or("").to_string();
-    let tool_calls = extract_chat_tool_calls(&response_json);
-
-    let saved_messages = conversation_repo
-        .save_chat_turn(&session_id, &payload.content, &response_text, &tool_calls)
-        .await
-        .map_err(to_string)?;
-
-    let assistant_id = chat_ctx.assistant_id.clone();
-    if let Some(assistant_id) = assistant_id {
-        if let Err(err) = conversation_repo
-            .enqueue_conversation_summary(&session_id, &assistant_id)
+    let execution: Result<LocalConversationSendResponse, String> = async {
+        let assistant_id = payload.assistant_id.clone();
+        let chat_ctx = conversation_repo
+            .get_chat_context(&session_id, assistant_id.as_deref())
             .await
-        {
-            warn!(
-                "failed to enqueue summary session={} assistant={} error={}",
-                session_id, assistant_id, err
+            .map_err(to_string)?;
+
+        emit_local_chat_stream_status(
+            &app,
+            request_id.as_deref(),
+            &trace_id,
+            "context_ready",
+            "local_send_context_ready",
+            Some(serde_json::json!({ "assistant_id": chat_ctx.assistant_id })),
+        );
+
+        let model_connection = conversation_repo
+            .resolve_chat_model(&chat_ctx)
+            .await
+            .map_err(to_string)?;
+
+        let messages = conversation_repo
+            .prepare_chat_messages(&chat_ctx, &payload.content)
+            .await
+            .map_err(to_string)?;
+
+        emit_local_chat_stream_status(
+            &app,
+            request_id.as_deref(),
+            &trace_id,
+            "model_request",
+            "local_send_model_request",
+            Some(serde_json::json!({
+                "provider_model_id": model_connection.provider_model_id,
+                "model_id": model_connection.model_id,
+            })),
+        );
+
+        let response_json = run_local_chat_complete_with_auto_code_mode(
+            &app_state,
+            &model_connection,
+            messages,
+            &chat_ctx,
+        )
+        .await?;
+
+        let response_text = response_json["content"].as_str().unwrap_or("").to_string();
+        let tool_calls = extract_chat_tool_calls(&response_json);
+
+        emit_local_chat_stream_status(
+            &app,
+            request_id.as_deref(),
+            &trace_id,
+            "assistant_stream",
+            "local_send_assistant_stream",
+            None,
+        );
+        emit_local_chat_stream_delta_chunks(
+            &app,
+            request_id.as_deref(),
+            &trace_id,
+            &response_text,
+        );
+        if !response_text.trim().is_empty() {
+            emit_local_chat_stream_blocks(
+                &app,
+                request_id.as_deref(),
+                &trace_id,
+                serde_json::json!([{ "type": "text", "content": response_text }]),
             );
         }
+
+        let saved_messages = conversation_repo
+            .save_chat_turn(&session_id, &payload.content, &response_text, &tool_calls)
+            .await
+            .map_err(to_string)?;
+
+        let assistant_id = chat_ctx.assistant_id.clone();
+        if let Some(assistant_id) = assistant_id {
+            if let Err(err) = conversation_repo
+                .enqueue_conversation_summary(&session_id, &assistant_id)
+                .await
+            {
+                warn!(
+                    "failed to enqueue summary session={} assistant={} error={}",
+                    session_id, assistant_id, err
+                );
+            }
+        }
+
+        let trace_meta = serde_json::json!({
+            "trace_id": trace_id,
+            "assistant_id": chat_ctx.assistant_id,
+            "provider_model_id": model_connection.provider_model_id,
+            "model_id": model_connection.model_id,
+        });
+
+        Ok(LocalConversationSendResponse {
+            session_id: session_id.clone(),
+            messages: saved_messages,
+            trace_meta: Some(trace_meta),
+        })
     }
+    .await;
 
-    let trace_meta = serde_json::json!({
-        "trace_id": trace_id,
-        "assistant_id": chat_ctx.assistant_id,
-        "provider_model_id": model_connection.provider_model_id,
-        "model_id": model_connection.model_id,
-    });
-
-    Ok(LocalConversationSendResponse {
-        session_id,
-        messages: saved_messages,
-        trace_meta: Some(trace_meta),
-    })
+    match execution {
+        Ok(response) => {
+            emit_local_chat_stream_done(&app, request_id.as_deref(), &trace_id);
+            Ok(response)
+        }
+        Err(err) => {
+            emit_local_chat_stream_error(&app, request_id.as_deref(), &trace_id, &err);
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]
 pub async fn regenerate_local_conversation_reply(
+    app: AppHandle,
     app_state: State<'_, AppState>,
     payload: LocalConversationRegenerateRequest,
 ) -> Result<LocalConversationRegenerateResponse, String> {
     let state = &app_state.mcp;
     let conversation_repo = &state.store;
+    let trace_id = Uuid::new_v4().to_string();
+    let request_id = payload
+        .request_id
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
-    let chat_ctx = conversation_repo
-        .get_chat_context(&payload.session_id, None)
-        .await
-        .map_err(to_string)?;
+    emit_local_chat_stream_status(
+        &app,
+        request_id.as_deref(),
+        &trace_id,
+        "request_received",
+        "local_regenerate_start",
+        Some(serde_json::json!({ "session_id": payload.session_id })),
+    );
 
-    let model_connection = conversation_repo
-        .resolve_chat_model(&chat_ctx)
-        .await
-        .map_err(to_string)?;
+    let execution: Result<LocalConversationRegenerateResponse, String> = async {
+        let chat_ctx = conversation_repo
+            .get_chat_context(&payload.session_id, None)
+            .await
+            .map_err(to_string)?;
 
-    let history = conversation_repo
-        .list_conversation_history(LocalConversationHistoryQuery {
+        let model_connection = conversation_repo
+            .resolve_chat_model(&chat_ctx)
+            .await
+            .map_err(to_string)?;
+
+        let history = conversation_repo
+            .list_conversation_history(LocalConversationHistoryQuery {
+                session_id: Some(payload.session_id.clone()),
+                cursor: None,
+                limit: Some(20),
+            })
+            .await
+            .map_err(to_string)?;
+
+        let mut messages: Vec<LocalChatInputMessage> = history
+            .messages
+            .into_iter()
+            .map(|m| LocalChatInputMessage {
+                role: m.role,
+                content: m.content,
+                name: None,
+            })
+            .collect();
+
+        if messages.is_empty() {
+            return Err("no message to regenerate".to_string());
+        }
+
+        if messages.last().map(|m| &m.role) == Some(&LocalConversationStatus::Assistant) {
+            messages.pop();
+        }
+
+        emit_local_chat_stream_status(
+            &app,
+            request_id.as_deref(),
+            &trace_id,
+            "model_request",
+            "local_regenerate_model_request",
+            Some(serde_json::json!({
+                "provider_model_id": model_connection.provider_model_id,
+                "model_id": model_connection.model_id,
+            })),
+        );
+
+        let response_json = run_local_chat_complete_with_auto_code_mode(
+            &app_state,
+            &model_connection,
+            messages,
+            &chat_ctx,
+        )
+        .await?;
+
+        let response_text = response_json["content"].as_str().unwrap_or("").to_string();
+        let tool_calls = extract_chat_tool_calls(&response_json);
+
+        emit_local_chat_stream_status(
+            &app,
+            request_id.as_deref(),
+            &trace_id,
+            "assistant_stream",
+            "local_regenerate_assistant_stream",
+            None,
+        );
+        emit_local_chat_stream_delta_chunks(
+            &app,
+            request_id.as_deref(),
+            &trace_id,
+            &response_text,
+        );
+        if !response_text.trim().is_empty() {
+            emit_local_chat_stream_blocks(
+                &app,
+                request_id.as_deref(),
+                &trace_id,
+                serde_json::json!([{ "type": "text", "content": response_text }]),
+            );
+        }
+
+        let assistant_message = conversation_repo
+            .save_regenerated_reply(&payload.session_id, &response_text, &tool_calls)
+            .await
+            .map_err(to_string)?;
+
+        Ok(LocalConversationRegenerateResponse {
             session_id: payload.session_id.clone(),
-            cursor: None,
-            limit: Some(20),
+            deleted_turn_index: None,
+            message: assistant_message,
         })
-        .await
-        .map_err(to_string)?;
-
-    let mut messages: Vec<LocalChatInputMessage> = history
-        .messages
-        .into_iter()
-        .map(|m| LocalChatInputMessage {
-            role: m.role,
-            content: m.content,
-            name: None,
-        })
-        .collect();
-
-    if messages.is_empty() {
-        return Err("no message to regenerate".to_string());
     }
+    .await;
 
-    if messages.last().map(|m| &m.role) == Some(&LocalConversationStatus::Assistant) {
-        messages.pop();
+    match execution {
+        Ok(response) => {
+            emit_local_chat_stream_done(&app, request_id.as_deref(), &trace_id);
+            Ok(response)
+        }
+        Err(err) => {
+            emit_local_chat_stream_error(&app, request_id.as_deref(), &trace_id, &err);
+            Err(err)
+        }
     }
-
-    let response_json = run_local_chat_complete_with_auto_code_mode(
-        &app_state,
-        &model_connection,
-        messages,
-        &chat_ctx,
-    )
-    .await?;
-
-    let response_text = response_json["content"].as_str().unwrap_or("").to_string();
-    let tool_calls = extract_chat_tool_calls(&response_json);
-
-    let assistant_message = conversation_repo
-        .save_regenerated_reply(&payload.session_id, &response_text, &tool_calls)
-        .await
-        .map_err(to_string)?;
-
-    Ok(LocalConversationRegenerateResponse {
-        session_id: payload.session_id,
-        message: assistant_message,
-    })
 }
 
 #[tauri::command]
@@ -787,6 +925,36 @@ pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Resul
     state
         .process_manager
         .stop_process(&tool_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn execute_mcp_tool_raw(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tool_name: String,
+    arguments: Value,
+) -> Result<Value, String> {
+    let mcp = &state.mcp;
+
+    // 1. Resolve tool by name
+    let tool = mcp
+        .store
+        .get_tool_by_name(&tool_name)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_name))?;
+
+    // 2. Ensure process is running or start it
+    mcp.process_manager
+        .ensure_process(app, &tool)
+        .await
+        .map_err(to_string)?;
+
+    // 3. Call tool via process manager
+    mcp.process_manager
+        .call_tool(&tool.id, &tool.name, arguments)
         .await
         .map_err(to_string)
 }
@@ -1276,6 +1444,19 @@ pub async fn list_local_gateway_logs(
 }
 
 #[tauri::command]
+pub async fn create_local_gateway_log(
+    state: State<'_, AppState>,
+    payload: LocalGatewayLogItem,
+) -> Result<(), String> {
+    let state = &state.mcp;
+    state
+        .store
+        .create_local_gateway_log(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn get_local_gateway_log_stats(
     state: State<'_, AppState>,
 ) -> Result<LocalGatewayLogStatsResponse, String> {
@@ -1292,7 +1473,7 @@ pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Resul
     let state = &app_state.mcp;
     let base_url = state.cloud_base_url.read().await.clone();
     let url = format!(
-        "{}/api/v1/skills/marketplace?limit=100",
+        "{}/api/v1/plugin-market/?limit=100",
         base_url.trim_end_matches('/')
     );
 
@@ -1510,45 +1691,79 @@ async fn run_local_chat_complete_with_auto_code_mode(
 ) -> Result<serde_json::Value, String> {
     let provider_model_id = &model_connection.provider_model_id;
     let model_id = &model_connection.model_id;
+    let mut orchestrated_messages = messages;
+    let mut last_response: Option<serde_json::Value> = None;
+    let mut last_results: Vec<String> = Vec::new();
 
-    let search_query = messages
-        .last()
-        .map(|m| &m.content)
-        .cloned()
-        .unwrap_or_default();
-    let mut tools = build_local_sdk_search_result(app_state, &search_query).await;
+    for round in 0..LOCAL_CHAT_AUTO_CODE_MODE_MAX_ROUNDS {
+        let search_query = orchestrated_messages
+            .last()
+            .map(|m| &m.content)
+            .cloned()
+            .unwrap_or_default();
+        let tools = build_local_sdk_search_result(app_state, &search_query).await;
 
-    let response = app_state
-        .providers
-        .store
-        .chat_completion(
-            provider_model_id,
-            model_id,
-            messages,
-            Some(tools),
-            None, // temperature
-            None, // max_tokens
-        )
-        .await
-        .map_err(to_string)?;
+        let response = app_state
+            .providers
+            .store
+            .chat_completion(
+                provider_model_id,
+                model_id,
+                orchestrated_messages.clone(),
+                Some(tools),
+                None, // temperature
+                None, // max_tokens
+            )
+            .await
+            .map_err(to_string)?;
 
-    let tool_calls = extract_chat_tool_calls(&response);
-    if tool_calls.is_empty() {
+        let tool_calls = extract_chat_tool_calls(&response);
+        if tool_calls.is_empty() {
+            return Ok(response);
+        }
+
+        let (synthesized, tool_call_meta, results) =
+            maybe_handle_local_code_mode_tool_calls(app_state, &response, chat_ctx).await;
+        if !synthesized {
+            return Ok(response);
+        }
+
+        let tool_feedback =
+            build_auto_code_mode_tool_feedback(round + 1, &tool_call_meta, &results);
+        let assistant_content = response
+            .get("content")
+            .and_then(|value| value.as_str())
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        if !assistant_content.is_empty() {
+            orchestrated_messages.push(LocalChatInputMessage {
+                role: "assistant".to_string(),
+                content: assistant_content,
+            });
+        }
+        orchestrated_messages.push(LocalChatInputMessage {
+            role: "user".to_string(),
+            content: tool_feedback,
+        });
+
+        last_results = results;
+        last_response = Some(response);
+    }
+
+    if let Some(mut response) = last_response {
+        let notice = build_auto_code_mode_round_limit_notice(
+            LOCAL_CHAT_AUTO_CODE_MODE_MAX_ROUNDS,
+            &last_results,
+        );
+        if let Some(content) = response.get_mut("content") {
+            *content = serde_json::json!(notice);
+        } else if let Some(obj) = response.as_object_mut() {
+            obj.insert("content".to_string(), serde_json::Value::String(notice));
+        }
         return Ok(response);
     }
 
-    let (synthesized, _tool_call_meta, results) =
-        maybe_handle_local_code_mode_tool_calls(app_state, &response, chat_ctx).await;
-
-    if synthesized {
-        let mut final_response = response.clone();
-        if let Some(content) = final_response.get_mut("content") {
-            *content = serde_json::json!(results.join("\n\n"));
-        }
-        return Ok(final_response);
-    }
-
-    Ok(response)
+    Err("local auto code mode orchestration produced no response".to_string())
 }
 
 async fn maybe_handle_local_code_mode_tool_calls(
@@ -1818,8 +2033,194 @@ fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCal
     calls
 }
 
+fn build_auto_code_mode_tool_feedback(
+    round: usize,
+    tool_call_meta: &[serde_json::Value],
+    results: &[String],
+) -> String {
+    let payload = serde_json::json!({
+        "round": round,
+        "tool_calls": tool_call_meta,
+        "results": results,
+    });
+    let serialized = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| {
+        serde_json::json!({
+            "round": round,
+            "results": results,
+        })
+        .to_string()
+    });
+    let content = format!(
+        "Auto tool execution round {} completed. Continue based on these tool results. If all tasks are complete, return the final answer.\n{}",
+        round, serialized
+    );
+    truncate_text_chars(&content, LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS)
+}
+
+fn build_auto_code_mode_round_limit_notice(max_rounds: usize, latest_results: &[String]) -> String {
+    let mut content = format!(
+        "Auto tool orchestration reached max rounds ({}). Returning latest available results.",
+        max_rounds
+    );
+    if !latest_results.is_empty() {
+        let joined = latest_results.join("\n\n");
+        content.push_str("\n\n");
+        content.push_str(&joined);
+    }
+    truncate_text_chars(&content, LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS)
+}
+
+fn truncate_text_chars(input: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    if input.chars().count() <= max_chars {
+        return input.to_string();
+    }
+    let mut out = input.chars().take(max_chars).collect::<String>();
+    out.push_str("...");
+    out
+}
+
+fn emit_local_chat_stream_payload(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    trace_id: &str,
+    payload: serde_json::Value,
+) {
+    let mut envelope = serde_json::json!({
+        "trace_id": trace_id,
+    });
+    if let Some(request_id) = request_id {
+        if !request_id.trim().is_empty() {
+            envelope["request_id"] = serde_json::json!(request_id);
+        }
+    }
+    if let (Some(target), Some(source)) = (envelope.as_object_mut(), payload.as_object()) {
+        for (key, value) in source {
+            target.insert(key.to_string(), value.clone());
+        }
+    }
+    if let Err(err) = app.emit(LOCAL_CHAT_STREAM_EVENT, envelope) {
+        warn!("failed to emit local chat stream event: {}", err);
+    }
+}
+
+fn emit_local_chat_stream_status(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    trace_id: &str,
+    stage: &str,
+    code: &str,
+    meta: Option<serde_json::Value>,
+) {
+    emit_local_chat_stream_payload(
+        app,
+        request_id,
+        trace_id,
+        serde_json::json!({
+            "type": "status",
+            "stage": stage,
+            "code": code,
+            "meta": meta,
+        }),
+    );
+}
+
+fn emit_local_chat_stream_blocks(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    trace_id: &str,
+    blocks: serde_json::Value,
+) {
+    emit_local_chat_stream_payload(
+        app,
+        request_id,
+        trace_id,
+        serde_json::json!({
+            "type": "blocks",
+            "blocks": blocks,
+        }),
+    );
+}
+
+fn emit_local_chat_stream_error(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    trace_id: &str,
+    message: &str,
+) {
+    emit_local_chat_stream_payload(
+        app,
+        request_id,
+        trace_id,
+        serde_json::json!({
+            "type": "error",
+            "code": "local_chat_failed",
+            "message": message,
+        }),
+    );
+}
+
+fn emit_local_chat_stream_done(app: &AppHandle, request_id: Option<&str>, trace_id: &str) {
+    emit_local_chat_stream_payload(
+        app,
+        request_id,
+        trace_id,
+        serde_json::json!({
+            "type": "done",
+        }),
+    );
+}
+
+fn emit_local_chat_stream_delta_chunks(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    trace_id: &str,
+    content: &str,
+) {
+    if content.is_empty() {
+        return;
+    }
+
+    let mut chunk = String::new();
+    let mut chunk_chars = 0usize;
+    for ch in content.chars() {
+        chunk.push(ch);
+        chunk_chars += 1;
+        if chunk_chars >= LOCAL_CHAT_STREAM_DELTA_CHUNK_CHARS {
+            emit_local_chat_stream_payload(
+                app,
+                request_id,
+                trace_id,
+                serde_json::json!({
+                    "type": "delta",
+                    "delta": chunk,
+                }),
+            );
+            chunk = String::new();
+            chunk_chars = 0;
+        }
+    }
+
+    if !chunk.is_empty() {
+        emit_local_chat_stream_payload(
+            app,
+            request_id,
+            trace_id,
+            serde_json::json!({
+                "type": "delta",
+                "delta": chunk,
+            }),
+        );
+    }
+}
+
 const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
 const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
+const LOCAL_CHAT_AUTO_CODE_MODE_MAX_ROUNDS: usize = 30;
+const LOCAL_CHAT_STREAM_EVENT: &str = "local-chat-stream";
+const LOCAL_CHAT_STREAM_DELTA_CHUNK_CHARS: usize = 64;
 const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
 const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
 
@@ -1847,5 +2248,24 @@ mod tests {
             calls[0].arguments.get("code").and_then(|v| v.as_str()),
             Some("print(1)")
         );
+    }
+
+    #[test]
+    fn build_auto_code_mode_tool_feedback_contains_round() {
+        let feedback = build_auto_code_mode_tool_feedback(
+            2,
+            &[serde_json::json!({"id":"call_1","status":"success"})],
+            &["ok".to_string()],
+        );
+        assert!(feedback.contains("round 2"));
+        assert!(feedback.contains("\"tool_calls\""));
+        assert!(feedback.contains("\"results\""));
+    }
+
+    #[test]
+    fn build_auto_code_mode_round_limit_notice_contains_limit() {
+        let notice = build_auto_code_mode_round_limit_notice(30, &["result".to_string()]);
+        assert!(notice.contains("30"));
+        assert!(notice.contains("result"));
     }
 }

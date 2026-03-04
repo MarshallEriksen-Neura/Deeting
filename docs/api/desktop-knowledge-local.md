@@ -1,6 +1,6 @@
 # Desktop Knowledge Local Schema (P1+)
 
-更新时间：2026-03-03
+更新时间：2026-03-04
 
 ## 范围
 - 本文档描述桌面端 SQLite 的离线知识库基础能力：`knowledge_folder`、`user_document`、`knowledge_chunk`。
@@ -131,7 +131,36 @@
   - SQLite `knowledge_chunk` 词法检索
   - LanceDB 向量检索（基于 chunk embedding）
 - 两路结果会做去重和重排后注入系统上下文（最多 4 条），供模型回答时参考。
+- 两个命令的 `payload` 现在统一携带 `session_id`，并支持可选 `request_id`（用于流式事件关联）；`send_local_conversation_message` 额外支持可选 `assistant_id`。
 - 本地向量索引采用异步维护：
   - 新建/重试文档后后台增量索引
   - 删除文档时清理对应向量条目
   - 桌面端启动时会自动重建一次 `indexed` 文档向量索引
+
+## 本地会话流式事件（Tauri Event）
+- 事件名：`local-chat-stream`
+- 发送方：`send_local_conversation_message` / `regenerate_local_conversation_reply`
+- 事件公共字段：
+  - `request_id?: string`（仅当请求携带时回传，用于前端过滤并发请求）
+  - `trace_id: string`
+  - `type: "status" | "delta" | "blocks" | "error" | "done"`
+
+### `status`
+- 字段：`stage`、`code`、`meta?`
+- 用途：驱动前端“正在准备上下文/请求模型/生成中”等中间态。
+
+### `delta`
+- 字段：`delta: string`
+- 用途：本地回答文本分片实时推送（前端可逐字拼接）。
+
+### `blocks`
+- 字段：`blocks: MessageBlock[]`
+- 用途：补充结构化 block 渲染（如文本块）。
+
+### `error`
+- 字段：`code`、`message`
+- 用途：本地链路失败时的即时反馈。
+
+### `done`
+- 字段：无额外字段
+- 用途：标记一次本地会话流式发射结束。

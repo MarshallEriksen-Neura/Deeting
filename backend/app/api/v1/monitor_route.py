@@ -413,8 +413,8 @@ async def trigger_monitor(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅 active 任务可触发")
 
     await _check_manual_trigger_cooldown(user.id, task_id)
-    execution_target = str(task.get("execution_target") or "cloud").strip().lower()
-    if execution_target in {"desktop", "desktop_preferred"}:
+    execution_target = str(task.get("execution_target") or "desktop").strip().lower()
+    if execution_target != "cloud":
         try:
             return await service.request_local_execution(task_id, user.id)
         except ValueError as e:

@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
@@ -167,6 +168,147 @@ async def test_dispatch_tool_timeout_uses_dynamic_config(monkeypatch):
 
     assert "error" in result
     assert "timed out after 0.1s" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_tool_inner_executes_skill_registry_tool(monkeypatch):
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        user_id="11111111-1111-1111-1111-111111111111",
+        session_id="sess_123",
+    )
+    ctx.set("template_render", "request_body", {"tools": []})
+    tool_call = ToolCall(
+        id="tool_1",
+        name="fetch_web_content",
+        arguments={"url": "https://example.com"},
+    )
+
+    class _FakeSessionCtx:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_by_tool_name(self, tool_name: str):
+            assert tool_name == "fetch_web_content"
+            return SimpleNamespace(id="official.skills.crawler")
+
+    captured: dict[str, object] = {}
+
+    class _FakeExecutor:
+        def __init__(self, _repo):
+            pass
+
+        async def execute(self, **kwargs):
+            captured.update(kwargs)
+            return {"status": "ok", "result": {"status": "ok"}}
+
+    monkeypatch.setattr("app.core.database.AsyncSessionLocal", lambda: _FakeSessionCtx())
+    monkeypatch.setattr(
+        "app.repositories.skill_registry_repository.SkillRegistryRepository", _FakeRepo
+    )
+    monkeypatch.setattr(
+        "app.services.skill_registry.skill_runtime_executor.SkillRuntimeExecutor",
+        _FakeExecutor,
+    )
+
+    result = await step._dispatch_tool_inner(ctx, tool_call, {})
+
+    assert result == {"status": "ok"}
+    assert captured["skill_id"] == "official.skills.crawler"
+    assert captured["session_id"] == "sess_123"
+    assert captured["intent"] == "fetch_web_content"
+    assert captured["inputs"] == {
+        "url": "https://example.com",
+        "__tool_name__": "fetch_web_content",
+    }
+
+
+@pytest.mark.asyncio
+async def test_dispatch_tool_inner_returns_skill_registry_error(monkeypatch):
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        user_id="11111111-1111-1111-1111-111111111111",
+    )
+    ctx.set("template_render", "request_body", {"tools": []})
+    tool_call = ToolCall(
+        id="tool_1",
+        name="fetch_web_content",
+        arguments={},
+    )
+
+    class _FakeSessionCtx:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_by_tool_name(self, _tool_name: str):
+            return SimpleNamespace(id="official.skills.crawler")
+
+    class _FakeExecutor:
+        def __init__(self, _repo):
+            pass
+
+        async def execute(self, **kwargs):
+            return {"status": "error", "error": "boom"}
+
+    monkeypatch.setattr("app.core.database.AsyncSessionLocal", lambda: _FakeSessionCtx())
+    monkeypatch.setattr(
+        "app.repositories.skill_registry_repository.SkillRegistryRepository", _FakeRepo
+    )
+    monkeypatch.setattr(
+        "app.services.skill_registry.skill_runtime_executor.SkillRuntimeExecutor",
+        _FakeExecutor,
+    )
+
+    result = await step._dispatch_tool_inner(ctx, tool_call, {})
+    assert result == {"error": "boom"}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_tool_inner_routes_core_sdk_tools_to_core_plugin(monkeypatch):
+    from app.services.agent.agent_service import agent_service
+
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        user_id="11111111-1111-1111-1111-111111111111",
+    )
+    ctx.set("template_render", "request_body", {"tools": []})
+    tool_call = ToolCall(
+        id="tool_core_1",
+        name="search_sdk",
+        arguments={"query": "fetch repository readme"},
+    )
+
+    class _FakeCorePlugin:
+        async def handle_search_sdk(self, query: str, __context__=None):
+            assert query == "fetch repository readme"
+            assert __context__ is ctx
+            return {"source": "core_plugin"}
+
+    monkeypatch.setattr(
+        agent_service.plugin_manager,
+        "get_plugin",
+        lambda name: _FakeCorePlugin() if name == "system.deeting_core_sdk" else None,
+    )
+
+    result = await step._dispatch_tool_inner(ctx, tool_call, {})
+    assert result == {"source": "core_plugin"}
 
 
 @pytest.mark.asyncio

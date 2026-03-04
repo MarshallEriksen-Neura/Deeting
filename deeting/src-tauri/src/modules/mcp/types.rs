@@ -1015,12 +1015,15 @@ pub struct LocalConversationClearResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalConversationSendRequest {
+    pub session_id: String,
+    pub assistant_id: Option<String>,
     pub content: String,
     pub model: String,
     pub provider_model_id: Option<String>,
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
     pub max_tokens: Option<u32>,
+    pub request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1078,6 +1081,7 @@ pub struct LocalConversationSessionsQuery {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalConversationHistoryQuery {
+    pub session_id: Option<String>,
     pub cursor: Option<i64>,
     pub limit: Option<i64>,
 }
@@ -1095,11 +1099,13 @@ pub struct CreateConversationMessageRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalConversationRegenerateRequest {
+    pub session_id: String,
     pub model: String,
     pub provider_model_id: Option<String>,
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
     pub max_tokens: Option<u32>,
+    pub request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

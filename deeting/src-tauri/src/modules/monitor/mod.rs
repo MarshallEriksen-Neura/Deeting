@@ -1,19 +1,28 @@
 pub mod commands;
+pub mod store;
 pub mod types;
 
 use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::de::DeserializeOwned;
+use log::warn;
 use serde_json::{json, Value};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
-    MonitorLocalPullResponse, MonitorLocalTaskPayload, MonitorWorkerStartRequest,
-    MonitorWorkerStatus,
+    LocalExecutionResult, LocalMonitorActionResponse, LocalMonitorCreateResponse,
+    LocalMonitorExecutionLogListResponse, LocalMonitorListQuery, LocalMonitorLogsQuery,
+    LocalMonitorStatsResponse, LocalMonitorTask, LocalMonitorTaskCreateRequest,
+    LocalMonitorTaskIdRequest, LocalMonitorTaskListResponse, LocalMonitorTaskUpdateRequest,
+    LocalMonitorTriggerResponse, LocalNotificationChannel, LocalNotificationChannelCreateRequest,
+    LocalNotificationChannelCreateResponse, LocalNotificationChannelDeleteResponse,
+    LocalNotificationChannelListResponse, LocalNotificationChannelTestRequest,
+    LocalNotificationChannelTestResponse, LocalNotificationChannelUpdateRequest,
+    LocalNotificationChannelUpdateResponse, MonitorWorkerStartRequest, MonitorWorkerStatus,
 };
 use crate::modules::providers::store::{ProviderConnection, ProviderStore};
 use crate::modules::providers::types::ProviderModel;
@@ -34,15 +43,15 @@ pub struct MonitorState {
 struct MonitorWorkerShared {
     client: reqwest::Client,
     provider_store: Arc<ProviderStore>,
-    cloud_base_url: Arc<RwLock<String>>,
+    store: Arc<MonitorStore>,
     worker_task: Mutex<Option<JoinHandle<()>>>,
+    tick_lock: Mutex<()>,
     config: RwLock<WorkerConfig>,
     runtime: RwLock<WorkerRuntime>,
 }
 
 #[derive(Debug, Clone)]
 struct WorkerConfig {
-    access_token: String,
     agent_id: String,
     poll_interval_seconds: u64,
     pull_limit: u32,
@@ -55,51 +64,40 @@ struct WorkerRuntime {
     last_claimed: i64,
 }
 
-#[derive(Debug, Clone)]
-struct LocalExecutionResult {
-    is_significant_change: bool,
-    change_summary: String,
-    new_snapshot: Value,
-    tokens_used: i64,
-    model_id: String,
-}
-
 impl MonitorState {
-    pub fn new(cloud_base_url: Arc<RwLock<String>>, provider_store: Arc<ProviderStore>) -> Self {
+    pub async fn new(
+        database_url: &str,
+        provider_store: Arc<ProviderStore>,
+    ) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         let config = WorkerConfig {
-            access_token: String::new(),
             agent_id: make_default_agent_id(),
             poll_interval_seconds: DEFAULT_MONITOR_POLL_INTERVAL_SECONDS,
             pull_limit: DEFAULT_MONITOR_PULL_LIMIT,
         };
-        Self {
+        let store = Arc::new(MonitorStore::new(database_url).await?);
+        Ok(Self {
             shared: Arc::new(MonitorWorkerShared {
                 client,
                 provider_store,
-                cloud_base_url,
+                store,
                 worker_task: Mutex::new(None),
+                tick_lock: Mutex::new(()),
                 config: RwLock::new(config),
                 runtime: RwLock::new(WorkerRuntime::default()),
             }),
-        }
+        })
     }
 
     pub async fn start_worker(
         &self,
         payload: MonitorWorkerStartRequest,
     ) -> Result<MonitorWorkerStatus, String> {
-        let token = payload.access_token.trim().to_string();
-        if token.is_empty() {
-            return Err("access_token 不能为空".to_string());
-        }
-
         {
             let mut config = self.shared.config.write().await;
-            config.access_token = token;
             config.poll_interval_seconds = normalize_poll_interval(
                 payload
                     .poll_interval_seconds
@@ -114,6 +112,7 @@ impl MonitorState {
             {
                 config.agent_id = agent_id;
             }
+            let _ = payload.access_token;
         }
 
         let mut worker_task_guard = self.shared.worker_task.lock().await;
@@ -135,10 +134,6 @@ impl MonitorState {
             let _ = handle.await;
         }
         drop(worker_task_guard);
-        {
-            let mut config = self.shared.config.write().await;
-            config.access_token.clear();
-        }
         self.get_status().await
     }
 
@@ -162,6 +157,281 @@ impl MonitorState {
         })
     }
 
+    pub async fn list_tasks(
+        &self,
+        query: LocalMonitorListQuery,
+    ) -> Result<LocalMonitorTaskListResponse, String> {
+        self.shared
+            .store
+            .list_tasks(
+                query.skip.unwrap_or(0),
+                query.limit.unwrap_or(100),
+                query.status.as_deref(),
+            )
+            .await
+    }
+
+    pub async fn get_task(&self, task_id: String) -> Result<LocalMonitorTask, String> {
+        self.shared
+            .store
+            .get_task(task_id.as_str())
+            .await?
+            .ok_or_else(|| "任务不存在".to_string())
+    }
+
+    pub async fn create_task(
+        &self,
+        payload: LocalMonitorTaskCreateRequest,
+    ) -> Result<LocalMonitorCreateResponse, String> {
+        let task = self.shared.store.create_task(payload).await?;
+        Ok(LocalMonitorCreateResponse {
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            message: "任务创建成功（本地执行）".to_string(),
+            assistant_id: task.assistant_id,
+            execution_target: task.execution_target,
+        })
+    }
+
+    pub async fn update_task(
+        &self,
+        task_id: String,
+        payload: LocalMonitorTaskUpdateRequest,
+    ) -> Result<LocalMonitorTask, String> {
+        self.shared
+            .store
+            .update_task(task_id.as_str(), payload)
+            .await
+    }
+
+    pub async fn pause_task(
+        &self,
+        payload: LocalMonitorTaskIdRequest,
+    ) -> Result<LocalMonitorActionResponse, String> {
+        let task = self
+            .shared
+            .store
+            .pause_task(payload.task_id.as_str())
+            .await?;
+        let Some(task) = task else {
+            return Err("任务不存在".to_string());
+        };
+        Ok(LocalMonitorActionResponse {
+            id: task.id,
+            status: Some("paused".to_string()),
+            message: "任务已暂停".to_string(),
+        })
+    }
+
+    pub async fn resume_task(
+        &self,
+        payload: LocalMonitorTaskIdRequest,
+    ) -> Result<LocalMonitorActionResponse, String> {
+        let task = self
+            .shared
+            .store
+            .resume_task(payload.task_id.as_str())
+            .await?;
+        let Some(task) = task else {
+            return Err("任务不存在".to_string());
+        };
+        Ok(LocalMonitorActionResponse {
+            id: task.id,
+            status: Some("active".to_string()),
+            message: "任务已恢复".to_string(),
+        })
+    }
+
+    pub async fn trigger_task(
+        &self,
+        payload: LocalMonitorTaskIdRequest,
+    ) -> Result<LocalMonitorTriggerResponse, String> {
+        let task = self
+            .shared
+            .store
+            .trigger_task(payload.task_id.as_str())
+            .await?;
+        let Some(task) = task else {
+            return Err("仅 active 任务可触发".to_string());
+        };
+        let state = self.clone();
+        tokio::spawn(async move {
+            let _ = state.process_tick().await;
+        });
+        Ok(LocalMonitorTriggerResponse {
+            task_id: task.id,
+            message: "已提交本地执行".to_string(),
+        })
+    }
+
+    pub async fn delete_task(
+        &self,
+        payload: LocalMonitorTaskIdRequest,
+    ) -> Result<LocalMonitorActionResponse, String> {
+        let deleted = self
+            .shared
+            .store
+            .delete_task(payload.task_id.as_str())
+            .await?;
+        if !deleted {
+            return Err("任务不存在".to_string());
+        }
+        Ok(LocalMonitorActionResponse {
+            id: payload.task_id,
+            status: None,
+            message: "任务已删除".to_string(),
+        })
+    }
+
+    pub async fn get_stats(&self) -> Result<LocalMonitorStatsResponse, String> {
+        self.shared.store.get_stats().await
+    }
+
+    pub async fn list_logs(
+        &self,
+        query: LocalMonitorLogsQuery,
+    ) -> Result<LocalMonitorExecutionLogListResponse, String> {
+        self.shared
+            .store
+            .list_logs(
+                query.task_id.as_str(),
+                query.skip.unwrap_or(0),
+                query.limit.unwrap_or(50),
+            )
+            .await
+    }
+
+    pub async fn submit_feedback(
+        &self,
+        task_id: String,
+        log_id: String,
+        score: f64,
+    ) -> Result<(), String> {
+        self.shared
+            .store
+            .submit_feedback(task_id.as_str(), log_id.as_str(), score)
+            .await
+    }
+
+    pub async fn list_notification_channels(
+        &self,
+    ) -> Result<LocalNotificationChannelListResponse, String> {
+        self.shared.store.list_notification_channels().await
+    }
+
+    pub async fn get_notification_channel(
+        &self,
+        channel_id: String,
+    ) -> Result<LocalNotificationChannel, String> {
+        self.shared
+            .store
+            .get_notification_channel(channel_id.as_str())
+            .await?
+            .ok_or_else(|| "通知渠道不存在".to_string())
+    }
+
+    pub async fn create_notification_channel(
+        &self,
+        payload: LocalNotificationChannelCreateRequest,
+    ) -> Result<LocalNotificationChannelCreateResponse, String> {
+        let channel = self
+            .shared
+            .store
+            .create_notification_channel(payload)
+            .await?;
+        Ok(LocalNotificationChannelCreateResponse {
+            id: channel.id,
+            channel: channel.channel,
+            message: "通知渠道创建成功".to_string(),
+        })
+    }
+
+    pub async fn update_notification_channel(
+        &self,
+        channel_id: String,
+        payload: LocalNotificationChannelUpdateRequest,
+    ) -> Result<LocalNotificationChannelUpdateResponse, String> {
+        let updated = self
+            .shared
+            .store
+            .update_notification_channel(channel_id.as_str(), payload)
+            .await?;
+        if updated.is_none() {
+            return Err("通知渠道不存在".to_string());
+        }
+        Ok(LocalNotificationChannelUpdateResponse {
+            id: channel_id,
+            message: "通知渠道更新成功".to_string(),
+        })
+    }
+
+    pub async fn delete_notification_channel(
+        &self,
+        channel_id: String,
+    ) -> Result<LocalNotificationChannelDeleteResponse, String> {
+        let deleted = self
+            .shared
+            .store
+            .delete_notification_channel(channel_id.as_str())
+            .await?;
+        if !deleted {
+            return Err("通知渠道不存在".to_string());
+        }
+        Ok(LocalNotificationChannelDeleteResponse {
+            message: "通知渠道已删除".to_string(),
+        })
+    }
+
+    pub async fn test_notification_channel(
+        &self,
+        payload: LocalNotificationChannelTestRequest,
+    ) -> Result<LocalNotificationChannelTestResponse, String> {
+        let channel = payload.channel.trim().to_lowercase();
+        if !is_supported_notification_channel(channel.as_str()) {
+            return Err("不支持的通知渠道类型".to_string());
+        }
+        if !payload.config.is_object() {
+            return Err("config 必须是 object".to_string());
+        }
+
+        let test_channel = LocalNotificationChannel {
+            id: "local-test".to_string(),
+            user_id: "local".to_string(),
+            channel: channel.clone(),
+            config: payload.config,
+            display_name: Some("本地测试渠道".to_string()),
+            is_active: true,
+            priority: 0,
+            last_used_at: None,
+            created_at: now_rfc3339(),
+            updated_at: now_rfc3339(),
+        };
+        let title = "🧪 Deeting 本地通知测试";
+        let content = "如果你收到此消息，说明桌面端本地通知链路可用。";
+        let payload = json!({
+            "type": "monitor_channel_test",
+            "source": "desktop_local",
+            "sent_at": now_rfc3339(),
+        });
+
+        match self
+            .send_notification_to_channel(&test_channel, title, content, &payload)
+            .await
+        {
+            Ok(message) => Ok(LocalNotificationChannelTestResponse {
+                success: true,
+                channel,
+                message: Some(message),
+            }),
+            Err(err) => Ok(LocalNotificationChannelTestResponse {
+                success: false,
+                channel,
+                message: Some(err),
+            }),
+        }
+    }
+
     async fn worker_loop(&self) {
         loop {
             let delay_seconds = {
@@ -177,45 +447,24 @@ impl MonitorState {
     }
 
     async fn process_tick(&self) -> Result<(), String> {
+        let _tick_guard = self.shared.tick_lock.lock().await;
         let config = self.shared.config.read().await.clone();
-        if config.access_token.trim().is_empty() {
-            return Err("monitor worker 缺少 access_token".to_string());
-        }
-
-        let base_url = {
-            let raw = self.shared.cloud_base_url.read().await;
-            raw.trim().trim_end_matches('/').to_string()
-        };
-        if base_url.is_empty() {
-            return Err("monitor worker 缺少 cloud base url".to_string());
-        }
-
-        let heartbeat_url = build_cloud_url(&base_url, "/api/v1/monitors/local/heartbeat");
-        let heartbeat_body = json!({ "agent_id": config.agent_id });
-        let _: Value = self
-            .post_json(&heartbeat_url, &config.access_token, heartbeat_body)
+        let tasks = self
+            .shared
+            .store
+            .list_due_tasks(config.pull_limit as i64)
             .await?;
-
-        let pull_url = build_cloud_url(&base_url, "/api/v1/monitors/local/pull");
-        let pull_body = json!({
-            "agent_id": config.agent_id,
-            "limit": config.pull_limit,
-        });
-        let pull_resp: MonitorLocalPullResponse = self
-            .post_json(&pull_url, &config.access_token, pull_body)
-            .await?;
-
         let mut task_errors = Vec::new();
-        for task in &pull_resp.items {
-            if let Err(err) = self.process_single_task(&base_url, &config, task).await {
-                task_errors.push(format!("task={} err={}", task.task_id, err));
+        for task in &tasks {
+            if let Err(err) = self.process_single_task(task).await {
+                task_errors.push(format!("task={} err={}", task.id, err));
             }
         }
 
         {
             let mut runtime = self.shared.runtime.write().await;
             runtime.last_tick_at = Some(now_rfc3339());
-            runtime.last_claimed = pull_resp.claimed.max(0);
+            runtime.last_claimed = tasks.len() as i64;
             if task_errors.is_empty() {
                 runtime.last_error = None;
             } else {
@@ -229,29 +478,68 @@ impl MonitorState {
         Err(task_errors.join("; "))
     }
 
-    async fn process_single_task(
-        &self,
-        base_url: &str,
-        config: &WorkerConfig,
-        task: &MonitorLocalTaskPayload,
-    ) -> Result<(), String> {
+    async fn process_single_task(&self, task: &LocalMonitorTask) -> Result<(), String> {
         match self.execute_task_local(task).await {
-            Ok(result) => self
-                .report_success(base_url, config, task, result)
-                .await
-                .map_err(|err| format!("report_success_failed: {}", err)),
-            Err(err) => self
-                .report_failure(base_url, config, task, &err)
-                .await
-                .map_err(|report_err| {
-                    format!("report_failure_failed: {} (origin: {})", report_err, err)
-                }),
+            Ok(result) => {
+                self.shared
+                    .store
+                    .record_execution_success(task, &result)
+                    .await
+                    .map_err(|err| format!("record_success_failed: {}", err))?;
+
+                let force_notify = task
+                    .notify_config
+                    .get("force_notify")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if result.is_significant_change || force_notify {
+                    if let Err(err) = self.dispatch_change_notification(task, &result).await {
+                        warn!(
+                            "monitor_local_notification_failed task_id={} err={}",
+                            task.id, err
+                        );
+                    }
+                }
+                Ok(())
+            }
+            Err(err) => {
+                self.shared
+                    .store
+                    .record_execution_failure(task, &err)
+                    .await
+                    .map_err(|report_err| {
+                        format!("record_failure_failed: {} (origin: {})", report_err, err)
+                    })?;
+
+                if let Some(updated) =
+                    self.shared
+                        .store
+                        .get_task(task.id.as_str())
+                        .await
+                        .map_err(|query_err| {
+                            format!("query_task_after_failure_failed: {}", query_err)
+                        })?
+                {
+                    if updated.status == "failed_suspended" {
+                        if let Err(notify_err) = self
+                            .dispatch_suspended_notification(&updated, err.as_str())
+                            .await
+                        {
+                            warn!(
+                                "monitor_local_suspend_notification_failed task_id={} err={}",
+                                updated.id, notify_err
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            }
         }
     }
 
     async fn execute_task_local(
         &self,
-        task: &MonitorLocalTaskPayload,
+        task: &LocalMonitorTask,
     ) -> Result<LocalExecutionResult, String> {
         let (model, connection) = self.resolve_execution_model(task).await?;
         let prompt = build_monitor_prompt(task);
@@ -270,7 +558,7 @@ impl MonitorState {
 
     async fn resolve_execution_model(
         &self,
-        task: &MonitorLocalTaskPayload,
+        task: &LocalMonitorTask,
     ) -> Result<(ProviderModel, ProviderConnection), String> {
         let mut active_models = self
             .shared
@@ -364,86 +652,317 @@ impl MonitorState {
         Ok((content, tokens))
     }
 
-    async fn report_success(
+    async fn dispatch_change_notification(
         &self,
-        base_url: &str,
-        config: &WorkerConfig,
-        task: &MonitorLocalTaskPayload,
-        result: LocalExecutionResult,
+        task: &LocalMonitorTask,
+        result: &LocalExecutionResult,
     ) -> Result<(), String> {
-        let url = build_cloud_url(
-            base_url,
-            &format!("/api/v1/monitors/local/{}/report", task.task_id),
-        );
-        let body = json!({
-            "agent_id": config.agent_id,
+        let title = format!("🔔 监控提醒: {}", task.title.trim());
+        let summary = if result.change_summary.trim().is_empty() {
+            "### 研判结论\n检测到显著变化。".to_string()
+        } else {
+            truncate(result.change_summary.as_str(), SUMMARY_MAX_CHARS)
+        };
+        let payload = json!({
+            "type": "monitor_change",
+            "task_id": task.id,
+            "task_title": task.title,
             "status": "success",
             "is_significant_change": result.is_significant_change,
-            "change_summary": result.change_summary,
-            "new_snapshot": result.new_snapshot,
+            "summary": summary,
+            "snapshot": result.new_snapshot,
             "tokens_used": result.tokens_used,
-            "force_notify": false,
             "model_id": result.model_id,
-            "strategy": "desktop_local_worker",
+            "sent_at": now_rfc3339(),
         });
-        let _: Value = self.post_json(&url, &config.access_token, body).await?;
-        Ok(())
+        self.dispatch_notification(task, title.as_str(), summary.as_str(), &payload)
+            .await
     }
 
-    async fn report_failure(
+    async fn dispatch_suspended_notification(
         &self,
-        base_url: &str,
-        config: &WorkerConfig,
-        task: &MonitorLocalTaskPayload,
+        task: &LocalMonitorTask,
         error_message: &str,
     ) -> Result<(), String> {
-        let url = build_cloud_url(
-            base_url,
-            &format!("/api/v1/monitors/local/{}/report", task.task_id),
+        let title = format!("⚠️ 任务熔断: {}", task.title.trim());
+        let summary = format!(
+            "### 任务已自动挂起\n连续失败次数已超阈值，请检查任务配置。\n\n最近错误：{}",
+            truncate(error_message, 600)
         );
-        let body = json!({
-            "agent_id": config.agent_id,
-            "status": "failure",
-            "is_significant_change": false,
-            "change_summary": "",
-            "new_snapshot": {},
-            "tokens_used": 0,
-            "error_message": truncate(error_message, 1900),
-            "force_notify": false,
-            "model_id": task.model_id.clone().unwrap_or_default(),
-            "strategy": "desktop_local_worker",
+        let payload = json!({
+            "type": "monitor_suspended",
+            "task_id": task.id,
+            "task_title": task.title,
+            "status": "failed_suspended",
+            "error_message": truncate(error_message, 1200),
+            "sent_at": now_rfc3339(),
         });
-        let _: Value = self.post_json(&url, &config.access_token, body).await?;
-        Ok(())
+        self.dispatch_notification(task, title.as_str(), summary.as_str(), &payload)
+            .await
     }
 
-    async fn post_json<T: DeserializeOwned>(
+    async fn dispatch_notification(
         &self,
-        url: &str,
-        access_token: &str,
-        body: Value,
-    ) -> Result<T, String> {
+        task: &LocalMonitorTask,
+        title: &str,
+        content: &str,
+        payload: &Value,
+    ) -> Result<(), String> {
+        let channel_ids = extract_notify_channel_ids(&task.notify_config);
+        let (channels, stop_on_success) = if channel_ids.is_empty() {
+            (
+                self.shared
+                    .store
+                    .list_active_notification_channels()
+                    .await?,
+                true,
+            )
+        } else {
+            (
+                self.shared
+                    .store
+                    .list_active_notification_channels_by_ids(&channel_ids)
+                    .await?,
+                false,
+            )
+        };
+        if channels.is_empty() {
+            return Ok(());
+        }
+
+        let mut sent = 0_i64;
+        let mut failures = Vec::new();
+        for channel in channels {
+            match self
+                .send_notification_to_channel(&channel, title, content, payload)
+                .await
+            {
+                Ok(_) => {
+                    sent += 1;
+                    if let Err(err) = self
+                        .shared
+                        .store
+                        .touch_notification_channel(&channel.id)
+                        .await
+                    {
+                        warn!(
+                            "touch_local_notification_channel_failed channel_id={} err={}",
+                            channel.id, err
+                        );
+                    }
+                    if stop_on_success {
+                        break;
+                    }
+                }
+                Err(err) => failures.push(format!("{}:{} -> {}", channel.channel, channel.id, err)),
+            }
+        }
+
+        if sent > 0 {
+            return Ok(());
+        }
+        if failures.is_empty() {
+            return Err("无可用通知渠道".to_string());
+        }
+        Err(failures.join("; "))
+    }
+
+    async fn send_notification_to_channel(
+        &self,
+        channel: &LocalNotificationChannel,
+        title: &str,
+        content: &str,
+        payload: &Value,
+    ) -> Result<String, String> {
+        let channel_kind = channel.channel.trim().to_lowercase();
+        if !is_supported_notification_channel(channel_kind.as_str()) {
+            return Err("不支持的通知渠道类型".to_string());
+        }
+
+        match channel_kind.as_str() {
+            "feishu" => {
+                self.send_feishu_notification(channel, title, content, payload)
+                    .await
+            }
+            "dingtalk" => {
+                self.send_dingtalk_notification(channel, title, content, payload)
+                    .await
+            }
+            "webhook" => {
+                self.send_webhook_notification(channel, title, content, payload)
+                    .await
+            }
+            "telegram" => {
+                self.send_telegram_notification(channel, title, content, payload)
+                    .await
+            }
+            "email" => Err("桌面端暂不支持 email 通知渠道".to_string()),
+            _ => Err("不支持的通知渠道类型".to_string()),
+        }
+    }
+
+    async fn send_feishu_notification(
+        &self,
+        channel: &LocalNotificationChannel,
+        title: &str,
+        content: &str,
+        payload: &Value,
+    ) -> Result<String, String> {
+        let webhook_url = config_string(&channel.config, "webhook_url")
+            .ok_or_else(|| "缺少 webhook_url".to_string())?;
+        let text = format!("{}\n\n{}", title, content);
+        let body = json!({
+            "msg_type": "text",
+            "content": { "text": truncate(text.as_str(), 4000) },
+            "meta": payload,
+        });
         let response = self
             .shared
             .client
-            .post(url)
-            .bearer_auth(access_token)
+            .post(webhook_url.as_str())
             .json(&body)
             .send()
             .await
             .map_err(|err| format!("请求失败: {}", err))?;
-
         let status = response.status();
-        let raw_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| String::from("failed to read response body"));
+        let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
         if !status.is_success() {
-            let detail = truncate(&raw_text, 400);
-            return Err(format!("http {}: {}", status.as_u16(), detail));
+            return Err(format!("HTTP {}", status.as_u16()));
         }
-        serde_json::from_str::<T>(&raw_text)
-            .map_err(|err| format!("解析响应失败: {} body={}", err, truncate(&raw_text, 300)))
+        if body_json.get("code").and_then(Value::as_i64).unwrap_or(0) != 0 {
+            let msg = body_json
+                .get("msg")
+                .or_else(|| body_json.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("feishu error");
+            return Err(msg.to_string());
+        }
+        Ok("发送成功".to_string())
+    }
+
+    async fn send_dingtalk_notification(
+        &self,
+        channel: &LocalNotificationChannel,
+        title: &str,
+        content: &str,
+        payload: &Value,
+    ) -> Result<String, String> {
+        let webhook_url = config_string(&channel.config, "webhook_url")
+            .ok_or_else(|| "缺少 webhook_url".to_string())?;
+        let text = format!("{}\n\n{}\n\n{}", title, content, payload);
+        let body = json!({
+            "msgtype": "text",
+            "text": { "content": truncate(text.as_str(), 4000) },
+        });
+        let response = self
+            .shared
+            .client
+            .post(webhook_url.as_str())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| format!("请求失败: {}", err))?;
+        let status = response.status();
+        let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
+        if !status.is_success() {
+            return Err(format!("HTTP {}", status.as_u16()));
+        }
+        if body_json
+            .get("errcode")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            != 0
+        {
+            let msg = body_json
+                .get("errmsg")
+                .or_else(|| body_json.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("dingtalk error");
+            return Err(msg.to_string());
+        }
+        Ok("发送成功".to_string())
+    }
+
+    async fn send_webhook_notification(
+        &self,
+        channel: &LocalNotificationChannel,
+        title: &str,
+        content: &str,
+        payload: &Value,
+    ) -> Result<String, String> {
+        let webhook_url = config_string(&channel.config, "webhook_url")
+            .ok_or_else(|| "缺少 webhook_url".to_string())?;
+        let method = config_string(&channel.config, "method")
+            .unwrap_or_else(|| "POST".to_string())
+            .to_uppercase();
+        let parsed_method = method
+            .parse::<reqwest::Method>()
+            .map_err(|_| "method 非法".to_string())?;
+        let body = json!({
+            "title": title,
+            "content": content,
+            "payload": payload,
+            "sent_at": now_rfc3339(),
+        });
+        let response = self
+            .shared
+            .client
+            .request(parsed_method, webhook_url.as_str())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| format!("请求失败: {}", err))?;
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status().as_u16()));
+        }
+        Ok("发送成功".to_string())
+    }
+
+    async fn send_telegram_notification(
+        &self,
+        channel: &LocalNotificationChannel,
+        title: &str,
+        content: &str,
+        payload: &Value,
+    ) -> Result<String, String> {
+        let bot_token = config_string(&channel.config, "bot_token")
+            .ok_or_else(|| "缺少 bot_token".to_string())?;
+        let chat_id =
+            config_string(&channel.config, "chat_id").ok_or_else(|| "缺少 chat_id".to_string())?;
+        let endpoint = format!(
+            "https://api.telegram.org/bot{}/sendMessage",
+            bot_token.trim()
+        );
+        let text = format!("{}\n\n{}\n\n{}", title, content, payload);
+        let response = self
+            .shared
+            .client
+            .post(endpoint.as_str())
+            .json(&json!({
+                "chat_id": chat_id,
+                "text": truncate(text.as_str(), 4000),
+                "disable_web_page_preview": true,
+            }))
+            .send()
+            .await
+            .map_err(|err| format!("请求失败: {}", err))?;
+        let status = response.status();
+        let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
+        if !status.is_success() {
+            return Err(format!("HTTP {}", status.as_u16()));
+        }
+        if !body_json
+            .get("ok")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            let msg = body_json
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("telegram error");
+            return Err(msg.to_string());
+        }
+        Ok("发送成功".to_string())
     }
 }
 
@@ -459,12 +978,6 @@ fn normalize_pull_limit(value: u32) -> u32 {
 
 fn make_default_agent_id() -> String {
     format!("desktop-{}", Uuid::new_v4().simple())
-}
-
-fn build_cloud_url(base_url: &str, path: &str) -> String {
-    let base = base_url.trim().trim_end_matches('/');
-    let route = path.trim().trim_start_matches('/');
-    format!("{base}/{route}")
 }
 
 fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
@@ -531,12 +1044,13 @@ fn matches_model_reference(model: &ProviderModel, normalized_reference: &str) ->
     false
 }
 
-fn build_monitor_prompt(task: &MonitorLocalTaskPayload) -> String {
-    let snapshot = if task.last_snapshot.is_object() {
-        task.last_snapshot.to_string()
-    } else {
-        "{}".to_string()
-    };
+fn build_monitor_prompt(task: &LocalMonitorTask) -> String {
+    let snapshot = task
+        .last_snapshot
+        .as_ref()
+        .filter(|value| value.is_object())
+        .map(Value::to_string)
+        .unwrap_or_else(|| "{}".to_string());
     let tools = if task.allowed_tools.is_empty() {
         "未限制".to_string()
     } else {
@@ -689,6 +1203,42 @@ fn extract_error_message(value: &Value) -> Option<String> {
                 .map(|message| message.trim().to_string())
                 .filter(|message| !message.is_empty())
         })
+}
+
+fn extract_notify_channel_ids(notify_config: &Value) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let Some(items) = notify_config.get("channel_ids").and_then(Value::as_array) else {
+        return result;
+    };
+    for raw in items {
+        let Some(id) = raw.as_str() else {
+            continue;
+        };
+        let normalized = id.trim().to_string();
+        if normalized.is_empty() {
+            continue;
+        }
+        if seen.insert(normalized.clone()) {
+            result.push(normalized);
+        }
+    }
+    result
+}
+
+fn config_string(config: &Value, key: &str) -> Option<String> {
+    config
+        .get(key)
+        .and_then(Value::as_str)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn is_supported_notification_channel(value: &str) -> bool {
+    matches!(
+        value,
+        "feishu" | "dingtalk" | "telegram" | "email" | "webhook"
+    )
 }
 
 fn truncate(input: &str, max_chars: usize) -> String {

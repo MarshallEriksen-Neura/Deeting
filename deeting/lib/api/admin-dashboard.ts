@@ -1465,6 +1465,35 @@ const EmbeddingSettingSchema = z.object({
 
 export type AdminEmbeddingSetting = z.infer<typeof EmbeddingSettingSchema>
 
+const INTERNAL_ADMIN_BASE = "/api/v1/internal/admin"
+
+/**
+ * Provider Preset Wishes (Internal)
+ */
+export async function fetchProviderWishes(params?: {
+  status?: string
+  limit?: number
+}) {
+  return request<any[]>({
+    url: `${INTERNAL_ADMIN_BASE}/provider-presets/wishes`,
+    method: "GET",
+    params,
+  })
+}
+
+export async function createProviderWish(payload: {
+  provider_name: string
+  model_names?: string[]
+  reason?: string
+  priority?: number
+}) {
+  return request<any>({
+    url: `${INTERNAL_ADMIN_BASE}/provider-presets/wishes`,
+    method: "POST",
+    data: payload,
+  })
+}
+
 export async function fetchAdminEmbeddingSetting() {
   const data = await request<unknown>({
     url: `${ADMIN_BASE}/settings/embedding`,

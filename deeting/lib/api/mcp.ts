@@ -240,3 +240,40 @@ export async function testMcpTool(payload: McpToolTestRequest): Promise<McpToolT
   })
   return McpToolTestResponseSchema.parse(data)
 }
+
+/**
+ * MCP Market APIs
+ */
+export async function fetchMcpMarketTools(params?: {
+  query?: string
+  trust_level?: string
+  limit?: number
+}) {
+  return request<any[]>({
+    url: `${MCP_BASE}/market-tools`,
+    method: "GET",
+    params,
+  })
+}
+
+export async function fetchMcpMarketTool(identifier: string) {
+  return request<any>({
+    url: `${MCP_BASE}/market-tools/${encodeURIComponent(identifier)}`,
+    method: "GET",
+  })
+}
+
+export async function subscribeMcpMarketTool(identifier: string) {
+  return request<{ ok: boolean; source_id: string }>({
+    url: `${MCP_BASE}/subscriptions`,
+    method: "POST",
+    data: { identifier },
+  })
+}
+
+export async function unsubscribeMcpMarketTool(identifier: string) {
+  return request<{ ok: boolean }>({
+    url: `${MCP_BASE}/subscriptions/${encodeURIComponent(identifier)}`,
+    method: "DELETE",
+  })
+}

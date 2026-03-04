@@ -307,10 +307,22 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
     if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") {
       return
     }
-    if (!enabled || !isAuthenticated) {
+    if (!enabled) {
       void stopLocalMonitorWorker().catch(() => null)
     }
-  }, [enabled, isAuthenticated])
+  }, [enabled])
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") {
+      return
+    }
+    if (!enabled) {
+      return
+    }
+    void startLocalMonitorWorker({}).catch((error) => {
+      console.warn("[monitor-worker] start failed", error)
+    })
+  }, [enabled])
 
   useEffect(() => {
     if (!enabled || !isAuthenticated) return undefined

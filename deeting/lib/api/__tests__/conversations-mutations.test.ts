@@ -6,6 +6,7 @@ import {
 } from "@/lib/api/conversations"
 import { request } from "@/lib/http"
 import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
 
 jest.mock("@/lib/http", () => ({
   request: jest.fn(),
@@ -13,9 +14,13 @@ jest.mock("@/lib/http", () => ({
 jest.mock("@tauri-apps/api/core", () => ({
   invoke: jest.fn(),
 }))
+jest.mock("@tauri-apps/api/event", () => ({
+  listen: jest.fn(),
+}))
 
 const mockRequest = request as jest.MockedFunction<typeof request>
 const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
+const mockListen = listen as jest.MockedFunction<typeof listen>
 const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
 const windowWithTauri = window as Window & {
   __TAURI__?: unknown
@@ -26,6 +31,7 @@ describe("conversation mutation apis", () => {
   afterEach(() => {
     mockRequest.mockReset()
     mockInvoke.mockReset()
+    mockListen.mockReset()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
     delete windowWithTauri.__TAURI__
     delete windowWithTauri.__TAURI_INTERNALS__
@@ -152,14 +158,16 @@ describe("conversation mutation apis", () => {
       },
     })
     expect(mockInvoke).toHaveBeenCalledWith("send_local_conversation_message", {
-      session_id: "session-local-1",
       payload: {
+        session_id: "session-local-1",
+        assistant_id: null,
         content: "hello",
         model: "gpt-4o",
         provider_model_id: "provider-model-id",
         temperature: 0.7,
         top_p: 0.9,
         max_tokens: 256,
+        request_id: null,
       },
     })
   })
@@ -174,5 +182,105 @@ describe("conversation mutation apis", () => {
       })
     ).rejects.toThrow("sendConversationMessage is only supported in Tauri runtime")
     expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it("streams local send events with request_id filter and auto unlisten", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    const unlisten = jest.fn()
+    let eventHandler: ((event: { payload: unknown }) => void) | null = null
+    mockListen.mockImplementation(async (_name, handler) => {
+      eventHandler = handler as (event: { payload: unknown }) => void
+      return unlisten
+    })
+
+    mockInvoke.mockImplementation(async () => {
+      eventHandler?.({
+        payload: { request_id: "req-send-1", type: "status", stage: "model_request" },
+      })
+      eventHandler?.({
+        payload: { request_id: "another-request", type: "status", stage: "ignored" },
+      })
+      eventHandler?.({
+        payload: { request_id: "req-send-1", type: "delta", delta: "hello" },
+      })
+      return {
+        session_id: "session-local-stream",
+        user_message: { role: "user", content: "hello", turn_index: 1 },
+        assistant_message: { role: "assistant", content: "hello", turn_index: 2 },
+      } as unknown
+    })
+
+    const events: Array<Record<string, unknown>> = []
+    const result = await sendConversationMessage(
+      "session-local-stream",
+      {
+        content: "hello",
+        model: "gpt-4o",
+        request_id: "req-send-1",
+      },
+      {
+        onStreamEvent: (event) => {
+          events.push(event as Record<string, unknown>)
+        },
+      }
+    )
+
+    expect(result.session_id).toBe("session-local-stream")
+    expect(mockListen).toHaveBeenCalledWith("local-chat-stream", expect.any(Function))
+    expect(events).toEqual([
+      { request_id: "req-send-1", type: "status", stage: "model_request" },
+      { request_id: "req-send-1", type: "delta", delta: "hello" },
+    ])
+    expect(unlisten).toHaveBeenCalledTimes(1)
+  })
+
+  it("streams local regenerate events with request_id filter and auto unlisten", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    const unlisten = jest.fn()
+    let eventHandler: ((event: { payload: unknown }) => void) | null = null
+    mockListen.mockImplementation(async (_name, handler) => {
+      eventHandler = handler as (event: { payload: unknown }) => void
+      return unlisten
+    })
+
+    mockInvoke.mockImplementation(async () => {
+      eventHandler?.({
+        payload: { request_id: "req-regen-1", type: "status", stage: "model_request" },
+      })
+      eventHandler?.({
+        payload: { request_id: "req-regen-1", type: "done" },
+      })
+      return {
+        session_id: "session-local-regen",
+        deleted_turn_index: 2,
+        message: { role: "assistant", content: "new", turn_index: 3 },
+      } as unknown
+    })
+
+    const events: Array<Record<string, unknown>> = []
+    const result = await regenerateConversationReply(
+      "session-local-regen",
+      {
+        model: "gpt-4o",
+        request_id: "req-regen-1",
+      },
+      {
+        onStreamEvent: (event) => {
+          events.push(event as Record<string, unknown>)
+        },
+      }
+    )
+
+    expect(result.session_id).toBe("session-local-regen")
+    expect(mockListen).toHaveBeenCalledWith("local-chat-stream", expect.any(Function))
+    expect(events).toEqual([
+      { request_id: "req-regen-1", type: "status", stage: "model_request" },
+      { request_id: "req-regen-1", type: "done" },
+    ])
+    expect(unlisten).toHaveBeenCalledTimes(1)
   })
 })

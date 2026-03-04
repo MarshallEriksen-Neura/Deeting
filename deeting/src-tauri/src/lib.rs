@@ -82,10 +82,9 @@ pub fn run() {
                 let code_mode_state = CodeModeState::new(&database_url)
                     .await
                     .map_err(|e| McpError::Storage(e.to_string()))?;
-                let monitor_state = MonitorState::new(
-                    mcp_state.cloud_base_url.clone(),
-                    provider_state.store.clone(),
-                );
+                let monitor_state = MonitorState::new(&database_url, provider_state.store.clone())
+                    .await
+                    .map_err(|e| McpError::Storage(e.to_string()))?;
 
                 Ok::<_, McpError>(AppState::new(
                     mcp_state,
@@ -331,6 +330,9 @@ pub fn run() {
             crate::modules::mcp::commands::import_mcp_config,
             crate::modules::mcp::commands::start_mcp_tool,
             crate::modules::mcp::commands::stop_mcp_tool,
+            crate::modules::mcp::commands::execute_mcp_tool_raw,
+            crate::modules::mcp::commands::approve_mcp_tool,
+            crate::modules::mcp::commands::reject_mcp_tool,
             crate::modules::mcp::commands::update_mcp_tool_env,
             crate::modules::mcp::commands::apply_pending_config,
             crate::modules::mcp::commands::resolve_mcp_conflict,
@@ -373,6 +375,24 @@ pub fn run() {
             crate::modules::code_mode::commands::get_local_code_mode_execution,
             crate::modules::code_mode::commands::replay_local_code_mode_execution,
             crate::modules::code_mode::commands::sync_local_code_mode_executions,
+            // Local Monitor Commands
+            crate::modules::monitor::commands::list_local_monitor_tasks,
+            crate::modules::monitor::commands::get_local_monitor_task,
+            crate::modules::monitor::commands::create_local_monitor_task,
+            crate::modules::monitor::commands::update_local_monitor_task,
+            crate::modules::monitor::commands::pause_local_monitor_task,
+            crate::modules::monitor::commands::resume_local_monitor_task,
+            crate::modules::monitor::commands::trigger_local_monitor_task,
+            crate::modules::monitor::commands::delete_local_monitor_task,
+            crate::modules::monitor::commands::get_local_monitor_stats,
+            crate::modules::monitor::commands::list_local_monitor_logs,
+            crate::modules::monitor::commands::submit_local_monitor_feedback,
+            crate::modules::monitor::commands::list_local_notification_channels,
+            crate::modules::monitor::commands::get_local_notification_channel,
+            crate::modules::monitor::commands::create_local_notification_channel,
+            crate::modules::monitor::commands::update_local_notification_channel,
+            crate::modules::monitor::commands::delete_local_notification_channel,
+            crate::modules::monitor::commands::test_local_notification_channel,
             // Local Monitor Worker Commands
             crate::modules::monitor::commands::start_local_monitor_worker,
             crate::modules::monitor::commands::stop_local_monitor_worker,

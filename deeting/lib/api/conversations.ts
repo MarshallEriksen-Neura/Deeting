@@ -14,6 +14,69 @@ async function invokeTauri<T>(command: string, args?: Record<string, unknown>): 
   return invoke<T>(command, args)
 }
 
+const LOCAL_CHAT_STREAM_EVENT = "local-chat-stream"
+
+export type LocalConversationStreamEvent = {
+  request_id?: string | null
+  trace_id?: string | null
+  type?: string
+  stage?: string | null
+  code?: string | null
+  delta?: string | null
+  message?: string | null
+  error_code?: string | null
+  blocks?: unknown
+  meta?: unknown
+}
+
+export type LocalConversationStreamOptions = {
+  onStreamEvent?: (event: LocalConversationStreamEvent) => void
+}
+
+const normalizeRequestId = (value?: string | null): string | null => {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+async function withLocalConversationStream<T>(
+  requestId: string | null,
+  options: LocalConversationStreamOptions | undefined,
+  run: () => Promise<T>
+): Promise<T> {
+  const onStreamEvent = options?.onStreamEvent
+  if (!onStreamEvent || !requestId || !isTauriRuntime()) {
+    return run()
+  }
+
+  let unlisten: (() => void) | undefined
+  try {
+    try {
+      const { listen } = await import("@tauri-apps/api/event")
+      unlisten = await listen<LocalConversationStreamEvent>(
+        LOCAL_CHAT_STREAM_EVENT,
+        (event) => {
+          const payload = event?.payload
+          if (!payload || typeof payload !== "object") return
+          const payloadRequestId = normalizeRequestId((payload as LocalConversationStreamEvent).request_id)
+          if (!payloadRequestId || payloadRequestId !== requestId) return
+          onStreamEvent(payload as LocalConversationStreamEvent)
+        }
+      )
+    } catch (error) {
+      console.warn("local_conversation_stream_subscribe_failed", error)
+    }
+
+    return await run()
+  } finally {
+    try {
+      unlisten?.()
+    } catch {
+      // ignore unlisten errors
+    }
+  }
+}
+
 export const ConversationMessageSchema = z.object({
   role: z.string(),
   content: z.any().nullable().optional(),
@@ -44,7 +107,7 @@ export async function fetchConversationWindow(sessionId: string): Promise<Conver
     } catch {
       const history = await invokeTauri<ConversationHistoryResponse>(
         "list_local_conversation_history",
-        { session_id: sessionId, query: { limit: 200 } }
+        { query: { session_id: sessionId, limit: 200 } }
       )
       return ConversationWindowSchema.parse({
         session_id: sessionId,
@@ -119,8 +182,8 @@ export async function fetchConversationHistory(
       const data = await invokeTauri<ConversationHistoryResponse>(
         "list_local_conversation_history",
         {
-          session_id: sessionId,
           query: {
+            session_id: sessionId,
             cursor: options.cursor ?? null,
             limit: options.limit ?? null,
           },
@@ -254,6 +317,7 @@ export type ConversationRegenerateRequest = {
   temperature?: number
   top_p?: number
   max_tokens?: number
+  request_id?: string | null
 }
 
 export type ConversationSendRequest = {
@@ -263,6 +327,8 @@ export type ConversationSendRequest = {
   temperature?: number
   top_p?: number
   max_tokens?: number
+  request_id?: string | null
+  assistant_id?: string | null
 }
 
 export type ConversationSessionsQuery = {
@@ -402,19 +468,24 @@ export async function clearConversation(sessionId: string): Promise<Conversation
 
 export async function regenerateConversationReply(
   sessionId: string,
-  payload: ConversationRegenerateRequest
+  payload: ConversationRegenerateRequest,
+  options?: LocalConversationStreamOptions
 ): Promise<ConversationRegenerateResponse> {
   if (isTauriRuntime()) {
-    const data = await invokeTauri<ConversationRegenerateResponse>("regenerate_local_conversation_reply", {
-      session_id: sessionId,
-      payload: {
-        model: payload.model,
-        provider_model_id: payload.provider_model_id ?? null,
-        temperature: payload.temperature ?? null,
-        top_p: payload.top_p ?? null,
-        max_tokens: payload.max_tokens ?? null,
-      },
-    })
+    const requestId = normalizeRequestId(payload.request_id)
+    const data = await withLocalConversationStream(requestId, options, () =>
+      invokeTauri<ConversationRegenerateResponse>("regenerate_local_conversation_reply", {
+        payload: {
+          session_id: sessionId,
+          model: payload.model,
+          provider_model_id: payload.provider_model_id ?? null,
+          temperature: payload.temperature ?? null,
+          top_p: payload.top_p ?? null,
+          max_tokens: payload.max_tokens ?? null,
+          request_id: requestId,
+        },
+      })
+    )
     return ConversationRegenerateResponseSchema.parse(data)
   }
 
@@ -449,22 +520,28 @@ export async function regenerateConversationReply(
 
 export async function sendConversationMessage(
   sessionId: string,
-  payload: ConversationSendRequest
+  payload: ConversationSendRequest,
+  options?: LocalConversationStreamOptions
 ): Promise<ConversationSendResponse> {
   if (!isTauriRuntime()) {
     throw new Error("sendConversationMessage is only supported in Tauri runtime")
   }
 
-  const data = await invokeTauri<ConversationSendResponse>("send_local_conversation_message", {
-    session_id: sessionId,
-    payload: {
-      content: payload.content,
-      model: payload.model,
-      provider_model_id: payload.provider_model_id ?? null,
-      temperature: payload.temperature ?? null,
-      top_p: payload.top_p ?? null,
-      max_tokens: payload.max_tokens ?? null,
-    },
-  })
+  const requestId = normalizeRequestId(payload.request_id)
+  const data = await withLocalConversationStream(requestId, options, () =>
+    invokeTauri<ConversationSendResponse>("send_local_conversation_message", {
+      payload: {
+        session_id: sessionId,
+        assistant_id: payload.assistant_id ?? null,
+        content: payload.content,
+        model: payload.model,
+        provider_model_id: payload.provider_model_id ?? null,
+        temperature: payload.temperature ?? null,
+        top_p: payload.top_p ?? null,
+        max_tokens: payload.max_tokens ?? null,
+        request_id: requestId,
+      },
+    })
+  )
   return ConversationSendResponseSchema.parse(data)
 }

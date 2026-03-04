@@ -83,14 +83,31 @@ export interface TestChannelResult {
 // =====================
 
 const BASE = "/api/v1/notification-channels"
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
 
 export async function fetchNotificationChannels(): Promise<NotificationChannelList> {
+  if (isTauriRuntime()) {
+    return invokeTauri<NotificationChannelList>("list_local_notification_channels")
+  }
   return request<NotificationChannelList>({ url: BASE, method: "GET" })
 }
 
 export async function fetchNotificationChannel(
   channelId: string
 ): Promise<NotificationChannel> {
+  if (isTauriRuntime()) {
+    return invokeTauri<NotificationChannel>("get_local_notification_channel", {
+      channel_id: channelId,
+    })
+  }
   return request<NotificationChannel>({
     url: `${BASE}/${channelId}`,
     method: "GET",
@@ -100,6 +117,12 @@ export async function fetchNotificationChannel(
 export async function createNotificationChannel(
   data: CreateChannelInput
 ): Promise<{ id: string; channel: string; message: string }> {
+  if (isTauriRuntime()) {
+    return invokeTauri<{ id: string; channel: string; message: string }>(
+      "create_local_notification_channel",
+      { payload: data }
+    )
+  }
   return request({ url: BASE, method: "POST", data })
 }
 
@@ -107,18 +130,34 @@ export async function updateNotificationChannel(
   channelId: string,
   data: UpdateChannelInput
 ): Promise<{ id: string; message: string }> {
+  if (isTauriRuntime()) {
+    return invokeTauri<{ id: string; message: string }>("update_local_notification_channel", {
+      channel_id: channelId,
+      payload: data,
+    })
+  }
   return request({ url: `${BASE}/${channelId}`, method: "PATCH", data })
 }
 
 export async function deleteNotificationChannel(
   channelId: string
 ): Promise<{ message: string }> {
+  if (isTauriRuntime()) {
+    return invokeTauri<{ message: string }>("delete_local_notification_channel", {
+      channel_id: channelId,
+    })
+  }
   return request({ url: `${BASE}/${channelId}`, method: "DELETE" })
 }
 
 export async function testNotificationChannel(
   data: TestChannelInput
 ): Promise<TestChannelResult> {
+  if (isTauriRuntime()) {
+    return invokeTauri<TestChannelResult>("test_local_notification_channel", {
+      payload: data,
+    })
+  }
   return request<TestChannelResult>({
     url: `${BASE}/test`,
     method: "POST",

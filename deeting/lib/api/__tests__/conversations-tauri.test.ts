@@ -75,8 +75,7 @@ describe("conversation tauri apis", () => {
       session_id: "session-local-2",
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_local_conversation_history", {
-      session_id: "session-local-2",
-      query: { limit: 200 },
+      query: { session_id: "session-local-2", limit: 200 },
     })
   })
 

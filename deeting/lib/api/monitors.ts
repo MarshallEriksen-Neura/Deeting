@@ -1,11 +1,11 @@
-import { getAuthToken, request } from "@/lib/http"
+import { request } from "@/lib/http"
 
 // =====================
 // Types
 // =====================
 
 export type MonitorStatus = "active" | "paused" | "failed_suspended"
-export type MonitorExecutionTarget = "cloud" | "desktop" | "desktop_preferred"
+export type MonitorExecutionTarget = "cloud" | "desktop"
 
 export interface MonitorTask {
   id: string
@@ -137,6 +137,21 @@ export interface LocalMonitorWorkerStatus {
   last_claimed: number
 }
 
+interface MonitorTaskActionResponse {
+  id: string
+  status?: MonitorStatus
+  message: string
+}
+
+export interface MonitorTaskCreateResponse {
+  id: string
+  title: string
+  status: string
+  message: string
+  assistant_id?: string | null
+  execution_target?: MonitorExecutionTarget
+}
+
 // =====================
 // API Functions
 // =====================
@@ -157,6 +172,15 @@ export async function fetchMonitorTasks(params?: {
   limit?: number
   status?: MonitorStatus
 }): Promise<MonitorTaskList> {
+  if (isTauriRuntime()) {
+    return invokeTauri<MonitorTaskList>("list_local_monitor_tasks", {
+      query: {
+        skip: params?.skip ?? 0,
+        limit: params?.limit ?? 100,
+        status: params?.status ?? null,
+      },
+    })
+  }
   return request<MonitorTaskList>({
     url: MONITORS_BASE,
     method: "GET",
@@ -165,6 +189,9 @@ export async function fetchMonitorTasks(params?: {
 }
 
 export async function fetchMonitorStats(): Promise<MonitorStats> {
+  if (isTauriRuntime()) {
+    return invokeTauri<MonitorStats>("get_local_monitor_stats")
+  }
   return request<MonitorStats>({
     url: `${MONITORS_BASE}/stats`,
     method: "GET",
@@ -172,6 +199,9 @@ export async function fetchMonitorStats(): Promise<MonitorStats> {
 }
 
 export async function fetchMonitorTask(taskId: string): Promise<MonitorTask> {
+  if (isTauriRuntime()) {
+    return invokeTauri<MonitorTask>("get_local_monitor_task", { task_id: taskId })
+  }
   return request<MonitorTask>({
     url: `${MONITORS_BASE}/${taskId}`,
     method: "GET",
@@ -180,8 +210,11 @@ export async function fetchMonitorTask(taskId: string): Promise<MonitorTask> {
 
 export async function createMonitorTask(
   data: MonitorTaskCreateInput
-): Promise<{ id: string; title: string; status: string; message: string; assistant_id: string }> {
-  return request({
+): Promise<MonitorTaskCreateResponse> {
+  if (isTauriRuntime()) {
+    return invokeTauri<MonitorTaskCreateResponse>("create_local_monitor_task", { payload: data })
+  }
+  return request<MonitorTaskCreateResponse>({
     url: MONITORS_BASE,
     method: "POST",
     data,
@@ -192,6 +225,12 @@ export async function updateMonitorTask(
   taskId: string,
   data: MonitorTaskUpdateInput
 ): Promise<MonitorTask> {
+  if (isTauriRuntime()) {
+    return invokeTauri<MonitorTask>("update_local_monitor_task", {
+      task_id: taskId,
+      payload: data,
+    })
+  }
   return request<MonitorTask>({
     url: `${MONITORS_BASE}/${taskId}`,
     method: "PATCH",
@@ -200,6 +239,12 @@ export async function updateMonitorTask(
 }
 
 export async function pauseMonitorTask(taskId: string): Promise<MonitorTask> {
+  if (isTauriRuntime()) {
+    await invokeTauri<MonitorTaskActionResponse>("pause_local_monitor_task", {
+      payload: { task_id: taskId },
+    })
+    return fetchMonitorTask(taskId)
+  }
   return request<MonitorTask>({
     url: `${MONITORS_BASE}/${taskId}/pause`,
     method: "POST",
@@ -207,6 +252,12 @@ export async function pauseMonitorTask(taskId: string): Promise<MonitorTask> {
 }
 
 export async function resumeMonitorTask(taskId: string): Promise<MonitorTask> {
+  if (isTauriRuntime()) {
+    await invokeTauri<MonitorTaskActionResponse>("resume_local_monitor_task", {
+      payload: { task_id: taskId },
+    })
+    return fetchMonitorTask(taskId)
+  }
   return request<MonitorTask>({
     url: `${MONITORS_BASE}/${taskId}/resume`,
     method: "POST",
@@ -214,6 +265,12 @@ export async function resumeMonitorTask(taskId: string): Promise<MonitorTask> {
 }
 
 export async function triggerMonitorTask(taskId: string): Promise<{ message: string }> {
+  if (isTauriRuntime()) {
+    const response = await invokeTauri<{ task_id: string; message: string }>("trigger_local_monitor_task", {
+      payload: { task_id: taskId },
+    })
+    return { message: response.message }
+  }
   return request({
     url: `${MONITORS_BASE}/${taskId}/trigger`,
     method: "POST",
@@ -221,6 +278,10 @@ export async function triggerMonitorTask(taskId: string): Promise<{ message: str
 }
 
 export async function deleteMonitorTask(taskId: string): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauri("delete_local_monitor_task", { payload: { task_id: taskId } })
+    return
+  }
   return request({
     url: `${MONITORS_BASE}/${taskId}`,
     method: "DELETE",
@@ -231,6 +292,15 @@ export async function fetchMonitorLogs(
   taskId: string,
   params?: { skip?: number; limit?: number }
 ): Promise<MonitorExecutionLogList> {
+  if (isTauriRuntime()) {
+    return invokeTauri<MonitorExecutionLogList>("list_local_monitor_logs", {
+      query: {
+        task_id: taskId,
+        skip: params?.skip ?? 0,
+        limit: params?.limit ?? 50,
+      },
+    })
+  }
   return request<MonitorExecutionLogList>({
     url: `${MONITORS_BASE}/${taskId}/logs`,
     method: "GET",
@@ -243,6 +313,12 @@ export async function submitMonitorFeedback(
   logId: string,
   score: number
 ): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauri("submit_local_monitor_feedback", {
+      payload: { task_id: taskId, log_id: logId, score },
+    })
+    return
+  }
   return request({
     url: `${MONITORS_BASE}/feedback`,
     method: "POST",
@@ -250,12 +326,21 @@ export async function submitMonitorFeedback(
   })
 }
 
+/** @deprecated 桌面端本地执行模式下无需调用此函数。 */
 export async function monitorLocalHeartbeat(agentId: string): Promise<{
   status: string
   agent_id: string
   server_time: string
   expires_in_seconds: number
 }> {
+  if (isTauriRuntime()) {
+    return {
+      status: "ok",
+      agent_id: agentId,
+      server_time: new Date().toISOString(),
+      expires_in_seconds: 0,
+    }
+  }
   return request({
     url: `${MONITORS_BASE}/local/heartbeat`,
     method: "POST",
@@ -263,10 +348,18 @@ export async function monitorLocalHeartbeat(agentId: string): Promise<{
   })
 }
 
+/** @deprecated 桌面端本地执行模式下无需调用此函数。 */
 export async function monitorLocalPull(
   agentId: string,
   limit = 5
 ): Promise<MonitorLocalPullResponse> {
+  if (isTauriRuntime()) {
+    return {
+      items: [],
+      claimed: 0,
+      server_time: new Date().toISOString(),
+    }
+  }
   return request<MonitorLocalPullResponse>({
     url: `${MONITORS_BASE}/local/pull`,
     method: "POST",
@@ -274,10 +367,18 @@ export async function monitorLocalPull(
   })
 }
 
+/** @deprecated 桌面端本地执行模式下无需调用此函数。 */
 export async function monitorLocalReport(
   taskId: string,
   data: MonitorLocalReportInput
 ): Promise<{ task_id: string; status: string; message: string }> {
+  if (isTauriRuntime()) {
+    return {
+      task_id: taskId,
+      status: data.status,
+      message: "本地模式无需云端回传",
+    }
+  }
   return request({
     url: `${MONITORS_BASE}/local/${taskId}/report`,
     method: "POST",
@@ -301,13 +402,9 @@ export async function startLocalMonitorWorker(options: {
   if (!isTauriRuntime()) {
     return null
   }
-  const token = (options.accessToken ?? getAuthToken() ?? "").trim()
-  if (!token) {
-    return null
-  }
   return invokeTauri<LocalMonitorWorkerStatus>("start_local_monitor_worker", {
     payload: {
-      access_token: token,
+      access_token: (options.accessToken ?? "").trim() || null,
       agent_id: options.agentId ?? null,
       poll_interval_seconds: options.pollIntervalSeconds ?? null,
       pull_limit: options.pullLimit ?? null,

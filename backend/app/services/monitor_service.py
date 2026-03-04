@@ -49,7 +49,7 @@ class MonitorService:
         cron_expr: str = "0 */6 * * *",
         notify_config: dict[str, Any] | None = None,
         allowed_tools: list[str] | None = None,
-        execution_target: MonitorExecutionTarget | str = MonitorExecutionTarget.CLOUD,
+        execution_target: MonitorExecutionTarget | str = MonitorExecutionTarget.DESKTOP,
         strategy_variants: dict[str, Any] | None = None,
         model_id: str | None = None,
     ) -> dict[str, Any]:
@@ -668,11 +668,7 @@ class MonitorService:
 
     @staticmethod
     def _should_enforce_cloud_cron_limit(target: MonitorExecutionTarget | str) -> bool:
-        normalized = normalize_monitor_execution_target(target)
-        return normalized in {
-            MonitorExecutionTarget.CLOUD,
-            MonitorExecutionTarget.DESKTOP_PREFERRED,
-        }
+        return normalize_monitor_execution_target(target) == MonitorExecutionTarget.CLOUD
 
     @staticmethod
     def _compute_next_run(task: MonitorTask, from_time) -> tuple[Any, int]:

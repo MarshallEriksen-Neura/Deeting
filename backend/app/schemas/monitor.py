@@ -45,8 +45,8 @@ class MonitorTaskCreate(BaseSchema):
     notify_config: dict[str, Any] = Field(default_factory=dict, description="触达配置")
     allowed_tools: list[str] = Field(default_factory=list, description="允许的工具列表")
     execution_target: MonitorExecutionTarget = Field(
-        default=MonitorExecutionTarget.CLOUD,
-        description="执行目标: cloud | desktop | desktop_preferred",
+        default=MonitorExecutionTarget.DESKTOP,
+        description="执行目标: cloud | desktop（兼容旧值 desktop_preferred）",
     )
 
     @field_validator("cron_expr")
@@ -77,7 +77,7 @@ class MonitorTaskUpdate(BaseSchema):
     allowed_tools: list[str] | None = Field(None, description="允许的工具列表")
     execution_target: MonitorExecutionTarget | None = Field(
         None,
-        description="执行目标: cloud | desktop | desktop_preferred",
+        description="执行目标: cloud | desktop（兼容旧值 desktop_preferred）",
     )
 
     @field_validator("cron_expr")

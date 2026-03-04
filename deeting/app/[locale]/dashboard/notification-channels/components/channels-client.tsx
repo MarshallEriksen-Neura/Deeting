@@ -61,13 +61,20 @@ export function NotificationChannelsClient() {
   const { data, isLoading, mutate } = useNotificationChannels()
   const [showAdd, setShowAdd] = useState(false)
   const [addType, setAddType] = useState<ChannelType | null>(null)
+  const isTauriRuntime =
+    process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
 
   const channels = data?.items ?? []
+  const selectableTypes = (Object.keys(CHANNEL_META) as ChannelType[]).filter(
+    (type) => !(isTauriRuntime && type === "email")
+  )
 
   // Channels not yet added by the user
-  const availableTypes = (
-    Object.keys(CHANNEL_META) as ChannelType[]
-  ).filter((t) => !channels.some((c) => c.channel === t))
+  const availableTypes = selectableTypes.filter(
+    (type) => !channels.some((channel) => channel.channel === type)
+  )
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-8">

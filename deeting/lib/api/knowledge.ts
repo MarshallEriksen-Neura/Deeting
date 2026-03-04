@@ -666,6 +666,59 @@ export async function shareFile(
 /*  Batch Operations                                                          */
 /* -------------------------------------------------------------------------- */
 
+const INTERNAL_KNOWLEDGE_BASE = "/api/v1/internal/knowledge"
+
+/**
+ * Knowledge Ingestion & Review APIs (Internal)
+ */
+export async function ingestDocument(payload: {
+  media_asset_id?: string
+  raw_text?: string
+  filename?: string
+  folder_id?: string
+  metadata?: Record<string, any>
+}) {
+  return request<any>({
+    url: `${INTERNAL_KNOWLEDGE_BASE}/ingest`,
+    method: "POST",
+    data: payload,
+  })
+}
+
+export async function fetchReviewTasks(params?: {
+  status?: string
+  asset_type?: string
+  limit?: number
+}) {
+  return request<any[]>({
+    url: `${INTERNAL_KNOWLEDGE_BASE}/reviews`,
+    method: "GET",
+    params,
+  })
+}
+
+export async function getReviewTask(taskId: string) {
+  return request<any>({
+    url: `${INTERNAL_KNOWLEDGE_BASE}/reviews/${taskId}`,
+    method: "GET",
+  })
+}
+
+export async function submitReviewResult(
+  taskId: string,
+  payload: {
+    action: "approve" | "reject" | "refine"
+    reason?: string
+    refined_payload?: Record<string, any>
+  }
+) {
+  return request<any>({
+    url: `${INTERNAL_KNOWLEDGE_BASE}/reviews/${taskId}/submit`,
+    method: "POST",
+    data: payload,
+  })
+}
+
 export async function batchDeleteFiles(
   fileIds: string[]
 ): Promise<{ deletedCount: number }> {

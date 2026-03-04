@@ -1739,50 +1739,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     return {"action": "pending_review", "status": "submitted"}
                 return {"action": "ignored", "status": "unsupported"}
 
-        from app.agent_plugins.core.context import ConcretePluginContext
-        from app.services.agent.agent_service import agent_service
-
-        plugin_name = agent_service.plugin_manager.get_plugin_name_for_tool_from_registry(
-            tool_name
-        )
-        if not plugin_name:
-            return None
-
-        fresh_ctx = ConcretePluginContext(
-            plugin_name=plugin_name,
-            plugin_id=plugin_name,
-            user_id=self.context.user_id,
-            session_id=self._resolve_session_id(
-                explicit_session_id=None, workflow_context=workflow_context
-            ),
-        )
-        plugin = await agent_service.plugin_manager.instantiate_plugin(plugin_name, fresh_ctx)
-
-        handler = getattr(plugin, f"handle_{tool_name}", None)
-        if not handler:
-            handler = getattr(plugin, tool_name, None)
-        is_generic = False
-        if not handler and hasattr(plugin, "handle_tool_call"):
-            handler = plugin.handle_tool_call
-            is_generic = True
-        if not handler:
-            return {"error": f"Tool '{tool_name}' handler not found in plugin '{plugin_name}'"}
-
-        kwargs = dict(arguments or {})
-        try:
-            sig = inspect.signature(handler)
-            if "__context__" in sig.parameters or "kwargs" in sig.parameters:
-                kwargs["__context__"] = workflow_context
-        except Exception:
-            pass
-
-        try:
-            if is_generic:
-                return await handler(tool_name, **kwargs)
-            return await handler(**kwargs)
-        except Exception as exc:
-            logger.error("local tool call failed name=%s err=%s", tool_name, exc, exc_info=True)
-            return {"error": f"Local tool '{tool_name}' failed: {exc}"}
+        return None
 
     async def _dispatch_remote_mcp_tool(
         self,

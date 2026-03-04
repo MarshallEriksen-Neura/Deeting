@@ -105,7 +105,41 @@ async def test_too_frequent_cron_fails(async_session: AsyncSession, monkeypatch:
             title="过高频率 Cron",
             objective="监控目标",
             cron_expr="*/1 * * * *",
+            execution_target=MonitorExecutionTarget.CLOUD,
         )
+
+
+@pytest.mark.asyncio
+async def test_create_task_defaults_to_desktop(async_session: AsyncSession):
+    user = await _create_user(async_session, "monitor_user_default_desktop@example.com")
+    service = MonitorService(async_session)
+
+    result = await service.create_task(
+        user_id=user.id,
+        title="默认本地任务",
+        objective="默认应本地执行",
+    )
+
+    detail = await service.get_task(result["id"])
+    assert detail is not None
+    assert detail["execution_target"] == "desktop"
+
+
+@pytest.mark.asyncio
+async def test_create_task_preferred_alias_normalized_to_desktop(async_session: AsyncSession):
+    user = await _create_user(async_session, "monitor_user_preferred_alias@example.com")
+    service = MonitorService(async_session)
+
+    result = await service.create_task(
+        user_id=user.id,
+        title="兼容别名任务",
+        objective="alias",
+        execution_target="desktop_preferred",
+    )
+
+    detail = await service.get_task(result["id"])
+    assert detail is not None
+    assert detail["execution_target"] == "desktop"
 
 
 @pytest.mark.asyncio

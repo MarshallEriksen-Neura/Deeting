@@ -11,10 +11,10 @@
 - `status`: `active | paused | failed_suspended`
 - `cron_expr`: 5 段 Cron 表达式（`minute hour day month weekday`）
 - `allowed_tools`: 后台任务可调用的工具白名单，工具名必须匹配 `^[A-Za-z0-9][A-Za-z0-9_./:-]{0,63}$`，最多 32 个
-- `execution_target`: 执行目标，支持 `cloud | desktop | desktop_preferred`
-  - `cloud`: 始终由云端 Celery worker 执行
-  - `desktop`: 仅由桌面端领取并本地执行，不走云端推理
-  - `desktop_preferred`: 优先桌面端（有心跳时），离线时回落云端
+- `execution_target`: 执行目标，支持 `desktop | cloud`
+  - `desktop`（默认，推荐）：仅由桌面端领取并本地执行，不走云端推理
+  - `cloud`：由云端 Celery worker 执行
+  - 兼容说明：历史值 `desktop_preferred` 仍可传入，但会按 `desktop` 处理，不再回落云端
 - `notify_config`: 任务级通知配置；命中敏感键（如 `webhook/token/secret/password`）的值会自动加密存储，接口返回时会脱敏为 `***`
   - 当前支持 `channel_ids: string[]`（通知渠道 ID 列表，来自 `/api/v1/notification-channels`）。
   - 监控任务触发通知时，若配置了 `channel_ids`，会按优先级向这些渠道依次发送（不提前短路）；未配置时按用户全量启用渠道与优先级发送（首个成功后停止）。
@@ -32,11 +32,11 @@
 - `cron_expr` string，可选，默认 `0 */6 * * *`
 - `notify_config` object，可选
 - `allowed_tools` array，可选
-- `execution_target` string，可选，默认 `cloud`
+- `execution_target` string，可选，默认 `desktop`
 
 约束：
 
-- `cloud` / `desktop_preferred` 模式下，`cron_expr` 频率不能低于系统最小间隔（默认 5 分钟）。
+- 仅 `cloud` 模式下，`cron_expr` 频率不能低于系统最小间隔（默认 5 分钟）。
 - 若过于高频，接口返回 `400`，错误信息包含“Cron 频率过高”。
 
 成功响应（201）：
@@ -48,7 +48,7 @@
   "status": "active",
   "message": "任务创建成功并已关联态势助手",
   "assistant_id": "2e3ac467-437a-4238-a34d-61f1cb95f4cb",
-  "execution_target": "cloud"
+  "execution_target": "desktop"
 }
 ```
 
@@ -137,7 +137,7 @@
 
 - 该接口为“手动触发”，会强制发送通知（不受 `is_significant_change` 是否为 `true` 的限制）。
 - `cloud` 模式采用即时投递（不加随机抖动），触发后会尽快进入 `reasoning_worker`。
-- `desktop` / `desktop_preferred` 模式不会触发云端推理，而是将任务标记为“本地立即执行”，等待桌面端领取。
+- 非 `cloud` 模式不会触发云端推理，而是将任务标记为“本地立即执行”，等待桌面端领取。
 - 定时调度触发仍保持原行为：仅在检测到显著变化时发送通知。
 - 手动触发受冷却时间保护（默认同一用户同一任务 30 秒内仅允许一次）。
 
@@ -247,7 +247,7 @@
 
 - 调度中心由 Celery Beat 每 30 秒触发 `scheduler_task`，优先从 Redis ZSET（`monitor:schedule:zset`）弹出到期任务并投递推理队列。
 - `bootstrap_schedule` 周期扫描 active 任务并重建 Redis 调度索引；仅在 Redis 不可用时降级为 DB 到期扫描。
-- `desktop` 任务不会进入云端调度执行；`desktop_preferred` 在检测到桌面心跳时优先本地执行。
+- `desktop` 任务不会进入云端调度执行；历史值 `desktop_preferred` 与 `desktop` 等价（仅本地执行）。
 - `next_run_at` 统一由 `cron_expr` 计算，并回写到 DB（用于审计与降级兜底）。
 - 触发研判时会自动加入 `0~120s` 随机抖动，平滑并发峰值。
 - 调度器每个 tick 有全局触发上限与单用户上限（默认 `50` / `3`）；超限任务会按背压延后（默认 60 秒）而不是立即触发。

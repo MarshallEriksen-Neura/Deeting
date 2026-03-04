@@ -31,6 +31,7 @@ import {
   fetchConversationHistory,
   regenerateConversationReply,
   sendConversationMessage,
+  type LocalConversationStreamEvent,
 } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type Message } from "@/store/chat-store"
@@ -372,6 +373,55 @@ export function useChatMessagingService() {
     }
   }, [clearStatus, setIsLoading])
 
+  const createLocalStreamHandler = useCallback((assistantMessageId: string) => {
+    return (event: LocalConversationStreamEvent) => {
+      if (!event || typeof event !== "object") return
+
+      if (typeof event.trace_id === "string" && event.trace_id.trim().length > 0) {
+        mergeMessageMeta(assistantMessageId, { trace_id: event.trace_id })
+      }
+
+      if (event.type === "status") {
+        setStatus({
+          stage: event.stage ?? null,
+          code: event.code ?? null,
+          meta: typeof event.meta === "object" && event.meta ? (event.meta as Record<string, unknown>) : null,
+        })
+        return
+      }
+
+      if (event.type === "delta") {
+        if (typeof event.delta === "string" && event.delta.length > 0) {
+          appendMessageBlocks(assistantMessageId, [
+            { type: "text", content: event.delta, streamState: "streaming" } as MessageBlock,
+          ])
+        }
+        return
+      }
+
+      if (event.type === "blocks") {
+        if (Array.isArray(event.blocks)) {
+          appendMessageBlocks(assistantMessageId, event.blocks as MessageBlock[])
+        }
+        return
+      }
+
+      if (event.type === "error") {
+        const message = event.message || "Request failed"
+        appendMessageBlocks(assistantMessageId, [
+          {
+            id: `${assistantMessageId}-error`,
+            type: "error",
+            message,
+            streamState: "completed",
+            displayMode: "bubble",
+          },
+        ] as MessageBlock[])
+        setErrorMessage(event.error_code ? `${event.error_code}: ${message}` : message)
+      }
+    }
+  }, [appendMessageBlocks, mergeMessageMeta, setErrorMessage, setStatus])
+
   const sendMessage = useCallback(async () => {
     const trimmedInput = input.trim()
     if (!trimmedInput && attachments.length === 0) return
@@ -379,8 +429,10 @@ export function useChatMessagingService() {
     const selectedModel =
       models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
       models[0]
+    const preferLocalRoute =
+      isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
     const activeAssistant = agent
-    if (!selectedModel || (isTauriRuntime && !activeAssistant)) return
+    if (!selectedModel || (preferLocalRoute && !activeAssistant)) return
 
     const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
       isTauriRuntime,
@@ -420,7 +472,7 @@ export function useChatMessagingService() {
     }
 
     try {
-      if (isTauriRuntime) {
+      if (preferLocalRoute) {
         if (!resolvedSessionId) {
           throw new Error("Session not found")
         }
@@ -432,6 +484,10 @@ export function useChatMessagingService() {
           temperature: config.temperature,
           top_p: config.topP,
           max_tokens: config.maxTokens,
+          assistant_id: assistantId,
+          request_id: createRequestId(),
+        }, {
+          onStreamEvent: createLocalStreamHandler(assistantMessageId),
         })
         setSessionId(response.session_id || resolvedSessionId)
 
@@ -663,6 +719,7 @@ export function useChatMessagingService() {
     setStatus,
     clearStatus,
     isTauriRuntime,
+    createLocalStreamHandler,
   ])
 
   const regenerateMessage = useCallback(async (targetMessageId: string) => {
@@ -681,6 +738,8 @@ export function useChatMessagingService() {
     const selectedModel =
       models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
       models[0]
+    const preferLocalRoute =
+      isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
     const activeAssistant = agent
     if (!selectedModel) return
 
@@ -715,7 +774,7 @@ export function useChatMessagingService() {
     }
 
     try {
-      if (isTauriRuntime) {
+      if (preferLocalRoute) {
         if (!resolvedSessionId) {
           throw new Error("Session not found")
         }
@@ -726,6 +785,9 @@ export function useChatMessagingService() {
           temperature: config.temperature,
           top_p: config.topP,
           max_tokens: config.maxTokens,
+          request_id: createRequestId(),
+        }, {
+          onStreamEvent: createLocalStreamHandler(assistantMessageId),
         })
         setSessionId(response.session_id || resolvedSessionId)
 
@@ -943,6 +1005,7 @@ export function useChatMessagingService() {
     setStatus,
     clearStatus,
     isTauriRuntime,
+    createLocalStreamHandler,
   ])
 
   return {

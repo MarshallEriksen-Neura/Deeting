@@ -101,6 +101,19 @@ export type AssistantMabResponse = z.infer<typeof AssistantMabResponseSchema>
 // =====================
 
 const BASE = "/api/v1/admin/routing-mab"
+const INTERNAL_GATEWAY_BASE = "/api/v1/internal/gateway"
+
+export async function reportBanditReward(payload: {
+  trace_id: string
+  reward: number // 1.0 for success/positive, 0.0 for failure/negative
+  scene?: string
+}): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>({
+    url: `${INTERNAL_GATEWAY_BASE}/bandit/report`,
+    method: "POST",
+    data: payload,
+  })
+}
 
 export async function fetchRoutingOverview(
   scene = "router:llm"
