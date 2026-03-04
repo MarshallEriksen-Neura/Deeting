@@ -14,6 +14,7 @@ __pycache__/
 opencode.json
 .tmp/
 .omc/
+.omx/
 backend/__pycache__
 backend/*.py[oc]
 backend/build/
