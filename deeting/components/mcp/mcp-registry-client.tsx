@@ -341,7 +341,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         await Promise.all(
           localSources.map((source) =>
             invoke("sync_mcp_source", {
-              source_id: source.id,
+              sourceId: source.id,
               payload: { auth_token: null },
             })
           )
@@ -524,7 +524,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       } else {
         const token = sourceTokens[source.id]
         await invoke("sync_mcp_source", {
-          source_id: source.id,
+          sourceId: source.id,
           payload: { auth_token: token || null },
         })
       }
@@ -671,7 +671,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       if (payload.authToken) {
         setSourceTokens((prev) => ({ ...prev, [created.id]: payload.authToken || "" }))
         await invoke("sync_mcp_source", {
-          source_id: created.id,
+          sourceId: created.id,
           payload: { auth_token: payload.authToken },
         })
         await refreshAll()
