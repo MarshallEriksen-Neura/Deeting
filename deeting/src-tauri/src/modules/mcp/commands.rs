@@ -568,15 +568,12 @@ pub async fn send_local_conversation_message(
     payload: LocalConversationSendRequest,
 ) -> Result<LocalConversationSendResponse, String> {
     let state = &app_state.mcp;
-    let conversation_repo = &state.store;
-
     let trace_id = Uuid::new_v4().to_string();
     let request_id = payload
         .request_id
         .as_ref()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    let session_id = payload.session_id.clone();
 
     emit_local_chat_stream_status(
         &app,
@@ -584,116 +581,51 @@ pub async fn send_local_conversation_message(
         &trace_id,
         "request_received",
         "local_send_start",
-        Some(serde_json::json!({ "session_id": session_id })),
+        Some(serde_json::json!({ "session_id": payload.session_id })),
     );
 
-    let execution: Result<LocalConversationSendResponse, String> = async {
-        let user_message = conversation_repo
-            .append_local_conversation_message(CreateConversationMessageRequest {
-                session_id: session_id.clone(),
-                role: "user".to_string(),
-                content: payload.content.clone(),
-                name: None,
-                meta_info: None,
-                is_truncated: Some(false),
-                parent_message_id: None,
-            })
+    let execution = if let Some(request_id_value) = request_id.clone() {
+        let app_clone = app.clone();
+        let app_state_clone = app_state.inner().clone();
+        let payload_clone = payload.clone();
+        let trace_id_clone = trace_id.clone();
+        let request_id_clone = request_id_value.clone();
+        let task = tokio::spawn(async move {
+            send_local_conversation_message_inner(
+                &app_clone,
+                &app_state_clone,
+                &payload_clone,
+                &trace_id_clone,
+                Some(request_id_clone.as_str()),
+            )
             .await
-            .map_err(to_string)?;
-        let chat_ctx = conversation_repo
-            .get_local_conversation_chat_context(&session_id)
-            .await
-            .map_err(to_string)?;
-
-        emit_local_chat_stream_status(
-            &app,
-            request_id.as_deref(),
-            &trace_id,
-            "context_ready",
-            "local_send_context_ready",
-            Some(serde_json::json!({
-                "assistant_id": chat_ctx.assistant_id,
-                "provider_model_id": payload.provider_model_id,
-            })),
-        );
-
-        let model_connection = resolve_local_model_connection(
-            app_state.inner(),
-            &payload.model,
-            payload.provider_model_id.as_deref(),
+        });
+        register_local_chat_task_abort_handle(
+            state.local_chat_tasks.as_ref(),
+            &request_id_value,
+            task.abort_handle(),
         )
-            .await
-            .map_err(to_string)?;
+        .await;
 
-        emit_local_chat_stream_status(
-            &app,
-            request_id.as_deref(),
-            &trace_id,
-            "model_request",
-            "local_send_model_request",
-            Some(serde_json::json!({
-                "provider_model_id": model_connection.provider_model_id,
-                "model_id": model_connection.model_id,
-            })),
-        );
-
-        let response_json = run_local_chat_complete_with_auto_code_mode(
-            app_state.inner(),
-            &model_connection,
-            chat_ctx.messages.clone(),
-            &chat_ctx,
-        )
-        .await?;
-
-        let response_text = response_json["content"].as_str().unwrap_or("").to_string();
-
-        emit_local_chat_stream_status(
-            &app,
-            request_id.as_deref(),
-            &trace_id,
-            "assistant_stream",
-            "local_send_assistant_stream",
-            None,
-        );
-        emit_local_chat_stream_delta_chunks(
-            &app,
-            request_id.as_deref(),
-            &trace_id,
-            &response_text,
-        );
-        if !response_text.trim().is_empty() {
-            emit_local_chat_stream_blocks(
-                &app,
-                request_id.as_deref(),
-                &trace_id,
-                serde_json::json!([{ "type": "text", "content": response_text }]),
-            );
+        let join_result = task.await;
+        clear_local_chat_task_abort_handle(state.local_chat_tasks.as_ref(), &request_id_value).await;
+        match join_result {
+            Ok(result) => result,
+            Err(err) if err.is_cancelled() => {
+                Err("local conversation request cancelled by user".to_string())
+            }
+            Err(err) => Err(format!("local conversation task join error: {}", err)),
         }
-
-        let assistant_message = conversation_repo
-            .append_local_conversation_message(CreateConversationMessageRequest {
-                session_id: session_id.clone(),
-                role: "assistant".to_string(),
-                content: response_text.clone(),
-                name: None,
-                meta_info: None,
-                is_truncated: Some(false),
-                parent_message_id: None,
-            })
-            .await
-            .map_err(to_string)?;
-
-        let _ = conversation_repo
-            .touch_local_conversation_summary_idle_task(&session_id)
-            .await;
-
-        Ok(LocalConversationSendResponse {
-            session_id: session_id.clone(),
-            user_message,
-            assistant_message,
-        })
-    }
-    .await;
+    } else {
+        send_local_conversation_message_inner(
+            &app,
+            app_state.inner(),
+            &payload,
+            &trace_id,
+            None,
+        )
+        .await
+    };
 
     match execution {
         Ok(response) => {
@@ -714,7 +646,6 @@ pub async fn regenerate_local_conversation_reply(
     payload: LocalConversationRegenerateRequest,
 ) -> Result<LocalConversationRegenerateResponse, String> {
     let state = &app_state.mcp;
-    let conversation_repo = &state.store;
     let trace_id = Uuid::new_v4().to_string();
     let request_id = payload
         .request_id
@@ -731,93 +662,48 @@ pub async fn regenerate_local_conversation_reply(
         Some(serde_json::json!({ "session_id": payload.session_id })),
     );
 
-    let execution: Result<LocalConversationRegenerateResponse, String> = async {
-        let regenerate_ctx = conversation_repo
-            .prepare_local_conversation_regenerate(&payload.session_id)
+    let execution = if let Some(request_id_value) = request_id.clone() {
+        let app_clone = app.clone();
+        let app_state_clone = app_state.inner().clone();
+        let payload_clone = payload.clone();
+        let trace_id_clone = trace_id.clone();
+        let request_id_clone = request_id_value.clone();
+        let task = tokio::spawn(async move {
+            regenerate_local_conversation_reply_inner(
+                &app_clone,
+                &app_state_clone,
+                &payload_clone,
+                &trace_id_clone,
+                Some(request_id_clone.as_str()),
+            )
             .await
-            .map_err(to_string)?;
-
-        let model_connection = resolve_local_model_connection(
-            app_state.inner(),
-            &payload.model,
-            payload.provider_model_id.as_deref(),
+        });
+        register_local_chat_task_abort_handle(
+            state.local_chat_tasks.as_ref(),
+            &request_id_value,
+            task.abort_handle(),
         )
-            .await
-            .map_err(to_string)?;
-        let chat_ctx = LocalConversationChatContext {
-            session_id: regenerate_ctx.session_id.clone(),
-            assistant_id: regenerate_ctx.assistant_id.clone(),
-            messages: regenerate_ctx.messages.clone(),
-        };
+        .await;
 
-        emit_local_chat_stream_status(
-            &app,
-            request_id.as_deref(),
-            &trace_id,
-            "model_request",
-            "local_regenerate_model_request",
-            Some(serde_json::json!({
-                "provider_model_id": model_connection.provider_model_id,
-                "model_id": model_connection.model_id,
-            })),
-        );
-
-        let response_json = run_local_chat_complete_with_auto_code_mode(
-            app_state.inner(),
-            &model_connection,
-            regenerate_ctx.messages,
-            &chat_ctx,
-        )
-        .await?;
-
-        let response_text = response_json["content"].as_str().unwrap_or("").to_string();
-
-        emit_local_chat_stream_status(
-            &app,
-            request_id.as_deref(),
-            &trace_id,
-            "assistant_stream",
-            "local_regenerate_assistant_stream",
-            None,
-        );
-        emit_local_chat_stream_delta_chunks(
-            &app,
-            request_id.as_deref(),
-            &trace_id,
-            &response_text,
-        );
-        if !response_text.trim().is_empty() {
-            emit_local_chat_stream_blocks(
-                &app,
-                request_id.as_deref(),
-                &trace_id,
-                serde_json::json!([{ "type": "text", "content": response_text }]),
-            );
+        let join_result = task.await;
+        clear_local_chat_task_abort_handle(state.local_chat_tasks.as_ref(), &request_id_value).await;
+        match join_result {
+            Ok(result) => result,
+            Err(err) if err.is_cancelled() => {
+                Err("local conversation request cancelled by user".to_string())
+            }
+            Err(err) => Err(format!("local conversation task join error: {}", err)),
         }
-
-        let assistant_message = conversation_repo
-            .append_local_conversation_message(CreateConversationMessageRequest {
-                session_id: payload.session_id.clone(),
-                role: "assistant".to_string(),
-                content: response_text,
-                name: None,
-                meta_info: None,
-                is_truncated: Some(false),
-                parent_message_id: None,
-            })
-            .await
-            .map_err(to_string)?;
-        let _ = conversation_repo
-            .touch_local_conversation_summary_idle_task(&payload.session_id)
-            .await;
-
-        Ok(LocalConversationRegenerateResponse {
-            session_id: payload.session_id.clone(),
-            deleted_turn_index: regenerate_ctx.deleted_turn_index,
-            message: assistant_message,
-        })
-    }
-    .await;
+    } else {
+        regenerate_local_conversation_reply_inner(
+            &app,
+            app_state.inner(),
+            &payload,
+            &trace_id,
+            None,
+        )
+        .await
+    };
 
     match execution {
         Ok(response) => {
@@ -828,6 +714,262 @@ pub async fn regenerate_local_conversation_reply(
             emit_local_chat_stream_error(&app, request_id.as_deref(), &trace_id, &err);
             Err(err)
         }
+    }
+}
+
+#[tauri::command]
+pub async fn cancel_local_conversation_request(
+    state: State<'_, AppState>,
+    request_id: String,
+) -> Result<LocalConversationCancelResponse, String> {
+    let normalized_request_id = request_id.trim().to_string();
+    if normalized_request_id.is_empty() {
+        return Err("request_id is required".to_string());
+    }
+
+    let canceled = abort_local_chat_task_by_request_id(
+        state.mcp.local_chat_tasks.as_ref(),
+        &normalized_request_id,
+    )
+    .await;
+
+    Ok(LocalConversationCancelResponse {
+        request_id: normalized_request_id,
+        status: if canceled {
+            "cancelled".to_string()
+        } else {
+            "not_found".to_string()
+        },
+    })
+}
+
+async fn send_local_conversation_message_inner(
+    app: &AppHandle,
+    app_state: &AppState,
+    payload: &LocalConversationSendRequest,
+    trace_id: &str,
+    request_id: Option<&str>,
+) -> Result<LocalConversationSendResponse, String> {
+    let conversation_repo = &app_state.mcp.store;
+    let session_id = payload.session_id.clone();
+    let user_message = conversation_repo
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: session_id.clone(),
+            role: "user".to_string(),
+            content: payload.content.clone(),
+            name: None,
+            meta_info: None,
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map_err(to_string)?;
+    let chat_ctx = conversation_repo
+        .get_local_conversation_chat_context(&session_id)
+        .await
+        .map_err(to_string)?;
+
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "context_ready",
+        "local_send_context_ready",
+        Some(serde_json::json!({
+            "assistant_id": chat_ctx.assistant_id,
+            "provider_model_id": payload.provider_model_id,
+        })),
+    );
+
+    let model_connection = resolve_local_model_connection(
+        app_state,
+        &payload.model,
+        payload.provider_model_id.as_deref(),
+    )
+    .await
+    .map_err(to_string)?;
+
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "model_request",
+        "local_send_model_request",
+        Some(serde_json::json!({
+            "provider_model_id": model_connection.provider_model_id,
+            "model_id": model_connection.model_id,
+        })),
+    );
+
+    let response_json = run_local_chat_complete_with_auto_code_mode(
+        app_state,
+        &model_connection,
+        chat_ctx.messages.clone(),
+        &chat_ctx,
+    )
+    .await?;
+
+    let response_text = response_json["content"].as_str().unwrap_or("").to_string();
+
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "assistant_stream",
+        "local_send_assistant_stream",
+        None,
+    );
+    emit_local_chat_stream_delta_chunks(app, request_id, trace_id, &response_text);
+    if !response_text.trim().is_empty() {
+        emit_local_chat_stream_blocks(
+            app,
+            request_id,
+            trace_id,
+            serde_json::json!([{ "type": "text", "content": response_text }]),
+        );
+    }
+
+    let assistant_message = conversation_repo
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: session_id.clone(),
+            role: "assistant".to_string(),
+            content: response_text.clone(),
+            name: None,
+            meta_info: None,
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map_err(to_string)?;
+
+    let _ = conversation_repo
+        .touch_local_conversation_summary_idle_task(&session_id)
+        .await;
+
+    Ok(LocalConversationSendResponse {
+        session_id,
+        user_message,
+        assistant_message,
+    })
+}
+
+async fn regenerate_local_conversation_reply_inner(
+    app: &AppHandle,
+    app_state: &AppState,
+    payload: &LocalConversationRegenerateRequest,
+    trace_id: &str,
+    request_id: Option<&str>,
+) -> Result<LocalConversationRegenerateResponse, String> {
+    let conversation_repo = &app_state.mcp.store;
+    let regenerate_ctx = conversation_repo
+        .prepare_local_conversation_regenerate(&payload.session_id)
+        .await
+        .map_err(to_string)?;
+
+    let model_connection = resolve_local_model_connection(
+        app_state,
+        &payload.model,
+        payload.provider_model_id.as_deref(),
+    )
+    .await
+    .map_err(to_string)?;
+    let chat_ctx = LocalConversationChatContext {
+        session_id: regenerate_ctx.session_id.clone(),
+        assistant_id: regenerate_ctx.assistant_id.clone(),
+        messages: regenerate_ctx.messages.clone(),
+    };
+
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "model_request",
+        "local_regenerate_model_request",
+        Some(serde_json::json!({
+            "provider_model_id": model_connection.provider_model_id,
+            "model_id": model_connection.model_id,
+        })),
+    );
+
+    let response_json = run_local_chat_complete_with_auto_code_mode(
+        app_state,
+        &model_connection,
+        regenerate_ctx.messages,
+        &chat_ctx,
+    )
+    .await?;
+
+    let response_text = response_json["content"].as_str().unwrap_or("").to_string();
+
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "assistant_stream",
+        "local_regenerate_assistant_stream",
+        None,
+    );
+    emit_local_chat_stream_delta_chunks(app, request_id, trace_id, &response_text);
+    if !response_text.trim().is_empty() {
+        emit_local_chat_stream_blocks(
+            app,
+            request_id,
+            trace_id,
+            serde_json::json!([{ "type": "text", "content": response_text }]),
+        );
+    }
+
+    let assistant_message = conversation_repo
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: payload.session_id.clone(),
+            role: "assistant".to_string(),
+            content: response_text,
+            name: None,
+            meta_info: None,
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map_err(to_string)?;
+    let _ = conversation_repo
+        .touch_local_conversation_summary_idle_task(&payload.session_id)
+        .await;
+
+    Ok(LocalConversationRegenerateResponse {
+        session_id: payload.session_id.clone(),
+        deleted_turn_index: regenerate_ctx.deleted_turn_index,
+        message: assistant_message,
+    })
+}
+
+async fn register_local_chat_task_abort_handle(
+    local_chat_tasks: &tokio::sync::RwLock<HashMap<String, tokio::task::AbortHandle>>,
+    request_id: &str,
+    abort_handle: tokio::task::AbortHandle,
+) {
+    local_chat_tasks
+        .write()
+        .await
+        .insert(request_id.to_string(), abort_handle);
+}
+
+async fn clear_local_chat_task_abort_handle(
+    local_chat_tasks: &tokio::sync::RwLock<HashMap<String, tokio::task::AbortHandle>>,
+    request_id: &str,
+) {
+    local_chat_tasks.write().await.remove(request_id);
+}
+
+async fn abort_local_chat_task_by_request_id(
+    local_chat_tasks: &tokio::sync::RwLock<HashMap<String, tokio::task::AbortHandle>>,
+    request_id: &str,
+) -> bool {
+    let removed = local_chat_tasks.write().await.remove(request_id);
+    if let Some(abort_handle) = removed {
+        abort_handle.abort();
+        true
+    } else {
+        false
     }
 }
 
@@ -3355,5 +3497,41 @@ mod tests {
             Some(2)
         );
         assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn abort_local_chat_task_by_request_id_cancels_task() {
+        let local_chat_tasks =
+            RwLock::new(HashMap::<String, tokio::task::AbortHandle>::new());
+        let task = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            1usize
+        });
+
+        register_local_chat_task_abort_handle(
+            &local_chat_tasks,
+            "req-cancel-1",
+            task.abort_handle(),
+        )
+        .await;
+
+        let canceled =
+            abort_local_chat_task_by_request_id(&local_chat_tasks, "req-cancel-1").await;
+        assert!(canceled);
+        assert!(local_chat_tasks.read().await.is_empty());
+
+        match task.await {
+            Err(err) => assert!(err.is_cancelled()),
+            Ok(_) => panic!("task should be canceled"),
+        }
+    }
+
+    #[tokio::test]
+    async fn abort_local_chat_task_by_request_id_returns_false_when_missing() {
+        let local_chat_tasks =
+            RwLock::new(HashMap::<String, tokio::task::AbortHandle>::new());
+        let canceled =
+            abort_local_chat_task_by_request_id(&local_chat_tasks, "req-missing").await;
+        assert!(!canceled);
     }
 }

@@ -1,4 +1,5 @@
 import {
+  cancelLocalConversationRequest,
   clearConversation,
   deleteConversationMessage,
   regenerateConversationReply,
@@ -282,5 +283,24 @@ describe("conversation mutation apis", () => {
       { request_id: "req-regen-1", type: "done" },
     ])
     expect(unlisten).toHaveBeenCalledTimes(1)
+  })
+
+  it("cancels local conversation request via tauri command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue({
+      request_id: "req-cancel-1",
+      status: "cancelled",
+    } as unknown)
+
+    const result = await cancelLocalConversationRequest("req-cancel-1")
+
+    expect(result).toEqual({
+      request_id: "req-cancel-1",
+      status: "cancelled",
+    })
+    expect(mockInvoke).toHaveBeenCalledWith("cancel_local_conversation_request", {
+      request_id: "req-cancel-1",
+    })
   })
 })

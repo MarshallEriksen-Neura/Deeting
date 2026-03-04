@@ -28,6 +28,7 @@ export function resolveAssistantRequestContext({
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import {
+  cancelLocalConversationRequest,
   fetchConversationHistory,
   regenerateConversationReply,
   sendConversationMessage,
@@ -376,11 +377,15 @@ export function useChatMessagingService() {
     clearStatus()
     if (!requestId) return
     try {
-      await cancelChatCompletion(requestId)
+      if (isTauriRuntime) {
+        await cancelLocalConversationRequest(requestId)
+      } else {
+        await cancelChatCompletion(requestId)
+      }
     } catch {
       // ignore cancel errors
     }
-  }, [clearStatus, setIsLoading])
+  }, [clearStatus, isTauriRuntime, setIsLoading])
 
   const createLocalStreamHandler = useCallback((assistantMessageId: string) => {
     return (event: LocalConversationStreamEvent) => {
@@ -491,6 +496,8 @@ export function useChatMessagingService() {
           throw new Error("Session not found")
         }
 
+        const localRequestId = createRequestId()
+        requestIdRef.current = localRequestId
         const response = await sendConversationMessage(resolvedSessionId, {
           content: serializeMessageContent(trimmedInput, attachments),
           model: selectedModel.id,
@@ -499,7 +506,7 @@ export function useChatMessagingService() {
           top_p: config.topP,
           max_tokens: config.maxTokens,
           assistant_id: assistantId,
-          request_id: createRequestId(),
+          request_id: localRequestId,
         }, {
           onStreamEvent: createLocalStreamHandler(assistantMessageId),
         })
@@ -698,6 +705,9 @@ export function useChatMessagingService() {
         ])
       }
     } catch (error) {
+      if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
+        return
+      }
       const message = error instanceof Error && error.message ? error.message : "Request failed"
       appendMessageBlocks(assistantMessageId, [
         {
@@ -800,13 +810,15 @@ export function useChatMessagingService() {
           throw new Error("Session not found")
         }
 
+        const localRequestId = createRequestId()
+        requestIdRef.current = localRequestId
         const response = await regenerateConversationReply(resolvedSessionId, {
           model: selectedModel.id,
           provider_model_id: selectedModel.provider_model_id ?? undefined,
           temperature: config.temperature,
           top_p: config.topP,
           max_tokens: config.maxTokens,
-          request_id: createRequestId(),
+          request_id: localRequestId,
         }, {
           onStreamEvent: createLocalStreamHandler(assistantMessageId),
         })
@@ -995,6 +1007,9 @@ export function useChatMessagingService() {
         ])
       }
     } catch (error) {
+      if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
+        return
+      }
       const message = error instanceof Error && error.message ? error.message : "Request failed"
       appendMessageBlocks(assistantMessageId, [
         {

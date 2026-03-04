@@ -1034,6 +1034,12 @@ pub struct LocalConversationSendResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationCancelResponse {
+    pub request_id: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalConversationRenameRequest {
     pub title: String,
 }

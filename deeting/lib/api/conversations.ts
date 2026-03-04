@@ -310,6 +310,11 @@ export const ConversationSendResponseSchema = z.object({
 })
 
 export type ConversationSendResponse = z.infer<typeof ConversationSendResponseSchema>
+export const ConversationCancelResponseSchema = z.object({
+  request_id: z.string(),
+  status: z.enum(["cancelled", "not_found"]),
+})
+export type ConversationCancelResponse = z.infer<typeof ConversationCancelResponseSchema>
 
 export type ConversationRegenerateRequest = {
   model: string
@@ -544,4 +549,23 @@ export async function sendConversationMessage(
     })
   )
   return ConversationSendResponseSchema.parse(data)
+}
+
+export async function cancelLocalConversationRequest(
+  requestId: string
+): Promise<ConversationCancelResponse> {
+  if (!isTauriRuntime()) {
+    throw new Error("cancelLocalConversationRequest is only supported in Tauri runtime")
+  }
+
+  const normalized = normalizeRequestId(requestId)
+  if (!normalized) {
+    throw new Error("request_id is required")
+  }
+
+  const data = await invokeTauri<ConversationCancelResponse>(
+    "cancel_local_conversation_request",
+    { request_id: normalized }
+  )
+  return ConversationCancelResponseSchema.parse(data)
 }

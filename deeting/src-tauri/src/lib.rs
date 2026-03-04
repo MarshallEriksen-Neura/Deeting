@@ -328,6 +328,7 @@ pub fn run() {
             crate::modules::mcp::commands::clear_local_conversation,
             crate::modules::mcp::commands::send_local_conversation_message,
             crate::modules::mcp::commands::regenerate_local_conversation_reply,
+            crate::modules::mcp::commands::cancel_local_conversation_request,
             crate::modules::mcp::commands::import_mcp_config,
             crate::modules::mcp::commands::start_mcp_tool,
             crate::modules::mcp::commands::stop_mcp_tool,

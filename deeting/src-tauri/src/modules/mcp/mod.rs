@@ -11,6 +11,7 @@ use std::sync::Arc;
 use reqwest::Client;
 use serde_json::Value;
 use tokio::sync::RwLock;
+use tokio::task::AbortHandle;
 
 use crate::modules::mcp::bridge::McpBridgeState;
 use crate::modules::mcp::process::ProcessManager;
@@ -30,6 +31,7 @@ pub struct McpRuntimeState {
     pub client: Client,
     pub bridge: Arc<McpBridgeState>,
     pub pending_tool_calls: Arc<RwLock<HashMap<String, PendingToolCall>>>,
+    pub local_chat_tasks: Arc<RwLock<HashMap<String, AbortHandle>>>,
 }
 
 impl McpRuntimeState {
@@ -45,6 +47,7 @@ impl McpRuntimeState {
             client: Client::new(),
             bridge: Arc::new(McpBridgeState::new(cloud_base_url)),
             pending_tool_calls: Arc::new(RwLock::new(HashMap::new())),
+            local_chat_tasks: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
