@@ -1,6 +1,6 @@
 "use client"
 
-import { getCurrent } from "@tauri-apps/api/window"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 import { arch, platform, type, version } from "@tauri-apps/plugin-os"
 import { executableDir, homeDir, tempDir } from "@tauri-apps/api/path"
 
@@ -43,7 +43,7 @@ export async function collectLocalContext(): Promise<LocalContextSnapshot> {
   }
 
   try {
-    const window = getCurrent()
+    const window = getCurrentWindow()
     const is_focused = await window.isFocused()
     const label = window.label
 

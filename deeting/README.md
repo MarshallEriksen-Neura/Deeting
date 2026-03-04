@@ -34,3 +34,19 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Tauri Desktop Build
+
+When running desktop commands, use:
+
+```bash
+npm run desktop:dev
+npm run desktop:build
+```
+
+The wrapper script `scripts/tauri-with-protoc.mjs` injects `PROTOC` automatically by checking:
+1. existing `PROTOC` environment variable
+2. `protoc` from system `PATH`
+3. local `../.tmp/protoc/bin/protoc(.exe)`
+
+If all checks fail, the script exits with a clear error so you can install `protoc` first.
