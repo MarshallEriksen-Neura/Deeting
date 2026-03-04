@@ -86,6 +86,9 @@ describe("models api", () => {
     expect(cloud?.models[0]?.runtime_source).toBe("cloud_internal")
 
     expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_instances", undefined)
+    expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_models", {
+      instanceId: "inst-local-1",
+    })
     expect(mockRequest).toHaveBeenCalledTimes(1)
   })
 

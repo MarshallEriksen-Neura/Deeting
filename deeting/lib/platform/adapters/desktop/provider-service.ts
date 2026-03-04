@@ -146,7 +146,7 @@ export const desktopProviderService: IProviderService = {
   },
   updateInstance: async (id: string, payload: ProviderInstanceUpdate): Promise<ProviderInstanceResponse> => {
     const updated = await invoke<LocalProviderInstance>("update_local_provider_instance", {
-      instance_id: id,
+      instanceId: id,
       payload: {
         name: payload.name ?? undefined,
         base_url: payload.base_url ?? undefined,
@@ -168,17 +168,17 @@ export const desktopProviderService: IProviderService = {
     return toInstanceResponse(updated);
   },
   deleteInstance: async (id: string): Promise<void> => {
-    await invoke("delete_local_provider_instance", { instance_id: id });
+    await invoke("delete_local_provider_instance", { instanceId: id });
   },
   getModels: async (instanceId: string): Promise<ProviderModelResponse[]> => {
     const models = await invoke<LocalProviderModel[]>("list_local_provider_models", {
-      instance_id: instanceId,
+      instanceId,
     });
     return models.map(toModelResponse);
   },
   syncModels: async (instanceId: string): Promise<ProviderModelResponse[]> => {
     const models = await invoke<LocalProviderModel[]>("sync_local_provider_models", {
-      instance_id: instanceId,
+      instanceId,
     });
     return models.map(toModelResponse);
   },
@@ -187,21 +187,21 @@ export const desktopProviderService: IProviderService = {
     payload: { models: string[]; capability?: string }
   ): Promise<ProviderModelResponse[]> => {
     const models = await invoke<LocalProviderModel[]>("quick_add_local_provider_models", {
-      instance_id: instanceId,
+      instanceId,
       payload,
     });
     return models.map(toModelResponse);
   },
   updateModel: async (modelId: string, payload: ProviderModelUpdate): Promise<ProviderModelResponse> => {
     const updated = await invoke<LocalProviderModel>("update_local_provider_model", {
-      model_id: modelId,
+      modelId,
       payload,
     });
     return toModelResponse(updated);
   },
   testModel: async (modelId: string, payload?: ProviderModelTestRequest): Promise<ProviderModelTestResponse> => {
     return await invoke<ProviderModelTestResponse>("test_local_provider_model", {
-      model_id: modelId,
+      modelId,
       payload,
     });
   },

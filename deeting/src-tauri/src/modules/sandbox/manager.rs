@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+#[cfg(target_os = "windows")]
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +23,13 @@ const DEFAULT_MAX_SANDBOXES: usize = 50;
 const MIN_EXEC_TIMEOUT_SECS: u64 = 5;
 const SESSION_BUSY_RETRY_ATTEMPTS: usize = 2;
 const REAPER_INTERVAL_SECS: u64 = 60;
+const DEFAULT_BRIDGE_PREFIX: &str = "v1";
+
+#[cfg(target_os = "windows")]
+const DEFAULT_BRIDGE_DISCOVERY_TIMEOUT_MS: u64 = 300;
+#[cfg(target_os = "windows")]
+const DEFAULT_BRIDGE_DISCOVERY_URLS: [&str; 2] =
+    ["http://127.0.0.1:3030", "http://localhost:3030"];
 
 #[derive(Debug, Clone)]
 pub struct SandboxManagerOptions {
@@ -38,15 +47,16 @@ pub struct SandboxManagerOptions {
 
 impl SandboxManagerOptions {
     pub fn from_home_dir(home_dir: PathBuf) -> Self {
-        let bridge_url = std::env::var("BOXLITE_REST_URL")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty());
+        let mut bridge_url = non_empty_env("BOXLITE_REST_URL");
+        #[cfg(target_os = "windows")]
+        if bridge_url.is_none() {
+            bridge_url = discover_bridge_url();
+        }
         let bridge_prefix = std::env::var("BOXLITE_REST_PREFIX")
             .ok()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| "v1".to_string());
+            .unwrap_or_else(|| DEFAULT_BRIDGE_PREFIX.to_string());
 
         Self {
             home_dir,
@@ -480,7 +490,9 @@ impl SandboxRuntimeManager {
                     }
                 }
             } else {
-                log::warn!("BOXLITE_REST_URL missing on Windows, fallback to host python runtime");
+                log::warn!(
+                    "BOXLITE_REST_URL missing and no local bridge discovered, fallback to host python runtime"
+                );
             }
 
             let host_backend = HostPythonBackend::new(HostBackendOptions {
@@ -536,6 +548,81 @@ impl SandboxRuntimeManager {
             BackendRuntime::Disabled(_) => Ok(()),
         }
     }
+}
+
+fn non_empty_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+#[cfg(target_os = "windows")]
+fn discover_bridge_url() -> Option<String> {
+    let candidates = bridge_url_candidates();
+    if candidates.is_empty() {
+        return None;
+    }
+
+    for candidate in candidates {
+        if is_bridge_candidate_reachable(&candidate) {
+            log::info!("auto discovered BOXLITE bridge endpoint: {}", candidate);
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn bridge_url_candidates() -> Vec<String> {
+    if let Some(raw) = non_empty_env("BOXLITE_REST_URL_CANDIDATES") {
+        let parsed = parse_bridge_url_candidates(&raw);
+        if !parsed.is_empty() {
+            return parsed;
+        }
+    }
+
+    DEFAULT_BRIDGE_DISCOVERY_URLS
+        .iter()
+        .map(|url| (*url).to_string())
+        .collect()
+}
+
+fn parse_bridge_url_candidates(raw: &str) -> Vec<String> {
+    raw.split([',', ';', '\n', '\t', ' '])
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_string())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn is_bridge_candidate_reachable(base_url: &str) -> bool {
+    let parsed = match reqwest::Url::parse(base_url) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+
+    let host = match parsed.host_str() {
+        Some(host) => host,
+        None => return false,
+    };
+    let port = match parsed.port_or_known_default() {
+        Some(port) => port,
+        None => return false,
+    };
+    let timeout = Duration::from_millis(DEFAULT_BRIDGE_DISCOVERY_TIMEOUT_MS);
+    let addrs = match (host, port).to_socket_addrs() {
+        Ok(addrs) => addrs,
+        Err(_) => return false,
+    };
+
+    for addr in addrs {
+        if TcpStream::connect_timeout(&addr, timeout).is_ok() {
+            return true;
+        }
+    }
+    false
 }
 
 fn normalize_session_id(raw: &str) -> Result<String, SandboxError> {
@@ -607,5 +694,22 @@ mod tests {
     fn normalize_session_rejects_empty() {
         let err = normalize_session_id("   ").unwrap_err();
         assert_eq!(err.code(), "SANDBOX_VALIDATION_ERROR");
+    }
+
+    #[test]
+    fn parse_bridge_candidates_splits_common_delimiters() {
+        let parsed = parse_bridge_url_candidates(
+            " http://127.0.0.1:3030,https://localhost:3031;http://a\nhttp://b\t http://c ",
+        );
+        assert_eq!(
+            parsed,
+            vec![
+                "http://127.0.0.1:3030",
+                "https://localhost:3031",
+                "http://a",
+                "http://b",
+                "http://c"
+            ]
+        );
     }
 }
