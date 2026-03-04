@@ -1,0 +1,17 @@
+tools:
+  - name: create_skill_md
+    description: "Generates or updates a SKILL.md file for a given skill directory."
+    parameters:
+      type: object
+      properties:
+        skill_path:
+          type: string
+          description: "Absolute path to the skill directory (e.g., '/data/Deeting/packages/official-skills/crawler')."
+        content:
+          type: string
+          description: "The Markdown content for SKILL.md following Agent Skills standard."
+      required: ["skill_path", "content"]
+
+  - name: list_official_skills
+    description: "Lists all official skills that might need an upgrade."
+    parameters: { type: object, properties: {} }

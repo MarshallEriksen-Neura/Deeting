@@ -1,0 +1,17 @@
+{
+  "id": "official.skills.skill_creator",
+  "name": "Skill Creator",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Meta-skill that helps create or upgrade other skills following the Agent Skills standard.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "fs.read",
+    "fs.write"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}
