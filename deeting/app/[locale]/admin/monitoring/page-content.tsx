@@ -54,11 +54,11 @@ export function PageContent() {
     return value.length > 5 ? value.slice(0, 5) : value
   }
 
-  const { data: dashboardStats } = useDashboardStats()
-  const { data: tokenThroughput } = useTokenThroughput("24h")
-  const { data: routerStats } = useSmartRouterStats()
-  const { data: providerHealth } = useProviderHealth()
-  const { data: recentErrors } = useRecentErrors(20)
+  const { data: dashboardStats } = useDashboardStats({ source: "cloud" })
+  const { data: tokenThroughput } = useTokenThroughput("24h", { source: "cloud" })
+  const { data: routerStats } = useSmartRouterStats({ source: "cloud" })
+  const { data: providerHealth } = useProviderHealth({ source: "cloud" })
+  const { data: recentErrors } = useRecentErrors(20, { source: "cloud" })
 
   const stats: StatCardData[] = [
     {

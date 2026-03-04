@@ -9,7 +9,9 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
-use crate::modules::sandbox::backend_host::{HostBackendOptions, HostPythonBackend};
+#[cfg(target_os = "windows")]
+use crate::modules::sandbox::backend_host::HostBackendOptions;
+use crate::modules::sandbox::backend_host::HostPythonBackend;
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::types::{
     SandboxExecutionOutput, SandboxIdentity, SandboxLeaseInfo, SandboxRunResult,
@@ -24,12 +26,13 @@ const MIN_EXEC_TIMEOUT_SECS: u64 = 5;
 const SESSION_BUSY_RETRY_ATTEMPTS: usize = 2;
 const REAPER_INTERVAL_SECS: u64 = 60;
 const DEFAULT_BRIDGE_PREFIX: &str = "v1";
+const DEFAULT_BOXRUN_PORT: u16 = 9090;
 
 #[cfg(target_os = "windows")]
 const DEFAULT_BRIDGE_DISCOVERY_TIMEOUT_MS: u64 = 300;
 #[cfg(target_os = "windows")]
 const DEFAULT_BRIDGE_DISCOVERY_URLS: [&str; 2] =
-    ["http://127.0.0.1:3030", "http://localhost:3030"];
+    ["http://127.0.0.1:9090", "http://localhost:9090"];
 
 #[derive(Debug, Clone)]
 pub struct SandboxManagerOptions {
@@ -43,20 +46,19 @@ pub struct SandboxManagerOptions {
     pub python_bin: String,
     pub bridge_url: Option<String>,
     pub bridge_prefix: String,
+    pub bridge_api_key: Option<String>,
 }
 
 impl SandboxManagerOptions {
     pub fn from_home_dir(home_dir: PathBuf) -> Self {
-        let mut bridge_url = non_empty_env("BOXLITE_REST_URL");
+        let bridge_url = bridge_url_from_env();
         #[cfg(target_os = "windows")]
-        if bridge_url.is_none() {
-            bridge_url = discover_bridge_url();
-        }
-        let bridge_prefix = std::env::var("BOXLITE_REST_PREFIX")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
+        let bridge_url = bridge_url.or_else(discover_bridge_url);
+        let bridge_prefix = non_empty_env("BOXRUN_API_PREFIX")
+            .or_else(|| non_empty_env("BOXLITE_REST_PREFIX"))
             .unwrap_or_else(|| DEFAULT_BRIDGE_PREFIX.to_string());
+        let bridge_api_key =
+            non_empty_env("BOXRUN_API_KEY").or_else(|| non_empty_env("BOXLITE_REST_API_KEY"));
 
         Self {
             home_dir,
@@ -69,6 +71,7 @@ impl SandboxManagerOptions {
             python_bin: "python3".to_string(),
             bridge_url,
             bridge_prefix,
+            bridge_api_key,
         }
     }
 }
@@ -449,7 +452,7 @@ impl SandboxRuntimeManager {
         {
             let _ = options;
             return Err(SandboxError::Unavailable(
-                "native boxlite backend is not linked in this desktop package; use WSL bridge"
+                "native boxrun backend is not linked in this desktop package; use WSL backend"
                     .to_string(),
             ));
         }
@@ -460,6 +463,7 @@ impl SandboxRuntimeManager {
                 match WslBoxliteBackend::new(WslBackendOptions {
                     base_url: bridge_url,
                     api_prefix: options.bridge_prefix.clone(),
+                    api_key: options.bridge_api_key.clone(),
                     image: options.image.clone(),
                     cpus: options.cpus,
                     memory_mib: options.memory_mib,
@@ -472,7 +476,7 @@ impl SandboxRuntimeManager {
                         tauri::async_runtime::spawn(async move {
                             if let Err(err) = probe_backend.probe().await {
                                 log::warn!(
-                                    "boxlite wsl bridge probe failed: code={} detail={}",
+                                    "boxrun WSL REST probe failed: code={} detail={}",
                                     err.code(),
                                     err
                                 );
@@ -483,7 +487,7 @@ impl SandboxRuntimeManager {
                     }
                     Err(err) => {
                         log::warn!(
-                            "wsl bridge backend unavailable, fallback to host python runtime: code={} detail={}",
+                            "boxrun WSL backend unavailable, fallback to host python runtime: code={} detail={}",
                             err.code(),
                             err
                         );
@@ -491,7 +495,7 @@ impl SandboxRuntimeManager {
                 }
             } else {
                 log::warn!(
-                    "BOXLITE_REST_URL missing and no local bridge discovered, fallback to host python runtime"
+                    "BOXRUN endpoint not configured/discovered, fallback to host python runtime"
                 );
             }
 
@@ -557,6 +561,35 @@ fn non_empty_env(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn bridge_url_from_env() -> Option<String> {
+    non_empty_env("BOXRUN_BASE_URL")
+        .or_else(|| boxrun_url_from_host_port_env())
+        .or_else(|| non_empty_env("BOXLITE_REST_URL"))
+}
+
+fn boxrun_url_from_host_port_env() -> Option<String> {
+    let host = non_empty_env("BOXRUN_HOST");
+    let port = non_empty_env("BOXRUN_PORT");
+    if host.is_none() && port.is_none() {
+        return None;
+    }
+
+    let raw_host = host.unwrap_or_else(|| "http://127.0.0.1".to_string());
+    let normalized = if raw_host.starts_with("http://") || raw_host.starts_with("https://") {
+        raw_host
+    } else {
+        format!("http://{raw_host}")
+    };
+    let mut parsed = reqwest::Url::parse(&normalized).ok()?;
+
+    let resolved_port = port
+        .and_then(|raw| raw.parse::<u16>().ok())
+        .or_else(|| parsed.port())
+        .unwrap_or(DEFAULT_BOXRUN_PORT);
+    let _ = parsed.set_port(Some(resolved_port));
+    Some(parsed.to_string().trim_end_matches('/').to_string())
+}
+
 #[cfg(target_os = "windows")]
 fn discover_bridge_url() -> Option<String> {
     let candidates = bridge_url_candidates();
@@ -566,7 +599,7 @@ fn discover_bridge_url() -> Option<String> {
 
     for candidate in candidates {
         if is_bridge_candidate_reachable(&candidate) {
-            log::info!("auto discovered BOXLITE bridge endpoint: {}", candidate);
+            log::info!("auto discovered BOXRUN endpoint: {}", candidate);
             return Some(candidate);
         }
     }
@@ -575,19 +608,35 @@ fn discover_bridge_url() -> Option<String> {
 
 #[cfg(target_os = "windows")]
 fn bridge_url_candidates() -> Vec<String> {
-    if let Some(raw) = non_empty_env("BOXLITE_REST_URL_CANDIDATES") {
+    let mut candidates = Vec::new();
+    if let Some(url) = boxrun_url_from_host_port_env() {
+        candidates.push(url);
+    }
+
+    if let Some(raw) = non_empty_env("BOXRUN_BASE_URL_CANDIDATES")
+        .or_else(|| non_empty_env("BOXLITE_REST_URL_CANDIDATES"))
+    {
         let parsed = parse_bridge_url_candidates(&raw);
         if !parsed.is_empty() {
-            return parsed;
+            candidates.extend(parsed);
         }
     }
 
-    DEFAULT_BRIDGE_DISCOVERY_URLS
-        .iter()
-        .map(|url| (*url).to_string())
-        .collect()
+    for default_url in DEFAULT_BRIDGE_DISCOVERY_URLS {
+        candidates.push(default_url.to_string());
+    }
+
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+    for candidate in candidates {
+        if seen.insert(candidate.clone()) {
+            deduped.push(candidate);
+        }
+    }
+    deduped
 }
 
+#[cfg(target_os = "windows")]
 fn parse_bridge_url_candidates(raw: &str) -> Vec<String> {
     raw.split([',', ';', '\n', '\t', ' '])
         .map(str::trim)
@@ -696,6 +745,7 @@ mod tests {
         assert_eq!(err.code(), "SANDBOX_VALIDATION_ERROR");
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn parse_bridge_candidates_splits_common_delimiters() {
         let parsed = parse_bridge_url_candidates(

@@ -30,9 +30,9 @@ export function PageContent() {
     notation: "compact",
     maximumFractionDigits: 1,
   })
-  const { data: dashboardStats } = useDashboardStats()
-  const { data: providerHealth } = useProviderHealth()
-  const { data: recentErrors } = useRecentErrors(5)
+  const { data: dashboardStats } = useDashboardStats({ source: "cloud" })
+  const { data: providerHealth } = useProviderHealth({ source: "cloud" })
+  const { data: recentErrors } = useRecentErrors(5, { source: "cloud" })
 
   const { data: totalUsers } = useSWR(
     "/api/v1/admin/users?limit=1",

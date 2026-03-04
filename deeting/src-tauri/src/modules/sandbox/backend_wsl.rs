@@ -14,6 +14,7 @@ use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
 pub struct WslBackendOptions {
     pub base_url: String,
     pub api_prefix: String,
+    pub api_key: Option<String>,
     pub image: String,
     pub cpus: Option<u8>,
     pub memory_mib: Option<u32>,
@@ -33,7 +34,7 @@ impl WslBoxliteBackend {
 
         if options.base_url.trim().is_empty() {
             return Err(SandboxError::Unavailable(
-                "missing BOXLITE_REST_URL for WSL bridge".to_string(),
+                "missing BOXRUN endpoint for WSL backend".to_string(),
             ));
         }
 
@@ -46,14 +47,15 @@ impl WslBoxliteBackend {
     }
 
     pub async fn probe(&self) -> Result<(), SandboxError> {
-        let url = self.url_root("/config");
-        let response = self.client.get(url).send().await?;
-        if response.status().is_success() {
+        let url = self.url("/boxes");
+        let response = self.authorized(self.client.get(url)).send().await?;
+        let status = response.status();
+        if status.is_success() || status.as_u16() == 401 || status.as_u16() == 403 {
             return Ok(());
         }
         Err(SandboxError::Unavailable(format!(
-            "boxlite WSL bridge probe failed with status {}",
-            response.status()
+            "boxrun WSL probe failed with status {}",
+            status
         )))
     }
 
@@ -66,21 +68,18 @@ impl WslBoxliteBackend {
             name: Some(box_name.to_string()),
             image: Some(self.options.image.clone()),
             rootfs_path: None,
-            cpus: self.options.cpus,
-            memory_mib: self.options.memory_mib,
-            disk_size_gb: None,
-            working_dir: self.options.working_dir.clone(),
+            cpu: self.options.cpus.map(|v| v.to_string()),
+            memory: self.options.memory_mib.map(|v| format!("{v}Mi")),
+            disk: None,
+            cwd: self.options.working_dir.clone(),
             env: Option::<HashMap<String, String>>::None,
             entrypoint: None,
             cmd: None,
             user: None,
-            auto_remove: Some(false),
-            detach: Some(false),
-            security: None,
         };
 
         let url = self.url("/boxes");
-        let response = self.client.post(url).json(&payload).send().await?;
+        let response = self.authorized(self.client.post(url)).json(&payload).send().await?;
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
@@ -90,8 +89,11 @@ impl WslBoxliteBackend {
         }
 
         let created: BoxResponse = response.json().await?;
+        let sandbox_id = created
+            .id()
+            .ok_or_else(|| SandboxError::Internal("create box response missing id".to_string()))?;
         Ok(SandboxIdentity {
-            sandbox_id: created.box_id,
+            sandbox_id: sandbox_id.to_string(),
             sandbox_name: created.name.unwrap_or_else(|| box_name.to_string()),
         })
     }
@@ -100,8 +102,8 @@ impl WslBoxliteBackend {
         if self.get_box(box_id_or_name).await?.is_none() {
             return Ok(());
         }
-        let url = self.url(&format!("/boxes/{box_id_or_name}/stop"));
-        let response = self.client.post(url).send().await?;
+        let url = self.url(&format!("/boxes/{box_id_or_name}:stop"));
+        let response = self.authorized(self.client.post(url)).send().await?;
         if response.status().is_success() || response.status().as_u16() == 404 {
             return Ok(());
         }
@@ -124,18 +126,19 @@ impl WslBoxliteBackend {
             .ok_or_else(|| SandboxError::NotFound(format!("sandbox {box_id_or_name} not found")))?;
 
         let request = ExecRequest {
-            command: self.options.python_bin.clone(),
-            args: vec!["-c".to_string(), code.to_string()],
+            cmd: vec![
+                self.options.python_bin.clone(),
+                "-c".to_string(),
+                code.to_string(),
+            ],
             env: None,
-            timeout_seconds: Some(timeout_seconds.max(1) as f64),
-            working_dir: self.options.working_dir.clone(),
-            tty: false,
+            timeout_ms: Some(timeout_seconds.max(1).saturating_mul(1000)),
+            cwd: self.options.working_dir.clone(),
         };
 
         let create_exec_url = self.url(&format!("/boxes/{}/exec", identity.sandbox_id));
         let create_response = self
-            .client
-            .post(create_exec_url)
+            .authorized(self.client.post(create_exec_url))
             .json(&request)
             .send()
             .await?;
@@ -153,13 +156,15 @@ impl WslBoxliteBackend {
         }
 
         let exec: ExecResponse = create_response.json().await?;
+        let execution_id = exec.execution_id().ok_or_else(|| {
+            SandboxError::Internal("create execution response missing id".to_string())
+        })?;
         let output_url = self.url(&format!(
-            "/boxes/{}/executions/{}/output",
-            identity.sandbox_id, exec.execution_id
+            "/boxes/{}/exec/{}/events",
+            identity.sandbox_id, execution_id
         ));
         let output_response = self
-            .client
-            .get(output_url)
+            .authorized(self.client.get(output_url))
             .header("Accept", "text/event-stream")
             .send()
             .await?;
@@ -175,6 +180,7 @@ impl WslBoxliteBackend {
         let mut stderr = Vec::new();
         let mut exit_code = -1;
         let mut error_message = None;
+        let mut finished = false;
 
         let mut stream = output_response.bytes_stream();
         let mut buffer = String::new();
@@ -201,6 +207,7 @@ impl WslBoxliteBackend {
                     current_event.clear();
                     current_data.clear();
                     if done {
+                        finished = true;
                         break;
                     }
                 } else if let Some(value) = line.strip_prefix("event: ") {
@@ -213,7 +220,7 @@ impl WslBoxliteBackend {
                 }
             }
 
-            if exit_code != -1 {
+            if finished {
                 break;
             }
         }
@@ -232,7 +239,7 @@ impl WslBoxliteBackend {
 
     async fn get_box(&self, box_id_or_name: &str) -> Result<Option<SandboxIdentity>, SandboxError> {
         let url = self.url(&format!("/boxes/{box_id_or_name}"));
-        let response = self.client.get(url).send().await?;
+        let response = self.authorized(self.client.get(url)).send().await?;
         if response.status().as_u16() == 404 {
             return Ok(None);
         }
@@ -244,28 +251,32 @@ impl WslBoxliteBackend {
             )));
         }
         let box_resp: BoxResponse = response.json().await?;
+        let sandbox_id = box_resp
+            .id()
+            .ok_or_else(|| SandboxError::Internal("box response missing id".to_string()))?;
         Ok(Some(SandboxIdentity {
-            sandbox_id: box_resp.box_id,
+            sandbox_id: sandbox_id.to_string(),
             sandbox_name: box_resp.name.unwrap_or_else(|| box_id_or_name.to_string()),
         }))
     }
 
     fn url(&self, path: &str) -> String {
+        format!("{}{}", self.api_base(), path)
+    }
+
+    fn api_base(&self) -> String {
         format!(
-            "{}/{}/default{}",
+            "{}/{}",
             self.options.base_url.trim_end_matches('/'),
-            self.options.api_prefix.trim_matches('/'),
-            path
+            self.options.api_prefix.trim_matches('/')
         )
     }
 
-    fn url_root(&self, path: &str) -> String {
-        format!(
-            "{}/{}{}",
-            self.options.base_url.trim_end_matches('/'),
-            self.options.api_prefix.trim_matches('/'),
-            path
-        )
+    fn authorized(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(api_key) = self.options.api_key.as_deref() {
+            return builder.header("x-api-key", api_key);
+        }
+        builder
     }
 }
 
@@ -307,72 +318,186 @@ fn dispatch_sse_event(
             }
             false
         }
-        "exit" => {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                *exit_code = parsed
-                    .get("exit_code")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(-1) as i32;
-                *error_message = parsed
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-            }
-            true
-        }
         "error" => {
             *exit_code = -1;
-            *error_message = Some(data.to_string());
+            *error_message = Some(decode_event_data(data).unwrap_or_else(|| data.to_string()));
             true
         }
-        _ => false,
+        _ => {
+            let parsed = serde_json::from_str::<serde_json::Value>(data).ok();
+            let lower_event = event.to_ascii_lowercase();
+
+            if let Some(parsed) = parsed.as_ref() {
+                if let Some(code) = extract_exit_code(parsed) {
+                    *exit_code = code;
+                    if error_message.is_none() {
+                        *error_message = parsed
+                            .get("error")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                    }
+                    if lower_event.contains("exit")
+                        || lower_event.contains("done")
+                        || lower_event.contains("complete")
+                    {
+                        return true;
+                    }
+                }
+
+                if let Some(stream_name) = parsed.get("stream").and_then(|v| v.as_str()) {
+                    if let Some(text) = extract_text_data(parsed) {
+                        if stream_name.eq_ignore_ascii_case("stderr") {
+                            stderr.push(text);
+                        } else {
+                            stdout.push(text);
+                        }
+                    }
+                    return false;
+                }
+            }
+
+            if lower_event.contains("stderr") {
+                if let Some(text) = decode_event_data(data) {
+                    stderr.push(text);
+                }
+                return false;
+            }
+            if lower_event.contains("stdout")
+                || lower_event == "chunk"
+                || lower_event == "message"
+                || lower_event.is_empty()
+            {
+                if let Some(text) = decode_event_data(data) {
+                    stdout.push(text);
+                }
+            }
+
+            false
+        }
     }
 }
 
 fn decode_event_data(data: &str) -> Option<String> {
-    let parsed: serde_json::Value = serde_json::from_str(data).ok()?;
-    let b64 = parsed.get("data")?.as_str()?;
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
+        if let Some(text) = extract_text_data(&parsed) {
+            return Some(text);
+        }
+    }
+    let trimmed = data.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn extract_text_data(parsed: &serde_json::Value) -> Option<String> {
+    if let Some(raw_data) = parsed.get("data").and_then(|v| v.as_str()) {
+        if let Some(decoded) = decode_base64(raw_data) {
+            return Some(decoded);
+        }
+        let trimmed = raw_data.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    for key in ["chunk", "text", "line", "message"] {
+        if let Some(value) = parsed.get(key).and_then(|v| v.as_str()) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    if let Some(output_text) = parsed.get("output").and_then(|v| v.as_str()) {
+        let trimmed = output_text.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    None
+}
+
+fn decode_base64(value: &str) -> Option<String> {
     let bytes = base64::engine::general_purpose::STANDARD
-        .decode(b64.trim())
+        .decode(value.trim())
         .ok()?;
     String::from_utf8(bytes).ok()
 }
 
+fn extract_exit_code(parsed: &serde_json::Value) -> Option<i32> {
+    for key in ["exit_code", "exitCode", "code"] {
+        if let Some(value) = parsed.get(key).and_then(|v| v.as_i64()) {
+            return Some(value as i32);
+        }
+    }
+    None
+}
+
 #[derive(Debug, Serialize)]
 struct CreateBoxRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     rootfs_path: Option<String>,
-    cpus: Option<u8>,
-    memory_mib: Option<u32>,
-    disk_size_gb: Option<u64>,
-    working_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cpu: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    disk: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     env: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     entrypoint: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     cmd: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     user: Option<String>,
-    auto_remove: Option<bool>,
-    detach: Option<bool>,
-    security: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 struct BoxResponse {
-    box_id: String,
+    id: Option<String>,
+    box_id: Option<String>,
     name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct ExecRequest {
-    command: String,
-    args: Vec<String>,
+    cmd: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     env: Option<HashMap<String, String>>,
-    timeout_seconds: Option<f64>,
-    working_dir: Option<String>,
-    tty: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ExecResponse {
-    execution_id: String,
+    id: Option<String>,
+    execution_id: Option<String>,
+}
+
+impl BoxResponse {
+    fn id(&self) -> Option<&str> {
+        self.id.as_deref().or(self.box_id.as_deref())
+    }
+}
+
+impl ExecResponse {
+    fn execution_id(&self) -> Option<&str> {
+        self.execution_id
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+            .or(self.id.as_deref())
+    }
 }

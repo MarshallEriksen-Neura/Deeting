@@ -5,10 +5,11 @@ import { request } from "@/lib/http"
 const MODELS_BASE = "/api/v1/internal/models"
 const AVAILABLE_MODELS_PATH = "/api/v1/models/available"
 
-const isTauriRuntime = () =>
-  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-  typeof window !== "undefined" &&
-  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+const isTauriRuntime = () => {
+  if (typeof window === "undefined") return false
+  if ("__TAURI_INTERNALS__" in window || "__TAURI__" in window) return true
+  return process.env.NEXT_PUBLIC_IS_TAURI === "true"
+}
 
 const shouldIncludeCloudModelsInDesktop = () =>
   process.env.NEXT_PUBLIC_DESKTOP_INCLUDE_CLOUD_MODELS === "true"

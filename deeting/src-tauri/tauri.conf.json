@@ -40,6 +40,7 @@
     "windows": {
       "nsis": {
         "installMode": "both",
+        "installerHooks": "./windows/hooks.nsh",
         "installerIcon": "icons/icon.ico",
         "headerImage": "icons/nsis-header.bmp",
         "sidebarImage": "icons/nsis-sidebar.bmp",
