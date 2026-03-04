@@ -22,6 +22,7 @@ const mockRequest = request as jest.MockedFunction<typeof request>
 const mockGetAuthToken = getAuthToken as jest.MockedFunction<typeof getAuthToken>
 const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
 const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
+const originalUserSyncFlag = process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC
 const windowWithTauri = window as Window & {
   __TAURI__?: unknown
   __TAURI_INTERNALS__?: unknown
@@ -33,6 +34,7 @@ describe("code mode api", () => {
     mockGetAuthToken.mockReset()
     mockInvoke.mockReset()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
+    process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC = originalUserSyncFlag
     delete windowWithTauri.__TAURI__
     delete windowWithTauri.__TAURI_INTERNALS__
   })
@@ -154,6 +156,7 @@ describe("code mode api", () => {
 
   it("syncs local executions via tauri command", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC = "true"
     windowWithTauri.__TAURI__ = {}
     mockGetAuthToken.mockReturnValue("token-123")
     mockInvoke.mockResolvedValue({

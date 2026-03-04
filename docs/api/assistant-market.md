@@ -4,6 +4,7 @@
 - 分页：市场列表与安装列表使用 `fastapi_pagination` 的 CursorPage。
 - 审核：提交后由超级用户秘书自动审核，通过后才会出现在市场；超级用户秘书模型未配置会返回 400。
 - 同步：仅系统助手（`owner_user_id = null`）或审核通过的用户助手会异步同步到 Qdrant 专家索引（`expert_network`）；未通过审核不会同步。
+- Desktop（Tauri）补充：市场读取前会执行“系统助手（`owner_user_id = null`）云端 -> 本地”单向同步；用户本地数据不上云。
 
 ## 市场列表
 

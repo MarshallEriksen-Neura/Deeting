@@ -1,5 +1,5 @@
-pub mod error;
 pub mod backend_host;
+pub mod error;
 pub mod manager;
 pub mod types;
 

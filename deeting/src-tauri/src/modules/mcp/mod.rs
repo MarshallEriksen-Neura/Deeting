@@ -54,10 +54,10 @@ impl McpRuntimeState {
     /// Determines if a tool operation is considered high-risk
     pub fn is_high_risk_tool(&self, tool_name: &str) -> bool {
         let name = tool_name.to_lowercase();
-        name.contains("delete") 
-            || name.contains("remove") 
-            || name.contains("write") 
-            || name.contains("shell") 
+        name.contains("delete")
+            || name.contains("remove")
+            || name.contains("write")
+            || name.contains("shell")
             || name.contains("execute")
             || name.contains("update")
             || name.contains("terminal")

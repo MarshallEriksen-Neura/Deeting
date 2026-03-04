@@ -32,7 +32,7 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
   } = useChatMessagingService()
 
   const handleSendMessage = useCallback(async () => {
-    if (isTauriRuntime && agent) {
+    if (isTauriRuntime) {
       const userContent = input.trim()
       if (!userContent && attachments.length === 0) return
 
@@ -44,7 +44,7 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
       let localSessionId = sessionId
       if (!localSessionId) {
         try {
-          const created = await createConversation({ assistant_id: agent.id })
+          const created = await createConversation({ assistant_id: agent?.id ?? null })
           if (created.session_id) {
             localSessionId = created.session_id
             setSessionId(created.session_id)

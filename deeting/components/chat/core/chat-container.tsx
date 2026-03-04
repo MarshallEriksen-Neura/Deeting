@@ -114,7 +114,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
       <ChatLayout
         agent={agent ?? undefined}
         isLoadingAssistants={showLoading}
-        allowMissingAgent={!isTauriRuntime}
+        allowMissingAgent
       >
         <ChatContent agent={agent ?? undefined} />
       </ChatLayout>

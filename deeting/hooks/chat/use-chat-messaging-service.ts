@@ -449,7 +449,7 @@ export function useChatMessagingService() {
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
     const activeAssistant = agent
-    if (!selectedModel || (preferLocalRoute && !activeAssistant)) return
+    if (!selectedModel) return
 
     const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
       isTauriRuntime,

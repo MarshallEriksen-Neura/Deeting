@@ -7,6 +7,9 @@ const isTauriRuntime = () =>
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
 
+const isUserCloudSyncEnabled = () =>
+  process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC === "true"
+
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
   return invoke<T>(command, args)
@@ -145,7 +148,7 @@ export async function fetchCodeModeExecutions(
   query: CodeModeExecutionsQuery = {}
 ): Promise<CodeModeExecutionPage> {
   if (isTauriRuntime()) {
-    if (!query.cursor) {
+    if (!query.cursor && isUserCloudSyncEnabled()) {
       try {
         await syncLocalCodeModeExecutions({ limit: query.size ?? 20 })
       } catch (error) {
@@ -255,7 +258,7 @@ export async function syncLocalCodeModeExecutions(options: {
     results: [],
     summary: { synced: 0, exists: 0, failed: 0 },
   }
-  if (!isTauriRuntime()) {
+  if (!isTauriRuntime() || !isUserCloudSyncEnabled()) {
     return empty
   }
   const token = (options.accessToken ?? getAuthToken() ?? "").trim()

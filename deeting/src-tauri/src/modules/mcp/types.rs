@@ -351,6 +351,37 @@ pub struct LocalAssistantSummaryVersion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudSystemAssistantVersionSnapshot {
+    pub id: String,
+    pub version: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub system_prompt: Option<String>,
+    pub tags: Vec<String>,
+    pub published_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudSystemAssistantSnapshot {
+    pub assistant_id: String,
+    pub icon_id: Option<String>,
+    pub share_slug: Option<String>,
+    pub summary: Option<String>,
+    pub published_at: Option<String>,
+    pub install_count: i64,
+    pub rating_avg: f64,
+    pub rating_count: i64,
+    pub version: CloudSystemAssistantVersionSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalSystemAssistantSyncResponse {
+    pub fetched_count: i64,
+    pub synced_count: i64,
+    pub archived_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalAssistantSummary {
     pub assistant_id: String,
     pub owner_user_id: Option<String>,

@@ -26,6 +26,20 @@ const LOCAL_DEFAULT_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 const DEFAULT_SYNC_BATCH_SIZE: i64 = 50;
 const MAX_SYNC_BATCH_SIZE: i64 = 200;
 
+fn user_cloud_sync_enabled() -> bool {
+    let parse_flag = |raw: Option<String>| {
+        matches!(
+            raw.as_deref()
+                .map(|v| v.trim().to_ascii_lowercase())
+                .as_deref(),
+            Some("1") | Some("true") | Some("yes") | Some("on")
+        )
+    };
+
+    parse_flag(std::env::var("DESKTOP_ALLOW_USER_CLOUD_SYNC").ok())
+        || parse_flag(std::env::var("NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC").ok())
+}
+
 #[derive(Debug, Serialize)]
 struct CloudSyncCodeModeExecutionsRequest {
     executions: Vec<CloudSyncCodeModeExecutionItem>,
@@ -188,6 +202,17 @@ pub async fn sync_local_code_mode_executions(
     access_token: String,
     limit: Option<i64>,
 ) -> Result<SyncLocalCodeModeExecutionsResponse, String> {
+    if !user_cloud_sync_enabled() {
+        return Ok(SyncLocalCodeModeExecutionsResponse {
+            results: vec![],
+            summary: CodeModeSyncSummary {
+                synced: 0,
+                exists: 0,
+                failed: 0,
+            },
+        });
+    }
+
     let normalized_token = access_token.trim().to_string();
     if normalized_token.is_empty() {
         return Err("access token is required".to_string());

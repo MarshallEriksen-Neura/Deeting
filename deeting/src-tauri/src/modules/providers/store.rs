@@ -2149,7 +2149,10 @@ mod tests {
         .execute(&store.pool)
         .await
         .expect("failed to create legacy provider_models");
-        store.init().await.expect("provider init should migrate legacy schema");
+        store
+            .init()
+            .await
+            .expect("provider init should migrate legacy schema");
 
         let columns = sqlx::query("PRAGMA table_info(provider_models)")
             .fetch_all(&store.pool)

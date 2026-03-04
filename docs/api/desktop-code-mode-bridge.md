@@ -35,6 +35,11 @@
 ## sync_local_code_mode_executions
 用于把桌面本地 `code_mode_executions` 中未同步记录批量推送到云端 `POST /api/v1/internal/code-mode/executions/sync`。
 
+默认行为（当前）：
+- 用户维度上云同步默认关闭。
+- 仅当桌面端环境变量 `DESKTOP_ALLOW_USER_CLOUD_SYNC=true` 时，该命令才会实际推送。
+- 未开启时，命令返回空结果（`synced/exists/failed` 均为 `0`）。
+
 请求参数：
 - `accessToken: string`（必填，云端 Bearer Token）
 - `limit?: number`（可选，默认 50，最大 200）

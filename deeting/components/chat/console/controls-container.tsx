@@ -160,7 +160,10 @@ function ControlsContainer() {
 
   const handleClearOverride = useCallback(() => {
     clearOverrideAssistantId();
-  }, [clearOverrideAssistantId]);
+    if (isTauriRuntime) {
+      router.replace("/chat");
+    }
+  }, [clearOverrideAssistantId, isTauriRuntime, router]);
 
   const handleNewChat = useCallback(async () => {
     resetSession();
@@ -170,7 +173,7 @@ function ControlsContainer() {
       clearOverrideAssistantId();
     }
     const targetAssistantId =
-      activeAssistantId ?? assistants[0]?.id ?? installedAgents[0]?.id ?? undefined;
+      activeAssistantId ?? undefined;
     setGlobalLoading(true);
     try {
       const created = await createConversation(
@@ -209,8 +212,6 @@ function ControlsContainer() {
     searchParams,
     pathname,
     activeAssistantId,
-    assistants,
-    installedAgents,
     setSessionId,
     setGlobalLoading,
     isTauriRuntime,
@@ -227,33 +228,10 @@ function ControlsContainer() {
 
   const handleSend = useCallback(() => {
     if (!canSend) return;
-
-    if (isTauriRuntime) {
-      if (!activeAssistantId) {
-        const defaultAgent = installedAgents[0] || assistants[0];
-        if (defaultAgent) {
-          setOverrideAssistantId(defaultAgent.id);
-          router.replace(`/chat/${defaultAgent.id}`);
-          handleSendMessage();
-        } else {
-          console.warn("No agents available to start chat");
-        }
-        return;
-      }
-      handleSendMessage();
-      return;
-    }
-
     handleSendMessage();
   }, [
     canSend,
-    activeAssistantId,
-    installedAgents,
-    assistants,
-    setOverrideAssistantId,
-    router,
     handleSendMessage,
-    isTauriRuntime,
   ]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -579,118 +557,96 @@ function ControlsContainer() {
           </Button>
 
           {/* Agent Selector (Opens Select Agent Modal) */}
-          {isTauriRuntime ? (
-            <Button
-              asChild
-              variant="ghost"
-              className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
-            >
-              <Link href="/chat/select-agent" scroll={false} aria-label={t("hud.selectAgent")}>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label={t("routing.override")}
+              >
                 <span
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
-                    activeAssistant?.color ?? "from-slate-400 to-slate-600"
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm ${
+                    activeAssistantId
+                      ? `bg-gradient-to-br ${activeAssistant?.color ?? "from-slate-400 to-slate-600"}`
+                      : "bg-gradient-to-br from-sky-500 to-cyan-500"
                   }`}
                 >
-                  {(activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
+                  {activeAssistantId ? (
+                    (activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")
+                  ) : (
+                    <Bot className="w-4 h-4 text-white" />
+                  )}
                 </span>
-                <span className="text-[13px] font-semibold text-slate-700 dark:text-white/70 max-w-[100px] truncate">
-                  {activeAssistant?.name ?? t("hud.selectAgent")}
-                </span>
-                <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
-              </Link>
-            </Button>
-          ) : (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
-                  aria-label={t("routing.override")}
-                >
-                  <span
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm ${
-                      activeAssistantId
-                        ? `bg-gradient-to-br ${activeAssistant?.color ?? "from-slate-400 to-slate-600"}`
-                        : "bg-gradient-to-br from-sky-500 to-cyan-500"
-                    }`}
-                  >
-                    {activeAssistantId ? (
-                      (activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")
-                    ) : (
-                      <Bot className="w-4 h-4 text-white" />
-                    )}
+                <div className="flex flex-col items-start leading-tight">
+                  <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/40">
+                    {activeAssistantId ? t("routing.locked") : t("routing.auto")}
                   </span>
-                  <div className="flex flex-col items-start leading-tight">
-                    <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/40">
-                      {activeAssistantId ? t("routing.locked") : t("routing.auto")}
+                  <span className="text-[13px] font-semibold text-slate-700 dark:text-white/80 max-w-[120px] truncate">
+                    {activeAssistantId ? activeAssistant?.name ?? t("routing.locked") : t("routing.autoDesc")}
+                  </span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="center"
+              className="w-72 p-2 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#1a1a1a] shadow-xl backdrop-blur-xl"
+            >
+              <div className="flex flex-col gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="justify-start gap-3 rounded-xl px-3 py-2 hover:bg-slate-100/80 dark:hover:bg-white/10"
+                  onClick={handleClearOverride}
+                  disabled={!activeAssistantId}
+                >
+                  <span className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-500 to-cyan-500 text-white flex items-center justify-center">
+                    <Bot className="w-4 h-4" />
+                  </span>
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium text-slate-800 dark:text-white/90">
+                      {t("routing.auto")}
                     </span>
-                    <span className="text-[13px] font-semibold text-slate-700 dark:text-white/80 max-w-[120px] truncate">
-                      {activeAssistantId ? activeAssistant?.name ?? t("routing.locked") : t("routing.autoDesc")}
+                    <span className="text-[11px] text-slate-500 dark:text-white/50">
+                      {t("routing.autoDesc")}
                     </span>
                   </div>
-                  <ChevronDown className="w-4 h-4 text-slate-500 dark:text-white/30" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="center"
-                className="w-72 p-2 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#1a1a1a] shadow-xl backdrop-blur-xl"
-              >
-                <div className="flex flex-col gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="justify-start gap-3 rounded-xl px-3 py-2 hover:bg-slate-100/80 dark:hover:bg-white/10"
-                    onClick={handleClearOverride}
-                    disabled={!activeAssistantId}
-                  >
-                    <span className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-500 to-cyan-500 text-white flex items-center justify-center">
-                      <Bot className="w-4 h-4" />
-                    </span>
-                    <div className="flex flex-col items-start">
-                      <span className="text-sm font-medium text-slate-800 dark:text-white/90">
-                        {t("routing.auto")}
-                      </span>
-                      <span className="text-[11px] text-slate-500 dark:text-white/50">
-                        {t("routing.autoDesc")}
-                      </span>
-                    </div>
-                  </Button>
 
-                  <div className="h-px bg-slate-200/70 dark:bg-white/10 my-1" />
+                <div className="h-px bg-slate-200/70 dark:bg-white/10 my-1" />
 
-                  {availableAssistants.length ? (
-                    availableAssistants.map((assistant) => (
-                      <Button
-                        key={assistant.id}
-                        type="button"
-                        variant="ghost"
-                        className="justify-start gap-3 rounded-xl px-3 py-2 hover:bg-slate-100/80 dark:hover:bg-white/10"
-                        onClick={() => handleSelectAssistant(assistant.id)}
+                {availableAssistants.length ? (
+                  availableAssistants.map((assistant) => (
+                    <Button
+                      key={assistant.id}
+                      type="button"
+                      variant="ghost"
+                      className="justify-start gap-3 rounded-xl px-3 py-2 hover:bg-slate-100/80 dark:hover:bg-white/10"
+                      onClick={() => handleSelectAssistant(assistant.id)}
+                    >
+                      <span
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
+                          assistant.color ?? "from-slate-400 to-slate-600"
+                        }`}
                       >
-                        <span
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${
-                            assistant.color ?? "from-slate-400 to-slate-600"
-                          }`}
-                        >
-                          {(assistant.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
-                        </span>
-                        <span className="text-sm font-medium text-slate-800 dark:text-white/90 flex-1 text-left truncate">
-                          {assistant.name}
-                        </span>
-                        {assistant.id === activeAssistantId ? (
-                          <Lock className="w-4 h-4 text-slate-500 dark:text-white/50" />
-                        ) : null}
-                      </Button>
-                    ))
-                  ) : (
-                    <div className="px-3 py-2 text-xs text-slate-500 dark:text-white/40">
-                      {t("routing.empty")}
-                    </div>
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
+                        {(assistant.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
+                      </span>
+                      <span className="text-sm font-medium text-slate-800 dark:text-white/90 flex-1 text-left truncate">
+                        {assistant.name}
+                      </span>
+                      {assistant.id === activeAssistantId ? (
+                        <Lock className="w-4 h-4 text-slate-500 dark:text-white/50" />
+                      ) : null}
+                    </Button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-xs text-slate-500 dark:text-white/40">
+                    {t("routing.empty")}
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <Button
             type="button"

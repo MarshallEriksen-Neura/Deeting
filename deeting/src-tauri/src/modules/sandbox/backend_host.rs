@@ -71,15 +71,17 @@ impl HostPythonBackend {
             .spawn()
             .map_err(|err| map_spawn_error(&self.command.program, err))?;
 
-        let wait_result =
-            tokio::time::timeout(Duration::from_secs(timeout_seconds.max(1)), child.wait_with_output())
-                .await
-                .map_err(|_| {
-                    SandboxError::Timeout(format!(
-                        "host python execution timed out (sandbox_id={box_id_or_name}, timeout={}s)",
-                        timeout_seconds.max(1)
-                    ))
-                })?;
+        let wait_result = tokio::time::timeout(
+            Duration::from_secs(timeout_seconds.max(1)),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| {
+            SandboxError::Timeout(format!(
+                "host python execution timed out (sandbox_id={box_id_or_name}, timeout={}s)",
+                timeout_seconds.max(1)
+            ))
+        })?;
         let output = wait_result.map_err(|err| SandboxError::Internal(err.to_string()))?;
 
         let stdout = output_to_lines(output.stdout);

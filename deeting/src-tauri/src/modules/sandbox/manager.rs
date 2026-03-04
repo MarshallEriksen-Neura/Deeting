@@ -480,9 +480,7 @@ impl SandboxRuntimeManager {
                     }
                 }
             } else {
-                log::warn!(
-                    "BOXLITE_REST_URL missing on Windows, fallback to host python runtime"
-                );
+                log::warn!("BOXLITE_REST_URL missing on Windows, fallback to host python runtime");
             }
 
             let host_backend = HostPythonBackend::new(HostBackendOptions {
@@ -522,10 +520,10 @@ impl SandboxRuntimeManager {
     ) -> Result<SandboxExecutionOutput, SandboxError> {
         match &self.backend {
             #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => {
+            BackendRuntime::Wsl(backend) => backend.run_python(_box_id, _code, _timeout_secs).await,
+            BackendRuntime::Host(backend) => {
                 backend.run_python(_box_id, _code, _timeout_secs).await
             }
-            BackendRuntime::Host(backend) => backend.run_python(_box_id, _code, _timeout_secs).await,
             BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
         }
     }

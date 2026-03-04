@@ -196,8 +196,10 @@ pub fn run() {
             });
             let periodic_worker_state = sync_state.clone();
             tauri::async_runtime::spawn(async move {
-                crate::modules::mcp::commands::start_local_periodic_worker(periodic_worker_state.mcp)
-                    .await;
+                crate::modules::mcp::commands::start_local_periodic_worker(
+                    periodic_worker_state.mcp,
+                )
+                .await;
             });
 
             // ── System Tray ──────────────────────────────────────────
@@ -247,9 +249,8 @@ pub fn run() {
             if shortcut_manager.is_registered(MAIN_WINDOW_SHORTCUT) {
                 let _ = shortcut_manager.unregister(MAIN_WINDOW_SHORTCUT);
             }
-            if let Err(err) = shortcut_manager.on_shortcut(
-                MAIN_WINDOW_SHORTCUT,
-                |app, _shortcut, event| {
+            if let Err(err) =
+                shortcut_manager.on_shortcut(MAIN_WINDOW_SHORTCUT, |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         if let Some(w) = app.get_webview_window("main") {
                             let _ = w.unminimize();
@@ -257,8 +258,8 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
-                },
-            ) {
+                })
+            {
                 warn!(
                     "global shortcut registration skipped ({MAIN_WINDOW_SHORTCUT}): {}",
                     err
@@ -351,6 +352,7 @@ pub fn run() {
             crate::modules::mcp::commands::get_mcp_logs,
             crate::modules::mcp::commands::clear_mcp_logs,
             crate::modules::mcp::commands::sync_cloud_subscriptions,
+            crate::modules::mcp::commands::sync_local_system_assistants,
             crate::modules::mcp::commands::register_local_skills,
             crate::modules::mcp::commands::sync_official_skills_index,
             crate::modules::mcp::bridge::set_mcp_backend_url,
