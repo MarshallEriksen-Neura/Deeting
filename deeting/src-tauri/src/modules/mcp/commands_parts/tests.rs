@@ -285,24 +285,48 @@ mod tests {
     #[test]
     fn build_upstream_endpoint_uses_v1_default() {
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com", ""),
+            build_upstream_endpoint("https://api.example.com", "", Some("openai"), None),
             "https://api.example.com/v1/chat/completions"
         );
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com/v1", ""),
+            build_upstream_endpoint("https://api.example.com/v1", "", Some("openai"), None),
             "https://api.example.com/v1/chat/completions"
         );
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com/", "/custom/path"),
+            build_upstream_endpoint(
+                "https://api.example.com/",
+                "/custom/path",
+                Some("openai"),
+                None
+            ),
             "https://api.example.com/custom/path"
         );
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com/v1", "v1/chat/completions"),
+            build_upstream_endpoint(
+                "https://api.example.com/v1",
+                "v1/chat/completions",
+                Some("openai"),
+                None
+            ),
             "https://api.example.com/v1/chat/completions"
         );
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com/v1", "/v1/chat/completions"),
+            build_upstream_endpoint(
+                "https://api.example.com/v1",
+                "/v1/chat/completions",
+                Some("openai"),
+                None
+            ),
             "https://api.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            build_upstream_endpoint(
+                "https://api.example.com",
+                "chat/completions",
+                Some("openai"),
+                Some(false)
+            ),
+            "https://api.example.com/chat/completions"
         );
     }
 

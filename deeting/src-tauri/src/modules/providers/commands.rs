@@ -278,7 +278,12 @@ pub async fn test_local_provider_model(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "ping".to_string());
 
-    let endpoint = build_upstream_endpoint(&connection.base_url, &model.upstream_path);
+    let endpoint = build_upstream_endpoint(
+        &connection.base_url,
+        &model.upstream_path,
+        connection.protocol.as_deref(),
+        connection.auto_append_v1,
+    );
     let body = serde_json::json!({
         "model": model.model_id,
         "messages": [{"role": "user", "content": prompt}],
@@ -289,7 +294,7 @@ pub async fn test_local_provider_model(
     let mut request = reqwest::Client::new().post(&endpoint).json(&body);
     if let Some(secret_key) = connection.secret_key.as_deref() {
         if !secret_key.trim().is_empty() {
-            request = request.bearer_auth(secret_key.trim());
+            request = apply_provider_auth_headers(request, connection.protocol.as_deref(), secret_key);
         }
     }
 
@@ -526,14 +531,28 @@ fn build_models_endpoints(
     }
 }
 
-fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
-    let base = base_url.trim().trim_end_matches('/');
+fn build_upstream_endpoint(
+    base_url: &str,
+    upstream_path: &str,
+    protocol: Option<&str>,
+    auto_append_v1: Option<bool>,
+) -> String {
+    let mut base = base_url.trim().trim_end_matches('/').to_string();
     let mut path = upstream_path.trim().trim_start_matches('/').to_string();
+    let protocol = protocol.unwrap_or("openai").trim().to_ascii_lowercase();
+
+    if protocol.contains("openai") && !protocol.contains("azure") {
+        let append_v1 = auto_append_v1.unwrap_or_else(|| !has_versioned_path(base.as_str()));
+        if append_v1 && !base.ends_with("/v1") {
+            base = format!("{base}/v1");
+        }
+    }
+
     if path.is_empty() {
         if base.ends_with("/v1") {
-            return format!("{base}/chat/completions");
+            return format!("{}/chat/completions", base);
         }
-        return format!("{base}/v1/chat/completions");
+        return format!("{}/v1/chat/completions", base);
     }
 
     if base.ends_with("/v1") {
@@ -547,10 +566,79 @@ fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
     }
 
     if path.is_empty() {
-        return base.to_string();
+        return base;
     }
 
     format!("{base}/{path}")
+}
+
+fn apply_provider_auth_headers(
+    request: reqwest::RequestBuilder,
+    protocol: Option<&str>,
+    secret_key: &str,
+) -> reqwest::RequestBuilder {
+    let secret_key = secret_key.trim();
+    if secret_key.is_empty() {
+        return request;
+    }
+
+    let protocol = protocol.unwrap_or("openai").trim().to_ascii_lowercase();
+    if protocol.contains("anthropic") || protocol.contains("claude") {
+        return request
+            .header("x-api-key", secret_key)
+            .header("anthropic-version", "2023-06-01");
+    }
+    if protocol.contains("azure") {
+        return request.header("api-key", secret_key);
+    }
+    if protocol.contains("gemini") || protocol.contains("google") || protocol.contains("vertex") {
+        return request.header("x-goog-api-key", secret_key);
+    }
+    request.bearer_auth(secret_key)
+}
+
+fn has_versioned_path(base_url: &str) -> bool {
+    let without_query = base_url.split('?').next().unwrap_or(base_url);
+    let path = if let Some((_, rest)) = without_query.split_once("://") {
+        if let Some(path_idx) = rest.find('/') {
+            &rest[path_idx + 1..]
+        } else {
+            ""
+        }
+    } else {
+        without_query.trim_start_matches('/')
+    };
+
+    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    for (idx, segment) in segments.iter().enumerate() {
+        if is_version_segment(segment) {
+            return true;
+        }
+        if segment.eq_ignore_ascii_case("api")
+            && segments
+                .get(idx + 1)
+                .map(|next| is_version_segment(next))
+                .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_version_segment(segment: &str) -> bool {
+    let normalized = segment.trim();
+    if normalized.len() < 2 {
+        return false;
+    }
+    let mut chars = normalized.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first != 'v' && first != 'V' {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_digit() || ch == '.')
 }
 
 fn extract_model_ids(value: &Value) -> Vec<String> {
@@ -651,12 +739,31 @@ mod tests {
     #[test]
     fn build_upstream_endpoint_deduplicates_v1_prefix() {
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com/v1", "v1/chat/completions"),
+            build_upstream_endpoint(
+                "https://api.example.com/v1",
+                "v1/chat/completions",
+                Some("openai"),
+                None
+            ),
             "https://api.example.com/v1/chat/completions"
         );
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com/v1", "/v1/embeddings"),
+            build_upstream_endpoint(
+                "https://api.example.com/v1",
+                "/v1/embeddings",
+                Some("openai"),
+                None
+            ),
             "https://api.example.com/v1/embeddings"
+        );
+        assert_eq!(
+            build_upstream_endpoint(
+                "https://api.example.com",
+                "chat/completions",
+                Some("openai"),
+                Some(false)
+            ),
+            "https://api.example.com/chat/completions"
         );
     }
 }
