@@ -296,6 +296,14 @@ mod tests {
             build_upstream_endpoint("https://api.example.com/", "/custom/path"),
             "https://api.example.com/custom/path"
         );
+        assert_eq!(
+            build_upstream_endpoint("https://api.example.com/v1", "v1/chat/completions"),
+            "https://api.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            build_upstream_endpoint("https://api.example.com/v1", "/v1/chat/completions"),
+            "https://api.example.com/v1/chat/completions"
+        );
     }
 
     #[tokio::test]

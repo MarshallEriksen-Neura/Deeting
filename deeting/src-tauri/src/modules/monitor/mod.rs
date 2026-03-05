@@ -982,13 +982,28 @@ fn make_default_agent_id() -> String {
 
 fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
     let base = base_url.trim().trim_end_matches('/');
-    let path = upstream_path.trim().trim_start_matches('/').to_string();
+    let mut path = upstream_path.trim().trim_start_matches('/').to_string();
     if path.is_empty() {
         if base.ends_with("/v1") {
             return format!("{base}/chat/completions");
         }
         return format!("{base}/v1/chat/completions");
     }
+
+    if base.ends_with("/v1") {
+        if let Some((head, tail)) = path.split_once('/') {
+            if head.eq_ignore_ascii_case("v1") {
+                path = tail.to_string();
+            }
+        } else if path.eq_ignore_ascii_case("v1") {
+            path.clear();
+        }
+    }
+
+    if path.is_empty() {
+        return base.to_string();
+    }
+
     format!("{base}/{path}")
 }
 

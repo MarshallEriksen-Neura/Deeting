@@ -51,11 +51,7 @@ impl EmbeddingService {
                 ProviderError::Validation("Model instance connection not found".to_string())
             })?;
 
-        let url = format!(
-            "{}/{}",
-            connection.base_url.trim_end_matches('/'),
-            embedding_model.upstream_path.trim_start_matches('/')
-        );
+        let url = build_upstream_endpoint(&connection.base_url, &embedding_model.upstream_path);
 
         let mut request = self.client.post(&url);
         if let Some(key) = connection.secret_key {
@@ -121,9 +117,33 @@ fn has_embedding_capability(model: &ProviderModel) -> bool {
         .any(|capability| capability.eq_ignore_ascii_case("embedding"))
 }
 
+fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
+    let base = base_url.trim().trim_end_matches('/');
+    let mut path = upstream_path.trim().trim_start_matches('/').to_string();
+
+    if base.ends_with("/v1") {
+        if let Some((head, tail)) = path.split_once('/') {
+            if head.eq_ignore_ascii_case("v1") {
+                path = tail.to_string();
+            }
+        } else if path.eq_ignore_ascii_case("v1") {
+            path.clear();
+        }
+    }
+
+    if path.is_empty() {
+        if base.ends_with("/v1") {
+            return format!("{base}/embeddings");
+        }
+        return format!("{base}/v1/embeddings");
+    }
+
+    format!("{base}/{path}")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::select_embedding_model;
+    use super::{build_upstream_endpoint, select_embedding_model};
     use crate::modules::providers::types::ProviderModel;
     use serde_json::json;
     use uuid::Uuid;
@@ -186,5 +206,17 @@ mod tests {
         let selected = select_embedding_model(&models, None);
 
         assert!(selected.is_none());
+    }
+
+    #[test]
+    fn build_upstream_endpoint_deduplicates_v1_prefix_for_embedding() {
+        assert_eq!(
+            build_upstream_endpoint("https://api.example.com/v1", "v1/embeddings"),
+            "https://api.example.com/v1/embeddings"
+        );
+        assert_eq!(
+            build_upstream_endpoint("https://api.example.com/v1", "/v1/embeddings"),
+            "https://api.example.com/v1/embeddings"
+        );
     }
 }

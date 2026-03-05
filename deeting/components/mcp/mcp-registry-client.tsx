@@ -347,7 +347,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
           )
         )
         if (accessToken) {
-          await invoke("sync_cloud_subscriptions", { access_token: accessToken })
+          await invoke("sync_cloud_subscriptions", { accessToken })
         }
         await refreshAll()
       } catch (err) {
@@ -520,7 +520,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         if (!accessToken) {
           throw new Error(t("toast.missingToken"))
         }
-        await invoke("sync_cloud_subscriptions", { access_token: accessToken })
+        await invoke("sync_cloud_subscriptions", { accessToken })
       } else {
         const token = sourceTokens[source.id]
         await invoke("sync_mcp_source", {

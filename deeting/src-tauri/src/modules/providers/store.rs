@@ -28,6 +28,18 @@ const PROVIDER_KEYCHAIN_SERVICE: &str = "deeting.provider";
 const LOCAL_DESKTOP_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 const BANDIT_DEFAULT_SCENE: &str = "router:llm";
 const BANDIT_DEFAULT_STRATEGY: &str = "epsilon_greedy";
+const CHAT_CAPABILITY: &str = "chat";
+const IMAGE_GENERATION_CAPABILITY: &str = "image_generation";
+const TEXT_TO_SPEECH_CAPABILITY: &str = "text_to_speech";
+const SPEECH_TO_TEXT_CAPABILITY: &str = "speech_to_text";
+const VIDEO_GENERATION_CAPABILITY: &str = "video_generation";
+const EMBEDDING_CAPABILITY: &str = "embedding";
+const CHAT_UPSTREAM_PATH: &str = "v1/chat/completions";
+const IMAGE_GENERATION_UPSTREAM_PATH: &str = "v1/images/generations";
+const TEXT_TO_SPEECH_UPSTREAM_PATH: &str = "v1/audio/speech";
+const SPEECH_TO_TEXT_UPSTREAM_PATH: &str = "v1/audio/transcriptions";
+const VIDEO_GENERATION_UPSTREAM_PATH: &str = "v1/video/generations";
+const EMBEDDING_UPSTREAM_PATH: &str = "v1/embeddings";
 
 impl ProviderStore {
     pub async fn new(database_url: &str) -> Result<Self, ProviderError> {
@@ -954,20 +966,22 @@ impl ProviderStore {
         model_ids: Vec<String>,
         capability: Option<String>,
     ) -> Result<Vec<ProviderModel>, ProviderError> {
-        let default_cap = capability
+        let explicit_capability = capability
             .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "chat".to_string());
+            .filter(|value| !value.is_empty());
         let now = now_rfc3339()?;
         let mut tx = self.pool.begin().await?;
         let mut touched = Vec::new();
-        let default_upstream_path = "v1/chat/completions";
 
         for raw in model_ids {
             let model_id = raw.trim().to_string();
             if model_id.is_empty() {
                 continue;
             }
+            let model_capability = explicit_capability
+                .clone()
+                .unwrap_or_else(|| infer_model_capability(&model_id).to_string());
+            let default_upstream_path = default_upstream_path_for_capability(&model_capability);
 
             let existing_row = sqlx::query(
                 "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
@@ -989,8 +1003,65 @@ impl ProviderStore {
                 continue;
             }
 
+            let existing_any_path_row = sqlx::query(
+                "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                        upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                        config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                        created_at, updated_at
+                 FROM provider_models
+                 WHERE instance_id = ? AND model_id = ?
+                 LIMIT 1",
+            )
+            .bind(instance_id.to_string())
+            .bind(&model_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+            if let Some(row) = existing_any_path_row {
+                let existing = row_to_model(&row)?;
+                let should_reconcile_auto_row =
+                    explicit_capability.is_none() && existing.source.eq_ignore_ascii_case("auto");
+                let needs_capability_reconcile =
+                    !contains_capability(&existing.capabilities, &model_capability);
+                let needs_path_reconcile = existing.upstream_path != default_upstream_path;
+
+                if should_reconcile_auto_row && (needs_capability_reconcile || needs_path_reconcile)
+                {
+                    let caps = serde_json::to_string(&vec![model_capability.clone()])
+                        .map_err(|e| ProviderError::Database(e.to_string()))?;
+                    sqlx::query(
+                        "UPDATE provider_models
+                         SET capabilities = ?, upstream_path = ?, updated_at = ?
+                         WHERE id = ?",
+                    )
+                    .bind(caps)
+                    .bind(default_upstream_path)
+                    .bind(&now)
+                    .bind(existing.id.to_string())
+                    .execute(&mut *tx)
+                    .await?;
+
+                    let updated_row = sqlx::query(
+                        "SELECT id, instance_id, capabilities, model_id, unified_model_id, display_name,
+                                upstream_path, pricing_config, limit_config, tokenizer_config, routing_config,
+                                config_override, source, extra_meta, weight, priority, is_active, synced_at,
+                                created_at, updated_at
+                         FROM provider_models
+                         WHERE id = ?",
+                    )
+                    .bind(existing.id.to_string())
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    touched.push(row_to_model(&updated_row)?);
+                    continue;
+                }
+
+                touched.push(existing);
+                continue;
+            }
+
             let new_id = Uuid::new_v4().to_string();
-            let caps = serde_json::to_string(&vec![default_cap.clone()])
+            let caps = serde_json::to_string(&vec![model_capability])
                 .map_err(|e| ProviderError::Database(e.to_string()))?;
 
             sqlx::query(
@@ -1945,6 +2016,122 @@ fn normalize_source(source: Option<&str>) -> String {
         .unwrap_or_else(|| "auto".to_string())
 }
 
+fn infer_model_capability(model_id: &str) -> &'static str {
+    let normalized = model_id.trim().to_ascii_lowercase();
+
+    let embedding_markers = [
+        "text-embedding",
+        "embedding",
+        "embed",
+        "ada-002",
+        "retriever",
+        "rerank",
+        "bge",
+        "e5",
+        "gte",
+        "nomic-embed",
+        "nv-embed",
+    ];
+    if matches_any_marker(&normalized, &embedding_markers) {
+        EMBEDDING_CAPABILITY
+    } else if matches_any_marker(
+        &normalized,
+        &[
+            "video-generation",
+            "text-to-video",
+            "image-to-video",
+            "video_gen",
+            "cogvideo",
+            "hunyuan-video",
+            "kling",
+            "veo",
+            "sora",
+            "pika",
+            "luma",
+            "mochi",
+            "-video",
+            "video-",
+        ],
+    ) {
+        VIDEO_GENERATION_CAPABILITY
+    } else if matches_any_marker(
+        &normalized,
+        &[
+            "image-generation",
+            "text-to-image",
+            "image-gen",
+            "dall-e",
+            "dalle",
+            "stable-diffusion",
+            "sdxl",
+            "flux",
+            "midjourney",
+            "imagen",
+            "playground",
+            "recraft",
+            "kandinsky",
+            "diffusion",
+        ],
+    ) {
+        IMAGE_GENERATION_CAPABILITY
+    } else if matches_any_marker(
+        &normalized,
+        &[
+            "speech-to-text",
+            "speech_to_text",
+            "audio-to-text",
+            "transcribe",
+            "transcription",
+            "whisper",
+            "asr",
+            "stt",
+            "wav2vec",
+            "deepgram",
+        ],
+    ) {
+        SPEECH_TO_TEXT_CAPABILITY
+    } else if matches_any_marker(
+        &normalized,
+        &[
+            "text-to-speech",
+            "text_to_speech",
+            "speech-synthesis",
+            "audio-speech",
+            "gpt-4o-mini-tts",
+            "tts",
+            "bark",
+            "vits",
+            "fish-speech",
+            "kokoro",
+            "piper",
+        ],
+    ) {
+        TEXT_TO_SPEECH_CAPABILITY
+    } else {
+        CHAT_CAPABILITY
+    }
+}
+
+fn default_upstream_path_for_capability(capability: &str) -> &'static str {
+    if capability.eq_ignore_ascii_case(EMBEDDING_CAPABILITY) {
+        EMBEDDING_UPSTREAM_PATH
+    } else if capability.eq_ignore_ascii_case(IMAGE_GENERATION_CAPABILITY) {
+        IMAGE_GENERATION_UPSTREAM_PATH
+    } else if capability.eq_ignore_ascii_case(TEXT_TO_SPEECH_CAPABILITY) {
+        TEXT_TO_SPEECH_UPSTREAM_PATH
+    } else if capability.eq_ignore_ascii_case(SPEECH_TO_TEXT_CAPABILITY) {
+        SPEECH_TO_TEXT_UPSTREAM_PATH
+    } else if capability.eq_ignore_ascii_case(VIDEO_GENERATION_CAPABILITY) {
+        VIDEO_GENERATION_UPSTREAM_PATH
+    } else {
+        CHAT_UPSTREAM_PATH
+    }
+}
+
+fn matches_any_marker(model_id: &str, markers: &[&str]) -> bool {
+    markers.iter().any(|marker| model_id.contains(marker))
+}
+
 fn insert_meta_if_non_empty(
     target: &mut serde_json::Map<String, serde_json::Value>,
     key: &str,
@@ -2223,7 +2410,13 @@ fn row_to_user_embedding_config(row: &SqliteRow) -> Result<UserEmbeddingConfig, 
 fn has_embedding_capability(capabilities: &[String]) -> bool {
     capabilities
         .iter()
-        .any(|capability| capability.eq_ignore_ascii_case("embedding"))
+        .any(|capability| capability.eq_ignore_ascii_case(EMBEDDING_CAPABILITY))
+}
+
+fn contains_capability(capabilities: &[String], expected: &str) -> bool {
+    capabilities
+        .iter()
+        .any(|capability| capability.eq_ignore_ascii_case(expected))
 }
 
 fn now_rfc3339() -> Result<String, ProviderError> {
@@ -2235,6 +2428,42 @@ fn now_rfc3339() -> Result<String, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn init_store() -> ProviderStore {
+        let store = ProviderStore::new("sqlite::memory:")
+            .await
+            .expect("failed to create provider store");
+        store.init().await.expect("provider init failed");
+        store
+    }
+
+    async fn insert_instance(store: &ProviderStore) -> Uuid {
+        let instance_id = Uuid::new_v4();
+        let now = now_rfc3339().expect("time");
+        sqlx::query(
+            "INSERT INTO provider_instances (
+                id, preset_slug, name, base_url, description, icon, priority, meta,
+                is_enabled, is_local, credentials_ref, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(instance_id.to_string())
+        .bind("openai")
+        .bind("Local OpenAI")
+        .bind("https://example.com")
+        .bind::<Option<&str>>(None)
+        .bind::<Option<&str>>(None)
+        .bind(0_i64)
+        .bind("{}")
+        .bind(1_i64)
+        .bind(1_i64)
+        .bind("db:test")
+        .bind(&now)
+        .bind(&now)
+        .execute(&store.pool)
+        .await
+        .expect("insert provider instance");
+        instance_id
+    }
 
     #[tokio::test]
     async fn init_migrates_legacy_provider_models_before_index_creation() {
@@ -2277,5 +2506,160 @@ mod tests {
             names.iter().any(|name| name == "unified_model_id"),
             "expected unified_model_id to be added"
         );
+    }
+
+    #[tokio::test]
+    async fn quick_add_models_infers_embedding_capability_and_path() {
+        let store = init_store().await;
+        let instance_id = insert_instance(&store).await;
+
+        let added = store
+            .quick_add_models(
+                &instance_id,
+                vec![
+                    "text-embedding-3-small".to_string(),
+                    "gpt-4o-mini".to_string(),
+                    "text-ada-002".to_string(),
+                ],
+                None,
+            )
+            .await
+            .expect("quick add models");
+
+        assert_eq!(added.len(), 3);
+
+        let embed = added
+            .iter()
+            .find(|model| model.model_id == "text-embedding-3-small")
+            .expect("embedding model");
+        assert_eq!(embed.capabilities, vec![EMBEDDING_CAPABILITY.to_string()]);
+        assert_eq!(embed.upstream_path, EMBEDDING_UPSTREAM_PATH);
+
+        let ada = added
+            .iter()
+            .find(|model| model.model_id == "text-ada-002")
+            .expect("ada model");
+        assert_eq!(ada.capabilities, vec![EMBEDDING_CAPABILITY.to_string()]);
+        assert_eq!(ada.upstream_path, EMBEDDING_UPSTREAM_PATH);
+
+        let chat = added
+            .iter()
+            .find(|model| model.model_id == "gpt-4o-mini")
+            .expect("chat model");
+        assert_eq!(chat.capabilities, vec![CHAT_CAPABILITY.to_string()]);
+        assert_eq!(chat.upstream_path, CHAT_UPSTREAM_PATH);
+    }
+
+    #[test]
+    fn infer_model_capability_covers_all_known_capabilities() {
+        assert_eq!(
+            infer_model_capability("nvidia/llama-3.2-nv-embedqa-1b-v1"),
+            EMBEDDING_CAPABILITY
+        );
+        assert_eq!(
+            infer_model_capability("openai/dall-e-3"),
+            IMAGE_GENERATION_CAPABILITY
+        );
+        assert_eq!(
+            infer_model_capability("openai/gpt-4o-mini-tts"),
+            TEXT_TO_SPEECH_CAPABILITY
+        );
+        assert_eq!(
+            infer_model_capability("openai/whisper-1"),
+            SPEECH_TO_TEXT_CAPABILITY
+        );
+        assert_eq!(
+            infer_model_capability("google/veo-2"),
+            VIDEO_GENERATION_CAPABILITY
+        );
+        assert_eq!(infer_model_capability("openai/gpt-4o"), CHAT_CAPABILITY);
+    }
+
+    #[test]
+    fn default_upstream_path_for_capability_maps_all_known_capabilities() {
+        assert_eq!(
+            default_upstream_path_for_capability(EMBEDDING_CAPABILITY),
+            EMBEDDING_UPSTREAM_PATH
+        );
+        assert_eq!(
+            default_upstream_path_for_capability(IMAGE_GENERATION_CAPABILITY),
+            IMAGE_GENERATION_UPSTREAM_PATH
+        );
+        assert_eq!(
+            default_upstream_path_for_capability(TEXT_TO_SPEECH_CAPABILITY),
+            TEXT_TO_SPEECH_UPSTREAM_PATH
+        );
+        assert_eq!(
+            default_upstream_path_for_capability(SPEECH_TO_TEXT_CAPABILITY),
+            SPEECH_TO_TEXT_UPSTREAM_PATH
+        );
+        assert_eq!(
+            default_upstream_path_for_capability(VIDEO_GENERATION_CAPABILITY),
+            VIDEO_GENERATION_UPSTREAM_PATH
+        );
+        assert_eq!(
+            default_upstream_path_for_capability(CHAT_CAPABILITY),
+            CHAT_UPSTREAM_PATH
+        );
+    }
+
+    #[tokio::test]
+    async fn quick_add_models_prefers_explicit_capability_over_inference() {
+        let store = init_store().await;
+        let instance_id = insert_instance(&store).await;
+
+        let added = store
+            .quick_add_models(
+                &instance_id,
+                vec!["text-embedding-3-small".to_string()],
+                Some("chat".to_string()),
+            )
+            .await
+            .expect("quick add models");
+
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].capabilities, vec!["chat".to_string()]);
+        assert_eq!(added[0].upstream_path, CHAT_UPSTREAM_PATH);
+    }
+
+    #[tokio::test]
+    async fn quick_add_models_reconciles_legacy_auto_rows_without_duplicates() {
+        let store = init_store().await;
+        let instance_id = insert_instance(&store).await;
+
+        let first = store
+            .quick_add_models(
+                &instance_id,
+                vec!["text-embedding-3-small".to_string()],
+                Some("chat".to_string()),
+            )
+            .await
+            .expect("first quick add");
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].capabilities, vec![CHAT_CAPABILITY.to_string()]);
+        assert_eq!(first[0].upstream_path, CHAT_UPSTREAM_PATH);
+
+        let second = store
+            .quick_add_models(
+                &instance_id,
+                vec!["text-embedding-3-small".to_string()],
+                None,
+            )
+            .await
+            .expect("second quick add");
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].capabilities, vec![EMBEDDING_CAPABILITY.to_string()]);
+        assert_eq!(second[0].upstream_path, EMBEDDING_UPSTREAM_PATH);
+
+        let all_models = store
+            .list_models(&instance_id)
+            .await
+            .expect("list models after reconcile");
+        assert_eq!(all_models.len(), 1);
+        assert_eq!(
+            all_models[0].capabilities,
+            vec![EMBEDDING_CAPABILITY.to_string()]
+        );
+        assert_eq!(all_models[0].upstream_path, EMBEDDING_UPSTREAM_PATH);
     }
 }
