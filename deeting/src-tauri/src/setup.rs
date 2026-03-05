@@ -87,10 +87,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     let periodic_worker_state = sync_state.clone();
     tauri::async_runtime::spawn(async move {
-        crate::modules::mcp::commands::start_local_periodic_worker(
-            periodic_worker_state.mcp,
-        )
-        .await;
+        crate::modules::mcp::commands::start_local_periodic_worker(periodic_worker_state.mcp).await;
     });
 
     // Setup Tray
@@ -116,17 +113,11 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
             .store
             .update_source_status(&source.id, McpSourceStatus::Syncing, None)
             .await;
-        match crate::modules::mcp::commands::sync_source_inner(mcp, source.clone(), None)
-            .await
-        {
+        match crate::modules::mcp::commands::sync_source_inner(mcp, source.clone(), None).await {
             Ok(tools) => {
                 let _ = mcp
                     .store
-                    .update_source_status(
-                        &source.id,
-                        McpSourceStatus::Active,
-                        Some(now_rfc3339()),
-                    )
+                    .update_source_status(&source.id, McpSourceStatus::Active, Some(now_rfc3339()))
                     .await;
 
                 // Index tools for semantic search
@@ -174,11 +165,10 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
 
         let app_state_for_knowledge_index = sync_state.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(err) =
-                crate::modules::mcp::commands::rebuild_local_knowledge_vector_index(
-                    &app_state_for_knowledge_index,
-                )
-                .await
+            if let Err(err) = crate::modules::mcp::commands::rebuild_local_knowledge_vector_index(
+                &app_state_for_knowledge_index,
+            )
+            .await
             {
                 warn!("local knowledge vector index bootstrap failed: {}", err);
             }
@@ -193,17 +183,15 @@ fn setup_shortcuts(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     if shortcut_manager.is_registered(MAIN_WINDOW_SHORTCUT) {
         let _ = shortcut_manager.unregister(MAIN_WINDOW_SHORTCUT);
     }
-    if let Err(err) =
-        shortcut_manager.on_shortcut(MAIN_WINDOW_SHORTCUT, |app, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.unminimize();
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+    if let Err(err) = shortcut_manager.on_shortcut(MAIN_WINDOW_SHORTCUT, |app, _shortcut, event| {
+        if event.state == ShortcutState::Pressed {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
             }
-        })
-    {
+        }
+    }) {
         warn!(
             "global shortcut registration skipped ({MAIN_WINDOW_SHORTCUT}): {}",
             err

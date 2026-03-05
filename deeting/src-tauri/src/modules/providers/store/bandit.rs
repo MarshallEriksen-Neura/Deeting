@@ -42,8 +42,11 @@ impl ProviderStore {
         &self,
         payload: BanditFeedbackRequest,
     ) -> Result<BanditArmState, ProviderError> {
-        let scene = payload.scene.clone().unwrap_or_else(|| BANDIT_DEFAULT_SCENE.to_string());
-        
+        let scene = payload
+            .scene
+            .clone()
+            .unwrap_or_else(|| BANDIT_DEFAULT_SCENE.to_string());
+
         let mut tx = self.pool.begin().await?;
 
         let now = now_rfc3339()?;

@@ -2,15 +2,19 @@ pub mod bandit;
 pub mod instances;
 pub mod models;
 pub mod presets;
+pub mod secret_store;
 pub mod secretary;
 pub mod utils;
+#[cfg(test)]
+mod tests;
 
-use std::str::FromStr;
+use crate::modules::providers::error::ProviderError;
+use crate::modules::providers::store::secret_store::SecretStore;
+use crate::modules::providers::store::utils::{normalize_secret, now_rfc3339};
+use log::warn;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row;
-use log::warn;
-use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::store::utils::{normalize_secret, now_rfc3339};
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct ProviderConnection {
@@ -22,6 +26,7 @@ pub struct ProviderConnection {
 
 pub struct ProviderStore {
     pub pool: SqlitePool,
+    secret_store: SecretStore,
 }
 
 pub const PROVIDER_KEYCHAIN_SERVICE: &str = "deeting.provider";
@@ -47,7 +52,8 @@ impl ProviderStore {
             .map_err(|err| ProviderError::Database(err.to_string()))?
             .create_if_missing(true);
         let pool = SqlitePoolOptions::new().connect_with(options).await?;
-        Ok(Self { pool })
+        let secret_store = SecretStore::new(database_url)?;
+        Ok(Self { pool, secret_store })
     }
 
     pub async fn init(&self) -> Result<(), ProviderError> {
@@ -128,6 +134,8 @@ impl ProviderStore {
                 instance_id TEXT NOT NULL REFERENCES provider_instances(id) ON DELETE CASCADE,
                 alias TEXT NOT NULL,
                 secret_key TEXT NOT NULL,
+                secret_ciphertext TEXT NOT NULL DEFAULT '',
+                secret_key_version INTEGER NOT NULL DEFAULT 0,
                 weight INTEGER NOT NULL DEFAULT 0,
                 priority INTEGER NOT NULL DEFAULT 0,
                 is_active BOOLEAN NOT NULL DEFAULT 1,
@@ -325,6 +333,18 @@ impl ProviderStore {
         )
         .await?;
         self.ensure_column(
+            "provider_credentials",
+            "secret_ciphertext",
+            "ALTER TABLE provider_credentials ADD COLUMN secret_ciphertext TEXT NOT NULL DEFAULT ''",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_credentials",
+            "secret_key_version",
+            "ALTER TABLE provider_credentials ADD COLUMN secret_key_version INTEGER NOT NULL DEFAULT 0",
+        )
+        .await?;
+        self.ensure_column(
             "provider_models",
             "capabilities",
             "ALTER TABLE provider_models ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'",
@@ -509,7 +529,10 @@ impl ProviderStore {
         Ok(())
     }
 
-    pub(crate) fn keychain_entry(&self, credential_id: &str) -> Result<keyring::Entry, ProviderError> {
+    pub(crate) fn keychain_entry(
+        &self,
+        credential_id: &str,
+    ) -> Result<keyring::Entry, ProviderError> {
         keyring::Entry::new(PROVIDER_KEYCHAIN_SERVICE, credential_id)
             .map_err(|err| ProviderError::Database(format!("keychain entry init failed: {err}")))
     }
@@ -539,7 +562,10 @@ impl ProviderStore {
         }
     }
 
-    pub(crate) fn delete_secret_in_keychain(&self, credential_id: &str) -> Result<(), ProviderError> {
+    pub(crate) fn delete_secret_in_keychain(
+        &self,
+        credential_id: &str,
+    ) -> Result<(), ProviderError> {
         let entry = self.keychain_entry(credential_id)?;
         match entry.delete_credential() {
             Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -553,13 +579,49 @@ impl ProviderStore {
         &self,
         credential_id: &str,
         db_secret: Option<&str>,
+        db_encrypted_secret: Option<&str>,
+        db_key_version: i64,
     ) -> Result<Option<String>, ProviderError> {
         match self.get_secret_from_keychain(credential_id) {
+            Ok(Some(secret)) => Ok(Some(secret)),
+            Ok(None) => self.resolve_db_secret(
+                credential_id,
+                db_secret,
+                db_encrypted_secret,
+                db_key_version,
+            ),
+            Err(err) => {
+                warn!(
+                    "failed to read keychain secret for credential {}: {}",
+                    credential_id, err
+                );
+                self.resolve_db_secret(
+                    credential_id,
+                    db_secret,
+                    db_encrypted_secret,
+                    db_key_version,
+                )
+            }
+        }
+    }
+
+    fn resolve_db_secret(
+        &self,
+        credential_id: &str,
+        db_secret: Option<&str>,
+        db_encrypted_secret: Option<&str>,
+        db_key_version: i64,
+    ) -> Result<Option<String>, ProviderError> {
+        let encrypted = db_encrypted_secret.unwrap_or_default();
+        match self
+            .secret_store
+            .decrypt_from_db(credential_id, encrypted, db_key_version)
+        {
             Ok(Some(secret)) => Ok(Some(secret)),
             Ok(None) => Ok(normalize_secret(db_secret.unwrap_or_default())),
             Err(err) => {
                 warn!(
-                    "failed to read keychain secret for credential {}: {}",
+                    "failed to decrypt db fallback secret for credential {}: {}",
                     credential_id, err
                 );
                 Ok(normalize_secret(db_secret.unwrap_or_default()))
@@ -567,10 +629,22 @@ impl ProviderStore {
         }
     }
 
-    pub(crate) fn resolve_secret_from_row(&self, row: &SqliteRow) -> Result<Option<String>, ProviderError> {
+    pub(crate) fn resolve_secret_from_row(
+        &self,
+        row: &SqliteRow,
+    ) -> Result<Option<String>, ProviderError> {
         let credential_id: String = row.try_get("id")?;
         let legacy_secret: String = row.try_get("secret_key")?;
-        self.resolve_secret_for_credential(&credential_id, Some(&legacy_secret))
+        let encrypted_secret: String = row
+            .try_get("secret_ciphertext")
+            .unwrap_or_else(|_| "".to_string());
+        let key_version: i64 = row.try_get("secret_key_version").unwrap_or(0);
+        self.resolve_secret_for_credential(
+            &credential_id,
+            Some(&legacy_secret),
+            Some(&encrypted_secret),
+            key_version,
+        )
     }
 
     pub(crate) async fn persist_secret_for_credential(
@@ -584,14 +658,14 @@ impl ProviderStore {
                 Ok(Some(saved)) if saved == secret => true,
                 Ok(Some(_)) | Ok(None) => {
                     warn!(
-                        "provider keychain write verification failed for credential {}, fallback to local db",
+                        "provider keychain write verification failed for credential {}, fallback to encrypted db secret",
                         credential_id
                     );
                     false
                 }
                 Err(err) => {
                     warn!(
-                        "provider keychain verification read failed for credential {}, fallback to local db: {}",
+                        "provider keychain verification read failed for credential {}, fallback to encrypted db secret: {}",
                         credential_id, err
                     );
                     false
@@ -599,32 +673,33 @@ impl ProviderStore {
             },
             Err(err) => {
                 warn!(
-                    "failed to migrate legacy db secret into keychain for credential {}: {}",
+                    "failed to write keychain secret for credential {}: {}",
                     credential_id, err
                 );
                 false
             }
         };
 
-        if keychain_ready {
-            sqlx::query(
-                "UPDATE provider_credentials
-                 SET secret_key = ''
-                 WHERE id = ?",
-            )
-            .bind(credential_id)
-            .execute(&self.pool)
-            .await?;
-        } else {
-            sqlx::query(
-                "UPDATE provider_credentials
-                 SET secret_key = ?
-                 WHERE id = ?",
-            )
-            .bind(secret)
-            .bind(credential_id)
-            .execute(&self.pool)
-            .await?;
+        let (encrypted_secret, key_version) =
+            self.secret_store.encrypt_for_db(credential_id, secret)?;
+        sqlx::query(
+            "UPDATE provider_credentials
+             SET secret_key = '',
+                 secret_ciphertext = ?,
+                 secret_key_version = ?
+             WHERE id = ?",
+        )
+        .bind(&encrypted_secret)
+        .bind(key_version)
+        .bind(credential_id)
+        .execute(&self.pool)
+        .await?;
+
+        if !keychain_ready {
+            warn!(
+                "credential {} saved to encrypted db fallback only; keychain unavailable",
+                credential_id
+            );
         }
 
         Ok(())
@@ -632,9 +707,9 @@ impl ProviderStore {
 
     async fn migrate_legacy_secrets_to_keychain(&self) -> Result<(), ProviderError> {
         let rows = sqlx::query(
-            "SELECT id, secret_key
+            "SELECT id, secret_key, secret_ciphertext, secret_key_version
              FROM provider_credentials
-             WHERE TRIM(secret_key) <> ''",
+             WHERE TRIM(secret_key) <> '' OR TRIM(secret_ciphertext) <> ''",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -642,45 +717,64 @@ impl ProviderStore {
         for row in rows {
             let credential_id: String = row.try_get("id")?;
             let secret_key: String = row.try_get("secret_key")?;
-            let secret = secret_key.trim();
-            if secret.is_empty() {
-                continue;
+            let encrypted_secret: String = row
+                .try_get("secret_ciphertext")
+                .unwrap_or_else(|_| "".to_string());
+            let key_version: i64 = row.try_get("secret_key_version").unwrap_or(0);
+
+            let mut candidate_secret = self
+                .secret_store
+                .decrypt_from_db(&credential_id, &encrypted_secret, key_version)
+                .unwrap_or(None);
+
+            if candidate_secret.is_none() {
+                candidate_secret = normalize_secret(&secret_key);
             }
 
-            match self.set_secret_in_keychain(&credential_id, secret) {
+            let Some(secret) = candidate_secret else {
+                continue;
+            };
+
+            let (ciphertext, version) =
+                self.secret_store.encrypt_for_db(&credential_id, &secret)?;
+            if let Err(err) = sqlx::query(
+                "UPDATE provider_credentials
+                 SET secret_key = '',
+                     secret_ciphertext = ?,
+                     secret_key_version = ?
+                 WHERE id = ?",
+            )
+            .bind(&ciphertext)
+            .bind(version)
+            .bind(&credential_id)
+            .execute(&self.pool)
+            .await
+            {
+                warn!(
+                    "failed to persist encrypted fallback secret for credential {}: {}",
+                    credential_id, err
+                );
+            }
+
+            match self.set_secret_in_keychain(&credential_id, &secret) {
                 Ok(_) => match self.get_secret_from_keychain(&credential_id) {
-                    Ok(Some(saved)) if saved == secret => {
-                        if let Err(err) = sqlx::query(
-                            "UPDATE provider_credentials
-                             SET secret_key = ''
-                             WHERE id = ?",
-                        )
-                        .bind(&credential_id)
-                        .execute(&self.pool)
-                        .await
-                        {
-                            warn!(
-                                "failed to clear legacy db secret after keychain migration for credential {}: {}",
-                                credential_id, err
-                            );
-                        }
-                    }
+                    Ok(Some(saved)) if saved == secret => {}
                     Ok(Some(_)) | Ok(None) => {
                         warn!(
-                            "keychain migration verification failed for credential {}, keep local db secret",
+                            "keychain migration verification failed for credential {}, encrypted db fallback remains active",
                             credential_id
                         );
                     }
                     Err(err) => {
                         warn!(
-                            "keychain migration verification read failed for credential {}, keep local db secret: {}",
+                            "keychain migration verification read failed for credential {}, encrypted db fallback remains active: {}",
                             credential_id, err
                         );
                     }
                 },
                 Err(err) => {
                     warn!(
-                        "failed to migrate legacy db secret into keychain for credential {}: {}",
+                        "failed to migrate credential {} into keychain, encrypted db fallback remains active: {}",
                         credential_id, err
                     );
                 }

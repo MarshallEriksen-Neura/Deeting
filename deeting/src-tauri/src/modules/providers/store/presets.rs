@@ -1,7 +1,7 @@
-use sqlx::Row;
 use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::types::ProviderPreset;
 use crate::modules::providers::store::ProviderStore;
+use crate::modules::providers::types::ProviderPreset;
+use sqlx::Row;
 
 impl ProviderStore {
     pub async fn list_presets(&self) -> Result<Vec<ProviderPreset>, ProviderError> {
@@ -26,17 +26,15 @@ impl ProviderStore {
                 category: row.try_get("category")?,
                 url_template: row.try_get("url_template")?,
                 template_engine: row.try_get("template_engine")?,
-                response_transform: response_transform_text.and_then(|t| serde_json::from_str(&t).ok()),
+                response_transform: response_transform_text
+                    .and_then(|t| serde_json::from_str(&t).ok()),
                 is_active: row.try_get::<i64, _>("is_active")? != 0,
             });
         }
         Ok(presets)
     }
 
-    pub async fn replace_presets(
-        &self,
-        presets: Vec<ProviderPreset>,
-    ) -> Result<(), ProviderError> {
+    pub async fn replace_presets(&self, presets: Vec<ProviderPreset>) -> Result<(), ProviderError> {
         let mut tx = self.pool.begin().await?;
 
         // Mark all as inactive first

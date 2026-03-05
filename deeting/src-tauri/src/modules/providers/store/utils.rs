@@ -1,11 +1,11 @@
+use crate::modules::providers::error::ProviderError;
+use crate::modules::providers::store::EMBEDDING_CAPABILITY;
+use crate::modules::providers::types::{
+    BanditArmState, ProviderInstance, ProviderModel, UserEmbeddingConfig, UserSecretary,
+};
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use uuid::Uuid;
-use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::types::{
-    UserSecretary, UserEmbeddingConfig, BanditArmState, ProviderInstance, ProviderModel
-};
-use crate::modules::providers::store::EMBEDDING_CAPABILITY;
 
 pub fn row_to_bandit_arm_state(row: &SqliteRow) -> Result<BanditArmState, ProviderError> {
     Ok(BanditArmState {

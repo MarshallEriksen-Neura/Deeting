@@ -1,10 +1,10 @@
-use uuid::Uuid;
 use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::types::{ProviderModel, ProviderModelUpdateRequest};
-use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::store::utils::{
-    now_rfc3339, row_to_model, normalize_upstream_path, normalize_source
+    normalize_source, normalize_upstream_path, now_rfc3339, row_to_model,
 };
+use crate::modules::providers::store::ProviderStore;
+use crate::modules::providers::types::{ProviderModel, ProviderModelUpdateRequest};
+use uuid::Uuid;
 
 impl ProviderStore {
     pub async fn list_models(
@@ -39,9 +39,11 @@ impl ProviderStore {
     }
 
     pub async fn list_active_models(&self) -> Result<Vec<ProviderModel>, ProviderError> {
-        let rows = sqlx::query("SELECT * FROM provider_models WHERE is_active = 1 ORDER BY priority DESC, weight DESC")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(
+            "SELECT * FROM provider_models WHERE is_active = 1 ORDER BY priority DESC, weight DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         let mut models = Vec::with_capacity(rows.len());
         for row in rows {
@@ -181,21 +183,25 @@ impl ProviderStore {
         if let Some(upstream_path) = payload.upstream_path {
             let normalized = normalize_upstream_path(Some(&upstream_path))
                 .unwrap_or_else(|| "v1/chat/completions".to_string());
-            sqlx::query("UPDATE provider_models SET upstream_path = ?, updated_at = ? WHERE id = ?")
-                .bind(normalized)
-                .bind(&now)
-                .bind(model_id.to_string())
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE provider_models SET upstream_path = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(normalized)
+            .bind(&now)
+            .bind(model_id.to_string())
+            .execute(&mut *tx)
+            .await?;
         }
 
         if let Some(pricing_config) = payload.pricing_config {
-            sqlx::query("UPDATE provider_models SET pricing_config = ?, updated_at = ? WHERE id = ?")
-                .bind(pricing_config.to_string())
-                .bind(&now)
-                .bind(model_id.to_string())
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE provider_models SET pricing_config = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(pricing_config.to_string())
+            .bind(&now)
+            .bind(model_id.to_string())
+            .execute(&mut *tx)
+            .await?;
         }
 
         if let Some(limit_config) = payload.limit_config {
@@ -208,30 +214,36 @@ impl ProviderStore {
         }
 
         if let Some(tokenizer_config) = payload.tokenizer_config {
-            sqlx::query("UPDATE provider_models SET tokenizer_config = ?, updated_at = ? WHERE id = ?")
-                .bind(tokenizer_config.to_string())
-                .bind(&now)
-                .bind(model_id.to_string())
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE provider_models SET tokenizer_config = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(tokenizer_config.to_string())
+            .bind(&now)
+            .bind(model_id.to_string())
+            .execute(&mut *tx)
+            .await?;
         }
 
         if let Some(routing_config) = payload.routing_config {
-            sqlx::query("UPDATE provider_models SET routing_config = ?, updated_at = ? WHERE id = ?")
-                .bind(routing_config.to_string())
-                .bind(&now)
-                .bind(model_id.to_string())
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE provider_models SET routing_config = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(routing_config.to_string())
+            .bind(&now)
+            .bind(model_id.to_string())
+            .execute(&mut *tx)
+            .await?;
         }
 
         if let Some(config_override) = payload.config_override {
-            sqlx::query("UPDATE provider_models SET config_override = ?, updated_at = ? WHERE id = ?")
-                .bind(config_override.to_string())
-                .bind(&now)
-                .bind(model_id.to_string())
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE provider_models SET config_override = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(config_override.to_string())
+            .bind(&now)
+            .bind(model_id.to_string())
+            .execute(&mut *tx)
+            .await?;
         }
 
         if let Some(source) = payload.source {
@@ -282,9 +294,9 @@ impl ProviderStore {
 
         tx.commit().await?;
 
-        self.get_model(model_id)
-            .await?
-            .ok_or_else(|| ProviderError::NotFound(format!("Model {model_id} not found after update")))
+        self.get_model(model_id).await?.ok_or_else(|| {
+            ProviderError::NotFound(format!("Model {model_id} not found after update"))
+        })
     }
 
     pub async fn get_model(&self, model_id: &Uuid) -> Result<Option<ProviderModel>, ProviderError> {

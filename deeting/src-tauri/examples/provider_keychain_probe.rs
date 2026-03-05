@@ -155,9 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "[probe] second-entry.get_password(after manual set) ok, matches={}",
             v == manual_value
         ),
-        Err(err) => println!(
-            "[probe] second-entry.get_password(after manual set) error: {err}"
-        ),
+        Err(err) => println!("[probe] second-entry.get_password(after manual set) error: {err}"),
     }
 
     // Clean up created secret and db record.

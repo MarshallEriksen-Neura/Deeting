@@ -1,15 +1,18 @@
+use crate::modules::providers::error::ProviderError;
+use crate::modules::providers::store::utils::{now_rfc3339, row_to_instance};
+use crate::modules::providers::store::ProviderStore;
+use crate::modules::providers::types::{
+    CreateInstanceRequest, ProviderInstance, UpdateInstanceRequest,
+};
 use sqlx::Row;
 use uuid::Uuid;
-use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::types::{ProviderInstance, CreateInstanceRequest, UpdateInstanceRequest};
-use crate::modules::providers::store::ProviderStore;
-use crate::modules::providers::store::utils::{now_rfc3339, row_to_instance};
 
 impl ProviderStore {
     pub async fn list_instances(&self) -> Result<Vec<ProviderInstance>, ProviderError> {
-        let rows = sqlx::query("SELECT * FROM provider_instances ORDER BY priority DESC, created_at DESC")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows =
+            sqlx::query("SELECT * FROM provider_instances ORDER BY priority DESC, created_at DESC")
+                .fetch_all(&self.pool)
+                .await?;
 
         let mut instances = Vec::with_capacity(rows.len());
         for row in rows {
@@ -29,21 +32,23 @@ impl ProviderStore {
         let mut tx = self.pool.begin().await?;
 
         // Try to inherit template_engine and response_transform from preset if available
-        let preset_row = sqlx::query("SELECT template_engine, response_transform FROM provider_presets WHERE slug = ?")
-            .bind(&payload.preset_slug)
-            .fetch_optional(&mut *tx)
-            .await?;
-        
+        let preset_row = sqlx::query(
+            "SELECT template_engine, response_transform FROM provider_presets WHERE slug = ?",
+        )
+        .bind(&payload.preset_slug)
+        .fetch_optional(&mut *tx)
+        .await?;
+
         let (template_engine, response_transform) = match preset_row {
             Some(row) => (
                 row.try_get::<Option<String>, _>("template_engine")?,
-                row.try_get::<Option<String>, _>("response_transform")?
+                row.try_get::<Option<String>, _>("response_transform")?,
             ),
-            None => (None, None)
+            None => (None, None),
         };
 
         // meta and is_enabled are missing in CreateInstanceRequest, use defaults
-        let meta = "{}"; 
+        let meta = "{}";
         let is_enabled = true;
 
         sqlx::query(
@@ -90,7 +95,7 @@ impl ProviderStore {
         }
 
         tx.commit().await?;
-        
+
         self.get_instance(&instance_id)
             .await?
             .ok_or_else(|| ProviderError::NotFound("Instance not found after creation".into()))
@@ -123,12 +128,14 @@ impl ProviderStore {
         }
 
         if let Some(description) = payload.description {
-            sqlx::query("UPDATE provider_instances SET description = ?, updated_at = ? WHERE id = ?")
-                .bind(description)
-                .bind(&now)
-                .bind(instance_id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE provider_instances SET description = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(description)
+            .bind(&now)
+            .bind(instance_id)
+            .execute(&mut *tx)
+            .await?;
         }
 
         if let Some(icon) = payload.icon {
@@ -150,21 +157,24 @@ impl ProviderStore {
         }
 
         if let Some(is_enabled) = payload.is_enabled {
-            sqlx::query("UPDATE provider_instances SET is_enabled = ?, updated_at = ? WHERE id = ?")
-                .bind(is_enabled)
-                .bind(&now)
-                .bind(instance_id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE provider_instances SET is_enabled = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(is_enabled)
+            .bind(&now)
+            .bind(instance_id)
+            .execute(&mut *tx)
+            .await?;
         }
 
         // meta is missing in UpdateInstanceRequest
 
         if let Some(secret_key) = payload.secret_key {
-            let row = sqlx::query("SELECT id FROM provider_credentials WHERE instance_id = ? LIMIT 1")
-                .bind(instance_id)
-                .fetch_optional(&mut *tx)
-                .await?;
+            let row =
+                sqlx::query("SELECT id FROM provider_credentials WHERE instance_id = ? LIMIT 1")
+                    .bind(instance_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
 
             if let Some(row) = row {
                 let credential_id: String = row.try_get("id")?;
@@ -191,9 +201,9 @@ impl ProviderStore {
 
         tx.commit().await?;
 
-        self.get_instance(instance_id)
-            .await?
-            .ok_or_else(|| ProviderError::NotFound(format!("Instance {instance_id} not found after update")))
+        self.get_instance(instance_id).await?.ok_or_else(|| {
+            ProviderError::NotFound(format!("Instance {instance_id} not found after update"))
+        })
     }
 
     pub async fn delete_instance(&self, instance_id: &str) -> Result<(), ProviderError> {
@@ -241,7 +251,7 @@ impl ProviderStore {
         };
 
         let cred_row = sqlx::query(
-            "SELECT id, secret_key FROM provider_credentials
+            "SELECT id, secret_key, secret_ciphertext, secret_key_version FROM provider_credentials
              WHERE instance_id = ? AND is_active = 1
              ORDER BY priority DESC, weight DESC
              LIMIT 1",

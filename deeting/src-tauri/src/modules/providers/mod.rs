@@ -25,6 +25,10 @@ impl ProviderState {
         store.init().await?;
         let embedding = EmbeddingService::new(store.clone());
         let transformer = ResponseTransformer::new();
-        Ok(Self { store, embedding, transformer })
+        Ok(Self {
+            store,
+            embedding,
+            transformer,
+        })
     }
 }

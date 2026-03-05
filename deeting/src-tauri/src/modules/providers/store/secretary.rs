@@ -1,10 +1,12 @@
 use crate::modules::providers::error::ProviderError;
+use crate::modules::providers::store::utils::{
+    now_rfc3339, row_to_user_embedding_config, row_to_user_secretary,
+};
+use crate::modules::providers::store::{ProviderStore, LOCAL_DESKTOP_USER_ID};
 use crate::modules::providers::types::{
     UserEmbeddingConfig, UserEmbeddingConfigUpdateRequest, UserSecretary,
     UserSecretaryUpdateRequest,
 };
-use crate::modules::providers::store::{ProviderStore, LOCAL_DESKTOP_USER_ID};
-use crate::modules::providers::store::utils::{now_rfc3339, row_to_user_secretary, row_to_user_embedding_config};
 use uuid::Uuid;
 
 impl ProviderStore {
@@ -128,7 +130,9 @@ impl ProviderStore {
 
         self.get_user_embedding_config_by_user_id(LOCAL_DESKTOP_USER_ID)
             .await?
-            .ok_or_else(|| ProviderError::NotFound("User embedding config not found after update".into()))
+            .ok_or_else(|| {
+                ProviderError::NotFound("User embedding config not found after update".into())
+            })
     }
 
     pub async fn get_user_embedding_config_by_user_id(

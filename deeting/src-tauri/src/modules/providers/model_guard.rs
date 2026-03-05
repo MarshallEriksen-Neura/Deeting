@@ -1,6 +1,6 @@
+use crate::modules::providers::store::utils::has_embedding_capability;
 use crate::modules::providers::types::ProviderModel;
 use crate::state::AppState;
-use crate::modules::providers::store::utils::has_embedding_capability;
 
 pub const MODEL_CONFIG_REQUIRED_PREFIX: &str = "MODEL_CONFIG_REQUIRED";
 pub const MODEL_CONFIG_SECRETARY: &str = "secretary";
@@ -96,7 +96,7 @@ fn matches_active_model_reference(models: &[ProviderModel], reference: &str) -> 
 }
 
 fn matches_active_embedding_model(models: &[ProviderModel], provider_model_id: &str) -> bool {
-    models
-        .iter()
-        .any(|model| model.id.to_string() == provider_model_id && has_embedding_capability(&model.capabilities))
+    models.iter().any(|model| {
+        model.id.to_string() == provider_model_id && has_embedding_capability(&model.capabilities)
+    })
 }

@@ -36,7 +36,7 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     let show_i_for_locale = show_i.clone();
     let quit_i_for_locale = quit_i.clone();
     let fallback_locale = default_locale.to_string();
-    
+
     app.listen(TRAY_LOCALE_EVENT, move |event| {
         let locale = serde_json::from_str::<TrayLocalePayload>(event.payload())
             .ok()

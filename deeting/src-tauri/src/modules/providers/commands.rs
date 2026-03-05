@@ -217,7 +217,7 @@ pub async fn sync_local_provider_models(
         .quick_add_models(&instance_id, model_ids)
         .await
         .map_err(|e| e.to_string())?;
-    
+
     state
         .providers
         .store
@@ -238,7 +238,7 @@ pub async fn quick_add_local_provider_models(
         .quick_add_models(&instance_id, payload.models)
         .await
         .map_err(|e| e.to_string())?;
-    
+
     state
         .providers
         .store
@@ -307,7 +307,8 @@ pub async fn test_local_provider_model(
     let mut request = reqwest::Client::new().post(&endpoint).json(&body);
     if let Some(secret_key) = connection.secret_key.as_deref() {
         if !secret_key.trim().is_empty() {
-            request = apply_provider_auth_headers(request, connection.protocol.as_deref(), secret_key);
+            request =
+                apply_provider_auth_headers(request, connection.protocol.as_deref(), secret_key);
         }
     }
 
@@ -622,7 +623,10 @@ fn has_versioned_path(base_url: &str) -> bool {
         without_query.trim_start_matches('/')
     };
 
-    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
     for (idx, segment) in segments.iter().enumerate() {
         if is_version_segment(segment) {
             return true;

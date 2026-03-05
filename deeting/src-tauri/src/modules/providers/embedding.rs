@@ -1,6 +1,6 @@
 use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::store::utils::has_embedding_capability;
+use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::ProviderModel;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -103,7 +103,9 @@ pub(crate) fn select_embedding_model<'a>(
         if !trimmed.is_empty() {
             if let Ok(target_id) = Uuid::parse_str(trimmed) {
                 if let Some(configured_model) = models.iter().find(|model| model.id == target_id) {
-                    if configured_model.is_active && has_embedding_capability(&configured_model.capabilities) {
+                    if configured_model.is_active
+                        && has_embedding_capability(&configured_model.capabilities)
+                    {
                         return Some(configured_model);
                     }
                 }
@@ -190,7 +192,10 @@ fn has_versioned_path(base_url: &str) -> bool {
         without_query.trim_start_matches('/')
     };
 
-    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
     for (idx, segment) in segments.iter().enumerate() {
         if is_version_segment(segment) {
             return true;

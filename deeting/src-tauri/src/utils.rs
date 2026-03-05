@@ -55,7 +55,9 @@ pub fn resolve_lancedb_uri<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<Str
     Ok(absolute.to_string_lossy().to_string())
 }
 
-pub fn resolve_boxrun_home_dir<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<PathBuf, McpError> {
+pub fn resolve_boxrun_home_dir<R: tauri::Runtime>(
+    app: &tauri::App<R>,
+) -> Result<PathBuf, McpError> {
     if let Some(path) = non_empty_env("BOXRUN_HOME") {
         let expanded = expand_path(&path);
         let absolute = if expanded.is_absolute() {

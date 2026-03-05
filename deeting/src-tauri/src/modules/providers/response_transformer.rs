@@ -1,6 +1,6 @@
-use serde_json::{json, Value};
 use handlebars::Handlebars;
 use log::error;
+use serde_json::{json, Value};
 
 pub struct ResponseTransformer {
     hb: Handlebars<'static>,
@@ -42,14 +42,18 @@ impl ResponseTransformer {
         match result {
             Ok(val) => val,
             Err(e) => {
-                error!("Response transform failed: engine={} error={}", template_engine, e);
+                error!(
+                    "Response transform failed: engine={} error={}",
+                    template_engine, e
+                );
                 raw_response
             }
         }
     }
 
     pub fn extract_error(&self, raw: &Value, status_code: u16) -> String {
-        if let Some(message) = raw.pointer("/error/message")
+        if let Some(message) = raw
+            .pointer("/error/message")
             .and_then(|v| v.as_str())
             .or_else(|| raw.get("error").and_then(|v| v.as_str()))
             .or_else(|| raw.get("message").and_then(|v| v.as_str()))
@@ -83,12 +87,14 @@ impl ResponseTransformer {
         match obj {
             Value::String(s) => {
                 if s.contains("{{") {
-                    self.hb.render_template(s, context)
+                    self.hb
+                        .render_template(s, context)
                         .map(|rendered| {
                             // Try to parse back to JSON if it looks like an object or array
                             let trimmed = rendered.trim();
-                            if (trimmed.starts_with('{') && trimmed.ends_with('}')) || 
-                               (trimmed.starts_with('[') && trimmed.ends_with(']')) {
+                            if (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                                || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+                            {
                                 serde_json::from_str(&rendered).unwrap_or(Value::String(rendered))
                             } else {
                                 Value::String(rendered)
@@ -165,7 +171,10 @@ impl ResponseTransformer {
             }
         }
 
-        let stop_reason = raw.get("stop_reason").and_then(|s| s.as_str()).unwrap_or("stop");
+        let stop_reason = raw
+            .get("stop_reason")
+            .and_then(|s| s.as_str())
+            .unwrap_or("stop");
         let finish_reason = match stop_reason {
             "end_turn" => "stop",
             "max_tokens" => "length",
@@ -173,8 +182,16 @@ impl ResponseTransformer {
             _ => stop_reason,
         };
 
-        let prompt_tokens = raw.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
-        let completion_tokens = raw.get("usage").and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+        let prompt_tokens = raw
+            .get("usage")
+            .and_then(|u| u.get("input_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let completion_tokens = raw
+            .get("usage")
+            .and_then(|u| u.get("output_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         Ok(json!({
             "id": raw.get("id"),
@@ -194,20 +211,26 @@ impl ResponseTransformer {
 
     fn adapt_gemini(&self, raw: Value) -> Result<Value, String> {
         let mut choices = Vec::new();
-        
+
         if let Some(candidates) = raw.get("candidates").and_then(|c| c.as_array()) {
             if let Some(cand) = candidates.first() {
                 let mut text_content = String::new();
                 let mut reasoning_content = String::new();
                 let mut tool_calls = Vec::new();
 
-                if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                if let Some(parts) = cand
+                    .get("content")
+                    .and_then(|c| c.get("parts"))
+                    .and_then(|p| p.as_array())
+                {
                     for (idx, part) in parts.iter().enumerate() {
                         if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                             text_content.push_str(text);
                         } else if let Some(thought) = part.get("thought").and_then(|t| t.as_str()) {
                             reasoning_content.push_str(thought);
-                        } else if let Some(func_call) = part.get("functionCall").or(part.get("function_call")) {
+                        } else if let Some(func_call) =
+                            part.get("functionCall").or(part.get("function_call"))
+                        {
                             tool_calls.push(json!({
                                 "id": format!("gemini-func-{}", idx),
                                 "type": "function",
@@ -234,8 +257,12 @@ impl ResponseTransformer {
                     }
                 }
 
-                let finish_reason = cand.get("finishReason").and_then(|f| f.as_str()).unwrap_or("STOP").to_lowercase();
-                
+                let finish_reason = cand
+                    .get("finishReason")
+                    .and_then(|f| f.as_str())
+                    .unwrap_or("STOP")
+                    .to_lowercase();
+
                 choices.push(json!({
                     "index": 0,
                     "message": message,
