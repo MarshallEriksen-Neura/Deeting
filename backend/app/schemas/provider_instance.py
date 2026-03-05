@@ -88,6 +88,7 @@ class ProviderInstanceResponse(BaseModel):
     icon: str | None = None
     priority: int
     is_enabled: bool
+    is_public: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -206,3 +207,11 @@ class ProviderVerifyResponse(BaseModel):
     latency_ms: int = 0
     discovered_models: list[str] = Field(default_factory=list)
     probe_url: str | None = None
+
+
+class AdminProviderInstanceCreate(ProviderInstanceCreate):
+    is_public: bool = Field(False, description="是否向普通用户公开")
+
+
+class AdminProviderInstancePublishUpdate(BaseModel):
+    is_public: bool = Field(..., description="是否向普通用户公开")

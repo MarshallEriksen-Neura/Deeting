@@ -52,3 +52,20 @@ class CreditsTransactionItem(BaseSchema):
 class CreditsTransactionListResponse(BaseSchema):
     items: list[CreditsTransactionItem]
     next_offset: int | None = Field(None, alias="nextOffset")
+
+
+class CreditsRechargePolicyResponse(BaseSchema):
+    credit_per_unit: float = Field(..., alias="creditPerUnit")
+    currency: str
+
+
+class CreditsRechargeRequest(BaseSchema):
+    amount: float = Field(..., gt=0)
+
+
+class CreditsRechargeResponse(BaseSchema):
+    amount: float
+    credited_amount: float = Field(..., alias="creditedAmount")
+    currency: str
+    balance: float
+    trace_id: str = Field(..., alias="traceId")

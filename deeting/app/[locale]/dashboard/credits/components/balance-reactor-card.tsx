@@ -1,20 +1,56 @@
 "use client"
 
+import { useState } from "react"
+import useSWR from "swr"
 import { useTranslations } from "next-intl"
 import { Zap, Plus } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Button } from "@/components/ui/button"
+import { fetchCreditsRechargePolicy, rechargeCredits } from "@/lib/api/credits"
 import { useCreditsBalance } from "@/lib/swr/use-credits-balance"
 
 export function BalanceReactorCard() {
   const t = useTranslations("credits")
-  const { data, isLoading } = useCreditsBalance()
+  const { data, isLoading, mutate } = useCreditsBalance()
+  const { data: rechargePolicy } = useSWR(
+    "/api/v1/credits/recharge-policy",
+    fetchCreditsRechargePolicy
+  )
+  const [amountInput, setAmountInput] = useState("10")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null)
 
   const balance = data?.balance ?? 0
   const monthlySpent = data?.monthlySpent ?? 0
   const percentage = Math.min(100, Math.max(0, data?.usedPercent ?? 0))
   const formatAmount = (value: number) =>
     value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+
+  const handleRecharge = async () => {
+    const amount = Number(amountInput)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setFeedback({ kind: "error", text: t("balance.feedback.invalidAmount") })
+      return
+    }
+
+    setIsSubmitting(true)
+    setFeedback(null)
+    try {
+      const result = await rechargeCredits(amount)
+      await mutate()
+      setFeedback({
+        kind: "success",
+        text: t("balance.feedback.rechargeSuccess", {
+          amount: formatAmount(result.creditedAmount),
+        }),
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("balance.feedback.rechargeFailed")
+      setFeedback({ kind: "error", text: message })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <GlassCard
@@ -76,15 +112,33 @@ export function BalanceReactorCard() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3">
-          <Button
-            size="sm"
-            className="flex-1 bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
-            disabled
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            {t("balance.recharge")}
-          </Button>
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--muted)]">
+            {t("balance.rechargePolicy", {
+              ratio: formatAmount(rechargePolicy?.creditPerUnit ?? 10),
+              currency: rechargePolicy?.currency ?? "USD",
+            })}
+          </p>
+          <div className="flex gap-3">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={amountInput}
+              onChange={(event) => setAmountInput(event.target.value)}
+              placeholder={t("balance.amountPlaceholder")}
+              className="h-9 w-28 rounded-md border border-[var(--muted)]/20 bg-transparent px-2 text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)]/60"
+            />
+            <Button
+              size="sm"
+              className="flex-1 bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
+              disabled={isSubmitting}
+              onClick={() => void handleRecharge()}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              {isSubmitting ? t("balance.recharging") : t("balance.recharge")}
+            </Button>
+          </div>
           <Button
             size="sm"
             variant="outline"
@@ -94,6 +148,13 @@ export function BalanceReactorCard() {
             {t("balance.autoRecharge")}
           </Button>
         </div>
+        {feedback ? (
+          <p
+            className={`text-xs ${feedback.kind === "success" ? "text-emerald-400" : "text-rose-300"}`}
+          >
+            {feedback.text}
+          </p>
+        ) : null}
 
         {/* Usage Stats */}
         <div className="pt-4 border-t border-[var(--muted)]/10 grid grid-cols-2 gap-4">

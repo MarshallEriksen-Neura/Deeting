@@ -13,7 +13,7 @@ export const CreditsBalanceSchema = z.object({
 
 export const CreditsConsumptionPointSchema = z.object({
   date: z.string(),
-  tokensByModel: z.record(z.number()),
+  tokensByModel: z.record(z.string(), z.number()),
 })
 
 export const CreditsConsumptionSchema = z.object({
@@ -52,12 +52,27 @@ export const CreditsTransactionsSchema = z.object({
   nextOffset: z.number().nullable().optional(),
 })
 
+export const CreditsRechargePolicySchema = z.object({
+  creditPerUnit: z.number().positive(),
+  currency: z.string(),
+})
+
+export const CreditsRechargeResponseSchema = z.object({
+  amount: z.number(),
+  creditedAmount: z.number(),
+  currency: z.string(),
+  balance: z.number(),
+  traceId: z.string(),
+})
+
 // Types
 export type CreditsBalance = z.infer<typeof CreditsBalanceSchema>
 export type CreditsConsumption = z.infer<typeof CreditsConsumptionSchema>
 export type CreditsModelUsage = z.infer<typeof CreditsModelUsageSchema>
 export type CreditsTransactionItem = z.infer<typeof CreditsTransactionItemSchema>
 export type CreditsTransactions = z.infer<typeof CreditsTransactionsSchema>
+export type CreditsRechargePolicy = z.infer<typeof CreditsRechargePolicySchema>
+export type CreditsRechargeResponse = z.infer<typeof CreditsRechargeResponseSchema>
 
 // =====================
 // API Functions
@@ -104,4 +119,21 @@ export async function fetchCreditsTransactions(params?: {
     },
   })
   return CreditsTransactionsSchema.parse(data)
+}
+
+export async function fetchCreditsRechargePolicy(): Promise<CreditsRechargePolicy> {
+  const data = await request<CreditsRechargePolicy>({
+    url: `${CREDITS_BASE}/recharge-policy`,
+    method: "GET",
+  })
+  return CreditsRechargePolicySchema.parse(data)
+}
+
+export async function rechargeCredits(amount: number): Promise<CreditsRechargeResponse> {
+  const data = await request<CreditsRechargeResponse>({
+    url: `${CREDITS_BASE}/recharge`,
+    method: "POST",
+    data: { amount },
+  })
+  return CreditsRechargeResponseSchema.parse(data)
 }

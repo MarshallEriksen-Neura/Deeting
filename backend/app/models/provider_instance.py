@@ -28,6 +28,7 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     - preset_slug 指向系统级 provider_preset（模板）
     - user_id 为空表示平台公共实例
+    - is_public 控制是否向普通用户公开展示/可路由
     - credentials_ref 作为默认凭证引用；额外多 Key 存在 provider_credential
     """
 
@@ -62,6 +63,14 @@ class ProviderInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true", comment="是否启用"
+    )
+    is_public: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        index=True,
+        comment="是否公开给普通用户可见/可路由",
     )
     meta: Mapped[dict[str, Any]] = mapped_column(
         JSONBCompat,

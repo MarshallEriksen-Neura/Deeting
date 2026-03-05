@@ -185,6 +185,34 @@ mod tests {
     }
 
     #[test]
+    fn build_local_tool_trace_blocks_contains_tool_call_and_result() {
+        let meta = vec![serde_json::json!({
+            "id": "call_1",
+            "name": "install_skill_from_git",
+            "status": "success",
+            "result": {
+                "action": "skill_installed"
+            }
+        })];
+
+        let blocks = build_local_tool_trace_blocks(&meta);
+        assert!(!blocks.is_empty());
+        assert_eq!(
+            blocks[0].get("type").and_then(|v| v.as_str()),
+            Some("execution_section")
+        );
+        assert!(blocks.iter().any(|block| {
+            block.get("type").and_then(|v| v.as_str()) == Some("tool_call")
+                && block.get("toolName").and_then(|v| v.as_str())
+                    == Some("install_skill_from_git")
+        }));
+        assert!(blocks.iter().any(|block| {
+            block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
+                && block.get("status").and_then(|v| v.as_str()) == Some("success")
+        }));
+    }
+
+    #[test]
     fn unknown_tool_call_builds_structured_install_gate_error_meta() {
         let call = LocalChatToolCall {
             id: Some("call_unknown".to_string()),

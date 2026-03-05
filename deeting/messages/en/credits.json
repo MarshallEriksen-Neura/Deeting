@@ -5,7 +5,15 @@
     "balance": {
       "title": "Available Credits",
       "recharge": "Recharge Now",
+      "recharging": "Recharging...",
       "autoRecharge": "Auto Recharge",
+      "amountPlaceholder": "Amount",
+      "rechargePolicy": "Rate: 1 {currency} = {ratio} credits",
+      "feedback": {
+        "invalidAmount": "Please enter a valid amount greater than 0",
+        "rechargeSuccess": "Recharge successful: +{amount} credits",
+        "rechargeFailed": "Recharge failed"
+      },
       "used": "Used This Month",
       "remaining": "Remaining"
     },

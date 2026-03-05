@@ -1785,6 +1785,13 @@ const EmbeddingSettingSchema = z.object({
 
 export type AdminEmbeddingSetting = z.infer<typeof EmbeddingSettingSchema>
 
+const RechargePolicySchema = z.object({
+  credit_per_unit: z.number().positive(),
+  currency: z.string().min(1),
+})
+
+export type AdminRechargePolicy = z.infer<typeof RechargePolicySchema>
+
 const INTERNAL_ADMIN_BASE = "/api/v1/internal/admin"
 
 /**
@@ -1831,4 +1838,24 @@ export async function updateAdminEmbeddingSetting(modelName: string) {
     },
   })
   return EmbeddingSettingSchema.parse(data)
+}
+
+export async function fetchAdminRechargePolicy() {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/settings/recharge-policy`,
+    method: "GET",
+  })
+  return RechargePolicySchema.parse(data)
+}
+
+export async function updateAdminRechargePolicy(payload: {
+  credit_per_unit: number
+  currency: string
+}) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/settings/recharge-policy`,
+    method: "PATCH",
+    data: payload,
+  })
+  return RechargePolicySchema.parse(data)
 }

@@ -5,7 +5,15 @@
     "balance": {
       "title": "可用积分",
       "recharge": "立即充值",
+      "recharging": "充值中...",
       "autoRecharge": "自动充值设置",
+      "amountPlaceholder": "充值金额",
+      "rechargePolicy": "比例：1 {currency} = {ratio} 积分",
+      "feedback": {
+        "invalidAmount": "请输入大于 0 的有效金额",
+        "rechargeSuccess": "充值成功：+{amount} 积分",
+        "rechargeFailed": "充值失败"
+      },
       "used": "本月已用",
       "remaining": "剩余"
     },

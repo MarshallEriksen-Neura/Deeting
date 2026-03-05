@@ -499,7 +499,37 @@
       },
       "actions": {
         "creating": "创建中...",
-        "addInstance": "添加实例"
+        "addInstance": "添加实例",
+        "manageModels": "管理模型"
+      },
+      "models": {
+        "title": "{instance} 的模型",
+        "actions": {
+          "sync": "自动同步",
+          "syncing": "同步中...",
+          "save": "保存",
+          "saving": "保存中...",
+          "close": "关闭"
+        },
+        "table": {
+          "model": "模型",
+          "active": "启用",
+          "inputPer1k": "输入 / 1K",
+          "outputPer1k": "输出 / 1K",
+          "actions": "操作"
+        },
+        "feedback": {
+          "syncSuccess": "模型同步完成",
+          "syncFailed": "模型同步失败",
+          "saveSuccess": "已保存模型：{model}",
+          "saveFailed": "保存模型失败",
+          "invalidPricing": "价格必须是有效数字"
+        },
+        "empty": {
+          "loading": "正在加载模型...",
+          "failed": "加载模型失败",
+          "noData": "暂无模型"
+        }
       },
       "filters": {
         "searchPlaceholder": "搜索 Provider...",
@@ -861,6 +891,19 @@
         "committed": "已提交",
         "pending": "处理中",
         "reversed": "已冲正"
+      },
+      "rechargePolicy": {
+        "title": "充值比例配置",
+        "description": "设置每 1 单位货币对应的积分数量。",
+        "creditPerUnit": "每 1 货币对应积分",
+        "currency": "货币代码",
+        "save": "保存配置",
+        "saving": "保存中...",
+        "feedback": {
+          "invalidRatio": "比例必须大于 0",
+          "updated": "充值比例已更新",
+          "updateFailed": "更新充值比例失败"
+        }
       },
       "quotaTable": {
         "headers": {

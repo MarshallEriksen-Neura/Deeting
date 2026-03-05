@@ -448,7 +448,7 @@ class ProviderInstanceService:
         user_id: uuid.UUID | None,
         preserve_user_overrides: bool = True,
     ) -> list[ProviderModel]:
-        instance = await self.assert_instance_access(instance_id, user_id)
+        instance = await self.assert_instance_write_access(instance_id, user_id)
         preset = await self.preset_repo.get_by_slug(instance.preset_slug)
         if not preset:
             raise ValueError("preset_not_found")
@@ -472,7 +472,7 @@ class ProviderInstanceService:
         model_ids: list[str],
         capability: str | None = None,
     ) -> list[ProviderModel]:
-        instance = await self.assert_instance_access(instance_id, user_id)
+        instance = await self.assert_instance_write_access(instance_id, user_id)
         # 清洗 + 去重
         cleaned = []
         seen: set[str] = set()
@@ -513,6 +513,7 @@ class ProviderInstanceService:
         api_version: str | None = None,
         project_id: str | None = None,
         region: str | None = None,
+        is_public: bool = False,
     ) -> ProviderInstance:
         preset = await self.preset_repo.get_by_slug(preset_slug)
         if not preset or not preset.is_active:
@@ -566,6 +567,7 @@ class ProviderInstanceService:
             "credentials_ref": final_credentials_ref,
             "priority": priority,
             "is_enabled": is_enabled,
+            "is_public": is_public,
             "meta": meta,
         }
 
@@ -582,7 +584,7 @@ class ProviderInstanceService:
         user_id: uuid.UUID | None,
         **fields,
     ) -> ProviderInstance:
-        instance = await self.assert_instance_access(instance_id, user_id)
+        instance = await self.assert_instance_write_access(instance_id, user_id)
 
         # 提取允许更新的字段
         updatable = {}
@@ -594,6 +596,7 @@ class ProviderInstanceService:
             "icon",
             "priority",
             "is_enabled",
+            "is_public",
             "credentials_ref",
         ]:
             if key in fields and fields[key] is not None:
@@ -693,10 +696,43 @@ class ProviderInstanceService:
     async def assert_instance_access(
         self, instance_id: uuid.UUID, user_id: uuid.UUID | None
     ) -> ProviderInstance:
+        # 兼容旧调用，默认走写权限判断
+        return await self.assert_instance_write_access(instance_id, user_id)
+
+    async def assert_instance_read_access(
+        self, instance_id: uuid.UUID, user_id: uuid.UUID | None
+    ) -> ProviderInstance:
         instance = await self.instance_repo.get(instance_id)
         if not instance:
             raise ValueError("instance_not_found")
-        if instance.user_id and instance.user_id != user_id:
+
+        # 系统内部调用（无用户上下文）允许读取
+        if user_id is None:
+            return instance
+
+        # 属主可读
+        if instance.user_id == user_id:
+            return instance
+
+        # 公开实例可读；兼容历史 user_id 为空即公共
+        if instance.is_public or instance.user_id is None:
+            return instance
+
+        raise PermissionError("forbidden")
+
+    async def assert_instance_write_access(
+        self, instance_id: uuid.UUID, user_id: uuid.UUID | None
+    ) -> ProviderInstance:
+        instance = await self.instance_repo.get(instance_id)
+        if not instance:
+            raise ValueError("instance_not_found")
+
+        # 系统内部调用（无用户上下文）允许写
+        if user_id is None:
+            return instance
+
+        # 仅属主可写；公共实例（含历史 user_id 为空）对普通用户只读
+        if instance.user_id != user_id:
             raise PermissionError("forbidden")
         return instance
 
@@ -706,7 +742,7 @@ class ProviderInstanceService:
         user_id: uuid.UUID | None,
         models: Iterable[ProviderModel],
     ) -> list[ProviderModel]:
-        await self.assert_instance_access(instance_id, user_id)
+        await self.assert_instance_write_access(instance_id, user_id)
 
         # Convert Pydantic models/objects to dicts for repository
         models_data = []
@@ -735,7 +771,7 @@ class ProviderInstanceService:
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
     ) -> list[ProviderModel]:
-        await self.assert_instance_access(instance_id, user_id)
+        await self.assert_instance_read_access(instance_id, user_id)
         from app.core.cache_keys import CacheKeys
 
         cache_key = CacheKeys.provider_model_list(str(instance_id))
@@ -761,7 +797,7 @@ class ProviderInstanceService:
             raise ValueError("model_not_found")
 
         # 权限校验
-        await self.assert_instance_access(model.instance_id, user_id)
+        await self.assert_instance_write_access(model.instance_id, user_id)
 
         updatable_fields = {
             "display_name",
@@ -832,7 +868,7 @@ class ProviderInstanceService:
         model = await self.model_repo.get(model_id)
         if not model:
             raise ValueError("model_not_found")
-        instance = await self.assert_instance_access(model.instance_id, user_id)
+        instance = await self.assert_instance_write_access(model.instance_id, user_id)
         preset = await self.preset_repo.get_by_slug(instance.preset_slug)
         protocol = (instance.meta or {}).get("protocol") or getattr(
             preset, "provider", "openai"
@@ -930,7 +966,7 @@ class ProviderInstanceService:
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
     ) -> list[ProviderCredential]:
-        await self.assert_instance_access(instance_id, user_id)
+        await self.assert_instance_read_access(instance_id, user_id)
         grouped = await self.credential_repo.get_by_instance_ids([str(instance_id)])
         return grouped.get(str(instance_id), [])
 
@@ -945,7 +981,7 @@ class ProviderInstanceService:
         is_active: bool = True,
         api_key: str | None = None,
     ) -> ProviderCredential:
-        instance = await self.assert_instance_access(instance_id, user_id)
+        instance = await self.assert_instance_write_access(instance_id, user_id)
 
         # 唯一性校验
         exists = await self.credential_repo.get_by_alias(instance_id, alias)
@@ -988,7 +1024,7 @@ class ProviderInstanceService:
         credential_id: uuid.UUID,
         user_id: uuid.UUID | None,
     ) -> None:
-        await self.assert_instance_access(instance_id, user_id)
+        await self.assert_instance_write_access(instance_id, user_id)
         cred = await self.credential_repo.get(credential_id)
         if not cred or cred.instance_id != instance_id:
             raise ValueError("credential_not_found")
@@ -1001,7 +1037,7 @@ class ProviderInstanceService:
         instance_id: uuid.UUID,
         user_id: uuid.UUID | None,
     ) -> None:
-        instance = await self.assert_instance_access(instance_id, user_id)
+        instance = await self.assert_instance_write_access(instance_id, user_id)
         await self.instance_repo.delete(instance_id)
 
         # 清理健康状态缓存

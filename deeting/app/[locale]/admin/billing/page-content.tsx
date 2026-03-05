@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { CreditCard } from "lucide-react"
@@ -18,7 +18,9 @@ import {
 import {
   fetchAdminBillingSummary,
   fetchAdminBillingTransactions,
+  fetchAdminRechargePolicy,
   fetchAdminQuotas,
+  updateAdminRechargePolicy,
   type BillingTransactionItem,
   type TenantQuotaItem,
 } from "@/lib/api/admin-dashboard"
@@ -57,6 +59,10 @@ export function PageContent() {
   const [searchQuery, setSearchQuery] = useState("")
   const [txTypeFilter, setTxTypeFilter] = useState("")
   const [txStatusFilter, setTxStatusFilter] = useState("")
+  const [ratioInput, setRatioInput] = useState("")
+  const [currencyInput, setCurrencyInput] = useState("USD")
+  const [isSavingPolicy, setIsSavingPolicy] = useState(false)
+  const [policyFeedback, setPolicyFeedback] = useState<string | null>(null)
 
   const { data: quotasData, error: quotasError, isLoading: quotasLoading } = useSWR(
     "/api/v1/admin/quotas?limit=100",
@@ -66,6 +72,10 @@ export function PageContent() {
   const { data: summaryData } = useSWR(
     "/api/v1/admin/billing/summary",
     fetchAdminBillingSummary
+  )
+  const { data: policyData, mutate: mutatePolicy } = useSWR(
+    "/api/v1/admin/settings/recharge-policy",
+    fetchAdminRechargePolicy
   )
 
   const {
@@ -295,8 +305,74 @@ export function PageContent() {
     },
   ]
 
+  useEffect(() => {
+    if (!policyData) return
+    setRatioInput(String(policyData.credit_per_unit))
+    setCurrencyInput(policyData.currency || "USD")
+  }, [policyData])
+
+  const handleSavePolicy = async () => {
+    const ratio = Number(ratioInput)
+    if (!Number.isFinite(ratio) || ratio <= 0 || isSavingPolicy) {
+      setPolicyFeedback(t("rechargePolicy.feedback.invalidRatio"))
+      return
+    }
+
+    setIsSavingPolicy(true)
+    setPolicyFeedback(null)
+    try {
+      await updateAdminRechargePolicy({
+        credit_per_unit: ratio,
+        currency: currencyInput.trim().toUpperCase() || "USD",
+      })
+      await mutatePolicy()
+      setPolicyFeedback(t("rechargePolicy.feedback.updated"))
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("rechargePolicy.feedback.updateFailed")
+      setPolicyFeedback(message)
+    } finally {
+      setIsSavingPolicy(false)
+    }
+  }
+
   return (
     <AdminPageShell title={tAdmin("billing.title")} description={tAdmin("billing.description")} icon={CreditCard}>
+      <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-[var(--foreground)]">{t("rechargePolicy.title")}</h3>
+          <p className="text-xs text-[var(--muted)]">{t("rechargePolicy.description")}</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={ratioInput}
+            onChange={(event) => setRatioInput(event.target.value)}
+            placeholder={t("rechargePolicy.creditPerUnit")}
+            className="h-9 rounded-md border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/60 focus:outline-none"
+          />
+          <input
+            type="text"
+            value={currencyInput}
+            onChange={(event) => setCurrencyInput(event.target.value)}
+            placeholder={t("rechargePolicy.currency")}
+            className="h-9 rounded-md border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/60 focus:outline-none"
+          />
+          <button
+            onClick={() => void handleSavePolicy()}
+            disabled={isSavingPolicy}
+            className="inline-flex h-9 items-center justify-center rounded-md bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSavingPolicy ? t("rechargePolicy.saving") : t("rechargePolicy.save")}
+          </button>
+        </div>
+        {policyFeedback ? (
+          <p className="mt-2 text-xs text-[var(--muted)]">{policyFeedback}</p>
+        ) : null}
+      </div>
+
       <div className="w-fit rounded-lg bg-white/5 p-1">
         <button
           onClick={() => setTab("quotas")}

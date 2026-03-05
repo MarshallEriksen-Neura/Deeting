@@ -17,6 +17,7 @@ from app.schemas.credits import (
     CreditsBalanceResponse,
     CreditsConsumptionPoint,
     CreditsConsumptionResponse,
+    CreditsRechargeResponse,
     CreditsModelUsageItem,
     CreditsModelUsageResponse,
     CreditsTransactionItem,
@@ -229,6 +230,49 @@ class CreditsService:
 
         next_offset = offset + limit if has_more else None
         return CreditsTransactionListResponse(items=items, next_offset=next_offset)
+
+    async def recharge(
+        self,
+        tenant_id: str | None,
+        amount: float,
+        credit_per_unit: float,
+        currency: str,
+    ) -> CreditsRechargeResponse:
+        if not tenant_id:
+            raise ValueError("无效的用户信息")
+        if amount <= 0:
+            raise ValueError("充值金额必须大于 0")
+        if credit_per_unit <= 0:
+            raise ValueError("充值比例必须大于 0")
+
+        tenant_id_str, tenant_uuid = self._normalize_tenant_id(tenant_id)
+        amount_decimal = Decimal(str(amount))
+        credited_amount = (
+            amount_decimal * Decimal(str(credit_per_unit))
+        ).quantize(Decimal("0.000001"))
+
+        if credited_amount <= Decimal("0"):
+            raise ValueError("充值积分必须大于 0")
+
+        trace_id = f"credits-recharge-{uuid.uuid4().hex[:24]}"
+        tx = await self.billing_repo.recharge(
+            tenant_id=tenant_uuid,
+            amount=credited_amount,
+            trace_id=trace_id,
+            description=(
+                f"Credits recharge amount={amount_decimal} {currency}, "
+                f"ratio={credit_per_unit}"
+            ),
+        )
+        await cache.delete(CacheKeys.credits_balance(tenant_id_str))
+
+        return CreditsRechargeResponse(
+            amount=float(amount_decimal),
+            credited_amount=float(tx.amount),
+            currency=currency,
+            balance=float(tx.balance_after),
+            trace_id=tx.trace_id,
+        )
 
     def _date_bucket_expr(self):
         if self._dialect and self._dialect.name == "postgresql":

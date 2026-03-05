@@ -54,10 +54,14 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
                     user_uuid = None
             if user_id is not None:
                 if include_public:
+                    public_clause = or_(
+                        ProviderInstance.is_public.is_(True),
+                        ProviderInstance.user_id.is_(None),  # 兼容历史公共实例
+                    )
                     stmt = stmt.where(
                         or_(
                             ProviderInstance.user_id == user_uuid,
-                            ProviderInstance.user_id.is_(None),
+                            public_clause,
                         )
                     )
                 else:
@@ -162,10 +166,14 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
 
             if user_id is not None:
                 if include_public:
+                    public_clause = or_(
+                        ProviderInstance.is_public.is_(True),
+                        ProviderInstance.user_id.is_(None),  # 兼容历史公共实例
+                    )
                     stmt = stmt.where(
                         or_(
                             ProviderInstance.user_id == user_uuid,
-                            ProviderInstance.user_id.is_(None),
+                            public_clause,
                         )
                     )
                 else:
@@ -277,7 +285,13 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
         stmt = (
             select(ProviderModel.model_id.distinct())
             .join(ProviderInstance, ProviderInstance.id == ProviderModel.instance_id)
-            .where(ProviderInstance.user_id == user_uuid)
+            .where(
+                or_(
+                    ProviderInstance.user_id == user_uuid,
+                    ProviderInstance.is_public.is_(True),
+                    ProviderInstance.user_id.is_(None),  # 兼容历史公共实例
+                )
+            )
             .where(ProviderInstance.is_enabled.is_(True))
             .where(ProviderModel.is_active.is_(True))
         )

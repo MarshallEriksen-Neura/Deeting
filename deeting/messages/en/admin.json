@@ -499,7 +499,37 @@
       },
       "actions": {
         "creating": "Creating...",
-        "addInstance": "Add Instance"
+        "addInstance": "Add Instance",
+        "manageModels": "Manage Models"
+      },
+      "models": {
+        "title": "Models for {instance}",
+        "actions": {
+          "sync": "Auto Sync",
+          "syncing": "Syncing...",
+          "save": "Save",
+          "saving": "Saving...",
+          "close": "Close"
+        },
+        "table": {
+          "model": "Model",
+          "active": "Active",
+          "inputPer1k": "Input / 1K",
+          "outputPer1k": "Output / 1K",
+          "actions": "Actions"
+        },
+        "feedback": {
+          "syncSuccess": "Model sync completed",
+          "syncFailed": "Model sync failed",
+          "saveSuccess": "Saved model: {model}",
+          "saveFailed": "Failed to save model",
+          "invalidPricing": "Pricing must be a valid number"
+        },
+        "empty": {
+          "loading": "Loading models...",
+          "failed": "Failed to load models",
+          "noData": "No models found"
+        }
       },
       "filters": {
         "searchPlaceholder": "Search providers...",
@@ -861,6 +891,19 @@
         "committed": "Committed",
         "pending": "Pending",
         "reversed": "Reversed"
+      },
+      "rechargePolicy": {
+        "title": "Recharge Policy",
+        "description": "Configure how much credits users receive per currency unit.",
+        "creditPerUnit": "Credits per 1 currency",
+        "currency": "Currency",
+        "save": "Save Policy",
+        "saving": "Saving...",
+        "feedback": {
+          "invalidRatio": "Ratio must be greater than 0",
+          "updated": "Recharge policy updated",
+          "updateFailed": "Failed to update recharge policy"
+        }
       },
       "quotaTable": {
         "headers": {

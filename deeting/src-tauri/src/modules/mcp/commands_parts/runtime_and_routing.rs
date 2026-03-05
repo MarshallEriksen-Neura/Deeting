@@ -710,6 +710,7 @@ async fn run_local_chat_complete_with_auto_code_mode(
     let model_id = &model_connection.model_id;
     let mut orchestrated_messages = messages;
     let mut round: usize = 0;
+    let mut all_tool_call_meta: Vec<serde_json::Value> = Vec::new();
 
     loop {
         round = round.saturating_add(1);
@@ -734,7 +735,12 @@ async fn run_local_chat_complete_with_auto_code_mode(
 
         let tool_calls = extract_chat_tool_calls(&response);
         if tool_calls.is_empty() {
-            return Ok(response);
+            let mut enriched = response;
+            if !all_tool_call_meta.is_empty() {
+                enriched["tool_trace_blocks"] =
+                    serde_json::Value::Array(build_local_tool_trace_blocks(&all_tool_call_meta));
+            }
+            return Ok(enriched);
         }
 
         let (synthesized, tool_call_meta, results) =
@@ -742,6 +748,7 @@ async fn run_local_chat_complete_with_auto_code_mode(
         if !synthesized {
             return Ok(response);
         }
+        all_tool_call_meta.extend(tool_call_meta.iter().cloned());
 
         let tool_feedback = build_auto_code_mode_tool_feedback(round, &tool_call_meta, &results);
         let assistant_content = response
@@ -760,6 +767,70 @@ async fn run_local_chat_complete_with_auto_code_mode(
             content: tool_feedback,
         });
     }
+}
+
+fn build_local_tool_trace_blocks(tool_call_meta: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    if tool_call_meta.is_empty() {
+        return Vec::new();
+    }
+
+    let mut blocks = Vec::with_capacity(1 + tool_call_meta.len() * 2);
+    blocks.push(serde_json::json!({
+        "type": "execution_section",
+        "title": "Local Tool Actions"
+    }));
+
+    for item in tool_call_meta {
+        let tool_name = item
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown_tool");
+        let call_id = item
+            .get("id")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let status = item
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let call_status = if status.eq_ignore_ascii_case("success") {
+            "success"
+        } else if status.eq_ignore_ascii_case("running") {
+            "running"
+        } else {
+            "error"
+        };
+
+        blocks.push(serde_json::json!({
+            "type": "tool_call",
+            "callId": call_id,
+            "toolName": tool_name,
+            "status": call_status,
+        }));
+
+        if status.eq_ignore_ascii_case("success") {
+            blocks.push(serde_json::json!({
+                "type": "tool_result",
+                "callId": call_id,
+                "toolName": tool_name,
+                "status": "success",
+                "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
+            }));
+        } else if status.eq_ignore_ascii_case("error") {
+            blocks.push(serde_json::json!({
+                "type": "tool_result",
+                "callId": call_id,
+                "toolName": tool_name,
+                "status": "error",
+                "result": {
+                    "error": item.get("error").cloned().unwrap_or_else(|| serde_json::json!("tool call failed")),
+                    "error_code": item.get("error_code").cloned().unwrap_or_else(|| serde_json::json!(null)),
+                },
+            }));
+        }
+    }
+
+    blocks
 }
 
 const LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE: &str =
@@ -1129,11 +1200,11 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
 }
 
 fn derive_skill_name_from_repo_url(repo_url: &str) -> String {
-    let raw = repo_url
-        .trim()
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
+    let normalized_repo = repo_url.trim().trim_end_matches('/');
+    let raw = normalized_repo
+        .rsplit_once('/')
+        .map(|(_, tail)| tail)
+        .or_else(|| normalized_repo.rsplit_once(':').map(|(_, tail)| tail))
         .unwrap_or("skill")
         .trim_end_matches(".git")
         .trim();

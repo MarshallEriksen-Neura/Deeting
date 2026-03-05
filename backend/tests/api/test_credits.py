@@ -14,6 +14,7 @@ from app.models.billing import (
     TransactionStatus,
     TransactionType,
 )
+from app.models.system_setting import SystemSetting
 from app.utils.time_utils import Datetime
 
 
@@ -35,6 +36,9 @@ async def _clear_user_data(
         )
         await session.execute(
             delete(TenantQuota).where(TenantQuota.tenant_id == user_id)
+        )
+        await session.execute(
+            delete(SystemSetting).where(SystemSetting.key == "credits_recharge_policy")
         )
         await session.commit()
 
@@ -237,3 +241,62 @@ async def test_credits_transactions_pagination(
     data = resp.json()
     assert len(data["items"]) == 2
     assert data["nextOffset"] == 2
+
+
+@pytest.mark.asyncio
+async def test_credits_recharge_updates_balance(
+    client: AsyncClient,
+    auth_tokens: dict,
+    admin_tokens: dict,
+    AsyncSessionLocal,
+) -> None:
+    user_id = await _get_test_user_id(AsyncSessionLocal)
+    await _clear_user_data(AsyncSessionLocal, user_id)
+
+    await client.patch(
+        "/api/v1/admin/settings/recharge-policy",
+        json={"credit_per_unit": 20, "currency": "USD"},
+        headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},
+    )
+
+    policy_resp = await client.get(
+        "/api/v1/credits/recharge-policy",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert policy_resp.status_code == 200
+    policy_data = policy_resp.json()
+    assert policy_data["creditPerUnit"] == 20
+    assert policy_data["currency"] == "USD"
+
+    recharge_resp = await client.post(
+        "/api/v1/credits/recharge",
+        json={"amount": 3},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert recharge_resp.status_code == 200
+    recharge_data = recharge_resp.json()
+    assert recharge_data["amount"] == 3
+    assert recharge_data["creditedAmount"] == 60
+    assert recharge_data["currency"] == "USD"
+    assert recharge_data["balance"] == 60
+    assert recharge_data["traceId"].startswith("credits-recharge-")
+
+    async with AsyncSessionLocal() as session:
+        tx = (
+            await session.execute(
+                select(BillingTransaction).where(
+                    BillingTransaction.trace_id == recharge_data["traceId"]
+                )
+            )
+        ).scalar_one()
+        assert tx.type == TransactionType.RECHARGE
+        assert tx.status == TransactionStatus.COMMITTED
+        assert float(tx.amount) == 60
+
+    balance_resp = await client.get(
+        "/api/v1/credits/balance",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert balance_resp.status_code == 200
+    balance_data = balance_resp.json()
+    assert balance_data["balance"] == 60

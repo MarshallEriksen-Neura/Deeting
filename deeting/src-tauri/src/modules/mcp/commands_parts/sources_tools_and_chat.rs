@@ -381,15 +381,8 @@ async fn send_local_conversation_message_inner(
         "local_send_assistant_stream",
         None,
     );
-    emit_local_chat_stream_delta_chunks(app, request_id, trace_id, &response_text);
-    if !response_text.trim().is_empty() {
-        emit_local_chat_stream_blocks(
-            app,
-            request_id,
-            trace_id,
-            serde_json::json!([{ "type": "text", "content": response_text }]),
-        );
-    }
+    let assistant_blocks =
+        emit_and_collect_local_assistant_blocks(app, request_id, trace_id, &response_json, &response_text);
 
     let assistant_message = conversation_repo
         .append_local_conversation_message(CreateConversationMessageRequest {
@@ -397,7 +390,13 @@ async fn send_local_conversation_message_inner(
             role: "assistant".to_string(),
             content: response_text.clone(),
             name: None,
-            meta_info: None,
+            meta_info: if assistant_blocks.is_empty() {
+                None
+            } else {
+                Some(serde_json::json!({
+                    "blocks": assistant_blocks
+                }))
+            },
             is_truncated: Some(false),
             parent_message_id: None,
         })
@@ -475,15 +474,8 @@ async fn regenerate_local_conversation_reply_inner(
         "local_regenerate_assistant_stream",
         None,
     );
-    emit_local_chat_stream_delta_chunks(app, request_id, trace_id, &response_text);
-    if !response_text.trim().is_empty() {
-        emit_local_chat_stream_blocks(
-            app,
-            request_id,
-            trace_id,
-            serde_json::json!([{ "type": "text", "content": response_text }]),
-        );
-    }
+    let assistant_blocks =
+        emit_and_collect_local_assistant_blocks(app, request_id, trace_id, &response_json, &response_text);
 
     let assistant_message = conversation_repo
         .append_local_conversation_message(CreateConversationMessageRequest {
@@ -491,7 +483,13 @@ async fn regenerate_local_conversation_reply_inner(
             role: "assistant".to_string(),
             content: response_text,
             name: None,
-            meta_info: None,
+            meta_info: if assistant_blocks.is_empty() {
+                None
+            } else {
+                Some(serde_json::json!({
+                    "blocks": assistant_blocks
+                }))
+            },
             is_truncated: Some(false),
             parent_message_id: None,
         })
@@ -506,6 +504,48 @@ async fn regenerate_local_conversation_reply_inner(
         deleted_turn_index: regenerate_ctx.deleted_turn_index,
         message: assistant_message,
     })
+}
+
+fn emit_and_collect_local_assistant_blocks(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    trace_id: &str,
+    response_json: &serde_json::Value,
+    response_text: &str,
+) -> Vec<serde_json::Value> {
+    let mut blocks = Vec::new();
+
+    if let Some(tool_trace_blocks) = response_json
+        .get("tool_trace_blocks")
+        .and_then(|value| value.as_array())
+        .filter(|arr| !arr.is_empty())
+    {
+        let trace_blocks = tool_trace_blocks.to_vec();
+        emit_local_chat_stream_blocks(
+            app,
+            request_id,
+            trace_id,
+            serde_json::Value::Array(trace_blocks.clone()),
+        );
+        blocks.extend(trace_blocks);
+    }
+
+    emit_local_chat_stream_delta_chunks(app, request_id, trace_id, response_text);
+    if !response_text.trim().is_empty() {
+        let text_block = serde_json::json!({
+            "type": "text",
+            "content": response_text
+        });
+        emit_local_chat_stream_blocks(
+            app,
+            request_id,
+            trace_id,
+            serde_json::Value::Array(vec![text_block.clone()]),
+        );
+        blocks.push(text_block);
+    }
+
+    blocks
 }
 
 async fn register_local_chat_task_abort_handle(

@@ -443,7 +443,135 @@ export function PageContent() {
               ? t("empty.failed")
               : t("empty.noData")
         }
+        rowActions={(row) => (
+          <button
+            onClick={(event) => {
+              event.stopPropagation()
+              handleOpenModelsPanel(row)
+            }}
+            className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/15 px-2 text-xs text-[var(--foreground)] transition-colors hover:bg-white/10"
+          >
+            {t("actions.manageModels")}
+          </button>
+        )}
       />
+
+      {selectedInstance && (
+        <GlassCard padding="default" hover="none">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--foreground)]">
+                {t("models.title", { instance: selectedInstance.name })}
+              </h3>
+              <p className="text-xs text-[var(--muted)]">{selectedInstance.base_url}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void handleSyncModels()}
+                disabled={isSyncingModels}
+                className="inline-flex h-8 cursor-pointer items-center rounded-lg bg-[var(--primary)] px-3 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSyncingModels ? t("models.actions.syncing") : t("models.actions.sync")}
+              </button>
+              <button
+                onClick={handleCloseModelsPanel}
+                className="inline-flex h-8 cursor-pointer items-center rounded-lg border border-white/15 px-3 text-xs text-[var(--foreground)] transition-colors hover:bg-white/10"
+              >
+                {t("models.actions.close")}
+              </button>
+            </div>
+          </div>
+
+          {modelFeedback && <p className="mt-3 text-xs text-[var(--muted)]">{modelFeedback}</p>}
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-xs text-[var(--muted)]">
+                  <th className="px-2 py-2">{t("models.table.model")}</th>
+                  <th className="px-2 py-2">{t("models.table.active")}</th>
+                  <th className="px-2 py-2">{t("models.table.inputPer1k")}</th>
+                  <th className="px-2 py-2">{t("models.table.outputPer1k")}</th>
+                  <th className="px-2 py-2 text-right">{t("models.table.actions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {modelsLoading ? (
+                  <tr>
+                    <td colSpan={5} className="px-2 py-6 text-center text-xs text-[var(--muted)]">
+                      {t("models.empty.loading")}
+                    </td>
+                  </tr>
+                ) : modelsError ? (
+                  <tr>
+                    <td colSpan={5} className="px-2 py-6 text-center text-xs text-rose-300">
+                      {t("models.empty.failed")}
+                    </td>
+                  </tr>
+                ) : (models ?? []).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-2 py-6 text-center text-xs text-[var(--muted)]">
+                      {t("models.empty.noData")}
+                    </td>
+                  </tr>
+                ) : (
+                  (models ?? []).map((model) => {
+                    const draft = modelEditorState[model.id]
+                    if (!draft) return null
+                    return (
+                      <tr key={model.id} className="border-b border-white/5">
+                        <td className="px-2 py-2">
+                          <div className="font-medium text-[var(--foreground)]">
+                            {model.display_name || model.model_id}
+                          </div>
+                          <div className="font-mono text-xs text-[var(--muted)]">{model.model_id}</div>
+                        </td>
+                        <td className="px-2 py-2">
+                          <Switch
+                            checked={draft.isActive}
+                            onCheckedChange={(checked) => {
+                              handleModelStateChange(model.id, { isActive: checked })
+                            }}
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            value={draft.inputPer1k}
+                            onChange={(event) => {
+                              handleModelStateChange(model.id, { inputPer1k: event.target.value })
+                            }}
+                            className="h-8 w-full min-w-[120px] rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            value={draft.outputPer1k}
+                            onChange={(event) => {
+                              handleModelStateChange(model.id, { outputPer1k: event.target.value })
+                            }}
+                            className="h-8 w-full min-w-[120px] rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          <button
+                            onClick={() => void handleSaveModel(model)}
+                            disabled={draft.saving}
+                            className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-emerald-300/30 px-2 text-xs text-emerald-200 transition-colors hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {draft.saving ? t("models.actions.saving") : t("models.actions.save")}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
+      )}
     </AdminPageShell>
   )
 }

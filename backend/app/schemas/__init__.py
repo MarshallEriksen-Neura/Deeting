@@ -155,6 +155,8 @@ from .spec_knowledge import (
 from .system_settings import (
     SystemEmbeddingSettingDTO,
     SystemEmbeddingSettingUpdateRequest,
+    SystemRechargePolicyDTO,
+    SystemRechargePolicyUpdateRequest,
 )
 from .user import (
     BanRequest,
@@ -358,6 +360,8 @@ __all__ = [
     "SpecPlanStatusResponse",
     "SystemEmbeddingSettingDTO",
     "SystemEmbeddingSettingUpdateRequest",
+    "SystemRechargePolicyDTO",
+    "SystemRechargePolicyUpdateRequest",
     "TimestampSchema",
     "TokenPair",
     "UserAdminUpdate",
