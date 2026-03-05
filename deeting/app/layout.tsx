@@ -8,6 +8,8 @@ import { PlatformProvider } from "@/lib/platform/provider";
 import "./globals.css";
 
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
+const isDesktopUserCloudSyncEnabled =
+  process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC === "true";
 
 export default function RootLayout({
   children,
@@ -28,8 +30,8 @@ export default function RootLayout({
             {children}
             <DownloadAppModal />
             {isTauri && <DesktopUpdateGuard />}
-            {isTauri && <BridgeMonitor />}
-            {isTauri && <ToolApprovalDialog />}
+            {isTauri && isDesktopUserCloudSyncEnabled && <BridgeMonitor />}
+            {isTauri && isDesktopUserCloudSyncEnabled && <ToolApprovalDialog />}
           </ThemeProvider>
         </PlatformProvider>
       </body>

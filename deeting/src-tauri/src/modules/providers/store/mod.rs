@@ -649,7 +649,7 @@ impl ProviderStore {
 
     pub(crate) async fn persist_secret_for_credential(
         &self,
-        _tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         credential_id: &str,
         secret: &str,
     ) -> Result<(), ProviderError> {
@@ -692,7 +692,7 @@ impl ProviderStore {
         .bind(&encrypted_secret)
         .bind(key_version)
         .bind(credential_id)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await?;
 
         if !keychain_ready {
