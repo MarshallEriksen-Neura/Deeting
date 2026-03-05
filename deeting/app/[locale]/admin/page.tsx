@@ -1,7 +1,11 @@
-import { Suspense } from "react"
+import dynamic from "next/dynamic"
 import { setRequestLocale } from "next-intl/server"
-import { PageContent } from "./page-content"
 import { AdminPageSkeleton } from "./components/admin-page-skeleton"
+
+const PageContent = dynamic(
+  () => import("./page-content").then((mod) => ({ default: mod.PageContent })),
+  { loading: () => <AdminPageSkeleton /> }
+)
 
 export default async function AdminDashboardPage({
   params,
@@ -11,9 +15,5 @@ export default async function AdminDashboardPage({
   const { locale } = await params
   setRequestLocale(locale)
 
-  return (
-    <Suspense fallback={<AdminPageSkeleton />}>
-      <PageContent />
-    </Suspense>
-  )
+  return <PageContent />
 }

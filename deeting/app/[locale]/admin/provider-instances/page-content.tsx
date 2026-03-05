@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Cloud } from "lucide-react"
@@ -14,11 +14,35 @@ import {
   type ColumnDef,
 } from "@/components/admin"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Switch } from "@/components/ui/switch"
 import {
   createAdminProviderInstance,
+  fetchAdminProviderModels,
   fetchAdminProviderInstances,
+  syncAdminProviderModels,
+  updateAdminProviderModel,
+  type AdminProviderModelResponse,
   type ProviderInstanceItem,
 } from "@/lib/api/admin-dashboard"
+
+type ModelEditorState = {
+  isActive: boolean
+  inputPer1k: string
+  outputPer1k: string
+  saving: boolean
+}
+
+function toPriceInput(value: unknown): string {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? String(numeric) : ""
+}
+
+function parsePrice(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return 0
+  const numeric = Number(trimmed)
+  return Number.isFinite(numeric) ? numeric : null
+}
 
 export function PageContent() {
   const tAdmin = useTranslations("admin")
@@ -33,6 +57,10 @@ export function PageContent() {
   const [apiKey, setApiKey] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [selectedInstance, setSelectedInstance] = useState<ProviderInstanceItem | null>(null)
+  const [modelFeedback, setModelFeedback] = useState<string | null>(null)
+  const [isSyncingModels, setIsSyncingModels] = useState(false)
+  const [modelEditorState, setModelEditorState] = useState<Record<string, ModelEditorState>>({})
 
   const {
     data,
@@ -40,6 +68,16 @@ export function PageContent() {
     isLoading,
     mutate,
   } = useSWR("/api/v1/admin/provider-instances", fetchAdminProviderInstances)
+
+  const {
+    data: models,
+    error: modelsError,
+    isLoading: modelsLoading,
+    mutate: mutateModels,
+  } = useSWR(
+    selectedInstance ? ["/api/v1/admin/provider-instances/models", selectedInstance.id] : null,
+    ([, instanceId]) => fetchAdminProviderModels(instanceId)
+  )
 
   const allRows = useMemo(() => data ?? [], [data])
 
@@ -55,6 +93,121 @@ export function PageContent() {
       )
     })
   }, [allRows, searchQuery, healthFilter, enabledFilter])
+
+  useEffect(() => {
+    if (!selectedInstance || !models) {
+      setModelEditorState({})
+      return
+    }
+
+    const nextState: Record<string, ModelEditorState> = {}
+    for (const model of models) {
+      const pricing = (model.pricing_config ?? {}) as Record<string, unknown>
+      nextState[model.id] = {
+        isActive: Boolean(model.is_active),
+        inputPer1k: toPriceInput(
+          pricing.input_per_1k ?? pricing.input ?? pricing.input_price
+        ),
+        outputPer1k: toPriceInput(
+          pricing.output_per_1k ?? pricing.output ?? pricing.output_price
+        ),
+        saving: false,
+      }
+    }
+    setModelEditorState(nextState)
+  }, [models, selectedInstance])
+
+  const handleOpenModelsPanel = (instance: ProviderInstanceItem) => {
+    setSelectedInstance(instance)
+    setModelFeedback(null)
+  }
+
+  const handleCloseModelsPanel = () => {
+    setSelectedInstance(null)
+    setModelFeedback(null)
+    setModelEditorState({})
+  }
+
+  const handleSyncModels = async () => {
+    if (!selectedInstance || isSyncingModels) return
+    setIsSyncingModels(true)
+    setModelFeedback(null)
+    try {
+      await syncAdminProviderModels(selectedInstance.id)
+      await Promise.all([mutateModels(), mutate()])
+      setModelFeedback(t("models.feedback.syncSuccess"))
+    } catch (syncError) {
+      const message =
+        syncError instanceof Error ? syncError.message : t("models.feedback.syncFailed")
+      setModelFeedback(message)
+    } finally {
+      setIsSyncingModels(false)
+    }
+  }
+
+  const handleModelStateChange = (
+    modelId: string,
+    patch: Partial<Omit<ModelEditorState, "saving">>
+  ) => {
+    setModelEditorState((current) => {
+      const existing = current[modelId]
+      if (!existing) return current
+      return {
+        ...current,
+        [modelId]: {
+          ...existing,
+          ...patch,
+        },
+      }
+    })
+  }
+
+  const handleSaveModel = async (model: AdminProviderModelResponse) => {
+    const draft = modelEditorState[model.id]
+    if (!draft || draft.saving) return
+
+    const inputPer1k = parsePrice(draft.inputPer1k)
+    const outputPer1k = parsePrice(draft.outputPer1k)
+    if (inputPer1k === null || outputPer1k === null) {
+      setModelFeedback(t("models.feedback.invalidPricing"))
+      return
+    }
+
+    setModelFeedback(null)
+    setModelEditorState((current) => ({
+      ...current,
+      [model.id]: {
+        ...current[model.id],
+        saving: true,
+      },
+    }))
+
+    try {
+      const pricingConfig = {
+        ...(model.pricing_config ?? {}),
+        input_per_1k: inputPer1k,
+        output_per_1k: outputPer1k,
+      }
+      await updateAdminProviderModel(model.id, {
+        is_active: draft.isActive,
+        pricing_config: pricingConfig,
+      })
+      await Promise.all([mutateModels(), mutate()])
+      setModelFeedback(t("models.feedback.saveSuccess", { model: model.display_name || model.model_id }))
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error ? saveError.message : t("models.feedback.saveFailed")
+      setModelFeedback(message)
+    } finally {
+      setModelEditorState((current) => ({
+        ...current,
+        [model.id]: {
+          ...current[model.id],
+          saving: false,
+        },
+      }))
+    }
+  }
 
   const handleCreateInstance = async () => {
     if (!presetSlug.trim() || !name.trim() || !baseUrl.trim() || !apiKey.trim() || isSubmitting) {

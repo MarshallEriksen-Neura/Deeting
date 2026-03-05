@@ -1,5 +1,11 @@
+import dynamic from "next/dynamic"
 import { setRequestLocale } from "next-intl/server"
-import { PageContent } from "./page-content"
+import { PageLoading } from "../components/page-loading"
+
+const PageContent = dynamic(
+  () => import("./page-content").then((mod) => ({ default: mod.PageContent })),
+  { loading: () => <PageLoading /> }
+)
 
 export default async function AssistantManagementPage({
   params,

@@ -469,7 +469,33 @@ async fn process_next_local_conversation_summary_job(state: &McpRuntimeState) ->
     process_next_local_conversation_summary_job_with_store(state.store.as_ref()).await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 async fn execute_or_queue_mcp_tool_call(
+    store: &crate::modules::mcp::store::McpStore,
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    tool_name: String,
+    arguments: Value,
+    require_approval: bool,
+) -> Result<Value, String> {
+    execute_or_queue_mcp_tool_call_with_context(
+        &crate::modules::mcp::ToolApprovalContext::default(),
+        None,
+        Vec::new(),
+        None,
+        store,
+        pending_tool_calls,
+        tool_name,
+        arguments,
+        require_approval,
+    )
+    .await
+}
+
+async fn execute_or_queue_mcp_tool_call_with_context(
+    approval_context: &crate::modules::mcp::ToolApprovalContext,
+    risk_level: Option<&str>,
+    risk_reasons: Vec<String>,
+    runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
     store: &crate::modules::mcp::store::McpStore,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     tool_name: String,
@@ -484,12 +510,31 @@ async fn execute_or_queue_mcp_tool_call(
 
     if require_approval {
         let approval_token = Uuid::new_v4().to_string();
-        pending_tool_calls.write().await.insert(
-            approval_token.clone(),
+        let pending = if let Some(runtime) = runtime_state {
+            runtime.build_pending_tool_call(
+                tool_name.clone(),
+                arguments.clone(),
+                runtime.tool_fingerprint(&tool),
+                approval_context.clone(),
+            )
+        } else {
+            let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
             crate::modules::mcp::PendingToolCall {
                 tool_name: tool_name.clone(),
                 arguments: arguments.clone(),
-            },
+                call_id: approval_context.call_id.clone(),
+                execution_token: approval_context.execution_token.clone(),
+                tool_fingerprint: tool.config_hash.clone(),
+                created_at_unix_ms: now as i128,
+                expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
+            }
+        };
+        let expires_in_ms = runtime_state
+            .map(|runtime| runtime.pending_tool_call_ttl_ms())
+            .unwrap_or(5 * 60 * 1000);
+        pending_tool_calls.write().await.insert(
+            approval_token.clone(),
+            pending,
         );
         return Ok(serde_json::json!({
             "status": "REQUIRES_APPROVAL",
@@ -497,26 +542,83 @@ async fn execute_or_queue_mcp_tool_call(
             "tool_name": tool_name,
             "arguments": arguments,
             "description": tool.description,
+            "risk_level": risk_level.unwrap_or("HIGH"),
+            "risk_reasons": risk_reasons,
+            "expires_in_ms": expires_in_ms,
         }));
     }
 
     execute_local_mcp_tool(&tool, &arguments).await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 async fn approve_mcp_tool_inner(
     store: &crate::modules::mcp::store::McpStore,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     approval_token: &str,
 ) -> Result<Value, String> {
-    let pending = pending_tool_calls.write().await.remove(approval_token);
+    approve_mcp_tool_inner_with_context(
+        &crate::modules::mcp::ToolApprovalContext::default(),
+        None,
+        store,
+        pending_tool_calls,
+        approval_token,
+    )
+    .await
+}
+
+async fn approve_mcp_tool_inner_with_context(
+    approval_context: &crate::modules::mcp::ToolApprovalContext,
+    runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
+    store: &crate::modules::mcp::store::McpStore,
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    approval_token: &str,
+) -> Result<Value, String> {
+    let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    let pending = pending_tool_calls
+        .read()
+        .await
+        .get(approval_token)
+        .cloned();
     let Some(pending) = pending else {
         return Err("pending tool call not found".to_string());
     };
+
+    if pending.expires_at_unix_ms <= now as i128 {
+        pending_tool_calls.write().await.remove(approval_token);
+        return Err("approval token expired; please retry the action".to_string());
+    }
+
+    if let Some(expected_call_id) = pending.call_id.as_deref() {
+        if approval_context.call_id.as_deref() != Some(expected_call_id) {
+            return Err("approval context mismatch (call_id)".to_string());
+        }
+    }
+    if let Some(expected_execution_token) = pending.execution_token.as_deref() {
+        if approval_context.execution_token.as_deref() != Some(expected_execution_token) {
+            return Err("approval context mismatch (execution_token)".to_string());
+        }
+    }
+
     let tool = store
         .get_tool_by_name(&pending.tool_name)
         .await
         .map_err(to_string)?
         .ok_or_else(|| format!("tool {} not found", pending.tool_name))?;
+
+    if let Some(runtime) = runtime_state {
+        let current_fingerprint = runtime.tool_fingerprint(&tool);
+        if current_fingerprint != pending.tool_fingerprint {
+            pending_tool_calls.write().await.remove(approval_token);
+            return Err("tool configuration changed after approval prompt; request was cancelled".to_string());
+        }
+    }
+
+    let removed = pending_tool_calls.write().await.remove(approval_token);
+    if removed.is_none() {
+        return Err("pending tool call already consumed".to_string());
+    }
+
     execute_local_mcp_tool(&tool, &pending.arguments).await
 }
 
@@ -598,6 +700,7 @@ fn build_local_summary_from_window(messages: &[LocalConversationHistoryMessage])
 }
 
 async fn run_local_chat_complete_with_auto_code_mode(
+    app: &AppHandle,
     app_state: &AppState,
     model_connection: &LocalModelConnection,
     messages: Vec<LocalChatInputMessage>,
@@ -635,7 +738,7 @@ async fn run_local_chat_complete_with_auto_code_mode(
         }
 
         let (synthesized, tool_call_meta, results) =
-            maybe_handle_local_code_mode_tool_calls(app_state, &response, chat_ctx).await;
+            maybe_handle_local_code_mode_tool_calls(app, app_state, &response, chat_ctx).await;
         if !synthesized {
             return Ok(response);
         }
@@ -677,6 +780,7 @@ fn build_local_tool_call_install_gate_error_meta(
 }
 
 async fn maybe_handle_local_code_mode_tool_calls(
+    app: &AppHandle,
     app_state: &AppState,
     chat_response: &serde_json::Value,
     chat_ctx: &LocalConversationChatContext,
@@ -712,7 +816,21 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .arguments
                 .get("dry_run")
                 .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+                .unwrap_or(true);
+
+            if !dry_run {
+                synthesized = true;
+                let error = "execute_code_plan requires explicit user-confirmed execution; auto-run is blocked";
+                tool_call_meta.push(serde_json::json!({
+                    "id": call.id,
+                    "name": tool_name,
+                    "status": "error",
+                    "error_code": "CODE_MODE_APPROVAL_REQUIRED",
+                    "error": error,
+                }));
+                results.push(format!("Code Execution Blocked [CODE_MODE_APPROVAL_REQUIRED]: {}", error));
+                continue;
+            }
 
             if !code.is_empty() {
                 let execution_res =
@@ -811,6 +929,32 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         }
                     }
                 }
+            } else if asset_type == "skill" {
+                match install_local_skill_from_onboarding_request(app, app_state, &payload).await {
+                    Ok(result) => {
+                        synthesized = true;
+                        tool_call_meta.push(serde_json::json!({
+                            "id": call.id,
+                            "name": tool_name,
+                            "status": "success",
+                            "result": result,
+                        }));
+                        results.push(format!(
+                            "Skill onboarding request executed:\n{}",
+                            serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
+                        ));
+                    }
+                    Err(err) => {
+                        synthesized = true;
+                        tool_call_meta.push(serde_json::json!({
+                            "id": call.id,
+                            "name": tool_name,
+                            "status": "error",
+                            "error": err,
+                        }));
+                        results.push(format!("Skill onboarding failed: {}", err));
+                    }
+                }
             }
         } else {
             synthesized = true;
@@ -854,7 +998,7 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
     let mut catalog = vec![
         serde_json::json!({
             "name": "execute_code_plan",
-            "description": "Execute python code in local sandbox and bridge",
+            "description": "Execute python code in local sandbox and bridge (auto mode requires dry_run=true for safety)",
             "source": "code_mode_core",
             "parameters": {
                 "code": "string(required)",
@@ -869,6 +1013,15 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
             "source": "code_mode_core",
             "parameters": {
                 "query": "string(optional)",
+            }
+        }),
+        serde_json::json!({
+            "name": "sys_submit_onboarding_request",
+            "description": "Submit onboarding actions. For skill installation use asset_type='skill' and payload {repo_url, skill_name}.",
+            "source": "code_mode_core",
+            "parameters": {
+                "asset_type": "string(required, oneof=assistant|skill)",
+                "payload": "object(required)",
             }
         }),
     ];
@@ -973,6 +1126,104 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
             "filtered_out_count": skill_install_filtered_count,
         }
     })
+}
+
+fn derive_skill_name_from_repo_url(repo_url: &str) -> String {
+    let raw = repo_url
+        .trim()
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("skill")
+        .trim_end_matches(".git")
+        .trim();
+    normalize_skill_dir_name(raw)
+}
+
+fn parse_skill_onboarding_payload(payload: &serde_json::Value) -> Result<(String, String), String> {
+    let obj = payload
+        .as_object()
+        .ok_or_else(|| "skill onboarding payload must be an object".to_string())?;
+    let repo_url = obj
+        .get("repo_url")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "skill onboarding requires payload.repo_url".to_string())?;
+    let skill_name = obj
+        .get("skill_name")
+        .or_else(|| obj.get("name"))
+        .or_else(|| obj.get("skill_id"))
+        .and_then(|value| value.as_str())
+        .map(normalize_skill_dir_name)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| derive_skill_name_from_repo_url(&repo_url));
+
+    Ok((repo_url, skill_name))
+}
+
+async fn install_local_skill_from_onboarding_request(
+    app: &AppHandle,
+    app_state: &AppState,
+    payload: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let (repo_url, skill_name) = parse_skill_onboarding_payload(payload)?;
+    if !is_allowed_skill_repo_url(&repo_url) {
+        return Err("skill onboarding only allows GitHub HTTPS/SSH repositories".to_string());
+    }
+
+    let install_result = execute_or_queue_mcp_tool_call_with_context(
+        &crate::modules::mcp::ToolApprovalContext::default(),
+        Some("HIGH"),
+        vec!["local skill installation writes files under desktop skills directory".to_string()],
+        Some(&app_state.mcp),
+        app_state.mcp.store.as_ref(),
+        app_state.mcp.pending_tool_calls.as_ref(),
+        "install_skill_from_git".to_string(),
+        serde_json::json!({
+            "repo_url": repo_url,
+            "skill_name": skill_name,
+        }),
+        true,
+    )
+    .await?;
+
+    if install_result
+        .get("status")
+        .and_then(|value| value.as_str())
+        .map(|value| value.eq_ignore_ascii_case("REQUIRES_APPROVAL"))
+        .unwrap_or(false)
+    {
+        return Ok(serde_json::json!({
+            "action": "skill_install_pending_approval",
+            "install": install_result,
+        }));
+    }
+
+    if install_result
+        .get("status")
+        .and_then(|value| value.as_str())
+        .map(|value| value.eq_ignore_ascii_case("error"))
+        .unwrap_or(false)
+    {
+        return Err(install_result
+            .get("error")
+            .and_then(|value| value.as_str())
+            .unwrap_or("skill installer returned error")
+            .to_string());
+    }
+
+    let indexed_tools = register_local_skills_inner(app.clone(), app_state).await?;
+    Ok(serde_json::json!({
+        "action": "skill_installed",
+        "repo_url": repo_url,
+        "skill_name": skill_name,
+        "install": install_result,
+        "index_refresh": {
+            "status": "ok",
+            "indexed_tools": indexed_tools
+        }
+    }))
 }
 
 fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCall> {

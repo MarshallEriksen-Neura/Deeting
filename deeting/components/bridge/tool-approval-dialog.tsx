@@ -28,7 +28,9 @@ export function ToolApprovalDialog() {
     try {
       // 1. Tell Rust to actually execute the pending tool
       const result = await invoke("approve_mcp_tool", {
-        approvalToken: pending.approval_token
+        approvalToken: pending.approval_token,
+        callId: pending.meta.call_id,
+        executionToken: pending.meta.execution_token,
       })
 
       // 2. Send result back to cloud bridge to finish the flow
@@ -44,16 +46,17 @@ export function ToolApprovalDialog() {
 
       toast.success(`Tool ${pending.tool_name} executed successfully`)
       clear()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[ApprovalDialog] Execution failed", err)
-      toast.error(`Execution failed: ${err.toString()}`)
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      toast.error(`Execution failed: ${errorMessage}`)
       
       // Still need to report failure to cloud so it doesn't hang
       await bridgeCallTool({
         tool_name: pending.tool_name,
         arguments: {
           call_id: pending.meta.call_id,
-          result: { error: err.toString() },
+          result: { error: errorMessage },
           ok: false
         },
         execution_token: pending.meta.execution_token
@@ -109,8 +112,20 @@ export function ToolApprovalDialog() {
             </div>
             {pending.description && (
               <p className="text-xs italic text-muted-foreground">
-                "{pending.description}"
+                &quot;{pending.description}&quot;
               </p>
+            )}
+            {!!pending.risk_reasons?.length && (
+              <div className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs">
+                <div className="mb-1 font-semibold text-destructive">
+                  Risk {pending.risk_level ?? "HIGH"}
+                </div>
+                <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+                  {pending.risk_reasons.map((reason, idx) => (
+                    <li key={`${idx}-${reason}`}>{reason}</li>
+                  ))}
+                </ul>
+              </div>
             )}
             <p className="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 p-2 rounded border border-yellow-200 dark:border-yellow-900">
               Warning: This tool may modify files or execute system commands. Only allow if you trust the current AI conversation.

@@ -163,6 +163,28 @@ mod tests {
     }
 
     #[test]
+    fn derive_skill_name_from_repo_url_uses_repo_basename() {
+        assert_eq!(
+            derive_skill_name_from_repo_url("https://github.com/org/weather-tool.git"),
+            "weather-tool"
+        );
+        assert_eq!(
+            derive_skill_name_from_repo_url("git@github.com:org/weather_tool"),
+            "weather_tool"
+        );
+    }
+
+    #[test]
+    fn parse_skill_onboarding_payload_supports_fallback_skill_name() {
+        let payload = serde_json::json!({
+            "repo_url": "https://github.com/org/stock-tracker.git"
+        });
+        let parsed = parse_skill_onboarding_payload(&payload).expect("parse onboarding payload");
+        assert_eq!(parsed.0, "https://github.com/org/stock-tracker.git");
+        assert_eq!(parsed.1, "stock-tracker");
+    }
+
+    #[test]
     fn unknown_tool_call_builds_structured_install_gate_error_meta() {
         let call = LocalChatToolCall {
             id: Some("call_unknown".to_string()),

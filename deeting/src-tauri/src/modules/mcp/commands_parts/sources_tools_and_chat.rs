@@ -363,6 +363,7 @@ async fn send_local_conversation_message_inner(
     );
 
     let response_json = run_local_chat_complete_with_auto_code_mode(
+        app,
         app_state,
         &model_connection,
         chat_ctx.messages.clone(),
@@ -456,6 +457,7 @@ async fn regenerate_local_conversation_reply_inner(
     );
 
     let response_json = run_local_chat_complete_with_auto_code_mode(
+        app,
         app_state,
         &model_connection,
         regenerate_ctx.messages,
@@ -573,7 +575,7 @@ pub async fn start_mcp_tool(
     _app: AppHandle,
     state: State<'_, AppState>,
     tool_id: String,
-) -> Result<(), String> {
+) -> Result<Value, String> {
     let state = &state.mcp;
     let tool = state
         .store
@@ -586,11 +588,26 @@ pub async fn start_mcp_tool(
         return Err("tool is not executable (no command)".to_string());
     }
 
+    let risk = state.assess_tool_risk(&tool, &serde_json::json!({}));
+    if risk.requires_approval {
+        return Err(format!(
+            "starting tool '{}' is blocked without explicit approval flow (risk={}): {}",
+            tool.name,
+            risk.risk_level,
+            risk.reasons.join("; ")
+        ));
+    }
+
     state
         .process_manager
         .start_tool(tool, true)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    Ok(serde_json::json!({
+        "status": "STARTED",
+        "tool_id": tool_id,
+    }))
 }
 
 #[tauri::command]
@@ -609,14 +626,40 @@ pub async fn execute_mcp_tool_raw(
     state: State<'_, AppState>,
     tool_name: String,
     arguments: Value,
+    call_id: Option<String>,
+    #[allow(non_snake_case)] callId: Option<String>,
+    execution_token: Option<String>,
+    #[allow(non_snake_case)] executionToken: Option<String>,
 ) -> Result<Value, String> {
-    let require_approval = state.mcp.is_high_risk_tool(&tool_name);
-    execute_or_queue_mcp_tool_call(
+    let normalized_tool_name = tool_name.trim().to_string();
+    if normalized_tool_name.is_empty() {
+        return Err("tool name is required".to_string());
+    }
+
+    let tool = state
+        .mcp
+        .store
+        .get_tool_by_name(&normalized_tool_name)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", normalized_tool_name))?;
+
+    let risk = state.mcp.assess_tool_risk(&tool, &arguments);
+    let approval_context = state.mcp.build_approval_context(
+        call_id.or(callId).as_deref(),
+        execution_token.or(executionToken).as_deref(),
+    );
+
+    execute_or_queue_mcp_tool_call_with_context(
+        &approval_context,
+        Some(risk.risk_level),
+        risk.reasons,
+        Some(&state.mcp),
         state.mcp.store.as_ref(),
         state.mcp.pending_tool_calls.as_ref(),
-        tool_name,
+        normalized_tool_name,
         arguments,
-        require_approval,
+        risk.requires_approval,
     )
     .await
 }

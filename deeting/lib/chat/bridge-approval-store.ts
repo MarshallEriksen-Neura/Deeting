@@ -3,8 +3,11 @@ import { create } from "zustand"
 export interface PendingApproval {
   approval_token: string
   tool_name: string
-  arguments: any
+  arguments: Record<string, unknown>
   description?: string
+  risk_level?: string
+  risk_reasons?: string[]
+  expires_in_ms?: number
   meta: {
     call_id: string
     execution_token?: string

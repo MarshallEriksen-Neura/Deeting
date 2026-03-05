@@ -470,6 +470,19 @@ async fn dispatch_tool_call(
                 .map_err(|err| ("MCP_STORE_ERROR".to_string(), err.to_string()))?;
 
             if let Some(tool) = tool {
+                let argument_value = serde_json::to_value(&arguments).unwrap_or_else(|_| json!({}));
+                let risk = state.deps.mcp.assess_tool_risk(&tool, &argument_value);
+                if risk.requires_approval {
+                    return Err((
+                        "CODE_MODE_BRIDGE_TOOL_REQUIRES_APPROVAL".to_string(),
+                        format!(
+                            "tool '{}' blocked by security policy (risk={}): {}",
+                            tool_name,
+                            risk.risk_level,
+                            risk.reasons.join("; ")
+                        ),
+                    ));
+                }
                 if let Some(command) = tool.command {
                     let mut cmd = tokio::process::Command::new(command);
                     if let Some(args) = tool.args {

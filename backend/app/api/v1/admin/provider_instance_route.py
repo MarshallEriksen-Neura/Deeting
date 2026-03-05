@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -12,6 +12,7 @@ from app.schemas.provider_instance import (
     ProviderInstanceResponse,
     ProviderModelResponse,
     ProviderModelsUpsertRequest,
+    ProviderModelUpdate,
     ProviderVerifyRequest,
     ProviderVerifyResponse,
 )
@@ -116,47 +117,58 @@ async def list_instances(
 @router.post("/{instance_id}/models:sync", response_model=list[ProviderModelResponse])
 async def sync_models(
     instance_id: str,
-    payload: ProviderModelsUpsertRequest,
+    payload: ProviderModelsUpsertRequest | None = Body(default=None),
+    preserve_user_overrides: bool = Query(True, description="保留用户自定义字段"),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_superuser),
 ):
-    """
-    手动同步/上报模型列表（最小可用实现）：
-    - 按 instance_id 和 capability/model_id/upstream_path 幂等 upsert
-    - 未做自动探测，前端/Agent 可先探测再调用本接口写入
-    """
     try:
         instance_uuid = uuid.UUID(instance_id)
     except Exception:
         raise HTTPException(status_code=400, detail="invalid instance_id")
 
     svc = ProviderInstanceService(db)
-    results: list[ProviderModel] = []
-    # 构造 ProviderModel 临时对象列表（不入库）
-    model_objs = [
-        ProviderModel(
-            id=uuid.uuid4(),
-            instance_id=instance_uuid,
-            capabilities=m.capabilities,
-            model_id=m.model_id,
-            unified_model_id=m.unified_model_id,
-            display_name=m.display_name,
-            upstream_path=m.upstream_path,
-            pricing_config=m.pricing_config,
-            limit_config=m.limit_config,
-            tokenizer_config=m.tokenizer_config,
-            routing_config=m.routing_config,
-            source=m.source,
-            extra_meta=m.extra_meta,
-            weight=m.weight,
-            priority=m.priority,
-            is_active=m.is_active,
-        )
-        for m in payload.models
-    ]
-    results = await svc.upsert_models(
-        instance_uuid, getattr(user, "id", None), model_objs
-    )
+    try:
+        if payload and payload.models:
+            model_objs = [
+                ProviderModel(
+                    id=uuid.uuid4(),
+                    instance_id=instance_uuid,
+                    capabilities=m.capabilities,
+                    model_id=m.model_id,
+                    unified_model_id=m.unified_model_id,
+                    display_name=m.display_name,
+                    upstream_path=m.upstream_path,
+                    pricing_config=m.pricing_config,
+                    limit_config=m.limit_config,
+                    tokenizer_config=m.tokenizer_config,
+                    routing_config=m.routing_config,
+                    source=m.source,
+                    extra_meta=m.extra_meta,
+                    weight=m.weight,
+                    priority=m.priority,
+                    is_active=m.is_active,
+                )
+                for m in payload.models
+            ]
+            results = await svc.upsert_models(
+                instance_uuid, getattr(user, "id", None), model_objs
+            )
+        else:
+            results = await svc.sync_models_from_upstream(
+                instance_uuid,
+                getattr(user, "id", None),
+                preserve_user_overrides=preserve_user_overrides,
+            )
+    except ValueError as e:
+        message = str(e)
+        if message == "instance_not_found":
+            raise HTTPException(status_code=404, detail="instance not found")
+        if message == "preset_not_found":
+            raise HTTPException(status_code=404, detail="preset not found")
+        raise HTTPException(status_code=400, detail=message)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
     return results
 
 
@@ -179,3 +191,32 @@ async def list_models(
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")
     return models
+
+
+@router.patch("/models/{model_id}", response_model=ProviderModelResponse)
+async def update_model(
+    model_id: str,
+    payload: ProviderModelUpdate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_superuser),
+):
+    try:
+        model_uuid = uuid.UUID(model_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid model_id")
+
+    svc = ProviderInstanceService(db)
+    try:
+        updated = await svc.update_model(
+            model_uuid,
+            getattr(user, "id", None),
+            **payload.model_dump(exclude_none=True)
+        )
+    except ValueError as e:
+        message = str(e)
+        if message == "model_not_found":
+            raise HTTPException(status_code=404, detail="model not found")
+        raise HTTPException(status_code=400, detail=message)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return updated

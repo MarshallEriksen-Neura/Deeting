@@ -1385,6 +1385,108 @@ export async function createAdminProviderInstance(
   return ProviderInstanceItemSchema.parse(data)
 }
 
+const AdminProviderModelResponseSchema = z.object({
+  id: z.string().uuid(),
+  instance_id: z.string().uuid(),
+  capabilities: z.array(z.string()).default([]),
+  model_id: z.string(),
+  unified_model_id: z.string().nullable().optional(),
+  display_name: z.string().nullable().optional(),
+  upstream_path: z.string(),
+  pricing_config: z.record(z.string(), z.unknown()).default({}),
+  limit_config: z.record(z.string(), z.unknown()).default({}),
+  tokenizer_config: z.record(z.string(), z.unknown()).default({}),
+  routing_config: z.record(z.string(), z.unknown()).default({}),
+  config_override: z.record(z.string(), z.unknown()).default({}),
+  source: z.string(),
+  extra_meta: z.record(z.string(), z.unknown()).default({}),
+  weight: z.number(),
+  priority: z.number(),
+  is_active: z.boolean(),
+  synced_at: z.string().nullable().optional(),
+  created_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+})
+
+const AdminProviderModelUpsertSchema = z.object({
+  capabilities: z.array(z.string()).default([]),
+  model_id: z.string(),
+  unified_model_id: z.string().nullable().optional(),
+  upstream_path: z.string(),
+  display_name: z.string().nullable().optional(),
+  pricing_config: z.record(z.string(), z.unknown()).default({}),
+  limit_config: z.record(z.string(), z.unknown()).default({}),
+  tokenizer_config: z.record(z.string(), z.unknown()).default({}),
+  routing_config: z.record(z.string(), z.unknown()).default({}),
+  config_override: z.record(z.string(), z.unknown()).default({}),
+  source: z.string().default("auto"),
+  extra_meta: z.record(z.string(), z.unknown()).default({}),
+  weight: z.number().default(100),
+  priority: z.number().default(0),
+  is_active: z.boolean().default(true),
+})
+
+const AdminProviderModelsUpsertPayloadSchema = z.object({
+  models: z.array(AdminProviderModelUpsertSchema).default([]),
+})
+
+const AdminProviderModelUpdateSchema = z.object({
+  display_name: z.string().nullable().optional(),
+  is_active: z.boolean().optional(),
+  capabilities: z.array(z.string()).optional(),
+  weight: z.number().optional(),
+  priority: z.number().optional(),
+  pricing_config: z.record(z.string(), z.unknown()).optional(),
+  limit_config: z.record(z.string(), z.unknown()).optional(),
+  tokenizer_config: z.record(z.string(), z.unknown()).optional(),
+  routing_config: z.record(z.string(), z.unknown()).optional(),
+  config_override: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type AdminProviderModelResponse = z.infer<typeof AdminProviderModelResponseSchema>
+export type AdminProviderModelsUpsertPayload = z.infer<
+  typeof AdminProviderModelsUpsertPayloadSchema
+>
+export type AdminProviderModelUpdate = z.infer<typeof AdminProviderModelUpdateSchema>
+
+export async function fetchAdminProviderModels(
+  instanceId: string
+): Promise<AdminProviderModelResponse[]> {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-instances/${instanceId}/models`,
+    method: "GET",
+  })
+  return z.array(AdminProviderModelResponseSchema).parse(data)
+}
+
+export async function syncAdminProviderModels(
+  instanceId: string,
+  payload?: AdminProviderModelsUpsertPayload,
+  options?: { preserve_user_overrides?: boolean }
+): Promise<AdminProviderModelResponse[]> {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-instances/${instanceId}/models:sync`,
+    method: "POST",
+    params: {
+      preserve_user_overrides: options?.preserve_user_overrides ?? true,
+    },
+    data: payload,
+  })
+  return z.array(AdminProviderModelResponseSchema).parse(data)
+}
+
+export async function updateAdminProviderModel(
+  modelId: string,
+  payload: AdminProviderModelUpdate
+): Promise<AdminProviderModelResponse> {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-instances/models/${modelId}`,
+    method: "PATCH",
+    data: payload,
+  })
+  return AdminProviderModelResponseSchema.parse(data)
+}
+
 const ProviderCredentialItemSchema = z.object({
   id: z.string(),
   instance_id: z.string(),

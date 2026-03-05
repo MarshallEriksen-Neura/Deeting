@@ -966,14 +966,24 @@ pub async fn approve_mcp_tool(
     state: State<'_, AppState>,
     approval_token: Option<String>,
     #[allow(non_snake_case)] approvalToken: Option<String>,
+    call_id: Option<String>,
+    #[allow(non_snake_case)] callId: Option<String>,
+    execution_token: Option<String>,
+    #[allow(non_snake_case)] executionToken: Option<String>,
 ) -> Result<Value, String> {
     let token = approval_token
         .or(approvalToken)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "approval token is required".to_string())?;
+    let approval_context = state.mcp.build_approval_context(
+        call_id.or(callId).as_deref(),
+        execution_token.or(executionToken).as_deref(),
+    );
 
-    approve_mcp_tool_inner(
+    approve_mcp_tool_inner_with_context(
+        &approval_context,
+        Some(&state.mcp),
         state.mcp.store.as_ref(),
         state.mcp.pending_tool_calls.as_ref(),
         &token,

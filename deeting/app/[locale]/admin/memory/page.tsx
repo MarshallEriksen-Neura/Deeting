@@ -1,5 +1,14 @@
+import dynamic from "next/dynamic"
 import { setRequestLocale, getTranslations } from "next-intl/server"
-import { AdminMemoryClient } from "./components/admin-memory-client"
+import { PageLoading } from "../components/page-loading"
+
+const AdminMemoryClient = dynamic(
+  () =>
+    import("./components/admin-memory-client").then((mod) => ({
+      default: mod.AdminMemoryClient,
+    })),
+  { loading: () => <PageLoading /> }
+)
 
 export default async function AdminMemoryPage({
   params,

@@ -1,7 +1,11 @@
-import { Suspense } from "react"
+import dynamic from "next/dynamic"
 import { setRequestLocale } from "next-intl/server"
-import { PageContent } from "./page-content"
 import { UsersPageSkeleton } from "./components/page-skeleton"
+
+const PageContent = dynamic(
+  () => import("./page-content").then((mod) => ({ default: mod.PageContent })),
+  { loading: () => <UsersPageSkeleton /> }
+)
 
 export default async function UserManagementPage({
   params,
@@ -11,9 +15,5 @@ export default async function UserManagementPage({
   const { locale } = await params
   setRequestLocale(locale)
 
-  return (
-    <Suspense fallback={<UsersPageSkeleton />}>
-      <PageContent />
-    </Suspense>
-  )
+  return <PageContent />
 }

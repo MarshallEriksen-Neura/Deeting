@@ -4,8 +4,15 @@ import { useEffect, useRef } from "react"
 import { useAuthStore } from "@/store/auth-store"
 import { subscribeBridgeEvents, bridgeCallTool } from "@/lib/api/bridge"
 import { invoke } from "@tauri-apps/api/core"
-import { toast } from "sonner"
 import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
+
+type BridgeToolCallRequestPayload = {
+  type: string
+  call_id?: string
+  tool_name?: string
+  arguments?: Record<string, unknown>
+  execution_token?: string
+}
 
 /**
  * Bridge Monitor Hook
@@ -30,49 +37,89 @@ export function useBridgeMonitor() {
     const disconnect = subscribeBridgeEvents({
       onMessage: async (data) => {
         try {
-          const payload = typeof data === "string" ? JSON.parse(data) : data
+          const payload: BridgeToolCallRequestPayload =
+            typeof data === "string" ? JSON.parse(data) : (data as BridgeToolCallRequestPayload)
           
           if (payload.type === "TOOL_CALL_REQUEST") {
-            const { call_id, tool_name, arguments: toolArgs, execution_token } = payload
+            const call_id = payload.call_id ?? ""
+            const tool_name = payload.tool_name ?? ""
+            const toolArgs = payload.arguments ?? {}
+            const execution_token = payload.execution_token
             
             console.log(`[BridgeMonitor] Received tool call: ${tool_name}`, toolArgs)
             
-            let result: any
+            let result: unknown
             let ok = true
 
             try {
               if (tool_name === "search_local_memories") {
-                const query = toolArgs.query || ""
-                const limit = toolArgs.limit || 5
-                const memories: any[] = await invoke("list_local_memories", { query, limit })
-                result = memories.map(m => ({ content: m.content, score: m.score, metadata: m.metadata }))
+                const query = (toolArgs.query as string) || ""
+                const limit = Number(toolArgs.limit ?? 5) || 5
+                const memories = await invoke<Array<{ content?: string; score?: number; metadata?: unknown }>>(
+                  "list_local_memories",
+                  { query, limit }
+                )
+                result = memories.map((m) => ({
+                  content: m.content,
+                  score: m.score,
+                  metadata: m.metadata,
+                }))
               } else {
                 // 1. Initial attempt to execute
-                const executionResult: any = await invoke("execute_mcp_tool_raw", {
+                const executionResult = await invoke<Record<string, unknown>>("execute_mcp_tool_raw", {
                   toolName: tool_name,
-                  arguments: toolArgs
+                  arguments: toolArgs,
+                  callId: call_id,
+                  executionToken: execution_token,
                 })
 
                 // 2. SECURITY INTERCEPT: If high-risk, wait for user
-                if (executionResult?.status === "REQUIRES_APPROVAL") {
+                if (executionResult.status === "REQUIRES_APPROVAL") {
                   console.log("[BridgeMonitor] High-risk tool intercepted, awaiting approval")
-                  
+                  const approvalToken =
+                    typeof executionResult.approval_token === "string"
+                      ? executionResult.approval_token
+                      : ""
+                  if (!approvalToken) {
+                    throw new Error("missing approval token in approval-required response")
+                  }
                   useBridgeApprovalStore.getState().setPending({
-                    approval_token: executionResult.approval_token,
-                    tool_name: executionResult.tool_name,
-                    arguments: executionResult.arguments,
-                    description: executionResult.description,
+                    approval_token: approvalToken,
+                    tool_name:
+                      typeof executionResult.tool_name === "string"
+                        ? executionResult.tool_name
+                        : tool_name,
+                    arguments:
+                      (executionResult.arguments as Record<string, unknown> | undefined) ??
+                      toolArgs,
+                    description:
+                      typeof executionResult.description === "string"
+                        ? executionResult.description
+                        : undefined,
+                    risk_level:
+                      typeof executionResult.risk_level === "string"
+                        ? executionResult.risk_level
+                        : undefined,
+                    risk_reasons: Array.isArray(executionResult.risk_reasons)
+                      ? executionResult.risk_reasons.filter(
+                          (v): v is string => typeof v === "string"
+                        )
+                      : undefined,
+                    expires_in_ms:
+                      typeof executionResult.expires_in_ms === "number"
+                        ? executionResult.expires_in_ms
+                        : undefined,
                     // Pass these through so the Dialog component can finish the Bridge call
-                    meta: { call_id, execution_token } as any 
+                    meta: { call_id, execution_token },
                   })
                   return // Stop here, Dialog will resume
                 }
 
                 result = executionResult
               }
-            } catch (err: any) {
+            } catch (err: unknown) {
               console.error(`[BridgeMonitor] Execution failed:`, err)
-              result = { error: err.toString() }
+              result = { error: err instanceof Error ? err.message : String(err) }
               ok = false
             }
 

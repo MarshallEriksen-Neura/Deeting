@@ -177,6 +177,11 @@ fn normalize_skill_dir_name(skill_id: &str) -> String {
     }
 }
 
+fn is_allowed_skill_repo_url(repo_url: &str) -> bool {
+    let normalized = repo_url.trim().to_ascii_lowercase();
+    normalized.starts_with("https://github.com/") || normalized.starts_with("git@github.com:")
+}
+
 fn read_manifest_json(manifest_path: &Path) -> Option<serde_json::Value> {
     let raw = std::fs::read_to_string(manifest_path).ok()?;
     serde_json::from_str::<serde_json::Value>(&raw).ok()
@@ -247,12 +252,17 @@ async fn try_clone_skill_repo(
     if normalized_repo.is_empty() {
         return Err("source repo is empty".to_string());
     }
+    if !is_allowed_skill_repo_url(normalized_repo) {
+        return Err("source repo is not in the allowed host list".to_string());
+    }
+    let revision = revision
+        .map(|raw| raw.trim().to_string())
+        .filter(|raw| !raw.is_empty())
+        .ok_or_else(|| "pinned revision is required for reinstall".to_string())?;
 
     let mut cmd = tokio::process::Command::new("git");
     cmd.arg("clone").arg("--depth").arg("1");
-    if let Some(rev) = revision.map(|raw| raw.trim()).filter(|raw| !raw.is_empty()) {
-        cmd.arg("--branch").arg(rev);
-    }
+    cmd.arg("--branch").arg(revision);
     cmd.arg(normalized_repo).arg(target_dir);
     let output = cmd.output().await.map_err(to_string)?;
     if output.status.success() {
@@ -632,7 +642,7 @@ pub async fn sync_local_skill_installs_from_cloud(
 
     let app_state = state.inner();
     let base_url = app_state.mcp.cloud_base_url.read().await.clone();
-    let enable_reinstall = reinstall_missing.unwrap_or(true);
+    let enable_reinstall = reinstall_missing.unwrap_or(false);
     let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
     std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
     let response = sync_local_skill_installs_from_cloud_inner(
