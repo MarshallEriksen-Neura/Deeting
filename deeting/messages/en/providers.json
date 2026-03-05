@@ -101,6 +101,9 @@
     "list": {
       "latency": "Latency",
       "offline": "OFFLINE",
+      "badges": {
+        "public": "PUBLIC"
+      },
       "confirmRemove": "Are you sure you want to remove this instance? This action cannot be undone.",
       "confirmTitle": "Confirm Removal",
       "actions": {

@@ -248,6 +248,16 @@ class Settings(BaseSettings):
 
     # 对象存储 / 短链配置
     SECRET_KEY: str = ""
+    # 支付宝充值配置
+    ALIPAY_ENABLED: bool = False
+    ALIPAY_APP_ID: str = ""
+    ALIPAY_GATEWAY: str = "https://openapi.alipay.com/gateway.do"
+    ALIPAY_PRIVATE_KEY: str = ""
+    ALIPAY_PUBLIC_KEY: str = ""
+    ALIPAY_NOTIFY_URL: str = ""
+    ALIPAY_RETURN_URL: str = ""
+    ALIPAY_TIMEOUT_EXPRESS: str = "15m"
+    ALIPAY_RECHARGE_SUBJECT: str = "Deeting Credits Recharge"
     # 飞书回调验签（监控互动卡片）
     FEISHU_CALLBACK_SECRET: str = ""
     FEISHU_CALLBACK_MAX_SKEW_SECONDS: int = 300

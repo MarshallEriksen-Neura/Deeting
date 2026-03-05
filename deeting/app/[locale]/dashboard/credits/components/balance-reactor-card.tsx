@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl"
 import { Zap, Plus } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Button } from "@/components/ui/button"
-import { fetchCreditsRechargePolicy, rechargeCredits } from "@/lib/api/credits"
+import { createAlipayRechargeOrder, fetchCreditsRechargePolicy } from "@/lib/api/credits"
 import { useCreditsBalance } from "@/lib/swr/use-credits-balance"
 
 export function BalanceReactorCard() {
@@ -36,18 +36,20 @@ export function BalanceReactorCard() {
     setIsSubmitting(true)
     setFeedback(null)
     try {
-      const result = await rechargeCredits(amount)
-      await mutate()
+      const order = await createAlipayRechargeOrder(amount)
+      if (!order.payUrl) {
+        throw new Error(t("balance.feedback.rechargeFailed"))
+      }
       setFeedback({
         kind: "success",
-        text: t("balance.feedback.rechargeSuccess", {
-          amount: formatAmount(result.creditedAmount),
-        }),
+        text: t("balance.feedback.redirectingToAlipay"),
       })
+      window.location.assign(order.payUrl)
     } catch (error) {
       const message = error instanceof Error ? error.message : t("balance.feedback.rechargeFailed")
       setFeedback({ kind: "error", text: message })
     } finally {
+      void mutate()
       setIsSubmitting(false)
     }
   }

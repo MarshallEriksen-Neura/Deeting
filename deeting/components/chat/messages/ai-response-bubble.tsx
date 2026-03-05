@@ -35,6 +35,21 @@ type RuntimeToolTraceItem = {
   errorCode: string | null;
 };
 
+type SkillInstallInsight =
+  | {
+      state: "pending_approval";
+      skillName: string | null;
+      repoUrl: string | null;
+      riskLevel: string | null;
+      approvalToken: string | null;
+    }
+  | {
+      state: "installed";
+      skillName: string | null;
+      repoUrl: string | null;
+      indexedTools: number | null;
+    };
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -111,6 +126,88 @@ function formatObjectAsMarkdown(value: unknown): string {
     return String(value);
   }
 }
+
+function asTrimmedString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function extractSkillInstallInsight(toolName?: string, result?: unknown): SkillInstallInsight | null {
+  if (toolName !== "sys_submit_onboarding_request") return null;
+  const payload = toRecord(result);
+  if (!payload) return null;
+  const action = asTrimmedString(payload.action);
+  if (!action) return null;
+
+  if (action === "skill_install_pending_approval") {
+    const install = toRecord(payload.install);
+    return {
+      state: "pending_approval",
+      skillName: asTrimmedString(payload.skill_name),
+      repoUrl: asTrimmedString(payload.repo_url),
+      riskLevel: asTrimmedString(install?.risk_level),
+      approvalToken: asTrimmedString(install?.approval_token),
+    };
+  }
+
+  if (action === "skill_installed") {
+    const indexRefresh = toRecord(payload.index_refresh);
+    return {
+      state: "installed",
+      skillName: asTrimmedString(payload.skill_name),
+      repoUrl: asTrimmedString(payload.repo_url),
+      indexedTools: toNumber(indexRefresh?.indexed_tools),
+    };
+  }
+
+  return null;
+}
+
+const SkillInstallStatusCard = memo<{ insight: SkillInstallInsight }>(function SkillInstallStatusCard({
+  insight,
+}) {
+  if (insight.state === "pending_approval") {
+    return (
+      <div className="rounded-lg border border-amber-300 bg-amber-50/70 p-3 dark:border-amber-900 dark:bg-amber-900/20">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+            Skill install pending approval
+          </div>
+          <Badge variant="outline" className="h-5 text-[10px] font-normal text-amber-700 dark:text-amber-300">
+            APPROVAL
+          </Badge>
+        </div>
+        <div className="space-y-1 text-[11px] text-amber-900/90 dark:text-amber-200/90">
+          {insight.skillName ? <div>Skill: <span className="font-mono">{insight.skillName}</span></div> : null}
+          {insight.repoUrl ? <div>Repo: <span className="font-mono break-all">{insight.repoUrl}</span></div> : null}
+          {insight.riskLevel ? <div>Risk: <span className="font-mono">{insight.riskLevel}</span></div> : null}
+          {insight.approvalToken ? (
+            <div>Token: <span className="font-mono">{insight.approvalToken.slice(0, 8)}...</span></div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-emerald-300 bg-emerald-50/70 p-3 dark:border-emerald-900 dark:bg-emerald-900/20">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+          Skill installed locally
+        </div>
+        <Badge variant="outline" className="h-5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300">
+          READY
+        </Badge>
+      </div>
+      <div className="space-y-1 text-[11px] text-emerald-900/90 dark:text-emerald-200/90">
+        {insight.skillName ? <div>Skill: <span className="font-mono">{insight.skillName}</span></div> : null}
+        {insight.repoUrl ? <div>Repo: <span className="font-mono break-all">{insight.repoUrl}</span></div> : null}
+        {insight.indexedTools !== null ? (
+          <div>Indexed tools: <span className="font-mono">{insight.indexedTools}</span></div>
+        ) : null}
+      </div>
+    </div>
+  );
+});
 
 function ToolDebugPanel({ debug }: { debug?: Record<string, unknown> }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -679,6 +776,11 @@ const ToolCallBlock = memo<{
       return null;
     }, [resultBlock]);
 
+    const skillInstallInsight = useMemo(
+      () => extractSkillInstallInsight(resultBlock?.toolName || name, resultBlock?.result),
+      [resultBlock?.toolName, name, resultBlock?.result]
+    );
+
     const resultContent = useMemo(() => {
       return formatObjectAsMarkdown(resultBlock?.result);
     }, [resultBlock?.result]);
@@ -738,6 +840,8 @@ const ToolCallBlock = memo<{
           <div className="mt-2">
             {taskLiveId ? (
               <TaskLiveBlock taskId={taskLiveId} />
+            ) : skillInstallInsight ? (
+              <SkillInstallStatusCard insight={skillInstallInsight} />
             ) : (
               <div className={cn(
                 "rounded-lg border p-3 text-sm overflow-hidden",
@@ -844,6 +948,10 @@ const ToolResultBlock = memo<{
   const [isOpen, setIsOpen] = useState(false);
   const title = name || callId || "tool_result";
   const isError = status === "error";
+  const skillInstallInsight = useMemo(
+    () => extractSkillInstallInsight(name, result),
+    [name, result]
+  );
 
   // Special Handling for System Skills (Live Tasks)
   if (
@@ -901,7 +1009,9 @@ const ToolResultBlock = memo<{
               ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
               : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
           )}>
-            {content ? (
+            {skillInstallInsight ? (
+              <SkillInstallStatusCard insight={skillInstallInsight} />
+            ) : content ? (
               <div className="overflow-x-auto">
                 <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />
               </div>

@@ -29,7 +29,7 @@ async def list_credentials(
 
     svc = ProviderInstanceService(db)
     try:
-        creds = await svc.list_credentials(instance_uuid, getattr(user, "id", None))
+        creds = await svc.list_credentials(instance_uuid, None)
     except ValueError:
         raise HTTPException(status_code=404, detail="instance not found")
     except PermissionError:
@@ -57,7 +57,7 @@ async def create_credential(
     try:
         cred = await svc.create_credential(
             instance_id=instance_uuid,
-            user_id=getattr(user, "id", None),
+            user_id=None,
             alias=payload.alias,
             secret_ref_id=payload.secret_ref_id,
             weight=payload.weight,
@@ -106,7 +106,7 @@ async def delete_credential(
 
     svc = ProviderInstanceService(db)
     try:
-        await svc.delete_credential(instance_uuid, cred_uuid, getattr(user, "id", None))
+        await svc.delete_credential(instance_uuid, cred_uuid, None)
     except ValueError:
         raise HTTPException(status_code=404, detail="credential not found")
     except PermissionError:

@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useCallback, useRef, useState, memo } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Sparkles, Clapperboard, Download, RefreshCw } from "lucide-react";
-import { Link } from "@/i18n/routing";
+import { Loader2, Sparkles, Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/hooks/use-i18n";
 import { useImageGenerationStore } from "@/store/image-generation-store";
@@ -142,17 +141,6 @@ const ImageResultBubble = memo<{
                 <a href={previewUrl!} download target="_blank" rel="noopener noreferrer">
                     <Download className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                 </a>
-             </Button>
-             <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0 rounded-full hover:bg-slate-100 dark:hover:bg-white/10"
-                title="Create Video from Image"
-             >
-                <Link href={`/video?image_url=${encodeURIComponent(previewUrl!)}`}>
-                    <Clapperboard className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                </Link>
              </Button>
             <ImageShareAction taskId={taskId} />
           </div>

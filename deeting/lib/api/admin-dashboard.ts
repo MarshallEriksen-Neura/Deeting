@@ -1342,6 +1342,7 @@ const ProviderInstanceItemSchema = z.object({
   auto_append_v1: z.boolean().nullable().optional(),
   priority: z.number().int(),
   is_enabled: z.boolean(),
+  is_public: z.boolean().default(false),
   health_status: z.string().nullable().optional(),
   latency_ms: z.number().int().optional(),
   sparkline: z.array(z.number().int()).default([]),
@@ -1370,6 +1371,7 @@ type AdminProviderInstanceCreatePayload = {
   auto_append_v1?: boolean
   priority?: number
   is_enabled?: boolean
+  is_public?: boolean
   credentials_ref?: string
   api_key?: string
 }
@@ -1380,6 +1382,22 @@ export async function createAdminProviderInstance(
   const data = await request<unknown>({
     url: `${ADMIN_BASE}/provider-instances`,
     method: "POST",
+    data: payload,
+  })
+  return ProviderInstanceItemSchema.parse(data)
+}
+
+type AdminProviderInstanceUpdatePayload = {
+  is_public: boolean
+}
+
+export async function updateAdminProviderInstance(
+  instanceId: string,
+  payload: AdminProviderInstanceUpdatePayload
+) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-instances/${instanceId}`,
+    method: "PATCH",
     data: payload,
   })
   return ProviderInstanceItemSchema.parse(data)

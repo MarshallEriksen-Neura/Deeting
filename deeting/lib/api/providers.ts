@@ -115,6 +115,7 @@ export const ProviderInstanceResponseSchema = z.object({
   theme_color: z.string().nullable().optional(),
   priority: z.number(),
   is_enabled: z.boolean(),
+  is_public: z.boolean().optional().default(false),
   created_at: z.string(),
   updated_at: z.string(),
   health_status: z.string().optional().nullable(),

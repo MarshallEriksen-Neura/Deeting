@@ -475,7 +475,10 @@
       },
       "feedback": {
         "created": "Created provider instance: {name}",
-        "createFailed": "Create failed"
+        "createFailed": "Create failed",
+        "published": "Published: {name}",
+        "unpublished": "Unpublished: {name}",
+        "publishFailed": "Failed to update publish status"
       },
       "table": {
         "headers": {
@@ -484,12 +487,17 @@
           "baseUrl": "Base URL",
           "priority": "Priority",
           "enabled": "Enabled",
+          "publish": "Publish",
           "health": "Health",
           "latency": "Latency",
           "models": "Models",
           "trend": "Trend"
         },
         "latencyMs": "{value}ms"
+      },
+      "publish": {
+        "public": "Published",
+        "private": "Hidden"
       },
       "form": {
         "presetSlug": "Preset slug",

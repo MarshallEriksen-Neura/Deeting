@@ -8,7 +8,8 @@ from app.core.database import get_db
 from app.deps.superuser import get_current_superuser
 from app.models.provider_instance import ProviderModel
 from app.schemas.provider_instance import (
-    ProviderInstanceCreate,
+    AdminProviderInstanceCreate,
+    AdminProviderInstancePublishUpdate,
     ProviderInstanceResponse,
     ProviderModelResponse,
     ProviderModelsUpsertRequest,
@@ -49,7 +50,7 @@ async def verify_provider(
     "", response_model=ProviderInstanceResponse, status_code=status.HTTP_201_CREATED
 )
 async def create_instance(
-    payload: ProviderInstanceCreate,
+    payload: AdminProviderInstanceCreate,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_superuser),
 ):
@@ -69,6 +70,7 @@ async def create_instance(
             auto_append_v1=payload.auto_append_v1,
             priority=payload.priority,
             is_enabled=payload.is_enabled,
+            is_public=payload.is_public,
         )
     except ValueError as e:
         message = str(e)
@@ -114,6 +116,32 @@ async def list_instances(
     return response_list
 
 
+@router.patch("/{instance_id}", response_model=ProviderInstanceResponse)
+async def update_instance_visibility(
+    instance_id: str,
+    payload: AdminProviderInstancePublishUpdate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_superuser),
+):
+    try:
+        instance_uuid = uuid.UUID(instance_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid instance_id")
+
+    svc = ProviderInstanceService(db)
+    try:
+        updated = await svc.update_instance(
+            instance_uuid,
+            None,  # superuser bypass: 管理员可维护任意实例
+            is_public=payload.is_public,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="instance not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return updated
+
+
 @router.post("/{instance_id}/models:sync", response_model=list[ProviderModelResponse])
 async def sync_models(
     instance_id: str,
@@ -152,12 +180,12 @@ async def sync_models(
                 for m in payload.models
             ]
             results = await svc.upsert_models(
-                instance_uuid, getattr(user, "id", None), model_objs
+                instance_uuid, None, model_objs
             )
         else:
             results = await svc.sync_models_from_upstream(
                 instance_uuid,
-                getattr(user, "id", None),
+                None,
                 preserve_user_overrides=preserve_user_overrides,
             )
     except ValueError as e:
@@ -185,7 +213,7 @@ async def list_models(
 
     svc = ProviderInstanceService(db)
     try:
-        models = await svc.list_models(instance_uuid, getattr(user, "id", None))
+        models = await svc.list_models(instance_uuid, None)
     except ValueError:
         raise HTTPException(status_code=404, detail="instance not found")
     except PermissionError:
@@ -209,7 +237,7 @@ async def update_model(
     try:
         updated = await svc.update_model(
             model_uuid,
-            getattr(user, "id", None),
+            None,
             **payload.model_dump(exclude_none=True)
         )
     except ValueError as e:

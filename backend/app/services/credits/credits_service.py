@@ -17,9 +17,9 @@ from app.schemas.credits import (
     CreditsBalanceResponse,
     CreditsConsumptionPoint,
     CreditsConsumptionResponse,
-    CreditsRechargeResponse,
     CreditsModelUsageItem,
     CreditsModelUsageResponse,
+    CreditsRechargeResponse,
     CreditsTransactionItem,
     CreditsTransactionListResponse,
 )
@@ -238,15 +238,35 @@ class CreditsService:
         credit_per_unit: float,
         currency: str,
     ) -> CreditsRechargeResponse:
+        trace_id = f"credits-recharge-{uuid.uuid4().hex[:24]}"
+        return await self.recharge_with_trace_id(
+            tenant_id=tenant_id,
+            amount=amount,
+            credit_per_unit=credit_per_unit,
+            currency=currency,
+            trace_id=trace_id,
+        )
+
+    async def recharge_with_trace_id(
+        self,
+        tenant_id: str | None,
+        amount: float | Decimal,
+        credit_per_unit: float,
+        currency: str,
+        trace_id: str,
+        description: str | None = None,
+    ) -> CreditsRechargeResponse:
         if not tenant_id:
             raise ValueError("无效的用户信息")
-        if amount <= 0:
+        amount_decimal = Decimal(str(amount))
+        if amount_decimal <= 0:
             raise ValueError("充值金额必须大于 0")
         if credit_per_unit <= 0:
             raise ValueError("充值比例必须大于 0")
+        if not trace_id:
+            raise ValueError("充值流水标识不能为空")
 
         tenant_id_str, tenant_uuid = self._normalize_tenant_id(tenant_id)
-        amount_decimal = Decimal(str(amount))
         credited_amount = (
             amount_decimal * Decimal(str(credit_per_unit))
         ).quantize(Decimal("0.000001"))
@@ -254,12 +274,12 @@ class CreditsService:
         if credited_amount <= Decimal("0"):
             raise ValueError("充值积分必须大于 0")
 
-        trace_id = f"credits-recharge-{uuid.uuid4().hex[:24]}"
         tx = await self.billing_repo.recharge(
             tenant_id=tenant_uuid,
             amount=credited_amount,
             trace_id=trace_id,
-            description=(
+            description=description
+            or (
                 f"Credits recharge amount={amount_decimal} {currency}, "
                 f"ratio={credit_per_unit}"
             ),

@@ -1,8 +1,13 @@
+import base64
+import json
 from datetime import timedelta
 from decimal import Decimal
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import pytest
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from httpx import AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,6 +21,40 @@ from app.models.billing import (
 )
 from app.models.system_setting import SystemSetting
 from app.utils.time_utils import Datetime
+
+
+def _generate_rsa_keypair() -> tuple[str, str]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_pem, public_pem
+
+
+def _sign_alipay_notify_payload(payload: dict[str, str], private_key_pem: str) -> str:
+    sign_content = "&".join(
+        f"{key}={payload[key]}"
+        for key in sorted(payload)
+        if key not in {"sign", "sign_type"}
+        and payload[key] is not None
+        and payload[key] != ""
+    )
+    private_key = serialization.load_pem_private_key(
+        private_key_pem.encode("utf-8"),
+        password=None,
+    )
+    signature = private_key.sign(
+        sign_content.encode("utf-8"),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+    return base64.b64encode(signature).decode("utf-8")
 
 
 async def _get_test_user_id(session_factory: async_sessionmaker[AsyncSession]) -> UUID:
@@ -300,3 +339,236 @@ async def test_credits_recharge_updates_balance(
     assert balance_resp.status_code == 200
     balance_data = balance_resp.json()
     assert balance_data["balance"] == 60
+
+
+@pytest.mark.asyncio
+async def test_alipay_recharge_order_creation(
+    client: AsyncClient,
+    auth_tokens: dict,
+    admin_tokens: dict,
+    AsyncSessionLocal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = await _get_test_user_id(AsyncSessionLocal)
+    await _clear_user_data(AsyncSessionLocal, user_id)
+    private_key, public_key = _generate_rsa_keypair()
+
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_ENABLED", True)
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_APP_ID", "2026000000000001")
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_PRIVATE_KEY",
+        private_key,
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_PUBLIC_KEY",
+        public_key,
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_NOTIFY_URL",
+        "https://example.com/api/v1/credits/recharge/alipay/notify",
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_RETURN_URL",
+        "https://example.com/dashboard/credits",
+    )
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_RECHARGE_SUBJECT", "Credits")
+
+    await client.patch(
+        "/api/v1/admin/settings/recharge-policy",
+        json={"credit_per_unit": 20, "currency": "CNY"},
+        headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},
+    )
+
+    resp = await client.post(
+        "/api/v1/credits/recharge/alipay/order",
+        json={"amount": 3},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["amount"] == 3
+    assert data["currency"] == "CNY"
+    assert data["expectedCreditedAmount"] == 60
+    assert data["outTradeNo"].startswith("rcg")
+    assert "openapi.alipay.com/gateway.do" in data["payUrl"]
+
+    parsed = parse_qs(urlparse(data["payUrl"]).query)
+    assert parsed.get("method", [""])[0] == "alipay.trade.page.pay"
+    assert parsed.get("app_id", [""])[0] == "2026000000000001"
+    assert parsed.get("sign_type", [""])[0] == "RSA2"
+    biz_content_raw = parsed.get("biz_content", ["{}"])[0]
+    biz_content = json.loads(biz_content_raw)
+    assert biz_content["out_trade_no"] == data["outTradeNo"]
+    assert biz_content["total_amount"] == "3.00"
+    assert parsed.get("sign", [""])[0]
+
+
+@pytest.mark.asyncio
+async def test_alipay_notify_recharge_is_idempotent(
+    client: AsyncClient,
+    auth_tokens: dict,
+    admin_tokens: dict,
+    AsyncSessionLocal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = await _get_test_user_id(AsyncSessionLocal)
+    await _clear_user_data(AsyncSessionLocal, user_id)
+    private_key, public_key = _generate_rsa_keypair()
+
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_ENABLED", True)
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_APP_ID", "2026000000000001")
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_PRIVATE_KEY",
+        private_key,
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_PUBLIC_KEY",
+        public_key,
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_NOTIFY_URL",
+        "https://example.com/api/v1/credits/recharge/alipay/notify",
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_RETURN_URL",
+        "https://example.com/dashboard/credits",
+    )
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_RECHARGE_SUBJECT", "Credits")
+
+    await client.patch(
+        "/api/v1/admin/settings/recharge-policy",
+        json={"credit_per_unit": 20, "currency": "CNY"},
+        headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},
+    )
+
+    order_resp = await client.post(
+        "/api/v1/credits/recharge/alipay/order",
+        json={"amount": 3},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert order_resp.status_code == 200
+    out_trade_no = order_resp.json()["outTradeNo"]
+
+    notify_payload = {
+        "app_id": "2026000000000001",
+        "charset": "utf-8",
+        "notify_time": "2026-03-05 00:01:05",
+        "notify_type": "trade_status_sync",
+        "out_trade_no": out_trade_no,
+        "seller_id": "2088101122136241",
+        "trade_no": "2026030522001400000000000001",
+        "trade_status": "TRADE_SUCCESS",
+        "total_amount": "3.00",
+        "version": "1.0",
+        "sign_type": "RSA2",
+    }
+    notify_payload["sign"] = _sign_alipay_notify_payload(notify_payload, private_key)
+
+    first = await client.post(
+        "/api/v1/credits/recharge/alipay/notify",
+        data=notify_payload,
+    )
+    assert first.status_code == 200
+    assert first.text == "success"
+
+    second = await client.post(
+        "/api/v1/credits/recharge/alipay/notify",
+        data=notify_payload,
+    )
+    assert second.status_code == 200
+    assert second.text == "success"
+
+    balance_resp = await client.get(
+        "/api/v1/credits/balance",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert balance_resp.status_code == 200
+    assert balance_resp.json()["balance"] == 60
+
+    async with AsyncSessionLocal() as session:
+        txs = (
+            await session.execute(
+                select(BillingTransaction).where(
+                    BillingTransaction.tenant_id == user_id,
+                    BillingTransaction.type == TransactionType.RECHARGE,
+                )
+            )
+        ).scalars().all()
+        assert len(txs) == 1
+        assert float(txs[0].amount) == 60
+
+
+@pytest.mark.asyncio
+async def test_alipay_notify_rejects_invalid_signature(
+    client: AsyncClient,
+    auth_tokens: dict,
+    admin_tokens: dict,
+    AsyncSessionLocal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = await _get_test_user_id(AsyncSessionLocal)
+    await _clear_user_data(AsyncSessionLocal, user_id)
+    private_key, public_key = _generate_rsa_keypair()
+
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_ENABLED", True)
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_APP_ID", "2026000000000001")
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_PRIVATE_KEY",
+        private_key,
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_PUBLIC_KEY",
+        public_key,
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_NOTIFY_URL",
+        "https://example.com/api/v1/credits/recharge/alipay/notify",
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings.ALIPAY_RETURN_URL",
+        "https://example.com/dashboard/credits",
+    )
+    monkeypatch.setattr("app.core.config.settings.ALIPAY_RECHARGE_SUBJECT", "Credits")
+
+    await client.patch(
+        "/api/v1/admin/settings/recharge-policy",
+        json={"credit_per_unit": 20, "currency": "CNY"},
+        headers={"Authorization": f"Bearer {admin_tokens['access_token']}"},
+    )
+
+    order_resp = await client.post(
+        "/api/v1/credits/recharge/alipay/order",
+        json={"amount": 3},
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert order_resp.status_code == 200
+    out_trade_no = order_resp.json()["outTradeNo"]
+
+    notify_payload = {
+        "app_id": "2026000000000001",
+        "charset": "utf-8",
+        "notify_time": "2026-03-05 00:01:05",
+        "notify_type": "trade_status_sync",
+        "out_trade_no": out_trade_no,
+        "seller_id": "2088101122136241",
+        "trade_no": "2026030522001400000000000001",
+        "trade_status": "TRADE_SUCCESS",
+        "total_amount": "3.00",
+        "version": "1.0",
+        "sign_type": "RSA2",
+        "sign": "invalid-sign",
+    }
+
+    resp = await client.post(
+        "/api/v1/credits/recharge/alipay/notify",
+        data=notify_payload,
+    )
+    assert resp.status_code == 400
+    assert resp.text == "failure"
+
+    balance_resp = await client.get(
+        "/api/v1/credits/balance",
+        headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+    )
+    assert balance_resp.status_code == 200
+    assert balance_resp.json()["balance"] == 0

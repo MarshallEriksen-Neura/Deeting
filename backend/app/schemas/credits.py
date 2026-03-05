@@ -63,6 +63,18 @@ class CreditsRechargeRequest(BaseSchema):
     amount: float = Field(..., gt=0)
 
 
+class CreditsAlipayOrderRequest(BaseSchema):
+    amount: float = Field(..., gt=0)
+
+
+class CreditsAlipayOrderResponse(BaseSchema):
+    out_trade_no: str = Field(..., alias="outTradeNo")
+    pay_url: str = Field(..., alias="payUrl")
+    amount: float
+    currency: str
+    expected_credited_amount: float = Field(..., alias="expectedCreditedAmount")
+
+
 class CreditsRechargeResponse(BaseSchema):
     amount: float
     credited_amount: float = Field(..., alias="creditedAmount")

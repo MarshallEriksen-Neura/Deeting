@@ -11,6 +11,7 @@
       "rechargePolicy": "Rate: 1 {currency} = {ratio} credits",
       "feedback": {
         "invalidAmount": "Please enter a valid amount greater than 0",
+        "redirectingToAlipay": "Redirecting to Alipay...",
         "rechargeSuccess": "Recharge successful: +{amount} credits",
         "rechargeFailed": "Recharge failed"
       },

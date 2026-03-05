@@ -14,7 +14,18 @@ import { RefreshCw } from "lucide-react"
 import { GlassButton } from "@/components/ui/glass-button"
 
 // ... (keep helper functions mapFromHub, mapFromInstanceOnly, buildItems)
-const mapFromHub = (preset: ProviderHubResponse["providers"][number], inst: any) => ({
+type HubInstanceLike = {
+  id?: string
+  name?: string
+  icon?: string | null
+  latency_ms?: number
+  health_status?: string
+  is_enabled?: boolean
+  is_public?: boolean
+  sparkline?: number[]
+}
+
+const mapFromHub = (preset: ProviderHubResponse["providers"][number], inst: HubInstanceLike) => ({
   id: inst.id as string,
   name: inst.name as string,
   presetName: preset.name,
@@ -24,6 +35,7 @@ const mapFromHub = (preset: ProviderHubResponse["providers"][number], inst: any)
   latency_ms: inst.latency_ms ?? 0,
   health_status: inst.health_status ?? "unknown",
   is_enabled: inst.is_enabled ?? true,
+  is_public: Boolean(inst.is_public),
   models_count: inst.sparkline ? inst.sparkline.length : undefined,
   sparkline: inst.sparkline ?? [],
 })
@@ -38,6 +50,7 @@ const mapFromInstanceOnly = (inst: ProviderInstanceResponse) => ({
   latency_ms: inst.latency_ms ?? 0,
   health_status: inst.health_status ?? "unknown",
   is_enabled: inst.is_enabled ?? true,
+  is_public: Boolean(inst.is_public),
   models_count: inst.sparkline ? inst.sparkline.length : undefined,
   sparkline: inst.sparkline ?? [],
 })

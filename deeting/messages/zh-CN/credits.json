@@ -11,6 +11,7 @@
       "rechargePolicy": "比例：1 {currency} = {ratio} 积分",
       "feedback": {
         "invalidAmount": "请输入大于 0 的有效金额",
+        "redirectingToAlipay": "正在跳转支付宝支付...",
         "rechargeSuccess": "充值成功：+{amount} 积分",
         "rechargeFailed": "充值失败"
       },

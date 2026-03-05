@@ -20,6 +20,7 @@ import {
   fetchAdminProviderModels,
   fetchAdminProviderInstances,
   syncAdminProviderModels,
+  updateAdminProviderInstance,
   updateAdminProviderModel,
   type AdminProviderModelResponse,
   type ProviderInstanceItem,
@@ -61,6 +62,7 @@ export function PageContent() {
   const [modelFeedback, setModelFeedback] = useState<string | null>(null)
   const [isSyncingModels, setIsSyncingModels] = useState(false)
   const [modelEditorState, setModelEditorState] = useState<Record<string, ModelEditorState>>({})
+  const [publishingInstanceId, setPublishingInstanceId] = useState<string | null>(null)
 
   const {
     data,
@@ -237,6 +239,27 @@ export function PageContent() {
     }
   }
 
+  const handlePublishToggle = async (instance: ProviderInstanceItem, nextPublic: boolean) => {
+    if (publishingInstanceId) return
+    setPublishingInstanceId(instance.id)
+    setFeedback(null)
+    try {
+      await updateAdminProviderInstance(instance.id, { is_public: nextPublic })
+      await mutate()
+      setFeedback(
+        nextPublic
+          ? t("feedback.published", { name: instance.name })
+          : t("feedback.unpublished", { name: instance.name })
+      )
+    } catch (toggleError) {
+      const message =
+        toggleError instanceof Error ? toggleError.message : t("feedback.publishFailed")
+      setFeedback(message)
+    } finally {
+      setPublishingInstanceId(null)
+    }
+  }
+
   const statusColor: Record<string, string> = {
     up: "rgb(52,211,153)",
     active: "rgb(52,211,153)",
@@ -299,6 +322,24 @@ export function PageContent() {
           text={row.is_enabled ? t("enabled.enabled") : t("enabled.disabled")}
           tone={row.is_enabled ? "success" : "error"}
         />
+      ),
+    },
+    {
+      key: "is_public",
+      header: t("table.headers.publish"),
+      render: (row) => (
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={Boolean(row.is_public)}
+            onCheckedChange={(checked) => {
+              void handlePublishToggle(row, checked)
+            }}
+            disabled={publishingInstanceId === row.id}
+          />
+          <span className="text-xs text-[var(--muted)]">
+            {row.is_public ? t("publish.public") : t("publish.private")}
+          </span>
+        </div>
       ),
     },
     {

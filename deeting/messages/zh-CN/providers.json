@@ -101,6 +101,9 @@
     "list": {
       "latency": "延迟",
       "offline": "离线",
+      "badges": {
+        "public": "公共"
+      },
       "confirmRemove": "确定要删除该实例吗？操作不可撤销。",
       "confirmTitle": "确认删除",
       "actions": {

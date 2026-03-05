@@ -38,6 +38,7 @@ type InstanceRowData = {
   latency_ms?: number
   health_status?: string
   is_enabled?: boolean
+  is_public?: boolean
   models_count?: number
   sparkline?: number[]
 }
@@ -74,6 +75,7 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
   }, [data.sparkline, data.latency_ms])
 
   const isEnabled = data.is_enabled !== false
+  const isReadOnly = data.is_public === true
   const isOffline = (data.health_status || "").toLowerCase() === "down" || !isEnabled
 
   const menuId = React.useMemo(() => `provider-${data.id}-menu`, [data.id])
@@ -128,6 +130,11 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                     LOCAL
                   </Badge>
                 )}
+                {isReadOnly && (
+                  <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-sky-400/40 text-sky-300">
+                    {t("badges.public")}
+                  </Badge>
+                )}
               </h3>
               <p className="text-sm text-[var(--muted)]">{data.presetName}</p>
             </div>
@@ -163,6 +170,7 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
               <Switch
                 checked={isEnabled}
                 onCheckedChange={(v) => onToggle(data.id, v)}
+                disabled={isReadOnly}
               />
 
               <GlassDropdownMenu>
@@ -181,56 +189,60 @@ export default function ProviderInstanceRow({ data, index, onToggle, onDelete, o
                   id={`${menuId}-content`}
                   aria-labelledby={`${menuId}-trigger`}
                 >
-                  <GlassDropdownMenuItem onClick={() => onToggle(data.id, !isEnabled)}>
-                    <Settings2 className="size-4" />
-                    {isEnabled ? t("actions.disable") : t("actions.enable")}
-                  </GlassDropdownMenuItem>
+                  {!isReadOnly && (
+                    <GlassDropdownMenuItem onClick={() => onToggle(data.id, !isEnabled)}>
+                      <Settings2 className="size-4" />
+                      {isEnabled ? t("actions.disable") : t("actions.enable")}
+                    </GlassDropdownMenuItem>
+                  )}
                   {onViewModels && (
                     <GlassDropdownMenuItem onClick={() => onViewModels(data.id)}>
                       <Server className="size-4" />
                       {t("actions.models")}
                     </GlassDropdownMenuItem>
                   )}
-                  {onEdit && (
+                  {onEdit && !isReadOnly && (
                     <GlassDropdownMenuItem onClick={() => onEdit(data.id)}>
                       <Settings2 className="size-4" />
                       {t("actions.edit")}
                     </GlassDropdownMenuItem>
                   )}
-                  <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-                    <AlertDialogTrigger asChild>
-                      <GlassDropdownMenuItem
-                        className="text-red-600 focus:text-red-600"
-                        onSelect={(e) => {
-                          e.preventDefault()
-                          setConfirmOpen(true)
-                        }}
-                        >
-                          <Trash2 className="size-4" />
-                          {t("actions.remove")}
-                      </GlassDropdownMenuItem>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>{t("confirmTitle")}</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {t("confirmRemove")}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>{t("actions.cancel")}</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-red-600 hover:bg-red-500 text-white"
-                          onClick={() => {
-                            onDelete(data.id)
-                            setConfirmOpen(false)
+                  {!isReadOnly && (
+                    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                      <AlertDialogTrigger asChild>
+                        <GlassDropdownMenuItem
+                          className="text-red-600 focus:text-red-600"
+                          onSelect={(e) => {
+                            e.preventDefault()
+                            setConfirmOpen(true)
                           }}
-                        >
-                          {t("actions.remove")}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                          >
+                            <Trash2 className="size-4" />
+                            {t("actions.remove")}
+                        </GlassDropdownMenuItem>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{t("confirmTitle")}</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t("confirmRemove")}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{t("actions.cancel")}</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-500 text-white"
+                            onClick={() => {
+                              onDelete(data.id)
+                              setConfirmOpen(false)
+                            }}
+                          >
+                            {t("actions.remove")}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                 </GlassDropdownMenuContent>
               </GlassDropdownMenu>
             </div>

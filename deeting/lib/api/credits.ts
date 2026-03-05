@@ -65,6 +65,14 @@ export const CreditsRechargeResponseSchema = z.object({
   traceId: z.string(),
 })
 
+export const CreditsAlipayOrderResponseSchema = z.object({
+  outTradeNo: z.string(),
+  payUrl: z.string().url(),
+  amount: z.number(),
+  currency: z.string(),
+  expectedCreditedAmount: z.number(),
+})
+
 // Types
 export type CreditsBalance = z.infer<typeof CreditsBalanceSchema>
 export type CreditsConsumption = z.infer<typeof CreditsConsumptionSchema>
@@ -73,6 +81,7 @@ export type CreditsTransactionItem = z.infer<typeof CreditsTransactionItemSchema
 export type CreditsTransactions = z.infer<typeof CreditsTransactionsSchema>
 export type CreditsRechargePolicy = z.infer<typeof CreditsRechargePolicySchema>
 export type CreditsRechargeResponse = z.infer<typeof CreditsRechargeResponseSchema>
+export type CreditsAlipayOrderResponse = z.infer<typeof CreditsAlipayOrderResponseSchema>
 
 // =====================
 // API Functions
@@ -136,4 +145,15 @@ export async function rechargeCredits(amount: number): Promise<CreditsRechargeRe
     data: { amount },
   })
   return CreditsRechargeResponseSchema.parse(data)
+}
+
+export async function createAlipayRechargeOrder(
+  amount: number
+): Promise<CreditsAlipayOrderResponse> {
+  const data = await request<CreditsAlipayOrderResponse>({
+    url: `${CREDITS_BASE}/recharge/alipay/order`,
+    method: "POST",
+    data: { amount },
+  })
+  return CreditsAlipayOrderResponseSchema.parse(data)
 }

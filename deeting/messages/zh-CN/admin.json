@@ -475,7 +475,10 @@
       },
       "feedback": {
         "created": "已创建 Provider 实例：{name}",
-        "createFailed": "创建失败"
+        "createFailed": "创建失败",
+        "published": "已上架：{name}",
+        "unpublished": "已下架：{name}",
+        "publishFailed": "更新上架状态失败"
       },
       "table": {
         "headers": {
@@ -484,12 +487,17 @@
           "baseUrl": "基础地址",
           "priority": "优先级",
           "enabled": "启用状态",
+          "publish": "上架",
           "health": "健康状态",
           "latency": "延迟",
           "models": "模型数",
           "trend": "趋势"
         },
         "latencyMs": "{value}毫秒"
+      },
+      "publish": {
+        "public": "已上架",
+        "private": "未上架"
       },
       "form": {
         "presetSlug": "预设 slug",
