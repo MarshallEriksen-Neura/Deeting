@@ -299,6 +299,15 @@ mod tests {
                 Some("openai"),
                 None
             ),
+            "https://api.example.com/v1/custom/path"
+        );
+        assert_eq!(
+            build_upstream_endpoint(
+                "https://api.example.com/",
+                "/custom/path",
+                Some("openai"),
+                Some(false)
+            ),
             "https://api.example.com/custom/path"
         );
         assert_eq!(
