@@ -54,7 +54,7 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
         }
       }
 
-      await serviceSendMessage()
+      await serviceSendMessage(localSessionId)
     } else {
       await serviceSendMessage()
     }

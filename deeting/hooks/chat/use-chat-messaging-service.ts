@@ -439,7 +439,7 @@ export function useChatMessagingService() {
     }
   }, [appendMessageBlocks, mergeMessageMeta, setErrorMessage, setStatus])
 
-  const sendMessage = useCallback(async () => {
+  const sendMessage = useCallback(async (sessionIdOverride?: string | null) => {
     const trimmedInput = input.trim()
     if (!trimmedInput && attachments.length === 0) return
 
@@ -480,7 +480,7 @@ export function useChatMessagingService() {
     setIsLoading(true)
     clearStatus()
 
-    let resolvedSessionId = sessionId
+    let resolvedSessionId = sessionIdOverride ?? useChatStore.getState().sessionId ?? sessionId
     const storageKey = sessionStorageKey
     if (!resolvedSessionId) {
       const fallbackSessionId = resolveSessionIdFromBrowser(storageKey, { allowStorageFallback: false })
