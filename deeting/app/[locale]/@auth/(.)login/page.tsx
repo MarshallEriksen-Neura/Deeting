@@ -1,5 +1,6 @@
 "use client"
 
+import { useCallback, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { LoginModal } from "@/components/auth"
 
@@ -12,32 +13,38 @@ export default function LoginInterceptPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get("callbackUrl")
+  const [open, setOpen] = useState(true)
+  const hasNavigatedRef = useRef(false)
 
-  const getSafeTarget = () => {
+  const getSafeTarget = useCallback(() => {
     if (!callbackUrl) return "/"
     if (!callbackUrl.startsWith("/") || callbackUrl.startsWith("//")) return "/"
     if (/(^|\/)login(?:$|[/?#])/i.test(callbackUrl)) return "/"
     return callbackUrl
-  }
+  }, [callbackUrl])
 
-  const navigateAwayFromLogin = () => {
+  const navigateAwayFromLogin = useCallback(() => {
+    if (hasNavigatedRef.current) return
+    hasNavigatedRef.current = true
+    setOpen(false)
     router.replace(getSafeTarget())
     router.refresh()
-  }
+  }, [getSafeTarget, router])
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = useCallback(() => {
     navigateAwayFromLogin()
-  }
+  }, [navigateAwayFromLogin])
 
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) {
       navigateAwayFromLogin()
     }
-  }
+  }, [navigateAwayFromLogin])
 
   return (
     <LoginModal
-      open={true}
+      open={open}
       onOpenChange={handleOpenChange}
       onLoginSuccess={handleLoginSuccess}
     />
