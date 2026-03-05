@@ -29,10 +29,17 @@ from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
+from app.repositories.provider_model_entitlement_repository import (
+    ProviderModelEntitlementRepository,
+)
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.services.providers.auth_resolver import resolve_auth_for_protocol
 from app.services.providers.config_utils import deep_merge
 from app.services.providers.upstream_url import build_upstream_url
+from app.utils.provider_model_access import (
+    parse_unlock_price_credits,
+    requires_model_purchase,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +95,7 @@ class RoutingSelector:
         self.preset_repo = ProviderPresetRepository(session)
         self.instance_repo = ProviderInstanceRepository(session)
         self.model_repo = ProviderModelRepository(session)
+        self.entitlement_repo = ProviderModelEntitlementRepository(session)
         self.credential_repo = ProviderCredentialRepository(session)
         self.bandit_repo = BanditRepository(session)
 
@@ -335,6 +343,7 @@ class RoutingSelector:
         if not instance or not instance.is_enabled:
             return results
 
+        user_uuid = None
         if user_id is not None:
             try:
                 user_uuid = uuid.UUID(str(user_id))
@@ -347,6 +356,18 @@ class RoutingSelector:
                 else:
                     if instance.user_id != user_uuid:
                         return results
+            unlock_price = parse_unlock_price_credits(model.pricing_config or {})
+            if requires_model_purchase(
+                instance_owner_id=instance.user_id,
+                user_id=user_uuid,
+                unlock_price_credits=unlock_price,
+            ):
+                is_purchased = await self.entitlement_repo.has_entitlement(
+                    user_id=user_uuid,
+                    provider_model_id=model.id,
+                )
+                if not is_purchased:
+                    return results
 
         preset = await self.preset_repo.get_by_slug(instance.preset_slug)
         if not preset or not preset.is_active:

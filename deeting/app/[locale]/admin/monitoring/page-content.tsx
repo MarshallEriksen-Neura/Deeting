@@ -2,7 +2,6 @@
 
 import { useLocale, useTranslations } from "next-intl"
 import {
-  Eye,
   Activity,
   Zap,
   Timer,
@@ -10,7 +9,6 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import {
-  AdminPageShell,
   AdminStatCards,
   AdminStatusBadge,
   getStatusTone,
@@ -27,7 +25,6 @@ import { useSmartRouterStats } from "@/lib/swr/use-smart-router-stats"
 import { useTokenThroughput } from "@/lib/swr/use-token-throughput"
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.monitoringPage")
   const locale = useLocale()
   const numberFormatter = new Intl.NumberFormat(locale)
@@ -119,11 +116,7 @@ export function PageContent() {
   }
 
   return (
-    <AdminPageShell
-      title={tAdmin("monitoring.title")}
-      description={tAdmin("monitoring.description")}
-      icon={Eye}
-    >
+    <>
       <AdminStatCards stats={stats} columns={4} />
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -279,6 +272,6 @@ export function PageContent() {
           </table>
         </div>
       </GlassCard>
-    </AdminPageShell>
+    </>
   )
 }

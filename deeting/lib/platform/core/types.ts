@@ -1,7 +1,8 @@
 import type { 
   ProviderHubResponse, ProviderCard, ProviderVerifyRequest, ProviderVerifyResponse,
   ProviderInstanceCreate, ProviderInstanceResponse, ProviderInstanceUpdate, ProviderModelResponse,
-  ProviderModelUpdate, ProviderModelTestRequest, ProviderModelTestResponse
+  ProviderModelUpdate, ProviderModelTestRequest, ProviderModelTestResponse,
+  ProviderModelPurchaseStatus
 } from '@/lib/api/providers';
 import type {
   ApiKeyListResponse, ApiKey, CreateApiKeyRequest, CreateApiKeyResponse,
@@ -36,6 +37,8 @@ export interface IProviderService {
   quickAddModels(instanceId: string, payload: { models: string[]; capability?: string }): Promise<ProviderModelResponse[]>;
   updateModel(modelId: string, payload: ProviderModelUpdate): Promise<ProviderModelResponse>;
   testModel(modelId: string, payload?: ProviderModelTestRequest): Promise<ProviderModelTestResponse>;
+  getModelPurchaseStatus(modelId: string): Promise<ProviderModelPurchaseStatus>;
+  purchaseModel(modelId: string): Promise<ProviderModelPurchaseStatus>;
 }
 
 export interface IApiKeyService {

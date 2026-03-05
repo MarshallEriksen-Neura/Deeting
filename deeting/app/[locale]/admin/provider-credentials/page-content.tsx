@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Key } from "lucide-react"
+
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -32,7 +31,6 @@ function formatDate(value: string, locale: string) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.providerCredentialsPage")
   const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
@@ -189,11 +187,7 @@ export function PageContent() {
   const hasError = instancesError || credentialError
 
   return (
-    <AdminPageShell
-      title={tAdmin("providerCredentials.title")}
-      description={tAdmin("providerCredentials.description")}
-      icon={Key}
-    >
+    <>
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-4">
           <select
@@ -271,6 +265,6 @@ export function PageContent() {
           </button>
         )}
       />
-    </AdminPageShell>
+    </>
   )
 }

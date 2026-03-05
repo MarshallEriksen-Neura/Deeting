@@ -5,7 +5,7 @@ import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
 import { RefreshCw, AlertCircle, Sparkles } from "lucide-react"
 
-import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels } from "@/hooks/use-providers"
+import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels, useProviderModelPurchase } from "@/hooks/use-providers"
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
 import { ModelEmptyState } from "./empty-state"
@@ -60,6 +60,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const { update: updateModel } = useUpdateProviderModel()
   const { test: testModelApi } = useTestProviderModel()
   const { quickAdd } = useQuickAddProviderModels()
+  const { purchase: purchaseModel } = useProviderModelPurchase()
 
   // State
   const [isSyncing, setIsSyncing] = React.useState(false)
@@ -68,6 +69,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const [quickAddOpen, setQuickAddOpen] = React.useState(false)
   const [quickAddInput, setQuickAddInput] = React.useState("")
   const [quickAddLoading, setQuickAddLoading] = React.useState(false)
+  const [purchasingModelUuid, setPurchasingModelUuid] = React.useState<string | null>(null)
   const [filters, setFilters] = React.useState<ModelFilterState>({
     search: "",
     capabilities: [],
@@ -99,7 +101,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         last_synced_at: raw.updated_at,
         theme_color: raw.theme_color || undefined,
         description: raw.description || undefined,
-        icon: raw.icon || undefined
+        icon: raw.icon || undefined,
+        is_public: raw.is_public ?? false,
+        has_credentials: raw.has_credentials ?? undefined,
       }
     },
     [instances, instanceId, normalizeStatus]
@@ -191,6 +195,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           output: outputPrice,
         },
         is_active: m.is_active,
+        is_locked: m.is_locked ?? false,
+        is_purchased: m.is_purchased ?? true,
+        unlock_price_credits: m.unlock_price_credits ?? null,
         upstream_path: m.upstream_path,
         request_url: requestUrl,
         weight: toNumber(m.weight, 0),
@@ -207,7 +214,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         deprecated_at: typeof rawMeta.deprecated_at === 'string' ? rawMeta.deprecated_at : undefined,
       }
     },
-    [toNumber]
+    [buildRequestUrl, instance?.base_url, toNumber]
   )
 
   const normalizedModels = React.useMemo<ProviderModel[]>(
@@ -256,7 +263,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         )
         await mutateModels()
         toast.success(t("filter.batchSuccess", { count: filteredModels.length }))
-      } catch (err) {
+      } catch {
         toast.error(t("filter.batchFailed"))
       }
     },
@@ -268,7 +275,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       await updateModel(model.uuid, { is_active: active })
       await mutateModels()
       toast.success(t("toast.updateSuccess"))
-    } catch (err) {
+    } catch {
       toast.error(t("toast.updateFailed"))
     }
   }, [updateModel, mutateModels, t])
@@ -278,7 +285,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       await updateModel(model.uuid, { display_name: alias })
       await mutateModels()
       toast.success(t("toast.updateSuccess"))
-    } catch (err) {
+    } catch {
       toast.error(t("toast.updateFailed"))
     }
   }, [updateModel, mutateModels, t])
@@ -315,6 +322,23 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     setTestModel(model)
   }
 
+  const handlePurchaseModel = React.useCallback(
+    async (model: ProviderModel) => {
+      try {
+        setPurchasingModelUuid(model.uuid)
+        await purchaseModel(model.uuid)
+        await mutateModels()
+        toast.success(t("toast.purchaseSuccess"))
+      } catch (err) {
+        const detail = getErrorMessage(err)
+        toast.error(detail ? `${t("toast.purchaseFailed")}: ${detail}` : t("toast.purchaseFailed"))
+      } finally {
+        setPurchasingModelUuid(null)
+      }
+    },
+    [mutateModels, purchaseModel, t]
+  )
+
   const parseModelsInput = React.useCallback((value: string) => {
     return value
       .split(/[\n,]+/)
@@ -335,7 +359,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       toast.success(t("quickAdd.toastSuccess", { count: res.length }))
       setQuickAddOpen(false)
       setQuickAddInput("")
-    } catch (err) {
+    } catch {
       toast.error(t("quickAdd.toastFailed"))
     } finally {
       setQuickAddLoading(false)
@@ -453,6 +477,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           onToggleActive={handleToggleActive}
           onUpdateAlias={handleUpdateAlias}
           onSave={handleSaveConfig}
+          onPurchase={handlePurchaseModel}
+          readOnly={instance?.is_public === true}
+          purchasingModelUuid={purchasingModelUuid}
         />
       ) : (
         <ModelEmptyState 

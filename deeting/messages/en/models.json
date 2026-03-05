@@ -13,7 +13,9 @@
       "syncSuccess": "Models synced successfully",
       "syncFailed": "Failed to sync models",
       "updateSuccess": "Model updated successfully",
-      "updateFailed": "Failed to update model"
+      "updateFailed": "Failed to update model",
+      "purchaseSuccess": "Model unlocked successfully",
+      "purchaseFailed": "Failed to unlock model"
     },
     "confirmDelete": "Are you sure you want to delete this provider instance?",
     "page": {
@@ -131,6 +133,10 @@
         "setAlias": "Set alias...",
         "noAlias": "No alias",
         "deprecated": "Deprecated",
+        "locked": "Locked",
+        "unlockPrice": "Unlock: {price} credits",
+        "purchase": "Unlock",
+        "purchasing": "Unlocking...",
         "disable": "Disable model",
         "enable": "Enable model",
         "test": "Test",

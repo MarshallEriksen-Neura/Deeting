@@ -73,6 +73,9 @@ from app.repositories.provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
+from app.repositories.provider_model_entitlement_repository import (
+    ProviderModelEntitlementRepository,
+)
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.schemas.bandit import (
     BanditReportResponse,
@@ -116,6 +119,10 @@ from app.services.workflow.stream_billing import stream_billing_callback
 from app.services.workflow.steps.upstream_call import (
     StreamTokenAccumulator,
     stream_with_billing,
+)
+from app.utils.provider_model_access import (
+    parse_unlock_price_credits,
+    requires_model_purchase,
 )
 
 logger = logging.getLogger(__name__)
@@ -1021,6 +1028,7 @@ async def list_models(
     preset_repo = ProviderPresetRepository(db)
     instance_repo = ProviderInstanceRepository(db)
     model_repo = ProviderModelRepository(db)
+    entitlement_repo = ProviderModelEntitlementRepository(db)
 
     logger.info(f"internal_models_list start user_id={user.id}")
     instances = await instance_repo.get_available_instances(
@@ -1066,10 +1074,29 @@ async def list_models(
     skipped_preset_missing = 0
     skipped_preset_inactive = 0
     skipped_capability_mismatch = 0
+    skipped_locked_not_purchased = 0
     added_models = 0
     logged_missing_preset_slugs: set[str] = set()
     grouped: dict[str, dict[str, Any]] = {}
     capability_filter = set(expand_capabilities(capability)) if capability else set()
+    lockable_model_ids: list[str] = []
+    for model in models:
+        inst = inst_map.get(str(model.instance_id))
+        if not inst:
+            continue
+        unlock_price = parse_unlock_price_credits(model.pricing_config or {})
+        if requires_model_purchase(
+            instance_owner_id=inst.user_id,
+            user_id=user.id,
+            unlock_price_credits=unlock_price,
+        ):
+            lockable_model_ids.append(str(model.id))
+
+    purchased_model_ids = await entitlement_repo.list_purchased_model_ids(
+        user_id=user.id,
+        provider_model_ids=lockable_model_ids,
+    )
+
     for m in models:
         # Check if model has any of the requested capabilities
         routing_config = m.routing_config if isinstance(m.routing_config, dict) else {}
@@ -1102,6 +1129,14 @@ async def list_models(
             continue
         if not m.is_active:
             skipped_inactive_model += 1
+            continue
+        unlock_price = parse_unlock_price_credits(m.pricing_config or {})
+        if requires_model_purchase(
+            instance_owner_id=inst.user_id,
+            user_id=user.id,
+            unlock_price_credits=unlock_price,
+        ) and str(m.id) not in purchased_model_ids:
+            skipped_locked_not_purchased += 1
             continue
         if inst.preset_slug not in preset_cache:
             preset_cache[inst.preset_slug] = await preset_repo.get_by_slug(
@@ -1161,7 +1196,8 @@ async def list_models(
             f"skipped_missing_instance={skipped_missing_instance} "
             f"skipped_inactive_model={skipped_inactive_model} "
             f"skipped_preset_missing={skipped_preset_missing} "
-            f"skipped_preset_inactive={skipped_preset_inactive}"
+            f"skipped_preset_inactive={skipped_preset_inactive} "
+            f"skipped_locked_not_purchased={skipped_locked_not_purchased}"
         )
     else:
         logger.info(

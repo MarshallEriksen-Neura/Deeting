@@ -68,7 +68,12 @@ from .notification import (
     NotificationReceipt,
     NotificationType,
 )
-from .provider_instance import ProviderCredential, ProviderInstance, ProviderModel
+from .provider_instance import (
+    ProviderCredential,
+    ProviderInstance,
+    ProviderModel,
+    ProviderModelEntitlement,
+)
 from .provider_preset import ProviderPreset
 from .registration_window import RegistrationWindow, RegistrationWindowStatus
 from .review import ReviewStatus, ReviewTask
@@ -97,6 +102,7 @@ __all__ = [
     "ProviderPreset",
     "ProviderInstance",
     "ProviderModel",
+    "ProviderModelEntitlement",
     "ProviderCredential",
     "UpstreamSecret",
     "GatewayLog",

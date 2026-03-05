@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Users, X } from "lucide-react"
+import { X } from "lucide-react"
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminStatusBadge,
   getStatusTone,
@@ -129,7 +128,6 @@ function UserDetailDrawer({
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.usersPage")
   const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
@@ -268,11 +266,7 @@ export function PageContent() {
   }
 
   return (
-    <AdminPageShell
-      title={tAdmin("users.title")}
-      description={tAdmin("users.description")}
-      icon={Users}
-    >
+    <>
       {/* 统计卡片 */}
       <UserStats users={allRows} />
 
@@ -344,6 +338,6 @@ export function PageContent() {
         locale={locale}
         onClose={() => setSelectedUserId(null)}
       />
-    </AdminPageShell>
+    </>
   )
 }

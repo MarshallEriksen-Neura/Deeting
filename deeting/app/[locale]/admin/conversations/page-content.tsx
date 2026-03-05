@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { MessageSquare } from "lucide-react"
+
 import {
-  AdminPageShell,
   AdminStatCards,
   AdminDataTable,
   AdminFilterBar,
@@ -54,7 +53,6 @@ function toIsoDateTime(value: string): string | undefined {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.conversationsPage")
   const locale = useLocale()
   const numberFormatter = new Intl.NumberFormat(locale)
@@ -439,7 +437,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell title={tAdmin("conversations.title")} description={tAdmin("conversations.description")} icon={MessageSquare}>
+    <>
       <AdminStatCards stats={stats} columns={tauriRuntime ? 5 : 4} />
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
@@ -680,6 +678,6 @@ export function PageContent() {
           />
         </div>
       ) : null}
-    </AdminPageShell>
+    </>
   )
 }

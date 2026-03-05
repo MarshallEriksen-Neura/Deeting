@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { KeyRound } from "lucide-react"
+
 import {
-  AdminPageShell,
   AdminStatCards,
   AdminDataTable,
   AdminFilterBar,
@@ -36,7 +35,6 @@ function formatDate(value: string, locale: string) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.apiKeysPage")
   const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
@@ -253,11 +251,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={tAdmin("apiKeys.title")}
-      description={tAdmin("apiKeys.description")}
-      icon={KeyRound}
-    >
+    <>
       <AdminStatCards stats={stats} columns={3} />
 
       <GlassCard padding="default" hover="none">
@@ -388,6 +382,6 @@ export function PageContent() {
           </div>
         )}
       />
-    </AdminPageShell>
+    </>
   )
 }

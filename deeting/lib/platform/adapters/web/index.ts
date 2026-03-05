@@ -38,6 +38,8 @@ export const webPlatform: IPlatform = {
     quickAddModels: providerApi.quickAddProviderModels,
     updateModel: providerApi.updateProviderModel,
     testModel: providerApi.testProviderModel,
+    getModelPurchaseStatus: providerApi.fetchProviderModelPurchaseStatus,
+    purchaseModel: providerApi.purchaseProviderModel,
   },
 
   apiKey: {

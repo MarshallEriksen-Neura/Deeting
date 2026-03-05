@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -7,11 +8,21 @@ from app.core.cache import cache
 from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models.provider_instance import ProviderModel
+from app.repositories import (
+    BillingRepository,
+    ProviderModelEntitlementRepository,
+    ProviderModelRepository,
+)
+from app.repositories.billing_repository import (
+    DuplicateTransactionError,
+    InsufficientBalanceError,
+)
 from app.schemas.provider_hub import ProviderCard, ProviderHubResponse
 from app.schemas.provider_instance import (
     ProviderInstanceCreate,
     ProviderInstanceResponse,
     ProviderInstanceUpdate,
+    ProviderModelPurchaseStatusResponse,
     ProviderModelResponse,
     ProviderModelsQuickAddRequest,
     ProviderModelsUpsertRequest,
@@ -24,8 +35,55 @@ from app.schemas.provider_instance import (
 from app.services.providers.provider_hub_service import ProviderHubService
 from app.services.providers.health_monitor import HealthMonitorService
 from app.services.providers.provider_instance_service import ProviderInstanceService
+from app.utils.provider_model_access import (
+    parse_unlock_price_credits,
+    requires_model_purchase,
+)
 
 router = APIRouter(prefix="/providers", tags=["Providers"])
+
+
+def _build_model_purchase_trace_id(user_id: uuid.UUID, model_id: uuid.UUID) -> str:
+    payload = f"{user_id}:{model_id}".encode("utf-8")
+    digest = hashlib.sha256(payload).hexdigest()[:40]
+    return f"model-purchase-{digest}"
+
+
+async def _resolve_purchase_status(
+    *,
+    db: AsyncSession,
+    model_uuid: uuid.UUID,
+    user_id: uuid.UUID,
+) -> tuple[ProviderModel, ProviderModelPurchaseStatusResponse]:
+    model_repo = ProviderModelRepository(db)
+    entitlement_repo = ProviderModelEntitlementRepository(db)
+    instance_svc = ProviderInstanceService(db)
+
+    model = await model_repo.get(model_uuid)
+    if not model:
+        raise ValueError("model_not_found")
+
+    instance = await instance_svc.assert_instance_read_access(model.instance_id, user_id)
+    unlock_price = parse_unlock_price_credits(model.pricing_config or {})
+    purchase_required = requires_model_purchase(
+        instance_owner_id=instance.user_id,
+        user_id=user_id,
+        unlock_price_credits=unlock_price,
+    )
+    is_purchased = True
+    if purchase_required:
+        is_purchased = await entitlement_repo.has_entitlement(
+            user_id=user_id,
+            provider_model_id=model.id,
+        )
+
+    return model, ProviderModelPurchaseStatusResponse(
+        model_id=model.id,
+        unlock_price_credits=(float(unlock_price) if unlock_price is not None else None),
+        currency="credits",
+        is_purchased=is_purchased,
+        is_locked=(purchase_required and not is_purchased),
+    )
 
 
 @router.get("/hub", response_model=ProviderHubResponse)
@@ -227,14 +285,168 @@ async def list_models(
     except Exception:
         raise HTTPException(status_code=400, detail="invalid instance_id")
 
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, uuid.UUID):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
     svc = ProviderInstanceService(db)
     try:
-        models = await svc.list_models(instance_uuid, getattr(user, "id", None))
+        models = await svc.list_models(instance_uuid, user_id)
+        instance = await svc.assert_instance_read_access(instance_uuid, user_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="instance not found")
     except PermissionError:
         raise HTTPException(status_code=403, detail="forbidden")
-    return models
+
+    entitlement_repo = ProviderModelEntitlementRepository(db)
+    lockable_model_ids: list[str] = []
+    unlock_price_by_model_id: dict[str, float] = {}
+
+    for model in models:
+        unlock_price = parse_unlock_price_credits(model.pricing_config or {})
+        if requires_model_purchase(
+            instance_owner_id=instance.user_id,
+            user_id=user_id,
+            unlock_price_credits=unlock_price,
+        ):
+            lockable_model_ids.append(str(model.id))
+            if unlock_price is not None:
+                unlock_price_by_model_id[str(model.id)] = float(unlock_price)
+
+    purchased_model_ids = await entitlement_repo.list_purchased_model_ids(
+        user_id=user_id,
+        provider_model_ids=lockable_model_ids,
+    )
+
+    response_models: list[ProviderModelResponse] = []
+    for model in models:
+        model_id = str(model.id)
+        is_lockable = model_id in lockable_model_ids
+        is_purchased = (not is_lockable) or model_id in purchased_model_ids
+        dto = ProviderModelResponse.model_validate(model)
+        dto.unlock_price_credits = unlock_price_by_model_id.get(model_id)
+        dto.currency = "credits"
+        dto.is_purchased = is_purchased
+        dto.is_locked = is_lockable and not is_purchased
+        response_models.append(dto)
+    return response_models
+
+
+@router.get(
+    "/models/{model_id}/purchase-status",
+    response_model=ProviderModelPurchaseStatusResponse,
+)
+async def get_model_purchase_status(
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        model_uuid = uuid.UUID(model_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid model_id")
+
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, uuid.UUID):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    try:
+        _model, status_payload = await _resolve_purchase_status(
+            db=db,
+            model_uuid=model_uuid,
+            user_id=user_id,
+        )
+        return status_payload
+    except ValueError as exc:
+        if str(exc) == "model_not_found":
+            raise HTTPException(status_code=404, detail="model not found")
+        raise HTTPException(status_code=400, detail=str(exc))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+
+@router.post(
+    "/models/{model_id}/purchase",
+    response_model=ProviderModelPurchaseStatusResponse,
+)
+async def purchase_model(
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    try:
+        model_uuid = uuid.UUID(model_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid model_id")
+
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, uuid.UUID):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    try:
+        model, status_payload = await _resolve_purchase_status(
+            db=db,
+            model_uuid=model_uuid,
+            user_id=user_id,
+        )
+        if not status_payload.is_locked:
+            return status_payload
+
+        unlock_price = parse_unlock_price_credits(model.pricing_config or {})
+        if unlock_price is None or unlock_price <= 0:
+            return status_payload
+
+        trace_id = _build_model_purchase_trace_id(user_id=user_id, model_id=model.id)
+        billing_repo = BillingRepository(db)
+        entitlement_repo = ProviderModelEntitlementRepository(db)
+
+        try:
+            await billing_repo.deduct(
+                tenant_id=user_id,
+                amount=unlock_price,
+                trace_id=trace_id,
+                provider="model_market",
+                model=model.model_id,
+                preset_item_id=model.id,
+                description=f"Model unlock purchase model_id={model.model_id}",
+                allow_negative=False,
+            )
+        except DuplicateTransactionError:
+            pass
+
+        await entitlement_repo.create_if_absent(
+            user_id=user_id,
+            provider_model_id=model.id,
+            purchase_price=unlock_price,
+            currency="credits",
+            source_tx_trace_id=trace_id,
+        )
+        await db.commit()
+
+        _model, refreshed = await _resolve_purchase_status(
+            db=db,
+            model_uuid=model_uuid,
+            user_id=user_id,
+        )
+        return refreshed
+    except InsufficientBalanceError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "INSUFFICIENT_BALANCE",
+                "required": float(exc.required),
+                "available": float(exc.available),
+            },
+        )
+    except ValueError as exc:
+        await db.rollback()
+        if str(exc) == "model_not_found":
+            raise HTTPException(status_code=404, detail="model not found")
+        raise HTTPException(status_code=400, detail=str(exc))
+    except PermissionError:
+        await db.rollback()
+        raise HTTPException(status_code=403, detail="forbidden")
 
 
 @router.patch("/models/{model_id}", response_model=ProviderModelResponse)

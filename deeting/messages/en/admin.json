@@ -524,6 +524,7 @@
           "active": "Active",
           "inputPer1k": "Input / 1K",
           "outputPer1k": "Output / 1K",
+          "unlockPriceCredits": "Unlock Price (Credits)",
           "actions": "Actions"
         },
         "feedback": {

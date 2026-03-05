@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Cloud } from "lucide-react"
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -30,6 +28,7 @@ type ModelEditorState = {
   isActive: boolean
   inputPer1k: string
   outputPer1k: string
+  unlockPriceCredits: string
   saving: boolean
 }
 
@@ -46,7 +45,6 @@ function parsePrice(value: string): number | null {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.providerInstancesPage")
   const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
@@ -113,6 +111,7 @@ export function PageContent() {
         outputPer1k: toPriceInput(
           pricing.output_per_1k ?? pricing.output ?? pricing.output_price
         ),
+        unlockPriceCredits: toPriceInput(pricing.unlock_price_credits),
         saving: false,
       }
     }
@@ -170,7 +169,8 @@ export function PageContent() {
 
     const inputPer1k = parsePrice(draft.inputPer1k)
     const outputPer1k = parsePrice(draft.outputPer1k)
-    if (inputPer1k === null || outputPer1k === null) {
+    const unlockPriceCredits = parsePrice(draft.unlockPriceCredits)
+    if (inputPer1k === null || outputPer1k === null || unlockPriceCredits === null) {
       setModelFeedback(t("models.feedback.invalidPricing"))
       return
     }
@@ -189,6 +189,7 @@ export function PageContent() {
         ...(model.pricing_config ?? {}),
         input_per_1k: inputPer1k,
         output_per_1k: outputPer1k,
+        unlock_price_credits: unlockPriceCredits,
       }
       await updateAdminProviderModel(model.id, {
         is_active: draft.isActive,
@@ -404,11 +405,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={tAdmin("providerInstances.title")}
-      description={tAdmin("providerInstances.description")}
-      icon={Cloud}
-    >
+    <>
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-5">
           <input
@@ -533,25 +530,26 @@ export function PageContent() {
                   <th className="px-2 py-2">{t("models.table.active")}</th>
                   <th className="px-2 py-2">{t("models.table.inputPer1k")}</th>
                   <th className="px-2 py-2">{t("models.table.outputPer1k")}</th>
+                  <th className="px-2 py-2">{t("models.table.unlockPriceCredits")}</th>
                   <th className="px-2 py-2 text-right">{t("models.table.actions")}</th>
                 </tr>
               </thead>
               <tbody>
                 {modelsLoading ? (
                   <tr>
-                    <td colSpan={5} className="px-2 py-6 text-center text-xs text-[var(--muted)]">
+                    <td colSpan={6} className="px-2 py-6 text-center text-xs text-[var(--muted)]">
                       {t("models.empty.loading")}
                     </td>
                   </tr>
                 ) : modelsError ? (
                   <tr>
-                    <td colSpan={5} className="px-2 py-6 text-center text-xs text-rose-300">
+                    <td colSpan={6} className="px-2 py-6 text-center text-xs text-rose-300">
                       {t("models.empty.failed")}
                     </td>
                   </tr>
                 ) : (models ?? []).length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-2 py-6 text-center text-xs text-[var(--muted)]">
+                    <td colSpan={6} className="px-2 py-6 text-center text-xs text-[var(--muted)]">
                       {t("models.empty.noData")}
                     </td>
                   </tr>
@@ -595,6 +593,16 @@ export function PageContent() {
                             placeholder="0"
                           />
                         </td>
+                        <td className="px-2 py-2">
+                          <input
+                            value={draft.unlockPriceCredits}
+                            onChange={(event) => {
+                              handleModelStateChange(model.id, { unlockPriceCredits: event.target.value })
+                            }}
+                            className="h-8 w-full min-w-[120px] rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+                            placeholder="0"
+                          />
+                        </td>
                         <td className="px-2 py-2 text-right">
                           <button
                             onClick={() => void handleSaveModel(model)}
@@ -613,6 +621,6 @@ export function PageContent() {
           </div>
         </GlassCard>
       )}
-    </AdminPageShell>
+    </>
   )
 }

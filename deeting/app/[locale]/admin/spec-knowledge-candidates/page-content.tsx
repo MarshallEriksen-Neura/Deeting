@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Tags, Check, X } from "lucide-react"
+import { Check, X } from "lucide-react"
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -26,7 +25,6 @@ function formatDate(value: string, locale: string) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.specKnowledgePage")
   const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
@@ -222,11 +220,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={tAdmin("specKnowledge.title")}
-      description={tAdmin("specKnowledge.description")}
-      icon={Tags}
-    >
+    <>
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
@@ -285,6 +279,6 @@ export function PageContent() {
           ) : null
         }
       />
-    </AdminPageShell>
+    </>
   )
 }

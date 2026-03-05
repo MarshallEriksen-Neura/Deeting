@@ -3,10 +3,9 @@
 import { useCallback, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Plug, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -36,7 +35,6 @@ function toTags(skill: SkillItem): string[] {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.skillsPage")
   const locale = useLocale()
   const numberFormatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1, minimumFractionDigits: 1 })
@@ -189,11 +187,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={tAdmin("skills.title")}
-      description={tAdmin("skills.description")}
-      icon={Plug}
-    >
+    <>
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
@@ -261,6 +255,6 @@ export function PageContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminPageShell>
+    </>
   )
 }

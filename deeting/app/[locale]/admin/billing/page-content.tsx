@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { CreditCard } from "lucide-react"
 import {
-  AdminPageShell,
   AdminStatCards,
   AdminDataTable,
   AdminFilterBar,
@@ -31,7 +29,6 @@ function shortId(value?: string | null) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.billingPage")
   const locale = useLocale()
   const numberFormatter = new Intl.NumberFormat(locale)
@@ -337,7 +334,7 @@ export function PageContent() {
   }
 
   return (
-    <AdminPageShell title={tAdmin("billing.title")} description={tAdmin("billing.description")} icon={CreditCard}>
+    <>
       <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-[var(--foreground)]">{t("rechargePolicy.title")}</h3>
@@ -448,6 +445,6 @@ export function PageContent() {
           />
         </>
       )}
-    </AdminPageShell>
+    </>
   )
 }

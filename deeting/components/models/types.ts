@@ -46,6 +46,12 @@ export interface ProviderModel {
   }
   /** Whether model is active in the gateway */
   is_active: boolean
+  /** Whether this model is locked before purchase */
+  is_locked?: boolean
+  /** Whether current user has purchased this model */
+  is_purchased?: boolean
+  /** One-time unlock price in credits */
+  unlock_price_credits?: number | null
   /** Upstream path for building request URL */
   upstream_path?: string
   /** Fully resolved request URL preview */
@@ -113,6 +119,10 @@ export interface ProviderInstance {
   description?: string
   /** Is this instance enabled */
   is_enabled: boolean
+  /** Whether this is a public instance (read-only for regular users) */
+  is_public?: boolean
+  /** Whether default credentials exist */
+  has_credentials?: boolean
   /** Health check interval in seconds */
   health_check_interval?: number
 }

@@ -12,7 +12,8 @@ import {
   type ProviderModelResponse,
   type ProviderModelUpdate,
   type ProviderModelTestRequest,
-  type ProviderModelTestResponse
+  type ProviderModelTestResponse,
+  type ProviderModelPurchaseStatus
 } from "@/lib/api/providers"
 
 const EMPTY_ARRAY: never[] = []
@@ -235,4 +236,18 @@ export function useTestProviderModel() {
   }
 
   return { test }
+}
+
+export function useProviderModelPurchase() {
+  const { provider } = usePlatform()
+
+  const getStatus = async (modelId: string): Promise<ProviderModelPurchaseStatus> => {
+    return await provider.getModelPurchaseStatus(modelId)
+  }
+
+  const purchase = async (modelId: string): Promise<ProviderModelPurchaseStatus> => {
+    return await provider.purchaseModel(modelId)
+  }
+
+  return { getStatus, purchase }
 }

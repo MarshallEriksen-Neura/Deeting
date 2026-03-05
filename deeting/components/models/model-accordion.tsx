@@ -20,6 +20,9 @@ interface ModelAccordionProps {
   onToggleActive: (model: ProviderModel, active: boolean) => void
   onUpdateAlias: (model: ProviderModel, alias: string) => void
   onSave?: (model: ProviderModel, payload: ProviderModelUpdate) => Promise<void>
+  onPurchase?: (model: ProviderModel) => Promise<void> | void
+  readOnly?: boolean
+  purchasingModelUuid?: string | null
 }
 
 export const ModelAccordion = React.memo(function ModelAccordion({
@@ -28,12 +31,16 @@ export const ModelAccordion = React.memo(function ModelAccordion({
   onToggleActive,
   onUpdateAlias,
   onSave,
+  onPurchase,
+  readOnly = false,
+  purchasingModelUuid = null,
 }: ModelAccordionProps) {
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
 
   const handleRowClick = React.useCallback((model: ProviderModel) => {
+    if (readOnly || model.is_locked) return
     setExpandedId((prev) => (prev === model.id ? null : model.id))
-  }, [])
+  }, [readOnly])
 
   const handleOpenChange = React.useCallback(
     (modelId: string, open: boolean) => {
@@ -58,11 +65,14 @@ export const ModelAccordion = React.memo(function ModelAccordion({
               onTest={onTest}
               onToggleActive={onToggleActive}
               onUpdateAlias={onUpdateAlias}
+              onPurchase={onPurchase}
               onRowClick={handleRowClick}
               isExpanded={isExpanded}
+              readOnly={readOnly}
+              isPurchasing={purchasingModelUuid === model.uuid}
             />
             <AnimatePresence initial={false}>
-              {isExpanded && (
+              {isExpanded && !readOnly && !model.is_locked && (
                 <CollapsibleContent forceMount className="px-2 pb-3">
                   <motion.div
                     key={`${model.id}-panel`}

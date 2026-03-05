@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Bell, Send } from "lucide-react"
+import { Send } from "lucide-react"
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -43,7 +42,6 @@ function formatDateTime(value: string, locale: string) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.notificationsPage")
   const locale = useLocale()
   const [title, setTitle] = useState("")
@@ -190,7 +188,7 @@ export function PageContent() {
   }
 
   return (
-    <AdminPageShell title={tAdmin("notifications.title")} description={t("description")} icon={Bell}>
+    <>
       <GlassCard padding="default" hover="none">
         <h3 className="mb-4 text-sm font-semibold text-[var(--foreground)]">{t("compose.title")}</h3>
         <div className="grid gap-4 md:grid-cols-2">
@@ -370,6 +368,6 @@ export function PageContent() {
               : t("empty.noData")
         }
       />
-    </AdminPageShell>
+    </>
   )
 }

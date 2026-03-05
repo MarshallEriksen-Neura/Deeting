@@ -167,6 +167,10 @@ class ProviderModelResponse(BaseModel):
     weight: int
     priority: int
     is_active: bool
+    unlock_price_credits: float | None = None
+    currency: str = "credits"
+    is_purchased: bool = True
+    is_locked: bool = False
     synced_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -185,6 +189,14 @@ class ProviderModelTestResponse(BaseModel):
     upstream_url: str
     response_body: dict[str, Any] | None = None
     error: str | None = None
+
+
+class ProviderModelPurchaseStatusResponse(BaseModel):
+    model_id: UUID
+    unlock_price_credits: float | None = None
+    currency: str = "credits"
+    is_purchased: bool = True
+    is_locked: bool = False
 
 
 class ProviderVerifyRequest(BaseModel):

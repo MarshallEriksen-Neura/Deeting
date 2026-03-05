@@ -13,7 +13,9 @@
       "syncSuccess": "模型同步成功",
       "syncFailed": "模型同步失败",
       "updateSuccess": "模型更新成功",
-      "updateFailed": "模型更新失败"
+      "updateFailed": "模型更新失败",
+      "purchaseSuccess": "模型解锁成功",
+      "purchaseFailed": "模型解锁失败"
     },
     "confirmDelete": "确定要删除该提供商实例吗？",
     "page": {
@@ -131,6 +133,10 @@
         "setAlias": "设置别名...",
         "noAlias": "无别名",
         "deprecated": "已弃用",
+        "locked": "已锁定",
+        "unlockPrice": "解锁价：{price} 积分",
+        "purchase": "立即解锁",
+        "purchasing": "解锁中...",
         "disable": "禁用模型",
         "enable": "启用模型",
         "test": "测试",

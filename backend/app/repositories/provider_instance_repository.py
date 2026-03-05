@@ -10,7 +10,15 @@ from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.logging import logger
-from app.models.provider_instance import ProviderInstance, ProviderModel
+from app.models.provider_instance import (
+    ProviderInstance,
+    ProviderModel,
+    ProviderModelEntitlement,
+)
+from app.utils.provider_model_access import (
+    parse_unlock_price_credits,
+    requires_model_purchase,
+)
 from app.utils.time_utils import Datetime
 
 from .base import BaseRepository
@@ -192,6 +200,43 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
                         for expanded_cap in expand_capabilities(cap)
                     )
                 ]
+
+            if user_uuid and models:
+                instance_ids = {m.instance_id for m in models}
+                owner_rows = await self.session.execute(
+                    select(ProviderInstance.id, ProviderInstance.user_id).where(
+                        ProviderInstance.id.in_(instance_ids)
+                    )
+                )
+                owner_map = {str(row[0]): row[1] for row in owner_rows.all()}
+
+                lockable_model_ids: list[uuid.UUID] = []
+                for model in models:
+                    unlock_price = parse_unlock_price_credits(model.pricing_config or {})
+                    if requires_model_purchase(
+                        instance_owner_id=owner_map.get(str(model.instance_id)),
+                        user_id=user_uuid,
+                        unlock_price_credits=unlock_price,
+                    ):
+                        lockable_model_ids.append(model.id)
+
+                if lockable_model_ids:
+                    purchased_rows = await self.session.execute(
+                        select(ProviderModelEntitlement.provider_model_id).where(
+                            ProviderModelEntitlement.user_id == user_uuid,
+                            ProviderModelEntitlement.provider_model_id.in_(
+                                lockable_model_ids
+                            ),
+                        )
+                    )
+                    purchased_ids = {row[0] for row in purchased_rows.all()}
+                    lockable_id_set = set(lockable_model_ids)
+                    models = [
+                        model
+                        for model in models
+                        if model.id not in lockable_id_set
+                        or model.id in purchased_ids
+                    ]
             return models
 
         return await cache.get_or_set_singleflight(
@@ -283,7 +328,12 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             return []
 
         stmt = (
-            select(ProviderModel.model_id.distinct())
+            select(
+                ProviderModel.id,
+                ProviderModel.model_id,
+                ProviderModel.pricing_config,
+                ProviderInstance.user_id,
+            )
             .join(ProviderInstance, ProviderInstance.id == ProviderModel.instance_id)
             .where(
                 or_(
@@ -295,8 +345,45 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             .where(ProviderInstance.is_enabled.is_(True))
             .where(ProviderModel.is_active.is_(True))
         )
-        result = await self.session.execute(stmt)
-        return [row[0] for row in result.all()]
+        rows = (await self.session.execute(stmt)).all()
+        if not rows:
+            return []
+
+        lockable_ids: list[uuid.UUID] = []
+        model_id_by_uuid: dict[str, str] = {}
+        for model_uuid, model_id, pricing_config, instance_owner_id in rows:
+            model_id_by_uuid[str(model_uuid)] = model_id
+            unlock_price = parse_unlock_price_credits(pricing_config or {})
+            if requires_model_purchase(
+                instance_owner_id=instance_owner_id,
+                user_id=user_uuid,
+                unlock_price_credits=unlock_price,
+            ):
+                lockable_ids.append(model_uuid)
+
+        purchased_ids: set[str] = set()
+        if lockable_ids:
+            purchased_rows = await self.session.execute(
+                select(ProviderModelEntitlement.provider_model_id).where(
+                    ProviderModelEntitlement.user_id == user_uuid,
+                    ProviderModelEntitlement.provider_model_id.in_(lockable_ids),
+                )
+            )
+            purchased_ids = {str(row[0]) for row in purchased_rows.all()}
+
+        available: list[str] = []
+        seen: set[str] = set()
+        lockable_id_set = {str(model_uuid) for model_uuid in lockable_ids}
+        for model_uuid, _, _, _ in rows:
+            model_uuid_str = str(model_uuid)
+            if model_uuid_str in lockable_id_set and model_uuid_str not in purchased_ids:
+                continue
+            model_id = model_id_by_uuid.get(model_uuid_str)
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            available.append(model_id)
+        return available
 
     async def upsert_from_upstream(
         self,

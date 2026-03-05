@@ -3,12 +3,11 @@
 import { useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Package } from "lucide-react"
-import { AdminPageShell, AdminStatusBadge } from "@/components/admin"
+import { AdminStatusBadge } from "@/components/admin"
 import { GlassCard } from "@/components/ui/glass-card"
 import { fetchAdminProviderPresets } from "@/lib/api/admin-dashboard"
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.providerPresetsPage")
   const { data, error, isLoading } = useSWR(
     "/api/v1/admin/provider-presets",
@@ -18,11 +17,7 @@ export function PageContent() {
   const rows = data ?? []
 
   return (
-    <AdminPageShell
-      title={tAdmin("providerPresets.title")}
-      description={tAdmin("providerPresets.description")}
-      icon={Package}
-    >
+    <>
       {isLoading && <p className="text-sm text-[var(--muted)]">{t("empty.loading")}</p>}
       {error && <p className="text-sm text-rose-300">{t("empty.failed")}</p>}
       {!isLoading && !error && rows.length === 0 && (
@@ -62,6 +57,6 @@ export function PageContent() {
           )
         })}
       </div>
-    </AdminPageShell>
+    </>
   )
 }

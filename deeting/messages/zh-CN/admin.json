@@ -524,6 +524,7 @@
           "active": "启用",
           "inputPer1k": "输入 / 1K",
           "outputPer1k": "输出 / 1K",
+          "unlockPriceCredits": "解锁价（积分）",
           "actions": "操作"
         },
         "feedback": {

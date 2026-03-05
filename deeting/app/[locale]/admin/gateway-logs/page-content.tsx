@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Activity, Check } from "lucide-react"
+import { Check } from "lucide-react"
 import {
-  AdminPageShell,
   AdminStatCards,
   AdminDataTable,
   AdminFilterBar,
@@ -24,7 +23,6 @@ function shortId(value?: string | null) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.gatewayLogsPage")
   const locale = useLocale()
   const numberFormatter = new Intl.NumberFormat(locale)
@@ -211,7 +209,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell title={tAdmin("gatewayLogs.title")} description={tAdmin("gatewayLogs.description")} icon={Activity}>
+    <>
       <AdminStatCards stats={stats} columns={4} />
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
@@ -263,7 +261,7 @@ export function PageContent() {
         }
         pageSize={15}
       />
-    </AdminPageShell>
+    </>
   )
 }
 

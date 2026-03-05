@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Cpu, Save } from "lucide-react"
-import { AdminPageShell } from "@/components/admin"
+import { Save } from "lucide-react"
+
 import { GlassCard } from "@/components/ui/glass-card"
 import {
   fetchAdminEmbeddingSetting,
@@ -12,7 +12,6 @@ import {
 } from "@/lib/api/admin-dashboard"
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.embeddingSettingsPage")
   const [selected, setSelected] = useState("")
   const [isSaving, setIsSaving] = useState(false)
@@ -50,11 +49,7 @@ export function PageContent() {
   }
 
   return (
-    <AdminPageShell
-      title={tAdmin("embeddingSettings.title")}
-      description={tAdmin("embeddingSettings.description")}
-      icon={Cpu}
-    >
+    <>
       <GlassCard padding="default" hover="none" className="max-w-lg">
         <div className="space-y-4">
           <div>
@@ -99,6 +94,6 @@ export function PageContent() {
           </div>
         </div>
       </GlassCard>
-    </AdminPageShell>
+    </>
   )
 }

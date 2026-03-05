@@ -1,10 +1,18 @@
 import dynamic from "next/dynamic"
-import { setRequestLocale } from "next-intl/server"
-import { AdminPageSkeleton } from "./components/admin-page-skeleton"
+import { LayoutDashboard } from "lucide-react"
+import { getTranslations, setRequestLocale } from "next-intl/server"
+import { AdminPageShell, AdminSkeleton } from "@/components/admin"
 
 const PageContent = dynamic(
   () => import("./page-content").then((mod) => ({ default: mod.PageContent })),
-  { loading: () => <AdminPageSkeleton /> }
+  {
+    loading: () => (
+      <div className="space-y-4">
+        <AdminSkeleton variant="stats" columns={4} />
+        <AdminSkeleton variant="table" rows={4} />
+      </div>
+    ),
+  }
 )
 
 export default async function AdminDashboardPage({
@@ -14,6 +22,15 @@ export default async function AdminDashboardPage({
 }) {
   const { locale } = await params
   setRequestLocale(locale)
+  const tAdmin = await getTranslations({ locale, namespace: "admin" })
 
-  return <PageContent />
+  return (
+    <AdminPageShell
+      title={tAdmin("dashboard.title")}
+      description={tAdmin("dashboard.description")}
+      icon={LayoutDashboard}
+    >
+      <PageContent />
+    </AdminPageShell>
+  )
 }

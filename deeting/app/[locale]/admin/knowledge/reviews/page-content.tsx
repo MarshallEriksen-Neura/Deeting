@@ -3,9 +3,8 @@
 import { useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { BookOpen, ExternalLink } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -18,7 +17,6 @@ import {
 } from "@/lib/api/admin-dashboard"
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.knowledgeReviewsPage")
   const locale = useLocale()
   const dateFormatter = new Intl.DateTimeFormat(locale, {
@@ -126,7 +124,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell title={tAdmin("knowledgeReviews.title")} description={tAdmin("knowledgeReviews.description")} icon={BookOpen}>
+    <>
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
@@ -167,6 +165,6 @@ export function PageContent() {
               : t("empty.noData")
         }
       />
-    </AdminPageShell>
+    </>
   )
 }

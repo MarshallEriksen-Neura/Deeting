@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Ticket } from "lucide-react"
+
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -30,7 +29,6 @@ function formatDate(value: string | null | undefined, locale: string) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.registrationPage")
   const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
@@ -174,11 +172,7 @@ export function PageContent() {
     : 0
 
   return (
-    <AdminPageShell
-      title={t("title")}
-      description={tAdmin("registration.description")}
-      icon={Ticket}
-    >
+    <>
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-5">
           <input
@@ -330,6 +324,6 @@ export function PageContent() {
                 : t("empty.noData")
         }
       />
-    </AdminPageShell>
+    </>
   )
 }

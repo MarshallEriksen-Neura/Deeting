@@ -3,10 +3,9 @@
 import { useMemo, useState, useCallback } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { Sparkles, Star, Trash2 } from "lucide-react"
+import { Star, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import {
-  AdminPageShell,
   AdminDataTable,
   AdminFilterBar,
   AdminStatusBadge,
@@ -61,7 +60,6 @@ function formatDate(value: string, locale: string) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.assistantsPage")
   const locale = useLocale()
   const numberFormatter = new Intl.NumberFormat(locale)
@@ -256,11 +254,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={tAdmin("assistants.title")}
-      description={tAdmin("assistants.description")}
-      icon={Sparkles}
-    >
+    <>
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-4">
           <input
@@ -369,6 +363,6 @@ export function PageContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminPageShell>
+    </>
   )
 }

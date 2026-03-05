@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -8,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     cast,
@@ -306,3 +308,57 @@ class ProviderCredential(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<ProviderCredential(instance={self.instance_id}, alias={self.alias})>"
+
+
+class ProviderModelEntitlement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    用户购买后解锁某个 ProviderModel 的授权记录。
+    """
+
+    __tablename__ = "provider_model_entitlement"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        nullable=False,
+        index=True,
+        comment="购买用户 ID",
+    )
+    provider_model_id: Mapped[uuid.UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("provider_model.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="被解锁的 ProviderModel ID",
+    )
+    purchase_price: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+        comment="购买价格（积分）",
+    )
+    currency: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="credits",
+        server_default="credits",
+        comment="计价货币，默认 credits",
+    )
+    source_tx_trace_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="关联计费流水 trace_id",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "provider_model_id",
+            name="uq_provider_model_entitlement_user_model",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            "<ProviderModelEntitlement("
+            f"user_id={self.user_id}, provider_model_id={self.provider_model_id})>"
+        )

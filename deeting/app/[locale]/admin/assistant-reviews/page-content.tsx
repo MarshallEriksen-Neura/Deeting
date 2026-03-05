@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { CheckSquare, Check, X } from "lucide-react"
+import { Check, X } from "lucide-react"
 import {
-  AdminPageShell,
   AdminStatCards,
   AdminDataTable,
   AdminFilterBar,
@@ -35,7 +34,6 @@ function formatDate(value: string | null | undefined, locale: string) {
 }
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.assistantReviewsPage")
   const locale = useLocale()
   const [searchQuery, setSearchQuery] = useState("")
@@ -191,11 +189,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={tAdmin("assistantReviews.title")}
-      description={tAdmin("assistantReviews.description")}
-      icon={CheckSquare}
-    >
+    <>
       <AdminStatCards stats={stats} columns={3} />
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
@@ -257,6 +251,6 @@ export function PageContent() {
           ) : null
         }
       />
-    </AdminPageShell>
+    </>
   )
 }

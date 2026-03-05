@@ -1,12 +1,11 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { Gauge } from "lucide-react"
-import { AdminPageShell } from "@/components/admin"
+
+
 import { GlassCard } from "@/components/ui/glass-card"
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.rateLimitPage")
   const rateLimits = [
     { label: "RPM", description: t("rateLimits.rpm"), value: 60 },
@@ -23,11 +22,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={tAdmin("rateLimit.title")}
-      description={tAdmin("rateLimit.description")}
-      icon={Gauge}
-    >
+    <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {rateLimits.map((rl) => (
           <GlassCard key={rl.label} padding="default" hover="lift">
@@ -80,6 +75,6 @@ export function PageContent() {
           {t("saveChanges")}
         </button>
       </div>
-    </AdminPageShell>
+    </>
   )
 }

@@ -150,6 +150,10 @@ export const ProviderModelResponseSchema = z.object({
   weight: z.number(),
   priority: z.number(),
   is_active: z.boolean(),
+  unlock_price_credits: z.number().nullable().optional(),
+  currency: z.string().optional().default("credits"),
+  is_purchased: z.boolean().optional().default(true),
+  is_locked: z.boolean().optional().default(false),
   synced_at: z.string().nullable().optional(),
   created_at: z.string().nullable().optional(),
   updated_at: z.string().nullable().optional(),
@@ -188,6 +192,16 @@ export const ProviderModelTestResponseSchema = z.object({
 })
 
 export type ProviderModelTestResponse = z.infer<typeof ProviderModelTestResponseSchema>
+
+export const ProviderModelPurchaseStatusSchema = z.object({
+  model_id: z.string().uuid(),
+  unlock_price_credits: z.number().nullable().optional(),
+  currency: z.string().optional().default("credits"),
+  is_purchased: z.boolean(),
+  is_locked: z.boolean(),
+})
+
+export type ProviderModelPurchaseStatus = z.infer<typeof ProviderModelPurchaseStatusSchema>
 
 // Quick Add Models
 export interface ProviderModelsQuickAddRequest {
@@ -366,4 +380,24 @@ export async function testProviderModel(
     data: payload,
   })
   return ProviderModelTestResponseSchema.parse(data)
+}
+
+export async function fetchProviderModelPurchaseStatus(
+  modelId: string
+): Promise<ProviderModelPurchaseStatus> {
+  const data = await request<ProviderModelPurchaseStatus>({
+    url: `${PROVIDERS_BASE}/models/${modelId}/purchase-status`,
+    method: "GET",
+  })
+  return ProviderModelPurchaseStatusSchema.parse(data)
+}
+
+export async function purchaseProviderModel(
+  modelId: string
+): Promise<ProviderModelPurchaseStatus> {
+  const data = await request<ProviderModelPurchaseStatus>({
+    url: `${PROVIDERS_BASE}/models/${modelId}/purchase`,
+    method: "POST",
+  })
+  return ProviderModelPurchaseStatusSchema.parse(data)
 }

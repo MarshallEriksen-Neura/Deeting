@@ -31,6 +31,7 @@ from .provider_instance_repository import (
     ProviderInstanceRepository,
     ProviderModelRepository,
 )
+from .provider_model_entitlement_repository import ProviderModelEntitlementRepository
 from .provider_preset_repository import ProviderPresetRepository
 from .quota_repository import InsufficientQuotaError, QuotaRepository
 from .review_repository import ReviewTaskRepository
@@ -74,6 +75,7 @@ __all__ = [
     "NotificationRepository",
     "ProviderInstanceRepository",
     "ProviderModelRepository",
+    "ProviderModelEntitlementRepository",
     "ProviderPresetRepository",
     "QuotaRepository",
     "ReviewTaskRepository",

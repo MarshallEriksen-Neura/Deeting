@@ -1,8 +1,8 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-import { GitBranch } from "lucide-react"
-import { AdminPageShell } from "@/components/admin"
+
+
+
 import { RoutingMabOverview } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-overview"
 import { RoutingMabStrategy } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-strategy"
 import { RoutingMabArmsTable } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-arms-table"
@@ -11,14 +11,9 @@ import { RoutingMabSkillReport } from "@/app/[locale]/dashboard/monitoring/compo
 import { RoutingMabAssistantReport } from "@/app/[locale]/dashboard/monitoring/components/routing-mab-assistant-report"
 
 export function PageContent() {
-  const t = useTranslations("monitoring.routing")
 
   return (
-    <AdminPageShell
-      title={t("pageTitle")}
-      description={t("pageDescription")}
-      icon={GitBranch}
-    >
+    <>
       {/* Overview Cards */}
       <RoutingMabOverview />
 
@@ -38,6 +33,6 @@ export function PageContent() {
 
       {/* Assistant MAB Report */}
       <RoutingMabAssistantReport />
-    </AdminPageShell>
+    </>
   )
 }

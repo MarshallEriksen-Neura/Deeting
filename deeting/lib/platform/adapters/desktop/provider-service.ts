@@ -7,6 +7,7 @@ import type {
   ProviderInstanceResponse,
   ProviderInstanceUpdate,
   ProviderModelResponse,
+  ProviderModelPurchaseStatus,
   ProviderModelTestRequest,
   ProviderModelTestResponse,
   ProviderModelUpdate,
@@ -205,5 +206,25 @@ export const desktopProviderService: IProviderService = {
       modelId,
       payload,
     });
+  },
+  getModelPurchaseStatus: async (
+    modelId: string
+  ): Promise<ProviderModelPurchaseStatus> => {
+    return {
+      model_id: modelId,
+      unlock_price_credits: null,
+      currency: "credits",
+      is_purchased: true,
+      is_locked: false,
+    };
+  },
+  purchaseModel: async (modelId: string): Promise<ProviderModelPurchaseStatus> => {
+    return {
+      model_id: modelId,
+      unlock_price_credits: null,
+      currency: "credits",
+      is_purchased: true,
+      is_locked: false,
+    };
   },
 };

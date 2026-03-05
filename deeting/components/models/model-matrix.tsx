@@ -8,10 +8,10 @@ import {
   Check,
   X,
   AlertTriangle,
-  ChevronRight,
-  MoreHorizontal,
+  Lock,
+  Loader2,
+  ShoppingCart,
   Copy,
-  Trash2,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -21,7 +21,6 @@ import { GlassButton } from "@/components/ui/glass-button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
-import { Progress } from "@/components/ui/progress"
 import {
   Tooltip,
   TooltipContent,
@@ -34,7 +33,6 @@ import {
   formatContextWindow,
   formatPrice,
   getPriceColor,
-  getPriceTier,
 } from "./types"
 
 /**
@@ -50,9 +48,12 @@ interface ModelDataStripProps {
   onTest: (model: ProviderModel) => void
   onToggleActive: (model: ProviderModel, active: boolean) => void
   onUpdateAlias: (model: ProviderModel, alias: string) => void
+  onPurchase?: (model: ProviderModel) => void
   onDelete?: (model: ProviderModel) => void
   onRowClick?: (model: ProviderModel) => void
   isExpanded?: boolean
+  readOnly?: boolean
+  isPurchasing?: boolean
 }
 
 // Capability icons component
@@ -156,12 +157,12 @@ function PriceDisplay({ input, output }: { input: number; output: number }) {
 // Editable alias component
 function EditableAlias({
   alias,
-  modelId,
   onSave,
+  readOnly = false,
 }: {
   alias?: string
-  modelId: string
   onSave: (alias: string) => void
+  readOnly?: boolean
 }) {
   const t = useTranslations('models')
   const [isEditing, setIsEditing] = React.useState(false)
@@ -225,8 +226,9 @@ function EditableAlias({
         </span>
       )}
       <button
+        disabled={readOnly}
         onClick={() => setIsEditing(true)}
-        className="p-0.5 opacity-0 group-hover/alias:opacity-100 text-[var(--muted)] hover:text-[var(--foreground)] transition-opacity"
+        className="p-0.5 opacity-0 group-hover/alias:opacity-100 text-[var(--muted)] hover:text-[var(--foreground)] transition-opacity disabled:pointer-events-none disabled:opacity-20"
       >
         <Pencil className="size-3" />
       </button>
@@ -240,11 +242,16 @@ export function ModelDataStrip({
   onTest,
   onToggleActive,
   onUpdateAlias,
+  onPurchase,
   onRowClick,
   isExpanded,
+  readOnly = false,
+  isPurchasing = false,
 }: ModelDataStripProps) {
   const t = useTranslations('models')
   const isDeprecated = !!model.deprecated_at
+  const isLocked = model.is_locked === true
+  const effectiveReadOnly = readOnly || isLocked
   const stopPropagation = React.useCallback((e: React.SyntheticEvent) => {
     e.stopPropagation()
   }, [])
@@ -309,9 +316,22 @@ export function ModelDataStrip({
             </div>
             <EditableAlias
               alias={model.display_name}
-              modelId={model.id}
               onSave={(alias) => onUpdateAlias(model, alias)}
+              readOnly={effectiveReadOnly}
             />
+            {isLocked && (
+              <div className="mt-1 flex items-center gap-2">
+                <Badge variant="outline" className="h-5 border-amber-400/40 text-amber-300 text-[10px]">
+                  <Lock className="size-3 mr-1" />
+                  {t("list.actions.locked")}
+                </Badge>
+                {typeof model.unlock_price_credits === "number" && (
+                  <span className="text-[10px] text-amber-200/90">
+                    {t("list.actions.unlockPrice", { price: model.unlock_price_credits })}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 2. Capabilities */}
@@ -342,6 +362,7 @@ export function ModelDataStrip({
                           checked={model.is_active}
                           onCheckedChange={(checked) => onToggleActive(model, checked)}
                           onClick={stopPropagation}
+                          disabled={effectiveReadOnly}
                         />
                       </div>
                     </TooltipTrigger>
@@ -351,19 +372,35 @@ export function ModelDataStrip({
               </Tooltip>
             </TooltipProvider>
 
-            {/* 6. Test Action */}
-            <GlassButton
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                stopPropagation(e)
-                onTest(model)
-              }}
-              className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Play className="size-3.5" />
-              <span>{t('list.actions.test')}</span>
-            </GlassButton>
+            {isLocked && onPurchase ? (
+              <GlassButton
+                variant="default"
+                size="sm"
+                disabled={isPurchasing}
+                onClick={(e) => {
+                  stopPropagation(e)
+                  onPurchase(model)
+                }}
+                className="gap-1.5 opacity-100"
+              >
+                {isPurchasing ? <Loader2 className="size-3.5 animate-spin" /> : <ShoppingCart className="size-3.5" />}
+                <span>{isPurchasing ? t("list.actions.purchasing") : t("list.actions.purchase")}</span>
+              </GlassButton>
+            ) : (
+              <GlassButton
+                variant="ghost"
+                size="sm"
+                disabled={effectiveReadOnly}
+                onClick={(e) => {
+                  stopPropagation(e)
+                  onTest(model)
+                }}
+                className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
+              >
+                <Play className="size-3.5" />
+                <span>{t('list.actions.test')}</span>
+              </GlassButton>
+            )}
           </div>
         </div>
 
@@ -393,7 +430,10 @@ interface ModelMatrixProps {
   onTest: (model: ProviderModel) => void
   onToggleActive: (model: ProviderModel, active: boolean) => void
   onUpdateAlias: (model: ProviderModel, alias: string) => void
+  onPurchase?: (model: ProviderModel) => void
   onDelete?: (model: ProviderModel) => void
+  readOnly?: boolean
+  purchasingModelUuid?: string | null
   className?: string
 }
 
@@ -402,7 +442,10 @@ export function ModelMatrix({
   onTest,
   onToggleActive,
   onUpdateAlias,
+  onPurchase,
   onDelete,
+  readOnly = false,
+  purchasingModelUuid = null,
   className,
 }: ModelMatrixProps) {
   const t = useTranslations('models')
@@ -427,7 +470,10 @@ export function ModelMatrix({
             onTest={onTest}
             onToggleActive={onToggleActive}
             onUpdateAlias={onUpdateAlias}
+            onPurchase={onPurchase}
             onDelete={onDelete}
+            readOnly={readOnly}
+            isPurchasing={purchasingModelUuid === model.uuid}
           />
         ))}
       </AnimatePresence>

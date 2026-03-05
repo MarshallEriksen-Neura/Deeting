@@ -1,10 +1,18 @@
 import dynamic from "next/dynamic"
-import { setRequestLocale } from "next-intl/server"
-import { UsersPageSkeleton } from "./components/page-skeleton"
+import { Users } from "lucide-react"
+import { getTranslations, setRequestLocale } from "next-intl/server"
+import { AdminPageShell, AdminSkeleton } from "@/components/admin"
 
 const PageContent = dynamic(
   () => import("./page-content").then((mod) => ({ default: mod.PageContent })),
-  { loading: () => <UsersPageSkeleton /> }
+  {
+    loading: () => (
+      <div className="space-y-4">
+        <AdminSkeleton variant="stats" columns={4} />
+        <AdminSkeleton variant="table" rows={6} />
+      </div>
+    ),
+  }
 )
 
 export default async function UserManagementPage({
@@ -14,6 +22,15 @@ export default async function UserManagementPage({
 }) {
   const { locale } = await params
   setRequestLocale(locale)
+  const tAdmin = await getTranslations({ locale, namespace: "admin" })
 
-  return <PageContent />
+  return (
+    <AdminPageShell
+      title={tAdmin("users.title")}
+      description={tAdmin("users.description")}
+      icon={Users}
+    >
+      <PageContent />
+    </AdminPageShell>
+  )
 }

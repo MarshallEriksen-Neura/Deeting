@@ -5,7 +5,6 @@ import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { ImageIcon, RefreshCw, Download, X, Clock, DollarSign, TrendingUp, Zap, ExternalLink } from "lucide-react"
 import {
-  AdminPageShell,
   AdminStatCards,
   AdminDataTable,
   AdminFilterBar,
@@ -297,7 +296,6 @@ function TaskDetailDrawer({
 /* ------------------------------------------------------------------ */
 
 export function PageContent() {
-  const tAdmin = useTranslations("admin")
   const t = useTranslations("admin.generationTasksPage")
   const locale = useLocale()
   const numberFormatter = new Intl.NumberFormat(locale)
@@ -715,7 +713,7 @@ export function PageContent() {
   )
 
   return (
-    <AdminPageShell title={tAdmin("generationTasks.title")} description={tAdmin("generationTasks.description")} icon={ImageIcon}>
+    <>
       <AdminStatCards stats={stats} columns={4} />
 
       {allRows.length > 0 && (
@@ -878,6 +876,6 @@ export function PageContent() {
         outputsError={normalizedOutputsError}
         onClose={() => setSelectedTask(null)}
       />
-    </AdminPageShell>
+    </>
   )
 }

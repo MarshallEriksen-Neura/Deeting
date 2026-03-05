@@ -2,9 +2,8 @@
 
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { LayoutDashboard, Users, Bot, Key, Activity } from "lucide-react"
+import { Users, Bot, Key, Activity } from "lucide-react"
 import {
-  AdminPageShell,
   AdminStatCards,
   type StatCardData,
 } from "@/components/admin"
@@ -110,11 +109,7 @@ export function PageContent() {
   ]
 
   return (
-    <AdminPageShell
-      title={t("dashboard.title")}
-      description={t("dashboard.description")}
-      icon={LayoutDashboard}
-    >
+    <>
       <AdminStatCards stats={stats} columns={4} />
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -130,6 +125,6 @@ export function PageContent() {
 
       {/* Recent Errors */}
       <RecentErrorsCard errors={recentErrors ?? []} />
-    </AdminPageShell>
+    </>
   )
 }
