@@ -1,5 +1,4 @@
 use serde_json::{json, Value};
-use crate::modules::providers::error::ProviderError;
 use handlebars::Handlebars;
 use log::error;
 
@@ -12,6 +11,8 @@ impl ResponseTransformer {
         let mut hb = Handlebars::new();
         hb.set_strict_mode(false);
         Self { hb }
+    }
+
     pub fn transform(
         &self,
         template_engine: &str,
@@ -31,7 +32,20 @@ impl ResponseTransformer {
         }
 
         let result = match template_engine {
-    ...
+            "jinja2" | "handlebars" => self.transform_handlebars(response_transform, &raw_response),
+            "openai_compat" => Ok(raw_response.clone()),
+            "anthropic_messages" => self.adapt_anthropic(raw_response.clone()),
+            "google_gemini" => self.adapt_gemini(raw_response.clone()),
+            _ => Ok(raw_response.clone()),
+        };
+
+        match result {
+            Ok(val) => val,
+            Err(e) => {
+                error!("Response transform failed: engine={} error={}", template_engine, e);
+                raw_response
+            }
+        }
     }
 
     pub fn extract_error(&self, raw: &Value, status_code: u16) -> String {
@@ -55,22 +69,6 @@ impl ResponseTransformer {
         }
 
         format!("Upstream error with status code {}", status_code)
-    }
-
-            "jinja2" | "handlebars" => self.transform_handlebars(response_transform, &raw_response),
-            "openai_compat" => Ok(raw_response.clone()),
-            "anthropic_messages" => self.adapt_anthropic(raw_response.clone()),
-            "google_gemini" => self.adapt_gemini(raw_response.clone()),
-            _ => Ok(raw_response.clone()),
-        };
-
-        match result {
-            Ok(val) => val,
-            Err(e) => {
-                error!("Response transform failed: engine={} error={}", template_engine, e);
-                raw_response
-            }
-        }
     }
 
     fn transform_handlebars(&self, template: &Value, context: &Value) -> Result<Value, String> {

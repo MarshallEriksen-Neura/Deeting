@@ -434,7 +434,11 @@ async fn request_provider_chat_completion(
     let template_engine = instance.template_engine.as_deref().unwrap_or_else(|| {
         connection.protocol.as_deref().unwrap_or("openai_compat")
     });
-    let response_transform = instance.response_transform.as_ref().unwrap_or(&serde_json::json!({}));
+    let default_response_transform = serde_json::json!({});
+    let response_transform = instance
+        .response_transform
+        .as_ref()
+        .unwrap_or(&default_response_transform);
 
     let transformed = app_state.providers.transformer.transform(
         template_engine,
