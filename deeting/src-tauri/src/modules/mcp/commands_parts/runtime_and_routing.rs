@@ -372,7 +372,7 @@ async fn request_provider_chat_completion(
     let connection = app_state
         .providers
         .store
-        .get_instance_connection(&model.instance_id)
+        .get_instance_connection(&model.instance_id.to_string())
         .await
         .map_err(to_string)?
         .ok_or_else(|| "provider instance not found".to_string())?;

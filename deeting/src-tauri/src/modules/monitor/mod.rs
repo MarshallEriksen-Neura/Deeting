@@ -601,7 +601,7 @@ impl MonitorState {
         let connection = self
             .shared
             .provider_store
-            .get_instance_connection(&selected.instance_id)
+            .get_instance_connection(&selected.instance_id.to_string())
             .await
             .map_err(|err| format!("读取模型连接失败: {}", err))?
             .ok_or_else(|| "模型实例不存在或连接信息缺失".to_string())?;

@@ -1,5 +1,6 @@
 use crate::modules::providers::error::ProviderError;
 use crate::modules::providers::store::ProviderStore;
+use crate::modules::providers::store::utils::has_embedding_capability;
 use crate::modules::providers::types::ProviderModel;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -45,7 +46,7 @@ impl EmbeddingService {
 
         let connection = self
             .store
-            .get_instance_connection(&embedding_model.instance_id)
+            .get_instance_connection(&embedding_model.instance_id.to_string())
             .await?
             .ok_or_else(|| {
                 ProviderError::Validation("Model instance connection not found".to_string())
@@ -102,7 +103,7 @@ pub(crate) fn select_embedding_model<'a>(
         if !trimmed.is_empty() {
             if let Ok(target_id) = Uuid::parse_str(trimmed) {
                 if let Some(configured_model) = models.iter().find(|model| model.id == target_id) {
-                    if configured_model.is_active && has_embedding_capability(configured_model) {
+                    if configured_model.is_active && has_embedding_capability(&configured_model.capabilities) {
                         return Some(configured_model);
                     }
                 }
@@ -112,14 +113,7 @@ pub(crate) fn select_embedding_model<'a>(
 
     models
         .iter()
-        .find(|model| model.is_active && has_embedding_capability(model))
-}
-
-fn has_embedding_capability(model: &ProviderModel) -> bool {
-    model
-        .capabilities
-        .iter()
-        .any(|capability| capability.eq_ignore_ascii_case("embedding"))
+        .find(|model| model.is_active && has_embedding_capability(&model.capabilities))
 }
 
 fn build_upstream_endpoint(

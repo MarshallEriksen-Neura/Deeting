@@ -78,12 +78,14 @@ pub async fn replace_local_provider_presets(
     state: State<'_, AppState>,
     presets: Vec<ProviderPreset>,
 ) -> Result<usize, String> {
+    let count = presets.len();
     state
         .providers
         .store
         .replace_presets(presets)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(count)
 }
 
 #[tauri::command]
@@ -143,11 +145,10 @@ pub async fn list_local_provider_models(
     state: State<'_, AppState>,
     instance_id: String,
 ) -> Result<Vec<ProviderModel>, String> {
-    let id = Uuid::parse_str(&instance_id).map_err(|e| e.to_string())?;
     state
         .providers
         .store
-        .list_models(&id)
+        .list_models(Some(instance_id), None)
         .await
         .map_err(|e| e.to_string())
 }
@@ -187,11 +188,10 @@ pub async fn sync_local_provider_models(
     state: State<'_, AppState>,
     instance_id: String,
 ) -> Result<Vec<ProviderModel>, String> {
-    let id = Uuid::parse_str(&instance_id).map_err(|e| e.to_string())?;
     let connection = state
         .providers
         .store
-        .get_instance_connection(&id)
+        .get_instance_connection(&instance_id)
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "instance not found".to_string())?;
@@ -214,7 +214,14 @@ pub async fn sync_local_provider_models(
     state
         .providers
         .store
-        .quick_add_models(&id, model_ids, None)
+        .quick_add_models(&instance_id, model_ids)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    state
+        .providers
+        .store
+        .list_models(Some(instance_id), None)
         .await
         .map_err(|e| e.to_string())
 }
@@ -225,11 +232,17 @@ pub async fn quick_add_local_provider_models(
     instance_id: String,
     payload: ProviderModelsQuickAddRequest,
 ) -> Result<Vec<ProviderModel>, String> {
-    let id = Uuid::parse_str(&instance_id).map_err(|e| e.to_string())?;
     state
         .providers
         .store
-        .quick_add_models(&id, payload.models, payload.capability)
+        .quick_add_models(&instance_id, payload.models)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    state
+        .providers
+        .store
+        .list_models(Some(instance_id), None)
         .await
         .map_err(|e| e.to_string())
 }
@@ -267,7 +280,7 @@ pub async fn test_local_provider_model(
     let connection = state
         .providers
         .store
-        .get_instance_connection(&model.instance_id)
+        .get_instance_connection(&model.instance_id.to_string())
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "instance not found".to_string())?;
@@ -344,7 +357,7 @@ pub async fn list_local_bandit_arm_states(
     state
         .providers
         .store
-        .list_bandit_arm_states(scene.as_deref())
+        .list_bandit_arm_states(scene)
         .await
         .map_err(|e| e.to_string())
 }
