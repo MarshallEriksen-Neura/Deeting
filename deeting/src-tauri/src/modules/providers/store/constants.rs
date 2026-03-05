@@ -1,0 +1,16 @@
+pub(super) const PROVIDER_KEYCHAIN_SERVICE: &str = "deeting.provider";
+pub(super) const LOCAL_DESKTOP_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
+pub(super) const BANDIT_DEFAULT_SCENE: &str = "router:llm";
+pub(super) const BANDIT_DEFAULT_STRATEGY: &str = "epsilon_greedy";
+pub(super) const CHAT_CAPABILITY: &str = "chat";
+pub(super) const IMAGE_GENERATION_CAPABILITY: &str = "image_generation";
+pub(super) const TEXT_TO_SPEECH_CAPABILITY: &str = "text_to_speech";
+pub(super) const SPEECH_TO_TEXT_CAPABILITY: &str = "speech_to_text";
+pub(super) const VIDEO_GENERATION_CAPABILITY: &str = "video_generation";
+pub(super) const EMBEDDING_CAPABILITY: &str = "embedding";
+pub(super) const CHAT_UPSTREAM_PATH: &str = "v1/chat/completions";
+pub(super) const IMAGE_GENERATION_UPSTREAM_PATH: &str = "v1/images/generations";
+pub(super) const TEXT_TO_SPEECH_UPSTREAM_PATH: &str = "v1/audio/speech";
+pub(super) const SPEECH_TO_TEXT_UPSTREAM_PATH: &str = "v1/audio/transcriptions";
+pub(super) const VIDEO_GENERATION_UPSTREAM_PATH: &str = "v1/video/generations";
+pub(super) const EMBEDDING_UPSTREAM_PATH: &str = "v1/embeddings";
