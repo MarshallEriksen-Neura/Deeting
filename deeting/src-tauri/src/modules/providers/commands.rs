@@ -377,8 +377,24 @@ async fn fetch_model_ids_from_upstream(
 
         match request.send().await {
             Ok(response) => {
-                if !response.status().is_success() {
-                    last_error = Some(format!("sync failed: {} ({endpoint})", response.status()));
+                let status = response.status();
+                if !status.is_success() {
+                    let body_text = response.text().await.unwrap_or_default();
+                    let parsed_body = serde_json::from_str::<Value>(&body_text).ok();
+                    let upstream_error = parsed_body
+                        .as_ref()
+                        .and_then(extract_error_message)
+                        .map(|message| format!("sync failed: {message} ({endpoint})"));
+                    last_error = upstream_error
+                        .or_else(|| Some(format!("sync failed: {status} ({endpoint})")));
+
+                    // Auth failures on the primary compatible endpoint are definitive;
+                    // falling back to /models often returns HTML and obscures the real cause.
+                    if status == reqwest::StatusCode::UNAUTHORIZED
+                        || status == reqwest::StatusCode::FORBIDDEN
+                    {
+                        break;
+                    }
                     continue;
                 }
                 let content_type = response

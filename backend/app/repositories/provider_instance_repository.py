@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.orm import defer, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.constants.model_capability_map import expand_capabilities
 from app.core.cache import cache
@@ -23,9 +24,96 @@ from app.utils.time_utils import Datetime
 
 from .base import BaseRepository
 
+_PROVIDER_INSTANCE_HAS_IS_PUBLIC: bool | None = None
+
+
+async def _has_provider_instance_is_public_column(session) -> bool:
+    """Detect whether provider_instance.is_public exists in current DB schema."""
+    global _PROVIDER_INSTANCE_HAS_IS_PUBLIC
+
+    if _PROVIDER_INSTANCE_HAS_IS_PUBLIC is not None:
+        return _PROVIDER_INSTANCE_HAS_IS_PUBLIC
+
+    dialect = (
+        session.bind.dialect.name if getattr(session, "bind", None) else None
+    )
+    if dialect != "postgresql":
+        _PROVIDER_INSTANCE_HAS_IS_PUBLIC = True
+        return _PROVIDER_INSTANCE_HAS_IS_PUBLIC
+
+    try:
+        result = await session.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'provider_instance'
+                  AND column_name = 'is_public'
+                LIMIT 1
+                """
+            )
+        )
+        _PROVIDER_INSTANCE_HAS_IS_PUBLIC = result.scalar_one_or_none() is not None
+    except Exception as exc:
+        logger.warning(
+            "provider_instance_is_public_column_probe_failed "
+            f"error={exc!s}; fallback_to_legacy_public_rule=true"
+        )
+        _PROVIDER_INSTANCE_HAS_IS_PUBLIC = False
+
+    if not _PROVIDER_INSTANCE_HAS_IS_PUBLIC:
+        logger.warning(
+            "provider_instance_is_public_column_missing "
+            "fallback_to_legacy_public_rule=true"
+        )
+    return _PROVIDER_INSTANCE_HAS_IS_PUBLIC
+
+
+def _public_instance_clause(has_is_public: bool):
+    if has_is_public:
+        return or_(
+            ProviderInstance.is_public.is_(True),
+            ProviderInstance.user_id.is_(None),
+        )
+    return ProviderInstance.user_id.is_(None)
+
+
+def _apply_legacy_is_public(instance: ProviderInstance | None) -> None:
+    if instance is None:
+        return
+    if "is_public" in instance.__dict__:
+        return
+    set_committed_value(instance, "is_public", instance.user_id is None)
+
 
 class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
     model = ProviderInstance
+
+    async def has_is_public_column(self) -> bool:
+        return await _has_provider_instance_is_public_column(self.session)
+
+    async def get(self, id: uuid.UUID) -> ProviderInstance | None:
+        has_is_public = await self.has_is_public_column()
+        stmt = select(self.model).where(self.model.id == id)
+        if not has_is_public:
+            stmt = stmt.options(defer(ProviderInstance.is_public))
+        result = await self.session.execute(stmt)
+        instance = result.scalars().first()
+        if not has_is_public:
+            _apply_legacy_is_public(instance)
+        return instance
+
+    async def get_multi(self, skip: int = 0, limit: int = 100) -> list[ProviderInstance]:
+        has_is_public = await self.has_is_public_column()
+        stmt = select(self.model).offset(skip).limit(limit)
+        if not has_is_public:
+            stmt = stmt.options(defer(ProviderInstance.is_public))
+        result = await self.session.execute(stmt)
+        instances = list(result.scalars().all())
+        if not has_is_public:
+            for instance in instances:
+                _apply_legacy_is_public(instance)
+        return instances
 
     async def get_available_instances(
         self,
@@ -35,6 +123,7 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
         cache_key = CacheKeys.provider_instance_list(user_id, include_public)
 
         async def loader() -> list[ProviderInstance]:
+            has_is_public = await self.has_is_public_column()
             model_count_sq = (
                 select(
                     ProviderModel.instance_id,
@@ -43,7 +132,6 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
                 .group_by(ProviderModel.instance_id)
                 .subquery()
             )
-
             stmt = (
                 select(ProviderInstance, model_count_sq.c.model_count)
                 .options(selectinload(ProviderInstance.credentials))
@@ -54,6 +142,8 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
                 )
                 .where(ProviderInstance.is_enabled == True)  # noqa: E712
             )
+            if not has_is_public:
+                stmt = stmt.options(defer(ProviderInstance.is_public))
             user_uuid = None
             if user_id:
                 try:
@@ -62,10 +152,7 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
                     user_uuid = None
             if user_id is not None:
                 if include_public:
-                    public_clause = or_(
-                        ProviderInstance.is_public.is_(True),
-                        ProviderInstance.user_id.is_(None),  # 兼容历史公共实例
-                    )
+                    public_clause = _public_instance_clause(has_is_public)
                     stmt = stmt.where(
                         or_(
                             ProviderInstance.user_id == user_uuid,
@@ -83,6 +170,8 @@ class ProviderInstanceRepository(BaseRepository[ProviderInstance]):
             for inst, count in rows:
                 # 挂载模型数量，未命中则为 0
                 inst.model_count = int(count or 0)  # type: ignore[attr-defined]
+                if not has_is_public:
+                    _apply_legacy_is_public(inst)
                 instances.append(inst)
             return instances
 
@@ -138,6 +227,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             return []
 
         async def loader() -> list[ProviderModel]:
+            has_is_public = await _has_provider_instance_is_public_column(self.session)
             capability_candidates = expand_capabilities(capability)
             if not capability_candidates:
                 return []
@@ -174,10 +264,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
 
             if user_id is not None:
                 if include_public:
-                    public_clause = or_(
-                        ProviderInstance.is_public.is_(True),
-                        ProviderInstance.user_id.is_(None),  # 兼容历史公共实例
-                    )
+                    public_clause = _public_instance_clause(has_is_public)
                     stmt = stmt.where(
                         or_(
                             ProviderInstance.user_id == user_uuid,
@@ -326,6 +413,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             user_uuid = uuid.UUID(str(user_id))
         except Exception:
             return []
+        has_is_public = await _has_provider_instance_is_public_column(self.session)
 
         stmt = (
             select(
@@ -338,8 +426,7 @@ class ProviderModelRepository(BaseRepository[ProviderModel]):
             .where(
                 or_(
                     ProviderInstance.user_id == user_uuid,
-                    ProviderInstance.is_public.is_(True),
-                    ProviderInstance.user_id.is_(None),  # 兼容历史公共实例
+                    _public_instance_clause(has_is_public),
                 )
             )
             .where(ProviderInstance.is_enabled.is_(True))

@@ -254,3 +254,64 @@ async def test_fetch_models_respects_versioned_base_url(monkeypatch):
         models = await svc._fetch_models_from_upstream(preset, inst, secret="sk-test")
         assert captured["url"] == "https://ark.cn-beijing.volces.com/api/v3/models"
         assert models == [{"id": "ark-model"}]
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_falls_back_from_v1_to_models(monkeypatch):
+    async with AsyncSessionLocal() as session:
+        preset = await _seed_preset(
+            session,
+            slug="custom-provider",
+            name="Custom Provider",
+            base_url="https://api.custom.example",
+        )
+
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="custom-provider",
+            name="inst-fallback",
+            base_url="https://api.custom.example",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
+
+        requested_urls: list[str] = []
+
+        class FakeResp:
+            def __init__(self, status_code: int, payload: dict) -> None:
+                self.status_code = status_code
+                self._payload = payload
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise RuntimeError(f"HTTP {self.status_code}")
+
+            def json(self):
+                return self._payload
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, url, headers=None, params=None):
+                url_str = str(url)
+                requested_urls.append(url_str)
+                if url_str.endswith("/v1/models"):
+                    return FakeResp(404, {"error": {"message": "not found"}})
+                return FakeResp(200, {"data": [{"id": "custom-model"}]})
+
+        monkeypatch.setattr(
+            "app.services.providers.provider_instance_service.create_async_http_client",
+            lambda *args, **kwargs: FakeClient(),
+        )
+
+        models = await svc._fetch_models_from_upstream(preset, inst, secret="sk-test")
+        assert requested_urls == [
+            "https://api.custom.example/v1/models",
+            "https://api.custom.example/models",
+        ]
+        assert models == [{"id": "custom-model"}]

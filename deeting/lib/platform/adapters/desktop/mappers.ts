@@ -41,7 +41,8 @@ export function toInstanceResponse(instance: LocalProviderInstance): ProviderIns
     latency_ms: 0,
     sparkline: [],
     model_count: 0,
-    has_credentials: Boolean(instance.credentials_ref),
+    // Desktop local mode cannot infer keychain presence from credentials_ref alone.
+    has_credentials: undefined,
   };
 }
 

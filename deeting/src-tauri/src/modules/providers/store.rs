@@ -745,7 +745,31 @@ impl ProviderStore {
 
         if let Some(value) = secret_key.as_deref() {
             let credential_key = credential_id.to_string();
-            self.set_secret_in_keychain(&credential_key, value)?;
+            if let Err(err) = self.set_secret_in_keychain(&credential_key, value) {
+                warn!(
+                    "failed to write provider credential into keychain ({}), fallback to local db: {}",
+                    credential_key, err
+                );
+                sqlx::query(
+                    "UPDATE provider_credentials
+                     SET secret_key = ?
+                     WHERE id = ?",
+                )
+                .bind(value)
+                .bind(&credential_key)
+                .execute(&mut *tx)
+                .await?;
+            } else {
+                // Keep db plaintext empty when keychain is available.
+                sqlx::query(
+                    "UPDATE provider_credentials
+                     SET secret_key = ''
+                     WHERE id = ?",
+                )
+                .bind(&credential_key)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
 
         tx.commit().await?;
@@ -812,7 +836,30 @@ impl ProviderStore {
                 let credential_id = self
                     .ensure_default_credential_in_tx(&mut tx, instance_id, &now)
                     .await?;
-                self.set_secret_in_keychain(&credential_id, secret)?;
+                if let Err(err) = self.set_secret_in_keychain(&credential_id, secret) {
+                    warn!(
+                        "failed to write provider credential into keychain ({}), fallback to local db: {}",
+                        credential_id, err
+                    );
+                    sqlx::query(
+                        "UPDATE provider_credentials
+                         SET secret_key = ?
+                         WHERE id = ?",
+                    )
+                    .bind(secret)
+                    .bind(&credential_id)
+                    .execute(&mut *tx)
+                    .await?;
+                } else {
+                    sqlx::query(
+                        "UPDATE provider_credentials
+                         SET secret_key = ''
+                         WHERE id = ?",
+                    )
+                    .bind(&credential_id)
+                    .execute(&mut *tx)
+                    .await?;
+                }
             }
         }
 

@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import DynamicBackground from '@/components/chat/visuals/dynamic-background';
 import { ChatAuthGuard } from '@/components/chat/routing/chat-auth-guard';
+import { ChatModelConfigGuard } from '@/components/chat/routing/chat-model-config-guard';
 import { WorkspaceShell } from '@/components/common/workspace';
 // import { GlobalAudioPlayer } from './components/global-audio-player';
 
@@ -21,6 +22,7 @@ export default function ChatLayout({
 }) {
   return (
     <ChatAuthGuard>
+      <ChatModelConfigGuard />
       <WorkspaceShell workspace={workspace}>
         <div className="relative h-full w-full overflow-hidden bg-background text-foreground selection:bg-primary/30">
           {/* Dynamic Animated Background */}

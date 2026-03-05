@@ -13,21 +13,25 @@ export default function LoginInterceptPage() {
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get("callbackUrl")
 
-  const handleLoginSuccess = () => {
-    // 优先使用 callbackUrl，否则返回上一页，最后默认首页
-    if (callbackUrl) {
-      router.push(callbackUrl)
-    } else if (window.history.length > 1) {
-      router.back()
-    } else {
-      router.push("/")
-    }
+  const getSafeTarget = () => {
+    if (!callbackUrl) return "/"
+    if (!callbackUrl.startsWith("/") || callbackUrl.startsWith("//")) return "/"
+    if (/(^|\/)login(?:$|[/?#])/i.test(callbackUrl)) return "/"
+    return callbackUrl
+  }
+
+  const navigateAwayFromLogin = () => {
+    router.replace(getSafeTarget())
     router.refresh()
+  }
+
+  const handleLoginSuccess = () => {
+    navigateAwayFromLogin()
   }
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      router.back()
+      navigateAwayFromLogin()
     }
   }
 

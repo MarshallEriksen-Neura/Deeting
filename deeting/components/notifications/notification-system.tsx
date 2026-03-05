@@ -18,8 +18,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { usePathname, useRouter } from "@/i18n/routing"
-import { fetchUserSecretary } from "@/lib/api/secretary"
-import { fetchUserEmbeddingConfig } from "@/lib/api/user-embedding-config"
 import {
   MODEL_CONFIG_REQUIRED_EVENT,
   type MissingDesktopModelConfig,
@@ -48,7 +46,6 @@ export function NotificationSystem({
   } = useNotifications()
   const { sendMarkRead, sendMarkAllRead, sendClear } = useNotificationRealtime()
   const t = useTranslations("notifications")
-  const startupCheckDoneRef = useRef(false)
   const lastModelConfigPromptRef = useRef<{ key: string; at: number } | null>(null)
   const [missingConfigs, setMissingConfigs] = useState<MissingDesktopModelConfig[]>([])
   const [isModelConfigDialogOpen, setIsModelConfigDialogOpen] = useState(false)
@@ -137,42 +134,6 @@ export function NotificationSystem({
       }
     }
   }, [addNotification, t])
-
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") return
-    if (!isAuthenticated) {
-      startupCheckDoneRef.current = false
-      return
-    }
-    if (startupCheckDoneRef.current) return
-    startupCheckDoneRef.current = true
-
-    let cancelled = false
-    ;(async () => {
-      try {
-        const [secretary, embedding] = await Promise.all([
-          fetchUserSecretary(),
-          fetchUserEmbeddingConfig(),
-        ])
-        if (cancelled) return
-
-        const nextMissing: MissingDesktopModelConfig[] = []
-        if (!secretary.model_name?.trim()) {
-          nextMissing.push("secretary")
-        }
-        if (!embedding.provider_model_id?.trim()) {
-          nextMissing.push("embedding")
-        }
-        openModelConfigGuard(nextMissing)
-      } catch (error) {
-        console.warn("[notification-system] startup model config check failed", error)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [isAuthenticated, openModelConfigGuard])
 
   useEffect(() => {
     if (typeof window === "undefined") return

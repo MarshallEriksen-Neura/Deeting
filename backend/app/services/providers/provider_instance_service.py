@@ -28,7 +28,6 @@ from app.repositories.provider_instance_repository import (
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.services.providers.upstream_url import (
-    build_upstream_url,
     build_upstream_url_with_params,
 )
 from app.services.secrets.manager import SecretManager
@@ -66,11 +65,13 @@ class ProviderInstanceService:
     ) -> dict[str, Any]:
         """验证凭证有效性并尝试发现模型列表。"""
         # 1. 构造探测 URL
-        url = base_url.rstrip("/")
-        headers = {}
+        base_probe_url = base_url.rstrip("/")
+        headers: dict[str, str] = {}
+        probe_urls: list[str] = []
 
         # Vertex AI 特殊处理
         if "vertexai" in preset_slug.lower():
+            url = base_probe_url
             if project_id and region:
                 url = url.replace("{project}", project_id).replace("{region}", region)
             headers["Authorization"] = f"Bearer {api_key}"
@@ -82,6 +83,7 @@ class ProviderInstanceService:
 
         # Azure 特殊处理
         elif "azure" in preset_slug.lower() and resource_name:
+            url = base_probe_url
             if "{resource}" in url:
                 url = url.replace("{resource}", resource_name)
             if deployment_name:
@@ -94,30 +96,40 @@ class ProviderInstanceService:
 
         # 协议处理
         elif protocol == "claude" or protocol == "anthropic":
-            url = build_upstream_url(
-                base_url=url,
-                upstream_path="v1/models",
+            probe_urls = self._build_model_discovery_endpoints(
+                base_url=base_probe_url,
                 protocol=protocol,
                 auto_append_v1=False,
             )
             headers["x-api-key"] = api_key
             headers["anthropic-version"] = "2023-06-01"
         else:
-            url = build_upstream_url(
-                base_url=url,
-                upstream_path="models",
+            probe_urls = self._build_model_discovery_endpoints(
+                base_url=base_probe_url,
                 protocol=protocol,
                 auto_append_v1=auto_append_v1,
             )
             headers["Authorization"] = f"Bearer {api_key}"
 
         start = time.time()
+        last_error: str | None = None
+        last_latency = 0
+        last_probe_url = base_probe_url
         try:
             async with create_async_http_client(timeout=10.0) as client:
-                resp = await client.get(url, headers=headers)
-                latency = int((time.time() - start) * 1000)
+                for probe_url in probe_urls:
+                    last_probe_url = probe_url
+                    try:
+                        resp = await client.get(probe_url, headers=headers)
+                    except Exception as e:
+                        last_error = f"Verification error: {e!s}"
+                        continue
 
-                if resp.status_code == 200:
+                    last_latency = int((time.time() - start) * 1000)
+                    if resp.status_code != 200:
+                        last_error = f"Verification failed: HTTP {resp.status_code} - {resp.text[:100]}"
+                        continue
+
                     data = resp.json()
                     models = []
                     if isinstance(data, dict):
@@ -129,26 +141,20 @@ class ProviderInstanceService:
                     return {
                         "success": True,
                         "message": "Verification successful",
-                        "latency_ms": latency,
+                        "latency_ms": last_latency,
                         "discovered_models": models,
-                        "probe_url": url,
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "message": f"Verification failed: HTTP {resp.status_code} - {resp.text[:100]}",
-                        "latency_ms": latency,
-                        "discovered_models": [],
-                        "probe_url": url,
+                        "probe_url": probe_url,
                     }
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"Verification error: {e!s}",
-                "latency_ms": 0,
-                "discovered_models": [],
-                "probe_url": url,
-            }
+            last_error = f"Verification error: {e!s}"
+
+        return {
+            "success": False,
+            "message": last_error or "Verification failed",
+            "latency_ms": last_latency,
+            "discovered_models": [],
+            "probe_url": last_probe_url,
+        }
 
     def _get_vertex_access_token(self, creds_input: str) -> str:
         try:
@@ -262,6 +268,30 @@ class ProviderInstanceService:
             base = tpl.replace("{resource}", resource_name)
         return (base or "").rstrip("/")
 
+    @staticmethod
+    def _build_model_discovery_endpoints(
+        base_url: str,
+        protocol: str | None,
+        auto_append_v1: bool | None,
+    ) -> list[str]:
+        base = (base_url or "").rstrip("/")
+        if not base:
+            return []
+
+        proto = (protocol or "").strip().lower()
+        if "anthropic" in proto or "claude" in proto:
+            if base.endswith("/v1"):
+                return [f"{base}/models"]
+            return [f"{base}/v1/models", f"{base}/models"]
+
+        if base.endswith("/v1"):
+            return [f"{base}/models", f"{base[:-3]}/models"]
+
+        append_v1 = True if auto_append_v1 is None else bool(auto_append_v1)
+        if append_v1:
+            return [f"{base}/v1/models", f"{base}/models"]
+        return [f"{base}/models", f"{base}/v1/models"]
+
     async def _fetch_models_from_upstream(
         self,
         preset,
@@ -288,12 +318,17 @@ class ProviderInstanceService:
         headers: dict[str, str] = {}
         params: dict[str, Any] = {}
         url = ""
+        candidates: list[str] = []
 
         proto_lower = (protocol or "").lower()
         provider_lower = (provider or "").lower()
 
         if "anthropic" in (proto_lower + provider_lower):
-            url = f"{base_url}/v1/models"
+            candidates = self._build_model_discovery_endpoints(
+                base_url=base_url,
+                protocol=protocol,
+                auto_append_v1=False,
+            )
             headers["x-api-key"] = secret or ""
             headers["anthropic-version"] = "2023-06-01"
         elif "azure" in proto_lower or "azure" in provider_lower:
@@ -301,6 +336,7 @@ class ProviderInstanceService:
             url = f"{base_url}/openai/deployments"
             params["api-version"] = version
             headers["api-key"] = secret or ""
+            candidates = [url]
         elif (
             "gemini" in provider_lower
             or "google" in provider_lower
@@ -310,25 +346,41 @@ class ProviderInstanceService:
             url = "https://generativelanguage.googleapis.com/v1beta/models"
             if secret:
                 headers["x-goog-api-key"] = secret
+            candidates = [url]
         elif "ark" in proto_lower or "volcengine" in provider_lower:
             # Volcengine Ark: GET /api/v3/models (OpenAI-compatible format)
             url = f"{base_url.rstrip('/')}/api/v3/models"
             if secret:
                 headers["Authorization"] = f"Bearer {secret}"
+            candidates = [url]
         else:
-            url = build_upstream_url(
+            candidates = self._build_model_discovery_endpoints(
                 base_url=base_url,
-                upstream_path="models",
                 protocol=protocol,
                 auto_append_v1=meta.get("auto_append_v1"),
             )
             if secret:
                 headers["Authorization"] = f"Bearer {secret}"
 
+        if not candidates:
+            raise ValueError("failed_to_fetch_models_from_upstream")
+
+        data: Any = {}
+        last_error: Exception | None = None
         async with create_async_http_client(timeout=10.0) as client:
-            resp = await client.get(url, headers=headers, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+            for candidate in candidates:
+                url = candidate
+                try:
+                    resp = await client.get(url, headers=headers, params=params)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    break
+                except Exception as exc:
+                    last_error = exc
+            else:
+                if last_error:
+                    raise last_error
+                raise ValueError("failed_to_fetch_models_from_upstream")
 
         models: list[dict[str, Any]] = []
         if isinstance(data, dict):

@@ -48,8 +48,12 @@ export function LoginModal({
   const isMobile = useIsMobile()
 
   const handleLoginSuccess = React.useCallback(() => {
+    if (onLoginSuccess) {
+      onLoginSuccess()
+      return
+    }
+
     onOpenChange(false)
-    onLoginSuccess?.()
   }, [onOpenChange, onLoginSuccess])
 
   // 移动端使用 Drawer
