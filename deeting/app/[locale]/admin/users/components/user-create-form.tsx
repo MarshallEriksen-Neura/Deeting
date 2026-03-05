@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useTranslations } from "next-intl"
 import { GlassCard } from "@/components/ui/glass-card"
+import { createAdminUser } from "@/lib/api/admin-dashboard"
 
 interface UserCreateFormProps {
   /**
@@ -30,25 +31,11 @@ export function UserCreateForm({ onSuccess, onError }: UserCreateFormProps) {
     setFeedback(null)
 
     try {
-      // 直接调用 API（未来可以改为 Server Action）
-      const response = await fetch("/api/v1/admin/users", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-          username: username.trim() || undefined,
-        }),
+      const result = await createAdminUser({
+        email: email.trim(),
+        password,
+        username: username.trim() || undefined,
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || t("feedback.createFailed"))
-      }
-
-      const result = await response.json()
       setEmail("")
       setUsername("")
       setPassword("")

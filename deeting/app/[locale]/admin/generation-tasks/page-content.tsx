@@ -3,7 +3,7 @@
 import { useMemo, useState, useCallback } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
-import { ImageIcon, RefreshCw, Download, X, Clock, DollarSign, TrendingUp, Zap } from "lucide-react"
+import { ImageIcon, RefreshCw, Download, X, Clock, DollarSign, TrendingUp, Zap, ExternalLink } from "lucide-react"
 import {
   AdminPageShell,
   AdminStatCards,
@@ -18,9 +18,12 @@ import {
 } from "@/components/admin"
 import { GlassCard } from "@/components/ui/glass-card"
 import {
+  fetchAdminGenerationTask,
+  fetchAdminGenerationTaskOutputs,
   fetchAdminGenerationShares,
   fetchAdminGenerationTasks,
   updateAdminGenerationShareActive,
+  type GenerationOutputItem,
   type GenerationShareItem,
   type GenerationTaskItem,
 } from "@/lib/api/admin-dashboard"
@@ -39,6 +42,13 @@ type TranslateFn = (key: string, values?: Record<string, string | number>) => st
 function shortId(value?: string | null) {
   if (!value) return "—"
   return `${value.slice(0, 8)}...`
+}
+
+function formatDateTime(value: string | null | undefined, locale: string) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date)
 }
 
 function durationInSeconds(start?: string | null, end?: string | null) {
@@ -122,9 +132,15 @@ const STATUS_CHART_COLORS: Record<string, string> = {
 
 function TaskDetailDrawer({
   task,
+  outputs,
+  outputsLoading,
+  outputsError,
   onClose,
 }: {
   task: GenerationTaskItem | null
+  outputs: GenerationOutputItem[]
+  outputsLoading: boolean
+  outputsError: Error | null
   onClose: () => void
 }) {
   const t = useTranslations("admin.generationTasksPage")
@@ -216,6 +232,60 @@ function TaskDetailDrawer({
               </div>
             </div>
           )}
+
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-[var(--muted)]">{t("drawer.outputsTitle")}</span>
+            {outputsLoading && <p className="text-xs text-[var(--muted)]">{t("drawer.outputsLoading")}</p>}
+            {outputsError && <p className="text-xs text-rose-400">{t("drawer.outputsFailed")}</p>}
+            {!outputsLoading && !outputsError && outputs.length === 0 && (
+              <p className="text-xs text-[var(--muted)]">{t("drawer.outputsEmpty")}</p>
+            )}
+            {!outputsLoading && !outputsError && outputs.length > 0 && (
+              <div className="space-y-3">
+                {outputs.map((output) => {
+                  const previewable = Boolean(
+                    output.source_url && output.content_type?.toLowerCase().startsWith("image/")
+                  )
+                  return (
+                    <div key={output.id} className="rounded-lg border border-white/10 bg-white/[0.02] p-2">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="font-mono text-[10px] text-[var(--foreground)]">
+                          #{output.output_index}
+                        </span>
+                        {output.source_url && (
+                          <a
+                            href={output.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] text-[var(--primary)] hover:underline"
+                          >
+                            <ExternalLink className="size-3" />
+                            {t("drawer.openSource")}
+                          </a>
+                        )}
+                      </div>
+                      <div className="space-y-1 text-[10px] text-[var(--muted)]">
+                        <div>{t("drawer.outputMeta.contentType")}: {output.content_type ?? "—"}</div>
+                        <div>{t("drawer.outputMeta.size")}: {output.size_bytes ?? "—"}</div>
+                        <div>
+                          {t("drawer.outputMeta.resolution")}:{" "}
+                          {output.width && output.height ? `${output.width}x${output.height}` : "—"}
+                        </div>
+                        <div>{t("drawer.outputMeta.created")}: {formatDateTime(output.created_at, locale)}</div>
+                      </div>
+                      {previewable && (
+                        <img
+                          src={output.source_url ?? ""}
+                          alt={t("drawer.previewAlt", { index: output.output_index })}
+                          className="mt-2 w-full rounded-md border border-white/10 bg-black/20 object-cover"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -260,6 +330,7 @@ export function PageContent() {
   const [shareActiveFilter, setShareActiveFilter] = useState("")
   const [shareFeedback, setShareFeedback] = useState<string | null>(null)
   const [actioningShareId, setActioningShareId] = useState<string | null>(null)
+  const [openingTaskId, setOpeningTaskId] = useState<string | null>(null)
 
   const { data, error, isLoading, mutate } = useSWR(
     ["/api/v1/admin/generation-tasks", statusFilter, typeFilter],
@@ -296,6 +367,15 @@ export function PageContent() {
       })
   )
 
+  const {
+    data: outputsData,
+    error: outputsError,
+    isLoading: outputsLoading,
+  } = useSWR(
+    selectedTask ? ["/api/v1/admin/generation-tasks/outputs", selectedTask.id] : null,
+    () => fetchAdminGenerationTaskOutputs(selectedTask!.id)
+  )
+
   const handleManualRefresh = useCallback(() => {
     mutate()
     mutateShares()
@@ -314,6 +394,8 @@ export function PageContent() {
   }, [allRows, searchQuery])
 
   const allShares = useMemo(() => sharesData?.items ?? [], [sharesData?.items])
+  const taskOutputs = useMemo(() => outputsData?.items ?? [], [outputsData?.items])
+  const normalizedOutputsError = outputsError instanceof Error ? outputsError : null
   const filteredShares = useMemo(() => {
     const query = shareSearchQuery.trim().toLowerCase()
     if (!query) return allShares
@@ -548,6 +630,27 @@ export function PageContent() {
     }
   }
 
+  const handleOpenTaskFromShare = async (taskId: string) => {
+    if (openingTaskId) return
+    setOpeningTaskId(taskId)
+    setShareFeedback(null)
+    try {
+      const existing = allRows.find((row) => row.id === taskId)
+      if (existing) {
+        setSelectedTask(existing)
+        return
+      }
+      const task = await fetchAdminGenerationTask(taskId)
+      setSelectedTask(task)
+    } catch (openError) {
+      const message =
+        openError instanceof Error ? openError.message : t("shares.feedback.openTaskFailed")
+      setShareFeedback(message)
+    } finally {
+      setOpeningTaskId(null)
+    }
+  }
+
   const refreshIntervals = [
     { label: t("refresh.off"), value: 0 },
     { label: t("refresh.tenSeconds"), value: 10_000 },
@@ -731,6 +834,9 @@ export function PageContent() {
         <AdminDataTable
           columns={shareColumns}
           data={filteredShares}
+          onRowClick={(row) => {
+            void handleOpenTaskFromShare(row.task_id)
+          }}
           emptyMessage={
             sharesLoading
               ? t("shares.empty.loading")
@@ -739,21 +845,39 @@ export function PageContent() {
                 : t("shares.empty.noData")
           }
           rowActions={(row) => (
-            <button
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleToggleShare(row)
-              }}
-              disabled={Boolean(actioningShareId)}
-              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {row.is_active ? t("shares.actions.deactivate") : t("shares.actions.activate")}
-            </button>
+            <div className="inline-flex items-center gap-1">
+              <button
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void handleOpenTaskFromShare(row.task_id)
+                }}
+                disabled={Boolean(openingTaskId)}
+                className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-sky-400/30 px-2 text-xs text-sky-300 transition-colors hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("shares.actions.openTask")}
+              </button>
+              <button
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void handleToggleShare(row)
+                }}
+                disabled={Boolean(actioningShareId)}
+                className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {row.is_active ? t("shares.actions.deactivate") : t("shares.actions.activate")}
+              </button>
+            </div>
           )}
         />
       </GlassCard>
 
-      <TaskDetailDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
+      <TaskDetailDrawer
+        task={selectedTask}
+        outputs={taskOutputs}
+        outputsLoading={outputsLoading}
+        outputsError={normalizedOutputsError}
+        onClose={() => setSelectedTask(null)}
+      />
     </AdminPageShell>
   )
 }

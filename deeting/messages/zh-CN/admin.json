@@ -230,7 +230,31 @@
       },
       "actions": {
         "activate": "启用",
-        "deactivate": "停用"
+        "deactivate": "停用",
+        "promoteSuperuser": "设为超级管理员",
+        "demoteSuperuser": "移除超级管理员"
+      },
+      "feedback": {
+        "created": "已创建用户：{email}",
+        "statusUpdated": "已更新用户状态：{email}",
+        "superuserUpdated": "已更新超级管理员权限：{email}",
+        "updateFailed": "更新用户失败"
+      },
+      "drawer": {
+        "title": "用户详情",
+        "loading": "正在加载用户详情...",
+        "failed": "加载用户详情失败",
+        "rolesEmpty": "未分配角色",
+        "fields": {
+          "userId": "用户 ID",
+          "email": "邮箱",
+          "username": "用户名",
+          "status": "状态",
+          "superuser": "超级管理员",
+          "created": "创建时间",
+          "updated": "更新时间",
+          "roles": "角色"
+        }
       },
       "empty": {
         "loading": "正在加载用户...",
@@ -714,6 +738,8 @@
           "updated": "更新时间"
         },
         "logsTitle": "执行日志",
+        "logStatusPlaceholder": "按状态精确过滤...",
+        "clearFilter": "清除",
         "logsLoading": "正在加载日志...",
         "logsFailed": "加载日志失败",
         "logsEmpty": "暂无执行日志",
@@ -723,6 +749,17 @@
         "sessionsLoading": "正在加载会话...",
         "sessionsFailed": "加载会话失败",
         "sessionsEmpty": "暂无 Worker 会话",
+        "json": {
+          "inputSnapshot": "输入快照",
+          "outputData": "输出数据",
+          "rawResponse": "原始响应",
+          "empty": "暂无数据"
+        },
+        "copy": {
+          "action": "复制 JSON",
+          "copied": "已复制",
+          "failed": "复制失败"
+        },
         "sessionMetrics": {
           "messages": "{count} 条消息",
           "thoughts": "{count} 条思考轨迹",
@@ -937,6 +974,18 @@
         "title": "任务详情",
         "prompt": "提示词",
         "errorDetails": "错误详情",
+        "outputsTitle": "输出结果",
+        "outputsLoading": "正在加载输出...",
+        "outputsFailed": "加载输出失败",
+        "outputsEmpty": "暂无输出",
+        "openSource": "打开",
+        "previewAlt": "输出 {index}",
+        "outputMeta": {
+          "contentType": "内容类型",
+          "size": "大小",
+          "resolution": "分辨率",
+          "created": "创建时间"
+        },
         "fields": {
           "taskId": "任务 ID",
           "type": "类型",
@@ -1007,6 +1056,7 @@
           "inactive": "停用"
         },
         "actions": {
+          "openTask": "打开任务",
           "activate": "启用",
           "deactivate": "停用"
         },
@@ -1031,7 +1081,8 @@
         "feedback": {
           "activated": "分享 {id} 已启用",
           "deactivated": "分享 {id} 已停用",
-          "updateFailed": "更新分享状态失败"
+          "updateFailed": "更新分享状态失败",
+          "openTaskFailed": "打开任务失败"
         },
         "empty": {
           "loading": "正在加载分享...",

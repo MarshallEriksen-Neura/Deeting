@@ -230,7 +230,31 @@
       },
       "actions": {
         "activate": "Activate",
-        "deactivate": "Deactivate"
+        "deactivate": "Deactivate",
+        "promoteSuperuser": "Grant Superuser",
+        "demoteSuperuser": "Revoke Superuser"
+      },
+      "feedback": {
+        "created": "Created user: {email}",
+        "statusUpdated": "Updated status: {email}",
+        "superuserUpdated": "Updated superuser role: {email}",
+        "updateFailed": "Failed to update user"
+      },
+      "drawer": {
+        "title": "User Details",
+        "loading": "Loading user details...",
+        "failed": "Failed to load user details",
+        "rolesEmpty": "No roles assigned",
+        "fields": {
+          "userId": "User ID",
+          "email": "Email",
+          "username": "Username",
+          "status": "Status",
+          "superuser": "Superuser",
+          "created": "Created",
+          "updated": "Updated",
+          "roles": "Roles"
+        }
       },
       "empty": {
         "loading": "Loading users...",
@@ -714,6 +738,8 @@
           "updated": "Updated"
         },
         "logsTitle": "Execution Logs",
+        "logStatusPlaceholder": "Filter by status (exact)...",
+        "clearFilter": "Clear",
         "logsLoading": "Loading logs...",
         "logsFailed": "Failed to load logs",
         "logsEmpty": "No execution logs",
@@ -723,6 +749,17 @@
         "sessionsLoading": "Loading sessions...",
         "sessionsFailed": "Failed to load sessions",
         "sessionsEmpty": "No worker sessions",
+        "json": {
+          "inputSnapshot": "Input Snapshot",
+          "outputData": "Output Data",
+          "rawResponse": "Raw Response",
+          "empty": "No data"
+        },
+        "copy": {
+          "action": "Copy JSON",
+          "copied": "Copied",
+          "failed": "Copy failed"
+        },
         "sessionMetrics": {
           "messages": "{count} messages",
           "thoughts": "{count} thoughts",
@@ -937,6 +974,18 @@
         "title": "Task Details",
         "prompt": "Prompt",
         "errorDetails": "Error Details",
+        "outputsTitle": "Outputs",
+        "outputsLoading": "Loading outputs...",
+        "outputsFailed": "Failed to load outputs",
+        "outputsEmpty": "No outputs",
+        "openSource": "Open",
+        "previewAlt": "Output {index}",
+        "outputMeta": {
+          "contentType": "Content-Type",
+          "size": "Size",
+          "resolution": "Resolution",
+          "created": "Created"
+        },
         "fields": {
           "taskId": "Task ID",
           "type": "Type",
@@ -1007,6 +1056,7 @@
           "inactive": "Inactive"
         },
         "actions": {
+          "openTask": "Open Task",
           "activate": "Activate",
           "deactivate": "Deactivate"
         },
@@ -1031,7 +1081,8 @@
         "feedback": {
           "activated": "Share {id} activated",
           "deactivated": "Share {id} deactivated",
-          "updateFailed": "Failed to update share status"
+          "updateFailed": "Failed to update share status",
+          "openTaskFailed": "Failed to open task"
         },
         "empty": {
           "loading": "Loading generation shares...",

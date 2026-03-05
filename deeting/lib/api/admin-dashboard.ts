@@ -618,6 +618,42 @@ export async function fetchAdminGenerationTasks(params?: {
   return GenerationTaskListSchema.parse(data)
 }
 
+export async function fetchAdminGenerationTask(taskId: string): Promise<GenerationTaskItem> {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/generation-tasks/${taskId}`,
+    method: "GET",
+  })
+  return GenerationTaskItemSchema.parse(data)
+}
+
+const GenerationOutputItemSchema = z.object({
+  id: z.string(),
+  task_id: z.string(),
+  output_index: z.number().int(),
+  media_asset_id: z.string().nullable().optional(),
+  source_url: z.string().nullable().optional(),
+  content_type: z.string().nullable().optional(),
+  size_bytes: z.number().int().nullable().optional(),
+  width: z.number().int().nullable().optional(),
+  height: z.number().int().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+const GenerationOutputListSchema = z.object({
+  items: z.array(GenerationOutputItemSchema).default([]),
+}).passthrough()
+
+export type GenerationOutputItem = z.infer<typeof GenerationOutputItemSchema>
+
+export async function fetchAdminGenerationTaskOutputs(taskId: string) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/generation-tasks/${taskId}/outputs`,
+    method: "GET",
+  })
+  return GenerationOutputListSchema.parse(data)
+}
+
 const GenerationShareItemSchema = z.object({
   id: z.string(),
   task_id: z.string(),

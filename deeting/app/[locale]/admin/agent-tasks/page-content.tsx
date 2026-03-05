@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Workflow, X } from "lucide-react"
@@ -37,6 +37,10 @@ function formatDateTime(value: string | null | undefined, locale: string) {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date)
 }
 
+function prettyJson(value: unknown) {
+  return JSON.stringify(value, null, 2)
+}
+
 function SpecPlanDetailDrawer({
   plan,
   locale,
@@ -48,12 +52,21 @@ function SpecPlanDetailDrawer({
 }) {
   const t = useTranslations("admin.agentTasksPage")
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
+  const [logStatusFilter, setLogStatusFilter] = useState("")
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSelectedLogId(null)
+    setLogStatusFilter("")
+    setCopyFeedback(null)
+  }, [plan?.id])
 
   const { data: logsData, isLoading: logsLoading, error: logsError } = useSWR(
-    plan ? ["/api/v1/admin/spec-plans/logs", plan.id] : null,
+    plan ? ["/api/v1/admin/spec-plans/logs", plan.id, logStatusFilter] : null,
     () =>
       fetchAdminSpecPlanLogs(plan!.id, {
         limit: 100,
+        status: logStatusFilter.trim() || undefined,
       })
   )
 
@@ -69,6 +82,15 @@ function SpecPlanDetailDrawer({
     [logs, selectedLogId]
   )
   const sessions = useMemo(() => sessionsData?.items ?? [], [sessionsData?.items])
+
+  const handleCopy = async (value: unknown) => {
+    try {
+      await navigator.clipboard.writeText(prettyJson(value))
+      setCopyFeedback(t("drawer.copy.copied"))
+    } catch {
+      setCopyFeedback(t("drawer.copy.failed"))
+    }
+  }
 
   if (!plan) return null
 
@@ -115,6 +137,20 @@ function SpecPlanDetailDrawer({
             <div className="mb-3 text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
               {t("drawer.logsTitle")}
             </div>
+            <div className="mb-3 flex items-center gap-2">
+              <input
+                value={logStatusFilter}
+                onChange={(event) => setLogStatusFilter(event.target.value)}
+                placeholder={t("drawer.logStatusPlaceholder")}
+                className="h-8 w-full rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/40 focus:outline-none"
+              />
+              <button
+                onClick={() => setLogStatusFilter("")}
+                className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
+              >
+                {t("drawer.clearFilter")}
+              </button>
+            </div>
             <div className="max-h-full space-y-2 overflow-y-auto">
               {logsLoading && <p className="text-xs text-[var(--muted)]">{t("drawer.logsLoading")}</p>}
               {logsError && <p className="text-xs text-rose-400">{t("drawer.logsFailed")}</p>}
@@ -150,6 +186,7 @@ function SpecPlanDetailDrawer({
             <div className="mb-3 text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
               {t("drawer.sessionsTitle")}
             </div>
+            {copyFeedback && <p className="mb-2 text-xs text-[var(--muted)]">{copyFeedback}</p>}
             {!selectedLog && <p className="text-xs text-[var(--muted)]">{t("drawer.selectLogHint")}</p>}
             {selectedLog && (
               <div className="space-y-3">
@@ -157,6 +194,63 @@ function SpecPlanDetailDrawer({
                   <div className="text-[10px] text-[var(--muted)]">{t("drawer.selectedLog")}</div>
                   <div className="mt-1 font-mono text-xs text-[var(--foreground)]">{selectedLog.id}</div>
                 </div>
+
+                <details className="rounded-lg border border-white/10 bg-white/[0.02] p-2">
+                  <summary className="cursor-pointer text-xs text-[var(--foreground)]">{t("drawer.json.inputSnapshot")}</summary>
+                  {selectedLog.input_snapshot ? (
+                    <div className="mt-2 space-y-2">
+                      <button
+                        onClick={() => void handleCopy(selectedLog.input_snapshot)}
+                        className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-[10px] text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
+                      >
+                        {t("drawer.copy.action")}
+                      </button>
+                      <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/20 p-2 text-[10px] text-[var(--muted)]">
+                        {prettyJson(selectedLog.input_snapshot)}
+                      </pre>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[10px] text-[var(--muted)]">{t("drawer.json.empty")}</p>
+                  )}
+                </details>
+
+                <details className="rounded-lg border border-white/10 bg-white/[0.02] p-2">
+                  <summary className="cursor-pointer text-xs text-[var(--foreground)]">{t("drawer.json.outputData")}</summary>
+                  {selectedLog.output_data ? (
+                    <div className="mt-2 space-y-2">
+                      <button
+                        onClick={() => void handleCopy(selectedLog.output_data)}
+                        className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-[10px] text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
+                      >
+                        {t("drawer.copy.action")}
+                      </button>
+                      <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/20 p-2 text-[10px] text-[var(--muted)]">
+                        {prettyJson(selectedLog.output_data)}
+                      </pre>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[10px] text-[var(--muted)]">{t("drawer.json.empty")}</p>
+                  )}
+                </details>
+
+                <details className="rounded-lg border border-white/10 bg-white/[0.02] p-2">
+                  <summary className="cursor-pointer text-xs text-[var(--foreground)]">{t("drawer.json.rawResponse")}</summary>
+                  {selectedLog.raw_response != null ? (
+                    <div className="mt-2 space-y-2">
+                      <button
+                        onClick={() => void handleCopy(selectedLog.raw_response)}
+                        className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-[10px] text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
+                      >
+                        {t("drawer.copy.action")}
+                      </button>
+                      <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/20 p-2 text-[10px] text-[var(--muted)]">
+                        {prettyJson(selectedLog.raw_response)}
+                      </pre>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[10px] text-[var(--muted)]">{t("drawer.json.empty")}</p>
+                  )}
+                </details>
 
                 {sessionsLoading && <p className="text-xs text-[var(--muted)]">{t("drawer.sessionsLoading")}</p>}
                 {sessionsError && <p className="text-xs text-rose-400">{t("drawer.sessionsFailed")}</p>}
