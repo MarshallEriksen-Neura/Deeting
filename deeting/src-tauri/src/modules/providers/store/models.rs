@@ -1,8 +1,13 @@
 use crate::modules::providers::error::ProviderError;
+use crate::modules::providers::store::{
+    ProviderStore, CHAT_CAPABILITY, CHAT_UPSTREAM_PATH, EMBEDDING_CAPABILITY,
+    EMBEDDING_UPSTREAM_PATH, IMAGE_GENERATION_CAPABILITY, IMAGE_GENERATION_UPSTREAM_PATH,
+    SPEECH_TO_TEXT_CAPABILITY, SPEECH_TO_TEXT_UPSTREAM_PATH, TEXT_TO_SPEECH_CAPABILITY,
+    TEXT_TO_SPEECH_UPSTREAM_PATH, VIDEO_GENERATION_CAPABILITY, VIDEO_GENERATION_UPSTREAM_PATH,
+};
 use crate::modules::providers::store::utils::{
     normalize_source, normalize_upstream_path, now_rfc3339, row_to_model,
 };
-use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::{ProviderModel, ProviderModelUpdateRequest};
 use uuid::Uuid;
 
@@ -121,11 +126,22 @@ impl ProviderStore {
         &self,
         instance_id: &str,
         model_ids: Vec<String>,
+        forced_capability: Option<&str>,
     ) -> Result<(), ProviderError> {
         let now = now_rfc3339()?;
         let mut tx = self.pool.begin().await?;
+        let normalized_forced_capability = normalize_capability(forced_capability);
 
         for model_id in model_ids {
+            let capabilities = normalized_forced_capability
+                .clone()
+                .map(|capability| vec![capability])
+                .unwrap_or_else(|| guess_capabilities(&model_id));
+            let primary_capability = capabilities
+                .first()
+                .map(String::as_str)
+                .unwrap_or(CHAT_CAPABILITY);
+            let upstream_path = upstream_path_for_capability(primary_capability);
             let id = Uuid::new_v4().to_string();
             sqlx::query(
                 "INSERT INTO provider_models (
@@ -133,16 +149,19 @@ impl ProviderStore {
                     upstream_path, pricing_config, limit_config, tokenizer_config,
                     routing_config, config_override, source, extra_meta, weight, priority,
                     is_active, synced_at, created_at, updated_at
-                ) VALUES (?, ?, '[\"chat\"]', ?, ?, 'v1/chat/completions', '{}', '{}', '{}', '{}', '{}', 'manual', '{}', 100, 0, 1, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, '{}', '{}', '{}', '{}', '{}', 'manual', '{}', 100, 0, 1, ?, ?, ?)
                 ON CONFLICT(instance_id, model_id, upstream_path) DO UPDATE SET
+                    capabilities = excluded.capabilities,
                     is_active = 1,
                     synced_at = excluded.synced_at,
                     updated_at = excluded.updated_at",
             )
             .bind(&id)
             .bind(instance_id)
+            .bind(serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()))
             .bind(&model_id)
             .bind(&model_id)
+            .bind(upstream_path)
             .bind(&now)
             .bind(&now)
             .bind(&now)
@@ -309,5 +328,108 @@ impl ProviderStore {
             Some(row) => Ok(Some(row_to_model(&row)?)),
             None => Ok(None),
         }
+    }
+}
+
+fn normalize_capability(capability: Option<&str>) -> Option<String> {
+    let normalized = capability
+        .map(|value| {
+            value
+                .trim()
+                .to_ascii_lowercase()
+                .replace(['-', ' '], "_")
+        })
+        .filter(|value| !value.is_empty())?;
+
+    let canonical = match normalized.as_str() {
+        "chat" | "chat_completion" | "chat_completions" | "text_generation" | "text"
+        | "reasoning" | "code" | "vision" => CHAT_CAPABILITY,
+        "embedding" | "embeddings" | "vector" => EMBEDDING_CAPABILITY,
+        "image_generation" | "image" | "image_gen" | "text_to_image" => {
+            IMAGE_GENERATION_CAPABILITY
+        }
+        "text_to_speech" | "tts" | "speech" => TEXT_TO_SPEECH_CAPABILITY,
+        "speech_to_text" | "stt" | "audio" | "audio_to_text" | "transcription" => {
+            SPEECH_TO_TEXT_CAPABILITY
+        }
+        "video_generation" | "video" | "video_gen" | "text_to_video" | "t2v" => {
+            VIDEO_GENERATION_CAPABILITY
+        }
+        _ => normalized.as_str(),
+    };
+
+    Some(canonical.to_string())
+}
+
+fn guess_capabilities(model_id: &str) -> Vec<String> {
+    let model_id_lower = model_id.to_ascii_lowercase();
+    let model_id_trimmed = model_id_lower.trim();
+
+    let capability = if model_id_trimmed.starts_with("text-embedding")
+        || model_id_trimmed.starts_with("embedding")
+        || model_id_trimmed.starts_with("ada-embedding")
+        || model_id_trimmed.contains("embed")
+    {
+        EMBEDDING_CAPABILITY
+    } else if model_id_trimmed.starts_with("whisper")
+        || model_id_trimmed.contains("transcrib")
+        || model_id_trimmed.contains("stt")
+        || model_id_trimmed.contains("speech-to-text")
+    {
+        SPEECH_TO_TEXT_CAPABILITY
+    } else if model_id_trimmed.starts_with("tts-")
+        || model_id_trimmed.contains("tts")
+        || model_id_trimmed.contains("text-to-speech")
+    {
+        TEXT_TO_SPEECH_CAPABILITY
+    } else if model_id_trimmed.starts_with("gpt-image")
+        || model_id_trimmed.starts_with("dall-e")
+        || model_id_trimmed.starts_with("sd")
+        || model_id_trimmed.starts_with("flux")
+        || model_id_trimmed.starts_with("glm-image")
+        || model_id_trimmed.starts_with("qwen-image")
+        || model_id_trimmed.contains("dall-e")
+        || model_id_trimmed.contains("sdxl")
+        || model_id_trimmed.contains("sd")
+        || model_id_trimmed.contains("flux")
+        || model_id_trimmed.contains("image")
+        || model_id_trimmed.contains("imagine")
+        || model_id_trimmed.contains("pixart")
+        || model_id_trimmed.contains("kolors")
+        || model_id_trimmed.contains("kandinsky")
+    {
+        IMAGE_GENERATION_CAPABILITY
+    } else if model_id_trimmed.starts_with("doubao-seedance")
+        || model_id_trimmed.starts_with("doubao-video")
+        || model_id_trimmed.starts_with("kling")
+        || model_id_trimmed.starts_with("cogvideox")
+        || model_id_trimmed.starts_with("wan-x")
+        || model_id_trimmed.starts_with("gen-")
+        || model_id_trimmed.contains("seedance")
+        || model_id_trimmed.contains("video-gen")
+        || model_id_trimmed.contains("runway")
+        || model_id_trimmed.contains("kling")
+        || model_id_trimmed.contains("cogvideo")
+        || model_id_trimmed.contains("wan-x")
+        || model_id_trimmed.contains("wan_x")
+        || model_id_trimmed.contains("hunyuan-video")
+        || model_id_trimmed.contains("video")
+    {
+        VIDEO_GENERATION_CAPABILITY
+    } else {
+        CHAT_CAPABILITY
+    };
+
+    vec![capability.to_string()]
+}
+
+fn upstream_path_for_capability(capability: &str) -> &'static str {
+    match capability {
+        EMBEDDING_CAPABILITY => EMBEDDING_UPSTREAM_PATH,
+        IMAGE_GENERATION_CAPABILITY => IMAGE_GENERATION_UPSTREAM_PATH,
+        TEXT_TO_SPEECH_CAPABILITY => TEXT_TO_SPEECH_UPSTREAM_PATH,
+        SPEECH_TO_TEXT_CAPABILITY => SPEECH_TO_TEXT_UPSTREAM_PATH,
+        VIDEO_GENERATION_CAPABILITY => VIDEO_GENERATION_UPSTREAM_PATH,
+        _ => CHAT_UPSTREAM_PATH,
     }
 }

@@ -214,7 +214,7 @@ pub async fn sync_local_provider_models(
     state
         .providers
         .store
-        .quick_add_models(&instance_id, model_ids)
+        .quick_add_models(&instance_id, model_ids, None)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -235,7 +235,7 @@ pub async fn quick_add_local_provider_models(
     state
         .providers
         .store
-        .quick_add_models(&instance_id, payload.models)
+        .quick_add_models(&instance_id, payload.models, payload.capability.as_deref())
         .await
         .map_err(|e| e.to_string())?;
 

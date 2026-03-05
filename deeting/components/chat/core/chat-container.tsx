@@ -78,14 +78,15 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     // 生成唯一 key，避免重复初始化
     const initKey = `${agentId}:${sessionId ?? ""}`
     if (initCalledRef.current === initKey) return
-    initCalledRef.current = initKey
 
     // Tauri 环境：使用本地 agent
     if (isTauriRuntime) {
       if (!marketLoaded) return // 等待市场数据加载
+      initCalledRef.current = initKey
       void initSession(agentId, sessionId, localAgent)
     } else {
       // 云端环境：store 内部会获取 agent 数据
+      initCalledRef.current = initKey
       void initSession(agentId, sessionId, null)
     }
   }, [agentId, sessionId, isTauriRuntime, marketLoaded, localAgent, initSession])

@@ -141,9 +141,12 @@ pub async fn send_local_conversation_message(
         &app,
         request_id.as_deref(),
         &trace_id,
-        "request_received",
-        "local_send_start",
-        Some(serde_json::json!({ "session_id": payload.session_id })),
+        "listen",
+        "template.rendered",
+        Some(serde_json::json!({
+            "engine": "desktop_local",
+            "session_id": payload.session_id,
+        })),
     );
 
     let execution = if let Some(request_id_value) = request_id.clone() {
@@ -214,9 +217,12 @@ pub async fn regenerate_local_conversation_reply(
         &app,
         request_id.as_deref(),
         &trace_id,
-        "request_received",
-        "local_regenerate_start",
-        Some(serde_json::json!({ "session_id": payload.session_id })),
+        "listen",
+        "template.rendered",
+        Some(serde_json::json!({
+            "engine": "desktop_local",
+            "session_id": payload.session_id,
+        })),
     );
 
     let execution = if let Some(request_id_value) = request_id.clone() {
@@ -308,6 +314,8 @@ async fn send_local_conversation_message_inner(
     trace_id: &str,
     request_id: Option<&str>,
 ) -> Result<LocalConversationSendResponse, String> {
+    let provider_request_started_at = std::time::Instant::now();
+
     crate::modules::providers::model_guard::ensure_required_local_models_configured(app_state)
         .await?;
 
@@ -334,9 +342,11 @@ async fn send_local_conversation_message_inner(
         app,
         request_id,
         trace_id,
-        "context_ready",
-        "local_send_context_ready",
+        "remember",
+        "context.loaded",
         Some(serde_json::json!({
+            "count": chat_ctx.messages.len(),
+            "has_summary": false,
             "assistant_id": chat_ctx.assistant_id,
             "provider_model_id": payload.provider_model_id,
         })),
@@ -354,12 +364,22 @@ async fn send_local_conversation_message_inner(
         app,
         request_id,
         trace_id,
-        "model_request",
-        "local_send_model_request",
+        "remember",
+        "routing.selected",
         Some(serde_json::json!({
+            "candidates": 1,
+            "provider": model_connection.model_id,
             "provider_model_id": model_connection.provider_model_id,
             "model_id": model_connection.model_id,
         })),
+    );
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "evolve",
+        "upstream.request.batch",
+        None,
     );
 
     let response_json = run_local_chat_complete_with_auto_code_mode(
@@ -377,12 +397,22 @@ async fn send_local_conversation_message_inner(
         app,
         request_id,
         trace_id,
-        "assistant_stream",
-        "local_send_assistant_stream",
+        "render",
+        "upstream.streaming",
         None,
     );
     let assistant_blocks =
         emit_and_collect_local_assistant_blocks(app, request_id, trace_id, &response_json, &response_text);
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "render",
+        "upstream.response",
+        Some(serde_json::json!({
+            "latency_ms": provider_request_started_at.elapsed().as_millis() as i64,
+        })),
+    );
 
     let assistant_message = conversation_repo
         .append_local_conversation_message(CreateConversationMessageRequest {
@@ -421,6 +451,8 @@ async fn regenerate_local_conversation_reply_inner(
     trace_id: &str,
     request_id: Option<&str>,
 ) -> Result<LocalConversationRegenerateResponse, String> {
+    let provider_request_started_at = std::time::Instant::now();
+
     crate::modules::providers::model_guard::ensure_required_local_models_configured(app_state)
         .await?;
 
@@ -442,17 +474,39 @@ async fn regenerate_local_conversation_reply_inner(
         assistant_id: regenerate_ctx.assistant_id.clone(),
         messages: regenerate_ctx.messages.clone(),
     };
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "remember",
+        "context.loaded",
+        Some(serde_json::json!({
+            "count": chat_ctx.messages.len(),
+            "has_summary": false,
+            "assistant_id": chat_ctx.assistant_id,
+        })),
+    );
 
     emit_local_chat_stream_status(
         app,
         request_id,
         trace_id,
-        "model_request",
-        "local_regenerate_model_request",
+        "remember",
+        "routing.selected",
         Some(serde_json::json!({
+            "candidates": 1,
+            "provider": model_connection.model_id,
             "provider_model_id": model_connection.provider_model_id,
             "model_id": model_connection.model_id,
         })),
+    );
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "evolve",
+        "upstream.request.batch",
+        None,
     );
 
     let response_json = run_local_chat_complete_with_auto_code_mode(
@@ -470,12 +524,22 @@ async fn regenerate_local_conversation_reply_inner(
         app,
         request_id,
         trace_id,
-        "assistant_stream",
-        "local_regenerate_assistant_stream",
+        "render",
+        "upstream.streaming",
         None,
     );
     let assistant_blocks =
         emit_and_collect_local_assistant_blocks(app, request_id, trace_id, &response_json, &response_text);
+    emit_local_chat_stream_status(
+        app,
+        request_id,
+        trace_id,
+        "render",
+        "upstream.response",
+        Some(serde_json::json!({
+            "latency_ms": provider_request_started_at.elapsed().as_millis() as i64,
+        })),
+    );
 
     let assistant_message = conversation_repo
         .append_local_conversation_message(CreateConversationMessageRequest {

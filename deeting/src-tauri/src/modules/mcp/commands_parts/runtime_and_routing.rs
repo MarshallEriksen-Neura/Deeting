@@ -1978,6 +1978,7 @@ fn emit_local_chat_stream_error(
         serde_json::json!({
             "type": "error",
             "code": "local_chat_failed",
+            "error_code": "local_chat_failed",
             "message": message,
         }),
     );

@@ -76,14 +76,20 @@ async fn init_migrates_legacy_provider_models_before_index_creation() {
 }
 
 #[tokio::test]
-async fn quick_add_models_creates_chat_models_with_default_path() {
+async fn quick_add_models_infers_capabilities_and_upstream_paths() {
     let store = init_store().await;
     let instance_id = insert_instance(&store).await;
 
     store
         .quick_add_models(
             &instance_id,
-            vec!["gpt-4o-mini".to_string(), "text-embedding-3-small".to_string()],
+            vec![
+                "gpt-4o-mini".to_string(),
+                "text-embedding-3-small".to_string(),
+                "grok-imagine-1.0".to_string(),
+                "grok-video".to_string(),
+            ],
+            None,
         )
         .await
         .expect("quick add models");
@@ -92,11 +98,37 @@ async fn quick_add_models_creates_chat_models_with_default_path() {
         .list_models(Some(instance_id.clone()), None)
         .await
         .expect("list models");
-    assert_eq!(models.len(), 2);
+    assert_eq!(models.len(), 4);
+
+    let chat = models
+        .iter()
+        .find(|model| model.model_id == "gpt-4o-mini")
+        .expect("chat model");
+    assert_eq!(chat.capabilities, vec![CHAT_CAPABILITY.to_string()]);
+    assert_eq!(chat.upstream_path, CHAT_UPSTREAM_PATH);
+
+    let embedding = models
+        .iter()
+        .find(|model| model.model_id == "text-embedding-3-small")
+        .expect("embedding model");
+    assert_eq!(embedding.capabilities, vec!["embedding".to_string()]);
+    assert_eq!(embedding.upstream_path, "v1/embeddings");
+
+    let image = models
+        .iter()
+        .find(|model| model.model_id == "grok-imagine-1.0")
+        .expect("image model");
+    assert_eq!(image.capabilities, vec!["image_generation".to_string()]);
+    assert_eq!(image.upstream_path, "v1/images/generations");
+
+    let video = models
+        .iter()
+        .find(|model| model.model_id == "grok-video")
+        .expect("video model");
+    assert_eq!(video.capabilities, vec!["video_generation".to_string()]);
+    assert_eq!(video.upstream_path, "v1/video/generations");
 
     for model in models {
-        assert_eq!(model.capabilities, vec![CHAT_CAPABILITY.to_string()]);
-        assert_eq!(model.upstream_path, CHAT_UPSTREAM_PATH);
         assert_eq!(model.source, "manual");
     }
 }
@@ -107,11 +139,11 @@ async fn quick_add_models_is_idempotent_for_same_model_and_instance() {
     let instance_id = insert_instance(&store).await;
 
     store
-        .quick_add_models(&instance_id, vec!["gpt-4o-mini".to_string()])
+        .quick_add_models(&instance_id, vec!["gpt-4o-mini".to_string()], None)
         .await
         .expect("first quick add");
     store
-        .quick_add_models(&instance_id, vec!["gpt-4o-mini".to_string()])
+        .quick_add_models(&instance_id, vec!["gpt-4o-mini".to_string()], None)
         .await
         .expect("second quick add");
 
@@ -121,6 +153,29 @@ async fn quick_add_models_is_idempotent_for_same_model_and_instance() {
         .expect("list models");
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].model_id, "gpt-4o-mini");
+}
+
+#[tokio::test]
+async fn quick_add_models_respects_forced_capability_alias() {
+    let store = init_store().await;
+    let instance_id = insert_instance(&store).await;
+
+    store
+        .quick_add_models(
+            &instance_id,
+            vec!["gpt-4o-mini".to_string()],
+            Some("image"),
+        )
+        .await
+        .expect("quick add models");
+
+    let models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list models");
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].capabilities, vec!["image_generation".to_string()]);
+    assert_eq!(models[0].upstream_path, "v1/images/generations");
 }
 
 #[tokio::test]
