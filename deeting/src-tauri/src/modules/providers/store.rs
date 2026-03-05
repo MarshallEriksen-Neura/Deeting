@@ -745,31 +745,8 @@ impl ProviderStore {
 
         if let Some(value) = secret_key.as_deref() {
             let credential_key = credential_id.to_string();
-            if let Err(err) = self.set_secret_in_keychain(&credential_key, value) {
-                warn!(
-                    "failed to write provider credential into keychain ({}), fallback to local db: {}",
-                    credential_key, err
-                );
-                sqlx::query(
-                    "UPDATE provider_credentials
-                     SET secret_key = ?
-                     WHERE id = ?",
-                )
-                .bind(value)
-                .bind(&credential_key)
-                .execute(&mut *tx)
+            self.persist_secret_for_credential(&mut tx, &credential_key, value)
                 .await?;
-            } else {
-                // Keep db plaintext empty when keychain is available.
-                sqlx::query(
-                    "UPDATE provider_credentials
-                     SET secret_key = ''
-                     WHERE id = ?",
-                )
-                .bind(&credential_key)
-                .execute(&mut *tx)
-                .await?;
-            }
         }
 
         tx.commit().await?;
@@ -836,30 +813,8 @@ impl ProviderStore {
                 let credential_id = self
                     .ensure_default_credential_in_tx(&mut tx, instance_id, &now)
                     .await?;
-                if let Err(err) = self.set_secret_in_keychain(&credential_id, secret) {
-                    warn!(
-                        "failed to write provider credential into keychain ({}), fallback to local db: {}",
-                        credential_id, err
-                    );
-                    sqlx::query(
-                        "UPDATE provider_credentials
-                         SET secret_key = ?
-                         WHERE id = ?",
-                    )
-                    .bind(secret)
-                    .bind(&credential_id)
-                    .execute(&mut *tx)
+                self.persist_secret_for_credential(&mut tx, &credential_id, secret)
                     .await?;
-                } else {
-                    sqlx::query(
-                        "UPDATE provider_credentials
-                         SET secret_key = ''
-                         WHERE id = ?",
-                    )
-                    .bind(&credential_id)
-                    .execute(&mut *tx)
-                    .await?;
-                }
             }
         }
 
@@ -1524,30 +1479,34 @@ impl ProviderStore {
             .await?
         };
 
+        let mut selected_credential_id: Option<String> = None;
         let mut secret_key = None;
         if let Some(value) = credential_row {
             let credential_id: String = value.try_get("id")?;
-            match self.get_secret_from_keychain(&credential_id) {
-                Ok(Some(secret)) => {
-                    secret_key = Some(secret);
+            selected_credential_id = Some(credential_id);
+            secret_key = self.resolve_secret_from_row(&value)?;
+        }
+
+        if secret_key.is_none() {
+            let rows = sqlx::query(
+                "SELECT id, secret_key
+                 FROM provider_credentials
+                 WHERE instance_id = ?
+                 ORDER BY created_at DESC",
+            )
+            .bind(instance_id.to_string())
+            .fetch_all(&self.pool)
+            .await?;
+
+            for row in rows {
+                let credential_id: String = row.try_get("id")?;
+                if selected_credential_id.as_deref() == Some(credential_id.as_str()) {
+                    continue;
                 }
-                Ok(None) => {
-                    let legacy_secret: String = value.try_get("secret_key")?;
-                    let trimmed = legacy_secret.trim();
-                    if !trimmed.is_empty() {
-                        secret_key = Some(trimmed.to_string());
-                    }
-                }
-                Err(err) => {
-                    warn!(
-                        "failed to read keychain secret for credential {}: {}",
-                        credential_id, err
-                    );
-                    let legacy_secret: String = value.try_get("secret_key")?;
-                    let trimmed = legacy_secret.trim();
-                    if !trimmed.is_empty() {
-                        secret_key = Some(trimmed.to_string());
-                    }
+                let candidate = self.resolve_secret_from_row(&row)?;
+                if candidate.is_some() {
+                    secret_key = candidate;
+                    break;
                 }
             }
         }
@@ -1767,6 +1726,94 @@ impl ProviderStore {
     fn keychain_entry(&self, credential_id: &str) -> Result<keyring::Entry, ProviderError> {
         keyring::Entry::new(PROVIDER_KEYCHAIN_SERVICE, credential_id)
             .map_err(|err| ProviderError::Database(format!("keychain entry init failed: {err}")))
+    }
+
+    fn resolve_secret_from_row(&self, row: &SqliteRow) -> Result<Option<String>, ProviderError> {
+        let credential_id: String = row.try_get("id")?;
+        match self.get_secret_from_keychain(&credential_id) {
+            Ok(Some(secret)) => Ok(Some(secret)),
+            Ok(None) => {
+                let legacy_secret: String = row.try_get("secret_key")?;
+                let trimmed = legacy_secret.trim();
+                if trimmed.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(trimmed.to_string()))
+                }
+            }
+            Err(err) => {
+                warn!(
+                    "failed to read keychain secret for credential {}: {}",
+                    credential_id, err
+                );
+                let legacy_secret: String = row.try_get("secret_key")?;
+                let trimmed = legacy_secret.trim();
+                if trimmed.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(trimmed.to_string()))
+                }
+            }
+        }
+    }
+
+    async fn persist_secret_for_credential(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        credential_id: &str,
+        secret: &str,
+    ) -> Result<(), ProviderError> {
+        let keychain_ready = match self.set_secret_in_keychain(credential_id, secret) {
+            Ok(_) => match self.get_secret_from_keychain(credential_id) {
+                Ok(Some(saved)) if saved == secret => true,
+                Ok(Some(_)) | Ok(None) => {
+                    warn!(
+                        "provider keychain write verification failed for credential {}, fallback to local db",
+                        credential_id
+                    );
+                    false
+                }
+                Err(err) => {
+                    warn!(
+                        "provider keychain verification read failed for credential {}, fallback to local db: {}",
+                        credential_id, err
+                    );
+                    false
+                }
+            },
+            Err(err) => {
+                warn!(
+                    "failed to write provider credential into keychain ({}), fallback to local db: {}",
+                    credential_id, err
+                );
+                false
+            }
+        };
+
+        if keychain_ready {
+            // Keep db plaintext empty when keychain is available.
+            sqlx::query(
+                "UPDATE provider_credentials
+                 SET secret_key = ''
+                 WHERE id = ?",
+            )
+            .bind(credential_id)
+            .execute(&mut **tx)
+            .await?;
+            return Ok(());
+        }
+
+        sqlx::query(
+            "UPDATE provider_credentials
+             SET secret_key = ?
+             WHERE id = ?",
+        )
+        .bind(secret)
+        .bind(credential_id)
+        .execute(&mut **tx)
+        .await?;
+
+        Ok(())
     }
 
     fn set_secret_in_keychain(

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react"
 
 import { buildApiWsUrl, getAuthToken, refreshAccessToken } from "@/lib/http/client"
 import { startLocalMonitorWorker, stopLocalMonitorWorker } from "@/lib/api/monitors"
-import { useNotificationActions } from "@/stores/notification-store"
+import { useNotificationActions } from "@/store/notification-store"
 import { useAuthStore } from "@/store/auth-store"
 import { type NotificationItem, type NotificationType } from "@/components/notifications/notification-center"
 import {

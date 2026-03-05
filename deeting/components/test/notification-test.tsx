@@ -1,7 +1,7 @@
 "use client"
 
 import { useNotifications } from "@/components/contexts/notification-context"
-import { useNotificationActions } from "@/stores/notification-store"
+import { useNotificationActions } from "@/store/notification-store"
 import { Button } from "@/components/ui/button"
 
 export function NotificationTestButtons() {

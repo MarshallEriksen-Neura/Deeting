@@ -30,7 +30,7 @@ import {
   useNotificationSheet,
   useNotificationsList,
   useUnreadCount,
-} from "@/stores/notification-store"
+} from "@/store/notification-store"
 import { normalizeNotificationTimestamp } from "@/components/notifications/notification-utils"
 
 export type NotificationType = "info" | "success" | "warning" | "error"

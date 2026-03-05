@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useCallback, useState, ReactNode } from "react"
-import { useNotificationActions, useNotificationsList } from "@/stores/notification-store"
+import { useNotificationActions, useNotificationsList } from "@/store/notification-store"
 
 // 通知系统上下文 - 现在主要用于环境光状态管理
 interface NotificationContextType {

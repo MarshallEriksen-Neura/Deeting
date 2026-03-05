@@ -366,6 +366,10 @@ async fn fetch_model_ids_from_upstream(
     let client = reqwest::Client::new();
     let normalized_protocol = normalize_protocol(protocol);
     let candidates = build_models_endpoints(base_url, &normalized_protocol, auto_append_v1);
+    let has_secret = secret_key
+        .map(str::trim)
+        .map(|value| !value.is_empty())
+        .unwrap_or(false);
     if candidates.is_empty() {
         return Err("base_url is empty".to_string());
     }
@@ -393,6 +397,11 @@ async fn fetch_model_ids_from_upstream(
                     if status == reqwest::StatusCode::UNAUTHORIZED
                         || status == reqwest::StatusCode::FORBIDDEN
                     {
+                        if !has_secret {
+                            return Err(format!(
+                                "sync failed: provider API key is empty, please open settings and save API key again ({endpoint})"
+                            ));
+                        }
                         break;
                     }
                     continue;
