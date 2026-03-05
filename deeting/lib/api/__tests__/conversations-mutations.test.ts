@@ -300,7 +300,7 @@ describe("conversation mutation apis", () => {
       status: "cancelled",
     })
     expect(mockInvoke).toHaveBeenCalledWith("cancel_local_conversation_request", {
-      request_id: "req-cancel-1",
+      requestId: "req-cancel-1",
     })
   })
 })

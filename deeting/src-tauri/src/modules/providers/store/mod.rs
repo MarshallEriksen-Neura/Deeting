@@ -61,6 +61,8 @@ impl ProviderStore {
                 theme_color TEXT,
                 category TEXT,
                 url_template TEXT,
+                template_engine TEXT,
+                response_transform TEXT,
                 auth_type TEXT NOT NULL DEFAULT 'api_key',
                 auth_config TEXT NOT NULL DEFAULT '{}',
                 default_headers TEXT NOT NULL DEFAULT '{}',
@@ -83,6 +85,8 @@ impl ProviderStore {
                 icon TEXT,
                 priority INTEGER NOT NULL DEFAULT 0,
                 meta TEXT NOT NULL DEFAULT '{}',
+                template_engine TEXT,
+                response_transform TEXT,
                 is_enabled BOOLEAN NOT NULL DEFAULT 1,
                 is_local BOOLEAN DEFAULT 0,
                 credentials_ref TEXT NOT NULL,
@@ -91,6 +95,31 @@ impl ProviderStore {
             )",
         )
         .execute(&self.pool)
+        .await?;
+
+        self.ensure_column(
+            "provider_presets",
+            "template_engine",
+            "ALTER TABLE provider_presets ADD COLUMN template_engine TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "response_transform",
+            "ALTER TABLE provider_presets ADD COLUMN response_transform TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_instances",
+            "template_engine",
+            "ALTER TABLE provider_instances ADD COLUMN template_engine TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_instances",
+            "response_transform",
+            "ALTER TABLE provider_instances ADD COLUMN response_transform TEXT",
+        )
         .await?;
 
         sqlx::query(

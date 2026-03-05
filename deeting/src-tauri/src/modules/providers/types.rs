@@ -15,6 +15,10 @@ pub struct ProviderPreset {
     pub category: Option<String>,
     #[serde(default)]
     pub url_template: Option<String>,
+    #[serde(default)]
+    pub template_engine: Option<String>,
+    #[serde(default)]
+    pub response_transform: Option<Value>,
     pub is_active: bool,
 }
 
@@ -30,6 +34,10 @@ pub struct ProviderInstance {
     pub priority: i64,
     #[serde(default)]
     pub meta: Value,
+    #[serde(default)]
+    pub template_engine: Option<String>,
+    #[serde(default)]
+    pub response_transform: Option<Value>,
     pub is_enabled: bool,
     pub is_local: bool,
     pub credentials_ref: String,

@@ -213,6 +213,44 @@ mod tests {
     }
 
     #[test]
+    fn build_local_tool_trace_blocks_emits_ui_blocks_from_render_blocks() {
+        let meta = vec![serde_json::json!({
+            "id": "call_exec_1",
+            "name": "execute_code_plan",
+            "status": "success",
+            "result": {
+                "render_blocks": [
+                    {
+                        "view_type": "table.simple",
+                        "payload": { "rows": [{"name": "Alice"}] },
+                        "title": "Execution Table",
+                        "metadata": { "source": "runtime" }
+                    }
+                ]
+            }
+        })];
+
+        let blocks = build_local_tool_trace_blocks(&meta);
+        let ui_block = blocks
+            .iter()
+            .find(|block| block.get("type").and_then(|v| v.as_str()) == Some("ui"))
+            .expect("ui block should be emitted from render_blocks");
+
+        assert_eq!(
+            ui_block.get("viewType").and_then(|v| v.as_str()),
+            Some("table.simple")
+        );
+        assert_eq!(
+            ui_block
+                .get("payload")
+                .and_then(|v| v.get("rows"))
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.len()),
+            Some(1)
+        );
+    }
+
+    #[test]
     fn unknown_tool_call_builds_structured_install_gate_error_meta() {
         let call = LocalChatToolCall {
             id: Some("call_unknown".to_string()),

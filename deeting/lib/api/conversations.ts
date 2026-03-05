@@ -107,7 +107,7 @@ export async function fetchConversationWindow(sessionId: string): Promise<Conver
   if (isTauriRuntime()) {
     try {
       const data = await invokeTauri<ConversationWindow>("get_local_conversation_window", {
-        session_id: sessionId,
+        sessionId,
       })
       return ConversationWindowSchema.parse(data)
     } catch {
@@ -396,7 +396,7 @@ export async function createConversation(
 export async function archiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<ConversationArchiveResponse>("archive_local_conversation", {
-      session_id: sessionId,
+      sessionId,
     })
     return ConversationArchiveResponseSchema.parse(data)
   }
@@ -411,7 +411,7 @@ export async function archiveConversation(sessionId: string): Promise<Conversati
 export async function unarchiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<ConversationArchiveResponse>("unarchive_local_conversation", {
-      session_id: sessionId,
+      sessionId,
     })
     return ConversationArchiveResponseSchema.parse(data)
   }
@@ -429,7 +429,7 @@ export async function renameConversation(
 ): Promise<ConversationRenameResponse> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<ConversationRenameResponse>("rename_local_conversation", {
-      session_id: sessionId,
+      sessionId,
       payload: { title },
     })
     return ConversationRenameResponseSchema.parse(data)
@@ -449,8 +449,8 @@ export async function deleteConversationMessage(
 ): Promise<ConversationDeleteResponse> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<ConversationDeleteResponse>("delete_local_conversation_message", {
-      session_id: sessionId,
-      turn_index: turnIndex,
+      sessionId,
+      turnIndex,
     })
     return ConversationDeleteResponseSchema.parse(data)
   }
@@ -465,7 +465,7 @@ export async function deleteConversationMessage(
 export async function clearConversation(sessionId: string): Promise<ConversationClearResponse> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<ConversationClearResponse>("clear_local_conversation", {
-      session_id: sessionId,
+      sessionId,
     })
     return ConversationClearResponseSchema.parse(data)
   }
@@ -571,7 +571,7 @@ export async function cancelLocalConversationRequest(
 
   const data = await invokeTauri<ConversationCancelResponse>(
     "cancel_local_conversation_request",
-    { request_id: normalized }
+    { requestId: normalized }
   )
   return ConversationCancelResponseSchema.parse(data)
 }

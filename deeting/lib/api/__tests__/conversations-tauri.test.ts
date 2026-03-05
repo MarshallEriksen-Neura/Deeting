@@ -46,7 +46,7 @@ describe("conversation tauri apis", () => {
       summary: { version: 1, summary_text: "summary" },
     })
     expect(mockInvoke).toHaveBeenCalledWith("get_local_conversation_window", {
-      session_id: "session-local-1",
+      sessionId: "session-local-1",
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
@@ -72,7 +72,7 @@ describe("conversation tauri apis", () => {
       summary: null,
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_local_conversation_window", {
-      session_id: "session-local-2",
+      sessionId: "session-local-2",
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_local_conversation_history", {
       query: { session_id: "session-local-2", limit: 200 },

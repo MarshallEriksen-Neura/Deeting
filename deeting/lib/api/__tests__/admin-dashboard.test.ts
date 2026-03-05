@@ -144,10 +144,10 @@ describe("admin dashboard api", () => {
     await closeAdminConversation("session-local-1")
 
     expect(mockInvoke).toHaveBeenNthCalledWith(1, "archive_local_conversation", {
-      session_id: "session-local-1",
+      sessionId: "session-local-1",
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "close_local_conversation", {
-      session_id: "session-local-1",
+      sessionId: "session-local-1",
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
@@ -218,7 +218,7 @@ describe("admin dashboard api", () => {
 
     expect(result.id).toBe("session-local-1")
     expect(mockInvoke).toHaveBeenCalledWith("get_local_admin_conversation", {
-      session_id: "session-local-1",
+      sessionId: "session-local-1",
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
@@ -300,7 +300,7 @@ describe("admin dashboard api", () => {
     expect(result.total).toBe(1)
     expect(result.items[0]?.id).toBe("msg-local-1")
     expect(mockInvoke).toHaveBeenCalledWith("list_local_admin_conversation_messages", {
-      session_id: "session-local-1",
+      sessionId: "session-local-1",
       query: {
         skip: 0,
         limit: 50,
@@ -374,7 +374,7 @@ describe("admin dashboard api", () => {
 
     expect(result.items[0]?.id).toBe("summary-local-1")
     expect(mockInvoke).toHaveBeenCalledWith("list_local_admin_conversation_summaries", {
-      session_id: "session-local-1",
+      sessionId: "session-local-1",
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
@@ -523,10 +523,10 @@ describe("admin dashboard api", () => {
     expect(triggerResult.queued).toBe(true)
     expect(retryResult.session_id).toBe("session-local-1")
     expect(mockInvoke).toHaveBeenNthCalledWith(1, "trigger_local_conversation_summary_job", {
-      session_id: "session-local-1",
+      sessionId: "session-local-1",
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "retry_local_conversation_summary_job", {
-      job_id: "job-1",
+      jobId: "job-1",
     })
   })
 

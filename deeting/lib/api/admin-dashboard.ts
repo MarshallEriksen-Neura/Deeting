@@ -186,7 +186,7 @@ export async function fetchAdminConversations(params?: {
 export async function fetchAdminConversation(sessionId: string): Promise<ConversationItem> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<unknown>("get_local_admin_conversation", {
-      session_id: sessionId,
+      sessionId,
     })
     return ConversationItemSchema.parse(data)
   }
@@ -201,7 +201,7 @@ export async function fetchAdminConversation(sessionId: string): Promise<Convers
 export async function archiveAdminConversation(sessionId: string): Promise<void> {
   if (isTauriRuntime()) {
     await invokeTauri("archive_local_conversation", {
-      session_id: sessionId,
+      sessionId,
     })
     return
   }
@@ -215,7 +215,7 @@ export async function archiveAdminConversation(sessionId: string): Promise<void>
 export async function closeAdminConversation(sessionId: string): Promise<void> {
   if (isTauriRuntime()) {
     await invokeTauri("close_local_conversation", {
-      session_id: sessionId,
+      sessionId,
     })
     return
   }
@@ -257,7 +257,7 @@ export async function fetchAdminConversationMessages(
 ): Promise<z.infer<typeof ConversationMessageListSchema>> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<unknown>("list_local_admin_conversation_messages", {
-      session_id: sessionId,
+      sessionId,
       query: {
         skip: params?.skip ?? 0,
         limit: params?.limit ?? 50,
@@ -303,7 +303,7 @@ export async function fetchAdminConversationSummaries(
 ): Promise<z.infer<typeof ConversationSummaryListSchema>> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<unknown>("list_local_admin_conversation_summaries", {
-      session_id: sessionId,
+      sessionId,
     })
     return ConversationSummaryListSchema.parse(data)
   }
@@ -429,7 +429,7 @@ export async function triggerLocalConversationSummary(
   }
 
   const data = await invokeTauri<unknown>("trigger_local_conversation_summary_job", {
-    session_id: sessionId,
+    sessionId,
   })
   return ConversationSummaryEnqueueResponseSchema.parse(data)
 }
@@ -442,7 +442,7 @@ export async function retryLocalConversationSummaryJob(
   }
 
   const data = await invokeTauri<unknown>("retry_local_conversation_summary_job", {
-    job_id: jobId,
+    jobId,
   })
   return ConversationSummaryEnqueueResponseSchema.parse(data)
 }

@@ -222,6 +222,47 @@ describe("normalizeConversationMessages", () => {
     ])
   })
 
+  it("keeps ui block as renderable assistant output for history replay", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: "legacy-ui-text",
+        turn_index: 16,
+        meta_info: {
+          blocks: [
+            {
+              type: "ui",
+              viewType: "table.simple",
+              payload: {
+                rows: [{ name: "Alice", score: 98 }],
+              },
+              title: "Top Result",
+            },
+          ],
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.content).toBe("")
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        type: "ui",
+        viewType: "table.simple",
+        payload: {
+          rows: [{ name: "Alice", score: 98 }],
+        },
+        title: "Top Result",
+      }),
+    ])
+  })
+
   it("uses backend created_at as message createdAt", () => {
     const createdAtIso = "2026-02-01T10:20:30.000Z"
     const [message] = normalizeConversationMessages(

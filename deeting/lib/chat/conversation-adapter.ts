@@ -37,6 +37,18 @@ const hasRenderableBlocks = (blocks: MessageBlock[]) =>
     if (block.type === "error") {
       return typeof block.message === "string" && block.message.trim().length > 0
     }
+    if (block.type === "ui") {
+      return typeof block.viewType === "string" && block.viewType.trim().length > 0
+    }
+    if (block.type === "execution_section") {
+      return typeof block.title === "string" && block.title.trim().length > 0
+    }
+    if (block.type === "console_log") {
+      return typeof block.content === "string" && block.content.trim().length > 0
+    }
+    if (block.type === "flight_offer" || block.type === "file_preview") {
+      return true
+    }
     return false
   })
 

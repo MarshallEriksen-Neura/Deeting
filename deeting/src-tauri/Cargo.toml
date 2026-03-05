@@ -46,3 +46,4 @@ keyring = { version = "3.6.3", default-features = false, features = ["windows-na
 lancedb = "0.14.0"
 arrow-array = "53.2"
 arrow-schema = "53.2"
+handlebars = "6.3.2"

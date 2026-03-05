@@ -369,13 +369,20 @@ async fn request_provider_chat_completion(
         .await
         .map_err(to_string)?
         .ok_or_else(|| "provider model not found".to_string())?;
+    let instance = app_state
+        .providers
+        .store
+        .get_instance(&model.instance_id.to_string())
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider instance not found".to_string())?;
     let connection = app_state
         .providers
         .store
         .get_instance_connection(&model.instance_id.to_string())
         .await
         .map_err(to_string)?
-        .ok_or_else(|| "provider instance not found".to_string())?;
+        .ok_or_else(|| "provider instance connection not found".to_string())?;
 
     let endpoint = build_upstream_endpoint(
         &connection.base_url,
@@ -423,7 +430,20 @@ async fn request_provider_chat_completion(
             truncate_upstream_body(raw_text.as_str(), 300)
         )
     })?;
-    Ok(normalize_chat_completion_response(raw))
+
+    let template_engine = instance.template_engine.as_deref().unwrap_or_else(|| {
+        connection.protocol.as_deref().unwrap_or("openai_compat")
+    });
+    let response_transform = instance.response_transform.as_ref().unwrap_or(&serde_json::json!({}));
+
+    let transformed = app_state.providers.transformer.transform(
+        template_engine,
+        response_transform,
+        raw,
+        status.as_u16(),
+    );
+
+    Ok(normalize_chat_completion_response(transformed))
 }
 
 fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
@@ -433,6 +453,11 @@ fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Val
 
     let mut content = raw
         .get("content")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mut reasoning_content = raw
+        .get("reasoning_content")
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .to_string();
@@ -451,19 +476,35 @@ fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Val
                     .unwrap_or("")
                     .to_string();
             }
+            if reasoning_content.is_empty() {
+                reasoning_content = message
+                    .get("reasoning_content")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .to_string();
+            }
             if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
                 for call in tool_calls {
-                    let function_name = call
-                        .get("function")
-                        .and_then(|value| value.get("name"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or("");
-                    let arguments = call
-                        .get("function")
-                        .and_then(|value| value.get("arguments"))
-                        .and_then(|value| value.as_str())
-                        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
-                        .unwrap_or_else(|| serde_json::json!({}));
+                    let (function_name, arguments) = if let Some(func) = call.get("function") {
+                        (
+                            func.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                            func.get("arguments")
+                                .and_then(|v| {
+                                    if let Some(s) = v.as_str() {
+                                        serde_json::from_str::<serde_json::Value>(s).ok()
+                                    } else {
+                                        Some(v.clone())
+                                    }
+                                })
+                                .unwrap_or_else(|| serde_json::json!({})),
+                        )
+                    } else {
+                        (
+                            call.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                            call.get("arguments").cloned().unwrap_or_else(|| serde_json::json!({})),
+                        )
+                    };
+
                     normalized_tool_calls.push(serde_json::json!({
                         "id": call.get("id").and_then(|value| value.as_str()).unwrap_or_default(),
                         "name": function_name,
@@ -474,10 +515,20 @@ fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Val
         }
     }
 
-    serde_json::json!({
+    if normalized_tool_calls.is_empty() {
+        if let Some(tc_array) = raw.get("tool_calls").and_then(|v| v.as_array()) {
+            normalized_tool_calls.extend(tc_array.iter().cloned());
+        }
+    }
+
+    let mut result = serde_json::json!({
         "content": content,
         "tool_calls": normalized_tool_calls
-    })
+    });
+    if !reasoning_content.is_empty() {
+        result["reasoning_content"] = serde_json::json!(reasoning_content);
+    }
+    result
 }
 
 fn build_upstream_endpoint(
@@ -1215,6 +1266,7 @@ fn build_local_tool_trace_blocks(tool_call_meta: &[serde_json::Value]) -> Vec<se
                 "status": "success",
                 "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
             }));
+            blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));
         } else if status.eq_ignore_ascii_case("error") {
             blocks.push(serde_json::json!({
                 "type": "tool_result",
@@ -1230,6 +1282,90 @@ fn build_local_tool_trace_blocks(tool_call_meta: &[serde_json::Value]) -> Vec<se
     }
 
     blocks
+}
+
+fn extract_ui_blocks_from_tool_result(
+    item: &serde_json::Value,
+    call_id: &str,
+    tool_name: &str,
+) -> Vec<serde_json::Value> {
+    let result = item
+        .get("result")
+        .and_then(|value| value.as_object());
+    let Some(result) = result else {
+        return Vec::new();
+    };
+
+    let Some(raw_blocks) = result.get("render_blocks").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+
+    raw_blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, raw)| map_render_block_to_ui_block(raw, call_id, tool_name, idx))
+        .collect()
+}
+
+fn map_render_block_to_ui_block(
+    raw: &serde_json::Value,
+    call_id: &str,
+    tool_name: &str,
+    index: usize,
+) -> Option<serde_json::Value> {
+    let object = raw.as_object()?;
+    let view_type = object
+        .get("view_type")
+        .or_else(|| object.get("viewType"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())?;
+
+    let payload = object
+        .get("payload")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let id_seed = if call_id.trim().is_empty() {
+        tool_name
+    } else {
+        call_id
+    };
+
+    let mut block = serde_json::Map::new();
+    block.insert(
+        "id".to_string(),
+        serde_json::Value::String(format!("{id_seed}-ui-{index}")),
+    );
+    block.insert("type".to_string(), serde_json::Value::String("ui".to_string()));
+    block.insert(
+        "viewType".to_string(),
+        serde_json::Value::String(view_type.to_string()),
+    );
+    block.insert("payload".to_string(), payload);
+    block.insert(
+        "displayMode".to_string(),
+        serde_json::Value::String("widget".to_string()),
+    );
+
+    if let Some(title) = object
+        .get("title")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        block.insert(
+            "title".to_string(),
+            serde_json::Value::String(title.to_string()),
+        );
+    }
+    if let Some(metadata) = object.get("metadata").and_then(|value| value.as_object()) {
+        block.insert(
+            "metadata".to_string(),
+            serde_json::Value::Object(metadata.clone()),
+        );
+    }
+
+    Some(serde_json::Value::Object(block))
 }
 
 const LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE: &str =
@@ -1700,17 +1836,26 @@ fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCal
     let mut calls = Vec::new();
     if let Some(tc_array) = response.get("tool_calls").and_then(|v| v.as_array()) {
         for tc in tc_array {
-            if let (Some(id), Some(name)) = (
-                tc.get("id").and_then(|v| v.as_str()),
-                tc.get("name").and_then(|v| v.as_str()),
-            ) {
+            let id = tc.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let name = tc.get("name").and_then(|v| v.as_str())
+                .or_else(|| tc.get("function").and_then(|f| f.get("name")).and_then(|v| v.as_str()))
+                .map(|s| s.to_string());
+            
+            let args = tc.get("arguments").cloned()
+                .or_else(|| tc.get("function").and_then(|f| f.get("arguments")).map(|v| {
+                    if let Some(s) = v.as_str() {
+                        serde_json::from_str(s).unwrap_or(serde_json::json!({}))
+                    } else {
+                        v.clone()
+                    }
+                }))
+                .unwrap_or(serde_json::json!({}));
+
+            if let Some(name_val) = name {
                 calls.push(LocalChatToolCall {
-                    id: Some(id.to_string()),
-                    name: name.to_string(),
-                    arguments: tc
-                        .get("arguments")
-                        .cloned()
-                        .unwrap_or(serde_json::json!({})),
+                    id,
+                    name: name_val,
+                    arguments: args,
                 });
             }
         }
