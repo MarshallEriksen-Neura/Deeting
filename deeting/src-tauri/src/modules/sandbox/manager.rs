@@ -29,8 +29,7 @@ const DEFAULT_BOXRUN_PORT: u16 = 9090;
 #[cfg(target_os = "windows")]
 const DEFAULT_BRIDGE_DISCOVERY_TIMEOUT_MS: u64 = 300;
 #[cfg(target_os = "windows")]
-const DEFAULT_BRIDGE_DISCOVERY_URLS: [&str; 2] =
-    ["http://127.0.0.1:9090", "http://localhost:9090"];
+const DEFAULT_BRIDGE_DISCOVERY_URLS: [&str; 2] = ["http://127.0.0.1:9090", "http://localhost:9090"];
 
 #[derive(Debug, Clone)]
 pub struct SandboxManagerOptions {
@@ -558,8 +557,7 @@ fn non_empty_env(key: &str) -> Option<String> {
 }
 
 fn bridge_url_from_env() -> Option<String> {
-    non_empty_env("BOXRUN_BASE_URL")
-        .or_else(|| boxrun_url_from_host_port_env())
+    non_empty_env("BOXRUN_BASE_URL").or_else(|| boxrun_url_from_host_port_env())
 }
 
 fn boxrun_url_from_host_port_env() -> Option<String> {

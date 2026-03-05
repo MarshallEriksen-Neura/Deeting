@@ -1,7 +1,6 @@
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthSync } from "@/components/auth/auth-sync";
 import { DownloadAppModal } from "@/components/ui/modal/download-app-modal";
-import { DesktopCloseGuard } from "@/components/common/desktop-close-guard";
 import { DesktopUpdateGuard } from "@/components/common/desktop-update-guard";
 import { BridgeMonitor } from "@/components/bridge/bridge-monitor";
 import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog";
@@ -28,7 +27,6 @@ export default function RootLayout({
             <AuthSync />
             {children}
             <DownloadAppModal />
-            {isTauri && <DesktopCloseGuard />}
             {isTauri && <DesktopUpdateGuard />}
             {isTauri && <BridgeMonitor />}
             {isTauri && <ToolApprovalDialog />}

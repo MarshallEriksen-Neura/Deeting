@@ -125,7 +125,7 @@ async def create_api_key(
             for q in data.quotas
         ]
 
-    api_key, raw_key = await service.generate_key(
+    api_key, raw_key, _raw_secret = await service.generate_key(
         key_type=key_type,
         name=data.name,
         created_by=current_user.id,
@@ -152,8 +152,16 @@ async def create_api_key(
 async def list_api_keys(
     skip: int = Query(0, ge=0, description="跳过数量"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
-    type: str | None = Query(None, description="Key 类型筛选"),
-    status: str | None = Query(None, description="状态筛选"),
+    type: str | None = Query(
+        None,
+        pattern="^(internal|external)$",
+        description="Key 类型筛选",
+    ),
+    status: str | None = Query(
+        None,
+        pattern="^(active|expiring|revoked|expired)$",
+        description="状态筛选",
+    ),
     tenant_id: UUID | None = Query(None, description="租户 ID 筛选"),
     user_id: UUID | None = Query(None, description="用户 ID 筛选"),
     service: ApiKeyService = Depends(get_api_key_service),
@@ -163,15 +171,26 @@ async def list_api_keys(
 
     支持按类型、状态、租户、用户筛选
     """
-    # TODO: 实现分页和筛选
+    key_type = ApiKeyType(type) if type else None
     status_enum = ApiKeyStatus(status) if status else None
 
     if tenant_id:
-        keys = await service.list_keys(tenant_id=tenant_id, status=status_enum)
+        keys = await service.list_keys(
+            tenant_id=tenant_id,
+            key_type=key_type,
+            status=status_enum,
+        )
     elif user_id:
-        keys = await service.list_keys(user_id=user_id, status=status_enum)
+        keys = await service.list_keys(
+            user_id=user_id,
+            key_type=key_type,
+            status=status_enum,
+        )
     else:
-        keys = await service.list_keys(status=status_enum)
+        keys = await service.list_keys(
+            key_type=key_type,
+            status=status_enum,
+        )
 
     # 简单分页
     total = len(keys)
@@ -295,7 +314,10 @@ async def rotate_api_key(
 
     生成新 Key，旧 Key 在宽限期后过期
     """
-    new_key, raw_key = await service.rotate_key(api_key_id, grace_period_hours)
+    new_key, raw_key, _raw_secret = await service.rotate_key(
+        api_key_id,
+        grace_period_hours,
+    )
     if not new_key:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

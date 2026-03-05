@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,15 +21,14 @@ interface CloseConfirmDialogProps {
 
 export function CloseConfirmDialog({ open, onChoose }: CloseConfirmDialogProps) {
   const [remember, setRemember] = useState(false);
+  const t = useTranslations("common.desktopClose");
 
   return (
     <AlertDialog open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Close Window</AlertDialogTitle>
-          <AlertDialogDescription>
-            Would you like to minimize Deeting to the system tray or quit the application?
-          </AlertDialogDescription>
+          <AlertDialogTitle>{t("title")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("description")}</AlertDialogDescription>
         </AlertDialogHeader>
         <div className="flex items-center gap-2 py-2">
           <Checkbox
@@ -37,15 +37,13 @@ export function CloseConfirmDialog({ open, onChoose }: CloseConfirmDialogProps) 
             onCheckedChange={(v) => setRemember(v === true)}
           />
           <label htmlFor="remember-close" className="text-sm cursor-pointer">
-            Remember my choice
+            {t("remember")}
           </label>
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => onChoose("minimize", remember)}>
-            Minimize to Tray
-          </AlertDialogCancel>
+          <AlertDialogCancel onClick={() => onChoose("minimize", remember)}>{t("minimize")}</AlertDialogCancel>
           <AlertDialogAction onClick={() => onChoose("quit", remember)}>
-            Quit
+            {t("quit")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -52,6 +52,7 @@ from app.models.api_key import (
     ApiKeyRateLimit,
     ApiKeyScope,
     ApiKeyStatus,
+    ApiKeyType,
     ApiKeyUsage,
     QuotaType,
     ScopeType,
@@ -131,6 +132,7 @@ class ApiKeyRepository:
         self,
         tenant_id: UUID | None = None,
         user_id: UUID | None = None,
+        key_type: ApiKeyType | None = None,
         status: ApiKeyStatus | None = None,
     ) -> list[ApiKey]:
         """
@@ -155,6 +157,8 @@ class ApiKeyRepository:
             stmt = stmt.where(ApiKey.tenant_id == tenant_id)
         if user_id:
             stmt = stmt.where(ApiKey.user_id == user_id)
+        if key_type:
+            stmt = stmt.where(ApiKey.type == key_type)
         if status:
             stmt = stmt.where(ApiKey.status == status)
 

@@ -285,6 +285,12 @@
       "feedback": {
         "created": "已创建 Key：{name}",
         "createFailed": "创建失败",
+        "revoked": "已吊销 Key：{name}",
+        "revokeFailed": "吊销失败",
+        "rotated": "已轮换 Key：{name}",
+        "rotateFailed": "轮换失败",
+        "deleted": "已删除 Key：{name}",
+        "deleteFailed": "删除失败",
         "rawKeyLabel": "原始 Key（仅展示一次）"
       },
       "types": {
@@ -293,6 +299,7 @@
       },
       "status": {
         "active": "活跃",
+        "expiring": "轮换中",
         "revoked": "已吊销",
         "expired": "已过期"
       },
@@ -315,7 +322,15 @@
       },
       "actions": {
         "creating": "创建中...",
-        "create": "创建 Key"
+        "create": "创建 Key",
+        "revoke": "吊销",
+        "rotate": "轮换",
+        "delete": "删除"
+      },
+      "confirm": {
+        "revoke": "确认吊销 Key「{name}」吗？",
+        "rotate": "确认轮换 Key「{name}」吗？旧 Key 将进入宽限期。",
+        "delete": "确认删除 Key「{name}」吗？该操作不可恢复。"
       },
       "filters": {
         "searchPlaceholder": "搜索 Key...",
@@ -490,7 +505,9 @@
       },
       "feedback": {
         "created": "已创建凭证：{alias}",
-        "createFailed": "创建失败"
+        "createFailed": "创建失败",
+        "deleted": "已删除凭证：{alias}",
+        "deleteFailed": "删除凭证失败"
       },
       "table": {
         "headers": {
@@ -511,7 +528,11 @@
       },
       "actions": {
         "creating": "创建中...",
-        "addCredential": "添加凭证"
+        "addCredential": "添加凭证",
+        "delete": "删除"
+      },
+      "confirm": {
+        "delete": "确认删除凭证「{alias}」吗？"
       },
       "filters": {
         "searchPlaceholder": "搜索凭证...",
@@ -672,6 +693,41 @@
         "paused": "已暂停",
         "completed": "已完成",
         "failed": "失败"
+      },
+      "actions": {
+        "pause": "暂停",
+        "resume": "继续"
+      },
+      "feedback": {
+        "paused": "已暂停任务：{project}",
+        "resumed": "已继续任务：{project}",
+        "operationFailed": "操作失败"
+      },
+      "drawer": {
+        "title": "任务执行详情",
+        "fields": {
+          "planId": "计划 ID",
+          "user": "用户",
+          "status": "状态",
+          "version": "版本",
+          "created": "创建时间",
+          "updated": "更新时间"
+        },
+        "logsTitle": "执行日志",
+        "logsLoading": "正在加载日志...",
+        "logsFailed": "加载日志失败",
+        "logsEmpty": "暂无执行日志",
+        "sessionsTitle": "Worker 会话",
+        "selectedLog": "已选日志",
+        "selectLogHint": "选择日志条目后查看会话",
+        "sessionsLoading": "正在加载会话...",
+        "sessionsFailed": "加载会话失败",
+        "sessionsEmpty": "暂无 Worker 会话",
+        "sessionMetrics": {
+          "messages": "{count} 条消息",
+          "thoughts": "{count} 条思考轨迹",
+          "tokens": "{count} Tokens"
+        }
       },
       "table": {
         "headers": {
@@ -942,6 +998,46 @@
         "loading": "正在加载生成任务...",
         "failed": "加载生成任务失败",
         "noData": "暂无生成任务"
+      },
+      "shares": {
+        "title": "分享管理",
+        "description": "审核并管理生成结果的分享状态",
+        "status": {
+          "active": "启用",
+          "inactive": "停用"
+        },
+        "actions": {
+          "activate": "启用",
+          "deactivate": "停用"
+        },
+        "filters": {
+          "searchPlaceholder": "按分享 ID、任务、用户、模型、提示词搜索...",
+          "active": "状态"
+        },
+        "table": {
+          "headers": {
+            "task": "任务",
+            "user": "用户",
+            "model": "模型",
+            "status": "状态",
+            "sharedAt": "分享时间",
+            "prompt": "提示词"
+          }
+        },
+        "confirm": {
+          "activate": "确认启用分享 {id} 吗？",
+          "deactivate": "确认停用分享 {id} 吗？"
+        },
+        "feedback": {
+          "activated": "分享 {id} 已启用",
+          "deactivated": "分享 {id} 已停用",
+          "updateFailed": "更新分享状态失败"
+        },
+        "empty": {
+          "loading": "正在加载分享...",
+          "failed": "加载分享失败",
+          "noData": "暂无分享数据"
+        }
       },
       "csv": {
         "id": "id",

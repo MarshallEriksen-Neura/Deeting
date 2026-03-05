@@ -500,6 +500,86 @@ export async function fetchAdminSpecPlans(params?: {
   return SpecPlanListSchema.parse(data)
 }
 
+export async function pauseAdminSpecPlan(planId: string): Promise<SpecPlanItem> {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/spec-plans/${planId}/pause`,
+    method: "POST",
+  })
+  return SpecPlanItemSchema.parse(data)
+}
+
+export async function resumeAdminSpecPlan(planId: string): Promise<SpecPlanItem> {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/spec-plans/${planId}/resume`,
+    method: "POST",
+  })
+  return SpecPlanItemSchema.parse(data)
+}
+
+const SpecExecutionLogItemSchema = z.object({
+  id: z.string(),
+  plan_id: z.string(),
+  node_id: z.string(),
+  status: z.string(),
+  worker_info: z.string().nullable().optional(),
+  input_snapshot: z.record(z.string(), z.unknown()).nullable().optional(),
+  output_data: z.record(z.string(), z.unknown()).nullable().optional(),
+  raw_response: z.unknown().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  retry_count: z.number().int().default(0),
+  started_at: z.string().nullable().optional(),
+  completed_at: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+export const SpecExecutionLogListSchema = createOffsetPageSchema(SpecExecutionLogItemSchema)
+export type SpecExecutionLogItem = z.infer<typeof SpecExecutionLogItemSchema>
+
+export async function fetchAdminSpecPlanLogs(
+  planId: string,
+  params?: {
+    skip?: number
+    limit?: number
+    status?: string
+  }
+) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/spec-plans/${planId}/logs`,
+    method: "GET",
+    params: {
+      skip: params?.skip ?? 0,
+      limit: params?.limit ?? 100,
+      status: params?.status,
+    },
+  })
+  return SpecExecutionLogListSchema.parse(data)
+}
+
+const SpecWorkerSessionItemSchema = z.object({
+  id: z.string(),
+  log_id: z.string(),
+  internal_messages: z.array(z.record(z.string(), z.unknown())).default([]),
+  thought_trace: z.array(z.record(z.string(), z.unknown())).default([]),
+  total_tokens: z.number().int().default(0),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+const SpecWorkerSessionListSchema = z.object({
+  items: z.array(SpecWorkerSessionItemSchema).default([]),
+}).passthrough()
+
+export type SpecWorkerSessionItem = z.infer<typeof SpecWorkerSessionItemSchema>
+
+export async function fetchAdminSpecLogSessions(logId: string) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/spec-logs/${logId}/sessions`,
+    method: "GET",
+  })
+  return SpecWorkerSessionListSchema.parse(data)
+}
+
 const GenerationTaskItemSchema = z.object({
   id: z.string(),
   task_type: z.string(),
@@ -536,6 +616,57 @@ export async function fetchAdminGenerationTasks(params?: {
     },
   })
   return GenerationTaskListSchema.parse(data)
+}
+
+const GenerationShareItemSchema = z.object({
+  id: z.string(),
+  task_id: z.string(),
+  user_id: z.string(),
+  model: z.string(),
+  prompt: z.string().nullable().optional(),
+  is_active: z.boolean(),
+  shared_at: z.string(),
+  revoked_at: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough()
+
+export const GenerationShareListSchema = createOffsetPageSchema(GenerationShareItemSchema)
+export type GenerationShareItem = z.infer<typeof GenerationShareItemSchema>
+
+export async function fetchAdminGenerationShares(params?: {
+  skip?: number
+  limit?: number
+  is_active?: boolean
+  user_id?: string
+  task_id?: string
+}) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/generation-shares`,
+    method: "GET",
+    params: {
+      skip: params?.skip ?? 0,
+      limit: params?.limit ?? 100,
+      is_active: params?.is_active,
+      user_id: params?.user_id,
+      task_id: params?.task_id,
+    },
+  })
+  return GenerationShareListSchema.parse(data)
+}
+
+export async function updateAdminGenerationShareActive(
+  shareId: string,
+  isActive: boolean
+) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/generation-shares/${shareId}`,
+    method: "PATCH",
+    data: {
+      is_active: isActive,
+    },
+  })
+  return GenerationShareItemSchema.parse(data)
 }
 
 const TenantQuotaItemSchema = z.object({
@@ -891,6 +1022,13 @@ const AdminApiKeyCreatedSchema = z.object({
 }).passthrough()
 
 export type AdminApiKeyCreated = z.infer<typeof AdminApiKeyCreatedSchema>
+const AdminApiKeyRotateResponseSchema = z.object({
+  new_key: AdminApiKeyItemSchema,
+  raw_key: z.string(),
+  old_key_expires_at: z.string(),
+}).passthrough()
+
+export type AdminApiKeyRotateResponse = z.infer<typeof AdminApiKeyRotateResponseSchema>
 
 type AdminApiKeyCreatePayload = {
   name: string
@@ -907,6 +1045,40 @@ export async function createAdminApiKey(payload: AdminApiKeyCreatePayload) {
     data: payload,
   })
   return AdminApiKeyCreatedSchema.parse(data)
+}
+
+export async function revokeAdminApiKey(apiKeyId: string, reason?: string) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/api-keys/${apiKeyId}/revoke`,
+    method: "POST",
+    data: {
+      reason: reason?.trim() || "revoked by admin dashboard",
+    },
+  })
+  return AdminApiKeyItemSchema.parse(data)
+}
+
+export async function deleteAdminApiKey(apiKeyId: string) {
+  await request<void>({
+    url: `${ADMIN_BASE}/api-keys/${apiKeyId}`,
+    method: "DELETE",
+  })
+}
+
+export async function rotateAdminApiKey(
+  apiKeyId: string,
+  params?: {
+    grace_period_hours?: number
+  }
+) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/api-keys/${apiKeyId}/rotate`,
+    method: "POST",
+    params: {
+      grace_period_hours: params?.grace_period_hours,
+    },
+  })
+  return AdminApiKeyRotateResponseSchema.parse(data)
 }
 
 const AssistantVersionSchema = z.object({
@@ -1217,6 +1389,16 @@ export async function createAdminProviderCredential(
     data: payload,
   })
   return ProviderCredentialItemSchema.parse(data)
+}
+
+export async function deleteAdminProviderCredential(
+  instanceId: string,
+  credentialId: string
+) {
+  await request<void>({
+    url: `${ADMIN_BASE}/provider-instances/${instanceId}/credentials/${credentialId}`,
+    method: "DELETE",
+  })
 }
 
 const ProviderPresetItemSchema = z.object({

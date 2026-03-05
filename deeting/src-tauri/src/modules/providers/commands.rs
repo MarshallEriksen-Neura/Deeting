@@ -381,12 +381,28 @@ async fn fetch_model_ids_from_upstream(
                     last_error = Some(format!("sync failed: {} ({endpoint})", response.status()));
                     continue;
                 }
-                let body: Value = response
-                    .json()
-                    .await
-                    .map_err(|e| format!("failed to parse model list from {endpoint}: {e}"))?;
-                let ids = extract_model_ids(&body);
-                return Ok(UpstreamModelsFetchResult { ids, endpoint });
+                let content_type = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok())
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty());
+                let body_text = match response.text().await {
+                    Ok(value) => value,
+                    Err(err) => {
+                        last_error =
+                            Some(format!("failed to read model list from {endpoint}: {err}"));
+                        continue;
+                    }
+                };
+
+                match decode_model_ids_from_body(&endpoint, &body_text, content_type.as_deref()) {
+                    Ok(ids) => return Ok(UpstreamModelsFetchResult { ids, endpoint }),
+                    Err(err) => {
+                        last_error = Some(err);
+                        continue;
+                    }
+                }
             }
             Err(err) => {
                 last_error = Some(format!("{err} ({endpoint})"));
@@ -400,6 +416,33 @@ async fn fetch_model_ids_from_upstream(
 struct UpstreamModelsFetchResult {
     ids: Vec<String>,
     endpoint: String,
+}
+
+fn decode_model_ids_from_body(
+    endpoint: &str,
+    body_text: &str,
+    content_type: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let body: Value = serde_json::from_str(body_text).map_err(|err| {
+        if let Some(content_type) = content_type {
+            format!(
+                "failed to parse model list from {endpoint} (content-type: {content_type}): {err}"
+            )
+        } else {
+            format!("failed to parse model list from {endpoint}: {err}")
+        }
+    })?;
+
+    let ids = extract_model_ids(&body);
+    if !ids.is_empty() {
+        return Ok(ids);
+    }
+
+    if let Some(message) = extract_error_message(&body) {
+        return Err(format!("sync failed: {message} ({endpoint})"));
+    }
+
+    Err(format!("no models discovered from upstream: {endpoint}"))
 }
 
 fn normalize_protocol(protocol: Option<&str>) -> String {
@@ -525,4 +568,43 @@ fn extract_error_message(value: &Value) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_model_ids_from_body;
+
+    #[test]
+    fn decode_model_ids_from_body_extracts_ids_from_data() {
+        let body = r#"{"data":[{"id":"gpt-4o"},{"id":"gpt-4o-mini"}]}"#;
+        let ids = decode_model_ids_from_body("https://example.com/v1/models", body, None)
+            .expect("should parse model ids");
+        assert_eq!(ids, vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]);
+    }
+
+    #[test]
+    fn decode_model_ids_from_body_reports_parse_error() {
+        let err = decode_model_ids_from_body(
+            "https://example.com/models",
+            "<html>not-json</html>",
+            Some("text/html"),
+        )
+        .expect_err("should fail for non-json body");
+        assert!(err.contains("failed to parse model list from https://example.com/models"));
+        assert!(err.contains("content-type: text/html"));
+    }
+
+    #[test]
+    fn decode_model_ids_from_body_reports_empty_models() {
+        let err = decode_model_ids_from_body(
+            "https://example.com/v1/models",
+            r#"{"object":"list","data":[]}"#,
+            Some("application/json"),
+        )
+        .expect_err("should fail when no models are present");
+        assert_eq!(
+            err,
+            "no models discovered from upstream: https://example.com/v1/models"
+        );
+    }
 }

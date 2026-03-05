@@ -13,14 +13,39 @@ use crate::modules::providers::ProviderState;
 use crate::modules::sandbox::SandboxState;
 use crate::state::AppState;
 use log::warn;
+use serde::Deserialize;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Emitter;
+use tauri::Listener;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::ShortcutState;
+
+const TRAY_LOCALE_EVENT: &str = "desktop-locale-changed";
+
+#[derive(Deserialize)]
+struct TrayLocalePayload {
+    locale: Option<String>,
+}
+
+fn desktop_prefers_zh() -> bool {
+    std::env::var("LC_ALL")
+        .or_else(|_| std::env::var("LC_MESSAGES"))
+        .or_else(|_| std::env::var("LANG"))
+        .map(|value| value.to_lowercase().starts_with("zh"))
+        .unwrap_or(false)
+}
+
+fn tray_labels_for_locale(locale: &str) -> (&'static str, &'static str) {
+    if locale.to_lowercase().starts_with("zh") {
+        ("显示主窗口", "退出 Deeting")
+    } else {
+        ("Show Window", "Quit Deeting")
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -203,9 +228,25 @@ pub fn run() {
             });
 
             // ── System Tray ──────────────────────────────────────────
-            let show_i = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit Deeting", true, None::<&str>)?;
+            let default_locale = if desktop_prefers_zh() { "zh-CN" } else { "en" };
+            let (show_label, quit_label) = tray_labels_for_locale(default_locale);
+            let show_i = MenuItem::with_id(app, "show", show_label, true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let show_i_for_locale = show_i.clone();
+            let quit_i_for_locale = quit_i.clone();
+            let fallback_locale = default_locale.to_string();
+            app.listen(TRAY_LOCALE_EVENT, move |event| {
+                let locale = serde_json::from_str::<TrayLocalePayload>(event.payload())
+                    .ok()
+                    .and_then(|payload| payload.locale)
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| fallback_locale.clone());
+                let (show_text, quit_text) = tray_labels_for_locale(&locale);
+                let _ = show_i_for_locale.set_text(show_text);
+                let _ = quit_i_for_locale.set_text(quit_text);
+            });
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())

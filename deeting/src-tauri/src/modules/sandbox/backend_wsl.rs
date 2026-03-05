@@ -79,7 +79,11 @@ impl WslBoxrunBackend {
         };
 
         let url = self.url("/boxes");
-        let response = self.authorized(self.client.post(url)).json(&payload).send().await?;
+        let response = self
+            .authorized(self.client.post(url))
+            .json(&payload)
+            .send()
+            .await?;
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();

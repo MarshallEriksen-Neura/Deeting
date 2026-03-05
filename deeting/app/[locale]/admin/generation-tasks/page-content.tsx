@@ -18,7 +18,10 @@ import {
 } from "@/components/admin"
 import { GlassCard } from "@/components/ui/glass-card"
 import {
+  fetchAdminGenerationShares,
   fetchAdminGenerationTasks,
+  updateAdminGenerationShareActive,
+  type GenerationShareItem,
   type GenerationTaskItem,
 } from "@/lib/api/admin-dashboard"
 
@@ -253,6 +256,10 @@ export function PageContent() {
   const [refreshInterval, setRefreshInterval] = useState(0)
   const [selectedTask, setSelectedTask] = useState<GenerationTaskItem | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
+  const [shareSearchQuery, setShareSearchQuery] = useState("")
+  const [shareActiveFilter, setShareActiveFilter] = useState("")
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null)
+  const [actioningShareId, setActioningShareId] = useState<string | null>(null)
 
   const { data, error, isLoading, mutate } = useSWR(
     ["/api/v1/admin/generation-tasks", statusFilter, typeFilter],
@@ -270,9 +277,29 @@ export function PageContent() {
     }
   )
 
+  const {
+    data: sharesData,
+    error: sharesError,
+    isLoading: sharesLoading,
+    mutate: mutateShares,
+  } = useSWR(
+    ["/api/v1/admin/generation-shares", shareActiveFilter],
+    () =>
+      fetchAdminGenerationShares({
+        limit: 100,
+        is_active:
+          shareActiveFilter === "active"
+            ? true
+            : shareActiveFilter === "inactive"
+              ? false
+              : undefined,
+      })
+  )
+
   const handleManualRefresh = useCallback(() => {
     mutate()
-  }, [mutate])
+    mutateShares()
+  }, [mutate, mutateShares])
 
   const allRows = useMemo(() => data?.items ?? [], [data?.items])
 
@@ -285,6 +312,17 @@ export function PageContent() {
       )
     )
   }, [allRows, searchQuery])
+
+  const allShares = useMemo(() => sharesData?.items ?? [], [sharesData?.items])
+  const filteredShares = useMemo(() => {
+    const query = shareSearchQuery.trim().toLowerCase()
+    if (!query) return allShares
+    return allShares.filter((row) =>
+      [row.id, row.task_id, row.user_id, row.model, row.prompt].some((value) =>
+        String(value ?? "").toLowerCase().includes(query)
+      )
+    )
+  }, [allShares, shareSearchQuery])
 
   const total = allRows.length
   const succeeded = allRows.filter((item) => item.status === "succeeded").length
@@ -433,6 +471,82 @@ export function PageContent() {
       ),
     },
   ]
+
+  const shareColumns: ColumnDef<GenerationShareItem>[] = [
+    {
+      key: "task_id",
+      header: t("shares.table.headers.task"),
+      render: (row) => <span className="font-mono text-xs text-[var(--foreground)]">{shortId(row.task_id)}</span>,
+    },
+    {
+      key: "user_id",
+      header: t("shares.table.headers.user"),
+      render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{shortId(row.user_id)}</span>,
+    },
+    {
+      key: "model",
+      header: t("shares.table.headers.model"),
+      render: (row) => <span className="font-mono text-xs text-[var(--muted)]">{row.model}</span>,
+    },
+    {
+      key: "is_active",
+      header: t("shares.table.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={row.is_active ? t("shares.status.active") : t("shares.status.inactive")}
+          tone={row.is_active ? "success" : "error"}
+        />
+      ),
+    },
+    {
+      key: "shared_at",
+      header: t("shares.table.headers.sharedAt"),
+      render: (row) => (
+        <span className="text-xs text-[var(--muted)]">{dateFormatter.format(new Date(row.shared_at))}</span>
+      ),
+    },
+    {
+      key: "prompt",
+      header: t("shares.table.headers.prompt"),
+      render: (row) => (
+        <span className="inline-block max-w-[260px] truncate text-xs text-[var(--muted)]" title={row.prompt ?? ""}>
+          {row.prompt || "—"}
+        </span>
+      ),
+    },
+  ]
+
+  const handleToggleShare = async (row: GenerationShareItem) => {
+    if (actioningShareId) return
+    const nextActive = !row.is_active
+    if (
+      !window.confirm(
+        row.is_active
+          ? t("shares.confirm.deactivate", { id: shortId(row.id) })
+          : t("shares.confirm.activate", { id: shortId(row.id) })
+      )
+    ) {
+      return
+    }
+
+    setActioningShareId(row.id)
+    setShareFeedback(null)
+    try {
+      await updateAdminGenerationShareActive(row.id, nextActive)
+      setShareFeedback(
+        nextActive
+          ? t("shares.feedback.activated", { id: shortId(row.id) })
+          : t("shares.feedback.deactivated", { id: shortId(row.id) })
+      )
+      await mutateShares()
+    } catch (actionError) {
+      const message =
+        actionError instanceof Error ? actionError.message : t("shares.feedback.updateFailed")
+      setShareFeedback(message)
+    } finally {
+      setActioningShareId(null)
+    }
+  }
 
   const refreshIntervals = [
     { label: t("refresh.off"), value: 0 },
@@ -585,6 +699,59 @@ export function PageContent() {
               : t("empty.noData")
         }
       />
+
+      <GlassCard padding="default" hover="none">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--foreground)]">{t("shares.title")}</h3>
+            <p className="mt-1 text-xs text-[var(--muted)]">{t("shares.description")}</p>
+          </div>
+        </div>
+
+        <AdminFilterBar
+          searchPlaceholder={t("shares.filters.searchPlaceholder")}
+          onSearch={setShareSearchQuery}
+          onFilterChange={(key, value) => {
+            if (key === "active") setShareActiveFilter(value)
+          }}
+          filters={[
+            {
+              key: "active",
+              label: t("shares.filters.active"),
+              options: [
+                { label: t("shares.status.active"), value: "active" },
+                { label: t("shares.status.inactive"), value: "inactive" },
+              ],
+            },
+          ]}
+        />
+
+        {shareFeedback && <p className="mb-2 text-xs text-[var(--muted)]">{shareFeedback}</p>}
+
+        <AdminDataTable
+          columns={shareColumns}
+          data={filteredShares}
+          emptyMessage={
+            sharesLoading
+              ? t("shares.empty.loading")
+              : sharesError
+                ? t("shares.empty.failed")
+                : t("shares.empty.noData")
+          }
+          rowActions={(row) => (
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                void handleToggleShare(row)
+              }}
+              disabled={Boolean(actioningShareId)}
+              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {row.is_active ? t("shares.actions.deactivate") : t("shares.actions.activate")}
+            </button>
+          )}
+        />
+      </GlassCard>
 
       <TaskDetailDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
     </AdminPageShell>

@@ -3,10 +3,14 @@ import { NextIntlClientProvider } from "next-intl"
 import { getMessages, getTranslations, setRequestLocale } from "next-intl/server"
 import { HeaderShell } from "@/components/layout/HeaderShell"
 import { defaultNavItems } from "@/components/layout/header/constants"
-import { routing, type AppLocale } from "@/i18n/routing"
+import { routing } from "@/i18n/routing"
 import { NotificationProvider } from "@/components/contexts/notification-context"
 import { NotificationSystem } from "@/components/notifications/notification-system"
 import { AppLoadingOverlay } from "@/components/common/app-loading-overlay"
+import { DesktopCloseGuard } from "@/components/common/desktop-close-guard"
+import { DesktopTrayLocaleSync } from "@/components/common/desktop-tray-locale-sync"
+
+const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
 
 export const dynamicParams = false
 
@@ -43,6 +47,8 @@ export default async function LocaleLayout({
           {children}
         </HeaderShell>
         {auth}
+        {isTauri && <DesktopCloseGuard />}
+        {isTauri && <DesktopTrayLocaleSync />}
         {/* 全局通知系统 */}
         <NotificationSystem />
       </NotificationProvider>

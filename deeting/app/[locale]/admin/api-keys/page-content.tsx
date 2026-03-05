@@ -17,7 +17,10 @@ import {
 import { GlassCard } from "@/components/ui/glass-card"
 import {
   createAdminApiKey,
+  deleteAdminApiKey,
   fetchAdminApiKeys,
+  revokeAdminApiKey,
+  rotateAdminApiKey,
   type AdminApiKeyItem,
 } from "@/lib/api/admin-dashboard"
 
@@ -47,6 +50,7 @@ export function PageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [rawKey, setRawKey] = useState<string | null>(null)
+  const [actioningId, setActioningId] = useState<string | null>(null)
 
   const {
     data,
@@ -117,8 +121,71 @@ export function PageContent() {
   }
   const statusTextMap: Record<string, string> = {
     active: t("status.active"),
+    expiring: t("status.expiring"),
     revoked: t("status.revoked"),
     expired: t("status.expired"),
+  }
+
+  const handleRevokeKey = async (row: AdminApiKeyItem) => {
+    if (actioningId) return
+    if (row.status !== "active") return
+    if (!window.confirm(t("confirm.revoke", { name: row.name }))) return
+
+    setActioningId(row.id)
+    setFeedback(null)
+    try {
+      await revokeAdminApiKey(row.id)
+      setFeedback(t("feedback.revoked", { name: row.name }))
+      await mutate()
+    } catch (actionError) {
+      const message =
+        actionError instanceof Error ? actionError.message : t("feedback.revokeFailed")
+      setFeedback(message)
+    } finally {
+      setActioningId(null)
+    }
+  }
+
+  const handleRotateKey = async (row: AdminApiKeyItem) => {
+    if (actioningId) return
+    if (!window.confirm(t("confirm.rotate", { name: row.name }))) return
+
+    setActioningId(row.id)
+    setFeedback(null)
+    setRawKey(null)
+    try {
+      const rotated = await rotateAdminApiKey(row.id, {
+        grace_period_hours: 24,
+      })
+      setFeedback(t("feedback.rotated", { name: row.name }))
+      setRawKey(rotated.raw_key)
+      await mutate()
+    } catch (actionError) {
+      const message =
+        actionError instanceof Error ? actionError.message : t("feedback.rotateFailed")
+      setFeedback(message)
+    } finally {
+      setActioningId(null)
+    }
+  }
+
+  const handleDeleteKey = async (row: AdminApiKeyItem) => {
+    if (actioningId) return
+    if (!window.confirm(t("confirm.delete", { name: row.name }))) return
+
+    setActioningId(row.id)
+    setFeedback(null)
+    try {
+      await deleteAdminApiKey(row.id)
+      setFeedback(t("feedback.deleted", { name: row.name }))
+      await mutate()
+    } catch (actionError) {
+      const message =
+        actionError instanceof Error ? actionError.message : t("feedback.deleteFailed")
+      setFeedback(message)
+    } finally {
+      setActioningId(null)
+    }
   }
 
   const columns: ColumnDef<AdminApiKeyItem>[] = [
@@ -267,6 +334,7 @@ export function PageContent() {
             label: t("filters.status"),
             options: [
               { label: t("status.active"), value: "active" },
+              { label: t("status.expiring"), value: "expiring" },
               { label: t("status.revoked"), value: "revoked" },
               { label: t("status.expired"), value: "expired" },
             ],
@@ -283,6 +351,42 @@ export function PageContent() {
               ? t("empty.failed")
               : t("empty.noData")
         }
+        rowActions={(row) => (
+          <div className="inline-flex items-center gap-1">
+            {row.status === "active" && (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void handleRevokeKey(row)
+                }}
+                disabled={Boolean(actioningId)}
+                className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-amber-400/30 px-2 text-xs text-amber-300 transition-colors hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("actions.revoke")}
+              </button>
+            )}
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                void handleRotateKey(row)
+              }}
+              disabled={Boolean(actioningId)}
+              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-sky-400/30 px-2 text-xs text-sky-300 transition-colors hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("actions.rotate")}
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                void handleDeleteKey(row)
+              }}
+              disabled={Boolean(actioningId)}
+              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-rose-400/30 px-2 text-xs text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("actions.delete")}
+            </button>
+          </div>
+        )}
       />
     </AdminPageShell>
   )

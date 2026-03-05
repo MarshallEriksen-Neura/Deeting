@@ -285,6 +285,12 @@
       "feedback": {
         "created": "Created key: {name}",
         "createFailed": "Create failed",
+        "revoked": "Revoked key: {name}",
+        "revokeFailed": "Failed to revoke key",
+        "rotated": "Rotated key: {name}",
+        "rotateFailed": "Failed to rotate key",
+        "deleted": "Deleted key: {name}",
+        "deleteFailed": "Failed to delete key",
         "rawKeyLabel": "Raw key (show once)"
       },
       "types": {
@@ -293,6 +299,7 @@
       },
       "status": {
         "active": "Active",
+        "expiring": "Expiring",
         "revoked": "Revoked",
         "expired": "Expired"
       },
@@ -315,7 +322,15 @@
       },
       "actions": {
         "creating": "Creating...",
-        "create": "Create Key"
+        "create": "Create Key",
+        "revoke": "Revoke",
+        "rotate": "Rotate",
+        "delete": "Delete"
+      },
+      "confirm": {
+        "revoke": "Revoke key \"{name}\"?",
+        "rotate": "Rotate key \"{name}\"? The old key will enter grace period.",
+        "delete": "Delete key \"{name}\"? This cannot be undone."
       },
       "filters": {
         "searchPlaceholder": "Search keys...",
@@ -490,7 +505,9 @@
       },
       "feedback": {
         "created": "Created credential: {alias}",
-        "createFailed": "Create failed"
+        "createFailed": "Create failed",
+        "deleted": "Deleted credential: {alias}",
+        "deleteFailed": "Failed to delete credential"
       },
       "table": {
         "headers": {
@@ -511,7 +528,11 @@
       },
       "actions": {
         "creating": "Creating...",
-        "addCredential": "Add Credential"
+        "addCredential": "Add Credential",
+        "delete": "Delete"
+      },
+      "confirm": {
+        "delete": "Delete credential \"{alias}\"?"
       },
       "filters": {
         "searchPlaceholder": "Search credentials...",
@@ -672,6 +693,41 @@
         "paused": "Paused",
         "completed": "Completed",
         "failed": "Failed"
+      },
+      "actions": {
+        "pause": "Pause",
+        "resume": "Resume"
+      },
+      "feedback": {
+        "paused": "Paused task: {project}",
+        "resumed": "Resumed task: {project}",
+        "operationFailed": "Operation failed"
+      },
+      "drawer": {
+        "title": "Task Execution Details",
+        "fields": {
+          "planId": "Plan ID",
+          "user": "User",
+          "status": "Status",
+          "version": "Version",
+          "created": "Created",
+          "updated": "Updated"
+        },
+        "logsTitle": "Execution Logs",
+        "logsLoading": "Loading logs...",
+        "logsFailed": "Failed to load logs",
+        "logsEmpty": "No execution logs",
+        "sessionsTitle": "Worker Sessions",
+        "selectedLog": "Selected Log",
+        "selectLogHint": "Select a log entry to inspect sessions",
+        "sessionsLoading": "Loading sessions...",
+        "sessionsFailed": "Failed to load sessions",
+        "sessionsEmpty": "No worker sessions",
+        "sessionMetrics": {
+          "messages": "{count} messages",
+          "thoughts": "{count} thoughts",
+          "tokens": "{count} tokens"
+        }
       },
       "table": {
         "headers": {
@@ -942,6 +998,46 @@
         "loading": "Loading generation tasks...",
         "failed": "Failed to load generation tasks",
         "noData": "No generation tasks found"
+      },
+      "shares": {
+        "title": "Generation Shares",
+        "description": "Review and moderate shared generation results",
+        "status": {
+          "active": "Active",
+          "inactive": "Inactive"
+        },
+        "actions": {
+          "activate": "Activate",
+          "deactivate": "Deactivate"
+        },
+        "filters": {
+          "searchPlaceholder": "Search by share/task/user/model/prompt...",
+          "active": "Status"
+        },
+        "table": {
+          "headers": {
+            "task": "Task",
+            "user": "User",
+            "model": "Model",
+            "status": "Status",
+            "sharedAt": "Shared At",
+            "prompt": "Prompt"
+          }
+        },
+        "confirm": {
+          "activate": "Activate share {id}?",
+          "deactivate": "Deactivate share {id}?"
+        },
+        "feedback": {
+          "activated": "Share {id} activated",
+          "deactivated": "Share {id} deactivated",
+          "updateFailed": "Failed to update share status"
+        },
+        "empty": {
+          "loading": "Loading generation shares...",
+          "failed": "Failed to load generation shares",
+          "noData": "No generation shares found"
+        }
       },
       "csv": {
         "id": "id",

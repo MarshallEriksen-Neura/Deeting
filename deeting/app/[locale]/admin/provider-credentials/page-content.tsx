@@ -14,6 +14,7 @@ import {
 import { GlassCard } from "@/components/ui/glass-card"
 import {
   createAdminProviderCredential,
+  deleteAdminProviderCredential,
   fetchAdminProviderCredentials,
   fetchAdminProviderInstances,
   type ProviderCredentialItem,
@@ -40,6 +41,7 @@ export function PageContent() {
   const [alias, setAlias] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
 
   const {
@@ -106,6 +108,25 @@ export function PageContent() {
       setFeedback(message)
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleDeleteCredential = async (row: ProviderCredentialRow) => {
+    if (deletingId) return
+    if (!window.confirm(t("confirm.delete", { alias: row.alias }))) return
+
+    setDeletingId(row.id)
+    setFeedback(null)
+    try {
+      await deleteAdminProviderCredential(row.instance_id, row.id)
+      setFeedback(t("feedback.deleted", { alias: row.alias }))
+      await mutate()
+    } catch (deleteError) {
+      const message =
+        deleteError instanceof Error ? deleteError.message : t("feedback.deleteFailed")
+      setFeedback(message)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -237,6 +258,18 @@ export function PageContent() {
               ? t("empty.failed")
               : t("empty.noData")
         }
+        rowActions={(row) => (
+          <button
+            onClick={(event) => {
+              event.stopPropagation()
+              void handleDeleteCredential(row)
+            }}
+            disabled={Boolean(deletingId)}
+            className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-rose-400/30 px-2 text-xs text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t("actions.delete")}
+          </button>
+        )}
       />
     </AdminPageShell>
   )

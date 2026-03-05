@@ -677,7 +677,7 @@ class ApiKeyService:
         self,
         api_key_id: UUID,
         grace_period_hours: int = 24,
-    ) -> tuple[ApiKey, str, str | None]:
+    ) -> tuple[ApiKey | None, str | None, str | None]:
         """
         轮换 Key
 
@@ -836,12 +836,14 @@ class ApiKeyService:
         self,
         tenant_id: UUID | None = None,
         user_id: UUID | None = None,
+        key_type: ApiKeyType | None = None,
         status: ApiKeyStatus | None = None,
     ) -> list[ApiKey]:
         """列出 Key"""
         return await self.repository.list_keys(
             tenant_id=tenant_id,
             user_id=user_id,
+            key_type=key_type,
             status=status,
         )
 

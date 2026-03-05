@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePlatform } from "@/lib/platform/provider";
 
 const STORAGE_KEY = "deeting-close-action";
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
@@ -9,22 +10,20 @@ type CloseAction = "minimize" | "quit";
 
 export function useCloseHandler() {
   const [showDialog, setShowDialog] = useState(false);
+  const { app } = usePlatform();
 
   const executeAction = useCallback(async (action: CloseAction) => {
     if (!isTauri || typeof window === "undefined") return;
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      const win = getCurrentWindow();
       if (action === "minimize") {
-        await win.hide();
+        await app.minimize();
       } else {
-        const { exit } = await import("@tauri-apps/plugin-process");
-        await exit(0);
+        await app.quit();
       }
     } catch (err) {
       console.error("close action failed:", err);
     }
-  }, []);
+  }, [app]);
 
   const handleChoose = useCallback(
     (action: CloseAction, remember: boolean) => {

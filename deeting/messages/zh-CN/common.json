@@ -22,6 +22,13 @@
     "loading": {
       "theme": "切换主题中..."
     },
+    "desktopClose": {
+      "title": "关闭窗口",
+      "description": "你希望将 Deeting 隐藏到系统托盘，还是直接退出应用？",
+      "remember": "记住我的选择",
+      "minimize": "隐藏到托盘",
+      "quit": "退出"
+    },
     "globalError": {
       "title": "系统出现波动",
       "description": "我们正在平复涟漪，请稍后再试或返回首页。",
