@@ -1766,22 +1766,36 @@ impl ProviderStore {
             }
 
             match self.set_secret_in_keychain(&credential_id, secret) {
-                Ok(_) => {
-                    if let Err(err) = sqlx::query(
-                        "UPDATE provider_credentials
-                         SET secret_key = ''
-                         WHERE id = ?",
-                    )
-                    .bind(&credential_id)
-                    .execute(&self.pool)
-                    .await
-                    {
+                Ok(_) => match self.get_secret_from_keychain(&credential_id) {
+                    Ok(Some(saved)) if saved == secret => {
+                        if let Err(err) = sqlx::query(
+                            "UPDATE provider_credentials
+                             SET secret_key = ''
+                             WHERE id = ?",
+                        )
+                        .bind(&credential_id)
+                        .execute(&self.pool)
+                        .await
+                        {
+                            warn!(
+                                "failed to clear legacy db secret after keychain migration for credential {}: {}",
+                                credential_id, err
+                            );
+                        }
+                    }
+                    Ok(Some(_)) | Ok(None) => {
                         warn!(
-                            "failed to clear legacy db secret after keychain migration for credential {}: {}",
+                            "keychain migration verification failed for credential {}, keep local db secret",
+                            credential_id
+                        );
+                    }
+                    Err(err) => {
+                        warn!(
+                            "keychain migration verification read failed for credential {}, keep local db secret: {}",
                             credential_id, err
                         );
                     }
-                }
+                },
                 Err(err) => {
                     warn!(
                         "failed to migrate legacy db secret into keychain for credential {}: {}",
@@ -1799,33 +1813,28 @@ impl ProviderStore {
             .map_err(|err| ProviderError::Database(format!("keychain entry init failed: {err}")))
     }
 
-    fn resolve_secret_from_row(&self, row: &SqliteRow) -> Result<Option<String>, ProviderError> {
-        let credential_id: String = row.try_get("id")?;
-        match self.get_secret_from_keychain(&credential_id) {
+    fn resolve_secret_for_credential(
+        &self,
+        credential_id: &str,
+        db_secret: Option<&str>,
+    ) -> Result<Option<String>, ProviderError> {
+        match self.get_secret_from_keychain(credential_id) {
             Ok(Some(secret)) => Ok(Some(secret)),
-            Ok(None) => {
-                let legacy_secret: String = row.try_get("secret_key")?;
-                let trimmed = legacy_secret.trim();
-                if trimmed.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(trimmed.to_string()))
-                }
-            }
+            Ok(None) => Ok(normalize_secret(db_secret.unwrap_or_default())),
             Err(err) => {
                 warn!(
                     "failed to read keychain secret for credential {}: {}",
                     credential_id, err
                 );
-                let legacy_secret: String = row.try_get("secret_key")?;
-                let trimmed = legacy_secret.trim();
-                if trimmed.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(trimmed.to_string()))
-                }
+                Ok(normalize_secret(db_secret.unwrap_or_default()))
             }
         }
+    }
+
+    fn resolve_secret_from_row(&self, row: &SqliteRow) -> Result<Option<String>, ProviderError> {
+        let credential_id: String = row.try_get("id")?;
+        let legacy_secret: String = row.try_get("secret_key")?;
+        self.resolve_secret_for_credential(&credential_id, Some(&legacy_secret))
     }
 
     async fn persist_secret_for_credential(
@@ -1904,14 +1913,7 @@ impl ProviderStore {
     ) -> Result<Option<String>, ProviderError> {
         let entry = self.keychain_entry(credential_id)?;
         match entry.get_password() {
-            Ok(secret) => {
-                let trimmed = secret.trim();
-                if trimmed.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(trimmed.to_string()))
-                }
-            }
+            Ok(secret) => Ok(normalize_secret(&secret)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(err) => Err(ProviderError::Database(format!(
                 "keychain read failed: {err}"
@@ -2014,6 +2016,15 @@ fn normalize_source(source: Option<&str>) -> String {
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "auto".to_string())
+}
+
+fn normalize_secret(secret: &str) -> Option<String> {
+    let trimmed = secret.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn infer_model_capability(model_id: &str) -> &'static str {
@@ -2426,240 +2437,4 @@ fn now_rfc3339() -> Result<String, ProviderError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn init_store() -> ProviderStore {
-        let store = ProviderStore::new("sqlite::memory:")
-            .await
-            .expect("failed to create provider store");
-        store.init().await.expect("provider init failed");
-        store
-    }
-
-    async fn insert_instance(store: &ProviderStore) -> Uuid {
-        let instance_id = Uuid::new_v4();
-        let now = now_rfc3339().expect("time");
-        sqlx::query(
-            "INSERT INTO provider_instances (
-                id, preset_slug, name, base_url, description, icon, priority, meta,
-                is_enabled, is_local, credentials_ref, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(instance_id.to_string())
-        .bind("openai")
-        .bind("Local OpenAI")
-        .bind("https://example.com")
-        .bind::<Option<&str>>(None)
-        .bind::<Option<&str>>(None)
-        .bind(0_i64)
-        .bind("{}")
-        .bind(1_i64)
-        .bind(1_i64)
-        .bind("db:test")
-        .bind(&now)
-        .bind(&now)
-        .execute(&store.pool)
-        .await
-        .expect("insert provider instance");
-        instance_id
-    }
-
-    #[tokio::test]
-    async fn init_migrates_legacy_provider_models_before_index_creation() {
-        let store = ProviderStore::new("sqlite::memory:")
-            .await
-            .expect("failed to create provider store");
-
-        // Simulate legacy schema that existed before upstream_path/unified_model_id.
-        sqlx::query(
-            "CREATE TABLE provider_models (
-                id TEXT PRIMARY KEY,
-                instance_id TEXT NOT NULL,
-                model_id TEXT NOT NULL,
-                display_name TEXT,
-                is_active BOOLEAN DEFAULT 1
-            )",
-        )
-        .execute(&store.pool)
-        .await
-        .expect("failed to create legacy provider_models");
-        store
-            .init()
-            .await
-            .expect("provider init should migrate legacy schema");
-
-        let columns = sqlx::query("PRAGMA table_info(provider_models)")
-            .fetch_all(&store.pool)
-            .await
-            .expect("failed to inspect provider_models");
-        let names: Vec<String> = columns
-            .iter()
-            .filter_map(|row| row.try_get::<String, _>("name").ok())
-            .collect();
-
-        assert!(
-            names.iter().any(|name| name == "upstream_path"),
-            "expected upstream_path to be added"
-        );
-        assert!(
-            names.iter().any(|name| name == "unified_model_id"),
-            "expected unified_model_id to be added"
-        );
-    }
-
-    #[tokio::test]
-    async fn quick_add_models_infers_embedding_capability_and_path() {
-        let store = init_store().await;
-        let instance_id = insert_instance(&store).await;
-
-        let added = store
-            .quick_add_models(
-                &instance_id,
-                vec![
-                    "text-embedding-3-small".to_string(),
-                    "gpt-4o-mini".to_string(),
-                    "text-ada-002".to_string(),
-                ],
-                None,
-            )
-            .await
-            .expect("quick add models");
-
-        assert_eq!(added.len(), 3);
-
-        let embed = added
-            .iter()
-            .find(|model| model.model_id == "text-embedding-3-small")
-            .expect("embedding model");
-        assert_eq!(embed.capabilities, vec![EMBEDDING_CAPABILITY.to_string()]);
-        assert_eq!(embed.upstream_path, EMBEDDING_UPSTREAM_PATH);
-
-        let ada = added
-            .iter()
-            .find(|model| model.model_id == "text-ada-002")
-            .expect("ada model");
-        assert_eq!(ada.capabilities, vec![EMBEDDING_CAPABILITY.to_string()]);
-        assert_eq!(ada.upstream_path, EMBEDDING_UPSTREAM_PATH);
-
-        let chat = added
-            .iter()
-            .find(|model| model.model_id == "gpt-4o-mini")
-            .expect("chat model");
-        assert_eq!(chat.capabilities, vec![CHAT_CAPABILITY.to_string()]);
-        assert_eq!(chat.upstream_path, CHAT_UPSTREAM_PATH);
-    }
-
-    #[test]
-    fn infer_model_capability_covers_all_known_capabilities() {
-        assert_eq!(
-            infer_model_capability("nvidia/llama-3.2-nv-embedqa-1b-v1"),
-            EMBEDDING_CAPABILITY
-        );
-        assert_eq!(
-            infer_model_capability("openai/dall-e-3"),
-            IMAGE_GENERATION_CAPABILITY
-        );
-        assert_eq!(
-            infer_model_capability("openai/gpt-4o-mini-tts"),
-            TEXT_TO_SPEECH_CAPABILITY
-        );
-        assert_eq!(
-            infer_model_capability("openai/whisper-1"),
-            SPEECH_TO_TEXT_CAPABILITY
-        );
-        assert_eq!(
-            infer_model_capability("google/veo-2"),
-            VIDEO_GENERATION_CAPABILITY
-        );
-        assert_eq!(infer_model_capability("openai/gpt-4o"), CHAT_CAPABILITY);
-    }
-
-    #[test]
-    fn default_upstream_path_for_capability_maps_all_known_capabilities() {
-        assert_eq!(
-            default_upstream_path_for_capability(EMBEDDING_CAPABILITY),
-            EMBEDDING_UPSTREAM_PATH
-        );
-        assert_eq!(
-            default_upstream_path_for_capability(IMAGE_GENERATION_CAPABILITY),
-            IMAGE_GENERATION_UPSTREAM_PATH
-        );
-        assert_eq!(
-            default_upstream_path_for_capability(TEXT_TO_SPEECH_CAPABILITY),
-            TEXT_TO_SPEECH_UPSTREAM_PATH
-        );
-        assert_eq!(
-            default_upstream_path_for_capability(SPEECH_TO_TEXT_CAPABILITY),
-            SPEECH_TO_TEXT_UPSTREAM_PATH
-        );
-        assert_eq!(
-            default_upstream_path_for_capability(VIDEO_GENERATION_CAPABILITY),
-            VIDEO_GENERATION_UPSTREAM_PATH
-        );
-        assert_eq!(
-            default_upstream_path_for_capability(CHAT_CAPABILITY),
-            CHAT_UPSTREAM_PATH
-        );
-    }
-
-    #[tokio::test]
-    async fn quick_add_models_prefers_explicit_capability_over_inference() {
-        let store = init_store().await;
-        let instance_id = insert_instance(&store).await;
-
-        let added = store
-            .quick_add_models(
-                &instance_id,
-                vec!["text-embedding-3-small".to_string()],
-                Some("chat".to_string()),
-            )
-            .await
-            .expect("quick add models");
-
-        assert_eq!(added.len(), 1);
-        assert_eq!(added[0].capabilities, vec!["chat".to_string()]);
-        assert_eq!(added[0].upstream_path, CHAT_UPSTREAM_PATH);
-    }
-
-    #[tokio::test]
-    async fn quick_add_models_reconciles_legacy_auto_rows_without_duplicates() {
-        let store = init_store().await;
-        let instance_id = insert_instance(&store).await;
-
-        let first = store
-            .quick_add_models(
-                &instance_id,
-                vec!["text-embedding-3-small".to_string()],
-                Some("chat".to_string()),
-            )
-            .await
-            .expect("first quick add");
-        assert_eq!(first.len(), 1);
-        assert_eq!(first[0].capabilities, vec![CHAT_CAPABILITY.to_string()]);
-        assert_eq!(first[0].upstream_path, CHAT_UPSTREAM_PATH);
-
-        let second = store
-            .quick_add_models(
-                &instance_id,
-                vec!["text-embedding-3-small".to_string()],
-                None,
-            )
-            .await
-            .expect("second quick add");
-        assert_eq!(second.len(), 1);
-        assert_eq!(second[0].capabilities, vec![EMBEDDING_CAPABILITY.to_string()]);
-        assert_eq!(second[0].upstream_path, EMBEDDING_UPSTREAM_PATH);
-
-        let all_models = store
-            .list_models(&instance_id)
-            .await
-            .expect("list models after reconcile");
-        assert_eq!(all_models.len(), 1);
-        assert_eq!(
-            all_models[0].capabilities,
-            vec![EMBEDDING_CAPABILITY.to_string()]
-        );
-        assert_eq!(all_models[0].upstream_path, EMBEDDING_UPSTREAM_PATH);
-    }
-}
+mod tests;
