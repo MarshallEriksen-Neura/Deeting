@@ -16,6 +16,7 @@ use crate::modules::memory::types::{
 
 const LOCAL_MEMORY_TABLE: &str = "local_memories";
 const LOCAL_ASSET_TABLE: &str = "local_assets";
+const DEFAULT_LOCAL_ASSET_VECTOR_DIM: i32 = 1536;
 
 pub struct MemoryStore {
     conn: Connection,
@@ -43,7 +44,10 @@ impl MemoryStore {
 
         if !table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
             self.conn
-                .create_empty_table(LOCAL_ASSET_TABLE, local_asset_schema())
+                .create_empty_table(
+                    LOCAL_ASSET_TABLE,
+                    local_asset_schema(DEFAULT_LOCAL_ASSET_VECTOR_DIM),
+                )
                 .execute()
                 .await?;
         }
@@ -104,9 +108,27 @@ impl MemoryStore {
         let now = now_rfc3339();
         let metadata_str = metadata.map(|v| v.to_string());
         let vector_opt = vector.into_iter().map(Some).collect::<Vec<Option<f32>>>();
+        let vector_dim = i32::try_from(vector_opt.len())
+            .map_err(|_| MemoryError::validation("embedding vector dimension is too large"))?;
+        if vector_dim <= 0 {
+            return Err(MemoryError::validation(
+                "embedding vector must not be empty",
+            ));
+        }
+
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let table_schema = table.schema().await?;
+        let expected_dim = local_asset_vector_dimension_from_schema(table_schema.as_ref())
+            .ok_or_else(|| MemoryError::validation("local_assets vector field is missing"))?;
+        if expected_dim != vector_dim {
+            return Err(MemoryError::validation(format!(
+                "embedding vector dimension mismatch: table expects {expected_dim}, got {vector_dim}; please rebuild local embedding index"
+            )));
+        }
+        let schema = local_asset_schema(expected_dim);
 
         let batch = RecordBatch::try_new(
-            local_asset_schema(),
+            schema.clone(),
             vec![
                 Arc::new(StringArray::from(vec![Some(id.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(name)])) as Arc<dyn Array>,
@@ -119,25 +141,50 @@ impl MemoryStore {
                     arrow_array::types::Float32Type,
                     _,
                     _,
-                >(vec![Some(vector_opt)], 1536)) as Arc<dyn Array>,
+                >(vec![Some(vector_opt)], vector_dim)) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now)])) as Arc<dyn Array>,
             ],
         )?;
 
-        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
-
         // Use standard LanceDB merge/upsert if possible, or simple add for now
         // Note: For simplicity in this heavy refactor, we clear old entries with same ID if needed
         // but LanceDB add is cumulative. In a real scenario, we'd use a merge query.
         table
-            .add(RecordBatchIterator::new(
-                vec![Ok(batch)],
-                local_asset_schema(),
-            ))
+            .add(RecordBatchIterator::new(vec![Ok(batch)], schema))
             .execute()
             .await?;
         Ok(())
+    }
+
+    pub async fn recreate_local_asset_table(&self, vector_dim: i32) -> Result<(), MemoryError> {
+        if vector_dim <= 0 {
+            return Err(MemoryError::validation(
+                "vector dimension must be greater than zero",
+            ));
+        }
+
+        let table_names = self.conn.table_names().execute().await?;
+        if table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
+            self.conn.drop_table(LOCAL_ASSET_TABLE).await?;
+        }
+
+        self.conn
+            .create_empty_table(LOCAL_ASSET_TABLE, local_asset_schema(vector_dim))
+            .execute()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn local_asset_vector_dimension(&self) -> Result<Option<i32>, MemoryError> {
+        let table_names = self.conn.table_names().execute().await?;
+        if !table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
+            return Ok(None);
+        }
+
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let schema = table.schema().await?;
+        Ok(local_asset_vector_dimension_from_schema(schema.as_ref()))
     }
 
     pub async fn search_assets(
@@ -354,7 +401,7 @@ fn local_memory_schema() -> SchemaRef {
     ]))
 }
 
-fn local_asset_schema() -> SchemaRef {
+fn local_asset_schema(vector_dim: i32) -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),
         Field::new("name", DataType::Utf8, false),
@@ -365,12 +412,25 @@ fn local_asset_schema() -> SchemaRef {
         Field::new("metadata_json", DataType::Utf8, true),
         Field::new(
             "vector",
-            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 1536),
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                vector_dim,
+            ),
             false,
         ),
         Field::new("created_at", DataType::Utf8, false),
         Field::new("updated_at", DataType::Utf8, false),
     ]))
+}
+
+fn local_asset_vector_dimension_from_schema(schema: &Schema) -> Option<i32> {
+    schema
+        .field_with_name("vector")
+        .ok()
+        .and_then(|field| match field.data_type() {
+            DataType::FixedSizeList(_, size) => Some(*size),
+            _ => None,
+        })
 }
 
 fn build_filter_sql(

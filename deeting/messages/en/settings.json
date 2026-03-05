@@ -47,6 +47,18 @@
       "modelLabel": "Local model",
       "modelPlaceholder": "Select a local embedding model",
       "modelHelp": "Local choice does not affect cloud dimensions.",
+      "rebuildTitle": "Local vector index rebuild required",
+      "rebuildDescription": "After switching the embedding model, rebuild the local index to avoid vector-dimension mismatch errors.",
+      "rebuildAction": "Rebuild now",
+      "rebuildLater": "Later",
+      "rebuildCompleted": "Rebuild finished: {indexed} succeeded, {failed} failed.",
+      "rebuildStage": {
+        "prepare": "Preparing",
+        "indexing_tools": "Reindexing tools",
+        "indexing_assistants": "Reindexing assistants",
+        "indexing_knowledge": "Reindexing knowledge",
+        "completed": "Completed"
+      },
       "unavailableTitle": "You are on Web",
       "unavailableDesc": "Configure local embedding models in the desktop app.",
       "download": "Get the desktop app",
@@ -85,7 +97,10 @@
       "saveSuccess": "Settings saved",
       "saveFailed": "Save failed. Please try again.",
       "unauthenticated": "Please sign in first",
-      "noPermission": "You don’t have permission to save settings"
+      "noPermission": "You don’t have permission to save settings",
+      "rebuildRecommended": "Embedding model changed. Rebuilding the local vector index is recommended.",
+      "rebuildSuccess": "Local index rebuild completed (success {indexed} / failed {failed})",
+      "rebuildFailed": "Local index rebuild failed. Please try again."
     }
   }
 }

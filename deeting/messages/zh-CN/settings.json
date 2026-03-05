@@ -47,6 +47,18 @@
       "modelLabel": "本地模型",
       "modelPlaceholder": "选择本地 embedding 模型",
       "modelHelp": "本地选择不会影响云端维度。",
+      "rebuildTitle": "检测到本地向量索引需要重建",
+      "rebuildDescription": "切换 embedding 模型后请重建本地索引，否则可能出现向量维度不匹配导致检索异常。",
+      "rebuildAction": "立即重建",
+      "rebuildLater": "稍后重建",
+      "rebuildCompleted": "重建完成：成功 {indexed} 项，失败 {failed} 项。",
+      "rebuildStage": {
+        "prepare": "准备中",
+        "indexing_tools": "重建工具索引",
+        "indexing_assistants": "重建助手索引",
+        "indexing_knowledge": "重建知识索引",
+        "completed": "已完成"
+      },
       "unavailableTitle": "当前为 Web 端",
       "unavailableDesc": "请在桌面端配置本地 embedding 模型。",
       "download": "前往获取桌面端",
@@ -85,7 +97,10 @@
       "saveSuccess": "设置已保存",
       "saveFailed": "保存失败，请稍后重试。",
       "unauthenticated": "请先登录",
-      "noPermission": "当前账号无权限保存配置"
+      "noPermission": "当前账号无权限保存配置",
+      "rebuildRecommended": "检测到 embedding 模型变更，建议立即重建本地向量索引。",
+      "rebuildSuccess": "本地索引重建完成（成功 {indexed} / 失败 {failed}）",
+      "rebuildFailed": "本地索引重建失败，请稍后重试"
     }
   }
 }

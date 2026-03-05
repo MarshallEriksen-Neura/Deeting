@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useMemo, useState, useCallback } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
@@ -273,10 +274,14 @@ function TaskDetailDrawer({
                         <div>{t("drawer.outputMeta.created")}: {formatDateTime(output.created_at, locale)}</div>
                       </div>
                       {previewable && (
-                        <img
+                        <Image
                           src={output.source_url ?? ""}
                           alt={t("drawer.previewAlt", { index: output.output_index })}
-                          className="mt-2 w-full rounded-md border border-white/10 bg-black/20 object-cover"
+                          width={output.width ?? 1024}
+                          height={output.height ?? 1024}
+                          unoptimized
+                          sizes="(min-width: 1024px) 480px, 100vw"
+                          className="mt-2 h-auto w-full rounded-md border border-white/10 bg-black/20"
                         />
                       )}
                     </div>

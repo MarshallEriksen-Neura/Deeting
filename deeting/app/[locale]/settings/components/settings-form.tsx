@@ -4,8 +4,26 @@ import * as React from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Form } from "@/components/ui/form"
+import { Progress } from "@/components/ui/progress"
+import { GlassButton } from "@/components/ui/glass-button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { useI18n } from "@/hooks/use-i18n"
 import { useChatService } from "@/hooks/use-chat-service"
+import {
+  LOCAL_EMBEDDING_REBUILD_PROGRESS_EVENT,
+  rebuildLocalEmbeddingAssets,
+  type LocalEmbeddingRebuildProgressPayload,
+  type LocalEmbeddingRebuildResponse,
+} from "@/lib/api/local-embedding-rebuild"
 import { updateUserSecretary, type UserSecretaryUpdate } from "@/lib/api/secretary"
 import { updateUserEmbeddingConfig } from "@/lib/api/user-embedding-config"
 import {
@@ -49,6 +67,13 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
   })
 
   const [isSaving, setIsSaving] = React.useState(false)
+  const [hasPendingRebuild, setHasPendingRebuild] = React.useState(false)
+  const [isRebuildPromptOpen, setIsRebuildPromptOpen] = React.useState(false)
+  const [isRebuilding, setIsRebuilding] = React.useState(false)
+  const [rebuildProgress, setRebuildProgress] =
+    React.useState<LocalEmbeddingRebuildProgressPayload | null>(null)
+  const [rebuildSummary, setRebuildSummary] =
+    React.useState<LocalEmbeddingRebuildResponse | null>(null)
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
@@ -84,6 +109,51 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
     userEmbeddingConfig?.provider_model_id,
   ])
 
+  const handleStartRebuild = React.useCallback(async () => {
+    if (!isTauriRuntime || isRebuilding) return
+
+    setIsRebuildPromptOpen(false)
+    setIsRebuilding(true)
+    setRebuildProgress({
+      phase: "prepare",
+      progress: 0,
+      total: 0,
+      processed: 0,
+      indexed: 0,
+      failed: 0,
+      current: null,
+    })
+
+    let unlisten: (() => void) | null = null
+    try {
+      const { listen } = await import("@tauri-apps/api/event")
+      unlisten = await listen<LocalEmbeddingRebuildProgressPayload>(
+        LOCAL_EMBEDDING_REBUILD_PROGRESS_EVENT,
+        (event) => {
+          setRebuildProgress(event.payload)
+        }
+      )
+
+      const summary = await rebuildLocalEmbeddingAssets()
+      setRebuildSummary(summary)
+      setHasPendingRebuild(false)
+      toast.success(
+        t("toast.rebuildSuccess", {
+          indexed: summary.indexed,
+          failed: summary.failed,
+        })
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("toast.rebuildFailed")
+      toast.error(message)
+    } finally {
+      if (unlisten) {
+        unlisten()
+      }
+      setIsRebuilding(false)
+    }
+  }, [isRebuilding, isTauriRuntime, t])
+
   async function onSubmit(values: SettingsFormValues) {
     if (!isAuthenticated) {
       toast.error(t("toast.unauthenticated"))
@@ -95,6 +165,8 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
     }
     setIsSaving(true)
     try {
+      let desktopEmbeddingChanged = false
+
       if (canEditPersonal) {
         const secretaryPayload: UserSecretaryUpdate = {}
         const nextSecretaryModel = values.secretaryModel.trim()
@@ -114,6 +186,7 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
           await updateUserEmbeddingConfig({
             provider_model_id: nextProviderModelId || null,
           })
+          desktopEmbeddingChanged = true
         }
       }
 
@@ -122,6 +195,13 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
         await mutateUserEmbeddingConfig?.()
       }
       toast.success(t("toast.saveSuccess"))
+      if (desktopEmbeddingChanged) {
+        setHasPendingRebuild(true)
+        setRebuildSummary(null)
+        setRebuildProgress(null)
+        setIsRebuildPromptOpen(true)
+        toast(t("toast.rebuildRecommended"))
+      }
     } catch {
       toast.error(t("toast.saveFailed"))
     } finally {
@@ -148,6 +228,39 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
             modelGroups={chatModelGroups}
             isLoadingModels={isLoadingChatModels}
           />
+          {canEditDesktop && (hasPendingRebuild || isRebuilding || rebuildSummary) && (
+            <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+              <p className="text-sm font-semibold text-foreground">{t("desktop.rebuildTitle")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("desktop.rebuildDescription")}</p>
+
+              {isRebuilding && (
+                <div className="mt-4 space-y-2">
+                  <Progress value={rebuildProgress?.progress ?? 0} className="h-2" />
+                  <p className="text-xs text-muted-foreground">
+                    {t(`desktop.rebuildStage.${rebuildProgress?.phase ?? "prepare"}`)} ·{" "}
+                    {rebuildProgress?.processed ?? 0}/{rebuildProgress?.total ?? 0}
+                  </p>
+                </div>
+              )}
+
+              {!isRebuilding && hasPendingRebuild && (
+                <div className="mt-3">
+                  <GlassButton size="sm" onClick={handleStartRebuild}>
+                    {t("desktop.rebuildAction")}
+                  </GlassButton>
+                </div>
+              )}
+
+              {!isRebuilding && rebuildSummary && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {t("desktop.rebuildCompleted", {
+                    indexed: rebuildSummary.indexed,
+                    failed: rebuildSummary.failed,
+                  })}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <SettingsFormActions
@@ -157,6 +270,21 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
           onReset={() => form.reset()}
         />
       </form>
+
+      <AlertDialog open={isRebuildPromptOpen} onOpenChange={setIsRebuildPromptOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("desktop.rebuildTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("desktop.rebuildDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("desktop.rebuildLater")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleStartRebuild}>
+              {t("desktop.rebuildAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Form>
   )
 }
