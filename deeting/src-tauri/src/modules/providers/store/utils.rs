@@ -34,7 +34,6 @@ pub fn row_to_bandit_arm_state(row: &SqliteRow) -> Result<BanditArmState, Provid
 
 pub fn row_to_instance(row: &SqliteRow) -> Result<ProviderInstance, ProviderError> {
     let meta_text: Option<String> = row.try_get("meta")?;
-    let response_transform_text: Option<String> = row.try_get("response_transform")?;
     let credential_source: String = row
         .try_get("credential_source")
         .unwrap_or_else(|_| "local".to_string());
@@ -48,8 +47,6 @@ pub fn row_to_instance(row: &SqliteRow) -> Result<ProviderInstance, ProviderErro
         icon: row.try_get("icon")?,
         priority: row.try_get::<i64, _>("priority").unwrap_or(0),
         meta: parse_json_object_text(meta_text),
-        template_engine: row.try_get("template_engine")?,
-        response_transform: response_transform_text.and_then(|t| serde_json::from_str(&t).ok()),
         is_enabled: row.try_get::<i64, _>("is_enabled")? != 0,
         is_local: row.try_get::<i64, _>("is_local")? != 0,
         credential_source,

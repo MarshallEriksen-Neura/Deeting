@@ -1189,11 +1189,9 @@ mod tests {
     }
 
     #[test]
-    fn prepare_provider_request_ignores_instance_template_fallbacks() {
+    fn prepare_provider_request_uses_preset_template_fields_only() {
         let preset = mock_preset();
-        let mut instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
-        instance.template_engine = Some("anthropic_messages".to_string());
-        instance.response_transform = Some(json!({ "legacy": true }));
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
         let model = mock_model(&["chat"]);
 
         let prepared = prepare_provider_request(

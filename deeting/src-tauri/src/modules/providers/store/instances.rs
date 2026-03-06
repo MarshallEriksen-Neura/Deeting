@@ -44,9 +44,8 @@ impl ProviderStore {
         sqlx::query(
             "INSERT INTO provider_instances (
                 id, preset_slug, name, base_url, description, icon, priority, meta,
-                template_engine, response_transform,
                 is_enabled, is_local, credential_source, credentials_ref, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&instance_id)
         .bind(&payload.preset_slug)
@@ -56,8 +55,6 @@ impl ProviderStore {
         .bind(&payload.icon)
         .bind(payload.priority.unwrap_or(0))
         .bind(meta)
-        .bind::<Option<String>>(None)
-        .bind::<Option<String>>(None)
         .bind(is_enabled)
         .bind(payload.is_local.unwrap_or(false))
         .bind(credential_source)

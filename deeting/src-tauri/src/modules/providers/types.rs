@@ -58,10 +58,6 @@ pub struct ProviderInstance {
     pub priority: i64,
     #[serde(default)]
     pub meta: Value,
-    #[serde(default)]
-    pub template_engine: Option<String>,
-    #[serde(default)]
-    pub response_transform: Option<Value>,
     pub is_enabled: bool,
     pub is_local: bool,
     /// "local" = use instance base_url + secret_key; "platform" = use cloud credits proxy.
