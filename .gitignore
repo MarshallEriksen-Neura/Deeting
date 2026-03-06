@@ -1,4 +1,4 @@
-# ============================================
+﻿# ============================================
 # Python (Backend)
 # ============================================
 .pytest_cache/
@@ -138,3 +138,7 @@ ai_higress_front/
 /$null
 /rustup-init.exe
 /vs_buildtools.exe
+
+# Nested standalone repos
+/deeting-relay/
+
