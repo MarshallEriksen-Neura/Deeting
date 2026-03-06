@@ -13,6 +13,7 @@ import {
   type ColumnDef,
   type StatCardData,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import {
   fetchAdminSpecPlans,
   pauseAdminSpecPlan,
@@ -210,16 +211,17 @@ export function PageContent() {
           }
 
           return (
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={(event) => {
                 event.stopPropagation()
                 void handleToggleStatus(row)
               }}
               disabled={Boolean(actioningId)}
-              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {canPause ? t("actions.pause") : t("actions.resume")}
-            </button>
+            </Button>
           )
         }}
       />

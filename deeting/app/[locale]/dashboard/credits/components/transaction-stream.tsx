@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl"
 import { CheckCircle2, XCircle, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import { useCreditsTransactions } from "@/lib/swr/use-credits-transactions"
 
 interface Transaction {
@@ -54,9 +55,9 @@ export function TransactionStream() {
             {t("transactions.subtitle")}
           </p>
         </div>
-        <button className="text-xs font-medium text-[var(--primary)] hover:underline transition-colors">
+        <Button variant="link" size="sm" className="text-xs font-medium">
           {t("transactions.exportCSV")}
-        </button>
+        </Button>
       </div>
 
       {/* Table Header */}

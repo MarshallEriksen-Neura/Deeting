@@ -2,17 +2,13 @@
 
 import { useState } from "react"
 import { useTranslations } from "next-intl"
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
 import { createAdminUser } from "@/lib/api/admin-dashboard"
 
 interface UserCreateFormProps {
-  /**
-   * 创建成功后的回调
-   */
   onSuccess?: (user: { email: string; id: string }) => void
-  /**
-   * 创建失败后的回调
-   */
   onError?: (error: string) => void
 }
 
@@ -54,34 +50,31 @@ export function UserCreateForm({ onSuccess, onError }: UserCreateFormProps) {
   return (
     <GlassCard padding="default" hover="none">
       <div className="grid gap-3 md:grid-cols-4">
-        <input
+        <Input
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           placeholder={t("placeholders.email")}
-          className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
         />
-        <input
+        <Input
           type="text"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           placeholder={t("placeholders.usernameOptional")}
-          className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
         />
-        <input
+        <Input
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder={t("placeholders.temporaryPassword")}
-          className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
         />
-        <button
+        <Button
           onClick={() => void handleSubmit()}
           disabled={!email.trim() || !password.trim() || isSubmitting}
-          className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          size="sm"
         >
           {isSubmitting ? t("actions.submitting") : t("actions.createUser")}
-        </button>
+        </Button>
       </div>
       {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
     </GlassCard>

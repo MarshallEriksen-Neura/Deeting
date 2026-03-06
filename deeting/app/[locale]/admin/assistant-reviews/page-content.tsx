@@ -13,6 +13,7 @@ import {
   type ColumnDef,
   type StatCardData,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import {
   approveAdminAssistantReview,
   fetchAdminAssistantReviews,
@@ -227,26 +228,30 @@ export function PageContent() {
         rowActions={(row) =>
           row.status === "pending" ? (
             <div className="flex items-center gap-1">
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 disabled={actioningId === row.id}
                 onClick={(event) => {
                   event.stopPropagation()
                   void handleDecision(row, "approve")
                 }}
-                className="inline-flex size-7 cursor-pointer items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-400"
               >
                 <Check className="size-3.5" />
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 disabled={actioningId === row.id}
                 onClick={(event) => {
                   event.stopPropagation()
                   void handleDecision(row, "reject")
                 }}
-                className="inline-flex size-7 cursor-pointer items-center justify-center rounded-lg bg-rose-500/10 text-rose-400 transition-colors hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="text-rose-400 hover:bg-rose-500/20 hover:text-rose-400"
               >
                 <X className="size-3.5" />
-              </button>
+              </Button>
             </div>
           ) : null
         }

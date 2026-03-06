@@ -13,7 +13,16 @@ import {
   type ColumnDef,
   type StatCardData,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   createAdminApiKey,
   deleteAdminApiKey,
@@ -256,48 +265,47 @@ export function PageContent() {
 
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-5">
-          <input
+          <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder={t("form.keyName")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <select
-            value={keyType}
-            onChange={(event) => setKeyType(event.target.value as "internal" | "external")}
-            className="h-9 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
-          >
-            <option value="internal">{t("types.internal")}</option>
-            <option value="external">{t("types.external")}</option>
-          </select>
+          <Select value={keyType} onValueChange={(v) => setKeyType(v as "internal" | "external")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="internal">{t("types.internal")}</SelectItem>
+              <SelectItem value="external">{t("types.external")}</SelectItem>
+            </SelectContent>
+          </Select>
           {keyType === "internal" ? (
-            <input
+            <Input
               value={userId}
               onChange={(event) => setUserId(event.target.value)}
               placeholder={t("form.userId")}
-              className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+              className="font-mono"
             />
           ) : (
-            <input
+            <Input
               value={tenantId}
               onChange={(event) => setTenantId(event.target.value)}
               placeholder={t("form.tenantId")}
-              className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+              className="font-mono"
             />
           )}
-          <input
+          <Input
             type="datetime-local"
             value={expiresAt}
             onChange={(event) => setExpiresAt(event.target.value)}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <button
+          <Button
             onClick={() => void handleCreateKey()}
             disabled={!canCreate || isSubmitting}
-            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            size="sm"
           >
             {isSubmitting ? t("actions.creating") : t("actions.create")}
-          </button>
+          </Button>
         </div>
         {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
         {rawKey && (
@@ -348,37 +356,40 @@ export function PageContent() {
         rowActions={(row) => (
           <div className="inline-flex items-center gap-1">
             {row.status === "active" && (
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={(event) => {
                   event.stopPropagation()
                   void handleRevokeKey(row)
                 }}
                 disabled={Boolean(actioningId)}
-                className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-amber-400/30 px-2 text-xs text-amber-300 transition-colors hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t("actions.revoke")}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={(event) => {
                 event.stopPropagation()
                 void handleRotateKey(row)
               }}
               disabled={Boolean(actioningId)}
-              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-sky-400/30 px-2 text-xs text-sky-300 transition-colors hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("actions.rotate")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={(event) => {
                 event.stopPropagation()
                 void handleDeleteKey(row)
               }}
               disabled={Boolean(actioningId)}
-              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-rose-400/30 px-2 text-xs text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("actions.delete")}
-            </button>
+            </Button>
           </div>
         )}
       />

@@ -1,6 +1,7 @@
 'use client';
 
 import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Link } from '@/i18n/routing';
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -297,7 +298,8 @@ export default function HUD() {
           <span className="text-slate-200 dark:text-white/10 text-xs self-center h-4 w-px bg-current"></span>
 
           {/* System Menu Trigger (Right) */}
-          <button 
+          <Button
+            variant="ghost"
             onClick={handleToggleMenu}
             className={`
                 p-1.5 rounded-full transition-all duration-300 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]
@@ -305,7 +307,7 @@ export default function HUD() {
             `}
           >
             <LayoutGrid className="w-4 h-4" />
-          </button>
+          </Button>
 
       </motion.div>
 
@@ -355,7 +357,8 @@ export default function HUD() {
                 </div>
 
                 <div className="flex flex-col gap-1 mt-1">
-                     <button 
+                     <Button
+                        variant="ghost"
                         onClick={handleThemeToggle}
                         className="flex items-center justify-between p-3 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
                      >
@@ -364,7 +367,7 @@ export default function HUD() {
                             <span>{t("hud.menu.interfaceMode")}</span>
                         </div>
                         <span className="text-[9px] opacity-40 uppercase">{theme}</span>
-                     </button>
+                     </Button>
                      
                      <Link href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`} className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
                         <LogOut className="w-4 h-4" />

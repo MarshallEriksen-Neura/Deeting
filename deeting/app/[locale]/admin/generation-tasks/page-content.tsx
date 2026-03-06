@@ -16,7 +16,15 @@ import {
   type ColumnDef,
   type StatCardData,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   fetchAdminGenerationTask,
   fetchAdminGenerationTaskOutputs,
@@ -183,12 +191,13 @@ function TaskDetailDrawer({
             <ImageIcon className="size-4 text-[var(--primary)]" />
             <h2 className="text-sm font-semibold text-[var(--foreground)]">{t("drawer.title")}</h2>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)] transition-colors cursor-pointer"
           >
             <X className="size-4" />
-          </button>
+          </Button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
@@ -684,36 +693,39 @@ export function PageContent() {
           className={`size-3.5 text-[var(--muted)] ${refreshInterval > 0 ? "animate-spin" : ""}`}
           style={refreshInterval > 0 ? { animationDuration: "3s" } : undefined}
         />
-        <select
-          value={refreshInterval}
-          onChange={(event) => setRefreshInterval(Number(event.target.value))}
-          className="h-7 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none cursor-pointer"
-        >
-          {refreshIntervals.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <Select value={String(refreshInterval)} onValueChange={(v) => setRefreshInterval(Number(v))}>
+          <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {refreshIntervals.map((option) => (
+              <SelectItem key={option.value} value={String(option.value)}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={handleManualRefresh}
-        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-white/10 transition-colors cursor-pointer"
         title={t("actions.lastRefreshed", { time: timeFormatter.format(lastRefreshed) })}
       >
         <RefreshCw className="size-3.5" />
         {t("actions.refresh")}
-      </button>
+      </Button>
 
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => downloadCSV(filteredRows, `generation-tasks-${new Date().toISOString().slice(0, 10)}.csv`, csvColumns)}
         disabled={filteredRows.length === 0}
-        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-30"
       >
         <Download className="size-3.5" />
         {t("actions.export")}
-      </button>
+      </Button>
     </div>
   )
 
@@ -849,26 +861,29 @@ export function PageContent() {
           }
           rowActions={(row) => (
             <div className="inline-flex items-center gap-1">
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={(event) => {
                   event.stopPropagation()
                   void handleOpenTaskFromShare(row.task_id)
                 }}
                 disabled={Boolean(openingTaskId)}
-                className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-sky-400/30 px-2 text-xs text-sky-300 transition-colors hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                className="border-sky-400/30 text-sky-300 hover:bg-sky-500/10"
               >
                 {t("shares.actions.openTask")}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={(event) => {
                   event.stopPropagation()
                   void handleToggleShare(row)
                 }}
                 disabled={Boolean(actioningShareId)}
-                className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {row.is_active ? t("shares.actions.deactivate") : t("shares.actions.activate")}
-              </button>
+              </Button>
             </div>
           )}
         />

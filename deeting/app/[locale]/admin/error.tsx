@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { Button } from "@/components/ui/button"
 
 export default function AdminError({
   error,
@@ -27,12 +28,14 @@ export default function AdminError({
             {error.digest}
           </p>
         )}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={reset}
-          className="mt-4 inline-flex h-9 items-center rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 text-sm text-rose-300 transition-colors hover:bg-rose-500/20 cursor-pointer"
+          className="mt-4 border-rose-500/30 text-rose-300 hover:bg-rose-500/20"
         >
           Try again
-        </button>
+        </Button>
       </div>
     </div>
   )

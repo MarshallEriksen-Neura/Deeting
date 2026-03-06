@@ -11,7 +11,17 @@ import {
   getStatusTone,
   type ColumnDef,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   broadcastAdminNotification,
   fetchAdminNotifications,
@@ -194,65 +204,67 @@ export function PageContent() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.title")}</label>
-            <input
+            <Input
               type="text"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder={t("compose.placeholders.title")}
-              className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-2">
               <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.type")}</label>
-              <select
-                value={type}
-                onChange={(event) => setType(event.target.value as NotificationType)}
-                className="h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
-              >
-                <option value="system">{t("type.system")}</option>
-                <option value="alert">{t("type.alert")}</option>
-                <option value="billing">{t("type.billing")}</option>
-                <option value="audit">{t("type.audit")}</option>
-                <option value="security">{t("type.security")}</option>
-                <option value="maintenance">{t("type.maintenance")}</option>
-              </select>
+              <Select value={type} onValueChange={(v) => setType(v as NotificationType)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="system">{t("type.system")}</SelectItem>
+                  <SelectItem value="alert">{t("type.alert")}</SelectItem>
+                  <SelectItem value="billing">{t("type.billing")}</SelectItem>
+                  <SelectItem value="audit">{t("type.audit")}</SelectItem>
+                  <SelectItem value="security">{t("type.security")}</SelectItem>
+                  <SelectItem value="maintenance">{t("type.maintenance")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.level")}</label>
-              <select
-                value={level}
-                onChange={(event) => setLevel(event.target.value as NotificationLevel)}
-                className="h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
-              >
-                <option value="info">{t("level.info")}</option>
-                <option value="warn">{t("level.warn")}</option>
-                <option value="error">{t("level.error")}</option>
-                <option value="critical">{t("level.critical")}</option>
-              </select>
+              <Select value={level} onValueChange={(v) => setLevel(v as NotificationLevel)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="info">{t("level.info")}</SelectItem>
+                  <SelectItem value="warn">{t("level.warn")}</SelectItem>
+                  <SelectItem value="error">{t("level.error")}</SelectItem>
+                  <SelectItem value="critical">{t("level.critical")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.target")}</label>
-              <select
-                value={target}
-                onChange={(event) => setTarget(event.target.value as NotificationTarget)}
-                className="h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
-              >
-                <option value="broadcast">{t("target.broadcast")}</option>
-                <option value="user">{t("target.user")}</option>
-              </select>
+              <Select value={target} onValueChange={(v) => setTarget(v as NotificationTarget)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="broadcast">{t("target.broadcast")}</SelectItem>
+                  <SelectItem value="user">{t("target.user")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           {target === "user" ? (
             <div className="space-y-2">
               <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.userId")}</label>
-              <input
+              <Input
                 type="text"
                 value={userId}
                 onChange={(event) => setUserId(event.target.value)}
                 placeholder="UUID"
-                className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
+                className="font-mono"
               />
             </div>
           ) : (
@@ -269,44 +281,40 @@ export function PageContent() {
 
           <div className="space-y-2">
             <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.source")}</label>
-            <input
+            <Input
               type="text"
               value={source}
               onChange={(event) => setSource(event.target.value)}
               placeholder="admin-dashboard"
-              className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.dedupeKey")}</label>
-            <input
+            <Input
               type="text"
               value={dedupeKey}
               onChange={(event) => setDedupeKey(event.target.value)}
               placeholder={t("compose.placeholders.optional")}
-              className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.expiresAt")}</label>
-            <input
+            <Input
               type="datetime-local"
               value={expiresAt}
               onChange={(event) => setExpiresAt(event.target.value)}
-              className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           </div>
 
           <div className="space-y-2 md:col-span-2">
             <label className="text-xs font-medium text-[var(--muted)]">{t("compose.fields.content")}</label>
-            <textarea
+            <Textarea
               value={content}
               onChange={(event) => setContent(event.target.value)}
               placeholder={t("compose.placeholders.content")}
               rows={3}
-              className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
             />
           </div>
 
@@ -314,14 +322,14 @@ export function PageContent() {
             <span className="text-xs text-[var(--muted)]" role="status">
               {feedback ?? t("compose.hint")}
             </span>
-            <button
+            <Button
               onClick={() => void handleSend()}
               disabled={!canSubmit || isSending}
-              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              size="sm"
             >
               <Send className="size-3.5" />
               {isSending ? t("actions.sending") : t("actions.send")}
-            </button>
+            </Button>
           </div>
         </div>
       </GlassCard>

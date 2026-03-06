@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { Upload, FolderPlus, Search, AlertTriangle, RefreshCw } from "lucide-react"
 import { useDebounce } from "@/hooks/use-debounce"
+import { Button } from "@/components/ui/button"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -355,9 +356,9 @@ export function KnowledgeClient() {
         <div className="flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900/30 bg-red-50 dark:bg-red-950/20 p-4 text-sm text-red-600 dark:text-red-400">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>{t("error.loadFailed")}</span>
-          <button onClick={() => mutateStats()} className="ml-auto hover:text-red-700 dark:hover:text-red-300">
+          <Button variant="ghost" size="icon-sm" onClick={() => mutateStats()} className="ml-auto hover:text-red-700 dark:hover:text-red-300">
             <RefreshCw className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
 

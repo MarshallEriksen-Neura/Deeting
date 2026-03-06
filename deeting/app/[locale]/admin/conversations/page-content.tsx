@@ -13,6 +13,8 @@ import {
   type ColumnDef,
   type StatCardData,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   archiveAdminConversation,
   closeAdminConversation,
@@ -294,28 +296,20 @@ export function PageContent() {
   ]
   const scopeActions = (
     <div className="flex items-center gap-2">
-      <button
-        type="button"
+      <Button
+        variant={onlyCurrentUser ? "default" : "outline"}
+        size="sm"
         onClick={() => setOnlyCurrentUser(true)}
-        className={`rounded border px-2 py-1 text-xs transition-colors ${
-          onlyCurrentUser
-            ? "border-[var(--primary)]/40 text-[var(--foreground)]"
-            : "border-white/10 text-[var(--muted)] hover:border-white/30 hover:text-[var(--foreground)]"
-        }`}
       >
         Current User
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant={!onlyCurrentUser ? "default" : "outline"}
+        size="sm"
         onClick={() => setOnlyCurrentUser(false)}
-        className={`rounded border px-2 py-1 text-xs transition-colors ${
-          !onlyCurrentUser
-            ? "border-[var(--primary)]/40 text-[var(--foreground)]"
-            : "border-white/10 text-[var(--muted)] hover:border-white/30 hover:text-[var(--foreground)]"
-        }`}
       >
         All Users
-      </button>
+      </Button>
     </div>
   )
 
@@ -468,23 +462,20 @@ export function PageContent() {
         actions={scopeActions}
       />
       <div className="mb-3 grid gap-2 md:grid-cols-3">
-        <input
+        <Input
           value={assistantIdFilter}
           onChange={(event) => setAssistantIdFilter(event.target.value)}
           placeholder="Assistant ID"
-          className="h-8 rounded border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/40 focus:outline-none"
         />
-        <input
+        <Input
           type="datetime-local"
           value={startTimeFilter}
           onChange={(event) => setStartTimeFilter(event.target.value)}
-          className="h-8 rounded border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/40 focus:outline-none"
         />
-        <input
+        <Input
           type="datetime-local"
           value={endTimeFilter}
           onChange={(event) => setEndTimeFilter(event.target.value)}
-          className="h-8 rounded border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/40 focus:outline-none"
         />
       </div>
       {tauriRuntime && (
@@ -495,34 +486,38 @@ export function PageContent() {
           <span>Failed: {numberFormatter.format(queueStats?.failed_jobs ?? 0)}</span>
           <span>Idle due tasks: {numberFormatter.format(queueStats?.idle_due_tasks ?? 0)}</span>
           <span>Idle total tasks: {numberFormatter.format(queueStats?.idle_total_tasks ?? 0)}</span>
-          <input
+          <Input
             type="text"
             value={failedReasonFilter}
             onChange={(event) => setFailedReasonFilter(event.target.value)}
             placeholder="Filter failed reason"
-            className="h-8 min-w-[220px] rounded border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/40 focus:outline-none"
+            className="min-w-[220px]"
           />
           {failedReasonQuickFilters.map((item) => (
-            <button
+            <Button
               key={item.label}
+              variant="outline"
+              size="sm"
               onClick={() => setFailedReasonFilter(item.value)}
-              className="rounded border border-white/10 px-2 py-1 text-xs text-[var(--muted)] hover:border-white/30 hover:text-[var(--foreground)]"
             >
               {item.label}
-            </button>
+            </Button>
           ))}
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setFailedReasonFilter("")}
-            className="rounded border border-white/10 px-2 py-1 text-xs text-[var(--muted)] hover:border-white/30 hover:text-[var(--foreground)]"
           >
             Clear Reason
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => void handleRetryFilteredSummaries()}
-            className="rounded border border-rose-500/30 px-2 py-1 text-xs text-rose-300 hover:border-rose-400 hover:text-rose-200"
+            className="border-rose-500/30 text-rose-300 hover:border-rose-400 hover:text-rose-200"
           >
             Retry Filtered Failed
-          </button>
+          </Button>
           {actionHint ? <span className="text-teal-300">{actionHint}</span> : null}
         </div>
       )}
@@ -535,48 +530,54 @@ export function PageContent() {
           return (
             <div className="flex items-center justify-end gap-2">
               {row.status !== "archived" ? (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(event) => {
                     event.stopPropagation()
                     void handleArchiveConversation(row.id)
                   }}
-                  className="rounded border border-amber-500/30 px-2 py-1 text-xs text-amber-200 hover:border-amber-400 hover:text-amber-100"
+                  className="border-amber-500/30 text-amber-200 hover:border-amber-400 hover:text-amber-100"
                 >
                   Archive
-                </button>
+                </Button>
               ) : null}
               {row.status !== "closed" ? (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(event) => {
                     event.stopPropagation()
                     void handleCloseConversation(row.id)
                   }}
-                  className="rounded border border-white/10 px-2 py-1 text-xs text-[var(--muted)] hover:border-white/30 hover:text-[var(--foreground)]"
                 >
                   Close
-                </button>
+                </Button>
               ) : null}
               {tauriRuntime ? (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(event) => {
                     event.stopPropagation()
                     void handleTriggerSummary(row.id)
                   }}
-                  className="rounded border border-white/10 px-2 py-1 text-xs text-[var(--muted)] hover:border-white/30 hover:text-[var(--foreground)]"
                 >
                   Trigger
-                </button>
+                </Button>
               ) : null}
               {tauriRuntime && failedJobId ? (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(event) => {
                     event.stopPropagation()
                     void handleRetrySummary(failedJobId, row.id)
                   }}
-                  className="rounded border border-rose-500/30 px-2 py-1 text-xs text-rose-300 hover:border-rose-400 hover:text-rose-200"
+                  className="border-rose-500/30 text-rose-300 hover:border-rose-400 hover:text-rose-200"
                 >
                   Retry Failed
-                </button>
+                </Button>
               ) : null}
             </div>
           )

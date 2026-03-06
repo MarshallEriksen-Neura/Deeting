@@ -3,6 +3,7 @@
 import { motion } from "framer-motion"
 import { Download, LayoutGrid, ShieldCheck, Zap, Cpu, Terminal, Database, ArrowRight } from "lucide-react"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
 import { GlassButton } from "@/components/ui/glass-button"
 
 export function LandingHero() {
@@ -71,18 +72,18 @@ export function LandingHero() {
               {/* 主 CTA：下载 */}
               <Link href="/download" className="relative group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-75 transition duration-200"></div>
-                <button className="relative w-full sm:w-auto px-8 py-4 bg-card text-card-foreground rounded-xl font-bold text-base hover:bg-accent transition-all flex items-center justify-center gap-2 shadow-xl">
+                <Button className="relative w-full sm:w-auto px-8 py-4 h-auto rounded-xl font-bold text-base shadow-xl">
                   <Download className="w-5 h-5" />
                   Download App
-                </button>
+                </Button>
               </Link>
 
               {/* 副 CTA：Web 预览 */}
               <Link href="/market">
-                <button className="w-full sm:w-auto px-8 py-4 rounded-xl font-medium text-foreground border border-border hover:bg-accent hover:border-border transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
+                <Button variant="outline" className="w-full sm:w-auto px-8 py-4 h-auto rounded-xl font-medium backdrop-blur-sm">
                   <LayoutGrid className="w-5 h-5" />
                   Live Demo
-                </button>
+                </Button>
               </Link>
             </motion.div>
 

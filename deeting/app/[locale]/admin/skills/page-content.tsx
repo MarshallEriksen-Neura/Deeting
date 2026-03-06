@@ -22,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Button } from "@/components/ui/button"
 import { deleteAdminSkill, fetchAdminSkills, type SkillItem } from "@/lib/api/admin-dashboard"
 
 type SkillRow = SkillItem & {
@@ -227,13 +228,15 @@ export function PageContent() {
               : t("empty.noData")
         }
         rowActions={(row) => (
-          <button
-            className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-red-500/10 hover:text-red-500 transition-colors cursor-pointer"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setDeleteId(row.id)}
             title={t("actions.delete")}
+            className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
           >
             <Trash2 className="size-4" />
-          </button>
+          </Button>
         )}
       />
 

@@ -5,7 +5,9 @@ import { useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Save } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
 import {
   fetchAdminEmbeddingSetting,
   updateAdminEmbeddingSetting,
@@ -70,12 +72,12 @@ export function PageContent() {
 
           <div className="space-y-2">
             <label className="text-xs font-medium text-[var(--muted)]">{t("fields.newModelName")}</label>
-            <input
+            <Input
               type="text"
               value={selected}
               onChange={(event) => setSelected(event.target.value)}
               placeholder={t("fields.placeholder")}
-              className="h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 font-mono text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:outline-none"
+              className="font-mono"
             />
           </div>
 
@@ -83,14 +85,14 @@ export function PageContent() {
           {error && !feedback && <p className="text-xs text-rose-300">{t("feedback.loadFailed")}</p>}
 
           <div className="flex justify-end pt-2">
-            <button
+            <Button
               onClick={() => void handleSave()}
               disabled={!selected.trim() || isSaving}
-              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              size="sm"
             >
               <Save className="size-3.5" />
               {isSaving ? t("actions.saving") : t("actions.save")}
-            </button>
+            </Button>
           </div>
         </div>
       </GlassCard>

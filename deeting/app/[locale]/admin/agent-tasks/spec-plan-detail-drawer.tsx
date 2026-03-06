@@ -4,6 +4,8 @@ import { useMemo, useState } from "react"
 import { useTranslations } from "next-intl"
 import useSWR from "swr"
 import { X } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   fetchAdminSpecLogSessions,
   fetchAdminSpecPlanLogs,
@@ -79,12 +81,13 @@ export function SpecPlanDetailDrawer({
             <h2 className="text-sm font-semibold text-[var(--foreground)]">{t("drawer.title")}</h2>
             <p className="mt-1 text-xs text-[var(--muted)]">{plan.project_name}</p>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)] transition-colors cursor-pointer"
           >
             <X className="size-4" />
-          </button>
+          </Button>
         </div>
 
         <div className="grid gap-4 border-b border-white/5 px-6 py-4 md:grid-cols-2">
@@ -114,18 +117,19 @@ export function SpecPlanDetailDrawer({
               {t("drawer.logsTitle")}
             </div>
             <div className="mb-3 flex items-center gap-2">
-              <input
+              <Input
                 value={logStatusFilter}
                 onChange={(event) => setLogStatusFilter(event.target.value)}
                 placeholder={t("drawer.logStatusPlaceholder")}
-                className="h-8 w-full rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/40 focus:outline-none"
               />
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setLogStatusFilter("")}
-                className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
+                className="shrink-0"
               >
                 {t("drawer.clearFilter")}
-              </button>
+              </Button>
             </div>
             <div className="max-h-full space-y-2 overflow-y-auto">
               {logsLoading && <p className="text-xs text-[var(--muted)]">{t("drawer.logsLoading")}</p>}
@@ -175,12 +179,13 @@ export function SpecPlanDetailDrawer({
                   <summary className="cursor-pointer text-xs text-[var(--foreground)]">{t("drawer.json.inputSnapshot")}</summary>
                   {selectedLog.input_snapshot ? (
                     <div className="mt-2 space-y-2">
-                      <button
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => void handleCopy(selectedLog.input_snapshot)}
-                        className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-[10px] text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
                       >
                         {t("drawer.copy.action")}
-                      </button>
+                      </Button>
                       <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/20 p-2 text-[10px] text-[var(--muted)]">
                         {prettyJson(selectedLog.input_snapshot)}
                       </pre>
@@ -194,12 +199,13 @@ export function SpecPlanDetailDrawer({
                   <summary className="cursor-pointer text-xs text-[var(--foreground)]">{t("drawer.json.outputData")}</summary>
                   {selectedLog.output_data ? (
                     <div className="mt-2 space-y-2">
-                      <button
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => void handleCopy(selectedLog.output_data)}
-                        className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-[10px] text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
                       >
                         {t("drawer.copy.action")}
-                      </button>
+                      </Button>
                       <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/20 p-2 text-[10px] text-[var(--muted)]">
                         {prettyJson(selectedLog.output_data)}
                       </pre>
@@ -213,12 +219,13 @@ export function SpecPlanDetailDrawer({
                   <summary className="cursor-pointer text-xs text-[var(--foreground)]">{t("drawer.json.rawResponse")}</summary>
                   {selectedLog.raw_response != null ? (
                     <div className="mt-2 space-y-2">
-                      <button
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => void handleCopy(selectedLog.raw_response)}
-                        className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-[10px] text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)]"
                       >
                         {t("drawer.copy.action")}
-                      </button>
+                      </Button>
                       <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/20 p-2 text-[10px] text-[var(--muted)]">
                         {prettyJson(selectedLog.raw_response)}
                       </pre>

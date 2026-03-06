@@ -12,7 +12,9 @@ import {
   DonutChart,
   type ColumnDef,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
 import {
   createAdminRegistrationWindow,
   fetchAdminActiveRegistrationWindow,
@@ -175,24 +177,21 @@ export function PageContent() {
     <>
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-5">
-          <input
+          <Input
             type="datetime-local"
             value={startAt}
             onChange={(event) => setStartAt(event.target.value)}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <input
+          <Input
             type="datetime-local"
             value={endAt}
             onChange={(event) => setEndAt(event.target.value)}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <input
+          <Input
             type="number"
             min={1}
             value={maxRegistrations}
             onChange={(event) => setMaxRegistrations(Number(event.target.value) || 1)}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
           <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-[var(--muted)]">
             <input
@@ -203,13 +202,13 @@ export function PageContent() {
             />
             {t("autoActivate")}
           </label>
-          <button
+          <Button
             onClick={() => void handleCreateWindow()}
             disabled={!startAt || !endAt || isSubmitting}
-            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            size="sm"
           >
             {isSubmitting ? t("actions.submitting") : t("actions.newWindow")}
-          </button>
+          </Button>
         </div>
       </GlassCard>
 
@@ -265,29 +264,28 @@ export function PageContent() {
           <h3 className="col-span-1 self-center text-sm font-semibold text-[var(--foreground)]">
             {t("inviteCodes.title")}
           </h3>
-          <input
+          <Input
             type="number"
             min={1}
             max={1000}
             value={inviteCount}
             onChange={(event) => setInviteCount(Number(event.target.value) || 1)}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <input
+          <Input
             type="number"
             min={6}
             max={32}
             value={inviteLength}
             onChange={(event) => setInviteLength(Number(event.target.value) || 12)}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => void handleGenerateInvites()}
             disabled={!activeWindow || isSubmitting}
-            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)]/10 px-3 text-xs text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("inviteCodes.generate")}
-          </button>
+          </Button>
         </div>
       </GlassCard>
 

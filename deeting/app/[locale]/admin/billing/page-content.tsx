@@ -13,6 +13,8 @@ import {
   type ColumnDef,
   type StatCardData,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   fetchAdminBillingSummary,
   fetchAdminBillingTransactions,
@@ -341,29 +343,27 @@ export function PageContent() {
           <p className="text-xs text-[var(--muted)]">{t("rechargePolicy.description")}</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
-          <input
+          <Input
             type="number"
             min={0}
             step="0.01"
             value={ratioInput}
             onChange={(event) => setRatioInput(event.target.value)}
             placeholder={t("rechargePolicy.creditPerUnit")}
-            className="h-9 rounded-md border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/60 focus:outline-none"
           />
-          <input
+          <Input
             type="text"
             value={currencyInput}
             onChange={(event) => setCurrencyInput(event.target.value)}
             placeholder={t("rechargePolicy.currency")}
-            className="h-9 rounded-md border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--primary)]/60 focus:outline-none"
           />
-          <button
+          <Button
             onClick={() => void handleSavePolicy()}
             disabled={isSavingPolicy}
-            className="inline-flex h-9 items-center justify-center rounded-md bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            size="sm"
           >
             {isSavingPolicy ? t("rechargePolicy.saving") : t("rechargePolicy.save")}
-          </button>
+          </Button>
         </div>
         {policyFeedback ? (
           <p className="mt-2 text-xs text-[var(--muted)]">{policyFeedback}</p>
@@ -371,18 +371,22 @@ export function PageContent() {
       </div>
 
       <div className="w-fit rounded-lg bg-white/5 p-1">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setTab("quotas")}
-          className={`cursor-pointer rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${tab === "quotas" ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--muted)] hover:text-[var(--foreground)]"}`}
+          className={tab === "quotas" ? "bg-[var(--primary)]/20 text-[var(--primary)]" : ""}
         >
           {t("tabs.quotas")}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setTab("transactions")}
-          className={`cursor-pointer rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${tab === "transactions" ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--muted)] hover:text-[var(--foreground)]"}`}
+          className={tab === "transactions" ? "bg-[var(--primary)]/20 text-[var(--primary)]" : ""}
         >
           {t("tabs.transactions")}
-        </button>
+        </Button>
       </div>
 
       {tab === "quotas" ? (

@@ -10,7 +10,16 @@ import {
   AdminStatusBadge,
   type ColumnDef,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   createAdminProviderCredential,
   deleteAdminProviderCredential,
@@ -190,37 +199,36 @@ export function PageContent() {
     <>
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-4">
-          <select
-            value={selectedInstanceId}
-            onChange={(event) => setSelectedInstanceId(event.target.value)}
-            className="h-9 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
-          >
-            <option value="">{t("form.selectInstance")}</option>
-            {(instances ?? []).map((instance) => (
-              <option key={instance.id} value={instance.id}>
-                {instance.name}
-              </option>
-            ))}
-          </select>
-          <input
+          <Select value={selectedInstanceId || "__none__"} onValueChange={(v) => setSelectedInstanceId(v === "__none__" ? "" : v)}>
+            <SelectTrigger>
+              <SelectValue placeholder={t("form.selectInstance")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">{t("form.selectInstance")}</SelectItem>
+              {(instances ?? []).map((instance) => (
+                <SelectItem key={instance.id} value={instance.id}>
+                  {instance.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
             value={alias}
             onChange={(event) => setAlias(event.target.value)}
             placeholder={t("form.credentialAlias")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <input
+          <Input
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
             placeholder={t("form.providerApiKey")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <button
+          <Button
             onClick={() => void handleCreateCredential()}
             disabled={!selectedInstanceId || !alias.trim() || !apiKey.trim() || isSubmitting}
-            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            size="sm"
           >
             {isSubmitting ? t("actions.creating") : t("actions.addCredential")}
-          </button>
+          </Button>
         </div>
         {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
       </GlassCard>
@@ -253,16 +261,17 @@ export function PageContent() {
               : t("empty.noData")
         }
         rowActions={(row) => (
-          <button
+          <Button
+            variant="destructive"
+            size="sm"
             onClick={(event) => {
               event.stopPropagation()
               void handleDeleteCredential(row)
             }}
             disabled={Boolean(deletingId)}
-            className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-rose-400/30 px-2 text-xs text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("actions.delete")}
-          </button>
+          </Button>
         )}
       />
     </>

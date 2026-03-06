@@ -4,6 +4,7 @@ import * as React from "react"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Button } from "@/components/ui/button"
 import {
   ChevronLeft,
   ChevronRight,
@@ -180,20 +181,22 @@ export function AdminDataTable<T extends Record<string, any>>({
             })}
           </span>
           <div className="flex items-center gap-1">
-            <button
-              className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)] disabled:opacity-30 transition-colors cursor-pointer"
+            <Button
+              variant="ghost"
+              size="icon-sm"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(1)}
             >
               <ChevronsLeft className="size-4" />
-            </button>
-            <button
-              className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)] disabled:opacity-30 transition-colors cursor-pointer"
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             >
               <ChevronLeft className="size-4" />
-            </button>
+            </Button>
             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
               let page: number
               if (totalPages <= 5) {
@@ -206,34 +209,36 @@ export function AdminDataTable<T extends Record<string, any>>({
                 page = currentPage - 2 + i
               }
               return (
-                <button
+                <Button
                   key={page}
+                  variant={page === currentPage ? "default" : "ghost"}
+                  size="icon-sm"
                   className={cn(
-                    "inline-flex size-8 items-center justify-center rounded-lg text-xs font-medium transition-colors cursor-pointer",
-                    page === currentPage
-                      ? "bg-[var(--primary)]/20 text-[var(--primary)]"
-                      : "text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)]"
+                    "text-xs font-medium",
+                    page === currentPage && "bg-[var(--primary)]/20 text-[var(--primary)]"
                   )}
                   onClick={() => setCurrentPage(page)}
                 >
                   {page}
-                </button>
+                </Button>
               )
             })}
-            <button
-              className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)] disabled:opacity-30 transition-colors cursor-pointer"
+            <Button
+              variant="ghost"
+              size="icon-sm"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             >
               <ChevronRight className="size-4" />
-            </button>
-            <button
-              className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)] disabled:opacity-30 transition-colors cursor-pointer"
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(totalPages)}
             >
               <ChevronsRight className="size-4" />
-            </button>
+            </Button>
           </div>
         </div>
       )}

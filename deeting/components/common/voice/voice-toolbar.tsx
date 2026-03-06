@@ -2,6 +2,7 @@
 
 import { Mic, X, Loader2 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
+import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import { useState, useEffect, useCallback, memo } from 'react';
 import { useI18n } from '@/hooks/use-i18n';
@@ -41,9 +42,9 @@ const VoiceInputToolbar = memo(() => {
       {/* Header */}
       <div className="absolute top-4 right-4">
         <Link href="/chat" scroll={false}>
-          <button className="text-white/30 hover:text-white transition-colors">
+          <Button variant="ghost" size="icon-sm" className="text-white/30 hover:text-white">
             <X className="w-4 h-4" />
-          </button>
+          </Button>
         </Link>
       </div>
 
@@ -92,10 +93,11 @@ const VoiceInputToolbar = memo(() => {
 
       {/* Controls */}
       <div className="flex items-center gap-4">
-        <button
+        <Button
           onClick={toggleListening}
+          size="lg"
           className={`
-            p-6 rounded-full transition-all shadow-2xl
+            p-6 rounded-full shadow-2xl h-auto
             ${
               isListening
                 ? 'bg-red-600 hover:bg-red-500 shadow-red-900/50'
@@ -104,12 +106,12 @@ const VoiceInputToolbar = memo(() => {
           `}
         >
           <Mic className="w-8 h-8 text-white" />
-        </button>
+        </Button>
 
         <Link href="/chat" scroll={false}>
-          <button className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-sm text-white transition-colors">
+          <Button variant="outline" className="px-6 py-3 h-auto bg-white/10 hover:bg-white/20 border-white/10 text-sm text-white">
             {t("voice.cancel")}
-          </button>
+          </Button>
         </Link>
       </div>
 

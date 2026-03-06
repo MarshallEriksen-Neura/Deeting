@@ -2,8 +2,17 @@
 
 import { useTranslations } from "next-intl"
 
-
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
 export function PageContent() {
   const t = useTranslations("admin.rateLimitPage")
@@ -31,10 +40,10 @@ export function PageContent() {
                 <h4 className="text-sm font-semibold text-[var(--foreground)]">{rl.label}</h4>
                 <p className="text-xs text-[var(--muted)]">{rl.description}</p>
               </div>
-              <input
+              <Input
                 type="number"
                 defaultValue={rl.value}
-                className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-mono text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none focus:ring-1 focus:ring-[var(--primary)]/25"
+                className="font-mono"
               />
             </div>
           </GlassCard>
@@ -44,36 +53,38 @@ export function PageContent() {
       <GlassCard padding="default" hover="none">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--foreground)]">{t("ipWhitelist.title")}</h3>
-          <button className="inline-flex h-7 items-center gap-1 rounded-lg bg-[var(--primary)]/10 px-3 text-xs text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-colors cursor-pointer">
+          <Button variant="outline" size="sm">
             {t("ipWhitelist.addIp")}
-          </button>
+          </Button>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/5">
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--muted)]">{t("ipWhitelist.columns.pattern")}</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--muted)]">{t("ipWhitelist.columns.description")}</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-[var(--muted)]">{t("ipWhitelist.columns.action")}</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs font-medium uppercase tracking-wider">{t("ipWhitelist.columns.pattern")}</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wider">{t("ipWhitelist.columns.description")}</TableHead>
+              <TableHead className="text-right text-xs font-medium uppercase tracking-wider">{t("ipWhitelist.columns.action")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {ipWhitelist.map((ip) => (
-              <tr key={ip.pattern} className="border-b border-white/5 last:border-0">
-                <td className="px-3 py-2.5 font-mono text-xs text-[var(--foreground)]">{ip.pattern}</td>
-                <td className="px-3 py-2.5 text-xs text-[var(--muted)]">{ip.description}</td>
-                <td className="px-3 py-2.5 text-right">
-                  <button className="text-xs text-rose-400 hover:underline cursor-pointer">{t("ipWhitelist.remove")}</button>
-                </td>
-              </tr>
+              <TableRow key={ip.pattern}>
+                <TableCell className="font-mono text-xs">{ip.pattern}</TableCell>
+                <TableCell className="text-xs text-[var(--muted)]">{ip.description}</TableCell>
+                <TableCell className="text-right">
+                  <Button variant="link" size="sm" className="text-rose-400">
+                    {t("ipWhitelist.remove")}
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </GlassCard>
 
       <div className="flex justify-end">
-        <button className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--primary)] px-6 text-sm font-medium text-white hover:opacity-90 transition-opacity cursor-pointer">
+        <Button>
           {t("saveChanges")}
-        </button>
+        </Button>
       </div>
     </>
   )

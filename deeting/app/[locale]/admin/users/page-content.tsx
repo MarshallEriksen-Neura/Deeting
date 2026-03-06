@@ -10,6 +10,7 @@ import {
   getStatusTone,
   type ColumnDef,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import {
   fetchAdminUserById,
   fetchAdminUsers,
@@ -53,12 +54,13 @@ function UserDetailDrawer({
       <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-lg flex-col border-l border-white/10 bg-[var(--surface,#0a0a0f)] shadow-2xl">
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
           <h2 className="text-sm font-semibold text-[var(--foreground)]">{t("drawer.title")}</h2>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-[var(--muted)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]"
           >
             <X className="size-4" />
-          </button>
+          </Button>
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
@@ -307,26 +309,29 @@ export function PageContent() {
         }
         rowActions={(row) => (
           <div className="inline-flex items-center gap-1">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={(event) => {
                 event.stopPropagation()
                 void handleToggleActive(row)
               }}
               disabled={isLoading || actioningUserId === row.id}
-              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/10 px-2 text-xs text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {row.is_active ? t("actions.deactivate") : t("actions.activate")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={(event) => {
                 event.stopPropagation()
                 void handleToggleSuperuser(row)
               }}
               disabled={isLoading || actioningUserId === row.id}
-              className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-amber-400/20 px-2 text-xs text-amber-300 transition-colors hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+              className="border-amber-400/20 text-amber-300 hover:bg-amber-500/10"
             >
               {row.is_superuser ? t("actions.demoteSuperuser") : t("actions.promoteSuperuser")}
-            </button>
+            </Button>
           </div>
         )}
       />

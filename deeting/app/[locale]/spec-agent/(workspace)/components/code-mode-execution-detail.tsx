@@ -52,7 +52,7 @@ const ToolTraceItem = memo(function ToolTraceItem({
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
       <CollapsibleTrigger asChild>
-        <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-muted/50 transition-colors">
+        <Button variant="ghost" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-muted/50 transition-colors">
           <span className="flex-shrink-0 w-5 h-5 rounded bg-muted flex items-center justify-center text-[10px] font-mono text-muted-foreground">
             {index + 1}
           </span>
@@ -73,7 +73,7 @@ const ToolTraceItem = memo(function ToolTraceItem({
           ) : (
             <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
           )}
-        </button>
+        </Button>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="ml-7 mr-2 mb-2 space-y-2">
@@ -213,10 +213,10 @@ export const CodeModeExecutionDetailDrawer = memo(
                 {/* Code */}
                 <Collapsible defaultOpen={toolTraces.length === 0}>
                   <CollapsibleTrigger asChild>
-                    <button className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors">
+                    <Button variant="ghost" className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors">
                       <Code2 className="w-4 h-4" />
                       {t('codeMode.detail.code')}
-                    </button>
+                    </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <pre className="mt-2 text-xs bg-muted/40 rounded-lg p-3 overflow-x-auto max-h-60 font-mono text-foreground/80 whitespace-pre-wrap">
@@ -261,10 +261,10 @@ export const CodeModeExecutionDetailDrawer = memo(
                   Object.keys(detail.render_blocks).length > 0 && (
                     <Collapsible>
                       <CollapsibleTrigger asChild>
-                        <button className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors">
+                        <Button variant="ghost" className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors">
                           <Code2 className="w-4 h-4" />
                           {t('codeMode.detail.renderBlocks')}
-                        </button>
+                        </Button>
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <pre className="mt-2 text-xs bg-muted/40 rounded-lg p-3 overflow-x-auto max-h-60 font-mono text-foreground/80">

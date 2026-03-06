@@ -22,6 +22,7 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -493,12 +494,14 @@ export function ConnectProviderDrawer({
                   {t("drawer.endpointLabel")}
                 </Label>
                 {!isSystem && (
-                  <button 
+                  <Button
+                    variant="link"
+                    size="sm"
                     onClick={handleTestConnection}
-                    className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+                    className="text-[10px] text-blue-400 hover:text-blue-300 p-0 h-auto"
                   >
                     <Zap className="size-3" /> {t("drawer.pingCheck")}
-                  </button>
+                  </Button>
                 )}
               </div>
               
@@ -625,10 +628,10 @@ export function ConnectProviderDrawer({
             {/* Advanced Settings (Accordion) */}
             <Collapsible className="group">
               <CollapsibleTrigger asChild>
-                <button className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white transition-colors w-full">
+                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-white w-full justify-start p-0 h-auto">
                   <ChevronDown className="size-3 group-data-[state=open]:rotate-180 transition-transform" />
                   {t("drawer.advanced")}
-                </button>
+                </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-4 pt-4">
                 {isOpenAIProtocol && (
@@ -766,13 +769,15 @@ export function ConnectProviderDrawer({
             
             {!isSystem && connectionStatus === 'error' && (
               <div className="mt-3 text-center">
-                <button 
+                <Button
+                  variant="link"
+                  size="sm"
                   onClick={handleSave}
-                  className="text-[10px] text-red-400 hover:text-red-300 underline decoration-red-400/30 underline-offset-2"
+                  className="text-[10px] text-red-400 hover:text-red-300 underline decoration-red-400/30 underline-offset-2 p-0 h-auto"
                   disabled={saving}
                 >
                   {t("drawer.save")}
-                </button>
+                </Button>
               </div>
             )}
           </div>

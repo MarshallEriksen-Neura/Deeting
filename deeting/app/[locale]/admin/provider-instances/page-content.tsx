@@ -24,6 +24,13 @@ import {
 import { GlassCard } from "@/components/ui/glass-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
   createAdminProviderInstance,
@@ -474,19 +481,19 @@ export function PageContent() {
             <div className="grid gap-4 py-2">
               <div className="grid gap-2">
                 <Label htmlFor="create-preset">{t("form.presetSlug")}</Label>
-                <select
-                  id="create-preset"
-                  value={presetSlug}
-                  onChange={(e) => handlePresetSelect(e.target.value)}
-                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-                >
-                  <option value="">{t("form.selectPreset")}</option>
-                  {activePresets.map((p) => (
-                    <option key={p.slug} value={p.slug ?? ""}>
-                      {p.name || p.slug} {p.category ? `(${p.category})` : ""}
-                    </option>
-                  ))}
-                </select>
+                <Select value={presetSlug || "__none__"} onValueChange={(v) => handlePresetSelect(v === "__none__" ? "" : v)}>
+                  <SelectTrigger id="create-preset">
+                    <SelectValue placeholder={t("form.selectPreset")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t("form.selectPreset")}</SelectItem>
+                    {activePresets.map((p) => (
+                      <SelectItem key={p.slug} value={p.slug ?? ""}>
+                        {p.name || p.slug} {p.category ? `(${p.category})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid gap-2">

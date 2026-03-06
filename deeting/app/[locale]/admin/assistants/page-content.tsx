@@ -12,7 +12,17 @@ import {
   getStatusTone,
   type ColumnDef,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -257,41 +267,40 @@ export function PageContent() {
     <>
       <GlassCard padding="default" hover="none">
         <div className="grid gap-3 md:grid-cols-4">
-          <input
+          <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder={t("form.assistantName")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <input
+          <Input
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
             placeholder={t("form.summary")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
           />
-          <select
-            value={createVisibility}
-            onChange={(event) => setCreateVisibility(event.target.value as "private" | "unlisted" | "public")}
-            className="h-9 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2 text-sm text-[var(--foreground)] focus:outline-none"
-          >
-            <option value="private">{t("visibility.private")}</option>
-            <option value="unlisted">{t("visibility.unlisted")}</option>
-            <option value="public">{t("visibility.public")}</option>
-          </select>
-          <button
+          <Select value={createVisibility} onValueChange={(v) => setCreateVisibility(v as "private" | "unlisted" | "public")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="private">{t("visibility.private")}</SelectItem>
+              <SelectItem value="unlisted">{t("visibility.unlisted")}</SelectItem>
+              <SelectItem value="public">{t("visibility.public")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
             onClick={() => void handleCreateAssistant()}
             disabled={!name.trim() || !systemPrompt.trim() || isSubmitting}
-            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            size="sm"
           >
             {isSubmitting ? t("actions.creating") : t("actions.create")}
-          </button>
+          </Button>
         </div>
-        <textarea
+        <Textarea
           value={systemPrompt}
           onChange={(event) => setSystemPrompt(event.target.value)}
           placeholder={t("form.systemPrompt")}
           rows={3}
-          className="mt-3 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+          className="mt-3"
         />
         {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
       </GlassCard>
@@ -335,13 +344,15 @@ export function PageContent() {
               : t("empty.noData")
         }
         rowActions={(row) => (
-          <button
-            className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-red-500/10 hover:text-red-500 transition-colors cursor-pointer"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setDeleteId(row.id)}
             title={t("actions.delete")}
+            className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
           >
             <Trash2 className="size-4" />
-          </button>
+          </Button>
         )}
       />
 
