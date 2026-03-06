@@ -272,20 +272,6 @@ class AuthService:
                 detail="Refresh token expired or invalid",
             )
 
-        session_service = LoginSessionService(self.db)
-        session_record = await session_service.get_active_session_by_key(
-            session_key=session_key
-        )
-        if (
-            not session_record
-            or session_record.user_id != user_id
-            or session_record.current_refresh_jti != jti
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token expired or invalid",
-            )
-
         if refresh_data.get("used"):
             if self._is_refresh_reuse_within_grace(refresh_data):
                 logger.warning(
@@ -305,6 +291,20 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token reuse detected, all sessions invalidated",
+            )
+
+        session_service = LoginSessionService(self.db)
+        session_record = await session_service.get_active_session_by_key(
+            session_key=session_key
+        )
+        if (
+            not session_record
+            or session_record.user_id != user_id
+            or session_record.current_refresh_jti != jti
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token expired or invalid",
             )
 
         # 标记旧 refresh token 为已使用
@@ -468,6 +468,7 @@ class AuthService:
             await self._invalidate_login_session(session_record)
 
         await self.user_repo.increment_token_version(user_id)
+        await self.db.commit()
         logger.info("all_tokens_revoked", extra={"user_id": str(user_id)})
 
     async def is_token_blacklisted(self, jti: str) -> bool:

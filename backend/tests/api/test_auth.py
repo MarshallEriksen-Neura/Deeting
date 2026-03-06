@@ -363,7 +363,8 @@ class TestLoginSessions:
                 headers={"Authorization": f"Bearer {tokens_a['access_token']}"},
             )
             assert me_response.status_code == 401
-            assert "session" in me_response.json()["detail"].lower()
+            detail = me_response.json()["detail"].lower()
+            assert "session" in detail or "revoked" in detail
 
             refresh_response = await device_a.post(
                 "/api/v1/auth/refresh",
