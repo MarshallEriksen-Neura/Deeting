@@ -292,7 +292,7 @@ pub async fn rebuild_local_embedding_assets(
     })
 }
 
-async fn resolve_local_model_connection(
+pub(crate) async fn resolve_local_model_connection(
     app_state: &AppState,
     requested_model: &str,
     requested_provider_model_id: Option<&str>,
@@ -535,7 +535,7 @@ fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Val
     result
 }
 
-fn build_upstream_endpoint(
+pub(crate) fn build_upstream_endpoint(
     base_url: &str,
     upstream_path: &str,
     protocol: Option<&str>,
@@ -576,7 +576,7 @@ fn build_upstream_endpoint(
     format!("{base}/{path}")
 }
 
-fn apply_provider_auth_headers(
+pub(crate) fn apply_provider_auth_headers(
     request: reqwest::RequestBuilder,
     protocol: Option<&str>,
     secret_key: &str,
@@ -1153,12 +1153,14 @@ fn build_local_summary_from_window(messages: &[LocalConversationHistoryMessage])
     truncate_text_chars(&joined, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)
 }
 
-async fn run_local_chat_complete_with_auto_code_mode(
+pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     app: &AppHandle,
     app_state: &AppState,
     model_connection: &LocalModelConnection,
     messages: Vec<LocalChatInputMessage>,
     chat_ctx: &LocalConversationChatContext,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
 ) -> Result<serde_json::Value, String> {
     let provider_model_id = &model_connection.provider_model_id;
     let model_id = &model_connection.model_id;
@@ -1181,8 +1183,8 @@ async fn run_local_chat_complete_with_auto_code_mode(
             model_id,
             orchestrated_messages.clone(),
             Some(tools),
-            None,
-            None,
+            temperature,
+            max_tokens,
         )
             .await
             .map_err(to_string)?;
@@ -1903,144 +1905,13 @@ fn truncate_text_chars(input: &str, max_chars: usize) -> String {
     out
 }
 
-fn emit_local_chat_stream_payload(
-    app: &AppHandle,
-    request_id: Option<&str>,
-    trace_id: &str,
-    payload: serde_json::Value,
-) {
-    let mut envelope = serde_json::json!({
-        "trace_id": trace_id,
-    });
-    if let Some(request_id) = request_id {
-        if !request_id.trim().is_empty() {
-            envelope["request_id"] = serde_json::json!(request_id);
-        }
-    }
-    if let (Some(target), Some(source)) = (envelope.as_object_mut(), payload.as_object()) {
-        for (key, value) in source {
-            target.insert(key.to_string(), value.clone());
-        }
-    }
-    if let Err(err) = app.emit(LOCAL_CHAT_STREAM_EVENT, envelope) {
-        warn!("failed to emit local chat stream event: {}", err);
-    }
-}
-
-fn emit_local_chat_stream_status(
-    app: &AppHandle,
-    request_id: Option<&str>,
-    trace_id: &str,
-    stage: &str,
-    code: &str,
-    meta: Option<serde_json::Value>,
-) {
-    emit_local_chat_stream_payload(
-        app,
-        request_id,
-        trace_id,
-        serde_json::json!({
-            "type": "status",
-            "stage": stage,
-            "code": code,
-            "meta": meta,
-        }),
-    );
-}
-
-fn emit_local_chat_stream_blocks(
-    app: &AppHandle,
-    request_id: Option<&str>,
-    trace_id: &str,
-    blocks: serde_json::Value,
-) {
-    emit_local_chat_stream_payload(
-        app,
-        request_id,
-        trace_id,
-        serde_json::json!({
-            "type": "blocks",
-            "blocks": blocks,
-        }),
-    );
-}
-
-fn emit_local_chat_stream_error(
-    app: &AppHandle,
-    request_id: Option<&str>,
-    trace_id: &str,
-    message: &str,
-) {
-    emit_local_chat_stream_payload(
-        app,
-        request_id,
-        trace_id,
-        serde_json::json!({
-            "type": "error",
-            "code": "local_chat_failed",
-            "error_code": "local_chat_failed",
-            "message": message,
-        }),
-    );
-}
-
-fn emit_local_chat_stream_done(app: &AppHandle, request_id: Option<&str>, trace_id: &str) {
-    emit_local_chat_stream_payload(
-        app,
-        request_id,
-        trace_id,
-        serde_json::json!({
-            "type": "done",
-        }),
-    );
-}
-
-fn emit_local_chat_stream_delta_chunks(
-    app: &AppHandle,
-    request_id: Option<&str>,
-    trace_id: &str,
-    content: &str,
-) {
-    if content.is_empty() {
-        return;
-    }
-
-    let mut chunk = String::new();
-    let mut chunk_chars = 0usize;
-    for ch in content.chars() {
-        chunk.push(ch);
-        chunk_chars += 1;
-        if chunk_chars >= LOCAL_CHAT_STREAM_DELTA_CHUNK_CHARS {
-            emit_local_chat_stream_payload(
-                app,
-                request_id,
-                trace_id,
-                serde_json::json!({
-                    "type": "delta",
-                    "delta": chunk,
-                }),
-            );
-            chunk = String::new();
-            chunk_chars = 0;
-        }
-    }
-
-    if !chunk.is_empty() {
-        emit_local_chat_stream_payload(
-            app,
-            request_id,
-            trace_id,
-            serde_json::json!({
-                "type": "delta",
-                "delta": chunk,
-            }),
-        );
-    }
+#[tauri::command]
+pub async fn get_local_gateway_url(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let url = state.mcp.local_gateway.base_url.read().await.clone();
+    Ok(url)
 }
 
 const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
 const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
-const LOCAL_CHAT_STREAM_EVENT: &str = "local-chat-stream";
-const LOCAL_CHAT_STREAM_DELTA_CHUNK_CHARS: usize = 64;
 const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
 const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;

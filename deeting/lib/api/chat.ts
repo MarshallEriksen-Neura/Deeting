@@ -1,4 +1,4 @@
-import { openApiSSE, request } from "@/lib/http"
+import { openApiSSE, openSSE, request } from "@/lib/http"
 import type { ChatMessageContent } from "@/lib/chat/message-content"
 import { collectLocalContext, type LocalContextSnapshot } from "@/lib/platform/context-collector"
 import { invoke as invokeTauri } from "@tauri-apps/api/core"
@@ -20,7 +20,7 @@ export type ChatCompletionRequest = {
   assistant_id?: string
   session_id?: string
   regenerate?: boolean
-  context?: LocalContextSnapshot | any
+  context?: LocalContextSnapshot | unknown
 }
 
 export type ChatCompletionResponse = {
@@ -33,6 +33,61 @@ export type ChatCompletionResponse = {
 }
 
 const CHAT_COMPLETIONS_PATH = "/api/v1/internal/chat/completions"
+const LOCAL_GATEWAY_CHAT_PATH = "/v1/chat/completions"
+const LOCAL_GATEWAY_URL_COMMAND = "get_local_gateway_url"
+const LOCAL_GATEWAY_RESOLVE_MAX_RETRIES = 50
+const LOCAL_GATEWAY_RESOLVE_INTERVAL_MS = 120
+
+let localGatewayBaseUrlCache: string | null = null
+let localGatewayBaseUrlInflight: Promise<string> | null = null
+
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+const sleep = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+
+async function resolveLocalGatewayBaseUrl() {
+  if (localGatewayBaseUrlCache) return localGatewayBaseUrlCache
+  if (localGatewayBaseUrlInflight) return localGatewayBaseUrlInflight
+
+  localGatewayBaseUrlInflight = (async () => {
+    if (!isTauriRuntime()) {
+      throw new Error("Local gateway is only available in Tauri runtime")
+    }
+
+    let lastError: unknown = null
+    for (let index = 0; index < LOCAL_GATEWAY_RESOLVE_MAX_RETRIES; index += 1) {
+      try {
+        const value = await invokeTauri<string | null>(LOCAL_GATEWAY_URL_COMMAND)
+        const normalized = typeof value === "string" ? value.trim() : ""
+        if (normalized) {
+          localGatewayBaseUrlCache = normalized
+          return normalized
+        }
+      } catch (error) {
+        lastError = error
+      }
+      await sleep(LOCAL_GATEWAY_RESOLVE_INTERVAL_MS)
+    }
+
+    throw new Error(
+      lastError instanceof Error
+        ? `Local gateway unavailable: ${lastError.message}`
+        : "Local gateway unavailable"
+    )
+  })()
+
+  try {
+    return await localGatewayBaseUrlInflight
+  } finally {
+    localGatewayBaseUrlInflight = null
+  }
+}
 
 export async function createChatCompletion(payload: ChatCompletionRequest) {
   return request<ChatCompletionResponse>({
@@ -52,25 +107,92 @@ export async function streamChatCompletion(
     onCancel?: (cancel: () => void) => void
   } = {}
 ): Promise<string> {
-  // Auto-collect local context for JIT orchestration if not provided
   const localContext = payload.context ?? (await collectLocalContext())
-
   const body = JSON.stringify({
     ...payload,
     context: localContext,
     stream: payload.stream ?? true,
     status_stream: payload.status_stream ?? true,
   })
+
+  return streamViaSse(
+    (callbacks) =>
+      openApiSSE(CHAT_COMPLETIONS_PATH, {
+        method: "POST",
+        body,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        onMessage: callbacks.onMessage,
+        onError: callbacks.onError,
+        onClose: callbacks.onClose,
+      }),
+    payload,
+    handlers,
+    control
+  )
+}
+
+export async function streamDesktopLocalChatCompletion(
+  payload: ChatCompletionRequest,
+  handlers: {
+    onDelta?: (delta: string, snapshot: string) => void
+    onMessage?: (data: unknown) => void
+  } = {},
+  control: {
+    onCancel?: (cancel: () => void) => void
+  } = {}
+): Promise<string> {
+  const localContext = payload.context ?? (await collectLocalContext())
+  const baseUrl = await resolveLocalGatewayBaseUrl()
+  const body = JSON.stringify({
+    ...payload,
+    context: localContext,
+    stream: payload.stream ?? true,
+    status_stream: payload.status_stream ?? true,
+  })
+
+  return streamViaSse(
+    (callbacks) =>
+      openSSE(`${baseUrl}${LOCAL_GATEWAY_CHAT_PATH}`, {
+        method: "POST",
+        body,
+        credentials: "omit",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        onMessage: callbacks.onMessage,
+        onError: callbacks.onError,
+        onClose: callbacks.onClose,
+      }),
+    payload,
+    handlers,
+    control
+  )
+}
+
+type StreamOpenCallbacks = {
+  onMessage: (message: { data: unknown }) => void
+  onError: (error: Error) => void
+  onClose: () => void
+}
+
+async function streamViaSse(
+  open: (callbacks: StreamOpenCallbacks) => () => void,
+  payload: ChatCompletionRequest,
+  handlers: {
+    onDelta?: (delta: string, snapshot: string) => void
+    onMessage?: (data: unknown) => void
+  },
+  control: {
+    onCancel?: (cancel: () => void) => void
+  }
+) {
   let fullText = ""
   let settled = false
 
   return await new Promise<string>((resolve, reject) => {
-    const close = openApiSSE(CHAT_COMPLETIONS_PATH, {
-      method: "POST",
-      body,
-      headers: {
-        "Content-Type": "application/json",
-      },
+    const close = open({
       onMessage: (message) => {
         const data = message.data
         if (data === "[DONE]") {
@@ -83,40 +205,63 @@ export async function streamChatCompletion(
 
         handlers.onMessage?.(data)
         const parsed =
-          typeof data === "string" || data === null ? null : (data as any)
+          typeof data === "string" || data === null
+            ? null
+            : (data as Record<string, unknown>)
+        const parsedMessage = parsed as
+          | {
+              usage?: {
+                prompt_tokens?: number
+                completion_tokens?: number
+                total_tokens?: number
+              }
+              trace_id?: string
+              duration_ms?: number
+              ttft_ms?: number
+              billing?: {
+                amount?: number
+              }
+              choices?: Array<{
+                delta?: {
+                  content?: string
+                }
+                message?: {
+                  content?: string
+                }
+              }>
+            }
+          | null
 
-        // ── LOG BACKFILL ──────────────────────────────────────────
-        if (parsed?.usage && process.env.NEXT_PUBLIC_IS_TAURI === "true") {
-          const usage = parsed.usage
+        if (parsedMessage?.usage && process.env.NEXT_PUBLIC_IS_TAURI === "true") {
+          const usage = parsedMessage.usage
           invokeTauri("create_local_gateway_log", {
             id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            trace_id: parsed.trace_id || payload.request_id,
+            trace_id: parsedMessage.trace_id || payload.request_id,
             model: payload.model,
             status_code: 200,
-            duration_ms: parsed.duration_ms || 0,
-            ttft_ms: parsed.ttft_ms,
+            duration_ms: parsedMessage.duration_ms || 0,
+            ttft_ms: parsedMessage.ttft_ms,
             input_tokens: usage.prompt_tokens || 0,
             output_tokens: usage.completion_tokens || 0,
             total_tokens: usage.total_tokens || 0,
-            cost_user: parsed.billing?.amount || 0,
+            cost_user: parsedMessage.billing?.amount || 0,
             created_at: new Date().toISOString(),
-          }).catch(err => console.warn("[ChatAPI] Local log backfill failed", err))
+          }).catch((error) => console.warn("[ChatAPI] Local log backfill failed", error))
         }
-        // ────────────────────────────────────────────────────────────
 
         const delta =
-          parsed?.choices?.[0]?.delta?.content ??
-          parsed?.choices?.[0]?.message?.content ??
+          parsedMessage?.choices?.[0]?.delta?.content ??
+          parsedMessage?.choices?.[0]?.message?.content ??
           ""
         if (delta) {
           fullText += delta
           handlers.onDelta?.(delta, fullText)
         }
       },
-      onError: (err) => {
+      onError: (error) => {
         if (settled) return
         settled = true
-        reject(err)
+        reject(error)
       },
       onClose: () => {
         if (settled) return
@@ -138,6 +283,14 @@ export async function streamChatCompletion(
 export async function cancelChatCompletion(requestId: string) {
   return request<{ request_id: string; status: string }>({
     url: `${CHAT_COMPLETIONS_PATH}/${requestId}/cancel`,
+    method: "POST",
+  })
+}
+
+export async function cancelDesktopLocalChatCompletion(requestId: string) {
+  const baseUrl = await resolveLocalGatewayBaseUrl()
+  return request<{ request_id: string; status: string }>({
+    url: `${baseUrl}${LOCAL_GATEWAY_CHAT_PATH}/${encodeURIComponent(requestId)}/cancel`,
     method: "POST",
   })
 }

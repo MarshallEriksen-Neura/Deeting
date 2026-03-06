@@ -1,8 +1,10 @@
 pub mod bridge;
 pub mod commands;
 pub mod error;
+pub mod local_orchestrator;
 pub mod process;
 pub mod store;
+pub mod gateway;
 pub mod types;
 
 use std::collections::HashMap;
@@ -66,6 +68,7 @@ pub struct McpRuntimeState {
     pub bridge: Arc<McpBridgeState>,
     pub pending_tool_calls: Arc<RwLock<HashMap<String, PendingToolCall>>>,
     pub local_chat_tasks: Arc<RwLock<HashMap<String, AbortHandle>>>,
+    pub local_gateway: Arc<crate::modules::mcp::gateway::LocalGatewayServer>,
 }
 
 impl McpRuntimeState {
@@ -82,6 +85,7 @@ impl McpRuntimeState {
             bridge: Arc::new(McpBridgeState::new(cloud_base_url)),
             pending_tool_calls: Arc::new(RwLock::new(HashMap::new())),
             local_chat_tasks: Arc::new(RwLock::new(HashMap::new())),
+            local_gateway: Arc::new(crate::modules::mcp::gateway::LocalGatewayServer::new()),
         }
     }
 

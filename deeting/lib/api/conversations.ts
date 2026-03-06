@@ -20,69 +20,6 @@ async function invokeTauri<T>(command: string, args?: Record<string, unknown>): 
   }
 }
 
-const LOCAL_CHAT_STREAM_EVENT = "local-chat-stream"
-
-export type LocalConversationStreamEvent = {
-  request_id?: string | null
-  trace_id?: string | null
-  type?: string
-  stage?: string | null
-  code?: string | null
-  delta?: string | null
-  message?: string | null
-  error_code?: string | null
-  blocks?: unknown
-  meta?: unknown
-}
-
-export type LocalConversationStreamOptions = {
-  onStreamEvent?: (event: LocalConversationStreamEvent) => void
-}
-
-const normalizeRequestId = (value?: string | null): string | null => {
-  if (typeof value !== "string") return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-async function withLocalConversationStream<T>(
-  requestId: string | null,
-  options: LocalConversationStreamOptions | undefined,
-  run: () => Promise<T>
-): Promise<T> {
-  const onStreamEvent = options?.onStreamEvent
-  if (!onStreamEvent || !requestId || !isTauriRuntime()) {
-    return run()
-  }
-
-  let unlisten: (() => void) | undefined
-  try {
-    try {
-      const { listen } = await import("@tauri-apps/api/event")
-      unlisten = await listen<LocalConversationStreamEvent>(
-        LOCAL_CHAT_STREAM_EVENT,
-        (event) => {
-          const payload = event?.payload
-          if (!payload || typeof payload !== "object") return
-          const payloadRequestId = normalizeRequestId((payload as LocalConversationStreamEvent).request_id)
-          if (!payloadRequestId || payloadRequestId !== requestId) return
-          onStreamEvent(payload as LocalConversationStreamEvent)
-        }
-      )
-    } catch (error) {
-      console.warn("local_conversation_stream_subscribe_failed", error)
-    }
-
-    return await run()
-  } finally {
-    try {
-      unlisten?.()
-    } catch {
-      // ignore unlisten errors
-    }
-  }
-}
-
 export const ConversationMessageSchema = z.object({
   role: z.string(),
   content: z.any().nullable().optional(),
@@ -309,19 +246,6 @@ export const ConversationRegenerateResponseSchema = z.object({
 
 export type ConversationRegenerateResponse = z.infer<typeof ConversationRegenerateResponseSchema>
 
-export const ConversationSendResponseSchema = z.object({
-  session_id: z.string(),
-  user_message: ConversationMessageSchema,
-  assistant_message: ConversationMessageSchema,
-})
-
-export type ConversationSendResponse = z.infer<typeof ConversationSendResponseSchema>
-export const ConversationCancelResponseSchema = z.object({
-  request_id: z.string(),
-  status: z.enum(["cancelled", "not_found"]),
-})
-export type ConversationCancelResponse = z.infer<typeof ConversationCancelResponseSchema>
-
 export type ConversationRegenerateRequest = {
   model: string
   provider_model_id?: string | null
@@ -329,17 +253,6 @@ export type ConversationRegenerateRequest = {
   top_p?: number
   max_tokens?: number
   request_id?: string | null
-}
-
-export type ConversationSendRequest = {
-  content: string
-  model: string
-  provider_model_id?: string | null
-  temperature?: number
-  top_p?: number
-  max_tokens?: number
-  request_id?: string | null
-  assistant_id?: string | null
 }
 
 export type ConversationSessionsQuery = {
@@ -479,27 +392,8 @@ export async function clearConversation(sessionId: string): Promise<Conversation
 
 export async function regenerateConversationReply(
   sessionId: string,
-  payload: ConversationRegenerateRequest,
-  options?: LocalConversationStreamOptions
+  payload: ConversationRegenerateRequest
 ): Promise<ConversationRegenerateResponse> {
-  if (isTauriRuntime()) {
-    const requestId = normalizeRequestId(payload.request_id)
-    const data = await withLocalConversationStream(requestId, options, () =>
-      invokeTauri<ConversationRegenerateResponse>("regenerate_local_conversation_reply", {
-        payload: {
-          session_id: sessionId,
-          model: payload.model,
-          provider_model_id: payload.provider_model_id ?? null,
-          temperature: payload.temperature ?? null,
-          top_p: payload.top_p ?? null,
-          max_tokens: payload.max_tokens ?? null,
-          request_id: requestId,
-        },
-      })
-    )
-    return ConversationRegenerateResponseSchema.parse(data)
-  }
-
   const data = await request<{
     session_id?: string | null
     choices?: Array<{ message?: { content?: string | null } }>
@@ -527,51 +421,4 @@ export async function regenerateConversationReply(
       meta_info: null,
     },
   })
-}
-
-export async function sendConversationMessage(
-  sessionId: string,
-  payload: ConversationSendRequest,
-  options?: LocalConversationStreamOptions
-): Promise<ConversationSendResponse> {
-  if (!isTauriRuntime()) {
-    throw new Error("sendConversationMessage is only supported in Tauri runtime")
-  }
-
-  const requestId = normalizeRequestId(payload.request_id)
-  const data = await withLocalConversationStream(requestId, options, () =>
-    invokeTauri<ConversationSendResponse>("send_local_conversation_message", {
-      payload: {
-        session_id: sessionId,
-        assistant_id: payload.assistant_id ?? null,
-        content: payload.content,
-        model: payload.model,
-        provider_model_id: payload.provider_model_id ?? null,
-        temperature: payload.temperature ?? null,
-        top_p: payload.top_p ?? null,
-        max_tokens: payload.max_tokens ?? null,
-        request_id: requestId,
-      },
-    })
-  )
-  return ConversationSendResponseSchema.parse(data)
-}
-
-export async function cancelLocalConversationRequest(
-  requestId: string
-): Promise<ConversationCancelResponse> {
-  if (!isTauriRuntime()) {
-    throw new Error("cancelLocalConversationRequest is only supported in Tauri runtime")
-  }
-
-  const normalized = normalizeRequestId(requestId)
-  if (!normalized) {
-    throw new Error("request_id is required")
-  }
-
-  const data = await invokeTauri<ConversationCancelResponse>(
-    "cancel_local_conversation_request",
-    { requestId: normalized }
-  )
-  return ConversationCancelResponseSchema.parse(data)
 }

@@ -109,9 +109,9 @@ pub struct LocalSkillInstallSyncResponse {
 }
 
 #[derive(Debug, Clone)]
-struct LocalModelConnection {
-    provider_model_id: String,
-    model_id: String,
+pub(crate) struct LocalModelConnection {
+    pub(crate) provider_model_id: String,
+    pub(crate) model_id: String,
 }
 
 pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[LocalAssistant]) {

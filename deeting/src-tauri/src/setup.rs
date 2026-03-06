@@ -90,6 +90,20 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         crate::modules::mcp::commands::start_local_periodic_worker(periodic_worker_state.mcp).await;
     });
 
+    let gateway_state = sync_state.clone();
+    let gateway_app_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        match gateway_state
+            .mcp
+            .local_gateway
+            .start(gateway_state.clone(), gateway_app_handle)
+            .await
+        {
+            Ok(url) => log::info!("Local Gateway started successfully at {}", url),
+            Err(e) => log::error!("Failed to start Local Gateway: {}", e),
+        }
+    });
+
     // Setup Tray
     crate::tray::setup_tray(app)?;
 

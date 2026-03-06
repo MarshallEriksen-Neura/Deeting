@@ -1,41 +1,19 @@
 import {
-  cancelLocalConversationRequest,
   clearConversation,
   deleteConversationMessage,
   regenerateConversationReply,
-  sendConversationMessage,
 } from "@/lib/api/conversations"
 import { request } from "@/lib/http"
-import { invoke } from "@tauri-apps/api/core"
-import { listen } from "@tauri-apps/api/event"
 
 jest.mock("@/lib/http", () => ({
   request: jest.fn(),
 }))
-jest.mock("@tauri-apps/api/core", () => ({
-  invoke: jest.fn(),
-}))
-jest.mock("@tauri-apps/api/event", () => ({
-  listen: jest.fn(),
-}))
 
 const mockRequest = request as jest.MockedFunction<typeof request>
-const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
-const mockListen = listen as jest.MockedFunction<typeof listen>
-const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
-const windowWithTauri = window as Window & {
-  __TAURI__?: unknown
-  __TAURI_INTERNALS__?: unknown
-}
 
 describe("conversation mutation apis", () => {
   afterEach(() => {
     mockRequest.mockReset()
-    mockInvoke.mockReset()
-    mockListen.mockReset()
-    process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
-    delete windowWithTauri.__TAURI__
-    delete windowWithTauri.__TAURI_INTERNALS__
   })
 
   it("deletes a conversation message via web endpoint", async () => {
@@ -60,7 +38,7 @@ describe("conversation mutation apis", () => {
     )
   })
 
-  it("clears a conversation via web endpoint", async () => {
+  it("clears a conversation via endpoint", async () => {
     mockRequest.mockResolvedValue({
       session_id: "session-2",
       cleared: true,
@@ -80,7 +58,7 @@ describe("conversation mutation apis", () => {
     )
   })
 
-  it("normalizes regenerate response from web endpoint", async () => {
+  it("normalizes regenerate response", async () => {
     mockRequest.mockResolvedValue({
       session_id: "session-3",
       choices: [{ message: { content: "new reply" } }],
@@ -116,191 +94,5 @@ describe("conversation mutation apis", () => {
         },
       })
     )
-  })
-
-  it("sends conversation message via tauri command", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-
-    mockInvoke.mockResolvedValue({
-      session_id: "session-local-1",
-      user_message: {
-        role: "user",
-        content: "hello",
-        turn_index: 1,
-      },
-      assistant_message: {
-        role: "assistant",
-        content: "hi",
-        turn_index: 2,
-      },
-    } as unknown)
-
-    const result = await sendConversationMessage("session-local-1", {
-      content: "hello",
-      model: "gpt-4o",
-      provider_model_id: "provider-model-id",
-      temperature: 0.7,
-      top_p: 0.9,
-      max_tokens: 256,
-    })
-
-    expect(result).toEqual({
-      session_id: "session-local-1",
-      user_message: {
-        role: "user",
-        content: "hello",
-        turn_index: 1,
-      },
-      assistant_message: {
-        role: "assistant",
-        content: "hi",
-        turn_index: 2,
-      },
-    })
-    expect(mockInvoke).toHaveBeenCalledWith("send_local_conversation_message", {
-      payload: {
-        session_id: "session-local-1",
-        assistant_id: null,
-        content: "hello",
-        model: "gpt-4o",
-        provider_model_id: "provider-model-id",
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 256,
-        request_id: null,
-      },
-    })
-  })
-
-  it("throws when sendConversationMessage is called outside tauri", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "false"
-
-    await expect(
-      sendConversationMessage("session-web-1", {
-        content: "hello",
-        model: "gpt-4o",
-      })
-    ).rejects.toThrow("sendConversationMessage is only supported in Tauri runtime")
-    expect(mockInvoke).not.toHaveBeenCalled()
-  })
-
-  it("streams local send events with request_id filter and auto unlisten", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-
-    const unlisten = jest.fn()
-    let eventHandler: ((event: { payload: unknown }) => void) | null = null
-    mockListen.mockImplementation(async (_name, handler) => {
-      eventHandler = handler as (event: { payload: unknown }) => void
-      return unlisten
-    })
-
-    mockInvoke.mockImplementation(async () => {
-      eventHandler?.({
-        payload: { request_id: "req-send-1", type: "status", stage: "model_request" },
-      })
-      eventHandler?.({
-        payload: { request_id: "another-request", type: "status", stage: "ignored" },
-      })
-      eventHandler?.({
-        payload: { request_id: "req-send-1", type: "delta", delta: "hello" },
-      })
-      return {
-        session_id: "session-local-stream",
-        user_message: { role: "user", content: "hello", turn_index: 1 },
-        assistant_message: { role: "assistant", content: "hello", turn_index: 2 },
-      } as unknown
-    })
-
-    const events: Array<Record<string, unknown>> = []
-    const result = await sendConversationMessage(
-      "session-local-stream",
-      {
-        content: "hello",
-        model: "gpt-4o",
-        request_id: "req-send-1",
-      },
-      {
-        onStreamEvent: (event) => {
-          events.push(event as Record<string, unknown>)
-        },
-      }
-    )
-
-    expect(result.session_id).toBe("session-local-stream")
-    expect(mockListen).toHaveBeenCalledWith("local-chat-stream", expect.any(Function))
-    expect(events).toEqual([
-      { request_id: "req-send-1", type: "status", stage: "model_request" },
-      { request_id: "req-send-1", type: "delta", delta: "hello" },
-    ])
-    expect(unlisten).toHaveBeenCalledTimes(1)
-  })
-
-  it("streams local regenerate events with request_id filter and auto unlisten", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-
-    const unlisten = jest.fn()
-    let eventHandler: ((event: { payload: unknown }) => void) | null = null
-    mockListen.mockImplementation(async (_name, handler) => {
-      eventHandler = handler as (event: { payload: unknown }) => void
-      return unlisten
-    })
-
-    mockInvoke.mockImplementation(async () => {
-      eventHandler?.({
-        payload: { request_id: "req-regen-1", type: "status", stage: "model_request" },
-      })
-      eventHandler?.({
-        payload: { request_id: "req-regen-1", type: "done" },
-      })
-      return {
-        session_id: "session-local-regen",
-        deleted_turn_index: 2,
-        message: { role: "assistant", content: "new", turn_index: 3 },
-      } as unknown
-    })
-
-    const events: Array<Record<string, unknown>> = []
-    const result = await regenerateConversationReply(
-      "session-local-regen",
-      {
-        model: "gpt-4o",
-        request_id: "req-regen-1",
-      },
-      {
-        onStreamEvent: (event) => {
-          events.push(event as Record<string, unknown>)
-        },
-      }
-    )
-
-    expect(result.session_id).toBe("session-local-regen")
-    expect(mockListen).toHaveBeenCalledWith("local-chat-stream", expect.any(Function))
-    expect(events).toEqual([
-      { request_id: "req-regen-1", type: "status", stage: "model_request" },
-      { request_id: "req-regen-1", type: "done" },
-    ])
-    expect(unlisten).toHaveBeenCalledTimes(1)
-  })
-
-  it("cancels local conversation request via tauri command", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue({
-      request_id: "req-cancel-1",
-      status: "cancelled",
-    } as unknown)
-
-    const result = await cancelLocalConversationRequest("req-cancel-1")
-
-    expect(result).toEqual({
-      request_id: "req-cancel-1",
-      status: "cancelled",
-    })
-    expect(mockInvoke).toHaveBeenCalledWith("cancel_local_conversation_request", {
-      requestId: "req-cancel-1",
-    })
   })
 })
