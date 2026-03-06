@@ -68,12 +68,13 @@ def _load_public_key() -> str:
     return key_path.read_text()
 
 
-def create_access_token(user_id: UUID, jti: str, version: int) -> str:
+def create_access_token(user_id: UUID, jti: str, version: int, sid: str) -> str:
     """创建 access token (短期，用于 API 访问，携带 token_version 便于失效校验)"""
     expire = Datetime.now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
         "jti": jti,
+        "sid": sid,
         "type": "access",
         "version": version,
         "exp": expire,
@@ -82,12 +83,13 @@ def create_access_token(user_id: UUID, jti: str, version: int) -> str:
     return jwt.encode(payload, _load_private_key(), algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: UUID, jti: str, version: int) -> str:
+def create_refresh_token(user_id: UUID, jti: str, version: int, sid: str) -> str:
     """创建 refresh token (长期，用于刷新 access token)"""
     expire = Datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(user_id),
         "jti": jti,
+        "sid": sid,
         "type": "refresh",
         "version": version,
         "exp": expire,

@@ -151,7 +151,7 @@ async def login(
         0
     ].strip() or (raw_request.client.host if raw_request.client else None)
     user_agent = raw_request.headers.get("user-agent")
-    tokens, _refresh_jti = await service.login_with_code(
+    tokens = await service.login_with_code(
         email=request.email,
         code=request.code,
         invite_code=request.invite_code,
@@ -159,6 +159,7 @@ async def login(
         client_ip=client_ip,
         user_agent=user_agent,
     )
+    await db.commit()
     _set_refresh_cookie(response, tokens.refresh_token)
     return tokens
 
@@ -189,7 +190,8 @@ async def refresh_token(
         )
 
     service = AuthService(db)
-    tokens, _refresh_jti = await service.refresh_tokens(refresh_token_value)
+    tokens = await service.refresh_tokens(refresh_token_value)
+    await db.commit()
     _set_refresh_cookie(response, tokens.refresh_token)
     return tokens
 
@@ -256,7 +258,7 @@ async def desktop_oauth_exchange(
 ) -> DesktopOAuthExchangeResponse:
     service = DesktopOAuthService(db)
     try:
-        user, tokens, _refresh_jti = await service.exchange_grant(
+        user, tokens = await service.exchange_grant(
             provider=payload.provider,
             session_id=payload.session_id,
             state=payload.state,
@@ -294,6 +296,7 @@ async def linuxdo_authorize(invite_code: str | None = None):
 async def linuxdo_callback(
     payload: OAuthCallbackRequest,
     response: Response,
+    raw_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """处理 LinuxDo OAuth 回调，返回 JWT。"""
@@ -312,7 +315,16 @@ async def linuxdo_callback(
 
     # 复用现有登录颁发逻辑
     auth = AuthService(db)
-    tokens, _refresh_jti = await auth.create_tokens(user)
+    client_ip = raw_request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        raw_request.client.host if raw_request.client else None
+    )
+    user_agent = raw_request.headers.get("user-agent")
+    tokens = await auth.create_session_tokens(
+        user,
+        client_ip=client_ip,
+        user_agent=user_agent,
+    )
+    await db.commit()
     _set_refresh_cookie(response, tokens.refresh_token)
     return OAuthCallbackResponse(
         access_token=tokens.access_token,
@@ -341,6 +353,7 @@ async def logout(
     service = AuthService(db)
     refresh_token = refresh_token_header or refresh_cookie
     await service.logout_with_tokens(user.id, authorization, refresh_token)
+    await db.commit()
     _clear_refresh_cookie(response)
 
     return MessageResponse(message="Successfully logged out")

@@ -16,6 +16,16 @@ type AttachmentBuildOptions = {
   purpose?: string
 }
 
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
+
 const createAttachmentId = () => {
   const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined
   if (cryptoObj?.randomUUID) {
@@ -86,6 +96,37 @@ const buildDataUrlAttachment = async (file: File): Promise<ChatAttachment> => {
     size: file.size,
     type: file.type,
     source: "data",
+  }
+}
+
+const buildLocalImageAttachment = async (file: File): Promise<ChatAttachment> => {
+  const [contentHash, dataUrl] = await Promise.all([
+    hashFile(file),
+    fileToDataUrl(file),
+  ])
+
+  const rawBase64 = dataUrl.replace(/^data:[^;]+;base64,/, "")
+  try {
+    await invokeTauri("save_local_chat_asset", {
+      payload: {
+        content_base64: rawBase64,
+        sha256: contentHash,
+        content_type: file.type,
+      },
+    })
+  } catch (err) {
+    console.warn("save_local_chat_asset failed, using data URL", err)
+  }
+
+  return {
+    id: createAttachmentId(),
+    kind: "image",
+    url: dataUrl,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    source: "local",
+    sha256: contentHash,
   }
 }
 
@@ -193,6 +234,9 @@ const buildAttachment = async (
   options: AttachmentBuildOptions
 ): Promise<ChatAttachment> => {
   if (file.type.startsWith("image/")) {
+    if (isTauriRuntime()) {
+      return buildLocalImageAttachment(file)
+    }
     return buildImageAttachment(file)
   }
 

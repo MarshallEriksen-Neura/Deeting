@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Callable, Iterable
 
 from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.permissions import PERMISSION_CODES
@@ -26,6 +27,7 @@ from app.core.cache_keys import CacheKeys
 from app.core.database import get_db
 from app.core.logging import logger
 from app.models import User
+from app.models.login_session import LoginSession
 from app.repositories import UserRepository
 from app.utils.security import decode_token
 
@@ -57,10 +59,11 @@ async def _get_user_from_jwt(
         )
 
     jti = payload.get("jti")
+    session_key = payload.get("sid")
     user_id_str = payload.get("sub")
     token_version = payload.get("version")
 
-    if not jti or not user_id_str:
+    if not jti or not user_id_str or not session_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
@@ -132,6 +135,19 @@ async def _get_user_from_jwt(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Account is banned: {ban_data.get('reason', 'No reason provided')}",
+        )
+
+    session_stmt = select(LoginSession.id).where(
+        LoginSession.user_id == user.id,
+        LoginSession.session_key == session_key,
+        LoginSession.revoked_at.is_(None),
+    )
+    session_result = await db.execute(session_stmt)
+    if session_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Login session has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     return user

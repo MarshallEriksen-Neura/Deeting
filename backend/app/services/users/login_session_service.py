@@ -69,31 +69,61 @@ class LoginSessionService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def record_session(
+    async def create_session(
         self,
         *,
+        session_key: str,
         user_id: uuid.UUID,
+        access_token_jti: str,
         refresh_token_jti: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
+        device_type: str | None = None,
+        device_name: str | None = None,
     ) -> LoginSession:
         """登录成功后记录会话。"""
-        device_type = _parse_device_type(user_agent) if user_agent else None
-        device_name = _parse_device_name(user_agent) if user_agent else None
+        resolved_device_type = device_type or (
+            _parse_device_type(user_agent) if user_agent else None
+        )
+        resolved_device_name = device_name or (
+            _parse_device_name(user_agent) if user_agent else None
+        )
         now = Datetime.now()
 
         record = LoginSession(
+            session_key=session_key,
             user_id=user_id,
-            refresh_token_jti=refresh_token_jti,
+            current_access_jti=access_token_jti,
+            current_refresh_jti=refresh_token_jti,
             ip_address=ip_address,
             user_agent=user_agent,
-            device_type=device_type,
-            device_name=device_name,
+            device_type=resolved_device_type,
+            device_name=resolved_device_name,
             last_active_at=now,
         )
         self.session.add(record)
         await self.session.flush()
         return record
+
+    async def get_session(
+        self, *, user_id: uuid.UUID, session_id: uuid.UUID
+    ) -> LoginSession | None:
+        stmt = select(LoginSession).where(
+            LoginSession.id == session_id,
+            LoginSession.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_active_session_by_key(
+        self, *, session_key: str
+    ) -> LoginSession | None:
+        stmt = select(LoginSession).where(
+            LoginSession.session_key == session_key,
+            LoginSession.revoked_at.is_(None),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def list_sessions(
         self, *, user_id: uuid.UUID
@@ -110,50 +140,62 @@ class LoginSessionService:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def rotate_session_tokens(
+        self,
+        *,
+        session_key: str,
+        access_token_jti: str,
+        refresh_token_jti: str,
+    ) -> LoginSession | None:
+        record = await self.get_active_session_by_key(session_key=session_key)
+        if not record:
+            return None
+
+        record.current_access_jti = access_token_jti
+        record.current_refresh_jti = refresh_token_jti
+        record.last_active_at = Datetime.now()
+        self.session.add(record)
+        await self.session.flush()
+        return record
+
     async def revoke_session(
         self, *, user_id: uuid.UUID, session_id: uuid.UUID
-    ) -> bool:
+    ) -> LoginSession | None:
         """注销指定会话。"""
+        record = await self.get_session(user_id=user_id, session_id=session_id)
+        if not record or record.revoked_at is not None:
+            return None
+
+        record.revoked_at = Datetime.now()
+        self.session.add(record)
+        await self.session.flush()
+        return record
+
+    async def revoke_by_session_key(
+        self, *, user_id: uuid.UUID, session_key: str
+    ) -> LoginSession | None:
+        """通过稳定会话键注销会话。"""
         stmt = select(LoginSession).where(
-            LoginSession.id == session_id,
             LoginSession.user_id == user_id,
+            LoginSession.session_key == session_key,
             LoginSession.revoked_at.is_(None),
         )
         result = await self.session.execute(stmt)
         record = result.scalars().first()
         if not record:
-            return False
+            return None
 
         record.revoked_at = Datetime.now()
         self.session.add(record)
         await self.session.flush()
-        return True
+        return record
 
-    async def revoke_by_jti(
-        self, *, user_id: uuid.UUID, refresh_token_jti: str
-    ) -> bool:
-        """通过 refresh token JTI 注销会话（登出时使用）。"""
-        stmt = select(LoginSession).where(
-            LoginSession.user_id == user_id,
-            LoginSession.refresh_token_jti == refresh_token_jti,
-            LoginSession.revoked_at.is_(None),
-        )
-        result = await self.session.execute(stmt)
-        record = result.scalars().first()
-        if not record:
-            return False
-
-        record.revoked_at = Datetime.now()
-        self.session.add(record)
-        await self.session.flush()
-        return True
-
-    async def touch_session(self, *, refresh_token_jti: str) -> None:
-        """刷新会话的最近活跃时间（token refresh 时调用）。"""
+    async def touch_session(self, *, session_key: str) -> None:
+        """刷新会话的最近活跃时间。"""
         stmt = (
             update(LoginSession)
             .where(
-                LoginSession.refresh_token_jti == refresh_token_jti,
+                LoginSession.session_key == session_key,
                 LoginSession.revoked_at.is_(None),
             )
             .values(last_active_at=Datetime.now())
@@ -161,7 +203,7 @@ class LoginSessionService:
         await self.session.execute(stmt)
 
     async def revoke_all_other_sessions(
-        self, *, user_id: uuid.UUID, current_jti: str
+        self, *, user_id: uuid.UUID, current_session_key: str
     ) -> int:
         """注销除当前会话以外的所有活跃会话。"""
         now = Datetime.now()
@@ -169,7 +211,7 @@ class LoginSessionService:
             update(LoginSession)
             .where(
                 LoginSession.user_id == user_id,
-                LoginSession.refresh_token_jti != current_jti,
+                LoginSession.session_key != current_session_key,
                 LoginSession.revoked_at.is_(None),
             )
             .values(revoked_at=now)

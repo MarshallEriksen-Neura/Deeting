@@ -6,9 +6,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.models import Base, DesktopOAuthGrant, DesktopOAuthSession, User
-from app.schemas.auth import TokenPair
+from app.models import Base, DesktopOAuthGrant, DesktopOAuthSession, LoginSession, User
 from app.services.users import desktop_oauth_service as oauth_desktop_svc
+from app.utils.security import decode_token
 from main import app
 
 
@@ -75,11 +75,6 @@ async def test_desktop_oauth_callback_and_exchange(monkeypatch, client: AsyncCli
         monkeypatch.setattr(oauth_desktop_svc, "_exchange_provider_code", fake_exchange)
         monkeypatch.setattr(oauth_desktop_svc, "_fetch_provider_profile", fake_profile)
 
-        async def fake_create_tokens(self, user):
-            return TokenPair(access_token="desktop-access-token", refresh_token="desktop-refresh-token", token_type="bearer"), "refresh-jti-1"
-
-        monkeypatch.setattr(oauth_desktop_svc.AuthService, "create_tokens", fake_create_tokens)
-
         start = await client.post(
             "/api/v1/auth/oauth/desktop/start",
             json={"provider": "google", "return_scheme": "deeting", "platform": "desktop"},
@@ -114,8 +109,13 @@ async def test_desktop_oauth_callback_and_exchange(monkeypatch, client: AsyncCli
         assert exchange.status_code == 200
         payload = exchange.json()
         assert payload["access_token"]
+        assert payload["refresh_token"]
         assert payload["token_type"] == "bearer"
         assert payload["user"]["email"] == "desktop@example.com"
+
+        access_payload = decode_token(payload["access_token"])
+        refresh_payload = decode_token(payload["refresh_token"])
+        assert access_payload["sid"] == refresh_payload["sid"]
 
         replay = await client.post(
             "/api/v1/auth/oauth/desktop/exchange",
@@ -137,6 +137,15 @@ async def test_desktop_oauth_callback_and_exchange(monkeypatch, client: AsyncCli
             grant_row = await session.scalar(select(DesktopOAuthGrant).where(DesktopOAuthGrant.session_id == oauth_session.id))
             assert grant_row is not None
             assert grant_row.status == oauth_desktop_svc.GRANT_STATUS_CONSUMED
+            login_session = await session.scalar(
+                select(LoginSession).where(
+                    LoginSession.user_id == user.id,
+                    LoginSession.session_key == access_payload["sid"],
+                )
+            )
+            assert login_session is not None
+            assert login_session.current_access_jti == access_payload["jti"]
+            assert login_session.current_refresh_jti == refresh_payload["jti"]
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(prev_overrides)

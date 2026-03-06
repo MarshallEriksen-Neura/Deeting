@@ -103,7 +103,7 @@ class AuthService:
         username: str | None = None,
         client_ip: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[TokenPair, str]:
+    ) -> TokenPair:
         """邮箱验证码登录（若不存在则自动注册并可绑定邀请码）。"""
         await self.check_login_rate_limit(email, client_ip)
 
@@ -148,15 +148,9 @@ class AuthService:
             await self._ensure_default_assistant(user)
 
         await self.reset_login_failures(email)
-        tokens, refresh_jti = await self.create_tokens(user)
-
-        # 记录登录会话
-        from app.services.users.login_session_service import LoginSessionService
-        session_service = LoginSessionService(self.db)
-        await session_service.record_session(
-            user_id=user.id,
-            refresh_token_jti=refresh_jti,
-            ip_address=client_ip,
+        tokens = await self.create_session_tokens(
+            user,
+            client_ip=client_ip,
             user_agent=user_agent,
         )
 
@@ -165,21 +159,62 @@ class AuthService:
             extra={"user_id": str(user.id), "email": user.email, "created": created},
         )
 
-        return tokens, refresh_jti
+        return tokens
 
-    async def create_tokens(self, user: User) -> tuple[TokenPair, str]:
-        """为用户创建 token 对，返回 (TokenPair, refresh_jti)"""
+    async def create_session_tokens(
+        self,
+        user: User,
+        *,
+        client_ip: str | None = None,
+        user_agent: str | None = None,
+        device_type: str | None = None,
+        device_name: str | None = None,
+    ) -> TokenPair:
+        """创建稳定登录会话并签发 token。"""
+        from app.services.users.login_session_service import LoginSessionService
+
+        session_key = generate_jti()
+        tokens, access_jti, refresh_jti = await self.create_tokens(user, session_key)
+
+        session_service = LoginSessionService(self.db)
+        await session_service.create_session(
+            session_key=session_key,
+            user_id=user.id,
+            access_token_jti=access_jti,
+            refresh_token_jti=refresh_jti,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            device_type=device_type,
+            device_name=device_name,
+        )
+        return tokens
+
+    async def create_tokens(
+        self, user: User, session_key: str
+    ) -> tuple[TokenPair, str, str]:
+        """为稳定会话创建 token 对，返回 (TokenPair, access_jti, refresh_jti)。"""
         access_jti = generate_jti()
         refresh_jti = generate_jti()
 
-        access_token = create_access_token(user.id, access_jti, user.token_version)
-        refresh_token = create_refresh_token(user.id, refresh_jti, user.token_version)
+        access_token = create_access_token(
+            user.id,
+            access_jti,
+            user.token_version,
+            session_key,
+        )
+        refresh_token = create_refresh_token(
+            user.id,
+            refresh_jti,
+            user.token_version,
+            session_key,
+        )
 
         # 存储 refresh token 到 Redis (用于轮换验证)
         refresh_key = f"auth:refresh:{refresh_jti}"
         refresh_data = {
             "user_id": str(user.id),
             "version": user.token_version,
+            "session_key": session_key,
             "used": False,
         }
         await cache.set(
@@ -192,10 +227,16 @@ class AuthService:
             "tokens_created", extra={"user_id": str(user.id), "access_jti": access_jti}
         )
 
-        return TokenPair(access_token=access_token, refresh_token=refresh_token), refresh_jti
+        return (
+            TokenPair(access_token=access_token, refresh_token=refresh_token),
+            access_jti,
+            refresh_jti,
+        )
 
-    async def refresh_tokens(self, refresh_token: str) -> tuple[TokenPair, str]:
+    async def refresh_tokens(self, refresh_token: str) -> TokenPair:
         """刷新 token（实现轮换策略）"""
+        from app.services.users.login_session_service import LoginSessionService
+
         try:
             payload = decode_token(refresh_token)
         except ValueError as e:
@@ -211,8 +252,14 @@ class AuthService:
             )
 
         jti = payload.get("jti")
+        session_key = payload.get("sid")
         user_id = UUID(payload.get("sub"))
         token_version = payload.get("version", 0)
+        if not jti or not session_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
 
         # 检查 refresh token 是否已使用（轮换策略）
         refresh_key = f"auth:refresh:{jti}"
@@ -220,6 +267,20 @@ class AuthService:
 
         if not refresh_data:
             logger.warning("refresh_token_not_found", extra={"jti": jti})
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token expired or invalid",
+            )
+
+        session_service = LoginSessionService(self.db)
+        session_record = await session_service.get_active_session_by_key(
+            session_key=session_key
+        )
+        if (
+            not session_record
+            or session_record.user_id != user_id
+            or session_record.current_refresh_jti != jti
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token expired or invalid",
@@ -274,16 +335,17 @@ class AuthService:
                 detail="Token version mismatch, please login again",
             )
 
-        # 更新旧会话活跃时间，创建新 token 对
-        from app.services.users.login_session_service import LoginSessionService
-        session_service = LoginSessionService(self.db)
-        if jti:
-            await session_service.touch_session(refresh_token_jti=jti)
-        return await self.create_tokens(user)
+        tokens, access_jti, refresh_jti = await self.create_tokens(user, session_key)
+        await session_service.rotate_session_tokens(
+            session_key=session_key,
+            access_token_jti=access_jti,
+            refresh_token_jti=refresh_jti,
+        )
+        return tokens
 
-    async def logout(self, access_jti: str, refresh_jti: str | None = None) -> None:
-        """登出：将 token 加入黑名单"""
-        # 将 access token 加入黑名单
+    async def _blacklist_access_token(self, access_jti: str | None) -> None:
+        if not access_jti:
+            return
         blacklist_key = CacheKeys.token_blacklist(access_jti)
         await cache.set(
             blacklist_key,
@@ -291,10 +353,32 @@ class AuthService:
             ttl=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
 
-        # 删除 refresh token
-        if refresh_jti:
-            refresh_key = f"auth:refresh:{refresh_jti}"
-            await cache.delete(refresh_key)
+    async def _delete_refresh_token(self, refresh_jti: str | None) -> None:
+        if not refresh_jti:
+            return
+        refresh_key = f"auth:refresh:{refresh_jti}"
+        await cache.delete(refresh_key)
+
+    async def _invalidate_login_session(
+        self,
+        session_record,
+        *,
+        access_jti: str | None = None,
+    ) -> None:
+        if session_record.revoked_at is None:
+            session_record.revoked_at = Datetime.now()
+        self.db.add(session_record)
+        await self.db.flush()
+
+        await self._delete_refresh_token(session_record.current_refresh_jti)
+        await self._blacklist_access_token(session_record.current_access_jti)
+        if access_jti and access_jti != session_record.current_access_jti:
+            await self._blacklist_access_token(access_jti)
+
+    async def logout(self, access_jti: str, refresh_jti: str | None = None) -> None:
+        """登出：将 token 加入黑名单"""
+        await self._blacklist_access_token(access_jti)
+        await self._delete_refresh_token(refresh_jti)
 
         logger.info("user_logout", extra={"access_jti": access_jti})
 
@@ -311,38 +395,78 @@ class AuthService:
         - 从 refresh_token 提取 jti
         - 执行登出操作
         """
-        # 从 Authorization header 提取 access token 的 jti
+        from app.services.users.login_session_service import LoginSessionService
+
+        # 从 Authorization header 提取 access token 的 jti / sid
         access_jti = None
+        access_session_key = None
         if authorization and authorization.startswith("Bearer "):
             token = authorization[7:]
             try:
                 payload = decode_token(token)
                 access_jti = payload.get("jti")
+                access_session_key = payload.get("sid")
             except ValueError:
                 pass  # Token 已验证过，此处忽略错误
 
-        # 从 refresh_token 提取 jti
+        # 从 refresh_token 提取 jti / sid
         refresh_jti = None
+        refresh_session_key = None
         if refresh_token:
             try:
                 payload = decode_token(refresh_token)
                 refresh_jti = payload.get("jti")
+                refresh_session_key = payload.get("sid")
             except ValueError:
                 pass  # 忽略无效的 refresh token
 
+        session_key = access_session_key or refresh_session_key
+
         if access_jti:
             await self.logout(access_jti, refresh_jti)
-            # 注销登录会话
-            if refresh_jti:
-                from app.services.users.login_session_service import LoginSessionService
-                session_service = LoginSessionService(self.db)
-                await session_service.revoke_by_jti(
-                    user_id=user_id, refresh_token_jti=refresh_jti
+
+        if session_key:
+            session_service = LoginSessionService(self.db)
+            session_record = await session_service.revoke_by_session_key(
+                user_id=user_id,
+                session_key=session_key,
+            )
+            if session_record:
+                await self._invalidate_login_session(
+                    session_record,
+                    access_jti=access_jti,
                 )
+
+        if access_jti or session_key:
             logger.info("logout_success", extra={"user_id": str(user_id)})
+
+    async def revoke_login_session(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> bool:
+        from app.services.users.login_session_service import LoginSessionService
+
+        session_service = LoginSessionService(self.db)
+        session_record = await session_service.revoke_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+        if not session_record:
+            return False
+
+        await self._invalidate_login_session(session_record)
+        return True
 
     async def revoke_all_tokens(self, user_id: UUID) -> None:
         """撤销用户所有 token（递增 token_version）"""
+        from app.services.users.login_session_service import LoginSessionService
+
+        session_service = LoginSessionService(self.db)
+        for session_record in await session_service.list_sessions(user_id=user_id):
+            await self._invalidate_login_session(session_record)
+
         await self.user_repo.increment_token_version(user_id)
         logger.info("all_tokens_revoked", extra={"user_id": str(user_id)})
 

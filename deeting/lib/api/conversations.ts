@@ -375,8 +375,31 @@ export async function deleteConversationMessage(
   return ConversationDeleteResponseSchema.parse(data)
 }
 
+const LOCAL_ASSET_RE = /local-asset:\/\/([a-f0-9]{64})/g
+
+async function cleanupLocalAssetsForConversation(sessionId: string): Promise<void> {
+  try {
+    const history = await fetchConversationHistory(sessionId, { limit: 500 })
+    const sha256Set = new Set<string>()
+    for (const msg of history.messages ?? []) {
+      const content = typeof msg.content === "string" ? msg.content : ""
+      for (const match of content.matchAll(LOCAL_ASSET_RE)) {
+        sha256Set.add(match[1])
+      }
+    }
+    if (sha256Set.size > 0) {
+      await invokeTauri("cleanup_conversation_chat_assets", {
+        sha256List: Array.from(sha256Set),
+      })
+    }
+  } catch {
+    // best-effort cleanup
+  }
+}
+
 export async function clearConversation(sessionId: string): Promise<ConversationClearResponse> {
   if (isTauriRuntime()) {
+    await cleanupLocalAssetsForConversation(sessionId)
     const data = await invokeTauri<ConversationClearResponse>("clear_local_conversation", {
       sessionId,
     })

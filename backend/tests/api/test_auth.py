@@ -8,8 +8,28 @@
 - 登出
 """
 
+from uuid import UUID
+
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
+from app.models.login_session import LoginSession
+from app.utils.security import decode_token
+from main import app
+
+
+async def _login(client: AsyncClient, email: str) -> dict:
+    await client.post(
+        "/api/v1/auth/login/code",
+        json={"email": email},
+    )
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "code": "123456"},
+    )
+    assert response.status_code == 200
+    return response.json()
 
 
 class TestLogin:
@@ -31,6 +51,31 @@ class TestLogin:
         assert "access_token" in data
         assert "refresh_token" in data
         assert data["token_type"] == "bearer"
+
+    @pytest.mark.asyncio
+    async def test_login_creates_bound_login_session(
+        self,
+        client: AsyncClient,
+        test_user: dict,
+        AsyncSessionLocal,
+    ):
+        data = await _login(client, test_user["email"])
+        access_payload = decode_token(data["access_token"])
+        refresh_payload = decode_token(data["refresh_token"])
+
+        assert access_payload["sid"] == refresh_payload["sid"]
+
+        async with AsyncSessionLocal() as session:
+            login_session = await session.scalar(
+                select(LoginSession).where(
+                    LoginSession.user_id == UUID(test_user["id"]),
+                    LoginSession.session_key == access_payload["sid"],
+                )
+            )
+
+        assert login_session is not None
+        assert login_session.current_access_jti == access_payload["jti"]
+        assert login_session.current_refresh_jti == refresh_payload["jti"]
 
     @pytest.mark.asyncio
     async def test_login_invalid_code(self, client: AsyncClient, test_user: dict):
@@ -178,6 +223,42 @@ class TestTokenRefresh:
         )
         assert response.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_refresh_rotates_tokens_on_same_login_session(
+        self,
+        client: AsyncClient,
+        auth_tokens: dict,
+        AsyncSessionLocal,
+    ):
+        old_access = decode_token(auth_tokens["access_token"])
+        old_refresh = decode_token(auth_tokens["refresh_token"])
+
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": auth_tokens["refresh_token"]},
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        new_access = decode_token(data["access_token"])
+        new_refresh = decode_token(data["refresh_token"])
+
+        assert new_access["sid"] == old_access["sid"]
+        assert new_refresh["sid"] == old_refresh["sid"]
+        assert new_access["jti"] != old_access["jti"]
+        assert new_refresh["jti"] != old_refresh["jti"]
+
+        async with AsyncSessionLocal() as session:
+            login_session = await session.scalar(
+                select(LoginSession).where(
+                    LoginSession.session_key == new_access["sid"],
+                )
+            )
+
+        assert login_session is not None
+        assert login_session.current_access_jti == new_access["jti"]
+        assert login_session.current_refresh_jti == new_refresh["jti"]
+
 
 class TestLogout:
     """登出测试"""
@@ -247,3 +328,64 @@ class TestJWTValidation:
             headers={"X-User-Id": test_user["id"]},
         )
         assert response.status_code == 401
+
+
+class TestLoginSessions:
+    @pytest.mark.asyncio
+    async def test_profile_revoke_invalidates_other_device(
+        self,
+        test_user: dict,
+    ):
+        transport = ASGITransport(app=app)
+        async with (
+            AsyncClient(transport=transport, base_url="http://test") as device_a,
+            AsyncClient(transport=transport, base_url="http://test") as device_b,
+        ):
+            tokens_a = await _login(device_a, test_user["email"])
+            tokens_b = await _login(device_b, test_user["email"])
+
+            sessions_response = await device_b.get(
+                "/api/v1/login-sessions",
+                headers={"Authorization": f"Bearer {tokens_b['access_token']}"},
+            )
+            assert sessions_response.status_code == 200
+            sessions = sessions_response.json()
+            target = next(item for item in sessions if not item["is_current"])
+
+            revoke_response = await device_b.delete(
+                f"/api/v1/login-sessions/{target['id']}",
+                headers={"Authorization": f"Bearer {tokens_b['access_token']}"},
+            )
+            assert revoke_response.status_code == 200
+
+            me_response = await device_a.get(
+                "/api/v1/users/me",
+                headers={"Authorization": f"Bearer {tokens_a['access_token']}"},
+            )
+            assert me_response.status_code == 401
+            assert "session" in me_response.json()["detail"].lower()
+
+            refresh_response = await device_a.post(
+                "/api/v1/auth/refresh",
+                json={"refresh_token": tokens_a["refresh_token"]},
+            )
+            assert refresh_response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_profile_cannot_revoke_current_device(
+        self,
+        client: AsyncClient,
+        auth_tokens: dict,
+    ):
+        sessions_response = await client.get(
+            "/api/v1/login-sessions",
+            headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+        )
+        assert sessions_response.status_code == 200
+        current = next(item for item in sessions_response.json() if item["is_current"])
+
+        revoke_response = await client.delete(
+            f"/api/v1/login-sessions/{current['id']}",
+            headers={"Authorization": f"Bearer {auth_tokens['access_token']}"},
+        )
+        assert revoke_response.status_code == 400

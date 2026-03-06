@@ -841,7 +841,7 @@ async fn execute_local_mcp_tool(tool: &McpTool, arguments: &Value) -> Result<Val
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let requested_args = marker_payload
+            let _requested_args = marker_payload
                 .get("arguments")
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
@@ -933,6 +933,7 @@ async fn spawn_skill_subprocess(
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
+    cmd.kill_on_drop(true);
 
     let mut child = cmd.spawn().map_err(to_string)?;
     if let Some(mut stdin) = child.stdin.take() {
@@ -952,7 +953,6 @@ async fn spawn_skill_subprocess(
     {
         Ok(result) => result.map_err(|e| format!("tool execution error: {}", e)),
         Err(_) => {
-            let _ = child.kill().await;
             Err(format!(
                 "skill execution timed out after {}s",
                 timeout_secs

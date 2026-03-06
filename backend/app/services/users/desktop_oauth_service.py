@@ -165,7 +165,7 @@ class DesktopOAuthService:
         session_id: UUID,
         state: str,
         grant: str,
-    ) -> tuple[User, Any, str]:
+    ) -> tuple[User, Any]:
         cfg = self._get_provider_config(provider)
         session = await self.db.get(DesktopOAuthSession, session_id)
         if not session or session.provider != cfg.provider:
@@ -186,13 +186,18 @@ class DesktopOAuthService:
         if not user:
             raise DesktopOAuthError("OAuth user not found", status.HTTP_404_NOT_FOUND)
 
-        tokens, refresh_jti = await self.auth_service.create_tokens(user)
+        tokens = await self.auth_service.create_session_tokens(
+            user,
+            user_agent=f"Deeting Desktop ({session.client_fingerprint or 'desktop'})",
+            device_type="desktop",
+            device_name="Deeting Desktop",
+        )
         grant_row.status = GRANT_STATUS_CONSUMED
         grant_row.consumed_at = Datetime.now()
         session.status = SESSION_STATUS_EXCHANGED
         session.completed_at = Datetime.now()
         await self.db.commit()
-        return user, tokens, refresh_jti
+        return user, tokens
 
     @staticmethod
     def build_callback_redirect_url(*, scheme: str, provider: str, session_id: UUID, state: str, grant: str) -> str:

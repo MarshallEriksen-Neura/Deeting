@@ -70,6 +70,7 @@ impl SandboxManagerOptions {
 #[derive(Clone)]
 pub struct SandboxRuntimeManager {
     backend: Arc<dyn SandboxProvider>,
+    provisioner: Option<Arc<crate::modules::sandbox::provisioner::BoxLiteProvisioner>>,
     options: SandboxManagerOptions,
     session_leases: Arc<RwLock<HashMap<String, SessionLease>>>,
     active_ids: Arc<RwLock<HashSet<String>>>,
@@ -118,22 +119,27 @@ impl SandboxProvider for DisabledProvider {
 
 impl SandboxRuntimeManager {
     pub fn new(options: SandboxManagerOptions) -> Self {
-        let backend: Arc<dyn SandboxProvider> = match Self::build_provider(&options) {
-            Ok(provider) => provider,
-            Err(err) => {
-                log::warn!(
-                    "sandbox runtime disabled: code={} detail={}",
-                    err.code(),
-                    err
-                );
-                Arc::new(DisabledProvider {
-                    reason: err.to_string(),
-                })
-            }
-        };
+        let (backend, provisioner): (Arc<dyn SandboxProvider>, _) =
+            match Self::build_provider(&options) {
+                Ok((provider, prov)) => (provider, prov),
+                Err(err) => {
+                    log::warn!(
+                        "sandbox runtime disabled: code={} detail={}",
+                        err.code(),
+                        err
+                    );
+                    (
+                        Arc::new(DisabledProvider {
+                            reason: err.to_string(),
+                        }),
+                        None,
+                    )
+                }
+            };
 
         Self {
             backend,
+            provisioner,
             options,
             session_leases: Arc::new(RwLock::new(HashMap::new())),
             active_ids: Arc::new(RwLock::new(HashSet::new())),
@@ -357,7 +363,13 @@ impl SandboxRuntimeManager {
             let _ = self.backend.stop_box(&sandbox_id).await;
             self.remove_lease_by_sandbox_id(&sandbox_id).await;
         }
-        self.backend.shutdown().await
+        let result = self.backend.shutdown().await;
+
+        if let Some(ref provisioner) = self.provisioner {
+            provisioner.stop().await;
+        }
+
+        result
     }
 
     async fn get_valid_lease(&self, session_id: &str, now_ms: i64) -> Option<SandboxLeaseInfo> {
@@ -471,7 +483,13 @@ impl SandboxRuntimeManager {
 
     fn build_provider(
         options: &SandboxManagerOptions,
-    ) -> Result<Arc<dyn SandboxProvider>, SandboxError> {
+    ) -> Result<
+        (
+            Arc<dyn SandboxProvider>,
+            Option<Arc<crate::modules::sandbox::provisioner::BoxLiteProvisioner>>,
+        ),
+        SandboxError,
+    > {
         #[cfg(not(target_os = "windows"))]
         {
             let _ = options;
@@ -483,51 +501,104 @@ impl SandboxRuntimeManager {
 
         #[cfg(target_os = "windows")]
         {
-            if let Some(bridge_url) = options.bridge_url.clone() {
-                match WslBoxrunBackend::new(WslBackendOptions {
-                    base_url: bridge_url,
-                    api_key: options.bridge_api_key.clone(),
-                    image: options.image.clone(),
-                    cpus: options.cpus,
-                    memory_mib: options.memory_mib,
-                    working_dir: options.working_dir.clone(),
-                    python_bin: options.python_bin.clone(),
-                }) {
-                    Ok(backend) => {
-                        let provider: Arc<dyn SandboxProvider> = Arc::new(backend);
-                        let probe_ref = Arc::clone(&provider);
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(err) = probe_ref.probe().await {
-                                log::warn!(
-                                    "boxrun WSL REST probe failed: code={} detail={}",
-                                    err.code(),
-                                    err
-                                );
-                            }
-                        });
+            use crate::modules::sandbox::provisioner::{BoxLiteConfig, BoxLiteProvisioner};
 
-                        return Ok(provider);
-                    }
+            let provisioner = Arc::new(BoxLiteProvisioner::new(
+                BoxLiteConfig::from_home_dir(&options.home_dir),
+            ));
+
+            // Phase 1: if an explicit bridge URL is set (env or auto-discovered), use it
+            if let Some(bridge_url) = options.bridge_url.clone() {
+                match Self::try_wsl_backend(&bridge_url, options) {
+                    Ok(provider) => return Ok((provider, Some(provisioner))),
                     Err(err) => {
                         log::warn!(
-                            "boxrun WSL backend unavailable, fallback to host python runtime: code={} detail={}",
+                            "boxrun WSL backend at {} unavailable: code={} detail={}",
+                            bridge_url,
                             err.code(),
                             err
                         );
                     }
                 }
-            } else {
-                log::warn!(
-                    "BOXRUN endpoint not configured/discovered, fallback to host python runtime"
-                );
             }
 
+            // Phase 2: auto-provision — try to start BoxLite if binary is found
+            if provisioner.resolve_binary().is_some() {
+                let prov_clone = Arc::clone(&provisioner);
+                let wsl_options = options.clone();
+                tauri::async_runtime::spawn(async move {
+                    match prov_clone.ensure_running().await {
+                        Ok(endpoint) => {
+                            log::info!("BoxLite auto-provisioned at {}", endpoint);
+                        }
+                        Err(err) => {
+                            log::warn!(
+                                "BoxLite auto-provisioning failed: code={} detail={}",
+                                err.code(),
+                                err
+                            );
+                        }
+                    }
+                    let _ = wsl_options;
+                });
+
+                let auto_endpoint = provisioner
+                    .resolve_binary()
+                    .map(|_| {
+                        format!(
+                            "http://127.0.0.1:{}",
+                            BoxLiteConfig::from_home_dir(&options.home_dir).port
+                        )
+                    })
+                    .unwrap_or_default();
+
+                if !auto_endpoint.is_empty() {
+                    if let Ok(provider) = Self::try_wsl_backend(&auto_endpoint, options) {
+                        return Ok((provider, Some(provisioner)));
+                    }
+                }
+            }
+
+            // Phase 3: fallback to host python
+            log::warn!(
+                "no BoxLite endpoint available, falling back to host python runtime"
+            );
             let host_backend = HostPythonBackend::new(HostBackendOptions {
                 python_bin: options.python_bin.clone(),
                 working_dir: options.working_dir.clone(),
             })?;
-            return Ok(Arc::new(host_backend));
+            Ok((Arc::new(host_backend), Some(provisioner)))
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn try_wsl_backend(
+        bridge_url: &str,
+        options: &SandboxManagerOptions,
+    ) -> Result<Arc<dyn SandboxProvider>, SandboxError> {
+        let backend = WslBoxrunBackend::new(WslBackendOptions {
+            base_url: bridge_url.to_string(),
+            api_key: options.bridge_api_key.clone(),
+            image: options.image.clone(),
+            cpus: options.cpus,
+            memory_mib: options.memory_mib,
+            working_dir: options.working_dir.clone(),
+            python_bin: options.python_bin.clone(),
+        })?;
+
+        let provider: Arc<dyn SandboxProvider> = Arc::new(backend);
+        let probe_ref = Arc::clone(&provider);
+        tauri::async_runtime::spawn(async move {
+            if let Err(err) = probe_ref.probe().await {
+                log::warn!(
+                    "boxrun REST probe failed: code={} detail={}",
+                    err.code(),
+                    err
+                );
+            }
+        });
+
+        Ok(provider)
     }
 }
 

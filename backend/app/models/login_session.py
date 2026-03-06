@@ -22,6 +22,14 @@ class LoginSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "login_session"
 
+    session_key: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="稳定设备会话标识（JWT sid）",
+    )
+
     user_id: Mapped[uuid.UUID] = mapped_column(
         SA_UUID(as_uuid=True),
         ForeignKey("user_account.id", ondelete="CASCADE"),
@@ -30,12 +38,20 @@ class LoginSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="所属用户 ID",
     )
 
-    refresh_token_jti: Mapped[str] = mapped_column(
+    current_access_jti: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
         unique=True,
         index=True,
-        comment="关联的 refresh token JTI",
+        comment="当前 access token JTI",
+    )
+
+    current_refresh_jti: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="当前 refresh token JTI",
     )
 
     ip_address: Mapped[str | None] = mapped_column(

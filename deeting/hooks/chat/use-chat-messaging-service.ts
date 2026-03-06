@@ -8,7 +8,7 @@ import {
   streamDesktopLocalChatCompletion,
   type ChatMessage,
 } from "@/lib/api/chat"
-import { buildMessageContent } from "@/lib/chat/message-content"
+import { buildMessageContent, resolveLocalAssetUrlsInContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { createRequestId } from "@/lib/chat/request-id"
 
@@ -65,14 +65,33 @@ function createMessageId() {
   return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+function collectLocalAssetUrlMap(history: Message[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const msg of history) {
+    if (!msg.attachments) continue
+    for (const att of msg.attachments) {
+      if (att.source === "local" && att.sha256 && att.url && !att.url.startsWith("local-asset://")) {
+        map.set(att.sha256, att.url)
+      }
+    }
+  }
+  return map
+}
+
 function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessage[] {
-  const mapped = history.map((msg) => ({
-    role: msg.role,
-    content: buildMessageContent(
+  const localUrlMap = collectLocalAssetUrlMap(history)
+  const mapped = history.map((msg) => {
+    const content = buildMessageContent(
       msg.content,
       msg.role === "user" ? msg.attachments ?? [] : []
-    ),
-  })) as ChatMessage[]
+    )
+    return {
+      role: msg.role,
+      content: localUrlMap.size > 0
+        ? resolveLocalAssetUrlsInContent(content, localUrlMap)
+        : content,
+    }
+  }) as ChatMessage[]
 
   const trimmedPrompt = systemPrompt?.trim()
   if (trimmedPrompt && !mapped.some((msg) => msg.role === "system")) {
@@ -107,10 +126,41 @@ function hasRenderableNonToolBlocks(blocks: MessageBlock[]): boolean {
   return blocks.some((block) => block.type !== "tool_call" && block.type !== "tool_result")
 }
 
-const resolveMessageAttachments = async (messages: Message[]) => {
+async function resolveLocalChatAsset(
+  sha256: string,
+  contentType: string
+): Promise<string | null> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core")
+    const result = await invoke<{ data_url: string }>("read_local_chat_asset", {
+      payload: { sha256, content_type: contentType },
+    })
+    return result.data_url
+  } catch {
+    return null
+  }
+}
+
+const resolveMessageAttachments = async (messages: Message[], isTauri = false) => {
   const objectKeys = new Set<string>()
-  messages.forEach((message) => {
-    message.attachments?.forEach((attachment) => {
+  const localAssets: { msgIdx: number; attIdx: number; sha256: string; type: string }[] = []
+
+  messages.forEach((message, msgIdx) => {
+    message.attachments?.forEach((attachment, attIdx) => {
+      if (
+        isTauri &&
+        attachment.source === "local" &&
+        attachment.sha256 &&
+        (!attachment.url || attachment.url.startsWith("local-asset://"))
+      ) {
+        localAssets.push({
+          msgIdx,
+          attIdx,
+          sha256: attachment.sha256,
+          type: attachment.type || "image/png",
+        })
+        return
+      }
       const key = attachment.objectKey
       if (!key) return
       if (!attachment.url || attachment.url.startsWith("asset://")) {
@@ -118,16 +168,32 @@ const resolveMessageAttachments = async (messages: Message[]) => {
       }
     })
   })
-  if (!objectKeys.size) return messages
 
-  const signed = await signAssets(Array.from(objectKeys))
+  if (!objectKeys.size && !localAssets.length) return messages
+
+  const [signedResult, ...localResults] = await Promise.all([
+    objectKeys.size
+      ? signAssets(Array.from(objectKeys)).catch(() => ({ assets: [] as { object_key: string; asset_url: string }[] }))
+      : Promise.resolve({ assets: [] as { object_key: string; asset_url: string }[] }),
+    ...localAssets.map((la) => resolveLocalChatAsset(la.sha256, la.type)),
+  ])
+
   const urlMap = new Map(
-    signed.assets.map((item) => [item.object_key, item.asset_url])
+    signedResult.assets.map((item) => [item.object_key, item.asset_url])
   )
 
-  return messages.map((message) => {
+  const localUrlMap = new Map<string, string>()
+  localAssets.forEach((la, i) => {
+    const dataUrl = localResults[i]
+    if (dataUrl) localUrlMap.set(la.sha256, dataUrl)
+  })
+
+  return messages.map((message, msgIdx) => {
     if (!message.attachments?.length) return message
-    const attachments = message.attachments.map((attachment) => {
+    const attachments = message.attachments.map((attachment, attIdx) => {
+      if (attachment.source === "local" && attachment.sha256 && localUrlMap.has(attachment.sha256)) {
+        return { ...attachment, url: localUrlMap.get(attachment.sha256)! }
+      }
       if (!attachment.objectKey) return attachment
       const url = urlMap.get(attachment.objectKey)
       if (!url) return attachment
@@ -189,14 +255,14 @@ export function useChatMessagingService() {
       const windowState = await fetchConversationHistory(sessionId, { limit: 30 })
       const mapped = mapConversationMessages(windowState.messages ?? [])
       let resolved = mapped
-      if (!isTauriRuntime) {
-        try {
-          resolved = await resolveMessageAttachments(mapped)
-        } catch (error) {
-          console.warn("signAssets_failed", error)
+      try {
+        resolved = await resolveMessageAttachments(mapped, isTauriRuntime)
+      } catch (error) {
+        console.warn("resolve_attachments_failed", error)
+        if (!isTauriRuntime) {
           setErrorMessage("i18n:input.image.errorSign")
-          resolved = mapped
         }
+        resolved = mapped
       }
       setMessages(resolved)
       setSessionId(sessionId)
@@ -240,14 +306,14 @@ export function useChatMessagingService() {
       })
       const mapped = mapConversationMessages(windowState.messages ?? [])
       let resolved = mapped
-      if (!isTauriRuntime) {
-        try {
-          resolved = await resolveMessageAttachments(mapped)
-        } catch (error) {
-          console.warn("signAssets_failed", error)
+      try {
+        resolved = await resolveMessageAttachments(mapped, isTauriRuntime)
+      } catch (error) {
+        console.warn("resolve_attachments_failed", error)
+        if (!isTauriRuntime) {
           setErrorMessage("i18n:input.image.errorSign")
-          resolved = mapped
         }
+        resolved = mapped
       }
       const currentMessages = useChatStore.getState().messages
       setMessages([...resolved, ...currentMessages])

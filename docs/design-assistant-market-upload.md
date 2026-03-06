@@ -1,45 +1,20 @@
-# Design: Assistant Market Upload & Metadata Lifecycle
+﻿# Design: Assistant Market Upload & Metadata Lifecycle
 
-## 1. 概述 (Overview)
+> 状态：核心审核闭环已落地，当前仅保留简要说明。
+> 更新时间：2026-03-06
 
-为了支撑 JIT 路由功能，我们需要一个高质量的元数据源。本设计规范了 Assistant 的上架流程、元数据要求以及审核闭环逻辑。
+## 当前结论
+- Assistant 的审核任务、审核状态流转，以及审核通过后同步到搜索 / Qdrant 的主链路已经进入现行实现。
+- 本文件不再维护详细的生命周期推演，后续以 review、assistant market service 与同步任务为准。
 
-## 2. 元数据规范 (Metadata Specification)
+## 当前实现入口
+- 审核任务模型：`backend/app/models/review.py`
+- 通用审核服务：`backend/app/services/review/review_service.py`
+- 助手市场服务：`backend/app/services/assistant/assistant_market_service.py`
+- 助手服务中的 expert network 门禁：`backend/app/services/assistant/assistant_service.py`
+- 助手路由：`backend/app/api/v1/assistants_route.py`
+- Qdrant 同步任务测试：`backend/tests/tasks/test_assistant_sync_task.py`
 
-| Field | Source | Description |
-| :--- | :--- | :--- |
-| `name` | `AssistantVersion.name` | 专家名称 |
-| `summary` | `Assistant.summary` | 简短简介，用于向量 Embedding 的一部分 |
-| `category` | `Metadata` | 一级分类（coding, writing 等） |
-| `system_prompt` | `AssistantVersion.system_prompt` | 核心指令，提取特征用于检索 |
-
----
-
-## 3. 上架流程与审核闭环 (Review Loop)
-
-### 3.1 流程定义
-1.  **用户发布**: 状态变为 `PENDING_REVIEW`。
-2.  **审核任务**: 生成 `ReviewTask`，触发 `AssistantAutoReviewService`。
-3.  **状态变更 (关键 Hook)**: 仅当 `ReviewTask` 状态流转为 **`APPROVED`** 时，系统异步触发 `sync_assistant_to_qdrant`。
-
-### 3.2 意义
-确保专家库中没有任何未经审核或低质量的内容，保证路由的安全性。
-
----
-
-## 4. 移除显式 Assistant ID 的影响分析
-
-### 4.1 前端影响 (Frontend)
-*   **路由**: 废弃 `/chat/{assistant_id}`，统一使用 `/chat`。
-*   **Store**: `createConversation` 不再需要 `assistant_id`。
-
-### 4.2 后端影响 (Backend)
-*   **Conversation Model**: `assistant_id` 设为 Nullable。
-*   **Chat API**: 默认加载 "Router Base Prompt"。
-*   **归因**: 记录 `used_persona_id` 用于奖励结算。
-
----
-
-## 5. 总结
-
-本设计确保了从用户上传到 AI 自动调度的完整闭环，通过审核机制保证质量，通过 JIT 路由提升体验。
+## 维护说明
+- 如需继续调整上架审核策略或元数据规范，请围绕 assistant market / review 现行链路另开新方案。
+- 本文件仅保留历史归档说明。

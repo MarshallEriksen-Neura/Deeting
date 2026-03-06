@@ -835,10 +835,56 @@ pub fn extract_user_text_from_messages(messages: &[Value]) -> Option<String> {
     None
 }
 
+fn has_non_text_blocks(items: &[Value]) -> bool {
+    items.iter().any(|item| {
+        item.as_object()
+            .and_then(|obj| obj.get("type").and_then(|v| v.as_str()))
+            .map(|t| t != "text")
+            .unwrap_or(false)
+    })
+}
+
+fn strip_data_urls_from_blocks(items: Vec<Value>) -> Vec<Value> {
+    items
+        .into_iter()
+        .filter_map(|item| {
+            let Some(obj) = item.as_object() else {
+                return Some(item);
+            };
+            let block_type = obj
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if block_type != "image_url" {
+                return Some(item);
+            }
+            let image_url = obj.get("image_url");
+            let url_str = image_url
+                .and_then(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| v.get("url").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                })
+                .unwrap_or_default();
+            if url_str.starts_with("data:") {
+                return None;
+            }
+            Some(item)
+        })
+        .collect()
+}
+
 fn extract_content_text(content: Value) -> String {
     match content {
         Value::String(text) => text,
         Value::Array(items) => {
+            if has_non_text_blocks(&items) {
+                let cleaned = strip_data_urls_from_blocks(items);
+                if cleaned.is_empty() {
+                    return String::new();
+                }
+                return serde_json::to_string(&cleaned).unwrap_or_default();
+            }
             let mut out = Vec::new();
             for item in items {
                 if let Some(obj) = item.as_object() {

@@ -38,7 +38,7 @@ const isContentBlockArray = (value: unknown): value is ChatContentBlock[] =>
 
 const parseImageUrl = (
   value: unknown
-): { url?: string; objectKey?: string } | null => {
+): { url?: string; objectKey?: string; localSha256?: string } | null => {
   let url: string | null = null
   if (typeof value === "string") {
     url = value
@@ -50,6 +50,10 @@ const parseImageUrl = (
   }
   if (!url) return null
   const trimmed = url.trim()
+  if (trimmed.startsWith("local-asset://")) {
+    const sha256 = trimmed.slice("local-asset://".length).replace(/^\/+/, "")
+    return sha256 ? { localSha256: sha256 } : null
+  }
   if (trimmed.startsWith("asset://")) {
     const objectKey = trimmed.slice("asset://".length).replace(/^\/+/, "")
     return objectKey ? { objectKey } : null
@@ -89,6 +93,9 @@ const parseInputFileFromBlock = (
 }
 
 const buildContentUrl = (attachment: ChatAttachment): string | null => {
+  if (attachment.source === "local" && attachment.sha256) {
+    return `local-asset://${attachment.sha256}`
+  }
   if (attachment.objectKey) {
     return `asset://${attachment.objectKey}`
   }
@@ -156,12 +163,21 @@ function parseBlocks(blocks: ChatContentBlock[]) {
     if (block.type === "image_url") {
       const imageInfo = parseImageUrl(block.image_url)
       if (!imageInfo) return
-      attachments.push({
-        id: `image-${index + 1}`,
-        kind: "image",
-        url: imageInfo.url,
-        objectKey: imageInfo.objectKey,
-      })
+      if (imageInfo.localSha256) {
+        attachments.push({
+          id: `image-${index + 1}`,
+          kind: "image",
+          sha256: imageInfo.localSha256,
+          source: "local",
+        })
+      } else {
+        attachments.push({
+          id: `image-${index + 1}`,
+          kind: "image",
+          url: imageInfo.url,
+          objectKey: imageInfo.objectKey,
+        })
+      }
       return
     }
 
@@ -236,4 +252,32 @@ export function serializeMessageContent(
     return text
   }
   return JSON.stringify(buildContentBlocks(text, attachments))
+}
+
+const LOCAL_ASSET_PREFIX = "local-asset://"
+
+export function resolveLocalAssetUrlsInContent(
+  content: ChatMessageContent,
+  urlMap: Map<string, string>
+): ChatMessageContent {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return content
+  return content.map((block) => {
+    if (block.type !== "image_url") return block
+    const imageUrl = block.image_url
+    let url: string | undefined
+    if (typeof imageUrl === "string") {
+      url = imageUrl
+    } else if (imageUrl && typeof imageUrl === "object" && "url" in imageUrl) {
+      url = imageUrl.url
+    }
+    if (!url?.startsWith(LOCAL_ASSET_PREFIX)) return block
+    const sha256 = url.slice(LOCAL_ASSET_PREFIX.length).replace(/^\/+/, "")
+    const resolved = urlMap.get(sha256)
+    if (!resolved) return block
+    return {
+      ...block,
+      image_url: typeof imageUrl === "string" ? resolved : { ...imageUrl, url: resolved },
+    }
+  })
 }

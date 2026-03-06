@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.deps.auth import get_current_active_user
 from app.models import User
+from app.services.users.auth_service import AuthService
 from app.services.users.login_session_service import LoginSessionService
 from app.utils.security import decode_token
 
@@ -37,22 +38,22 @@ class LoginSessionItem(BaseModel):
     is_current: bool = Field(False, description="是否为当前会话")
 
 
-def _extract_refresh_jti(cookie_value: str | None) -> str | None:
-    """从 refresh token cookie 中提取 jti。"""
+def _extract_refresh_context(cookie_value: str | None) -> tuple[str | None, str | None]:
+    """从 refresh token cookie 中提取 sid 和 jti。"""
     if not cookie_value:
-        return None
+        return None, None
     token = cookie_value.strip()
     if token.startswith(f"{REFRESH_COOKIE_NAME}="):
         token = token[len(f"{REFRESH_COOKIE_NAME}="):]
     if ";" in token:
         token = token.split(";", 1)[0].strip()
     if not token:
-        return None
+        return None, None
     try:
         payload = decode_token(token)
-        return payload.get("jti")
+        return payload.get("sid"), payload.get("jti")
     except (ValueError, Exception):
-        return None
+        return None, None
 
 
 @router.get("", response_model=list[LoginSessionItem])
@@ -64,7 +65,7 @@ async def list_login_sessions(
     """列出当前用户的所有活跃登录会话。"""
     service = LoginSessionService(db)
     sessions = await service.list_sessions(user_id=user.id)
-    current_jti = _extract_refresh_jti(refresh_cookie)
+    current_session_key, current_jti = _extract_refresh_context(refresh_cookie)
 
     return [
         {
@@ -75,7 +76,8 @@ async def list_login_sessions(
             "last_active_at": s.last_active_at,
             "created_at": s.created_at,
             "is_current": (
-                current_jti is not None and s.refresh_token_jti == current_jti
+                (current_session_key is not None and s.session_key == current_session_key)
+                or (current_jti is not None and s.current_refresh_jti == current_jti)
             ),
         }
         for s in sessions
@@ -93,24 +95,22 @@ async def revoke_login_session(
     # 检查是否尝试注销当前会话
     service = LoginSessionService(db)
 
-    current_jti = _extract_refresh_jti(refresh_cookie)
-    if current_jti:
-        from sqlalchemy import select
-        from app.models.login_session import LoginSession
-
-        stmt = select(LoginSession).where(
-            LoginSession.id == session_id,
-            LoginSession.user_id == user.id,
+    current_session_key, current_jti = _extract_refresh_context(refresh_cookie)
+    target = await service.get_session(user_id=user.id, session_id=session_id)
+    if target and (
+        (current_session_key is not None and target.session_key == current_session_key)
+        or (current_jti is not None and target.current_refresh_jti == current_jti)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot revoke current session, use logout instead",
         )
-        result = await db.execute(stmt)
-        target = result.scalars().first()
-        if target and target.refresh_token_jti == current_jti:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot revoke current session, use logout instead",
-            )
 
-    success = await service.revoke_session(user_id=user.id, session_id=session_id)
+    auth_service = AuthService(db)
+    success = await auth_service.revoke_login_session(
+        user_id=user.id,
+        session_id=session_id,
+    )
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
