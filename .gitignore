@@ -139,6 +139,4 @@ ai_higress_front/
 /rustup-init.exe
 /vs_buildtools.exe
 
-# Nested standalone repos
-/deeting-relay/
 

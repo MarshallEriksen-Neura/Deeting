@@ -1,0 +1,3 @@
+[submodule "deeting-relay"]
+	path = deeting-relay
+	url = https://github.com/MarshallEriksen-Neura/deeting_relay.git
