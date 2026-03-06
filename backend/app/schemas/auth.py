@@ -1,5 +1,7 @@
 """认证相关 Pydantic Schema"""
 
+from uuid import UUID
+
 from pydantic import EmailStr, Field
 
 from app.schemas.base import BaseSchema
@@ -65,3 +67,40 @@ class MessageResponse(BaseSchema):
     """通用消息响应"""
 
     message: str = Field(..., description="消息内容")
+
+
+class DesktopOAuthStartRequest(BaseSchema):
+    """桌面端 OAuth 启动请求。"""
+
+    provider: str = Field(..., description="OAuth provider")
+    return_scheme: str | None = Field(None, description="桌面回调 scheme")
+    platform: str = Field("desktop", description="平台标记")
+
+
+class DesktopOAuthStartResponse(BaseSchema):
+    """桌面端 OAuth 启动响应。"""
+
+    session_id: UUID = Field(..., description="OAuth session id")
+    authorize_url: str = Field(..., description="Provider authorize url")
+    expires_in: int = Field(..., description="Session ttl seconds")
+
+
+class DesktopOAuthExchangeRequest(BaseSchema):
+    """桌面端 OAuth 授权码兑换请求。"""
+
+    provider: str = Field(..., description="OAuth provider")
+    session_id: UUID = Field(..., description="OAuth session id")
+    state: str = Field(..., description="OAuth state")
+    grant: str = Field(..., description="One-time desktop grant")
+
+
+class DesktopOAuthUserSummary(BaseSchema):
+    id: str = Field(..., description="User id")
+    email: str = Field(..., description="User email")
+    name: str | None = Field(None, description="Display name")
+
+
+class DesktopOAuthExchangeResponse(TokenPair):
+    """桌面端 OAuth 兑换响应。"""
+
+    user: DesktopOAuthUserSummary

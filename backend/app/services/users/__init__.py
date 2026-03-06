@@ -3,6 +3,10 @@
 """
 
 from app.services.users.auth_service import AuthService
+from app.services.users.desktop_oauth_service import (
+    DesktopOAuthError,
+    DesktopOAuthService,
+)
 from app.services.users.invite_code_service import InviteCodeService
 from app.services.users.registration_policy import RegistrationPolicy
 from app.services.users.registration_window_service import (
@@ -24,6 +28,8 @@ from app.services.users.user_service import UserService
 
 __all__ = [
     "AuthService",
+    "DesktopOAuthError",
+    "DesktopOAuthService",
     "InviteCodeService",
     "RegistrationPolicy",
     "RegistrationQuotaExceededError",

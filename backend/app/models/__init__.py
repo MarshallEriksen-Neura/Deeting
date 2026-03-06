@@ -47,6 +47,7 @@ from .conversation import (
     ConversationSummary,
 )
 from .code_mode_execution import CodeModeExecution
+from .desktop_oauth import DesktopOAuthGrant, DesktopOAuthSession
 from .gateway_log import GatewayLog
 from .identity import Identity
 from .image_generation import (
@@ -195,6 +196,8 @@ __all__ = [
     "MonitorStatus",
     # Login Session
     "LoginSession",
+    "DesktopOAuthSession",
+    "DesktopOAuthGrant",
     # Knowledge (Unified Crawler)
     # Knowledge (Unified Crawler)
     "KnowledgeArtifact",

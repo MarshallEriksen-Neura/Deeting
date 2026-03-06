@@ -14,7 +14,7 @@ export const DESKTOP_CONFIG_KEYS = {
   authToken: "auth.token",
 } as const
 
-function isTauriRuntime(): boolean {
+export function isTauriRuntime(): boolean {
   return (
     typeof window !== "undefined" &&
     process.env.NEXT_PUBLIC_IS_TAURI === "true" &&

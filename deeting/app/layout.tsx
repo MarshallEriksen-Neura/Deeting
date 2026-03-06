@@ -1,5 +1,6 @@
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthSync } from "@/components/auth/auth-sync";
+import { DesktopOAuthListener } from "@/components/auth/desktop-oauth-listener";
 import { DownloadAppModal } from "@/components/ui/modal/download-app-modal";
 import { DesktopUpdateGuard } from "@/components/common/desktop-update-guard";
 import { BridgeMonitor } from "@/components/bridge/bridge-monitor";
@@ -27,6 +28,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <AuthSync />
+            {isTauri && <DesktopOAuthListener />}
             {children}
             <DownloadAppModal />
             {isTauri && <DesktopUpdateGuard />}

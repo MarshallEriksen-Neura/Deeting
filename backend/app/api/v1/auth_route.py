@@ -21,11 +21,13 @@ from fastapi import (
     Depends,
     Header,
     HTTPException,
+    Query,
     Request,
     Response,
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -35,6 +37,10 @@ from app.deps.auth import get_current_user
 from app.models import User
 from app.schemas.auth import (
     LoginRequest,
+    DesktopOAuthExchangeRequest,
+    DesktopOAuthExchangeResponse,
+    DesktopOAuthStartRequest,
+    DesktopOAuthStartResponse,
     MessageResponse,
     OAuthCallbackRequest,
     OAuthCallbackResponse,
@@ -42,7 +48,7 @@ from app.schemas.auth import (
     SendLoginCodeRequest,
     TokenPair,
 )
-from app.services.users import AuthService
+from app.services.users import AuthService, DesktopOAuthError, DesktopOAuthService
 from app.services.users.oauth_linuxdo_service import (
     LinuxDoOAuthError,
     build_authorize_url,
@@ -186,6 +192,89 @@ async def refresh_token(
     tokens, _refresh_jti = await service.refresh_tokens(refresh_token_value)
     _set_refresh_cookie(response, tokens.refresh_token)
     return tokens
+
+
+@router.post("/oauth/desktop/start", response_model=DesktopOAuthStartResponse)
+async def desktop_oauth_start(
+    payload: DesktopOAuthStartRequest,
+    db: AsyncSession = Depends(get_db),
+) -> DesktopOAuthStartResponse:
+    service = DesktopOAuthService(db)
+    try:
+        result = await service.start_session(
+            provider=payload.provider,
+            return_scheme=payload.return_scheme,
+            client_fingerprint=payload.platform,
+        )
+    except DesktopOAuthError as exc:
+        raise exc
+    return DesktopOAuthStartResponse(
+        session_id=str(result.session_id),
+        authorize_url=result.authorize_url,
+        expires_in=result.expires_in,
+    )
+
+
+@router.get("/oauth/{provider}/callback", status_code=307)
+async def desktop_oauth_callback(
+    provider: str,
+    code: str = Query(...),
+    state: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    service = DesktopOAuthService(db)
+    client = create_async_http_client()
+    try:
+        result = await service.complete_callback(
+            provider=provider,
+            code=code,
+            state=state,
+            client=client,
+        )
+    except DesktopOAuthError as exc:
+        raise exc
+    finally:
+        await client.aclose()
+
+    return RedirectResponse(
+        service.build_callback_redirect_url(
+            scheme=result.session.redirect_scheme,
+            provider=result.session.provider,
+            session_id=result.session.id,
+            state=result.session.state,
+            grant=result.grant,
+        ),
+        status_code=307,
+    )
+
+
+@router.post("/oauth/desktop/exchange", response_model=DesktopOAuthExchangeResponse)
+async def desktop_oauth_exchange(
+    payload: DesktopOAuthExchangeRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> DesktopOAuthExchangeResponse:
+    service = DesktopOAuthService(db)
+    try:
+        user, tokens, _refresh_jti = await service.exchange_grant(
+            provider=payload.provider,
+            session_id=payload.session_id,
+            state=payload.state,
+            grant=payload.grant,
+        )
+    except DesktopOAuthError as exc:
+        raise exc
+    _set_refresh_cookie(response, tokens.refresh_token)
+    return DesktopOAuthExchangeResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type=tokens.token_type,
+        user={
+            "id": str(user.id),
+            "email": user.email,
+            "name": user.username,
+        },
+    )
 
 
 @router.get("/oauth/linuxdo/authorize", status_code=307)

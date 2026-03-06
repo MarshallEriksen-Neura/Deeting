@@ -11,9 +11,17 @@ import {
 } from "@/lib/api/auth"
 import { authService } from "@/lib/api/auth.service"
 import {
+  exchangeDesktopOAuthGrant,
+  openDesktopOAuthAuthorizeUrl,
+  startDesktopOAuthSession,
+  type DesktopOAuthExchangeRequest,
+  type DesktopOAuthProvider,
+} from "@/lib/api/auth-oauth-desktop"
+import {
   clearAuthTokenForDesktop,
   persistAuthTokenForDesktop,
   syncPlatformModelsForDesktop,
+  isTauriRuntime,
 } from "@/lib/api/desktop-config"
 import { ApiError, clearAuthToken } from "@/lib/http"
 
@@ -70,6 +78,28 @@ export function useAuthService() {
     return tokens
   })
 
+  const startDesktopOAuth = useCallback(async (provider: DesktopOAuthProvider) => {
+    if (!isTauriRuntime()) {
+      throw new ApiError("Desktop OAuth is only available in the desktop app", {
+        status: 400,
+        code: "DESKTOP_OAUTH_DESKTOP_ONLY",
+      })
+    }
+    const session = await startDesktopOAuthSession({
+      provider,
+      return_scheme: "deeting",
+      platform: "desktop",
+    })
+    await openDesktopOAuthAuthorizeUrl(session.authorize_url)
+    return session
+  }, [])
+
+  const completeDesktopOAuth = useCallback(async (payload: DesktopOAuthExchangeRequest) => {
+    const response = await exchangeDesktopOAuthGrant(payload)
+    applySession(response)
+    return response
+  }, [applySession])
+
   const logout = useCallback(async () => {
     clearSession()
     setTokenPair(null)
@@ -82,6 +112,8 @@ export function useAuthService() {
     verifyCodeMutation,
     refreshMutation,
     lastTokenPair,
+    startDesktopOAuth,
+    completeDesktopOAuth,
     logout,
   }
 }

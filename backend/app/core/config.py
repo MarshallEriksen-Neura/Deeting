@@ -293,6 +293,30 @@ class Settings(BaseSettings):
     LINUXDO_TOKEN_ENDPOINT: str = "https://connect.linux.do/oauth2/token"
     LINUXDO_USERINFO_ENDPOINT: str = "https://connect.linux.do/api/user"
 
+    # Desktop OAuth 配置
+    DESKTOP_OAUTH_CALLBACK_SCHEME: str = "deeting"
+    DESKTOP_OAUTH_SESSION_TTL_SECONDS: int = 600
+    DESKTOP_OAUTH_GRANT_TTL_SECONDS: int = 120
+
+    # Google OAuth 配置
+    GOOGLE_OAUTH_ENABLED: bool = False
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_REDIRECT_URI: str | None = None
+    GOOGLE_AUTHORIZE_ENDPOINT: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    GOOGLE_TOKEN_ENDPOINT: str = "https://oauth2.googleapis.com/token"
+    GOOGLE_USERINFO_ENDPOINT: str = "https://openidconnect.googleapis.com/v1/userinfo"
+
+    # GitHub OAuth 配置
+    GITHUB_OAUTH_ENABLED: bool = False
+    GITHUB_CLIENT_ID: str | None = None
+    GITHUB_CLIENT_SECRET: str | None = None
+    GITHUB_REDIRECT_URI: str | None = None
+    GITHUB_AUTHORIZE_ENDPOINT: str = "https://github.com/login/oauth/authorize"
+    GITHUB_TOKEN_ENDPOINT: str = "https://github.com/login/oauth/access_token"
+    GITHUB_USERINFO_ENDPOINT: str = "https://api.github.com/user"
+    GITHUB_EMAILS_ENDPOINT: str = "https://api.github.com/user/emails"
+
     # 密码和安全配置
     PASSWORD_MIN_LENGTH: int = 8
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 5

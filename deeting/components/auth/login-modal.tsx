@@ -17,6 +17,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer"
 import { LoginForm, type LoginFormProps } from "./login-form"
+import { useAuthStore } from "@/store/auth-store"
 
 export interface LoginModalProps extends Omit<LoginFormProps, "onSuccess"> {
   /** 控制弹窗是否打开 */
@@ -46,6 +47,7 @@ export function LoginModal({
   ...loginFormProps
 }: LoginModalProps) {
   const isMobile = useIsMobile()
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
 
   const handleLoginSuccess = React.useCallback(() => {
     if (onLoginSuccess) {
@@ -55,6 +57,11 @@ export function LoginModal({
 
     onOpenChange(false)
   }, [onOpenChange, onLoginSuccess])
+
+  React.useEffect(() => {
+    if (!open || !isAuthenticated) return
+    handleLoginSuccess()
+  }, [handleLoginSuccess, isAuthenticated, open])
 
   // 移动端使用 Drawer
   if (isMobile) {
