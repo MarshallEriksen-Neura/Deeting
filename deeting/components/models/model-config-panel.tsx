@@ -96,6 +96,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
   // 初始化表单状态（仅本地）
   const [displayName, setDisplayName] = React.useState(model.display_name || "")
   const [unifiedModelId, setUnifiedModelId] = React.useState(model.unified_model_id || model.id)
+  const [upstreamPath, setUpstreamPath] = React.useState(model.upstream_path || "")
   const [weight, setWeight] = React.useState(model.weight?.toString() || "")
   const [priority, setPriority] = React.useState(model.priority?.toString() || "")
   const [inputPrice, setInputPrice] = React.useState(model.pricing.input?.toString() || "")
@@ -125,6 +126,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     return {
       displayName: (displayName || "").trim(),
       unifiedModelId: (unifiedModelId || "").trim(),
+      upstreamPath: (upstreamPath || "").trim(),
       weight: (weight || "").trim(),
       priority: (priority || "").trim(),
       inputPrice: (inputPrice || "").trim(),
@@ -146,6 +148,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     rpm,
     tpm,
     unifiedModelId,
+    upstreamPath,
     weight,
   ])
 
@@ -158,6 +161,9 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     const payload: ProviderModelUpdate = {}
     const display = (displayName || "").trim()
     if (display) payload.display_name = display
+
+    const path = (upstreamPath || "").trim()
+    payload.upstream_path = path
 
     const weightNum = normalizeNumber(weight)
     if (weightNum !== undefined) payload.weight = weightNum
@@ -205,6 +211,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     rpm,
     tpm,
     unifiedModelId,
+    upstreamPath,
     weight,
   ])
 
@@ -228,6 +235,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     if (!snap) return
     setDisplayName((snap.displayName as string) || "")
     setUnifiedModelId((snap.unifiedModelId as string) || model.id)
+    setUpstreamPath((snap.upstreamPath as string) ?? model.upstream_path ?? "")
     setWeight((snap.weight as string) || "")
     setPriority((snap.priority as string) || "")
     setInputPrice((snap.inputPrice as string) || "")
@@ -244,6 +252,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     const initial = {
       displayName: model.display_name || "",
       unifiedModelId: model.unified_model_id || model.id,
+      upstreamPath: model.upstream_path || "",
       weight: model.weight?.toString() || "",
       priority: model.priority?.toString() || "",
       inputPrice: model.pricing.input?.toString() || "",
@@ -256,6 +265,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     }
     setDisplayName(initial.displayName)
     setUnifiedModelId(initial.unifiedModelId)
+    setUpstreamPath(initial.upstreamPath)
     setWeight(initial.weight)
     setPriority(initial.priority)
     setInputPrice(initial.inputPrice)
@@ -291,10 +301,11 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
               onChange={setUnifiedModelId}
               placeholder={model.unified_model_id || model.id}
             />
-            <ReadonlyInput
+            <TextInput
               label={t("basic.upstreamPath")}
-              value={model.upstream_path || ""}
-              placeholder={model.upstream_path ? undefined : "-"}
+              value={upstreamPath}
+              onChange={setUpstreamPath}
+              placeholder={t("basic.upstreamPathPlaceholder")}
             />
             <ReadonlyInput
               label={t("basic.requestUrl")}

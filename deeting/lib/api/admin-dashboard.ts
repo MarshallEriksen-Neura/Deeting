@@ -1454,6 +1454,7 @@ const AdminProviderModelUpdateSchema = z.object({
   capabilities: z.array(z.string()).optional(),
   weight: z.number().optional(),
   priority: z.number().optional(),
+  upstream_path: z.string().nullable().optional(),
   pricing_config: z.record(z.string(), z.unknown()).optional(),
   limit_config: z.record(z.string(), z.unknown()).optional(),
   tokenizer_config: z.record(z.string(), z.unknown()).optional(),

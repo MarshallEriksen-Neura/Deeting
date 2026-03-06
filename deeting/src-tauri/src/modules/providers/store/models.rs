@@ -201,7 +201,7 @@ impl ProviderStore {
 
         if let Some(upstream_path) = payload.upstream_path {
             let normalized = normalize_upstream_path(Some(&upstream_path))
-                .unwrap_or_else(|| "v1/chat/completions".to_string());
+                .unwrap_or_else(|| CHAT_UPSTREAM_PATH.to_string());
             sqlx::query(
                 "UPDATE provider_models SET upstream_path = ?, updated_at = ? WHERE id = ?",
             )

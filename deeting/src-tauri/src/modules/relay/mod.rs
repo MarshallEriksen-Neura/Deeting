@@ -173,7 +173,7 @@ impl RelayClient {
 /// Background worker that continuously pulls events from the relay and
 /// handles simple Feishu chat events by piping them through the local
 /// orchestrator.
-pub async fn start_relay_event_worker(app_state: AppState) {
+pub async fn start_relay_event_worker(app_state: AppState, app_handle: tauri::AppHandle) {
     // Prefer persisted desktop_config, fall back to environment variables for
     // backwards compatibility or power users.
     let stored_base_url = app_state
@@ -228,7 +228,9 @@ pub async fn start_relay_event_worker(app_state: AppState) {
             Ok(events) if !events.is_empty() => {
                 for event in events {
                     if event.source == "feishu" && event.kind == "chat" {
-                        if let Err(err) = handle_feishu_chat_event(&app_state, &client, &event).await {
+                        if let Err(err) =
+                            handle_feishu_chat_event(&app_state, &app_handle, &client, &event).await
+                        {
                             warn!("relay_feishu_event_failed: {}", err);
                         }
                     }
@@ -248,13 +250,13 @@ pub async fn start_relay_event_worker(app_state: AppState) {
 
 async fn handle_feishu_chat_event(
     app_state: &AppState,
+    app_handle: &tauri::AppHandle,
     client: &RelayClient,
     event: &RelayEvent,
 ) -> Result<(), String> {
     use crate::modules::mcp::local_orchestrator::{
         execute_local_orchestrated_chat, LocalOrchestratorInput,
     };
-    use tauri::AppHandle;
 
     let text = event.text.trim();
     if text.is_empty() {
@@ -293,8 +295,14 @@ async fn handle_feishu_chat_event(
     };
 
     // Execute local orchestrated chat without streaming back to UI.
-    let app_handle = AppHandle::current();
-    let response = execute_local_orchestrated_chat(&app_handle, app_state, input, uuid::Uuid::new_v4().to_string(), None).await?;
+    let response = execute_local_orchestrated_chat(
+        app_handle,
+        app_state,
+        input,
+        uuid::Uuid::new_v4().to_string(),
+        None,
+    )
+    .await?;
 
     let reply_text = response
         .get("choices")

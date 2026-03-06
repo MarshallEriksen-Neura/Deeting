@@ -1,5 +1,5 @@
 use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::store::EMBEDDING_CAPABILITY;
+use crate::modules::providers::store::{CHAT_UPSTREAM_PATH, EMBEDDING_CAPABILITY};
 use crate::modules::providers::types::{
     BanditArmState, ProviderInstance, ProviderModel, UserEmbeddingConfig, UserSecretary,
 };
@@ -75,7 +75,7 @@ pub fn row_to_model(row: &SqliteRow) -> Result<ProviderModel, ProviderError> {
         upstream_path: normalize_upstream_path(Some(
             row.try_get::<String, _>("upstream_path")?.as_str(),
         ))
-        .unwrap_or_else(|| "v1/chat/completions".to_string()),
+        .unwrap_or_else(|| CHAT_UPSTREAM_PATH.to_string()),
         pricing_config: parse_json_object_text(pricing_config),
         limit_config: parse_json_object_text(limit_config),
         tokenizer_config: parse_json_object_text(tokenizer_config),

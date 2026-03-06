@@ -489,7 +489,7 @@ impl ProviderStore {
              SET created_at = COALESCE(NULLIF(created_at, ''), ?),
                  updated_at = COALESCE(NULLIF(updated_at, ''), created_at),
                  capabilities = COALESCE(NULLIF(capabilities, ''), '[]'),
-                 upstream_path = COALESCE(NULLIF(upstream_path, ''), 'v1/chat/completions'),
+                 upstream_path = COALESCE(NULLIF(upstream_path, ''), ?),
                  pricing_config = COALESCE(NULLIF(pricing_config, ''), '{}'),
                  limit_config = COALESCE(NULLIF(limit_config, ''), '{}'),
                  tokenizer_config = COALESCE(NULLIF(tokenizer_config, ''), '{}'),
@@ -501,6 +501,7 @@ impl ProviderStore {
                  priority = COALESCE(priority, 0)",
         )
         .bind(&backfill_now)
+        .bind(CHAT_UPSTREAM_PATH)
         .execute(&self.pool)
         .await?;
 

@@ -1242,15 +1242,15 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
         Box::pin(async move {
             let connection = ctx
                 .connection
-                .as_ref()
+                .clone()
                 .ok_or_else(|| "monitor model connection missing".to_string())?;
             let model = ctx
                 .model
-                .as_ref()
+                .clone()
                 .ok_or_else(|| "monitor model missing".to_string())?;
             let prompt = ctx
                 .prompt
-                .as_ref()
+                .clone()
                 .ok_or_else(|| "monitor prompt missing".to_string())?;
 
             ctx.emit_status(

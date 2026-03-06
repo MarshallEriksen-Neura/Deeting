@@ -106,8 +106,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let relay_state = sync_state.clone();
+    let relay_app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
-        start_relay_event_worker(relay_state).await;
+        start_relay_event_worker(relay_state, relay_app_handle).await;
     });
 
     // Setup Tray

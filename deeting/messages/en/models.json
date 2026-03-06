@@ -79,7 +79,8 @@
         "desc": "Give the model a readable name and control its availability.",
         "displayName": "Display name",
         "unifiedId": "External model ID (routing alias)",
-        "upstreamPath": "Upstream path",
+        "upstreamPath": "Request path",
+        "upstreamPathPlaceholder": "Leave empty for default v1/chat/completions",
         "requestUrl": "Request URL",
         "weight": "Routing weight",
         "priority": "Routing priority"

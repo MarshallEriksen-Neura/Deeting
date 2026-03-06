@@ -167,6 +167,7 @@ export const ProviderModelUpdateSchema = z.object({
   is_active: z.boolean().optional(),
   weight: z.number().optional(),
   priority: z.number().optional(),
+  upstream_path: z.string().nullable().optional(),
   pricing_config: z.record(z.string(), z.any()).optional(),
   limit_config: z.record(z.string(), z.any()).optional(),
   tokenizer_config: z.record(z.string(), z.any()).optional(),

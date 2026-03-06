@@ -371,7 +371,7 @@ async fn select_model_by_bandit(
 ) -> crate::modules::providers::types::ProviderModel {
     use crate::modules::providers::store::BANDIT_DEFAULT_SCENE;
 
-    let now_rfc3339 = chrono::Utc::now().to_rfc3339();
+    let current_time_rfc3339 = now_rfc3339();
     let arms = app_state
         .providers
         .store
@@ -392,7 +392,7 @@ async fn select_model_by_bandit(
             let arm_id = m.id.to_string();
             match arm_map.get(&arm_id) {
                 Some(arm) => match &arm.cooldown_until {
-                    Some(until) => until.as_str() <= now_rfc3339.as_str(),
+                    Some(until) => until.as_str() <= current_time_rfc3339.as_str(),
                     None => true,
                 },
                 None => true, // no bandit data yet — eligible
