@@ -63,6 +63,17 @@ export interface MonitorExecutionLog {
     is_significant_change?: boolean
     change_summary?: string
     new_snapshot?: Record<string, unknown>
+    events?: Array<{
+      type?: string
+      scope?: string
+      execution_id?: string
+      task_id?: string
+      stage?: string
+      step?: string
+      state?: string
+      code?: string
+      meta?: Record<string, unknown> | null
+    }>
   } | null
   tokens_used: number
   error_message: string | null

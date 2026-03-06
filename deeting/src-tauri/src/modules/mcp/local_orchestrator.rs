@@ -19,6 +19,121 @@ const LOCAL_ROUTER_BASE_PROMPT: &str = "You are Deeting desktop local orchestrat
 Follow user intent strictly, be concise, and avoid fabricating facts.";
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
 
+pub trait LocalWorkflowStep<C>: Send + Sync {
+    fn name(&self) -> &'static str;
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    fn execute<'a>(&'a self, ctx: &'a mut C) -> BoxFuture<'a, Result<(), String>>;
+}
+
+pub struct LocalOrchestrationEngine<C> {
+    steps: std::collections::HashMap<String, Box<dyn LocalWorkflowStep<C>>>,
+    execution_layers: Vec<Vec<String>>,
+}
+
+impl<C> LocalOrchestrationEngine<C> {
+    pub fn new(steps: Vec<Box<dyn LocalWorkflowStep<C>>>) -> Result<Self, String> {
+        use std::collections::{HashMap, HashSet};
+
+        let mut step_map = HashMap::new();
+        for step in steps {
+            let name = step.name().to_string();
+            if step_map.contains_key(&name) {
+                return Err(format!("duplicate step name: {}", name));
+            }
+            step_map.insert(name, step);
+        }
+
+        // build dependency graph
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+        for name in step_map.keys() {
+            in_degree.entry(name.clone()).or_insert(0);
+        }
+        for (name, step) in step_map.iter() {
+            for dep in step.depends_on() {
+                let dep_str = dep.to_string();
+                if !step_map.contains_key(&dep_str) {
+                    return Err(format!(
+                        "step '{}' depends on unknown step '{}'",
+                        name, dep
+                    ));
+                }
+                *in_degree.entry(name.clone()).or_insert(0) += 1;
+                dependents.entry(dep_str).or_default().push(name.clone());
+            }
+        }
+
+        // Kahn topo sort, grouping by layers
+        let mut layers: Vec<Vec<String>> = Vec::new();
+        let mut queue: Vec<String> = in_degree
+            .iter()
+            .filter_map(|(name, &deg)| if deg == 0 { Some(name.clone()) } else { None })
+            .collect();
+
+        let mut visited: HashSet<String> = HashSet::new();
+        while !queue.is_empty() {
+            let current_layer = queue.clone();
+            layers.push(current_layer.clone());
+            queue.clear();
+
+            for node in current_layer {
+                visited.insert(node.clone());
+                if let Some(children) = dependents.get(&node) {
+                    for child in children {
+                        if let Some(entry) = in_degree.get_mut(child) {
+                            if *entry > 0 {
+                                *entry -= 1;
+                                if *entry == 0 {
+                                    queue.push(child.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if visited.len() != step_map.len() {
+            return Err("local orchestration engine detected cyclic dependencies".to_string());
+        }
+
+        Ok(Self {
+            steps: step_map,
+            execution_layers: layers,
+        })
+    }
+
+    pub async fn execute(&self, ctx: &mut C) -> Result<(), String> {
+        for layer in &self.execution_layers {
+            for name in layer {
+                let step = self
+                    .steps
+                    .get(name)
+                    .ok_or_else(|| format!("step '{}' not found in engine", name))?;
+                step.execute(ctx).await?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn debug_layers(&self) -> &Vec<Vec<String>> {
+        &self.execution_layers
+    }
+}
+fn build_desktop_local_chat_engine() -> Result<LocalOrchestrationEngine<LocalWorkflowContext>, String> {
+    LocalOrchestrationEngine::new(vec![
+        Box::new(AssistantPromptInjectionStep),
+        Box::new(SemanticMemoryInjectionStep),
+        Box::new(ActivePersonaInjectionStep),
+        Box::new(TemplateRenderStep),
+    ])
+}
+
 #[derive(Debug, Clone)]
 pub struct LocalOrchestratorInput {
     pub model: String,
@@ -48,6 +163,12 @@ struct LocalWorkflowContext {
     assistant_name: Option<String>,
     messages: Vec<LocalChatInputMessage>,
     prompt_fragments: Vec<String>,
+    // last emitted status snapshot for de-duplication and richer payloads
+    status_stage: Option<String>,
+    status_step: Option<String>,
+    status_state: Option<String>,
+    status_code: Option<String>,
+    status_meta: Option<Value>,
 }
 
 impl LocalWorkflowContext {
@@ -55,27 +176,32 @@ impl LocalWorkflowContext {
         app_state: AppState,
         trace_id: String,
         request_id: Option<String>,
-        input: &LocalOrchestratorInput,
-        messages: Vec<LocalChatInputMessage>,
-        assistant_id: Option<String>,
-        event_tx: Option<UnboundedSender<String>>,
-    ) -> Self {
-        Self {
+            input: &LocalOrchestratorInput,
+            messages: Vec<LocalChatInputMessage>,
+            assistant_id: Option<String>,
+            event_tx: Option<UnboundedSender<String>>,
+        ) -> Self {
+            Self {
             app_state,
             trace_id,
             request_id,
             session_id: input.session_id.clone(),
-            input_model: input.model.clone(),
-            stream: input.stream,
-            status_stream: input.status_stream,
-            started_at: Instant::now(),
-            event_tx,
-            assistant_id,
-            assistant_name: None,
-            messages,
-            prompt_fragments: Vec::new(),
+                input_model: input.model.clone(),
+                stream: input.stream,
+                status_stream: input.status_stream,
+                started_at: Instant::now(),
+                event_tx,
+                assistant_id,
+                assistant_name: None,
+                messages,
+                prompt_fragments: Vec::new(),
+                status_stage: None,
+                status_step: None,
+                status_state: None,
+                status_code: None,
+                status_meta: None,
+            }
         }
-    }
 
     fn enrich_payload(&self, payload: &mut Value) {
         if let Some(object) = payload.as_object_mut() {
@@ -91,30 +217,56 @@ impl LocalWorkflowContext {
         }
     }
 
-    fn emit_json(&self, payload: Value) {
-        let Some(tx) = &self.event_tx else {
-            return;
-        };
+        fn emit_json(&self, payload: Value) {
+            let Some(tx) = &self.event_tx else {
+                return;
+            };
         let serialized = match serde_json::to_string(&payload) {
             Ok(value) => value,
             Err(_) => return,
-        };
-        let _ = tx.send(serialized);
-    }
-
-    fn emit_status(&self, stage: &str, code: &str, meta: Option<Value>) {
-        if !self.status_stream {
-            return;
+            };
+            let _ = tx.send(serialized);
         }
-        let mut payload = json!({
-            "type": "status",
-            "stage": stage,
-            "code": code,
-            "meta": meta,
-        });
-        self.enrich_payload(&mut payload);
-        self.emit_json(payload);
-    }
+
+        fn emit_status(
+            &mut self,
+            stage: &str,
+            step: Option<&str>,
+            state: &str,
+            code: &str,
+            meta: Option<Value>,
+        ) {
+            if !self.status_stream {
+                return;
+            }
+
+            // Avoid emitting identical consecutive status events
+            let is_same_as_last = self.status_stage.as_deref() == Some(stage)
+                && self.status_step.as_deref() == step
+                && self.status_state.as_deref() == Some(state)
+                && self.status_code.as_deref() == Some(code)
+                && self.status_meta.as_ref() == meta.as_ref();
+            if is_same_as_last {
+                return;
+            }
+
+            self.status_stage = Some(stage.to_string());
+            self.status_step = step.map(|s| s.to_string());
+            self.status_state = Some(state.to_string());
+            self.status_code = Some(code.to_string());
+            self.status_meta = meta.clone();
+
+            let mut payload = json!({
+                "type": "status",
+                "stage": stage,
+                "step": step,
+                "state": state,
+                "code": code,
+                "meta": meta,
+            });
+            self.enrich_payload(&mut payload);
+            self.emit_json(payload);
+        }
 
     fn emit_blocks(&self, blocks: Vec<Value>) {
         if blocks.is_empty() {
@@ -175,13 +327,13 @@ impl LocalWorkflowContext {
     }
 }
 
-trait LocalWorkflowStep: Send + Sync {
-    fn execute<'a>(&'a self, ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>>;
-}
-
 struct AssistantPromptInjectionStep;
 
-impl LocalWorkflowStep for AssistantPromptInjectionStep {
+impl LocalWorkflowStep<LocalWorkflowContext> for AssistantPromptInjectionStep {
+    fn name(&self) -> &'static str {
+        "assistant_prompt_injection"
+    }
+
     fn execute<'a>(&'a self, ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             let Some(assistant_id) = ctx.assistant_id.clone() else {
@@ -209,6 +361,8 @@ impl LocalWorkflowStep for AssistantPromptInjectionStep {
                 .push(format!("## Assistant Persona\n{}", prompt));
             ctx.emit_status(
                 "remember",
+                Some("assistant_prompt_injection"),
+                "success",
                 "assistant.selected",
                 Some(json!({
                     "assistant_id": assistant.id,
@@ -222,7 +376,11 @@ impl LocalWorkflowStep for AssistantPromptInjectionStep {
 
 struct SemanticMemoryInjectionStep;
 
-impl LocalWorkflowStep for SemanticMemoryInjectionStep {
+impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
+    fn name(&self) -> &'static str {
+        "semantic_memory_injection"
+    }
+
     fn execute<'a>(&'a self, ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             let query = LocalMemoryListQuery {
@@ -241,6 +399,8 @@ impl LocalWorkflowStep for SemanticMemoryInjectionStep {
             if memories.items.is_empty() {
                 ctx.emit_status(
                     "remember",
+                    Some("semantic_memory_injection"),
+                    "success",
                     "semantic.memory.loaded",
                     Some(json!({ "count": 0 })),
                 );
@@ -266,6 +426,8 @@ impl LocalWorkflowStep for SemanticMemoryInjectionStep {
 
             ctx.emit_status(
                 "remember",
+                Some("semantic_memory_injection"),
+                "success",
                 "semantic.memory.loaded",
                 Some(json!({ "count": memories.items.len() })),
             );
@@ -276,7 +438,11 @@ impl LocalWorkflowStep for SemanticMemoryInjectionStep {
 
 struct ActivePersonaInjectionStep;
 
-impl LocalWorkflowStep for ActivePersonaInjectionStep {
+impl LocalWorkflowStep<LocalWorkflowContext> for ActivePersonaInjectionStep {
+    fn name(&self) -> &'static str {
+        "active_persona_hint"
+    }
+
     fn execute<'a>(&'a self, ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             let latest_user_query = ctx
@@ -342,6 +508,8 @@ impl LocalWorkflowStep for ActivePersonaInjectionStep {
 
             ctx.emit_status(
                 "remember",
+                Some("active_persona_hint"),
+                "success",
                 "semantic.persona.loaded",
                 Some(json!({
                     "assistant_name": persona_name,
@@ -356,7 +524,19 @@ impl LocalWorkflowStep for ActivePersonaInjectionStep {
 
 struct TemplateRenderStep;
 
-impl LocalWorkflowStep for TemplateRenderStep {
+impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
+    fn name(&self) -> &'static str {
+        "template_render"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &[
+            "assistant_prompt_injection",
+            "semantic_memory_injection",
+            "active_persona_hint",
+        ]
+    }
+
     fn execute<'a>(&'a self, ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             let code_mode_prompt = render_code_mode_capability_prompt(&[
@@ -380,7 +560,9 @@ impl LocalWorkflowStep for TemplateRenderStep {
             }
 
             ctx.emit_status(
-                "listen",
+                "evolve",
+                Some("template_render"),
+                "success",
                 "template.rendered",
                 Some(json!({ "engine": "desktop_local_orchestrator" })),
             );
@@ -452,6 +634,8 @@ pub async fn execute_local_orchestrated_chat(
     );
     ctx.emit_status(
         "remember",
+        Some("conversation_load"),
+        "success",
         "context.loaded",
         Some(json!({
             "count": ctx.messages.len(),
@@ -470,6 +654,8 @@ pub async fn execute_local_orchestrated_chat(
     let model_id = model_connection.model_id.clone();
     ctx.emit_status(
         "remember",
+        Some("routing"),
+        "success",
         "routing.selected",
         Some(json!({
             "provider_model_id": provider_model_id,
@@ -478,17 +664,10 @@ pub async fn execute_local_orchestrated_chat(
         })),
     );
 
-    let steps: Vec<Box<dyn LocalWorkflowStep>> = vec![
-        Box::new(AssistantPromptInjectionStep),
-        Box::new(SemanticMemoryInjectionStep),
-        Box::new(ActivePersonaInjectionStep),
-        Box::new(TemplateRenderStep),
-    ];
-    for step in steps {
-        step.execute(&mut ctx).await?;
-    }
+    let engine = build_desktop_local_chat_engine()?;
+    engine.execute(&mut ctx).await?;
 
-    ctx.emit_status("evolve", "upstream.request.batch", None);
+    ctx.emit_status("evolve", Some("upstream_call"), "running", "upstream.request.batch", None);
     let chat_context = crate::modules::mcp::store::LocalConversationChatContext {
         session_id: session_id.clone(),
         assistant_id: assistant_id.clone(),
@@ -510,7 +689,7 @@ pub async fn execute_local_orchestrated_chat(
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
-    ctx.emit_status("render", "upstream.streaming", None);
+    ctx.emit_status("render", Some("upstream_call"), "streaming", "upstream.streaming", None);
 
     let mut assistant_blocks = Vec::<Value>::new();
     if let Some(tool_trace_blocks) = response_json
@@ -535,6 +714,8 @@ pub async fn execute_local_orchestrated_chat(
 
     ctx.emit_status(
         "render",
+        Some("upstream_call"),
+        "success",
         "upstream.response",
         Some(json!({
             "latency_ms": ctx.started_at.elapsed().as_millis() as i64,
@@ -648,4 +829,72 @@ fn unix_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::future::BoxFuture;
+
+    struct TestStep {
+        name: &'static str,
+        deps: &'static [&'static str],
+    }
+
+    impl LocalWorkflowStep<LocalWorkflowContext> for TestStep {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn depends_on(&self) -> &'static [&'static str] {
+            self.deps
+        }
+
+        fn execute<'a>(&'a self, _ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[test]
+    fn engine_builds_layers_for_linear_dependencies() {
+        let steps: Vec<Box<dyn LocalWorkflowStep<LocalWorkflowContext>>> = vec![
+            Box::new(TestStep { name: "step_a", deps: &[] }),
+            Box::new(TestStep { name: "step_b", deps: &["step_a"] }),
+            Box::new(TestStep { name: "step_c", deps: &["step_b"] }),
+        ];
+
+        let engine = LocalOrchestrationEngine::new(steps).expect("engine should build without errors");
+        let layers = engine.debug_layers();
+
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[0], vec!["step_a".to_string()]);
+        assert_eq!(layers[1], vec!["step_b".to_string()]);
+        assert_eq!(layers[2], vec!["step_c".to_string()]);
+    }
+
+    #[test]
+    fn engine_fails_on_unknown_dependency() {
+        let steps: Vec<Box<dyn LocalWorkflowStep<LocalWorkflowContext>>> = vec![
+            Box::new(TestStep { name: "step_a", deps: &[] }),
+            Box::new(TestStep { name: "step_b", deps: &["unknown_step"] }),
+        ];
+
+        let result = LocalOrchestrationEngine::new(steps);
+        assert!(result.is_err());
+        let msg = result.err().unwrap();
+        assert!(msg.contains("depends on unknown step"));
+    }
+
+    #[test]
+    fn engine_fails_on_cycle() {
+        let steps: Vec<Box<dyn LocalWorkflowStep<LocalWorkflowContext>>> = vec![
+            Box::new(TestStep { name: "step_a", deps: &["step_b"] }),
+            Box::new(TestStep { name: "step_b", deps: &["step_a"] }),
+        ];
+
+        let result = LocalOrchestrationEngine::new(steps);
+        assert!(result.is_err());
+        let msg = result.err().unwrap();
+        assert!(msg.contains("cyclic dependencies"));
+    }
 }

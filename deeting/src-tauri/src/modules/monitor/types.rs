@@ -161,6 +161,7 @@ pub struct LocalExecutionResult {
     pub new_snapshot: Value,
     pub tokens_used: i64,
     pub model_id: String,
+    pub events: Vec<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -125,9 +125,9 @@ async fn chat_completions_handler(
             return (
                 axum::http::StatusCode::BAD_REQUEST,
                 Json(json!({
-                    "type": "error",
-                    "error_code": "bad_request",
+                    "code": "LOCAL_BAD_REQUEST",
                     "message": err,
+                    "source": "desktop",
                     "trace_id": trace_id,
                 })),
             )
@@ -148,9 +148,9 @@ async fn chat_completions_handler(
         Err(err) => (
             axum::http::StatusCode::BAD_REQUEST,
             Json(json!({
-                "type": "error",
-                "error_code": "local_chat_failed",
+                "code": "LOCAL_CHAT_FAILED",
                 "message": err,
+                "source": "desktop",
                 "trace_id": trace_id,
             })),
         )
@@ -173,9 +173,9 @@ async fn stream_chat_completion(
             Err(err) => {
                 let _ = tx.send(
                     json!({
-                        "type": "error",
-                        "error_code": "bad_request",
+                        "code": "LOCAL_BAD_REQUEST",
                         "message": err,
+                        "source": "desktop",
                         "trace_id": trace_id,
                         "request_id": request_id,
                     })
@@ -237,9 +237,9 @@ async fn stream_chat_completion(
             Err(err) => {
                 let _ = tx.send(
                     json!({
-                        "type": "error",
-                        "error_code": "local_chat_failed",
+                        "code": "LOCAL_CHAT_FAILED",
                         "message": err,
+                        "source": "desktop",
                         "trace_id": trace_id,
                         "request_id": request_id,
                     })
@@ -272,7 +272,9 @@ async fn cancel_chat_completions_handler(
         return (
             axum::http::StatusCode::BAD_REQUEST,
             Json(json!({
-                "error": "request_id is required",
+                "code": "LOCAL_BAD_REQUEST",
+                "message": "request_id is required",
+                "source": "desktop",
             })),
         )
             .into_response();

@@ -862,6 +862,7 @@ impl MonitorStore {
             "is_significant_change": result.is_significant_change,
             "change_summary": summary,
             "new_snapshot": result.new_snapshot,
+            "events": result.events,
         });
         let input_data = json!({
             "source": "desktop_local_worker",

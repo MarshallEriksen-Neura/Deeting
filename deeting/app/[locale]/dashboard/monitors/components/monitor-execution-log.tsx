@@ -159,6 +159,9 @@ function LogCard({
   const StatusIcon = config.icon
   const hasChange = log.output_data?.is_significant_change === true
   const summary = log.output_data?.change_summary
+  const events = Array.isArray(log.output_data?.events)
+    ? (log.output_data!.events as Array<Record<string, unknown>>)
+    : []
 
   return (
     <GlassCard padding="sm" hover="none" className="relative">
@@ -199,6 +202,33 @@ function LogCard({
           {log.error_message.slice(0, 150)}
         </p>
       ) : null}
+
+      {/* Orchestration timeline */}
+      {events.length > 0 && (
+        <div className="mb-2 mt-1 space-y-1 border-l border-white/10 pl-3">
+          {events.slice(0, 6).map((evt, idx) => {
+            const code = typeof evt.code === "string" ? evt.code : ""
+            const stage = typeof evt.stage === "string" ? evt.stage : ""
+            const step = typeof evt.step === "string" ? evt.step : ""
+            const state = typeof evt.state === "string" ? evt.state : ""
+            const key = `${idx}-${code}-${stage}-${step}`
+            return (
+              <div key={key} className="flex items-center gap-2 text-[10px] text-[var(--muted)]">
+                <span className="inline-flex h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
+                <span className="uppercase text-[9px] tracking-wide opacity-70">
+                  {stage || "stage"}
+                </span>
+                <span className="text-[var(--foreground)]/80">
+                  {code || step || state || "event"}
+                </span>
+              </div>
+            )
+          })}
+          {events.length > 6 && (
+            <div className="pl-3 text-[9px] text-[var(--muted)]">… 等 {events.length - 6} 条事件</div>
+          )}
+        </div>
+      )}
 
       {/* Footer: tokens + feedback */}
       <div className="flex items-center gap-3 pt-1 border-t border-white/5">

@@ -6,12 +6,14 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::future::BoxFuture;
 use log::warn;
 use serde_json::{json, Value};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::modules::mcp::local_orchestrator::{LocalOrchestrationEngine, LocalWorkflowStep};
 use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
     LocalExecutionResult, LocalMonitorActionResponse, LocalMonitorCreateResponse,
@@ -62,6 +64,63 @@ struct WorkerRuntime {
     last_tick_at: Option<String>,
     last_error: Option<String>,
     last_claimed: i64,
+}
+
+struct MonitorWorkflowContext {
+    state: MonitorState,
+    task: LocalMonitorTask,
+    execution_id: String,
+    events: Vec<Value>,
+    model: Option<ProviderModel>,
+    connection: Option<ProviderConnection>,
+    prompt: Option<String>,
+    content: Option<String>,
+    tokens_used: i64,
+    is_significant_change: bool,
+    change_summary: String,
+    new_snapshot: Value,
+}
+
+impl MonitorWorkflowContext {
+    fn new(state: MonitorState, task: LocalMonitorTask) -> Self {
+        Self {
+            state,
+            task,
+            execution_id: Uuid::new_v4().to_string(),
+            events: Vec::new(),
+            model: None,
+            connection: None,
+            prompt: None,
+            content: None,
+            tokens_used: 0,
+            is_significant_change: false,
+            change_summary: String::new(),
+            new_snapshot: json!({}),
+        }
+    }
+
+    fn emit_status(
+        &mut self,
+        stage: &str,
+        step: &str,
+        state: &str,
+        code: &str,
+        meta: Option<Value>,
+    ) {
+        let payload = json!({
+            "type": "status",
+            "scope": "monitor",
+            "execution_id": self.execution_id,
+            "task_id": self.task.id,
+            "stage": stage,
+            "step": step,
+            "state": state,
+            "code": code,
+            "meta": meta,
+        });
+        self.events.push(payload.clone());
+        log::info!("monitor_status {}", payload.to_string());
+    }
 }
 
 impl MonitorState {
@@ -541,18 +600,22 @@ impl MonitorState {
         &self,
         task: &LocalMonitorTask,
     ) -> Result<LocalExecutionResult, String> {
-        let (model, connection) = self.resolve_execution_model(task).await?;
-        let prompt = build_monitor_prompt(task);
-        let (content, tokens) = self.invoke_model_chat(&connection, &model, &prompt).await?;
-        let (is_significant_change, change_summary, new_snapshot) =
-            parse_monitor_analysis(&content);
+        let ctx_task = task.clone();
+        let mut ctx = MonitorWorkflowContext::new(self.clone(), ctx_task);
+        let engine = build_monitor_engine();
+        engine.execute(&mut ctx).await?;
 
         Ok(LocalExecutionResult {
-            is_significant_change,
-            change_summary,
-            new_snapshot,
-            tokens_used: tokens.max(0),
-            model_id: model.model_id.clone(),
+            is_significant_change: ctx.is_significant_change,
+            change_summary: ctx.change_summary,
+            new_snapshot: ctx.new_snapshot,
+            tokens_used: ctx.tokens_used.max(0),
+            model_id: ctx
+                .model
+                .as_ref()
+                .map(|m| m.model_id.clone())
+                .unwrap_or_default(),
+            events: ctx.events,
         })
     }
 
@@ -607,49 +670,6 @@ impl MonitorState {
             .ok_or_else(|| "模型实例不存在或连接信息缺失".to_string())?;
 
         Ok((selected, connection))
-    }
-
-    async fn invoke_model_chat(
-        &self,
-        connection: &ProviderConnection,
-        model: &ProviderModel,
-        prompt: &str,
-    ) -> Result<(String, i64), String> {
-        let endpoint = build_upstream_endpoint(&connection.base_url, &model.upstream_path);
-        let body = json!({
-            "model": model.model_id,
-            "messages": [{ "role": "user", "content": prompt }],
-            "stream": false
-        });
-        let mut request = self.shared.client.post(&endpoint).json(&body);
-        if let Some(secret_key) = connection.secret_key.as_deref() {
-            if !secret_key.trim().is_empty() {
-                request = request.bearer_auth(secret_key.trim());
-            }
-        }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|err| format!("调用本地模型失败: {}", err))?;
-        let status = response.status();
-        let body_json: Value = response
-            .json()
-            .await
-            .unwrap_or_else(|_| json!({ "raw": "failed to parse json response" }));
-
-        if !status.is_success() {
-            let detail = extract_error_message(&body_json)
-                .unwrap_or_else(|| format!("upstream status {}", status.as_u16()));
-            return Err(detail);
-        }
-
-        let content = extract_model_content(&body_json);
-        if content.trim().is_empty() {
-            return Err("模型返回内容为空".to_string());
-        }
-        let tokens = extract_total_tokens(&body_json);
-        Ok((content, tokens))
     }
 
     async fn dispatch_change_notification(
@@ -1140,6 +1160,213 @@ fn build_snapshot_summary(snapshot: &Value, is_significant_change: bool) -> Stri
         title,
         truncate(&snapshot.to_string(), SUMMARY_MAX_CHARS)
     )
+}
+
+struct MonitorResolveModelStep;
+
+impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveModelStep {
+    fn name(&self) -> &'static str {
+        "monitor_resolve_model"
+    }
+
+    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            ctx.emit_status(
+                "remember",
+                "monitor_resolve_model",
+                "running",
+                "monitor.model.selecting",
+                None,
+            );
+            let (model, connection) = ctx.state.resolve_execution_model(&ctx.task).await?;
+            ctx.model = Some(model);
+            ctx.connection = Some(connection);
+            ctx.emit_status(
+                "remember",
+                "monitor_resolve_model",
+                "success",
+                "monitor.model.selected",
+                None,
+            );
+            Ok(())
+        })
+    }
+}
+
+struct MonitorBuildPromptStep;
+
+impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
+    fn name(&self) -> &'static str {
+        "monitor_build_prompt"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["monitor_resolve_model"]
+    }
+
+    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            ctx.emit_status(
+                "evolve",
+                "monitor_build_prompt",
+                "running",
+                "monitor.prompt.building",
+                None,
+            );
+            let prompt = build_monitor_prompt(&ctx.task);
+            ctx.prompt = Some(prompt);
+            ctx.emit_status(
+                "evolve",
+                "monitor_build_prompt",
+                "success",
+                "monitor.prompt.built",
+                None,
+            );
+            Ok(())
+        })
+    }
+}
+
+struct MonitorInvokeModelStep;
+
+impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
+    fn name(&self) -> &'static str {
+        "monitor_invoke_model"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["monitor_build_prompt"]
+    }
+
+    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let connection = ctx
+                .connection
+                .as_ref()
+                .ok_or_else(|| "monitor model connection missing".to_string())?;
+            let model = ctx
+                .model
+                .as_ref()
+                .ok_or_else(|| "monitor model missing".to_string())?;
+            let prompt = ctx
+                .prompt
+                .as_ref()
+                .ok_or_else(|| "monitor prompt missing".to_string())?;
+
+            ctx.emit_status(
+                "evolve",
+                "monitor_invoke_model",
+                "running",
+                "monitor.upstream.request",
+                Some(json!({ "model_id": model.model_id })),
+            );
+
+            let endpoint = build_upstream_endpoint(&connection.base_url, &model.upstream_path);
+            let body = json!({
+                "model": model.model_id,
+                "messages": [{ "role": "user", "content": prompt }],
+                "stream": false
+            });
+            let mut request = ctx.state.shared.client.post(&endpoint).json(&body);
+            if let Some(secret_key) = connection.secret_key.as_deref() {
+                if !secret_key.trim().is_empty() {
+                    request = request.bearer_auth(secret_key.trim());
+                }
+            }
+
+            let response = request
+                .send()
+                .await
+                .map_err(|err| format!("调用本地模型失败: {}", err))?;
+            let status = response.status();
+            let body_json: Value = response
+                .json()
+                .await
+                .unwrap_or_else(|_| json!({ "raw": "failed to parse json response" }));
+
+            if !status.is_success() {
+                let detail = extract_error_message(&body_json)
+                    .unwrap_or_else(|| format!("upstream status {}", status.as_u16()));
+                ctx.emit_status(
+                    "evolve",
+                    "monitor_invoke_model",
+                    "failed",
+                    "monitor.upstream.error",
+                    Some(json!({
+                        "status": status.as_u16(),
+                        "message": detail,
+                    })),
+                );
+                return Err(detail);
+            }
+
+            let content = extract_model_content(&body_json);
+            if content.trim().is_empty() {
+                ctx.emit_status(
+                    "render",
+                    "monitor_invoke_model",
+                    "failed",
+                    "monitor.response.empty",
+                    None,
+                );
+                return Err("模型返回内容为空".to_string());
+            }
+            let tokens = extract_total_tokens(&body_json);
+            ctx.content = Some(content);
+            ctx.tokens_used = tokens;
+            ctx.emit_status(
+                "render",
+                "monitor_invoke_model",
+                "success",
+                "monitor.response.received",
+                Some(json!({ "tokens_used": tokens })),
+            );
+            Ok(())
+        })
+    }
+}
+
+struct MonitorParseResultStep;
+
+impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
+    fn name(&self) -> &'static str {
+        "monitor_parse_result"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["monitor_invoke_model"]
+    }
+
+    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let content = ctx
+                .content
+                .as_ref()
+                .ok_or_else(|| "monitor content missing".to_string())?;
+            let (is_change, summary, snapshot) = parse_monitor_analysis(content);
+            ctx.is_significant_change = is_change;
+            ctx.change_summary = summary;
+            ctx.new_snapshot = snapshot;
+            ctx.emit_status(
+                "render",
+                "monitor_parse_result",
+                "success",
+                "monitor.analysis.done",
+                Some(json!({ "is_significant_change": ctx.is_significant_change })),
+            );
+            Ok(())
+        })
+    }
+}
+
+fn build_monitor_engine() -> LocalOrchestrationEngine<MonitorWorkflowContext> {
+    LocalOrchestrationEngine::new(vec![
+        Box::new(MonitorResolveModelStep),
+        Box::new(MonitorBuildPromptStep),
+        Box::new(MonitorInvokeModelStep),
+        Box::new(MonitorParseResultStep),
+    ])
+    .expect("monitor engine dag should be valid")
 }
 
 fn extract_model_content(value: &Value) -> String {
