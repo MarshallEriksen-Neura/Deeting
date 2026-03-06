@@ -58,13 +58,6 @@ pub fn prepare_provider_request(
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         })
-        .or_else(|| {
-            instance
-                .template_engine
-                .as_deref()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })
         .unwrap_or_else(|| default_template_engine(protocol.as_str()).to_string());
 
     let request_template = effective_config
@@ -77,7 +70,6 @@ pub fn prepare_provider_request(
         .get("response_transform")
         .cloned()
         .or_else(|| effective_config.get("response_template").cloned())
-        .or_else(|| instance.response_transform.clone())
         .or_else(|| preset.and_then(|item| item.response_transform.clone()))
         .unwrap_or_else(|| json!({}));
 
@@ -112,6 +104,10 @@ pub fn prepare_provider_request(
         .or_else(|| effective_config.get("params").cloned())
         .unwrap_or_else(|| json!({}));
     let default_params = deep_merge_json(preset_default_params, &capability_params);
+    let request_builder = effective_config
+        .get("request_builder")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     let render_context = build_render_context(
         request_data.as_object().cloned().unwrap_or_default(),
@@ -124,6 +120,7 @@ pub fn prepare_provider_request(
     let rendered_body = render_body(
         &request_template,
         &default_params,
+        &request_builder,
         template_engine.as_str(),
         &render_context,
         tools,
@@ -367,6 +364,7 @@ fn build_render_context(
 fn render_body(
     request_template: &Value,
     default_params: &Value,
+    request_builder: &Value,
     engine: &str,
     context: &Value,
     tools: Option<&Value>,
@@ -378,6 +376,7 @@ fn render_body(
     } else {
         simple_merge_body(&effective_template, context)
     };
+    body = apply_request_builder(request_builder, body, context);
     inject_tools(&mut body, tools, engine);
     Ok(body)
 }
@@ -514,6 +513,143 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str) {
                 .or_insert_with(|| Value::String("auto".to_string()));
         }
     }
+}
+
+fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) -> Value {
+    let Some(builder_type) = config.get("type").and_then(|value| value.as_str()) else {
+        return rendered_body;
+    };
+
+    let input = context
+        .get("input")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+
+    match builder_type.trim() {
+        "ark_content_array" => ark_content_array_builder(&input, config),
+        _ => rendered_body,
+    }
+}
+
+fn ark_content_array_builder(
+    request_data: &Map<String, Value>,
+    config: &Value,
+) -> Value {
+    let mut prompt = request_data
+        .get("prompt")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    if let Some(flags) = config.get("prompt_flags").and_then(|value| value.as_object()) {
+        for (field_name, flag_value) in flags {
+            let Some(flag) = flag_value.as_str().map(str::trim).filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            let Some(raw_value) = request_data.get(field_name) else {
+                continue;
+            };
+            if raw_value.is_null() {
+                continue;
+            }
+            let rendered = render_scalar(raw_value);
+            if rendered.trim().is_empty() {
+                continue;
+            }
+            if !prompt.is_empty() {
+                prompt.push(' ');
+            }
+            prompt.push_str(flag);
+            prompt.push(' ');
+            prompt.push_str(rendered.as_str());
+        }
+    }
+
+    let mut content = vec![json!({
+        "type": "text",
+        "text": prompt,
+    })];
+
+    maybe_push_media_content(
+        &mut content,
+        config,
+        request_data,
+        "image_field",
+        "image_url",
+        "image_content_type",
+        "image_url",
+        "image_url",
+    );
+    maybe_push_media_content(
+        &mut content,
+        config,
+        request_data,
+        "audio_field",
+        "audio_url",
+        "audio_content_type",
+        "audio_url",
+        "audio_url",
+    );
+    maybe_push_media_content(
+        &mut content,
+        config,
+        request_data,
+        "video_field",
+        "video_url",
+        "video_content_type",
+        "video_url",
+        "video_url",
+    );
+    maybe_push_media_content(
+        &mut content,
+        config,
+        request_data,
+        "end_image_field",
+        "end_image_url",
+        "end_image_content_type",
+        "end_image_url",
+        "image_url",
+    );
+
+    json!({
+        "model": request_data.get("model").cloned().unwrap_or(Value::Null),
+        "content": content,
+    })
+}
+
+fn maybe_push_media_content(
+    content: &mut Vec<Value>,
+    config: &Value,
+    request_data: &Map<String, Value>,
+    field_key: &str,
+    field_default: &str,
+    type_key: &str,
+    type_default: &str,
+    payload_key: &str,
+) {
+    let field_name = config
+        .get(field_key)
+        .and_then(|value| value.as_str())
+        .unwrap_or(field_default);
+    let Some(url) = request_data.get(field_name).and_then(|value| value.as_str()) else {
+        return;
+    };
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    let content_type = config
+        .get(type_key)
+        .and_then(|value| value.as_str())
+        .unwrap_or(type_default);
+    content.push(json!({
+        "type": content_type,
+        payload_key: {
+            "url": trimmed,
+        }
+    }));
 }
 
 fn extract_tool_definitions(value: &Value) -> Vec<Value> {
@@ -897,7 +1033,8 @@ fn is_version_segment(segment: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_upstream_url_with_params, deep_merge_json, prepare_provider_request,
+        apply_request_builder, build_upstream_url_with_params, deep_merge_json,
+        prepare_provider_request,
         resolve_auth_for_protocol,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
@@ -1049,5 +1186,78 @@ mod tests {
         assert_eq!(prepared.headers.get("X-Source"), Some(&"desktop".to_string()));
         assert_eq!(prepared.body["model"], json!("gpt-4o-mini"));
         assert_eq!(prepared.body["max_tokens"], json!(64));
+    }
+
+    #[test]
+    fn prepare_provider_request_ignores_instance_template_fallbacks() {
+        let preset = mock_preset();
+        let mut instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        instance.template_engine = Some("anthropic_messages".to_string());
+        instance.response_transform = Some(json!({ "legacy": true }));
+        let model = mock_model(&["chat"]);
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [{ "role": "user", "content": "hi" }],
+                "stream": false,
+            }),
+            None,
+            None,
+        )
+        .expect("prepare request");
+
+        assert_eq!(prepared.template_engine, "simple_replace");
+        assert_eq!(prepared.response_transform, json!({}));
+    }
+
+    #[test]
+    fn apply_request_builder_without_type_keeps_rendered_body() {
+        let body = json!({ "prompt": "hello" });
+        let context = json!({ "input": { "prompt": "hello" } });
+
+        let result = apply_request_builder(&json!({}), body.clone(), &context);
+
+        assert_eq!(result, body);
+    }
+
+    #[test]
+    fn apply_request_builder_supports_ark_content_array() {
+        let result = apply_request_builder(
+            &json!({
+                "type": "ark_content_array",
+                "prompt_flags": {
+                    "aspect_ratio": "--ratio",
+                    "duration": "--dur"
+                }
+            }),
+            json!({}),
+            &json!({
+                "input": {
+                    "model": "doubao-seedance-1-5-pro-251215",
+                    "prompt": "一只猫在草地上奔跑",
+                    "aspect_ratio": "16:9",
+                    "duration": 5,
+                    "image_url": "https://example.com/input.png"
+                }
+            }),
+        );
+
+        assert_eq!(result["model"], json!("doubao-seedance-1-5-pro-251215"));
+        assert_eq!(result["content"][0]["type"], json!("text"));
+        assert_eq!(
+            result["content"][0]["text"],
+            json!("一只猫在草地上奔跑 --ratio 16:9 --dur 5")
+        );
+        assert_eq!(result["content"][1]["type"], json!("image_url"));
+        assert_eq!(
+            result["content"][1]["image_url"]["url"],
+            json!("https://example.com/input.png")
+        );
     }
 }

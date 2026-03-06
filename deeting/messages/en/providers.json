@@ -8,7 +8,8 @@
         "all": "All Providers",
         "cloud": "Cloud API",
         "local": "Local Hosted",
-        "custom": "Custom"
+        "custom": "Custom",
+        "platform": "Platform Models"
       },
       "connectModal": {
         "title": "Connect {name}",
@@ -20,6 +21,15 @@
         "emptyNoMatch": "No providers match \"{query}\". Try adjusting your search or category filter.",
         "emptyNoCategory": "No providers available in this category.",
         "requestProvider": "Request Provider"
+      },
+      "platform": {
+        "loading": "Loading platform models...",
+        "emptyTitle": "No platform models",
+        "emptyDescription": "No official models are available yet. Models configured by the administrator will appear here.",
+        "pricingLabel": "Credits",
+        "inputPrice": "Input: {price}/1K tokens",
+        "outputPrice": "Output: {price}/1K tokens",
+        "useModel": "Use Model"
       },
       "card": {
         "popular": "POPULAR",

@@ -80,6 +80,10 @@ export const CreditsPlatformModelSchema = z.object({
   display_name: z.string().optional(),
   capabilities: z.array(z.string()).optional().default([]),
   pricing: z.record(z.string(), z.unknown()).optional(),
+  provider_name: z.string().optional().default(""),
+  provider_slug: z.string().optional().default(""),
+  provider_icon: z.string().nullable().optional(),
+  provider_color: z.string().nullable().optional(),
 })
 export const CreditsPlatformModelsResponseSchema = z.object({
   models: z.array(CreditsPlatformModelSchema),

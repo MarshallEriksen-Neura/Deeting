@@ -5,12 +5,13 @@
 """
 
 import logging
-from decimal import Decimal
 from typing import Any
 
 from app.core.cache import cache
-from app.repositories.billing_repository import BillingRepository
 from app.repositories.usage_repository import UsageRepository
+from app.services.billing_pipeline import calculate_cost as bp_calculate_cost
+from app.services.billing_pipeline import estimate_cost as bp_estimate_cost
+from app.services.billing_pipeline import record_and_adjust as bp_record_and_adjust
 from app.services.orchestrator.context import WorkflowContext
 from app.services.workflow.steps.upstream_call import StreamTokenAccumulator
 
@@ -29,20 +30,9 @@ async def stream_billing_callback(
     input_tokens = ctx.billing.input_tokens
     output_tokens = ctx.billing.output_tokens
 
-    input_per_1k = (
-        Decimal(str(pricing.get("input_per_1k", 0))) if pricing else Decimal("0")
+    input_cost, output_cost, total_cost = bp_calculate_cost(
+        input_tokens, output_tokens, pricing
     )
-    output_per_1k = (
-        Decimal(str(pricing.get("output_per_1k", 0))) if pricing else Decimal("0")
-    )
-
-    input_cost = (
-        float((Decimal(input_tokens) / 1000) * input_per_1k) if pricing else 0.0
-    )
-    output_cost = (
-        float((Decimal(output_tokens) / 1000) * output_per_1k) if pricing else 0.0
-    )
-    total_cost = input_cost + output_cost
 
     ctx.billing.input_cost = input_cost
     ctx.billing.output_cost = output_cost
@@ -53,18 +43,18 @@ async def stream_billing_callback(
 
     if pricing and ctx.tenant_id and ctx.db_session:
         try:
-            repo = BillingRepository(ctx.db_session)
-            estimated_cost = await _get_estimated_cost_for_stream(ctx)
-            cost_diff = Decimal(str(total_cost)) - Decimal(str(estimated_cost))
+            request = ctx.get("validation", "request")
+            max_tokens = getattr(request, "max_tokens", 4096) if request else 4096
+            estimated_cost = bp_estimate_cost(pricing, max_tokens)
 
-            await repo.record_transaction(
-                tenant_id=ctx.tenant_id,
-                amount=Decimal(str(total_cost)),
+            await bp_record_and_adjust(
+                db_session=ctx.db_session,
+                tenant_id=str(ctx.tenant_id),
                 trace_id=ctx.trace_id,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-                input_price=input_per_1k,
-                output_price=output_per_1k,
+                pricing_config=pricing,
+                estimated_cost=estimated_cost,
                 provider=(
                     ctx.upstream_result.provider
                     if hasattr(ctx, "upstream_result")
@@ -75,16 +65,6 @@ async def stream_billing_callback(
                 api_key_id=ctx.api_key_id,
                 description="Stream billing completed",
             )
-
-            if abs(float(cost_diff)) > 0.000001:
-                await repo.adjust_redis_balance(ctx.tenant_id, cost_diff)
-                logger.debug(
-                    "stream_billing_cost_adjusted tenant=%s estimated=%s actual=%s diff=%s",
-                    ctx.tenant_id,
-                    estimated_cost,
-                    total_cost,
-                    cost_diff,
-                )
 
             await ctx.db_session.commit()
         except Exception as exc:
@@ -174,21 +154,6 @@ async def stream_billing_callback(
         ctx.billing.currency,
         accumulator.is_completed,
     )
-
-
-async def _get_estimated_cost_for_stream(ctx: WorkflowContext) -> float:
-    """获取流式请求的预估费用（与 QuotaCheckStep 计算方式保持一致）。"""
-    pricing = ctx.get("routing", "pricing_config") or {}
-    if not pricing:
-        return 0.0
-
-    request = ctx.get("validation", "request")
-    max_tokens = getattr(request, "max_tokens", 4096) if request else 4096
-    estimated_tokens = max_tokens * 2
-    avg_price = (
-        float(pricing.get("input_per_1k", 0)) + float(pricing.get("output_per_1k", 0))
-    ) / 2
-    return (estimated_tokens / 1000) * avg_price
 
 
 def _record_usage_task(**kwargs: Any) -> None:

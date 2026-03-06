@@ -34,6 +34,7 @@
     "actions": {
       "title": "快速操作",
       "subtitle": "常用功能和提醒",
+      "viewModels": "查看可用模型",
       "export": "导出 CSV",
       "alerts": "配置提醒",
       "settings": "计费设置",

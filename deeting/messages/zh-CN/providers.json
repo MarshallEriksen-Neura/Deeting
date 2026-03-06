@@ -8,7 +8,8 @@
         "all": "全部服务商",
         "cloud": "云 API",
         "local": "本地部署",
-        "custom": "自定义"
+        "custom": "自定义",
+        "platform": "官方平台模型"
       },
       "connectModal": {
         "title": "连接 {name}",
@@ -20,6 +21,15 @@
         "emptyNoMatch": "未找到与“{query}”匹配的服务商，请调整搜索或分类筛选。",
         "emptyNoCategory": "该分类下暂无可用服务商。",
         "requestProvider": "申请新增服务商"
+      },
+      "platform": {
+        "loading": "加载平台模型中…",
+        "emptyTitle": "暂无平台模型",
+        "emptyDescription": "管理员配置的官方模型将显示在这里，可使用积分调用。",
+        "pricingLabel": "积分计费",
+        "inputPrice": "输入：{price}/1K tokens",
+        "outputPrice": "输出：{price}/1K tokens",
+        "useModel": "使用模型"
       },
       "card": {
         "popular": "热门",

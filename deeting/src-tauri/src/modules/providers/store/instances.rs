@@ -31,22 +31,6 @@ impl ProviderStore {
 
         let mut tx = self.pool.begin().await?;
 
-        // Try to inherit template_engine and response_transform from preset if available
-        let preset_row = sqlx::query(
-            "SELECT template_engine, response_transform FROM provider_presets WHERE slug = ?",
-        )
-        .bind(&payload.preset_slug)
-        .fetch_optional(&mut *tx)
-        .await?;
-
-        let (template_engine, response_transform) = match preset_row {
-            Some(row) => (
-                row.try_get::<Option<String>, _>("template_engine")?,
-                row.try_get::<Option<String>, _>("response_transform")?,
-            ),
-            None => (None, None),
-        };
-
         // meta and is_enabled are missing in CreateInstanceRequest, use defaults
         let meta = "{}";
         let is_enabled = true;
@@ -72,8 +56,8 @@ impl ProviderStore {
         .bind(&payload.icon)
         .bind(payload.priority.unwrap_or(0))
         .bind(meta)
-        .bind(&template_engine)
-        .bind(&response_transform)
+        .bind::<Option<String>>(None)
+        .bind::<Option<String>>(None)
         .bind(is_enabled)
         .bind(payload.is_local.unwrap_or(false))
         .bind(credential_source)

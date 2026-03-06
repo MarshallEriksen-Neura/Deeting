@@ -7,15 +7,16 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useProviderHub } from "@/hooks/use-providers"
 import ProviderGrid from "@/components/providers/provider-grid"
+import { PlatformModelGrid } from "@/components/market/platform-model-grid"
 import { useDebounce } from "@/hooks/use-debounce"
 
-// Category mapping for filtering
-const CATEGORY_MAPPING = {
+type TabValue = "all" | "cloud" | "local" | "platform"
+
+const CATEGORY_MAPPING: Record<string, string | undefined> = {
   all: undefined,
   cloud: "cloud api",
   local: "local hosted",
-  custom: "custom",
-} as const
+}
 
 interface ProviderMarketClientProps {
   initialData?: any
@@ -31,35 +32,32 @@ export function ProviderMarketClient({
   className
 }: ProviderMarketClientProps) {
   const t = useTranslations("providers.market")
-  const [selectedCategory, setSelectedCategory] = React.useState<keyof typeof CATEGORY_MAPPING>("all")
+  const [selectedTab, setSelectedTab] = React.useState<TabValue>("all")
   const [searchQuery, setSearchQuery] = React.useState("")
   
-  // Debounce search query
   const debouncedQuery = useDebounce(searchQuery, 300)
+  const isPlatformTab = selectedTab === "platform"
 
   const queryParams = React.useMemo(() => ({
-    category: CATEGORY_MAPPING[selectedCategory],
+    category: CATEGORY_MAPPING[selectedTab],
     q: debouncedQuery || undefined,
-    include_public: true, // Market always shows public stuff
-  }), [selectedCategory, debouncedQuery])
+    include_public: true,
+  }), [selectedTab, debouncedQuery])
 
   const { 
     providers, 
     stats, 
     isLoading 
-  } = useProviderHub(queryParams)
+  } = useProviderHub(isPlatformTab ? {} : queryParams)
 
-  // Hydration / Initial Data logic
-  const displayProviders = (isLoading && !searchQuery && selectedCategory === 'all' && initialData?.providers) 
+  const displayProviders = (isLoading && !searchQuery && selectedTab === 'all' && initialData?.providers) 
     ? initialData.providers 
     : providers
 
   return (
     <div className={className || "space-y-8"}>
-      {/* Controls Section */}
       <div className="flex flex-col items-center gap-6 max-w-2xl mx-auto">
-        {/* Search */}
-        {showSearch && (
+        {showSearch && !isPlatformTab && (
           <div className="relative w-full">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[var(--muted)]" />
             <Input 
@@ -71,10 +69,9 @@ export function ProviderMarketClient({
           </div>
         )}
 
-        {/* Category Tabs */}
         <Tabs 
           defaultValue="all" 
-          onValueChange={(value) => setSelectedCategory(value as keyof typeof CATEGORY_MAPPING)} 
+          onValueChange={(value) => setSelectedTab(value as TabValue)} 
           className="w-full flex justify-center"
         >
           <TabsList className="bg-[var(--surface)]/50 backdrop-blur-md border border-white/5 p-1 h-auto rounded-full">
@@ -87,17 +84,23 @@ export function ProviderMarketClient({
             <TabsTrigger value="local" className="rounded-full px-6 py-2 data-[state=active]:bg-[var(--primary)] data-[state=active]:text-white">
               {t("tabs.local")}
             </TabsTrigger>
+            <TabsTrigger value="platform" className="rounded-full px-6 py-2 data-[state=active]:bg-[var(--primary)] data-[state=active]:text-white">
+              {t("tabs.platform")}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
-      {/* Provider Grid */}
-      <ProviderGrid 
-        providers={displayProviders}
-        isLoading={isLoading && !displayProviders.length}
-        searchQuery={searchQuery}
-        onSelect={onProviderSelect}
-      />
+      {isPlatformTab ? (
+        <PlatformModelGrid />
+      ) : (
+        <ProviderGrid 
+          providers={displayProviders}
+          isLoading={isLoading && !displayProviders.length}
+          searchQuery={searchQuery}
+          onSelect={onProviderSelect}
+        />
+      )}
     </div>
   )
 }

@@ -429,11 +429,18 @@ pub async fn record_local_bandit_feedback(
         .map_err(|e| e.to_string())
 }
 
-/// Sync platform (credits) models from GET /api/v1/credits/models into local platform instance.
-/// Ensures one instance with credential_source=platform exists, then upserts models from cloud.
+/// Sync platform (credits) models from GET /api/v1/credits/models into local platform instances.
+/// Groups models by provider_slug and creates/updates one local instance per provider.
 #[tauri::command]
 pub async fn sync_platform_models(state: State<'_, AppState>) -> Result<Vec<ProviderModel>, String> {
+    sync_platform_models_impl(&state).await
+}
+
+/// Inner implementation callable from both Tauri command and background tasks.
+pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderModel>, String> {
     use crate::modules::providers::store::CHAT_UPSTREAM_PATH;
+    use std::collections::HashMap;
+
     let base_url = state.mcp.cloud_base_url.read().await.clone();
     let base_url = base_url.trim().trim_end_matches('/');
     if base_url.is_empty() {
@@ -477,106 +484,133 @@ pub async fn sync_platform_models(state: State<'_, AppState>) -> Result<Vec<Prov
         .and_then(|m| m.as_array())
         .ok_or_else(|| "credits/models response missing models array".to_string())?;
 
+    if models_json.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Group models by provider_slug
+    let mut grouped: HashMap<String, (String, Vec<&Value>)> = HashMap::new();
+    for m in models_json {
+        let slug = m.get("provider_slug")
+            .and_then(|v| v.as_str())
+            .unwrap_or("platform")
+            .to_string();
+        let name = m.get("provider_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Platform")
+            .to_string();
+        grouped.entry(slug).or_insert_with(|| (name, Vec::new())).1.push(m);
+    }
+
     let instances = state
         .providers
         .store
         .list_instances()
         .await
         .map_err(|e| e.to_string())?;
-    let platform_instance = instances
-        .iter()
-        .find(|i| i.credential_source.eq_ignore_ascii_case("platform"));
-
-    let instance_id = match platform_instance {
-        Some(inst) => inst.id,
-        None => {
-            let created = state
-                .providers
-                .store
-                .create_instance(CreateInstanceRequest {
-                    preset_slug: "custom".to_string(),
-                    name: "Platform".to_string(),
-                    base_url: "https://platform".to_string(),
-                    description: Some("Models billed via platform credits".to_string()),
-                    icon: None,
-                    priority: Some(0),
-                    protocol: None,
-                    model_prefix: None,
-                    auto_append_v1: None,
-                    resource_name: None,
-                    deployment_name: None,
-                    api_version: None,
-                    project_id: None,
-                    region: None,
-                    is_local: Some(false),
-                    credential_source: Some("platform".to_string()),
-                    secret_key: None,
-                })
-                .await
-                .map_err(|e| e.to_string())?;
-            created.id
-        }
-    };
 
     let now = uuid::Uuid::nil();
-    let models: Vec<ProviderModel> = models_json
-        .iter()
-        .filter_map(|m| {
-            let model_id = m.get("model_id").or_else(|| m.get("id"))?.as_str()?.to_string();
-            let display_name = m.get("display_name").and_then(|v| v.as_str()).map(String::from);
-            let capabilities: Vec<String> = m
-                .get("capabilities")
-                .and_then(|c| c.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_else(|| vec!["chat".to_string()]);
-            let pricing = m.get("pricing").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
-            Some(ProviderModel {
-                id: now,
-                instance_id,
-                model_id,
-                unified_model_id: None,
-                display_name,
-                capabilities,
-                upstream_path: CHAT_UPSTREAM_PATH.to_string(),
-                pricing_config: pricing,
-                limit_config: Value::Object(serde_json::Map::new()),
-                tokenizer_config: Value::Object(serde_json::Map::new()),
-                routing_config: Value::Object(serde_json::Map::new()),
-                config_override: Value::Object(serde_json::Map::new()),
-                source: "platform".to_string(),
-                extra_meta: Value::Object(serde_json::Map::new()),
-                weight: 100,
-                priority: 0,
-                is_active: true,
-                synced_at: None,
-                created_at: None,
-                updated_at: None,
-            })
-        })
-        .collect();
+    let mut all_synced: Vec<ProviderModel> = Vec::new();
 
-    if models.is_empty() {
-        return Ok(vec![]);
+    for (slug, (provider_name, group_models)) in &grouped {
+        // Find or create a platform instance for this provider slug
+        let platform_instance = instances.iter().find(|i| {
+            i.credential_source.eq_ignore_ascii_case("platform")
+                && i.preset_slug.eq_ignore_ascii_case(slug)
+        });
+
+        let instance_id = match platform_instance {
+            Some(inst) => inst.id,
+            None => {
+                let created = state
+                    .providers
+                    .store
+                    .create_instance(CreateInstanceRequest {
+                        preset_slug: slug.clone(),
+                        name: format!("{} (Platform)", provider_name),
+                        base_url: "https://platform".to_string(),
+                        description: Some("Models billed via platform credits".to_string()),
+                        icon: None,
+                        priority: Some(0),
+                        protocol: None,
+                        model_prefix: None,
+                        auto_append_v1: None,
+                        resource_name: None,
+                        deployment_name: None,
+                        api_version: None,
+                        project_id: None,
+                        region: None,
+                        is_local: Some(false),
+                        credential_source: Some("platform".to_string()),
+                        secret_key: None,
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?;
+                created.id
+            }
+        };
+
+        let models: Vec<ProviderModel> = group_models
+            .iter()
+            .filter_map(|m| {
+                let model_id = m.get("model_id").or_else(|| m.get("id"))?.as_str()?.to_string();
+                let display_name = m.get("display_name").and_then(|v| v.as_str()).map(String::from);
+                let capabilities: Vec<String> = m
+                    .get("capabilities")
+                    .and_then(|c| c.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| vec!["chat".to_string()]);
+                let pricing = m.get("pricing").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+                Some(ProviderModel {
+                    id: now,
+                    instance_id,
+                    model_id,
+                    unified_model_id: None,
+                    display_name,
+                    capabilities,
+                    upstream_path: CHAT_UPSTREAM_PATH.to_string(),
+                    pricing_config: pricing,
+                    limit_config: Value::Object(serde_json::Map::new()),
+                    tokenizer_config: Value::Object(serde_json::Map::new()),
+                    routing_config: Value::Object(serde_json::Map::new()),
+                    config_override: Value::Object(serde_json::Map::new()),
+                    source: "platform".to_string(),
+                    extra_meta: Value::Object(serde_json::Map::new()),
+                    weight: 100,
+                    priority: 0,
+                    is_active: true,
+                    synced_at: None,
+                    created_at: None,
+                    updated_at: None,
+                })
+            })
+            .collect();
+
+        if models.is_empty() {
+            continue;
+        }
+
+        state
+            .providers
+            .store
+            .sync_models(&instance_id.to_string(), models)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let synced = state
+            .providers
+            .store
+            .list_models(Some(instance_id.to_string()), None)
+            .await
+            .map_err(|e| e.to_string())?;
+        all_synced.extend(synced);
     }
 
-    state
-        .providers
-        .store
-        .sync_models(&instance_id.to_string(), models.clone())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let synced = state
-        .providers
-        .store
-        .list_models(Some(instance_id.to_string()), None)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(synced)
+    Ok(all_synced)
 }
 
 async fn fetch_model_ids_from_upstream(
@@ -748,119 +782,6 @@ fn build_models_endpoints(
     }
 }
 
-fn build_upstream_endpoint(
-    base_url: &str,
-    upstream_path: &str,
-    protocol: Option<&str>,
-    auto_append_v1: Option<bool>,
-) -> String {
-    let mut base = base_url.trim().trim_end_matches('/').to_string();
-    let mut path = upstream_path.trim().trim_start_matches('/').to_string();
-    let protocol = protocol.unwrap_or("openai").trim().to_ascii_lowercase();
-
-    if protocol.contains("openai") && !protocol.contains("azure") {
-        let append_v1 = auto_append_v1.unwrap_or_else(|| !has_versioned_path(base.as_str()));
-        if append_v1 && !base.ends_with("/v1") {
-            base = format!("{base}/v1");
-        }
-    }
-
-    if path.is_empty() {
-        if base.ends_with("/v1") {
-            return format!("{}/chat/completions", base);
-        }
-        return format!("{}/v1/chat/completions", base);
-    }
-
-    if base.ends_with("/v1") {
-        if let Some((head, tail)) = path.split_once('/') {
-            if head.eq_ignore_ascii_case("v1") {
-                path = tail.to_string();
-            }
-        } else if path.eq_ignore_ascii_case("v1") {
-            path.clear();
-        }
-    }
-
-    if path.is_empty() {
-        return base;
-    }
-
-    format!("{base}/{path}")
-}
-
-fn apply_provider_auth_headers(
-    request: reqwest::RequestBuilder,
-    protocol: Option<&str>,
-    secret_key: &str,
-) -> reqwest::RequestBuilder {
-    let secret_key = secret_key.trim();
-    if secret_key.is_empty() {
-        return request;
-    }
-
-    let protocol = protocol.unwrap_or("openai").trim().to_ascii_lowercase();
-    if protocol.contains("anthropic") || protocol.contains("claude") {
-        return request
-            .header("x-api-key", secret_key)
-            .header("anthropic-version", "2023-06-01");
-    }
-    if protocol.contains("azure") {
-        return request.header("api-key", secret_key);
-    }
-    if protocol.contains("gemini") || protocol.contains("google") || protocol.contains("vertex") {
-        return request.header("x-goog-api-key", secret_key);
-    }
-    request.bearer_auth(secret_key)
-}
-
-fn has_versioned_path(base_url: &str) -> bool {
-    let without_query = base_url.split('?').next().unwrap_or(base_url);
-    let path = if let Some((_, rest)) = without_query.split_once("://") {
-        if let Some(path_idx) = rest.find('/') {
-            &rest[path_idx + 1..]
-        } else {
-            ""
-        }
-    } else {
-        without_query.trim_start_matches('/')
-    };
-
-    let segments: Vec<&str> = path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    for (idx, segment) in segments.iter().enumerate() {
-        if is_version_segment(segment) {
-            return true;
-        }
-        if segment.eq_ignore_ascii_case("api")
-            && segments
-                .get(idx + 1)
-                .map(|next| is_version_segment(next))
-                .unwrap_or(false)
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn is_version_segment(segment: &str) -> bool {
-    let normalized = segment.trim();
-    if normalized.len() < 2 {
-        return false;
-    }
-    let mut chars = normalized.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if first != 'v' && first != 'V' {
-        return false;
-    }
-    chars.all(|ch| ch.is_ascii_digit() || ch == '.')
-}
-
 fn extract_model_ids(value: &Value) -> Vec<String> {
     let mut ids = Vec::new();
 
@@ -958,32 +879,45 @@ mod tests {
 
     #[test]
     fn build_upstream_endpoint_deduplicates_v1_prefix() {
+        let helper = crate::modules::providers::request_runtime::build_upstream_url_with_params;
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/v1",
                 "v1/chat/completions",
                 Some("openai"),
-                None
+                None,
+                None,
             ),
-            "https://api.example.com/v1/chat/completions"
+            (
+                "https://api.example.com/v1/chat/completions".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/v1",
                 "/v1/embeddings",
                 Some("openai"),
-                None
+                None,
+                None,
             ),
-            "https://api.example.com/v1/embeddings"
+            (
+                "https://api.example.com/v1/embeddings".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com",
                 "chat/completions",
                 Some("openai"),
-                Some(false)
+                Some(false),
+                None,
             ),
-            "https://api.example.com/chat/completions"
+            (
+                "https://api.example.com/chat/completions".to_string(),
+                serde_json::json!({}),
+            )
         );
     }
 }

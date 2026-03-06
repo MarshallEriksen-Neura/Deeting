@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Check, Cpu, Search, Zap } from "lucide-react"
+import { Check, Coins, Cpu, Search, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -12,6 +12,8 @@ export type ModelPickerModel = {
   owned_by?: string
   provider_model_id?: string
   health_status?: string | null
+  is_platform?: boolean
+  pricing?: Record<string, unknown> | null
 }
 
 export type ModelPickerGroup = {
@@ -19,6 +21,7 @@ export type ModelPickerGroup = {
   instance_name: string
   provider?: string
   models: ModelPickerModel[]
+  is_platform?: boolean
 }
 
 type ModelPickerValueField = "id" | "provider_model_id"
@@ -142,10 +145,24 @@ export function ModelPicker({
     return model.provider_model_id ?? model.id
   }
 
+  const sortedGroups = useMemo(() => {
+    const platformGroups: ModelPickerGroup[] = []
+    const regularGroups: ModelPickerGroup[] = []
+    for (const group of modelGroups) {
+      const hasPlatformModel = group.is_platform || group.models.some(m => m.is_platform)
+      if (hasPlatformModel) {
+        platformGroups.push({ ...group, is_platform: true })
+      } else {
+        regularGroups.push(group)
+      }
+    }
+    return [...platformGroups, ...regularGroups]
+  }, [modelGroups])
+
   const filteredModelGroups = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    if (!keyword) return modelGroups
-    return modelGroups
+    if (!keyword) return sortedGroups
+    return sortedGroups
       .map((group) => ({
         ...group,
         models: group.models.filter((model) => {
@@ -156,7 +173,7 @@ export function ModelPicker({
         }),
       }))
       .filter((group) => group.models.length > 0)
-  }, [modelGroups, query])
+  }, [sortedGroups, query])
 
   const filteredCount = useMemo(
     () => filteredModelGroups.reduce((sum, group) => sum + group.models.length, 0),
@@ -220,7 +237,12 @@ export function ModelPicker({
                   className="rounded-2xl bg-white/80 dark:bg-black/30 border border-black/5 dark:border-white/10 shadow-[0_10px_24px_-16px_rgba(15,23,42,0.25)]"
                 >
                   <div className="flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-black/40 dark:text-white/40">
-                    <span className="font-black">{group.instance_name}</span>
+                    <span className="flex items-center gap-1.5 font-black">
+                      {group.is_platform && (
+                        <Coins className="h-3 w-3 text-amber-500" />
+                      )}
+                      {group.instance_name}
+                    </span>
                     {group.provider ? (
                       <span className="text-[9px] font-semibold text-black/35 dark:text-white/35">
                         {group.provider}
@@ -264,7 +286,14 @@ export function ModelPicker({
                             </span>
                             <span className="flex min-w-0 flex-col text-left leading-tight">
                               <span className="truncate text-[11px] font-semibold">{model.id}</span>
-                              {model.owned_by ? (
+                              {model.is_platform && model.pricing ? (
+                                <span className="truncate text-[9px] text-amber-600 dark:text-amber-400">
+                                  {model.pricing.input_per_1k != null ? `↓${model.pricing.input_per_1k}` : ""}
+                                  {model.pricing.input_per_1k != null && model.pricing.output_per_1k != null ? " · " : ""}
+                                  {model.pricing.output_per_1k != null ? `↑${model.pricing.output_per_1k}` : ""}
+                                  <span className="text-black/25 dark:text-white/25 ml-0.5">/1K</span>
+                                </span>
+                              ) : model.owned_by ? (
                                 <span className="truncate text-[9px] text-black/35 dark:text-white/35">
                                   {model.owned_by}
                                 </span>

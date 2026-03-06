@@ -32,6 +32,8 @@ export const ModelInfoSchema = z.object({
   input_types: z.array(z.string()).nullable().optional(),
   request_route: z.enum(["local_invoke", "cloud_http"]).optional(),
   runtime_source: z.enum(["desktop_local", "cloud_internal"]).optional(),
+  is_platform: z.boolean().optional(),
+  pricing: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
 export const ModelListResponseSchema = z.object({

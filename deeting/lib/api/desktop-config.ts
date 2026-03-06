@@ -35,3 +35,11 @@ export function clearAuthTokenForDesktop(): void {
   if (!isTauriRuntime()) return
   setDesktopConfig(DESKTOP_CONFIG_KEYS.authToken, "").catch(() => {})
 }
+
+/** Trigger platform models sync in Tauri (fire-and-forget). Call after login or on startup. */
+export function syncPlatformModelsForDesktop(): void {
+  if (!isTauriRuntime()) return
+  import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke("sync_platform_models"))
+    .catch(() => {})
+}

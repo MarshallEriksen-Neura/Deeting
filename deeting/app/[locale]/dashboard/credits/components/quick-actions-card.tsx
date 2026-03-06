@@ -1,19 +1,27 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { Download, Bell, Settings, TrendingUp } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Cpu, Download, Bell, Settings, TrendingUp } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Button } from "@/components/ui/button"
 
 export function QuickActionsCard() {
   const t = useTranslations("credits")
+  const router = useRouter()
 
   const actions = [
+    {
+      icon: Cpu,
+      label: t("actions.viewModels"),
+      onClick: () => router.push("/dashboard?tab=market&category=platform"),
+      variant: "default" as const,
+    },
     {
       icon: Download,
       label: t("actions.export"),
       onClick: () => console.log("Export CSV"),
-      variant: "default" as const,
+      variant: "outline" as const,
     },
     {
       icon: Bell,

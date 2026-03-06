@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import uuid
 from decimal import Decimal
 
 import httpx
@@ -19,11 +20,7 @@ from app.repositories import (
     ProviderPresetRepository,
     SystemSettingRepository,
 )
-from app.repositories.billing_repository import (
-    BillingRepository,
-    DuplicateTransactionError,
-    InsufficientBalanceError,
-)
+from app.repositories.billing_repository import DuplicateTransactionError
 from app.schemas.credits import (
     CreditsAlipayOrderRequest,
     CreditsAlipayOrderResponse,
@@ -36,6 +33,13 @@ from app.schemas.credits import (
     CreditsRechargeRequest,
     CreditsRechargeResponse,
     CreditsTransactionListResponse,
+)
+from app.services.billing_pipeline import (
+    QuotaExceededError,
+    estimate_cost,
+    quota_precheck,
+    record_and_adjust,
+    wrap_stream_with_billing,
 )
 from app.services.credits import CreditsService
 from app.services.payments import AlipayService
@@ -74,10 +78,6 @@ def get_alipay_service() -> AlipayService:
         return_url=str(settings.ALIPAY_RETURN_URL or ""),
         timeout_express=str(settings.ALIPAY_TIMEOUT_EXPRESS or "15m"),
     )
-
-
-def get_billing_repository(db: AsyncSession = Depends(get_db)) -> BillingRepository:
-    return BillingRepository(db)
 
 
 def _build_alipay_trace_id(trade_no: str, out_trade_no: str) -> str:
@@ -168,18 +168,24 @@ async def get_credits_models(
 ) -> CreditsPlatformModelsResponse:
     """
     返回管理员配置的公共平台模型列表，供桌面端同步到本地「平台」实例。
-    从 is_public=True 且 is_enabled 的 ProviderInstance 下查询 ProviderModel。
+    从 is_public=True 且 is_enabled 的 ProviderInstance 下查询 ProviderModel，
+    JOIN ProviderPreset 以获取 provider 品牌元数据（name/slug/icon/color）。
     """
+    from app.models.provider_preset import ProviderPreset
+
     stmt = (
-        select(ProviderModel)
+        select(ProviderModel, ProviderPreset)
         .join(ProviderInstance, ProviderModel.instance_id == ProviderInstance.id)
+        .outerjoin(
+            ProviderPreset, ProviderInstance.preset_slug == ProviderPreset.slug
+        )
         .where(
             ProviderInstance.is_public.is_(True),
             ProviderInstance.is_enabled.is_(True),
             ProviderModel.is_active.is_(True),
         )
     )
-    rows = (await db.execute(stmt)).scalars().all()
+    rows = (await db.execute(stmt)).all()
     models = [
         CreditsPlatformModel(
             id=str(m.id),
@@ -187,8 +193,12 @@ async def get_credits_models(
             display_name=m.display_name,
             capabilities=m.capabilities or [],
             pricing=m.pricing_config or None,
+            provider_name=preset.name if preset else "",
+            provider_slug=preset.slug if preset else "",
+            provider_icon=preset.icon if preset else None,
+            provider_color=preset.theme_color if preset else None,
         )
-        for m in rows
+        for m, preset in rows
     ]
     return CreditsPlatformModelsResponse(models=models)
 
@@ -197,13 +207,14 @@ async def get_credits_models(
 async def credits_chat_completions_proxy(
     request: Request,
     current_user: User = Depends(get_current_user),
-    billing_repo: BillingRepository = Depends(get_billing_repository),
     db: AsyncSession = Depends(get_db),
 ):
     """
     计费代理（瘦代理）：
-    鉴权 → 按 model_id 查库找到管理员配置的公共实例和密钥 →
+    鉴权 → 余额预检 → 按 model_id 查库找到管理员配置的公共实例和密钥 →
     构建上游 URL → 转发请求 → 按 pricing_config 扣费 → 返回响应。
+
+    计费逻辑通过 BillingPipeline 与 Gateway 共享，确保两条路径行为一致。
     """
     body = await request.json()
     model_id = (body.get("model") or "").strip()
@@ -256,7 +267,22 @@ async def credits_chat_completions_proxy(
             detail="Platform credential not configured for this model",
         )
 
-    # --- 4. 构建上游 URL 和认证头 ---
+    # --- 4. 余额预检 (与 Gateway QuotaCheckStep 一致) ---
+    tenant_id = str(current_user.id) if current_user else None
+    pricing = provider_model.pricing_config or {}
+    max_tokens = body.get("max_tokens") or 4096
+    estimated = estimate_cost(pricing, max_tokens)
+
+    if tenant_id and pricing:
+        try:
+            await quota_precheck(tenant_id, estimated, db)
+        except QuotaExceededError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Insufficient credits: {exc}",
+            ) from exc
+
+    # --- 5. 构建上游 URL 和认证头 ---
     protocol = instance.protocol or (
         (preset.capability_configs or {}).get("chat", {}).get("protocol")
     ) or preset.provider
@@ -279,22 +305,22 @@ async def credits_chat_completions_proxy(
         **(preset.default_headers or {}),
     }
 
-    # --- 5. 构建转发体 ---
-    stream = body.get("stream") is True
+    # --- 6. 构建转发体 ---
+    is_stream = body.get("stream") is True
     forward_body = {
         "model": provider_model.model_id,
         "messages": messages,
-        "stream": stream,
+        "stream": is_stream,
         **{k: body[k] for k in ("temperature", "max_tokens", "tools") if k in body},
     }
+    if is_stream:
+        forward_body["stream_options"] = {"include_usage": True}
 
-    tenant_id = str(current_user.id) if current_user else None
-    trace_id = (body.get("trace_id") or "").strip() or None
-    pricing = provider_model.pricing_config or {}
+    trace_id = (body.get("trace_id") or "").strip() or f"credits-{uuid.uuid4().hex[:16]}"
 
-    # --- 6. 流式转发 ---
-    if stream:
-        async def _stream_and_bill():
+    # --- 7. 流式转发 + 扣费 (通过 BillingPipeline) ---
+    if is_stream:
+        async def _raw_stream():
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST", upstream_url, headers=headers, json=forward_body,
@@ -305,13 +331,24 @@ async def credits_chat_completions_proxy(
                     async for chunk in resp.aiter_bytes():
                         yield chunk
 
+        billed_stream = wrap_stream_with_billing(
+            raw_stream=_raw_stream(),
+            db_session=db,
+            tenant_id=tenant_id or "",
+            trace_id=trace_id,
+            pricing_config=pricing,
+            estimated_cost=estimated,
+            provider=preset.provider,
+            model=model_id,
+        )
+
         return StreamingResponse(
-            _stream_and_bill(),
+            billed_stream,
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
-    # --- 7. 非流式转发 ---
+    # --- 8. 非流式转发 ---
     async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(upstream_url, headers=headers, json=forward_body)
 
@@ -325,38 +362,31 @@ async def credits_chat_completions_proxy(
 
     data = resp.json()
 
-    # --- 8. 按 pricing_config 扣费 ---
+    # --- 9. 按 pricing_config 扣费 (通过 BillingPipeline) ---
     usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
     input_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
     output_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
 
-    if tenant_id and trace_id and (input_tokens > 0 or output_tokens > 0):
-        input_per_1k = Decimal(str(pricing.get("input_per_1k", 0)))
-        output_per_1k = Decimal(str(pricing.get("output_per_1k", 0)))
-        input_cost = (Decimal(input_tokens) / 1000) * input_per_1k
-        output_cost = (Decimal(output_tokens) / 1000) * output_per_1k
-        amount = input_cost + output_cost
-        if amount > 0:
-            try:
-                await billing_repo.deduct(
-                    tenant_id=tenant_id,
-                    amount=amount,
-                    trace_id=trace_id,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    input_price=input_per_1k,
-                    output_price=output_per_1k,
-                    provider=preset.provider,
-                    model=model_id,
-                    description=f"Credits proxy model={model_id}",
-                )
-            except DuplicateTransactionError:
-                pass
-            except InsufficientBalanceError as e:
-                raise HTTPException(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail=str(e),
-                ) from e
+    if tenant_id and (input_tokens > 0 or output_tokens > 0):
+        try:
+            await record_and_adjust(
+                db_session=db,
+                tenant_id=tenant_id,
+                trace_id=trace_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                pricing_config=pricing,
+                estimated_cost=estimated,
+                provider=preset.provider,
+                model=model_id,
+                description=f"Credits proxy model={model_id}",
+            )
+            await db.commit()
+        except DuplicateTransactionError:
+            pass
+        except Exception as exc:
+            logger.error("credits_proxy_billing_failed trace=%s err=%s", trace_id, exc)
+            await db.rollback()
 
     return data
 

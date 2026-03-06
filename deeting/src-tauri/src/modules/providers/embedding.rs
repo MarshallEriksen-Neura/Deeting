@@ -2,15 +2,9 @@ use crate::modules::providers::error::ProviderError;
 use crate::modules::providers::store::utils::has_embedding_capability;
 use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::ProviderModel;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
-
-#[derive(Debug, Serialize)]
-struct EmbeddingRequest {
-    model: String,
-    input: String,
-}
 
 #[derive(Debug, Deserialize)]
 struct EmbeddingResponse {
@@ -135,115 +129,6 @@ pub(crate) fn select_embedding_model<'a>(
         .find(|model| model.is_active && has_embedding_capability(&model.capabilities))
 }
 
-fn build_upstream_endpoint(
-    base_url: &str,
-    upstream_path: &str,
-    protocol: Option<&str>,
-    auto_append_v1: Option<bool>,
-) -> String {
-    let mut base = base_url.trim().trim_end_matches('/').to_string();
-    let mut path = upstream_path.trim().trim_start_matches('/').to_string();
-
-    let protocol = protocol.unwrap_or("openai").trim().to_ascii_lowercase();
-    if protocol.contains("openai") && !protocol.contains("azure") {
-        let append_v1 = auto_append_v1.unwrap_or_else(|| !has_versioned_path(base.as_str()));
-        if append_v1 && !base.ends_with("/v1") {
-            base = format!("{base}/v1");
-        }
-    }
-
-    if base.ends_with("/v1") {
-        if let Some((head, tail)) = path.split_once('/') {
-            if head.eq_ignore_ascii_case("v1") {
-                path = tail.to_string();
-            }
-        } else if path.eq_ignore_ascii_case("v1") {
-            path.clear();
-        }
-    }
-
-    if path.is_empty() {
-        if base.ends_with("/v1") {
-            return format!("{}/embeddings", base);
-        }
-        return format!("{}/v1/embeddings", base);
-    }
-
-    format!("{base}/{path}")
-}
-
-fn apply_provider_auth_headers(
-    request: reqwest::RequestBuilder,
-    protocol: Option<&str>,
-    secret_key: &str,
-) -> reqwest::RequestBuilder {
-    let secret_key = secret_key.trim();
-    if secret_key.is_empty() {
-        return request;
-    }
-
-    let protocol = protocol.unwrap_or("openai").trim().to_ascii_lowercase();
-    if protocol.contains("anthropic") || protocol.contains("claude") {
-        return request
-            .header("x-api-key", secret_key)
-            .header("anthropic-version", "2023-06-01");
-    }
-    if protocol.contains("azure") {
-        return request.header("api-key", secret_key);
-    }
-    if protocol.contains("gemini") || protocol.contains("google") || protocol.contains("vertex") {
-        return request.header("x-goog-api-key", secret_key);
-    }
-    request.header("Authorization", format!("Bearer {secret_key}"))
-}
-
-fn has_versioned_path(base_url: &str) -> bool {
-    let without_query = base_url.split('?').next().unwrap_or(base_url);
-    let path = if let Some((_, rest)) = without_query.split_once("://") {
-        if let Some(path_idx) = rest.find('/') {
-            &rest[path_idx + 1..]
-        } else {
-            ""
-        }
-    } else {
-        without_query.trim_start_matches('/')
-    };
-
-    let segments: Vec<&str> = path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    for (idx, segment) in segments.iter().enumerate() {
-        if is_version_segment(segment) {
-            return true;
-        }
-        if segment.eq_ignore_ascii_case("api")
-            && segments
-                .get(idx + 1)
-                .map(|next| is_version_segment(next))
-                .unwrap_or(false)
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn is_version_segment(segment: &str) -> bool {
-    let normalized = segment.trim();
-    if normalized.len() < 2 {
-        return false;
-    }
-    let mut chars = normalized.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if first != 'v' && first != 'V' {
-        return false;
-    }
-    chars.all(|ch| ch.is_ascii_digit() || ch == '.')
-}
-
 #[cfg(test)]
 mod tests {
     use super::{build_upstream_endpoint, select_embedding_model};
@@ -313,32 +198,45 @@ mod tests {
 
     #[test]
     fn build_upstream_endpoint_deduplicates_v1_prefix_for_embedding() {
+        let helper = crate::modules::providers::request_runtime::build_upstream_url_with_params;
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/v1",
                 "v1/embeddings",
                 Some("openai"),
-                None
+                None,
+                None,
             ),
-            "https://api.example.com/v1/embeddings"
+            (
+                "https://api.example.com/v1/embeddings".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/v1",
                 "/v1/embeddings",
                 Some("openai"),
-                None
+                None,
+                None,
             ),
-            "https://api.example.com/v1/embeddings"
+            (
+                "https://api.example.com/v1/embeddings".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com",
                 "embeddings",
                 Some("openai"),
-                Some(false)
+                Some(false),
+                None,
             ),
-            "https://api.example.com/embeddings"
+            (
+                "https://api.example.com/embeddings".to_string(),
+                serde_json::json!({}),
+            )
         );
     }
 }

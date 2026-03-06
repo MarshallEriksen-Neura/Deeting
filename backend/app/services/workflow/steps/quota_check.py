@@ -6,6 +6,7 @@ QuotaCheckStep: 配额检查与原子扣减（P0-1 核心改动）
 - 缓存未命中时从 DB 预热 Redis Hash（使用 SETNX 防止竞态）
 - Redis 不可用时回退到 DB 扣减（QuotaRepository.check_and_deduct）
 - 扣减在此步骤完成，BillingStep 只记录流水
+- 核心预扣逻辑已提取到 billing_pipeline，此处为 thin wrapper
 """
 
 from __future__ import annotations
@@ -17,7 +18,15 @@ from typing import TYPE_CHECKING
 from app.core.cache import cache
 from app.core.cache_keys import CacheKeys
 from app.repositories.api_key import ApiKeyRepository
-from app.repositories.quota_repository import InsufficientQuotaError, QuotaRepository
+from app.repositories.quota_repository import QuotaRepository
+from app.services.billing_pipeline import (
+    QuotaExceededError,
+    estimate_cost,
+    quota_precheck,
+)
+
+# Re-export for backward compatibility
+__all__ = ["QuotaCheckStep", "QuotaExceededError"]
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import (
@@ -31,18 +40,6 @@ if TYPE_CHECKING:
     from app.services.orchestrator.context import WorkflowContext
 
 logger = logging.getLogger(__name__)
-
-
-class QuotaExceededError(Exception):
-    """配额超限异常"""
-
-    def __init__(self, quota_type: str, required: float, available: float):
-        self.quota_type = quota_type
-        self.required = required
-        self.available = available
-        super().__init__(
-            f"{quota_type} quota insufficient: required={required}, available={available}"
-        )
 
 
 @step_registry.register
@@ -89,14 +86,16 @@ class QuotaCheckStep(BaseStep):
             return StepResult(status=StepStatus.SUCCESS)
 
         try:
-            # 0. API Key 预算/配额检查（保持现有逻辑，防止高层回归）
             await self._check_api_key_quota(ctx, api_key_id)
 
             quota_info = {}
             if tenant_id:
-                estimated_cost = await self._estimate_cost(ctx)
-                quota_info = await self._check_quota_redis(
-                    ctx, str(tenant_id), estimated_cost
+                pricing = ctx.get("routing", "pricing_config") or {}
+                request = ctx.get("validation", "request")
+                max_tokens = getattr(request, "max_tokens", 4096) if request else 4096
+                estimated_cost = estimate_cost(pricing, max_tokens)
+                quota_info = await quota_precheck(
+                    str(tenant_id), estimated_cost, ctx.db_session, self.quota_repo,
                 )
 
             if quota_info:
@@ -281,195 +280,5 @@ class QuotaCheckStep(BaseStep):
             # 释放预热锁
             await redis_client.delete(lock_key)
 
-    async def _estimate_cost(self, ctx: WorkflowContext) -> float:
-        """估算费用用于余额预检查（流式/非流式都可用）"""
-        pricing = ctx.get("routing", "pricing_config") or {}
-        if not pricing:
-            return 0.0
-
-        request = ctx.get("validation", "request")
-        max_tokens = getattr(request, "max_tokens", 4096) if request else 4096
-        estimated_tokens = max_tokens * 2  # 输入+输出粗估
-
-        avg_price = (
-            float(pricing.get("input_per_1k", 0))
-            + float(pricing.get("output_per_1k", 0))
-        ) / 2
-        return (estimated_tokens / 1000) * avg_price
-
-    async def _check_quota_redis(
-        self, ctx: WorkflowContext, tenant_id: str, estimated_cost: float
-    ) -> dict:
-        """
-        Redis Lua 原子扣减配额（P0-1 核心改动）
-
-        使用 quota_deduct.lua 进行原子扣减：
-        - 扣减余额
-        - 增加日/月请求计数
-        - 返回扣减后的配额信息
-        """
-        redis_client = getattr(cache, "_redis", None)
-        if not redis_client:
-            return await self._deduct_quota_db(ctx, tenant_id, estimated_cost)
-
-        script_sha = cache.get_script_sha("quota_deduct")
-        if not script_sha:
-            await cache.preload_scripts()
-            script_sha = cache.get_script_sha("quota_deduct")
-
-        if not script_sha:
-            logger.warning("quota_deduct_script_not_found, fallback to DB")
-            return await self._deduct_quota_db(ctx, tenant_id, estimated_cost)
-
-        key = CacheKeys.quota_hash(tenant_id)
-        exists = await redis_client.exists(cache._make_key(key))
-        if not exists:
-            await self._warm_quota_cache_safe(ctx, redis_client, key, tenant_id)
-
-        today = self._today_str()
-        month = self._month_str()
-
-        # 调用 quota_deduct.lua 进行原子扣减
-        # args: amount, daily_requests, monthly_requests, today, month, allow_negative
-        result = await redis_client.evalsha(
-            script_sha,
-            1,
-            cache._make_key(key),
-            str(estimated_cost),  # amount
-            "1",  # daily_requests
-            "1",  # monthly_requests
-            today,
-            month,
-            "0",  # allow_negative=False（配额检查阶段不允许负余额）
-        )
-
-        if result[0] == 0:
-            # 扣减失败
-            err = result[1]
-            if err == "INSUFFICIENT_BALANCE":
-                raise QuotaExceededError("balance", float(result[2]), float(result[3]))
-            if err == "DAILY_QUOTA_EXCEEDED":
-                raise QuotaExceededError("daily", float(result[2]), float(result[3]))
-            if err == "MONTHLY_QUOTA_EXCEEDED":
-                raise QuotaExceededError("monthly", float(result[2]), float(result[3]))
-            raise QuotaExceededError("unknown", 0, 0)
-
-        # 扣减成功，返回扣减后的配额信息
-        # result: [1, "OK", new_balance, daily_used, monthly_used, version]
-        return {
-            "balance": float(result[2]),
-            "daily_used": int(result[3]),
-            "monthly_used": int(result[4]),
-            "version": int(result[5]),
-            "daily_remaining": None,  # 需要从配额总量计算
-            "monthly_remaining": None,
-        }
-
-    async def _warm_quota_cache_safe(
-        self, ctx: WorkflowContext, redis_client, cache_key: str, tenant_id: str
-    ) -> None:
-        """
-        从 DB 预热配额 Hash，使用 SETNX 防止竞态（P2-7）
-
-        多个并发请求可能同时发现缓存未命中，使用 SETNX 确保只有一个请求执行预热。
-        """
-        full_key = cache._make_key(cache_key)
-        lock_key = f"{full_key}:warming"
-
-        # 尝试获取预热锁（5 秒过期）
-        acquired = await redis_client.set(lock_key, "1", ex=5, nx=True)
-        if not acquired:
-            # 其他请求正在预热，等待一小段时间后重试
-            await asyncio.sleep(0.05)
-            # 检查缓存是否已被预热
-            exists = await redis_client.exists(full_key)
-            if exists:
-                return
-            # 仍未预热，继续等待或降级到 DB
-            await asyncio.sleep(0.05)
-            return
-
-        try:
-            # 持有锁，执行预热
-            repo = self.quota_repo or QuotaRepository(ctx.db_session)
-            quota = await repo.get_or_create(tenant_id)
-            payload = {
-                "balance": str(quota.balance),
-                "credit_limit": str(quota.credit_limit),
-                "daily_quota": str(quota.daily_quota),
-                "daily_used": str(quota.daily_used),
-                "daily_date": (
-                    quota.daily_reset_at.isoformat()
-                    if quota.daily_reset_at
-                    else self._today_str()
-                ),
-                "monthly_quota": str(quota.monthly_quota),
-                "monthly_used": str(quota.monthly_used),
-                "monthly_month": (
-                    quota.monthly_reset_at.strftime("%Y-%m")
-                    if quota.monthly_reset_at
-                    else self._month_str()
-                ),
-                "rpm_limit": str(quota.rpm_limit) if quota.rpm_limit else "0",
-                "tpm_limit": str(quota.tpm_limit) if quota.tpm_limit else "0",
-                "version": str(quota.version),
-            }
-            await redis_client.hset(full_key, mapping=payload)
-            await redis_client.expire(full_key, 86400)
-            logger.debug("quota_cache_warmed tenant=%s", tenant_id)
-        finally:
-            # 释放预热锁
-            await redis_client.delete(lock_key)
-
-    async def _deduct_quota_db(
-        self, ctx: WorkflowContext, tenant_id: str, estimated_cost: float
-    ) -> dict:
-        """
-        DB 回退路径：直接扣减配额（P0-1）
-
-        Redis 不可用时，使用 QuotaRepository 的 check_and_deduct 方法进行扣减。
-        """
-        from decimal import Decimal
-
-        repo = self.quota_repo or QuotaRepository(ctx.db_session)
-
-        try:
-            quota = await repo.check_and_deduct(
-                tenant_id=tenant_id,
-                balance_amount=Decimal(str(estimated_cost)),
-                daily_requests=1,
-                monthly_requests=1,
-                allow_negative=False,
-                commit=False,  # 不提交，由外层事务控制
-                sync_cache=False,  # 不同步缓存（Redis 不可用）
-                invalidate_cache=False,
-            )
-
-            daily_remaining = quota.daily_quota - quota.daily_used
-            monthly_remaining = quota.monthly_quota - quota.monthly_used
-
-            return {
-                "balance": float(quota.balance),
-                "credit_limit": float(quota.credit_limit),
-                "daily_remaining": int(daily_remaining),
-                "monthly_remaining": int(monthly_remaining),
-                "daily_used": int(quota.daily_used),
-                "monthly_used": int(quota.monthly_used),
-                "version": int(quota.version),
-            }
-        except InsufficientQuotaError as e:
-            # 转换为 QuotaExceededError
-            raise QuotaExceededError(e.quota_type, e.required, e.available) from e
-
-    @staticmethod
-    def _today_str() -> str:
-        from datetime import date
-
-        return date.today().isoformat()
-
-    @staticmethod
-    def _month_str() -> str:
-        from datetime import date
-
-        d = date.today()
-        return f"{d.year:04d}-{d.month:02d}"
+    # quota_precheck / estimate_cost / _warm / _deduct_db
+    # delegated to app.services.billing_pipeline

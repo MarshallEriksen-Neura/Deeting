@@ -34,6 +34,7 @@
     "actions": {
       "title": "Quick Actions",
       "subtitle": "Common operations and alerts",
+      "viewModels": "View Available Models",
       "export": "Export CSV",
       "alerts": "Configure Alerts",
       "settings": "Billing Settings",

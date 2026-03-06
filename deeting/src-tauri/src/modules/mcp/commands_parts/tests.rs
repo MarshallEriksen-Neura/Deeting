@@ -322,58 +322,85 @@ mod tests {
 
     #[test]
     fn build_upstream_endpoint_uses_v1_default() {
+        let helper = crate::modules::providers::request_runtime::build_upstream_url_with_params;
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com", "", Some("openai"), None),
-            "https://api.example.com/v1/chat/completions"
+            helper("https://api.example.com", "", Some("openai"), None, None),
+            (
+                "https://api.example.com/v1".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint("https://api.example.com/v1", "", Some("openai"), None),
-            "https://api.example.com/v1/chat/completions"
+            helper("https://api.example.com/v1", "", Some("openai"), None, None),
+            (
+                "https://api.example.com/v1".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/",
                 "/custom/path",
                 Some("openai"),
-                None
+                None,
+                None,
             ),
-            "https://api.example.com/v1/custom/path"
+            (
+                "https://api.example.com/v1/custom/path".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/",
                 "/custom/path",
                 Some("openai"),
-                Some(false)
+                Some(false),
+                None,
             ),
-            "https://api.example.com/custom/path"
+            (
+                "https://api.example.com/custom/path".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/v1",
                 "v1/chat/completions",
                 Some("openai"),
-                None
+                None,
+                None,
             ),
-            "https://api.example.com/v1/chat/completions"
+            (
+                "https://api.example.com/v1/chat/completions".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com/v1",
                 "/v1/chat/completions",
                 Some("openai"),
-                None
+                None,
+                None,
             ),
-            "https://api.example.com/v1/chat/completions"
+            (
+                "https://api.example.com/v1/chat/completions".to_string(),
+                serde_json::json!({}),
+            )
         );
         assert_eq!(
-            build_upstream_endpoint(
+            helper(
                 "https://api.example.com",
                 "chat/completions",
                 Some("openai"),
-                Some(false)
+                Some(false),
+                None,
             ),
-            "https://api.example.com/chat/completions"
+            (
+                "https://api.example.com/chat/completions".to_string(),
+                serde_json::json!({}),
+            )
         );
     }
 

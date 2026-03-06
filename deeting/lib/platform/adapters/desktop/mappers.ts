@@ -10,6 +10,7 @@ import type {
   LocalProviderModel,
   LocalProviderPreset,
 } from "./types";
+import { derivePresetCapabilities } from "./preset-helpers"
 
 function readMetaString(meta: Record<string, unknown> | null | undefined, key: string): string | null {
   const raw = meta?.[key];
@@ -76,20 +77,22 @@ export function toHubResponse(
   presets: LocalProviderPreset[],
   instances: LocalProviderInstance[]
 ): ProviderHubResponse {
-  const cards: ProviderCard[] = presets.map((preset) => {
+  const cards: ProviderCard[] = presets
+    .filter((preset) => preset.is_active !== false)
+    .map((preset) => {
     const related = instances.filter((instance) => instance.preset_slug === preset.slug);
     return {
       slug: preset.slug,
       name: preset.name,
       provider: preset.provider,
-      category: "cloud",
+      category: preset.category ?? "cloud",
       description: null,
       icon: preset.icon ?? null,
-      theme_color: null,
+      theme_color: preset.theme_color ?? null,
       base_url: preset.base_url || null,
-      url_template: null,
+      url_template: preset.url_template ?? null,
       tags: [],
-      capabilities: [],
+      capabilities: derivePresetCapabilities(preset),
       is_popular: false,
       sort_order: 0,
       connected: related.length > 0,

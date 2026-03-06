@@ -16,18 +16,14 @@ import type {
 } from "@/lib/api/providers";
 
 import { toHubResponse, toInstanceResponse, toModelResponse } from "./mappers";
+import { derivePresetCapabilities } from "./preset-helpers"
 import type {
   LocalProviderInstance,
   LocalProviderModel,
   LocalProviderPreset,
 } from "./types";
 
-async function syncPresetsFromCloud(params?: {
-  category?: string;
-  q?: string;
-  include_public?: boolean;
-}) {
-  void params
+async function syncPresetsFromCloud() {
   const cloudPresets = await providerApi.fetchProviderPresetConfigs();
 
   const presets: LocalProviderPreset[] = cloudPresets.map((preset) => ({
@@ -64,7 +60,7 @@ async function listLocalInstances() {
 export const desktopProviderService: IProviderService = {
   getHub: async (params) => {
     try {
-      await syncPresetsFromCloud(params);
+      await syncPresetsFromCloud();
     } catch (error) {
       console.warn("[desktop-provider] sync presets from cloud failed", error);
     }
@@ -92,13 +88,13 @@ export const desktopProviderService: IProviderService = {
   },
   getDetail: async (slug) => {
     let presets = await listLocalPresets();
-    let preset = presets.find((item) => item.slug === slug);
+    let preset = presets.find((item) => item.slug === slug && item.is_active !== false);
 
     if (!preset) {
       try {
-        await syncPresetsFromCloud({ include_public: true });
+        await syncPresetsFromCloud();
         presets = await listLocalPresets();
-        preset = presets.find((item) => item.slug === slug);
+        preset = presets.find((item) => item.slug === slug && item.is_active !== false);
       } catch (error) {
         console.warn("[desktop-provider] fallback sync preset detail failed", error);
       }
@@ -116,7 +112,7 @@ export const desktopProviderService: IProviderService = {
         base_url: preset.base_url || null,
         url_template: preset.url_template ?? null,
         tags: [],
-        capabilities: [],
+        capabilities: derivePresetCapabilities(preset),
         is_popular: false,
         sort_order: 0,
         connected: false,

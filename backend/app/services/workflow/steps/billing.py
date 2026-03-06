@@ -19,6 +19,9 @@ from app.repositories.billing_repository import (
     BillingRepository,
     InsufficientBalanceError,
 )
+from app.services.billing_pipeline import calculate_cost as bp_calculate_cost
+from app.services.billing_pipeline import estimate_cost as bp_estimate_cost
+from app.services.billing_pipeline import record_and_adjust as bp_record_and_adjust
 from app.services.orchestrator.context import ErrorSource
 from app.services.orchestrator.registry import step_registry
 from app.services.workflow.steps.base import (
@@ -106,11 +109,9 @@ class BillingStep(BaseStep):
         pricing = ctx.get("routing", "pricing_config") or {}
         input_tokens = ctx.billing.input_tokens or 0
         output_tokens = ctx.billing.output_tokens or 0
-        input_cost = self._calculate_cost(input_tokens, pricing.get("input_per_1k", 0))
-        output_cost = self._calculate_cost(
-            output_tokens, pricing.get("output_per_1k", 0)
+        input_cost, output_cost, total_cost = bp_calculate_cost(
+            input_tokens, output_tokens, pricing
         )
-        total_cost = input_cost + output_cost
         currency = pricing.get("currency", "USD")
 
         ctx.billing.input_cost = input_cost
@@ -226,18 +227,18 @@ class BillingStep(BaseStep):
         if not ctx.db_session or not pricing or not ctx.tenant_id:
             return
 
-        repo = BillingRepository(ctx.db_session)
-        estimated_cost = await self._get_estimated_cost(ctx)
-        cost_diff = Decimal(str(total_cost)) - Decimal(str(estimated_cost))
+        request = ctx.get("validation", "request")
+        max_tokens = (getattr(request, "max_tokens", None) if request else None) or 4096
+        estimated_cost = bp_estimate_cost(pricing, max_tokens)
 
-        tx = await repo.record_transaction(
-            tenant_id=ctx.tenant_id,
-            amount=Decimal(str(total_cost)),
+        balance_after = await bp_record_and_adjust(
+            db_session=ctx.db_session,
+            tenant_id=str(ctx.tenant_id),
             trace_id=ctx.trace_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            input_price=Decimal(str(pricing.get("input_per_1k", 0))),
-            output_price=Decimal(str(pricing.get("output_per_1k", 0))),
+            pricing_config=pricing,
+            estimated_cost=estimated_cost,
             provider=(
                 ctx.upstream_result.provider
                 if hasattr(ctx, "upstream_result")
@@ -247,42 +248,8 @@ class BillingStep(BaseStep):
             preset_item_id=ctx.get("routing", "provider_model_id"),
             api_key_id=ctx.api_key_id,
         )
-
-        if abs(float(cost_diff)) > 0.000001:
-            await repo.adjust_redis_balance(ctx.tenant_id, cost_diff)
-            logger.debug(
-                "billing_cost_adjusted tenant=%s estimated=%s actual=%s diff=%s",
-                ctx.tenant_id,
-                estimated_cost,
-                total_cost,
-                cost_diff,
-            )
-
-        ctx.set("billing", "balance_after", float(tx.balance_after))
-
-    async def _get_estimated_cost(self, ctx: WorkflowContext) -> float:
-        """获取 QuotaCheckStep 中使用的预估费用"""
-        pricing = ctx.get("routing", "pricing_config") or {}
-        if not pricing:
-            return 0.0
-
-        request = ctx.get("validation", "request")
-        max_tokens = (getattr(request, "max_tokens", None) if request else None) or 4096
-        estimated_tokens = max_tokens * 2  # 输入+输出粗估
-
-        avg_price = (
-            float(pricing.get("input_per_1k", 0))
-            + float(pricing.get("output_per_1k", 0))
-        ) / 2
-        return (estimated_tokens / 1000) * avg_price
-
-    def _calculate_cost(self, tokens: int | None, price_per_1k: float | None) -> float:
-        if not tokens or not price_per_1k or tokens <= 0 or price_per_1k <= 0:
-            return 0.0
-        tokens_dec = Decimal(str(tokens))
-        price_dec = Decimal(str(price_per_1k))
-        cost = (tokens_dec / 1000) * price_dec
-        return float(cost.quantize(Decimal("0.000001")))
+        if balance_after is not None:
+            ctx.set("billing", "balance_after", balance_after)
 
     def _sync_affinity_savings(self, ctx: WorkflowContext) -> None:
         """

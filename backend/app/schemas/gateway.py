@@ -210,6 +210,8 @@ class ModelInfo(BaseModel):
     upstream_model_id: str | None = None
     provider_model_id: str | None = None
     input_types: list[str] | None = None
+    is_platform: bool = False
+    pricing: dict | None = None
 
 
 class ModelListResponse(BaseModel):

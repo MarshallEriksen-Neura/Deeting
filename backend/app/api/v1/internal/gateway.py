@@ -1167,21 +1167,24 @@ async def list_models(
                 "models": [],
             }
             grouped[str(inst.id)] = group
-        group["models"].append(
-            {
-                "id": m.unified_model_id or m.model_id,
-                "object": "model",
-                "owned_by": preset.provider,
-                "health_status": instance_health.get(str(inst.id), {}).get(
-                    "status", "unknown"
-                ),
-                "latency_ms": instance_health.get(str(inst.id), {}).get("latency", 0),
-                "icon": icon,
-                "upstream_model_id": m.model_id,
-                "provider_model_id": str(m.id),
-                "input_types": extra_meta.get("input_types"),
-            }
-        )
+        model_entry: dict[str, Any] = {
+            "id": m.unified_model_id or m.model_id,
+            "object": "model",
+            "owned_by": preset.provider,
+            "health_status": instance_health.get(str(inst.id), {}).get(
+                "status", "unknown"
+            ),
+            "latency_ms": instance_health.get(str(inst.id), {}).get("latency", 0),
+            "icon": icon,
+            "upstream_model_id": m.model_id,
+            "provider_model_id": str(m.id),
+            "input_types": extra_meta.get("input_types"),
+        }
+        if getattr(inst, "is_public", False):
+            model_entry["is_platform"] = True
+            if m.pricing_config:
+                model_entry["pricing"] = m.pricing_config
+        group["models"].append(model_entry)
         added_models += 1
 
     instances_data = [

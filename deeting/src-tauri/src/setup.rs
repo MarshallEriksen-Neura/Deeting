@@ -111,6 +111,32 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         start_relay_event_worker(relay_state, relay_app_handle).await;
     });
 
+    let platform_sync_state = sync_state.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let has_token = platform_sync_state
+            .mcp
+            .store
+            .get_desktop_config("auth.token")
+            .await
+            .ok()
+            .flatten()
+            .map(|t| !t.trim().is_empty())
+            .unwrap_or(false);
+        if has_token {
+            match crate::modules::providers::commands::sync_platform_models_impl(
+                &platform_sync_state,
+            )
+            .await
+            {
+                Ok(models) => {
+                    log::info!("Platform models startup sync: {} models", models.len())
+                }
+                Err(e) => log::warn!("Platform models startup sync failed: {}", e),
+            }
+        }
+    });
+
     // Setup Tray
     crate::tray::setup_tray(app)?;
 

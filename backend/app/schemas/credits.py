@@ -90,6 +90,10 @@ class CreditsPlatformModel(BaseSchema):
     display_name: str | None = None
     capabilities: list[str] = Field(default_factory=list)
     pricing: dict | None = None
+    provider_name: str = ""
+    provider_slug: str = ""
+    provider_icon: str | None = None
+    provider_color: str | None = None
 
 
 class CreditsPlatformModelsResponse(BaseSchema):
