@@ -458,10 +458,21 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let project_root = std::env::current_dir().unwrap();
-
-    // 1. Official System Skills (Bundled with source)
-    let official_skills_dir = project_root.join("packages/official-skills");
+    // 1. Official System Skills
+    //    Production: bundled as Tauri resources → $RESOURCE/official-skills/
+    //    Dev fallback: source tree → $CWD/packages/official-skills/
+    let official_skills_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|p| p.join("official-skills"))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("packages")
+                .join("official-skills")
+        });
 
     // 2. User/Dynamic Skills (Standard App Data Directory)
     let user_skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
