@@ -2,6 +2,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
     tauri::generate_handler![
         // MCP Commands
         crate::modules::mcp::commands::set_cloud_base_url,
+        crate::modules::mcp::commands::get_desktop_config,
+        crate::modules::mcp::commands::set_desktop_config,
         crate::modules::mcp::commands::list_mcp_sources,
         crate::modules::mcp::commands::create_mcp_source,
         crate::modules::mcp::commands::sync_mcp_source,
@@ -73,6 +75,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::resolve_mcp_conflict,
         crate::modules::mcp::commands::get_mcp_logs,
         crate::modules::mcp::commands::clear_mcp_logs,
+        crate::modules::mcp::commands::get_desktop_config_value,
+        crate::modules::mcp::commands::set_desktop_config_value,
         crate::modules::mcp::commands::sync_cloud_subscriptions,
         crate::modules::mcp::commands::sync_local_skill_installs_from_cloud,
         crate::modules::mcp::commands::sync_local_system_assistants,

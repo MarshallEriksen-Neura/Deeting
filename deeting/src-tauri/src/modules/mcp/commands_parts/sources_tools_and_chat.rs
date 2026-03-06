@@ -302,3 +302,34 @@ pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Resu
     state.process_manager.clear_logs(&tool_id).await;
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_desktop_config_value(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<Option<String>, String> {
+    state
+        .mcp
+        .store
+        .get_desktop_config(key.trim())
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn set_desktop_config_value(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("desktop config key is required".to_string());
+    }
+    state
+        .mcp
+        .store
+        .set_desktop_config(key, value.trim())
+        .await
+        .map_err(to_string)
+}

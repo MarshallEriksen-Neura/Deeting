@@ -345,7 +345,11 @@ export function useChatMessagingService() {
         throw new Error("Session not found")
       }
 
-      const requestMessages = buildChatMessages([...messages, userMessage], activeAssistant?.systemPrompt)
+      // Local route: Rust orchestrator injects assistant persona; skip frontend prepend to avoid duplication.
+      const requestMessages = buildChatMessages(
+        [...messages, userMessage],
+        preferLocalRoute ? undefined : activeAssistant?.systemPrompt,
+      )
       const payload = {
         model: selectedModel.id,
         provider_model_id: selectedModel.provider_model_id ?? undefined,
@@ -618,7 +622,10 @@ export function useChatMessagingService() {
         throw new Error("Session not found")
       }
 
-      const requestMessages = buildChatMessages(messagesBeforeTarget, activeAssistant?.systemPrompt)
+      const requestMessages = buildChatMessages(
+        messagesBeforeTarget,
+        preferLocalRoute ? undefined : activeAssistant?.systemPrompt,
+      )
       const payload = {
         model: selectedModel.id,
         provider_model_id: selectedModel.provider_model_id ?? undefined,

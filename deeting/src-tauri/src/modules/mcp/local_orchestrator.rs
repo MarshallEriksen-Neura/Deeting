@@ -127,6 +127,7 @@ impl<C> LocalOrchestrationEngine<C> {
 }
 fn build_desktop_local_chat_engine() -> Result<LocalOrchestrationEngine<LocalWorkflowContext>, String> {
     LocalOrchestrationEngine::new(vec![
+        Box::new(SummaryInjectionStep),
         Box::new(AssistantPromptInjectionStep),
         Box::new(SemanticMemoryInjectionStep),
         Box::new(ActivePersonaInjectionStep),
@@ -324,6 +325,48 @@ impl LocalWorkflowContext {
             self.enrich_payload(&mut payload);
             self.emit_json(payload);
         }
+    }
+}
+
+struct SummaryInjectionStep;
+
+impl LocalWorkflowStep<LocalWorkflowContext> for SummaryInjectionStep {
+    fn name(&self) -> &'static str {
+        "summary_injection"
+    }
+
+    fn execute<'a>(&'a self, ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let summary = ctx
+                .app_state
+                .mcp
+                .store
+                .get_latest_local_conversation_summary(&ctx.session_id)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let Some(summary_text) = summary else {
+                ctx.emit_status(
+                    "remember",
+                    Some("summary_injection"),
+                    "success",
+                    "summary.empty",
+                    None,
+                );
+                return Ok(());
+            };
+
+            ctx.prompt_fragments
+                .push(format!("## Conversation Summary\n{}", summary_text));
+            ctx.emit_status(
+                "remember",
+                Some("summary_injection"),
+                "success",
+                "summary.loaded",
+                Some(json!({ "chars": summary_text.len() })),
+            );
+            Ok(())
+        })
     }
 }
 
@@ -531,6 +574,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
 
     fn depends_on(&self) -> &'static [&'static str] {
         &[
+            "summary_injection",
             "assistant_prompt_injection",
             "semantic_memory_injection",
             "active_persona_hint",

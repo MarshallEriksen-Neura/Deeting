@@ -4,3 +4,4 @@ pub mod memory;
 pub mod monitor;
 pub mod providers;
 pub mod sandbox;
+pub mod relay;

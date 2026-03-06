@@ -62,7 +62,19 @@
       "unavailableTitle": "You are on Web",
       "unavailableDesc": "Configure local embedding models in the desktop app.",
       "download": "Get the desktop app",
-      "scopeBadge": "Local only"
+      "scopeBadge": "Local only",
+      "relay": {
+        "title": "Desktop Relay Gateway",
+        "description": "Configure the lightweight deeting-relay endpoint so Feishu messages can be proxied to your desktop for local execution.",
+        "securityHint": "We recommend running the relay on your own VPS or internal network with a strong shared secret.",
+        "baseUrlLabel": "Relay base URL",
+        "baseUrlHelp": "For example https://your-relay.example.com. Should match the Feishu callback configuration.",
+        "sharedSecretLabel": "Shared secret",
+        "sharedSecretHelp": "Must match RELAY_SHARED_SECRET configured for deeting-relay. Used to authenticate desktop ↔ relay traffic.",
+        "showSecret": "Show",
+        "hideSecret": "Hide",
+        "footerHint": "Used only by this desktop app, never synced to cloud."
+      }
     },
     "personal": {
       "title": "Personal Assistant Models",
@@ -87,6 +99,29 @@
       "emptyHint": "No models available yet",
       "scopeBadge": "Personal only"
     },
+    "agent": {
+      "title": "Agent Execution",
+      "description": "Configure how the AI agent behaves when executing tool calls locally.",
+      "badge": "Desktop",
+      "hint": "These settings affect the local AI orchestration engine.",
+      "maxRoundsLabel": "Max tool execution rounds",
+      "maxRoundsRange": "Range: {min}–{max}",
+      "maxRoundsHelp": "Maximum number of agentic tool-call rounds per request. If the agent exceeds this limit it will stop and return the last response.",
+      "roundsValidation": "Must be between {min} and {max}",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveSuccess": "Agent settings saved",
+      "saveFailed": "Failed to save agent settings",
+      "scopeBadge": "Desktop only"
+    },
+    "nav": {
+      "models": "Models",
+      "modelsDesc": "Embedding & secretary models",
+      "agent": "Agent",
+      "agentDesc": "Tool execution settings",
+      "relay": "Relay",
+      "relayDesc": "Desktop relay gateway"
+    },
     "actions": {
       "hint": "Cloud, desktop, and personal settings are independent. Save as needed.",
       "reset": "Reset",
@@ -100,7 +135,8 @@
       "noPermission": "You don’t have permission to save settings",
       "rebuildRecommended": "Embedding model changed. Rebuilding the local vector index is recommended.",
       "rebuildSuccess": "Local index rebuild completed (success {indexed} / failed {failed})",
-      "rebuildFailed": "Local index rebuild failed. Please try again."
+      "rebuildFailed": "Local index rebuild failed. Please try again.",
+      "desktopRelayUpdated": "Desktop relay settings updated"
     }
   }
 }

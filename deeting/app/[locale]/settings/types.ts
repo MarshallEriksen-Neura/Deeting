@@ -1,6 +1,8 @@
 export interface SettingsFormValues {
   secretaryModel: string
   desktopEmbeddingProviderModelId: string
+  relayBaseUrl: string
+  relaySharedSecret: string
 }
 
 export interface ModelGroup {

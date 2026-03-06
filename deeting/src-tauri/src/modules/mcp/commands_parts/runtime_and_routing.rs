@@ -325,31 +325,145 @@ pub(crate) async fn resolve_local_model_connection(
         return Err("no active provider model configured".to_string());
     }
     let requested = requested_model.trim().to_lowercase();
-    let selected = models
-        .iter()
-        .find(|model| {
-            if requested.is_empty() {
-                return false;
-            }
-            model.model_id.eq_ignore_ascii_case(&requested)
-                || model
-                    .unified_model_id
-                    .as_deref()
-                    .map(|value| value.eq_ignore_ascii_case(&requested))
-                    .unwrap_or(false)
-                || model
-                    .display_name
-                    .as_deref()
-                    .map(|value| value.eq_ignore_ascii_case(&requested))
-                    .unwrap_or(false)
-        })
-        .cloned()
-        .unwrap_or_else(|| models[0].clone());
+
+    // 1. Try exact name match first
+    let exact_match = models.iter().find(|model| {
+        if requested.is_empty() {
+            return false;
+        }
+        model.model_id.eq_ignore_ascii_case(&requested)
+            || model
+                .unified_model_id
+                .as_deref()
+                .map(|value| value.eq_ignore_ascii_case(&requested))
+                .unwrap_or(false)
+            || model
+                .display_name
+                .as_deref()
+                .map(|value| value.eq_ignore_ascii_case(&requested))
+                .unwrap_or(false)
+    });
+
+    // 2. If exact match found, use it directly
+    if let Some(matched) = exact_match {
+        return Ok(LocalModelConnection {
+            provider_model_id: matched.id.to_string(),
+            model_id: matched.model_id.clone(),
+        });
+    }
+
+    // 3. No exact match — use epsilon-greedy bandit selection among all active models
+    let selected = select_model_by_bandit(app_state, &models).await;
 
     Ok(LocalModelConnection {
         provider_model_id: selected.id.to_string(),
-        model_id: selected.model_id,
+        model_id: selected.model_id.clone(),
     })
+}
+
+/// Epsilon-greedy bandit selection: with probability epsilon pick a random model,
+/// otherwise pick the model with the highest success rate (successes / total_trials).
+/// Models in cooldown are excluded from selection. Falls back to models[0] if all are
+/// in cooldown or no bandit data exists.
+async fn select_model_by_bandit(
+    app_state: &AppState,
+    models: &[crate::modules::providers::types::ProviderModel],
+) -> crate::modules::providers::types::ProviderModel {
+    use crate::modules::providers::store::BANDIT_DEFAULT_SCENE;
+
+    let now_rfc3339 = chrono::Utc::now().to_rfc3339();
+    let arms = app_state
+        .providers
+        .store
+        .list_bandit_arm_states(Some(BANDIT_DEFAULT_SCENE.to_string()))
+        .await
+        .unwrap_or_default();
+
+    // Build arm lookup: arm_id → BanditArmState
+    let arm_map: std::collections::HashMap<String, &crate::modules::providers::types::BanditArmState> = arms
+        .iter()
+        .filter_map(|arm| arm.arm_id.as_ref().map(|id| (id.clone(), arm)))
+        .collect();
+
+    // Filter out models that are in cooldown
+    let eligible: Vec<&crate::modules::providers::types::ProviderModel> = models
+        .iter()
+        .filter(|m| {
+            let arm_id = m.id.to_string();
+            match arm_map.get(&arm_id) {
+                Some(arm) => match &arm.cooldown_until {
+                    Some(until) => until.as_str() <= now_rfc3339.as_str(),
+                    None => true,
+                },
+                None => true, // no bandit data yet — eligible
+            }
+        })
+        .collect();
+
+    // If all models are in cooldown, fall back to first model
+    if eligible.is_empty() {
+        return models[0].clone();
+    }
+
+    // If only one eligible model, use it
+    if eligible.len() == 1 {
+        return eligible[0].clone();
+    }
+
+    // Determine epsilon from the first arm that has config, or default 0.1
+    let epsilon = arm_map
+        .values()
+        .next()
+        .map(|arm| arm.epsilon)
+        .unwrap_or(0.1);
+
+    // Epsilon-greedy: explore with probability epsilon, exploit otherwise
+    let rand_val: f64 = {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            .hash(&mut hasher);
+        (hasher.finish() % 10000) as f64 / 10000.0
+    };
+
+    if rand_val < epsilon {
+        // Explore: pick random eligible model
+        let idx = (rand_val * 10000.0) as usize % eligible.len();
+        return eligible[idx].clone();
+    }
+
+    // Exploit: pick eligible model with highest success rate
+    eligible
+        .into_iter()
+        .max_by(|a, b| {
+            let rate_a = arm_map
+                .get(&a.id.to_string())
+                .map(|arm| {
+                    if arm.total_trials > 0 {
+                        arm.successes as f64 / arm.total_trials as f64
+                    } else {
+                        0.5 // optimistic prior for untried models
+                    }
+                })
+                .unwrap_or(0.5);
+            let rate_b = arm_map
+                .get(&b.id.to_string())
+                .map(|arm| {
+                    if arm.total_trials > 0 {
+                        arm.successes as f64 / arm.total_trials as f64
+                    } else {
+                        0.5
+                    }
+                })
+                .unwrap_or(0.5);
+            rate_a.partial_cmp(&rate_b).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .cloned()
+        .unwrap_or_else(|| models[0].clone())
 }
 
 async fn request_provider_chat_completion(
@@ -412,11 +526,34 @@ async fn request_provider_chat_completion(
         }
     }
 
+    let call_start = std::time::Instant::now();
     let response = request.send().await.map_err(to_string)?;
     let status = response.status();
+    let latency_ms = call_start.elapsed().as_millis() as f64;
     let raw_text = response.text().await.map_err(to_string)?;
     let raw_json = serde_json::from_str::<serde_json::Value>(&raw_text).ok();
-    if !status.is_success() {
+
+    let success = status.is_success();
+
+    // Record bandit feedback for this model arm
+    {
+        let arm_id = provider_model_id.to_string();
+        let feedback = crate::modules::providers::types::BanditFeedbackRequest {
+            scene: None, // uses BANDIT_DEFAULT_SCENE
+            arm_id,
+            success,
+            latency_ms: Some(latency_ms),
+            cost: None,
+            reward: Some(if success { 1.0 } else { 0.0 }),
+            routing_config: None,
+            reward_metric_type: None,
+        };
+        if let Err(err) = app_state.providers.store.record_bandit_feedback(feedback).await {
+            log::warn!("failed to record bandit feedback: {}", err);
+        }
+    }
+
+    if !success {
         return Err(extract_upstream_error_message(
             status,
             raw_json.as_ref(),
@@ -1162,14 +1299,40 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     temperature: Option<f32>,
     max_tokens: Option<u32>,
 ) -> Result<serde_json::Value, String> {
+    const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
+    let max_rounds = match app_state
+        .mcp
+        .store
+        .get_desktop_config("max_agentic_rounds")
+        .await
+    {
+        Ok(Some(val)) => val.parse::<usize>().unwrap_or(DEFAULT_MAX_AGENTIC_ROUNDS),
+        _ => DEFAULT_MAX_AGENTIC_ROUNDS,
+    };
+
     let provider_model_id = &model_connection.provider_model_id;
     let model_id = &model_connection.model_id;
     let mut orchestrated_messages = messages;
     let mut round: usize = 0;
     let mut all_tool_call_meta: Vec<serde_json::Value> = Vec::new();
+    let mut last_response: Option<serde_json::Value> = None;
 
     loop {
         round = round.saturating_add(1);
+        if round > max_rounds {
+            log::warn!(
+                "agentic loop exceeded {} rounds, returning last response",
+                max_rounds
+            );
+            let mut fallback = last_response.unwrap_or_else(|| serde_json::json!({
+                "content": "Tool execution reached the maximum number of rounds."
+            }));
+            if !all_tool_call_meta.is_empty() {
+                fallback["tool_trace_blocks"] =
+                    serde_json::Value::Array(build_local_tool_trace_blocks(&all_tool_call_meta));
+            }
+            return Ok(fallback);
+        }
         let search_query = orchestrated_messages
             .last()
             .map(|m| &m.content)
@@ -1198,6 +1361,8 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
             }
             return Ok(enriched);
         }
+
+        last_response = Some(response.clone());
 
         let (synthesized, tool_call_meta, results) =
             maybe_handle_local_code_mode_tool_calls(app, app_state, &response, chat_ctx).await;

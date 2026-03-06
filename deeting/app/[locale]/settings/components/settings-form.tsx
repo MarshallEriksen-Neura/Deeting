@@ -31,8 +31,11 @@ import {
   useUserSecretary,
 } from "@/lib/swr/use-embedding-settings"
 import { DesktopEmbeddingSettingsCard } from "./desktop-embedding-settings-card"
+import { DesktopRelaySettingsCard } from "./desktop-relay-settings-card"
+import { AgentSettingsCard } from "./agent-settings-card"
 import { PersonalSettingsCard } from "./personal-settings-card"
 import { SettingsFormActions } from "./settings-form-actions"
+import { SettingsNav, type SettingsSection } from "./settings-nav"
 import { type SettingsFormValues } from "../types"
 
 interface SettingsFormProps {
@@ -42,6 +45,7 @@ interface SettingsFormProps {
 
 export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormProps) {
   const t = useI18n("settings")
+  const [activeSection, setActiveSection] = React.useState<SettingsSection>("models")
   const {
     data: secretarySetting,
     isLoading: isLoadingSecretary,
@@ -79,6 +83,8 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
     defaultValues: {
       secretaryModel: "",
       desktopEmbeddingProviderModelId: "",
+      relayBaseUrl: "",
+      relaySharedSecret: "",
     },
   })
 
@@ -92,13 +98,42 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
     if (!isAuthenticated) return
     if (isLoadingSecretary) return
     if (isTauriRuntime && isLoadingUserEmbeddingConfig) return
+    let cancelled = false
 
-    form.reset({
-      secretaryModel: secretarySetting?.model_name ?? "",
-      desktopEmbeddingProviderModelId: isTauriRuntime
-        ? userEmbeddingConfig?.provider_model_id ?? ""
-        : "",
-    })
+    const syncSettings = async () => {
+      let relayBaseUrl = ""
+      let relaySharedSecret = ""
+
+      if (isTauriRuntime) {
+        try {
+          const { getDesktopRelaySettings } = await import("@/lib/api/desktop-relay")
+          const current = await getDesktopRelaySettings()
+          if (!cancelled) {
+            relayBaseUrl = current.relayBaseUrl ?? ""
+            relaySharedSecret = current.relaySharedSecret ?? ""
+          }
+        } catch (error) {
+          console.warn("[desktop-settings] load relay settings failed", error)
+        }
+      }
+
+      if (cancelled) return
+
+      form.reset({
+        secretaryModel: secretarySetting?.model_name ?? "",
+        desktopEmbeddingProviderModelId: isTauriRuntime
+          ? userEmbeddingConfig?.provider_model_id ?? ""
+          : "",
+        relayBaseUrl,
+        relaySharedSecret,
+      })
+    }
+
+    void syncSettings()
+
+    return () => {
+      cancelled = true
+    }
   }, [
     form,
     isAuthenticated,
@@ -166,6 +201,7 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
     setIsSaving(true)
     try {
       let desktopEmbeddingChanged = false
+      let relaySettingsChanged = false
 
       if (canEditPersonal) {
         const secretaryPayload: UserSecretaryUpdate = {}
@@ -188,6 +224,30 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
           })
           desktopEmbeddingChanged = true
         }
+
+        // Desktop relay settings (only meaningful in Tauri runtime)
+        if (isTauriRuntime) {
+          const { getDesktopRelaySettings, updateDesktopRelaySettings } = await import(
+            "@/lib/api/desktop-relay"
+          )
+          try {
+            const current = await getDesktopRelaySettings()
+            const nextBaseUrl = values.relayBaseUrl.trim()
+            const nextSecret = values.relaySharedSecret.trim()
+            if (
+              nextBaseUrl !== (current.relayBaseUrl ?? "") ||
+              nextSecret !== (current.relaySharedSecret ?? "")
+            ) {
+              await updateDesktopRelaySettings({
+                relayBaseUrl: nextBaseUrl,
+                relaySharedSecret: nextSecret,
+              })
+              relaySettingsChanged = true
+            }
+          } catch (error) {
+            console.warn("[desktop-settings] update relay settings failed", error)
+          }
+        }
       }
 
       await mutateSecretary?.()
@@ -202,6 +262,10 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
         setIsRebuildPromptOpen(true)
         toast(t("toast.rebuildRecommended"))
       }
+
+      if (relaySettingsChanged) {
+        toast(t("toast.desktopRelayUpdated"))
+      }
     } catch {
       toast.error(t("toast.saveFailed"))
     } finally {
@@ -209,67 +273,100 @@ export function SettingsForm({ isAuthenticated, isTauriRuntime }: SettingsFormPr
     }
   }
 
+  const showRebuildBanner = canEditDesktop && (hasPendingRebuild || isRebuilding || rebuildSummary)
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="flex flex-col gap-6">
-          <DesktopEmbeddingSettingsCard
-            control={form.control}
-            isTauriRuntime={isTauriRuntime}
-            canEditDesktop={canEditDesktop}
-            hasAvailableModels={hasAvailableEmbeddingModels}
-            modelGroups={embeddingModelGroups}
-            isLoadingModels={isLoadingEmbeddingModels}
-          />
-          <PersonalSettingsCard
-            control={form.control}
-            canEditPersonal={canEditPersonal}
-            hasAvailableModels={hasAvailableChatModels}
-            modelGroups={chatModelGroups}
-            isLoadingModels={isLoadingChatModels}
-          />
-          {canEditDesktop && (hasPendingRebuild || isRebuilding || rebuildSummary) && (
-            <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
-              <p className="text-sm font-semibold text-foreground">{t("desktop.rebuildTitle")}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t("desktop.rebuildDescription")}</p>
+      <div className="flex flex-col gap-0 md:flex-row md:gap-6">
+        <SettingsNav
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+          isTauriRuntime={isTauriRuntime}
+        />
 
-              {isRebuilding && (
-                <div className="mt-4 space-y-2">
-                  <Progress value={rebuildProgress?.progress ?? 0} className="h-2" />
-                  <p className="text-xs text-muted-foreground">
-                    {t(`desktop.rebuildStage.${rebuildProgress?.phase ?? "prepare"}`)} ·{" "}
-                    {rebuildProgress?.processed ?? 0}/{rebuildProgress?.total ?? 0}
-                  </p>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="min-w-0 flex-1 space-y-6">
+          {/* Models section */}
+          {activeSection === "models" && (
+            <div className="flex flex-col gap-6">
+              <DesktopEmbeddingSettingsCard
+                control={form.control}
+                isTauriRuntime={isTauriRuntime}
+                canEditDesktop={canEditDesktop}
+                hasAvailableModels={hasAvailableEmbeddingModels}
+                modelGroups={embeddingModelGroups}
+                isLoadingModels={isLoadingEmbeddingModels}
+              />
+              <PersonalSettingsCard
+                control={form.control}
+                canEditPersonal={canEditPersonal}
+                hasAvailableModels={hasAvailableChatModels}
+                modelGroups={chatModelGroups}
+                isLoadingModels={isLoadingChatModels}
+              />
+              {showRebuildBanner && (
+                <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+                  <p className="text-sm font-semibold text-foreground">{t("desktop.rebuildTitle")}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t("desktop.rebuildDescription")}</p>
+
+                  {isRebuilding && (
+                    <div className="mt-4 space-y-2">
+                      <Progress value={rebuildProgress?.progress ?? 0} className="h-2" />
+                      <p className="text-xs text-muted-foreground">
+                        {t(`desktop.rebuildStage.${rebuildProgress?.phase ?? "prepare"}`)} ·{" "}
+                        {rebuildProgress?.processed ?? 0}/{rebuildProgress?.total ?? 0}
+                      </p>
+                    </div>
+                  )}
+
+                  {!isRebuilding && hasPendingRebuild && (
+                    <div className="mt-3">
+                      <GlassButton size="sm" onClick={handleStartRebuild}>
+                        {t("desktop.rebuildAction")}
+                      </GlassButton>
+                    </div>
+                  )}
+
+                  {!isRebuilding && rebuildSummary && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {t("desktop.rebuildCompleted", {
+                        indexed: rebuildSummary.indexed,
+                        failed: rebuildSummary.failed,
+                      })}
+                    </p>
+                  )}
                 </div>
-              )}
-
-              {!isRebuilding && hasPendingRebuild && (
-                <div className="mt-3">
-                  <GlassButton size="sm" onClick={handleStartRebuild}>
-                    {t("desktop.rebuildAction")}
-                  </GlassButton>
-                </div>
-              )}
-
-              {!isRebuilding && rebuildSummary && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {t("desktop.rebuildCompleted", {
-                    indexed: rebuildSummary.indexed,
-                    failed: rebuildSummary.failed,
-                  })}
-                </p>
               )}
             </div>
           )}
-        </div>
 
-        <SettingsFormActions
-          canSave={canSave}
-          isSaving={isSaving}
-          isSubmitting={form.formState.isSubmitting}
-          onReset={() => form.reset()}
-        />
-      </form>
+          {/* Agent section */}
+          {activeSection === "agent" && (
+            <div className="flex flex-col gap-6">
+              <AgentSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
+          {/* Relay section */}
+          {activeSection === "relay" && (
+            <div className="flex flex-col gap-6">
+              <DesktopRelaySettingsCard
+                control={form.control}
+                isTauriRuntime={isTauriRuntime}
+                canEditDesktop={canEditDesktop}
+              />
+            </div>
+          )}
+
+          {activeSection !== "agent" && (
+            <SettingsFormActions
+              canSave={canSave}
+              isSaving={isSaving}
+              isSubmitting={form.formState.isSubmitting}
+              onReset={() => form.reset()}
+            />
+          )}
+        </form>
+      </div>
 
       <AlertDialog open={isRebuildPromptOpen} onOpenChange={setIsRebuildPromptOpen}>
         <AlertDialogContent>

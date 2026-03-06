@@ -62,7 +62,19 @@
       "unavailableTitle": "当前为 Web 端",
       "unavailableDesc": "请在桌面端配置本地 embedding 模型。",
       "download": "前往获取桌面端",
-      "scopeBadge": "仅本地"
+      "scopeBadge": "仅本地",
+      "relay": {
+        "title": "桌面 Relay 转发",
+        "description": "配置轻量级 deeting-relay 服务地址，让飞书消息可以通过云端中转到本地桌面执行。",
+        "securityHint": "建议在内网或自建 VPS 上部署 relay，并设置强随机密钥。",
+        "baseUrlLabel": "Relay 服务地址",
+        "baseUrlHelp": "例如 https://your-relay.example.com，需与飞书回调配置保持一致。",
+        "sharedSecretLabel": "共享密钥",
+        "sharedSecretHelp": "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致，用于桌面端与 relay 之间的鉴权。",
+        "showSecret": "显示",
+        "hideSecret": "隐藏",
+        "footerHint": "仅本机桌面端使用，不会同步到云端。"
+      }
     },
     "personal": {
       "title": "个人助手模型",
@@ -87,6 +99,29 @@
       "emptyHint": "暂无可用模型，请先添加",
       "scopeBadge": "仅个人"
     },
+    "agent": {
+      "title": "Agent 执行",
+      "description": "配置 AI Agent 在本地执行工具调用时的行为。",
+      "badge": "桌面端",
+      "hint": "这些设置影响本地 AI 编排引擎的行为。",
+      "maxRoundsLabel": "最大工具执行轮次",
+      "maxRoundsRange": "范围：{min}–{max}",
+      "maxRoundsHelp": "每次请求中 Agent 执行工具调用的最大轮次。超过此限制后 Agent 将停止并返回最后的响应。",
+      "roundsValidation": "必须在 {min} 到 {max} 之间",
+      "save": "保存",
+      "saving": "保存中...",
+      "saveSuccess": "Agent 设置已保存",
+      "saveFailed": "Agent 设置保存失败",
+      "scopeBadge": "仅桌面端"
+    },
+    "nav": {
+      "models": "模型",
+      "modelsDesc": "Embedding 与秘书模型",
+      "agent": "Agent",
+      "agentDesc": "工具执行设置",
+      "relay": "Relay",
+      "relayDesc": "桌面端中继网关"
+    },
     "actions": {
       "hint": "云端、桌面与个人设置互不影响，请按需保存。",
       "reset": "重置",
@@ -100,7 +135,8 @@
       "noPermission": "当前账号无权限保存配置",
       "rebuildRecommended": "检测到 embedding 模型变更，建议立即重建本地向量索引。",
       "rebuildSuccess": "本地索引重建完成（成功 {indexed} / 失败 {failed}）",
-      "rebuildFailed": "本地索引重建失败，请稍后重试"
+      "rebuildFailed": "本地索引重建失败，请稍后重试",
+      "desktopRelayUpdated": "桌面 Relay 配置已更新"
     }
   }
 }

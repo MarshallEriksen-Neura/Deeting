@@ -7,6 +7,7 @@ use crate::modules::memory::MemoryState;
 use crate::modules::monitor::MonitorState;
 use crate::modules::providers::ProviderState;
 use crate::modules::sandbox::SandboxState;
+use crate::modules::relay::start_relay_event_worker;
 use crate::state::AppState;
 use crate::utils::*;
 use log::warn;
@@ -102,6 +103,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             Ok(url) => log::info!("Local Gateway started successfully at {}", url),
             Err(e) => log::error!("Failed to start Local Gateway: {}", e),
         }
+    });
+
+    let relay_state = sync_state.clone();
+    tauri::async_runtime::spawn(async move {
+        start_relay_event_worker(relay_state).await;
     });
 
     // Setup Tray

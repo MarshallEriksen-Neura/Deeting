@@ -2035,6 +2035,59 @@ impl McpStore {
         })
     }
 
+    /// Returns the latest summary text for a conversation session, or None if no summary exists.
+    pub async fn get_latest_local_conversation_summary(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<String>, McpError> {
+        let normalized = session_id.trim().to_string();
+        if normalized.is_empty() {
+            return Ok(None);
+        }
+
+        let session_row = sqlx::query(
+            r#"
+            SELECT last_summary_version
+            FROM conversation_session
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let version: i64 = match session_row {
+            Some(row) => row.try_get::<i64, _>("last_summary_version").unwrap_or(0),
+            None => return Ok(None),
+        };
+        if version <= 0 {
+            return Ok(None);
+        }
+
+        let summary_row = sqlx::query(
+            r#"
+            SELECT summary_text
+            FROM conversation_summary
+            WHERE session_id = ? AND version = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized)
+        .bind(version)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(summary_row.and_then(|row| {
+            row.try_get::<String, _>("summary_text")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        }))
+    }
+
     pub async fn persist_local_conversation_summary(
         &self,
         session_id: &str,
