@@ -52,37 +52,54 @@ impl EmbeddingService {
                 ProviderError::Validation("Model instance connection not found".to_string())
             })?;
 
-        let url = build_upstream_endpoint(
-            &connection.base_url,
-            &embedding_model.upstream_path,
-            connection.protocol.as_deref(),
-            connection.auto_append_v1,
-        );
+        let instance = self
+            .store
+            .get_instance(&embedding_model.instance_id.to_string())
+            .await?
+            .ok_or_else(|| {
+                ProviderError::Validation("Model instance not found".to_string())
+            })?;
+        let preset = self.store.get_preset(&instance.preset_slug).await?;
 
-        let mut request = self.client.post(&url);
-        if let Some(key) = connection.secret_key.as_deref() {
-            request = apply_provider_auth_headers(request, connection.protocol.as_deref(), key);
-        }
+        let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
+            preset.as_ref(),
+            &instance,
+            embedding_model,
+            connection.secret_key.as_deref(),
+            "embedding",
+            serde_json::json!({
+                "model": embedding_model.model_id.clone(),
+                "input": text.to_string(),
+            }),
+            None,
+            None,
+        )
+        .map_err(ProviderError::Network)?;
 
-        let response = request
-            .json(&EmbeddingRequest {
-                model: embedding_model.model_id.clone(),
-                input: text.to_string(),
-            })
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+        let response = crate::modules::providers::request_runtime::send_prepared_json_request(
+            &self.client,
+            &prepared,
+        )
+        .await
+        .map_err(ProviderError::Network)?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        if !response.status.is_success() {
+            let status = response.status;
+            let body = response.text;
             return Err(ProviderError::Network(format!(
                 "Embedding request failed: {} - {}",
                 status, body
             )));
         }
 
-        let result: EmbeddingResponse = response.json().await.map_err(|e| {
+        let result: EmbeddingResponse = serde_json::from_value(
+            response
+                .json
+                .ok_or_else(|| {
+                    ProviderError::Network("Failed to parse embedding response JSON".to_string())
+                })?,
+        )
+        .map_err(|e| {
             ProviderError::Network(format!("Failed to parse embedding response: {}", e))
         })?;
 

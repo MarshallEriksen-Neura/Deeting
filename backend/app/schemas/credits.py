@@ -81,3 +81,16 @@ class CreditsRechargeResponse(BaseSchema):
     currency: str
     balance: float
     trace_id: str = Field(..., alias="traceId")
+
+
+# 平台模型（积分计费代理用，桌面端同步到本地「平台」实例）
+class CreditsPlatformModel(BaseSchema):
+    id: str
+    model_id: str
+    display_name: str | None = None
+    capabilities: list[str] = Field(default_factory=list)
+    pricing: dict | None = None
+
+
+class CreditsPlatformModelsResponse(BaseSchema):
+    models: list[CreditsPlatformModel]

@@ -27,18 +27,27 @@ async function syncPresetsFromCloud(params?: {
   q?: string;
   include_public?: boolean;
 }) {
-  const cloudHub = await providerApi.fetchProviderHub({
-    ...params,
-    include_public: params?.include_public ?? true,
-  });
+  void params
+  const cloudPresets = await providerApi.fetchProviderPresetConfigs();
 
-  const presets: LocalProviderPreset[] = cloudHub.providers.map((provider) => ({
-    slug: provider.slug,
-    name: provider.name,
-    provider: provider.provider,
-    base_url: provider.base_url ?? "",
-    icon: provider.icon ?? null,
-    is_active: true,
+  const presets: LocalProviderPreset[] = cloudPresets.map((preset) => ({
+    slug: preset.slug,
+    name: preset.name,
+    provider: preset.provider,
+    base_url: preset.base_url ?? "",
+    icon: preset.icon ?? null,
+    theme_color: preset.theme_color ?? null,
+    category: preset.category ?? null,
+    url_template: preset.url_template ?? null,
+    template_engine: preset.template_engine ?? null,
+    response_transform: preset.response_transform ?? null,
+    auth_type: preset.auth_type ?? null,
+    auth_config: (preset.auth_config || {}) as Record<string, unknown>,
+    default_headers: (preset.default_headers || {}) as Record<string, unknown>,
+    default_params: (preset.default_params || {}) as Record<string, unknown>,
+    capability_configs: (preset.capability_configs || {}) as Record<string, unknown>,
+    version: preset.version ?? 1,
+    is_active: preset.is_active !== false,
   }));
 
   await invoke<number>("replace_local_provider_presets", { presets });
@@ -64,20 +73,22 @@ export const desktopProviderService: IProviderService = {
 
     const hub = toHubResponse(presets, instances);
     const query = params?.q?.trim().toLowerCase();
-    if (!query) {
-      return hub;
-    }
+    const normalizedCategory = params?.category?.trim().toLowerCase();
 
     return {
       ...hub,
       providers: hub.providers.filter((provider) => {
+        const providerCategory = provider.category?.trim().toLowerCase() ?? ""
+        const matchesCategory = !normalizedCategory || providerCategory === normalizedCategory
+        if (!matchesCategory) return false
+        if (!query) return true
         return (
           provider.name.toLowerCase().includes(query) ||
           provider.slug.toLowerCase().includes(query) ||
           provider.provider.toLowerCase().includes(query)
-        );
+        )
       }),
-    };
+    }
   },
   getDetail: async (slug) => {
     let presets = await listLocalPresets();
@@ -98,12 +109,12 @@ export const desktopProviderService: IProviderService = {
         slug: preset.slug,
         name: preset.name,
         provider: preset.provider,
-        category: "cloud",
+        category: preset.category || "cloud",
         description: null,
         icon: preset.icon ?? null,
-        theme_color: null,
+        theme_color: preset.theme_color ?? null,
         base_url: preset.base_url || null,
-        url_template: null,
+        url_template: preset.url_template ?? null,
         tags: [],
         capabilities: [],
         is_popular: false,

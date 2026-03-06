@@ -2,6 +2,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+fn default_auth_type() -> String {
+    "api_key".to_string()
+}
+
+fn default_json_object() -> Value {
+    serde_json::json!({})
+}
+
+fn default_preset_version() -> i64 {
+    1
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProviderPreset {
     pub slug: String,
@@ -19,6 +31,18 @@ pub struct ProviderPreset {
     pub template_engine: Option<String>,
     #[serde(default)]
     pub response_transform: Option<Value>,
+    #[serde(default = "default_auth_type")]
+    pub auth_type: String,
+    #[serde(default = "default_json_object")]
+    pub auth_config: Value,
+    #[serde(default = "default_json_object")]
+    pub default_headers: Value,
+    #[serde(default = "default_json_object")]
+    pub default_params: Value,
+    #[serde(default = "default_json_object")]
+    pub capability_configs: Value,
+    #[serde(default = "default_preset_version")]
+    pub version: i64,
     pub is_active: bool,
 }
 
@@ -40,6 +64,9 @@ pub struct ProviderInstance {
     pub response_transform: Option<Value>,
     pub is_enabled: bool,
     pub is_local: bool,
+    /// "local" = use instance base_url + secret_key; "platform" = use cloud credits proxy.
+    #[serde(default)]
+    pub credential_source: String,
     pub credentials_ref: String,
     pub updated_at: String,
     pub created_at: String,
@@ -122,6 +149,8 @@ pub struct CreateInstanceRequest {
     pub project_id: Option<String>,
     pub region: Option<String>,
     pub is_local: Option<bool>,
+    /// "local" or "platform"; default "local".
+    pub credential_source: Option<String>,
     pub secret_key: Option<String>,
 }
 
@@ -129,6 +158,7 @@ pub struct CreateInstanceRequest {
 pub struct UpdateInstanceRequest {
     pub name: Option<String>,
     pub base_url: Option<String>,
+    pub credential_source: Option<String>,
     pub description: Option<String>,
     pub icon: Option<String>,
     pub priority: Option<i64>,

@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import { request } from "@/lib/http"
+import { modelSupportsCapability } from "@/lib/providers/model-capabilities"
 
 const MODELS_BASE = "/api/v1/internal/models"
 const AVAILABLE_MODELS_PATH = "/api/v1/models/available"
@@ -68,14 +69,17 @@ type LocalProviderModel = {
   unified_model_id?: string | null
   capabilities?: string[]
   is_active?: boolean
+  routing_config?: Record<string, unknown> | null
   extra_meta?: Record<string, unknown> | null
 }
 
 const hasCapability = (model: LocalProviderModel, capability?: string) => {
-  const target = capability?.trim().toLowerCase()
-  if (!target) return true
-  const capabilities = Array.isArray(model.capabilities) ? model.capabilities : []
-  return capabilities.some((item) => String(item || "").trim().toLowerCase() === target)
+  return modelSupportsCapability({
+    capabilities: model.capabilities,
+    routingConfig: model.routing_config ?? null,
+    extraMeta: model.extra_meta ?? null,
+    capability,
+  })
 }
 
 const markModelRoute = (

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.deps.auth import get_current_user
+from app.deps.superuser import get_current_superuser
 from app.models import User
 from app.models.bandit import BanditArmState
 from app.models.provider_instance import ProviderInstance, ProviderModel
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/admin/routing-mab", tags=["Admin - Routing MAB"])
 @router.get("/overview", response_model=RoutingOverviewResponse)
 async def routing_overview(
     scene: str = Query("router:llm"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """平台级路由决策概览"""
@@ -75,7 +75,7 @@ async def routing_overview(
 
 @router.get("/strategy", response_model=StrategyConfigResponse)
 async def routing_strategy(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """当前路由策略配置（取最常用策略）"""
@@ -114,7 +114,7 @@ async def routing_strategy(
 @router.get("/arms", response_model=ArmPerformanceResponse)
 async def routing_arms(
     scene: str = Query("router:llm"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """供应商/模型臂表现列表"""
@@ -186,7 +186,7 @@ async def routing_arms(
 
 @router.get("/skills", response_model=SkillMabResponse)
 async def routing_skills(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """技能路由 MAB 报表"""
@@ -223,7 +223,7 @@ async def routing_assistants(
         default="score_desc",
         description="排序方式：score_desc/rating_desc/trials_desc/recent_desc",
     ),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """助手路由 MAB 报表"""

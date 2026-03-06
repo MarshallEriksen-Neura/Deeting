@@ -1,5 +1,5 @@
 use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::store::utils::{now_rfc3339, row_to_instance};
+use crate::modules::providers::store::utils::{now_rfc3339, parse_json_object_text, row_to_instance};
 use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::{
     CreateInstanceRequest, ProviderInstance, UpdateInstanceRequest,
@@ -51,12 +51,18 @@ impl ProviderStore {
         let meta = "{}";
         let is_enabled = true;
 
+        let credential_source = payload
+            .credential_source
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("local");
         sqlx::query(
             "INSERT INTO provider_instances (
                 id, preset_slug, name, base_url, description, icon, priority, meta,
                 template_engine, response_transform,
-                is_enabled, is_local, credentials_ref, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                is_enabled, is_local, credential_source, credentials_ref, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&instance_id)
         .bind(&payload.preset_slug)
@@ -70,6 +76,7 @@ impl ProviderStore {
         .bind(&response_transform)
         .bind(is_enabled)
         .bind(payload.is_local.unwrap_or(false))
+        .bind(credential_source)
         .bind(&credentials_ref)
         .bind(&now)
         .bind(&now)
@@ -167,6 +174,23 @@ impl ProviderStore {
             .await?;
         }
 
+        if let Some(cs) = payload.credential_source {
+            let normalized = cs.trim();
+            let value = if normalized.is_empty() {
+                "local"
+            } else {
+                normalized
+            };
+            sqlx::query(
+                "UPDATE provider_instances SET credential_source = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(value)
+            .bind(&now)
+            .bind(instance_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+
         // meta is missing in UpdateInstanceRequest
 
         if let Some(secret_key) = payload.secret_key {
@@ -240,15 +264,46 @@ impl ProviderStore {
         &self,
         instance_id: &str,
     ) -> Result<Option<crate::modules::providers::store::ProviderConnection>, ProviderError> {
-        let instance_row = sqlx::query("SELECT base_url FROM provider_instances WHERE id = ?")
-            .bind(instance_id)
-            .fetch_optional(&self.pool)
-            .await?;
+        let instance_row = sqlx::query(
+            "SELECT base_url, meta, COALESCE(credential_source, 'local') AS credential_source FROM provider_instances WHERE id = ?",
+        )
+        .bind(instance_id)
+        .fetch_optional(&self.pool)
+        .await?;
 
-        let base_url = match instance_row {
-            Some(row) => row.try_get::<String, _>("base_url")?,
+        let (base_url, meta, credential_source) = match instance_row {
+            Some(row) => (
+                row.try_get::<String, _>("base_url")?,
+                parse_json_object_text(row.try_get::<Option<String>, _>("meta")?),
+                row.try_get::<String, _>("credential_source")
+                    .unwrap_or_else(|_| "local".to_string()),
+            ),
             None => return Ok(None),
         };
+        let protocol = meta
+            .get("protocol")
+            .and_then(|value| value.as_str())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let auto_append_v1 = meta.get("auto_append_v1").and_then(|value| match value {
+            serde_json::Value::Bool(item) => Some(*item),
+            serde_json::Value::String(item) => match item.trim().to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => Some(true),
+                "false" | "0" | "no" | "off" => Some(false),
+                _ => None,
+            },
+            _ => None,
+        });
+
+        if credential_source.eq_ignore_ascii_case("platform") {
+            return Ok(Some(crate::modules::providers::store::ProviderConnection {
+                base_url: String::new(),
+                secret_key: None,
+                protocol,
+                auto_append_v1,
+                credential_source: Some("platform".to_string()),
+            }));
+        }
 
         let cred_row = sqlx::query(
             "SELECT id, secret_key, secret_ciphertext, secret_key_version FROM provider_credentials
@@ -268,8 +323,9 @@ impl ProviderStore {
         Ok(Some(crate::modules::providers::store::ProviderConnection {
             base_url,
             secret_key,
-            protocol: None,
-            auto_append_v1: None,
+            protocol,
+            auto_append_v1,
+            credential_source: None,
         }))
     }
 }

@@ -870,6 +870,8 @@ pub async fn preview_local_assistant(
         None,
         payload.temperature,
         payload.max_tokens,
+        None,
+        None,
     )
     .await?;
     let content = response

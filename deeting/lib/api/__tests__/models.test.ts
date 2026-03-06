@@ -205,4 +205,67 @@ describe("models api", () => {
     expect(result.instances).toHaveLength(0)
     expect(mockRequest).not.toHaveBeenCalled()
   })
+
+  it("matches local capability aliases like cloud filtering", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    mockInvoke
+      .mockResolvedValueOnce([
+        {
+          id: "inst-local-video",
+          name: "Local Video Provider",
+          preset_slug: "custom",
+          icon: null,
+          is_enabled: true,
+        },
+      ] as unknown)
+      .mockResolvedValueOnce([
+        {
+          id: "pm-local-video",
+          instance_id: "inst-local-video",
+          model_id: "wanx-local",
+          unified_model_id: null,
+          capabilities: ["video"],
+          is_active: true,
+          extra_meta: {},
+        },
+      ] as unknown)
+
+    const result = await fetchChatModels({ capability: "video_generation" })
+    expect(result.instances).toHaveLength(1)
+    expect(result.instances[0]?.models[0]?.provider_model_id).toBe("pm-local-video")
+  })
+
+  it("falls back to routing and upstream capabilities for local filtering", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    mockInvoke
+      .mockResolvedValueOnce([
+        {
+          id: "inst-local-routing",
+          name: "Local Routing Provider",
+          preset_slug: "custom",
+          icon: null,
+          is_enabled: true,
+        },
+      ] as unknown)
+      .mockResolvedValueOnce([
+        {
+          id: "pm-local-routing",
+          instance_id: "inst-local-routing",
+          model_id: "wanx-routing-only",
+          unified_model_id: null,
+          capabilities: [],
+          routing_config: { capabilities: ["video_generation"] },
+          is_active: true,
+          extra_meta: { upstream_capabilities: ["video_generation"] },
+        },
+      ] as unknown)
+
+    const result = await fetchChatModels({ capability: "video_generation" })
+    expect(result.instances).toHaveLength(1)
+    expect(result.instances[0]?.models[0]?.provider_model_id).toBe("pm-local-routing")
+  })
 })

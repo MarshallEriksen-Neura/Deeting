@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.logging import logger
-from app.deps.auth import get_current_user
+from app.deps.superuser import get_current_superuser
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.schemas.provider_preset import ProviderPresetDTO, ProviderWish
 
@@ -14,10 +14,9 @@ router = APIRouter(prefix="/admin/provider-presets", tags=["ProviderPresets"])
 @router.get("", response_model=list[ProviderPresetDTO])
 async def list_presets(
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(get_current_superuser),
 ):
     repo = ProviderPresetRepository(db)
-    # Market only shows system/curated presets.
     presets = await repo.get_active_presets()
     return presets
 
@@ -25,7 +24,7 @@ async def list_presets(
 @router.post("/wishes", status_code=status.HTTP_202_ACCEPTED)
 async def wish_provider(
     payload: ProviderWish,
-    user=Depends(get_current_user),
+    user=Depends(get_current_superuser),
 ):
     """
     Submit a wish for a new provider.

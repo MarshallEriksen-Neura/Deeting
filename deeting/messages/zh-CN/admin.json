@@ -500,10 +500,21 @@
         "private": "未上架"
       },
       "form": {
-        "presetSlug": "预设 slug",
+        "presetSlug": "Provider 预设",
+        "selectPreset": "选择预设模板…",
         "instanceName": "实例名称",
+        "instanceNamePlaceholder": "例如：OpenAI 官方",
+        "description": "描述",
+        "descriptionPlaceholder": "可选，简要说明用途",
         "baseUrl": "基础地址",
-        "providerApiKey": "Provider API Key"
+        "providerApiKey": "API Key",
+        "isPublic": "立即上架（公开）",
+        "isPublicHint": "上架后用户可通过积分使用此实例的模型"
+      },
+      "dialog": {
+        "title": "新建 Provider 实例",
+        "description": "选择预设模板，填写基础地址和密钥。上架后的实例将作为平台官方模型提供给用户。",
+        "cancel": "取消"
       },
       "actions": {
         "creating": "创建中...",
@@ -524,7 +535,8 @@
           "active": "启用",
           "inputPer1k": "输入 / 1K",
           "outputPer1k": "输出 / 1K",
-          "unlockPriceCredits": "解锁价（积分）",
+          "unlockPriceCredits": "解锁价",
+          "creditsUnit": "(积分)",
           "actions": "操作"
         },
         "feedback": {

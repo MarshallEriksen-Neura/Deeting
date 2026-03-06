@@ -35,6 +35,9 @@ pub fn row_to_bandit_arm_state(row: &SqliteRow) -> Result<BanditArmState, Provid
 pub fn row_to_instance(row: &SqliteRow) -> Result<ProviderInstance, ProviderError> {
     let meta_text: Option<String> = row.try_get("meta")?;
     let response_transform_text: Option<String> = row.try_get("response_transform")?;
+    let credential_source: String = row
+        .try_get("credential_source")
+        .unwrap_or_else(|_| "local".to_string());
     Ok(ProviderInstance {
         id: Uuid::parse_str(row.try_get::<String, _>("id")?.as_str())
             .map_err(|e| ProviderError::Database(format!("invalid uuid: {e}")))?,
@@ -49,6 +52,7 @@ pub fn row_to_instance(row: &SqliteRow) -> Result<ProviderInstance, ProviderErro
         response_transform: response_transform_text.and_then(|t| serde_json::from_str(&t).ok()),
         is_enabled: row.try_get::<i64, _>("is_enabled")? != 0,
         is_local: row.try_get::<i64, _>("is_local")? != 0,
+        credential_source,
         credentials_ref: row.try_get("credentials_ref")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,

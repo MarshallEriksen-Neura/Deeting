@@ -73,6 +73,18 @@ export const CreditsAlipayOrderResponseSchema = z.object({
   expectedCreditedAmount: z.number(),
 })
 
+/** Platform model (credits-backed) for desktop sync and model picker */
+export const CreditsPlatformModelSchema = z.object({
+  id: z.string(),
+  model_id: z.string(),
+  display_name: z.string().optional(),
+  capabilities: z.array(z.string()).optional().default([]),
+  pricing: z.record(z.string(), z.unknown()).optional(),
+})
+export const CreditsPlatformModelsResponseSchema = z.object({
+  models: z.array(CreditsPlatformModelSchema),
+})
+
 // Types
 export type CreditsBalance = z.infer<typeof CreditsBalanceSchema>
 export type CreditsConsumption = z.infer<typeof CreditsConsumptionSchema>
@@ -82,6 +94,8 @@ export type CreditsTransactions = z.infer<typeof CreditsTransactionsSchema>
 export type CreditsRechargePolicy = z.infer<typeof CreditsRechargePolicySchema>
 export type CreditsRechargeResponse = z.infer<typeof CreditsRechargeResponseSchema>
 export type CreditsAlipayOrderResponse = z.infer<typeof CreditsAlipayOrderResponseSchema>
+export type CreditsPlatformModel = z.infer<typeof CreditsPlatformModelSchema>
+export type CreditsPlatformModelsResponse = z.infer<typeof CreditsPlatformModelsResponseSchema>
 
 // =====================
 // API Functions
@@ -156,4 +170,35 @@ export async function createAlipayRechargeOrder(
     data: { amount },
   })
   return CreditsAlipayOrderResponseSchema.parse(data)
+}
+
+/** Platform models available for credits (desktop sync / model picker). */
+export async function fetchCreditsModels(): Promise<CreditsPlatformModelsResponse> {
+  const data = await request<CreditsPlatformModelsResponse>({
+    url: `${CREDITS_BASE}/models`,
+    method: "GET",
+  })
+  return CreditsPlatformModelsResponseSchema.parse(data)
+}
+
+/**
+ * Credits billing proxy: POST chat completion via cloud (auth + balance + upstream).
+ * Use when request_route is "platform". See docs/plans/cloud-billing-proxy-implementation.md.
+ */
+export async function createCreditsChatCompletion(payload: {
+  model: string
+  messages: Array<{ role: string; content: string }>
+  stream?: boolean
+  temperature?: number
+  max_tokens?: number
+  trace_id?: string
+  session_id?: string
+  tools?: unknown
+}): Promise<Record<string, unknown>> {
+  const data = await request<Record<string, unknown>>({
+    url: `${CREDITS_BASE}/chat/completions`,
+    method: "POST",
+    data: payload,
+  })
+  return data
 }

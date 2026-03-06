@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -176,6 +177,92 @@ async fn quick_add_models_respects_forced_capability_alias() {
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].capabilities, vec!["image_generation".to_string()]);
     assert_eq!(models[0].upstream_path, "v1/images/generations");
+}
+
+#[tokio::test]
+async fn normalize_model_capability_data_backfills_routing_and_upstream_caps() {
+    let store = init_store().await;
+    let instance_id = insert_instance(&store).await;
+    let model_id = Uuid::new_v4().to_string();
+    let now = now_rfc3339().expect("time");
+
+    sqlx::query(
+        "INSERT INTO provider_models (
+            id, instance_id, capabilities, model_id, display_name, upstream_path,
+            pricing_config, limit_config, tokenizer_config, routing_config,
+            config_override, source, extra_meta, weight, priority,
+            is_active, synced_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, '{}', '{}', '{}', ?, '{}', 'manual', ?, 100, 0, 1, ?, ?, ?)",
+    )
+    .bind(&model_id)
+    .bind(&instance_id)
+    .bind("[]")
+    .bind("wanx-routing-only")
+    .bind("Wanx Routing Only")
+    .bind("v1/videos/generations")
+    .bind(r#"{"capabilities":["video"]}"#)
+    .bind(r#"{"upstream_capabilities":["video_generation"]}"#)
+    .bind(&now)
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .expect("insert model");
+
+    store
+        .normalize_model_capability_data()
+        .await
+        .expect("normalize capabilities");
+
+    let models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list models");
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].capabilities, vec!["video_generation".to_string()]);
+}
+
+#[tokio::test]
+async fn update_model_mirrors_routing_capabilities_to_capabilities() {
+    let store = init_store().await;
+    let instance_id = insert_instance(&store).await;
+
+    store
+        .quick_add_models(&instance_id, vec!["gpt-4o-mini".to_string()], None)
+        .await
+        .expect("quick add models");
+
+    let models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list models");
+    let model = models.first().expect("model available");
+
+    let updated = store
+        .update_model(
+            &model.id,
+            crate::modules::providers::types::ProviderModelUpdateRequest {
+                display_name: None,
+                is_active: None,
+                capabilities: None,
+                unified_model_id: None,
+                upstream_path: None,
+                weight: None,
+                priority: None,
+                pricing_config: None,
+                limit_config: None,
+                tokenizer_config: None,
+                routing_config: Some(json!({ "capabilities": ["video"] })),
+                config_override: None,
+                source: None,
+                extra_meta: None,
+            },
+        )
+        .await
+        .expect("update model");
+
+    assert_eq!(updated.capabilities, vec!["video_generation".to_string()]);
+    assert_eq!(updated.routing_config["capabilities"][0], json!("video_generation"));
 }
 
 #[tokio::test]

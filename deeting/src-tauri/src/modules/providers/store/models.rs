@@ -6,9 +6,11 @@ use crate::modules::providers::store::{
     TEXT_TO_SPEECH_UPSTREAM_PATH, VIDEO_GENERATION_CAPABILITY, VIDEO_GENERATION_UPSTREAM_PATH,
 };
 use crate::modules::providers::store::utils::{
-    normalize_source, normalize_upstream_path, now_rfc3339, row_to_model,
+    normalize_source, normalize_upstream_path, now_rfc3339, parse_json_object_text, row_to_model,
 };
 use crate::modules::providers::types::{ProviderModel, ProviderModelUpdateRequest};
+use serde_json::Value;
+use sqlx::Row;
 use uuid::Uuid;
 
 impl ProviderStore {
@@ -55,6 +57,59 @@ impl ProviderStore {
             models.push(row_to_model(&row)?);
         }
         Ok(models)
+    }
+
+    pub async fn normalize_model_capability_data(&self) -> Result<(), ProviderError> {
+        let rows = sqlx::query(
+            "SELECT id, model_id, capabilities, routing_config, extra_meta FROM provider_models",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut tx = self.pool.begin().await?;
+        for row in rows {
+            let id: String = row.try_get("id")?;
+            let model_id: String = row.try_get("model_id")?;
+            let caps_text: String = row.try_get("capabilities")?;
+            let routing_config = parse_json_object_text(row.try_get::<Option<String>, _>("routing_config")?);
+            let extra_meta = parse_json_object_text(row.try_get::<Option<String>, _>("extra_meta")?);
+
+            let mut merged_caps: Vec<String> =
+                serde_json::from_str::<Vec<String>>(&caps_text).unwrap_or_default();
+            if let Some(routing_caps) = routing_config.get("capabilities").and_then(|value| value.as_array()) {
+                merged_caps.extend(
+                    routing_caps
+                        .iter()
+                        .filter_map(|value| value.as_str().map(|item| item.to_string())),
+                );
+            }
+            if let Some(upstream_caps) = extra_meta
+                .get("upstream_capabilities")
+                .and_then(|value| value.as_array())
+            {
+                merged_caps.extend(
+                    upstream_caps
+                        .iter()
+                        .filter_map(|value| value.as_str().map(|item| item.to_string())),
+                );
+            }
+
+            let normalized = normalize_capabilities(merged_caps.iter().map(|item| item.as_str()), None);
+            let final_caps = if normalized.is_empty() {
+                guess_capabilities(&model_id)
+            } else {
+                normalized
+            };
+
+            sqlx::query("UPDATE provider_models SET capabilities = ? WHERE id = ?")
+                .bind(serde_json::to_string(&final_caps).unwrap_or_else(|_| "[]".to_string()))
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
     }
 
     pub async fn sync_models(
@@ -191,12 +246,20 @@ impl ProviderStore {
         }
 
         if let Some(capabilities) = payload.capabilities {
+            if capabilities.is_empty() {
+                // Keep existing behavior aligned with cloud: ignore empty capability updates.
+            } else {
+            let normalized = normalize_capabilities(
+                capabilities.iter().map(|item| item.as_str()),
+                Some(CHAT_CAPABILITY),
+            );
             sqlx::query("UPDATE provider_models SET capabilities = ?, updated_at = ? WHERE id = ?")
-                .bind(serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()))
+                .bind(serde_json::to_string(&normalized).unwrap_or_else(|_| "[]".to_string()))
                 .bind(&now)
                 .bind(model_id.to_string())
                 .execute(&mut *tx)
                 .await?;
+            }
         }
 
         if let Some(upstream_path) = payload.upstream_path {
@@ -243,7 +306,33 @@ impl ProviderStore {
             .await?;
         }
 
-        if let Some(routing_config) = payload.routing_config {
+        if let Some(mut routing_config) = payload.routing_config {
+            let normalized_from_routing = routing_config
+                .get("capabilities")
+                .and_then(|value| value.as_array())
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(|value| value.as_str().map(|item| item.to_string()))
+                        .collect::<Vec<String>>()
+                })
+                .filter(|values| !values.is_empty())
+                .map(|values| normalize_capabilities(values.iter().map(|item| item.as_str()), Some(CHAT_CAPABILITY)));
+
+            if let Some(normalized_caps) = normalized_from_routing.as_ref() {
+                if let Some(object) = routing_config.as_object_mut() {
+                    object.insert(
+                        "capabilities".to_string(),
+                        Value::Array(
+                            normalized_caps
+                                .iter()
+                                .map(|item| Value::String(item.clone()))
+                                .collect(),
+                        ),
+                    );
+                }
+            }
+
             sqlx::query(
                 "UPDATE provider_models SET routing_config = ?, updated_at = ? WHERE id = ?",
             )
@@ -252,6 +341,15 @@ impl ProviderStore {
             .bind(model_id.to_string())
             .execute(&mut *tx)
             .await?;
+
+            if let Some(normalized_caps) = normalized_from_routing {
+                sqlx::query("UPDATE provider_models SET capabilities = ?, updated_at = ? WHERE id = ?")
+                    .bind(serde_json::to_string(&normalized_caps).unwrap_or_else(|_| "[]".to_string()))
+                    .bind(&now)
+                    .bind(model_id.to_string())
+                    .execute(&mut *tx)
+                    .await?;
+            }
         }
 
         if let Some(config_override) = payload.config_override {
@@ -359,6 +457,28 @@ fn normalize_capability(capability: Option<&str>) -> Option<String> {
     };
 
     Some(canonical.to_string())
+}
+
+fn normalize_capabilities<'a>(
+    capabilities: impl IntoIterator<Item = &'a str>,
+    default: Option<&str>,
+) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for capability in capabilities {
+        let canonical = normalize_capability(Some(capability));
+        if let Some(canonical) = canonical {
+            if !normalized.contains(&canonical) {
+                normalized.push(canonical);
+            }
+        }
+    }
+    if !normalized.is_empty() {
+        return normalized;
+    }
+    default
+        .and_then(|value| normalize_capability(Some(value)))
+        .map(|value| vec![value])
+        .unwrap_or_default()
 }
 
 fn guess_capabilities(model_id: &str) -> Vec<String> {

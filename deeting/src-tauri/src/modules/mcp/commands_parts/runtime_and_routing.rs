@@ -466,6 +466,86 @@ async fn select_model_by_bandit(
         .unwrap_or_else(|| models[0].clone())
 }
 
+async fn request_platform_chat_via_proxy(
+    app_state: &AppState,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tools: Option<serde_json::Value>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    trace_id: Option<&str>,
+    session_id: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let base_url = app_state.mcp.cloud_base_url.read().await.clone();
+    let base_url = base_url.trim().trim_end_matches('/');
+    if base_url.is_empty() {
+        return Err("cloud API base URL not configured; set api.base_url for platform models".to_string());
+    }
+    let url = format!("{}/api/v1/credits/chat/completions", base_url);
+
+    let mut body = serde_json::json!({
+        "model": model_id.trim(),
+        "messages": messages,
+        "stream": false
+    });
+    if let Some(t) = temperature {
+        body["temperature"] = serde_json::json!(t);
+    }
+    if let Some(m) = max_tokens {
+        body["max_tokens"] = serde_json::json!(m);
+    }
+    if let Some(ref t) = tools {
+        body["tools"] = t.clone();
+    }
+    if let Some(id) = trace_id.filter(|s| !s.trim().is_empty()) {
+        body["trace_id"] = serde_json::json!(id);
+    }
+    if let Some(id) = session_id.filter(|s| !s.trim().is_empty()) {
+        body["session_id"] = serde_json::json!(id);
+    }
+
+    let mut request = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .header("Content-Type", "application/json");
+
+    if let Some(token) = app_state
+        .mcp
+        .store
+        .get_desktop_config("auth.token")
+        .await
+        .ok()
+        .flatten()
+    {
+        let token = token.trim();
+        if !token.is_empty() {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+    }
+
+    let response = request.send().await.map_err(to_string)?;
+    let status = response.status();
+    let raw_text = response.text().await.map_err(to_string)?;
+    let raw_json = serde_json::from_str::<serde_json::Value>(&raw_text).ok();
+
+    if !status.is_success() {
+        return Err(extract_upstream_error_message(
+            status,
+            raw_json.as_ref(),
+            &raw_text,
+        ));
+    }
+
+    let out = raw_json.ok_or_else(|| {
+        format!(
+            "credits proxy returned non-json (status={}): {}",
+            status.as_u16(),
+            truncate_upstream_body(&raw_text, 300)
+        )
+    })?;
+    Ok(normalize_chat_completion_response(out))
+}
+
 async fn request_provider_chat_completion(
     app_state: &AppState,
     provider_model_id: &str,
@@ -474,6 +554,8 @@ async fn request_provider_chat_completion(
     tools: Option<serde_json::Value>,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
+    trace_id: Option<&str>,
+    session_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
     let model = app_state
@@ -498,14 +580,43 @@ async fn request_provider_chat_completion(
         .map_err(to_string)?
         .ok_or_else(|| "provider instance connection not found".to_string())?;
 
-    let endpoint = build_upstream_endpoint(
-        &connection.base_url,
-        &model.upstream_path,
-        connection.protocol.as_deref(),
-        connection.auto_append_v1,
-    );
+    if connection
+        .credential_source
+        .as_deref()
+        .map(|s| s.eq_ignore_ascii_case("platform"))
+        .unwrap_or(false)
+    {
+        let effective_model = if model_id.trim().is_empty() {
+            model.model_id.as_str()
+        } else {
+            model_id
+        };
+        return request_platform_chat_via_proxy(
+            app_state,
+            effective_model,
+            messages,
+            tools,
+            temperature,
+            max_tokens,
+            trace_id,
+            session_id,
+        )
+        .await;
+    }
+
+    let effective_model = if model_id.trim().is_empty() {
+        model.model_id.clone()
+    } else {
+        model_id.to_string()
+    };
+    let preset = app_state
+        .providers
+        .store
+        .get_preset(&instance.preset_slug)
+        .await
+        .map_err(to_string)?;
     let mut body = serde_json::json!({
-        "model": if model_id.trim().is_empty() { model.model_id.clone() } else { model_id.to_string() },
+        "model": effective_model,
         "messages": messages,
         "stream": false
     });
@@ -515,23 +626,27 @@ async fn request_provider_chat_completion(
     if let Some(max_tokens) = max_tokens {
         body["max_tokens"] = serde_json::json!(max_tokens);
     }
-    if let Some(tools) = tools {
-        body["tools_catalog"] = tools;
-    }
-
-    let mut request = reqwest::Client::new().post(&endpoint).json(&body);
-    if let Some(secret_key) = connection.secret_key.as_deref() {
-        if !secret_key.trim().is_empty() {
-            request = apply_provider_auth_headers(request, connection.protocol.as_deref(), secret_key);
-        }
-    }
+    let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
+        preset.as_ref(),
+        &instance,
+        &model,
+        connection.secret_key.as_deref(),
+        "chat",
+        body,
+        tools.as_ref(),
+        trace_id,
+    )?;
 
     let call_start = std::time::Instant::now();
-    let response = request.send().await.map_err(to_string)?;
-    let status = response.status();
+    let response = crate::modules::providers::request_runtime::send_prepared_json_request(
+        &reqwest::Client::new(),
+        &prepared,
+    )
+    .await?;
+    let status = response.status;
     let latency_ms = call_start.elapsed().as_millis() as f64;
-    let raw_text = response.text().await.map_err(to_string)?;
-    let raw_json = serde_json::from_str::<serde_json::Value>(&raw_text).ok();
+    let raw_text = response.text;
+    let raw_json = response.json;
 
     let success = status.is_success();
 
@@ -568,18 +683,9 @@ async fn request_provider_chat_completion(
         )
     })?;
 
-    let template_engine = instance.template_engine.as_deref().unwrap_or_else(|| {
-        connection.protocol.as_deref().unwrap_or("openai_compat")
-    });
-    let default_response_transform = serde_json::json!({});
-    let response_transform = instance
-        .response_transform
-        .as_ref()
-        .unwrap_or(&default_response_transform);
-
     let transformed = app_state.providers.transformer.transform(
-        template_engine,
-        response_transform,
+        prepared.template_engine.as_str(),
+        &prepared.response_transform,
         raw,
         status.as_u16(),
     );
@@ -1310,6 +1416,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         _ => DEFAULT_MAX_AGENTIC_ROUNDS,
     };
 
+    let trace_id = Uuid::new_v4().to_string();
+    let session_id = chat_ctx.session_id.clone();
+
     let provider_model_id = &model_connection.provider_model_id;
     let model_id = &model_connection.model_id;
     let mut orchestrated_messages = messages;
@@ -1348,6 +1457,8 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
             Some(tools),
             temperature,
             max_tokens,
+            Some(trace_id.as_str()),
+            Some(session_id.as_str()),
         )
             .await
             .map_err(to_string)?;

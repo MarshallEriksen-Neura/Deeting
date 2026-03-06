@@ -13,6 +13,7 @@ import { InstanceDashboard } from "./instance-dashboard"
 import { FilterLens } from "./filter-lens"
 import { TestDrawer } from "./test-drawer"
 import type { ProviderModelResponse, ProviderModelUpdate } from "@/lib/api/providers"
+import { resolveModelCapabilities } from "@/lib/providers/model-capabilities"
 import type { ProviderModel, ModelCapability, ModelFilterState, ProviderStatus } from "./types"
 import { getPriceTier } from "./types"
 import { toast } from "sonner"
@@ -152,21 +153,12 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
 
       const extraMeta = (m.extra_meta || {}) as Record<string, unknown>
       const routingConfig = (m.routing_config || {}) as Record<string, unknown>
-      const capabilitiesFromRouting = Array.isArray(routingConfig.capabilities)
-        ? routingConfig.capabilities
-        : []
-      const capabilitiesFromMeta = Array.isArray(extraMeta.upstream_capabilities)
-        ? extraMeta.upstream_capabilities
-        : []
-      const capabilitiesFromPayload = Array.isArray(m.capabilities) ? m.capabilities : []
-      const capabilities: ModelCapability[] =
-        capabilitiesFromRouting.length > 0
-          ? (capabilitiesFromRouting as ModelCapability[])
-          : capabilitiesFromPayload.length > 0
-            ? (capabilitiesFromPayload as ModelCapability[])
-            : capabilitiesFromMeta.length > 0
-              ? (capabilitiesFromMeta as ModelCapability[])
-              : ["chat"]
+      const capabilities = resolveModelCapabilities({
+        capabilities: m.capabilities,
+        routingConfig,
+        extraMeta,
+        defaultCapability: "chat",
+      }) as ModelCapability[]
 
       const tokenizerConfig = (m.tokenizer_config || {}) as Record<string, unknown>
       const rawMeta = (extraMeta.raw || {}) as Record<string, unknown>

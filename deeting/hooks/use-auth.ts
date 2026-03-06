@@ -10,6 +10,7 @@ import {
   type TokenPair,
 } from "@/lib/api/auth"
 import { authService } from "@/lib/api/auth.service"
+import { clearAuthTokenForDesktop, persistAuthTokenForDesktop } from "@/lib/api/desktop-config"
 import { ApiError, clearAuthToken } from "@/lib/http"
 
 type SendCodeVariables = SendLoginCodeRequest
@@ -39,6 +40,7 @@ export function useAuthService() {
     (tokens: TokenPair) => {
       setTokenPair(tokens)
       setSession({ accessToken: tokens.access_token, tokenType: tokens.token_type })
+      persistAuthTokenForDesktop(tokens.access_token)
     },
     [setSession, setTokenPair]
   )
@@ -67,6 +69,7 @@ export function useAuthService() {
     clearSession()
     setTokenPair(null)
     clearAuthToken()
+    clearAuthTokenForDesktop()
   }, [clearSession, setTokenPair])
 
   return {

@@ -22,6 +22,8 @@ pub struct ProviderConnection {
     pub secret_key: Option<String>,
     pub protocol: Option<String>,
     pub auto_append_v1: Option<bool>,
+    /// When Some("platform"), caller should use cloud credits proxy instead of direct upstream.
+    pub credential_source: Option<String>,
 }
 
 pub struct ProviderStore {
@@ -228,6 +230,12 @@ impl ProviderStore {
             "provider_instances",
             "is_enabled",
             "ALTER TABLE provider_instances ADD COLUMN is_enabled BOOLEAN NOT NULL DEFAULT 1",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_instances",
+            "credential_source",
+            "ALTER TABLE provider_instances ADD COLUMN credential_source TEXT NOT NULL DEFAULT 'local'",
         )
         .await?;
         self.ensure_column(
@@ -505,6 +513,7 @@ impl ProviderStore {
         .execute(&self.pool)
         .await?;
 
+        self.normalize_model_capability_data().await?;
         self.migrate_legacy_secrets_to_keychain().await?;
 
         Ok(())

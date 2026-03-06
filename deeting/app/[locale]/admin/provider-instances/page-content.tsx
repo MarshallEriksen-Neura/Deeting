@@ -11,12 +11,25 @@ import {
   Sparkline,
   type ColumnDef,
 } from "@/components/admin"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { GlassCard } from "@/components/ui/glass-card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import {
   createAdminProviderInstance,
   fetchAdminProviderModels,
   fetchAdminProviderInstances,
+  fetchAdminProviderPresets,
   syncAdminProviderModels,
   updateAdminProviderInstance,
   updateAdminProviderModel,
@@ -50,11 +63,16 @@ export function PageContent() {
   const [searchQuery, setSearchQuery] = useState("")
   const [healthFilter, setHealthFilter] = useState("")
   const [enabledFilter, setEnabledFilter] = useState("")
+
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [presetSlug, setPresetSlug] = useState("")
   const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
   const [baseUrl, setBaseUrl] = useState("")
   const [apiKey, setApiKey] = useState("")
+  const [isPublicOnCreate, setIsPublicOnCreate] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
   const [feedback, setFeedback] = useState<string | null>(null)
   const [selectedInstance, setSelectedInstance] = useState<ProviderInstanceItem | null>(null)
   const [modelFeedback, setModelFeedback] = useState<string | null>(null)
@@ -68,6 +86,8 @@ export function PageContent() {
     isLoading,
     mutate,
   } = useSWR("/api/v1/admin/provider-instances", fetchAdminProviderInstances)
+
+  const { data: presets } = useSWR("/api/v1/admin/provider-presets", fetchAdminProviderPresets)
 
   const {
     data: models,
@@ -212,6 +232,26 @@ export function PageContent() {
     }
   }
 
+  const resetCreateForm = () => {
+    setPresetSlug("")
+    setName("")
+    setDescription("")
+    setBaseUrl("")
+    setApiKey("")
+    setIsPublicOnCreate(false)
+  }
+
+  const handlePresetSelect = (slug: string) => {
+    setPresetSlug(slug)
+    const preset = (presets ?? []).find((p) => p.slug === slug)
+    if (preset?.base_url) {
+      setBaseUrl(preset.base_url)
+    }
+    if (preset?.name && !name.trim()) {
+      setName(preset.name)
+    }
+  }
+
   const handleCreateInstance = async () => {
     if (!presetSlug.trim() || !name.trim() || !baseUrl.trim() || !apiKey.trim() || isSubmitting) {
       return
@@ -222,13 +262,13 @@ export function PageContent() {
       const created = await createAdminProviderInstance({
         preset_slug: presetSlug.trim(),
         name: name.trim(),
+        description: description.trim() || undefined,
         base_url: baseUrl.trim(),
         api_key: apiKey.trim(),
+        is_public: isPublicOnCreate,
       })
-      setPresetSlug("")
-      setName("")
-      setBaseUrl("")
-      setApiKey("")
+      resetCreateForm()
+      setCreateDialogOpen(false)
       setFeedback(t("feedback.created", { name: created.name }))
       await mutate()
     } catch (createError) {
@@ -404,44 +444,131 @@ export function PageContent() {
     },
   ]
 
+  const activePresets = useMemo(
+    () => (presets ?? []).filter((p) => p.is_active),
+    [presets],
+  )
+
+  const canSubmitCreate =
+    presetSlug.trim() && name.trim() && baseUrl.trim() && apiKey.trim() && !isSubmitting
+
   return (
     <>
-      <GlassCard padding="default" hover="none">
-        <div className="grid gap-3 md:grid-cols-5">
-          <input
-            value={presetSlug}
-            onChange={(event) => setPresetSlug(event.target.value)}
-            placeholder={t("form.presetSlug")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
-          />
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("form.instanceName")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
-          />
-          <input
-            value={baseUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder={t("form.baseUrl")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
-          />
-          <input
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder={t("form.providerApiKey")}
-            className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
-          />
-          <button
-            onClick={() => void handleCreateInstance()}
-            disabled={!presetSlug.trim() || !name.trim() || !baseUrl.trim() || !apiKey.trim() || isSubmitting}
-            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSubmitting ? t("actions.creating") : t("actions.addInstance")}
-          </button>
-        </div>
-        {feedback && <p className="mt-2 text-xs text-[var(--muted)]">{feedback}</p>}
-      </GlassCard>
+      <div className="flex items-center justify-between gap-3">
+        <Dialog
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open)
+            if (!open) resetCreateForm()
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button>{t("actions.addInstance")}</Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("dialog.title")}</DialogTitle>
+              <DialogDescription>{t("dialog.description")}</DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-2">
+              <div className="grid gap-2">
+                <Label htmlFor="create-preset">{t("form.presetSlug")}</Label>
+                <select
+                  id="create-preset"
+                  value={presetSlug}
+                  onChange={(e) => handlePresetSelect(e.target.value)}
+                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                >
+                  <option value="">{t("form.selectPreset")}</option>
+                  {activePresets.map((p) => (
+                    <option key={p.slug} value={p.slug ?? ""}>
+                      {p.name || p.slug} {p.category ? `(${p.category})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="create-name">{t("form.instanceName")}</Label>
+                <Input
+                  id="create-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={t("form.instanceNamePlaceholder")}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="create-desc">{t("form.description")}</Label>
+                <Input
+                  id="create-desc"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={t("form.descriptionPlaceholder")}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="create-baseurl">{t("form.baseUrl")}</Label>
+                <Input
+                  id="create-baseurl"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://api.openai.com"
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="create-apikey">{t("form.providerApiKey")}</Label>
+                <Input
+                  id="create-apikey"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..."
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-white/10 px-3 py-2">
+                <div>
+                  <Label htmlFor="create-public" className="cursor-pointer">
+                    {t("form.isPublic")}
+                  </Label>
+                  <p className="text-muted-foreground text-xs">{t("form.isPublicHint")}</p>
+                </div>
+                <Switch
+                  id="create-public"
+                  checked={isPublicOnCreate}
+                  onCheckedChange={setIsPublicOnCreate}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreateDialogOpen(false)
+                  resetCreateForm()
+                }}
+              >
+                {t("dialog.cancel")}
+              </Button>
+              <Button
+                onClick={() => void handleCreateInstance()}
+                disabled={!canSubmitCreate}
+              >
+                {isSubmitting ? t("actions.creating") : t("actions.addInstance")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {feedback && (
+          <p className="text-muted-foreground text-xs">{feedback}</p>
+        )}
+      </div>
 
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
@@ -482,15 +609,16 @@ export function PageContent() {
               : t("empty.noData")
         }
         rowActions={(row) => (
-          <button
+          <Button
+            size="sm"
+            variant="outline"
             onClick={(event) => {
               event.stopPropagation()
               handleOpenModelsPanel(row)
             }}
-            className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-white/15 px-2 text-xs text-[var(--foreground)] transition-colors hover:bg-white/10"
           >
             {t("actions.manageModels")}
-          </button>
+          </Button>
         )}
       />
 
@@ -504,19 +632,20 @@ export function PageContent() {
               <p className="text-xs text-[var(--muted)]">{selectedInstance.base_url}</p>
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <Button
+                size="sm"
                 onClick={() => void handleSyncModels()}
                 disabled={isSyncingModels}
-                className="inline-flex h-8 cursor-pointer items-center rounded-lg bg-[var(--primary)] px-3 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSyncingModels ? t("models.actions.syncing") : t("models.actions.sync")}
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={handleCloseModelsPanel}
-                className="inline-flex h-8 cursor-pointer items-center rounded-lg border border-white/15 px-3 text-xs text-[var(--foreground)] transition-colors hover:bg-white/10"
               >
                 {t("models.actions.close")}
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -528,9 +657,18 @@ export function PageContent() {
                 <tr className="border-b border-white/10 text-left text-xs text-[var(--muted)]">
                   <th className="px-2 py-2">{t("models.table.model")}</th>
                   <th className="px-2 py-2">{t("models.table.active")}</th>
-                  <th className="px-2 py-2">{t("models.table.inputPer1k")}</th>
-                  <th className="px-2 py-2">{t("models.table.outputPer1k")}</th>
-                  <th className="px-2 py-2">{t("models.table.unlockPriceCredits")}</th>
+                  <th className="px-2 py-2">
+                    {t("models.table.inputPer1k")}
+                    <span className="ml-1 font-normal text-[var(--muted)]">{t("models.table.creditsUnit")}</span>
+                  </th>
+                  <th className="px-2 py-2">
+                    {t("models.table.outputPer1k")}
+                    <span className="ml-1 font-normal text-[var(--muted)]">{t("models.table.creditsUnit")}</span>
+                  </th>
+                  <th className="px-2 py-2">
+                    {t("models.table.unlockPriceCredits")}
+                    <span className="ml-1 font-normal text-[var(--muted)]">{t("models.table.creditsUnit")}</span>
+                  </th>
                   <th className="px-2 py-2 text-right">{t("models.table.actions")}</th>
                 </tr>
               </thead>
@@ -574,43 +712,44 @@ export function PageContent() {
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <input
+                          <Input
                             value={draft.inputPer1k}
                             onChange={(event) => {
                               handleModelStateChange(model.id, { inputPer1k: event.target.value })
                             }}
-                            className="h-8 w-full min-w-[120px] rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+                            className="h-8 min-w-[100px] text-xs"
                             placeholder="0"
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <input
+                          <Input
                             value={draft.outputPer1k}
                             onChange={(event) => {
                               handleModelStateChange(model.id, { outputPer1k: event.target.value })
                             }}
-                            className="h-8 w-full min-w-[120px] rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+                            className="h-8 min-w-[100px] text-xs"
                             placeholder="0"
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <input
+                          <Input
                             value={draft.unlockPriceCredits}
                             onChange={(event) => {
                               handleModelStateChange(model.id, { unlockPriceCredits: event.target.value })
                             }}
-                            className="h-8 w-full min-w-[120px] rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-[var(--foreground)] focus:border-[var(--primary)]/50 focus:outline-none"
+                            className="h-8 min-w-[100px] text-xs"
                             placeholder="0"
                           />
                         </td>
                         <td className="px-2 py-2 text-right">
-                          <button
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => void handleSaveModel(model)}
                             disabled={draft.saving}
-                            className="inline-flex h-7 cursor-pointer items-center rounded-lg border border-emerald-300/30 px-2 text-xs text-emerald-200 transition-colors hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {draft.saving ? t("models.actions.saving") : t("models.actions.save")}
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     )

@@ -500,10 +500,21 @@
         "private": "Hidden"
       },
       "form": {
-        "presetSlug": "Preset slug",
+        "presetSlug": "Provider Preset",
+        "selectPreset": "Select a preset…",
         "instanceName": "Instance name",
+        "instanceNamePlaceholder": "e.g. OpenAI Official",
+        "description": "Description",
+        "descriptionPlaceholder": "Optional, brief usage note",
         "baseUrl": "Base URL",
-        "providerApiKey": "Provider API Key"
+        "providerApiKey": "API Key",
+        "isPublic": "Publish immediately",
+        "isPublicHint": "Published instances are available to users via credits"
+      },
+      "dialog": {
+        "title": "New Provider Instance",
+        "description": "Select a preset template, fill in the base URL and API key. Published instances serve as official platform models.",
+        "cancel": "Cancel"
       },
       "actions": {
         "creating": "Creating...",
@@ -524,7 +535,8 @@
           "active": "Active",
           "inputPer1k": "Input / 1K",
           "outputPer1k": "Output / 1K",
-          "unlockPriceCredits": "Unlock Price (Credits)",
+          "unlockPriceCredits": "Unlock Price",
+          "creditsUnit": "(credits)",
           "actions": "Actions"
         },
         "feedback": {

@@ -284,6 +284,28 @@ pub async fn test_local_provider_model(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "instance not found".to_string())?;
+    let instance = state
+        .providers
+        .store
+        .get_instance(&model.instance_id.to_string())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "instance not found".to_string())?;
+    let preset = state
+        .providers
+        .store
+        .get_preset(&instance.preset_slug)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if connection
+        .credential_source
+        .as_deref()
+        .map(|s| s.eq_ignore_ascii_case("platform"))
+        .unwrap_or(false)
+    {
+        return Err("platform models cannot be tested locally; use chat to verify".to_string());
+    }
 
     let prompt = payload
         .and_then(|item| item.prompt)
@@ -291,33 +313,64 @@ pub async fn test_local_provider_model(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "ping".to_string());
 
-    let endpoint = build_upstream_endpoint(
-        &connection.base_url,
-        &model.upstream_path,
-        connection.protocol.as_deref(),
-        connection.auto_append_v1,
-    );
-    let body = serde_json::json!({
-        "model": model.model_id,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": false
-    });
+    let capability = model
+        .capabilities
+        .first()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "chat".to_string());
+    let request_data = match capability.as_str() {
+        "embedding" => serde_json::json!({
+            "model": model.model_id,
+            "input": prompt,
+        }),
+        "image_generation" => serde_json::json!({
+            "model": model.model_id,
+            "prompt": prompt,
+            "n": 1,
+        }),
+        "text_to_speech" => serde_json::json!({
+            "model": model.model_id,
+            "input": prompt,
+            "voice": "alloy",
+        }),
+        "speech_to_text" => serde_json::json!({
+            "model": model.model_id,
+            "audio_data": prompt,
+            "response_format": "json",
+        }),
+        "video_generation" => serde_json::json!({
+            "model": model.model_id,
+            "prompt": prompt,
+        }),
+        _ => serde_json::json!({
+            "model": model.model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": false,
+            "max_tokens": 16,
+        }),
+    };
+    let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
+        preset.as_ref(),
+        &instance,
+        &model,
+        connection.secret_key.as_deref(),
+        capability.as_str(),
+        request_data,
+        None,
+        None,
+    )?;
 
     let started = Instant::now();
-    let mut request = reqwest::Client::new().post(&endpoint).json(&body);
-    if let Some(secret_key) = connection.secret_key.as_deref() {
-        if !secret_key.trim().is_empty() {
-            request =
-                apply_provider_auth_headers(request, connection.protocol.as_deref(), secret_key);
-        }
-    }
-
-    let response = request.send().await.map_err(|e| e.to_string())?;
-    let status = response.status();
+    let response = crate::modules::providers::request_runtime::send_prepared_json_request(
+        &reqwest::Client::new(),
+        &prepared,
+    )
+    .await?;
+    let status = response.status;
     let body_json: Value = response
-        .json()
-        .await
-        .unwrap_or_else(|_| serde_json::json!({ "raw": "failed to parse json response" }));
+        .json
+        .unwrap_or_else(|| serde_json::json!({ "raw": "failed to parse json response" }));
 
     let error = if status.is_success() {
         None
@@ -330,7 +383,7 @@ pub async fn test_local_provider_model(
         success: status.is_success(),
         latency_ms: started.elapsed().as_millis() as i64,
         status_code: status.as_u16() as i32,
-        upstream_url: endpoint,
+        upstream_url: prepared.display_url(),
         response_body: Some(body_json),
         error,
     })
@@ -374,6 +427,156 @@ pub async fn record_local_bandit_feedback(
         .record_bandit_feedback(payload)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Sync platform (credits) models from GET /api/v1/credits/models into local platform instance.
+/// Ensures one instance with credential_source=platform exists, then upserts models from cloud.
+#[tauri::command]
+pub async fn sync_platform_models(state: State<'_, AppState>) -> Result<Vec<ProviderModel>, String> {
+    use crate::modules::providers::store::CHAT_UPSTREAM_PATH;
+    let base_url = state.mcp.cloud_base_url.read().await.clone();
+    let base_url = base_url.trim().trim_end_matches('/');
+    if base_url.is_empty() {
+        return Err("cloud API base URL not configured".to_string());
+    }
+    let url = format!("{}/api/v1/credits/models", base_url);
+
+    let mut request = reqwest::Client::new().get(&url);
+    if let Some(token) = state
+        .mcp
+        .store
+        .get_desktop_config("auth.token")
+        .await
+        .ok()
+        .flatten()
+    {
+        let token = token.trim();
+        if !token.is_empty() {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+    }
+
+    let response = request.send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let preview = if body.len() > 200 {
+            body.chars().take(200).collect::<String>()
+        } else {
+            body
+        };
+        return Err(format!(
+            "credits/models returned {}: {}",
+            status.as_u16(),
+            preview
+        ));
+    }
+    let body: Value = response.json().await.map_err(|e| e.to_string())?;
+    let models_json = body
+        .get("models")
+        .and_then(|m| m.as_array())
+        .ok_or_else(|| "credits/models response missing models array".to_string())?;
+
+    let instances = state
+        .providers
+        .store
+        .list_instances()
+        .await
+        .map_err(|e| e.to_string())?;
+    let platform_instance = instances
+        .iter()
+        .find(|i| i.credential_source.eq_ignore_ascii_case("platform"));
+
+    let instance_id = match platform_instance {
+        Some(inst) => inst.id,
+        None => {
+            let created = state
+                .providers
+                .store
+                .create_instance(CreateInstanceRequest {
+                    preset_slug: "custom".to_string(),
+                    name: "Platform".to_string(),
+                    base_url: "https://platform".to_string(),
+                    description: Some("Models billed via platform credits".to_string()),
+                    icon: None,
+                    priority: Some(0),
+                    protocol: None,
+                    model_prefix: None,
+                    auto_append_v1: None,
+                    resource_name: None,
+                    deployment_name: None,
+                    api_version: None,
+                    project_id: None,
+                    region: None,
+                    is_local: Some(false),
+                    credential_source: Some("platform".to_string()),
+                    secret_key: None,
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            created.id
+        }
+    };
+
+    let now = uuid::Uuid::nil();
+    let models: Vec<ProviderModel> = models_json
+        .iter()
+        .filter_map(|m| {
+            let model_id = m.get("model_id").or_else(|| m.get("id"))?.as_str()?.to_string();
+            let display_name = m.get("display_name").and_then(|v| v.as_str()).map(String::from);
+            let capabilities: Vec<String> = m
+                .get("capabilities")
+                .and_then(|c| c.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_else(|| vec!["chat".to_string()]);
+            let pricing = m.get("pricing").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+            Some(ProviderModel {
+                id: now,
+                instance_id,
+                model_id,
+                unified_model_id: None,
+                display_name,
+                capabilities,
+                upstream_path: CHAT_UPSTREAM_PATH.to_string(),
+                pricing_config: pricing,
+                limit_config: Value::Object(serde_json::Map::new()),
+                tokenizer_config: Value::Object(serde_json::Map::new()),
+                routing_config: Value::Object(serde_json::Map::new()),
+                config_override: Value::Object(serde_json::Map::new()),
+                source: "platform".to_string(),
+                extra_meta: Value::Object(serde_json::Map::new()),
+                weight: 100,
+                priority: 0,
+                is_active: true,
+                synced_at: None,
+                created_at: None,
+                updated_at: None,
+            })
+        })
+        .collect();
+
+    if models.is_empty() {
+        return Ok(vec![]);
+    }
+
+    state
+        .providers
+        .store
+        .sync_models(&instance_id.to_string(), models.clone())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let synced = state
+        .providers
+        .store
+        .list_models(Some(instance_id.to_string()), None)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(synced)
 }
 
 async fn fetch_model_ids_from_upstream(
