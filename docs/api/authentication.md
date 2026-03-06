@@ -69,15 +69,14 @@
 ## Google / GitHub 实际接入配置
 
 
-### 仓库内模板文件
-- 后端生产 / 预发模板：`backend/.env.template`
-- 后端本地开发模板：`backend/.env.local.template`
-- 前端 / 桌面端本地模板：`deeting/.env.local.template`
+### 环境文件约定
+- 后端只保留：`backend/.env` 与 `backend/.env.example`
+- 前端 / Tauri 本地开发可使用：`deeting/.env.local`
 
 推荐用法：
-- 本地后端：复制 `backend/.env.local.template` -> `backend/.env.local`
-- 生产后端：复制 `backend/.env.template` -> `backend/.env`
-- 前端 / Tauri：复制 `deeting/.env.local.template` -> `deeting/.env.local`
+- 本地后端：直接维护 `backend/.env`
+- 后端示例：查看 `backend/.env.example`
+- 前端 / Tauri：维护 `deeting/.env.local`
 
 ### 总体原则
 - 当前桌面 OAuth 实现是：**桌面端打开系统浏览器 -> provider 回调后端 HTTPS 地址 -> 后端再 deep-link 回桌面**。
