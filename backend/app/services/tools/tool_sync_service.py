@@ -215,6 +215,34 @@ class ToolSyncService:
         )
         return len(delta.to_upsert) + len(delta.to_delete)
 
+    async def remove_user_skill_embeddings(
+        self, user_id: uuid.UUID, skill_id: str
+    ) -> None:
+        """Remove all embeddings related to a specific skill for a user."""
+        if not qdrant_is_configured():
+            return
+        collection = get_kb_user_tool_collection_name(user_id)
+        client = get_qdrant_client()
+        try:
+            await delete_points(
+                client,
+                collection_name=collection,
+                query_filter={
+                    "must": [
+                        {"key": "user_id", "match": {"value": str(user_id)}},
+                        {"key": "plugin_id", "match": {"value": skill_id}},
+                    ]
+                },
+                wait=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "skill embedding cleanup failed user=%s skill=%s",
+                user_id,
+                skill_id,
+                exc_info=exc,
+            )
+
     async def delete_user_tools(self, *, user_id: uuid.UUID, origin: str) -> None:
         if not qdrant_is_configured():
             return

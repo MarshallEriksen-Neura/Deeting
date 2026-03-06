@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.provider_registry",
   "name": "Provider Registry",
   "version": "1.0.0",
@@ -10,6 +11,12 @@
   "permissions": [
     "network.outbound"
   ],
+  "restricted": true,
+  "allowed_roles": ["admin"],
+  "runtime": ["cloud"],
+  "execution": {
+    "timeout_seconds": 60
+  },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"
   }

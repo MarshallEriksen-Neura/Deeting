@@ -176,6 +176,19 @@ impl MemoryStore {
         Ok(())
     }
 
+    pub async fn delete_assets_by_package(&self, pkg_name: &str) -> Result<(), MemoryError> {
+        let table_names = self.conn.table_names().execute().await?;
+        if !table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
+            return Ok(());
+        }
+
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        table
+            .delete(&format!("pkg_name = '{}'", sql_escape(pkg_name)))
+            .await?;
+        Ok(())
+    }
+
     pub async fn local_asset_vector_dimension(&self) -> Result<Option<i32>, MemoryError> {
         let table_names = self.conn.table_names().execute().await?;
         if !table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {

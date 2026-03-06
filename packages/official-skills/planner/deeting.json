@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.planner",
   "name": "Planner",
   "version": "1.0.0",
@@ -6,6 +7,10 @@
   "description": "Architect capabilities: Design execution plans and manage workflows.",
   "entry": {
     "backend": "main.py"
+  },
+  "runtime": ["cloud", "local"],
+  "execution": {
+    "timeout_seconds": 60
   },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"

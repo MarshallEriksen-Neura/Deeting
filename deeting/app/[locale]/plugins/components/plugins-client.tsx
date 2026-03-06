@@ -11,12 +11,10 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PluginCard } from "@/components/plugins/plugin-card"
 import { PermissionConfirmDialog } from "@/components/plugins/permission-confirm-dialog"
-import { ImportRepoDialog } from "@/components/plugins/import-repo-dialog"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 import {
   installPlugin,
   isDesktopRuntime,
-  submitPluginRepo,
   syncLocalSkillInstallsFromCloud,
   uninstallPlugin,
 } from "@/lib/api/plugin-market"
@@ -88,23 +86,6 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     [mutate, t]
   )
 
-  const handleImportRepo = React.useCallback(
-    async (payload: { repo_url: string; revision?: string; skill_id?: string }) => {
-      await submitPluginRepo(payload)
-      toast.success(t("importRepo.successTitle"), {
-        description: t("importRepo.successDesc"),
-      })
-      await mutate()
-      void (async () => {
-        for (let index = 0; index < 6; index += 1) {
-          await new Promise((resolve) => window.setTimeout(resolve, 5000))
-          await mutate()
-        }
-      })()
-    },
-    [mutate, t],
-  )
-
   const handleSyncInstalls = React.useCallback(async (reinstallMissing: boolean) => {
     setSyncMode(reinstallMissing ? "reinstall" : "sync")
     try {
@@ -149,7 +130,6 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         plugin.name,
         plugin.description ?? "",
         plugin.id,
-        plugin.source_repo ?? "",
       ]
         .join(" ")
         .toLowerCase()
@@ -192,33 +172,29 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         <p className="text-muted-foreground text-lg">{pageTitle}</p>
         <p className="text-muted-foreground">{pageSubtitle}</p>
 
-        {/* Import from GitHub */}
         {isMarketMode ? (
-          <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
-            <ImportRepoDialog onSubmit={handleImportRepo} />
-            {showDesktopSync && (
-              <>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => void handleSyncInstalls(false)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "sync" ? t("page.syncing") : t("page.syncAction")}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => void handleSyncInstalls(true)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "reinstall"
-                    ? t("page.syncing")
-                    : t("page.syncReinstallAction")}
-                </Button>
-              </>
-            )}
-          </div>
+          showDesktopSync ? (
+            <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={() => void handleSyncInstalls(false)}
+                disabled={syncMode !== null}
+              >
+                {syncMode === "sync" ? t("page.syncing") : t("page.syncAction")}
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={() => void handleSyncInstalls(true)}
+                disabled={syncMode !== null}
+              >
+                {syncMode === "reinstall"
+                  ? t("page.syncing")
+                  : t("page.syncReinstallAction")}
+              </Button>
+            </div>
+          ) : null
         ) : (
           <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
             <Button asChild variant="outline" className="rounded-full">

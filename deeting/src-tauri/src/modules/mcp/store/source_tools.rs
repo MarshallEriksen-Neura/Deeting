@@ -856,4 +856,76 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
     }
+
+    // --- Pillar 3: Skill lifecycle methods ---
+
+    pub async fn find_source_by_name(&self, name: &str) -> Result<Option<McpSource>, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, name, source_type, path_or_url, trust_level, status,
+                   last_synced_at, is_read_only, created_at, updated_at
+            FROM mcp_sources
+            WHERE name = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        row.map(|row| row_to_source(&row)).transpose()
+    }
+
+    pub async fn upsert_skill_source(
+        &self,
+        name: &str,
+        path_or_url: &str,
+        trust_level: McpTrustLevel,
+        is_read_only: bool,
+    ) -> Result<McpSource, McpError> {
+        if let Some(existing) = self.find_source_by_name(name).await? {
+            return Ok(existing);
+        }
+        self.insert_source(NewSource {
+            name: name.to_string(),
+            source_type: McpSourceType::Local,
+            path_or_url: path_or_url.to_string(),
+            trust_level,
+            status: McpSourceStatus::Active,
+            last_synced_at: None,
+            is_read_only,
+        })
+        .await
+    }
+
+    pub async fn delete_tools_by_source_id(&self, source_id: &str) -> Result<i64, McpError> {
+        let result = sqlx::query("DELETE FROM mcp_tools WHERE source_id = ?;")
+            .bind(source_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected() as i64)
+    }
+
+    pub async fn delete_source(&self, id: &str) -> Result<(), McpError> {
+        sqlx::query("DELETE FROM mcp_sources WHERE id = ?;")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn delete_local_skill_install(&self, skill_id: &str) -> Result<(), McpError> {
+        sqlx::query(
+            "DELETE FROM local_skill_install WHERE user_id = ? AND skill_id = ?;",
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(skill_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
 }

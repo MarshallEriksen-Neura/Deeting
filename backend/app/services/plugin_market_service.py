@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import HTTPException, status
@@ -15,6 +16,8 @@ from app.repositories.user_skill_installation_repository import (
 )
 from app.utils.security import is_safe_upstream_url
 
+logger = logging.getLogger(__name__)
+
 
 class PluginMarketService:
     def __init__(self, session: AsyncSession):
@@ -27,7 +30,6 @@ class PluginMarketService:
     ) -> list[tuple[SkillRegistry, bool]]:
         stmt = select(SkillRegistry).where(
             SkillRegistry.status == "active",
-            SkillRegistry.source_repo.is_not(None),
         )
         keyword = (q or "").strip()
         if keyword:
@@ -80,10 +82,10 @@ class PluginMarketService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="plugin not found"
             )
-        if skill.source_repo is None:
+        if skill.type == "BUILTIN":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="system skill cannot be installed via plugin market",
+                detail="builtin skill cannot be installed via plugin market",
             )
         if skill.status != "active":
             raise HTTPException(
@@ -122,4 +124,18 @@ class PluginMarketService:
         return installation, True
 
     async def uninstall_skill(self, *, user_id: uuid.UUID, skill_id: str) -> bool:
-        return await self.install_repo.delete_by_user_skill(user_id, skill_id)
+        deleted = await self.install_repo.delete_by_user_skill(user_id, skill_id)
+
+        try:
+            from app.services.tools.tool_sync_service import tool_sync_service
+
+            await tool_sync_service.remove_user_skill_embeddings(user_id, skill_id)
+        except Exception:
+            logger.warning(
+                "failed to cleanup skill embeddings user=%s skill=%s",
+                user_id,
+                skill_id,
+                exc_info=True,
+            )
+
+        return deleted

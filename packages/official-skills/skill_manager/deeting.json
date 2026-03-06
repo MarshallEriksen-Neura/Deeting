@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.skill_manager",
   "name": "Skill Manager",
   "version": "1.0.0",
@@ -11,6 +12,10 @@
     "fs.write",
     "shell.execute"
   ],
+  "runtime": ["local"],
+  "execution": {
+    "timeout_seconds": 120
+  },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"
   }

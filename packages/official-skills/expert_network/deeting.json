@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.expert_network",
   "name": "Expert Network",
   "version": "1.0.0",
@@ -6,6 +7,10 @@
   "description": "Retrieve expert assistants for a given intent query.",
   "entry": {
     "backend": "main.py"
+  },
+  "runtime": ["cloud", "local"],
+  "execution": {
+    "timeout_seconds": 60
   },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"

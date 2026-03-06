@@ -1,17 +1,39 @@
 tools:
-  - name: create_skill_md
-    description: "Generates or updates a SKILL.md file for a given skill directory."
+  - name: create_deeting_skill
+    description: >
+      [Deeting Platform] Create a new Deeting skill with the full standard
+      directory structure: deeting.json (manifest), llm-tool.yaml (tool definitions),
+      and main.py (entry point). The skill is created under
+      $APP_DATA_DIR/skills/<skill_id>/. Do NOT create SKILL.md — Deeting uses
+      deeting.json as the manifest, not the AgentSkills/opencode/openclaw format.
     parameters:
       type: object
       properties:
-        skill_path:
+        skill_id:
           type: string
-          description: "Absolute path to the skill directory (e.g., '/data/Deeting/packages/official-skills/crawler')."
-        content:
+          description: "Unique skill identifier, lowercase with dots/hyphens (e.g., 'community.weather-tool')."
+        name:
           type: string
-          description: "The Markdown content for SKILL.md following Agent Skills standard."
-      required: ["skill_path", "content"]
+          description: "Human-readable skill name."
+        description:
+          type: string
+          description: "Brief description of what the skill does."
+        tool_name:
+          type: string
+          description: "Name of the primary tool this skill exposes."
+        tool_description:
+          type: string
+          description: "Description of the primary tool."
+        tool_parameters:
+          type: object
+          description: "JSON Schema for the tool's input parameters."
+        main_py_code:
+          type: string
+          description: "Python source code for main.py. Must read JSON from stdin {method, arguments} and print JSON to stdout."
+      required: ["skill_id", "name", "description", "tool_name", "tool_description"]
 
   - name: list_official_skills
-    description: "Lists all official skills that might need an upgrade."
+    description: >
+      [Deeting Platform] List all official Deeting skills bundled with the application.
+      Each skill has deeting.json, llm-tool.yaml, and main.py.
     parameters: { type: object, properties: {} }

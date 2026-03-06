@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://deeting.com/schemas/deeting-manifest.json",
+  "title": "Deeting Skill Manifest",
+  "description": "Schema for deeting.json — the single source of truth for a Deeting skill.",
+  "type": "object",
+  "required": ["id", "name", "version", "entry"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]*$",
+      "description": "Unique skill identifier (e.g. official.skills.crawler)"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable skill name"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version (e.g. 1.0.0)"
+    },
+    "author": {
+      "type": "string",
+      "description": "Skill author or organization"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of what this skill does"
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "description": "Path to the main executable script (e.g. main.py)"
+        },
+        "renderer": {
+          "type": "string",
+          "description": "Path to the UI entry point"
+        }
+      },
+      "description": "Entry points for different runtimes"
+    },
+    "permissions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Required permissions (e.g. network.outbound, fs.write, shell.execute)"
+    },
+    "restricted": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, skill is only available to users with matching roles"
+    },
+    "allowed_roles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Roles that can access this skill when restricted is true"
+    },
+    "runtime": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["cloud", "local"]
+      },
+      "default": ["cloud", "local"],
+      "description": "Where this skill can run: cloud, local, or both"
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300,
+          "default": 60,
+          "description": "Maximum execution time in seconds before the skill is killed"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Execution constraints"
+    },
+    "env_requirements": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Environment variables required at runtime"
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "llm_tools": {
+          "type": "string",
+          "description": "Path to LLM tool definitions file (e.g. llm-tool.yaml)"
+        }
+      },
+      "description": "Capability declarations"
+    }
+  },
+  "additionalProperties": false
+}

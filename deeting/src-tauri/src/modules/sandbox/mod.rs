@@ -1,6 +1,7 @@
 pub mod backend_host;
 pub mod error;
 pub mod manager;
+pub mod provider;
 pub mod types;
 
 #[cfg(target_os = "windows")]

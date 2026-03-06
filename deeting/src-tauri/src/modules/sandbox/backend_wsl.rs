@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use base64::Engine;
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::modules::sandbox::error::SandboxError;
+use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
 
 const BOXRUN_API_PREFIX: &str = "v1";
@@ -47,7 +49,54 @@ impl WslBoxrunBackend {
         Ok(Self { client, options })
     }
 
-    pub async fn probe(&self) -> Result<(), SandboxError> {
+    async fn get_box(&self, box_id_or_name: &str) -> Result<Option<SandboxIdentity>, SandboxError> {
+        let url = self.url(&format!("/boxes/{box_id_or_name}"));
+        let response = self.authorized(self.client.get(url)).send().await?;
+        if response.status().as_u16() == 404 {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(SandboxError::Internal(format!(
+                "get box failed: status={status} body={body}"
+            )));
+        }
+        let box_resp: BoxResponse = response.json().await?;
+        let sandbox_id = box_resp.id;
+        Ok(Some(SandboxIdentity {
+            sandbox_id,
+            sandbox_name: box_resp.name.unwrap_or_else(|| box_id_or_name.to_string()),
+        }))
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}{}", self.api_base(), path)
+    }
+
+    fn api_base(&self) -> String {
+        format!(
+            "{}/{}",
+            self.options.base_url.trim_end_matches('/'),
+            BOXRUN_API_PREFIX
+        )
+    }
+
+    fn authorized(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(api_key) = self.options.api_key.as_deref() {
+            return builder.header("x-api-key", api_key);
+        }
+        builder
+    }
+}
+
+#[async_trait]
+impl SandboxProvider for WslBoxrunBackend {
+    fn provider_name(&self) -> &str {
+        "boxlite"
+    }
+
+    async fn probe(&self) -> Result<(), SandboxError> {
         let url = self.url("/boxes");
         let response = self.authorized(self.client.get(url)).send().await?;
         let status = response.status();
@@ -60,7 +109,7 @@ impl WslBoxrunBackend {
         )))
     }
 
-    pub async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+    async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
         if let Some(existing) = self.get_box(box_name).await? {
             return Ok(existing);
         }
@@ -100,7 +149,7 @@ impl WslBoxrunBackend {
         })
     }
 
-    pub async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
+    async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
         if self.get_box(box_id_or_name).await?.is_none() {
             return Ok(());
         }
@@ -116,7 +165,7 @@ impl WslBoxrunBackend {
         )))
     }
 
-    pub async fn run_python(
+    async fn run_python(
         &self,
         box_id_or_name: &str,
         code: &str,
@@ -231,50 +280,6 @@ impl WslBoxrunBackend {
             exit_code,
             error_message,
         })
-    }
-
-    pub async fn shutdown(&self) -> Result<(), SandboxError> {
-        Ok(())
-    }
-
-    async fn get_box(&self, box_id_or_name: &str) -> Result<Option<SandboxIdentity>, SandboxError> {
-        let url = self.url(&format!("/boxes/{box_id_or_name}"));
-        let response = self.authorized(self.client.get(url)).send().await?;
-        if response.status().as_u16() == 404 {
-            return Ok(None);
-        }
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(SandboxError::Internal(format!(
-                "get box failed: status={status} body={body}"
-            )));
-        }
-        let box_resp: BoxResponse = response.json().await?;
-        let sandbox_id = box_resp.id;
-        Ok(Some(SandboxIdentity {
-            sandbox_id,
-            sandbox_name: box_resp.name.unwrap_or_else(|| box_id_or_name.to_string()),
-        }))
-    }
-
-    fn url(&self, path: &str) -> String {
-        format!("{}{}", self.api_base(), path)
-    }
-
-    fn api_base(&self) -> String {
-        format!(
-            "{}/{}",
-            self.options.base_url.trim_end_matches('/'),
-            BOXRUN_API_PREFIX
-        )
-    }
-
-    fn authorized(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if let Some(api_key) = self.options.api_key.as_deref() {
-            return builder.header("x-api-key", api_key);
-        }
-        builder
     }
 }
 

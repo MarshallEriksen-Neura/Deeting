@@ -144,6 +144,7 @@ dependencies = [
  "arrow-array",
  "arrow-schema",
  "async-stream",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "futures-util",

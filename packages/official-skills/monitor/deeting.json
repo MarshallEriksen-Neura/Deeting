@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.monitor",
   "name": "Active Monitor",
   "version": "1.0.0",
@@ -6,6 +7,10 @@
   "description": "Proactive monitoring and alerting system.",
   "entry": {
     "backend": "main.py"
+  },
+  "runtime": ["cloud", "local"],
+  "execution": {
+    "timeout_seconds": 60
   },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"

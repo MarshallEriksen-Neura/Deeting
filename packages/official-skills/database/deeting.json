@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.database",
   "name": "Provider Manager",
   "version": "1.0.0",
@@ -6,6 +7,12 @@
   "description": "Manage LLM Provider Presets and Templates.",
   "entry": {
     "backend": "main.py"
+  },
+  "restricted": true,
+  "allowed_roles": ["admin"],
+  "runtime": ["cloud"],
+  "execution": {
+    "timeout_seconds": 60
   },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"

@@ -27,6 +27,7 @@ backend/*.pyc
 backend/.venv
 backend/.uv-*
 backend/.pytest_*
+backend/pytest-cache-files-*
 
 # Backend logs
 backend/logs/

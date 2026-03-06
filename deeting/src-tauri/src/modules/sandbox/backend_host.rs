@@ -2,9 +2,11 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use tokio::process::Command;
 
 use crate::modules::sandbox::error::SandboxError;
+use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
 
 #[derive(Debug, Clone)]
@@ -30,19 +32,26 @@ impl HostPythonBackend {
         let command = resolve_python_command(&options.python_bin)?;
         Ok(Self { command, options })
     }
+}
 
-    pub async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+#[async_trait]
+impl SandboxProvider for HostPythonBackend {
+    fn provider_name(&self) -> &str {
+        "host-python"
+    }
+
+    async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
         Ok(SandboxIdentity {
             sandbox_id: box_name.to_string(),
             sandbox_name: box_name.to_string(),
         })
     }
 
-    pub async fn stop_box(&self, _box_id_or_name: &str) -> Result<(), SandboxError> {
+    async fn stop_box(&self, _box_id_or_name: &str) -> Result<(), SandboxError> {
         Ok(())
     }
 
-    pub async fn run_python(
+    async fn run_python(
         &self,
         box_id_or_name: &str,
         code: &str,
@@ -94,10 +103,6 @@ impl HostPythonBackend {
             exit_code,
             error_message: None,
         })
-    }
-
-    pub async fn shutdown(&self) -> Result<(), SandboxError> {
-        Ok(())
     }
 }
 

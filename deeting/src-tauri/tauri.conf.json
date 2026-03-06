@@ -31,7 +31,8 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "resources": {
-      "../../packages/official-skills/": "official-skills/"
+      "../../packages/official-skills/": "official-skills/",
+      "../../packages/deeting-sdk/": "deeting-sdk/"
     },
     "icon": [
       "icons/32x32.png",

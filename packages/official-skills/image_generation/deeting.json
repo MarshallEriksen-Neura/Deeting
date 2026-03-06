@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.image_generation",
   "name": "Image Generation",
   "version": "1.0.0",
@@ -10,6 +11,10 @@
   "permissions": [
     "network.outbound"
   ],
+  "runtime": ["cloud", "local"],
+  "execution": {
+    "timeout_seconds": 120
+  },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"
   }

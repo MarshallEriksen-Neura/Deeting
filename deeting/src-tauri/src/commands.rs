@@ -81,6 +81,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::sync_local_skill_installs_from_cloud,
         crate::modules::mcp::commands::sync_local_system_assistants,
         crate::modules::mcp::commands::register_local_skills,
+        crate::modules::mcp::commands::install_skill_from_repo,
+        crate::modules::mcp::commands::uninstall_skill,
         crate::modules::mcp::commands::sync_official_skills_index,
         crate::modules::mcp::commands::rebuild_local_embedding_assets,
         crate::modules::mcp::bridge::set_mcp_backend_url,

@@ -1,4 +1,5 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.ingestor",
   "name": "Asset Ingestor",
   "version": "1.0.0",
@@ -12,6 +13,10 @@
     "tools.call",
     "assistants.write"
   ],
+  "runtime": ["cloud", "local"],
+  "execution": {
+    "timeout_seconds": 120
+  },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"
   }

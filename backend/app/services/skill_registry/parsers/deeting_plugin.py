@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 import yaml
 
 from app.services.skill_registry.parsers.base import (
@@ -11,6 +13,38 @@ from app.services.skill_registry.parsers.base import (
     RepoContext,
     RepoParserPlugin,
 )
+
+logger = logging.getLogger(__name__)
+
+_SCHEMA_PATH = Path(__file__).resolve().parents[5] / "packages" / "deeting-manifest-schema.json"
+_cached_schema: dict | None = None
+
+
+def _load_manifest_schema() -> dict | None:
+    global _cached_schema
+    if _cached_schema is not None:
+        return _cached_schema
+    if _SCHEMA_PATH.exists():
+        try:
+            _cached_schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+            return _cached_schema
+        except Exception:
+            logger.warning("failed to load deeting manifest schema from %s", _SCHEMA_PATH)
+    return None
+
+
+def validate_deeting_manifest(manifest: dict) -> list[str]:
+    """Validate a deeting.json manifest against the schema.
+    Returns a list of error messages (empty if valid)."""
+    schema = _load_manifest_schema()
+    if schema is None:
+        return []
+    errors: list[str] = []
+    validator = jsonschema.Draft7Validator(schema)
+    for error in validator.iter_errors(manifest):
+        path = ".".join(str(p) for p in error.absolute_path) if error.absolute_path else "(root)"
+        errors.append(f"{path}: {error.message}")
+    return errors
 
 
 class DeetingPluginParser(RepoParserPlugin):
@@ -30,7 +64,7 @@ class DeetingPluginParser(RepoParserPlugin):
     def collect_evidence(self, repo_context: RepoContext) -> EvidencePack:
         root = repo_context.root_path
         
-        # 1. Read deeting.json
+        # 1. Read and validate deeting.json
         manifest_data = {}
         manifest_path = root / "deeting.json"
         if manifest_path.exists():
@@ -38,6 +72,15 @@ class DeetingPluginParser(RepoParserPlugin):
                 manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 pass
+
+        validation_errors = validate_deeting_manifest(manifest_data) if manifest_data else []
+        if validation_errors:
+            skill_id = manifest_data.get("id", "unknown")
+            logger.warning(
+                "deeting.json schema validation errors for %s: %s",
+                skill_id,
+                "; ".join(validation_errors),
+            )
 
         # 2. Read llm-tool.yaml (or specified path in deeting.json)
         tool_spec_path = "llm-tool.yaml"
@@ -72,6 +115,7 @@ class DeetingPluginParser(RepoParserPlugin):
         evidence.metadata = {
             "deeting_json": manifest_data,
             "llm_tool_yaml": tool_spec_data,
+            "validation_errors": validation_errors,
         }
         return evidence
 
@@ -98,8 +142,12 @@ class DeetingPluginParser(RepoParserPlugin):
             "author": deeting_json.get("author"),
             "description": description,
             "permissions": deeting_json.get("permissions") or [],
+            "restricted": deeting_json.get("restricted", False),
+            "allowed_roles": deeting_json.get("allowed_roles") or [],
+            "runtime": deeting_json.get("runtime") or ["cloud", "local"],
+            "execution": deeting_json.get("execution") or {"timeout_seconds": 60},
             "entry": deeting_json.get("entry") or {},
-            "io_schema": tool_spec, # The tool spec is our I/O contract
+            "io_schema": tool_spec,
             "capabilities": deeting_json.get("capabilities", {}).get("tags") or [tool_spec.get("name")] if tool_spec.get("name") else [],
             "usage_spec": {
                 "example_code": self._generate_example_usage(deeting_json, tool_spec)

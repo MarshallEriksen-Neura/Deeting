@@ -814,7 +814,98 @@ fn truncate_upstream_body(text: &str, max_len: usize) -> String {
     format!("{head}...")
 }
 
+fn parse_timeout_from_tool(tool: &McpTool) -> u64 {
+    serde_json::from_str::<serde_json::Value>(&tool.config_json)
+        .ok()
+        .and_then(|v| v.get("execution")?.get("timeout_seconds")?.as_u64())
+        .unwrap_or(60)
+}
+
+/// Marker sentinel printed by DeetingRuntime.call_tool() in Marker mode.
+/// Must match packages/code-mode-contract/contract.json → markers.runtime_tool_call
+const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
+const MAX_MARKER_REEXEC: usize = 8;
+
 async fn execute_local_mcp_tool(tool: &McpTool, arguments: &Value) -> Result<Value, String> {
+    let timeout_secs = parse_timeout_from_tool(tool);
+    let mut tool_results: Vec<serde_json::Value> = Vec::new();
+
+    for attempt in 0..=MAX_MARKER_REEXEC {
+        let output = spawn_skill_subprocess(tool, arguments, &tool_results, timeout_secs).await?;
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+
+        // Check for Marker protocol: SDK call_tool() prints the marker then exits non-zero
+        if let Some(marker_payload) = extract_tool_call_marker(&stdout_str) {
+            let requested_tool = marker_payload
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let requested_args = marker_payload
+                .get("arguments")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
+
+            if requested_tool.is_empty() {
+                return Err("skill requested a tool call with empty tool_name".to_string());
+            }
+            if attempt >= MAX_MARKER_REEXEC {
+                return Err(format!(
+                    "skill exceeded {} marker re-execution rounds",
+                    MAX_MARKER_REEXEC
+                ));
+            }
+
+            log::info!(
+                "marker re-exec #{}: skill {} requests tool {}",
+                attempt + 1,
+                tool.name,
+                requested_tool
+            );
+
+            // TODO: resolve and execute the requested tool, then push result.
+            // For now, push a placeholder — full cross-tool dispatch requires
+            // access to the tool registry, which will be wired in a follow-up.
+            let inner_result = serde_json::json!({
+                "status": "error",
+                "error": format!("cross-tool call to '{}' not yet supported in desktop Marker mode", requested_tool)
+            });
+            tool_results.push(inner_result);
+            continue;
+        }
+
+        // Normal exit path
+        if output.status.success() {
+            if output.stdout.is_empty() {
+                return Ok(serde_json::json!({ "ok": true }));
+            }
+            return match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                Ok(parsed) => Ok(parsed),
+                Err(_) => Ok(serde_json::json!({
+                    "ok": true,
+                    "raw": stdout_str.to_string()
+                })),
+            };
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!(
+            "tool execution failed (exit={}): {}",
+            output.status, stderr
+        ));
+    }
+
+    Err("skill marker re-execution loop exhausted".to_string())
+}
+
+/// Spawn the skill subprocess with optional DEETING_RUNTIME_CONTEXT for
+/// Marker-mode re-execution (passing cached tool_results).
+async fn spawn_skill_subprocess(
+    tool: &McpTool,
+    arguments: &Value,
+    tool_results: &[serde_json::Value],
+    timeout_secs: u64,
+) -> Result<std::process::Output, String> {
     let command = tool
         .command
         .clone()
@@ -826,6 +917,19 @@ async fn execute_local_mcp_tool(tool: &McpTool, arguments: &Value) -> Result<Val
     if let Some(env) = &tool.env {
         cmd.envs(env);
     }
+
+    // Inject runtime context for Marker re-execution
+    if !tool_results.is_empty() {
+        let ctx = serde_json::json!({
+            "tool_results": tool_results,
+            "max_tool_calls": MAX_MARKER_REEXEC,
+        });
+        cmd.env(
+            "DEETING_RUNTIME_CONTEXT",
+            serde_json::to_string(&ctx).unwrap_or_default(),
+        );
+    }
+
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -840,24 +944,39 @@ async fn execute_local_mcp_tool(tool: &McpTool, arguments: &Value) -> Result<Val
         stdin.write_all(&payload_bytes).await.map_err(to_string)?;
     }
 
-    let output = child.wait_with_output().await.map_err(to_string)?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(format!(
-            "tool execution failed (exit={}): {}",
-            output.status, stderr
-        ));
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        child.wait_with_output(),
+    )
+    .await
+    {
+        Ok(result) => result.map_err(|e| format!("tool execution error: {}", e)),
+        Err(_) => {
+            let _ = child.kill().await;
+            Err(format!(
+                "skill execution timed out after {}s",
+                timeout_secs
+            ))
+        }
     }
-    if output.stdout.is_empty() {
-        return Ok(serde_json::json!({ "ok": true }));
+}
+
+/// Extract Marker tool-call request from subprocess stdout.
+fn extract_tool_call_marker(stdout: &str) -> Option<serde_json::Value> {
+    for line in stdout.lines().rev() {
+        let trimmed = line.trim();
+        if let Some(json_str) = trimmed.strip_prefix(TOOL_CALL_MARKER) {
+            let json_str = json_str.trim();
+            if json_str.is_empty() {
+                return Some(serde_json::json!({}));
+            }
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                return Some(parsed);
+            }
+            return Some(serde_json::json!({}));
+        }
     }
-    match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
-        Ok(parsed) => Ok(parsed),
-        Err(_) => Ok(serde_json::json!({
-            "ok": true,
-            "raw": String::from_utf8_lossy(&output.stdout).to_string()
-        })),
-    }
+    None
 }
 
 pub(crate) async fn sync_source_inner(
@@ -1311,6 +1430,29 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     let provider_model_id = &model_connection.provider_model_id;
     let model_id = &model_connection.model_id;
     let mut orchestrated_messages = messages;
+
+    // Inject Deeting platform identity as leading system message
+    let has_system = orchestrated_messages
+        .first()
+        .map(|m| m.role == "system")
+        .unwrap_or(false);
+    if !has_system {
+        orchestrated_messages.insert(
+            0,
+            LocalChatInputMessage {
+                role: "system".to_string(),
+                content: concat!(
+                    "You are running inside Deeting, an AI agent platform.\n",
+                    "When the user asks to install, create, or manage skills:\n",
+                    "- Deeting skills use deeting.json (NOT SKILL.md), llm-tool.yaml, and main.py.\n",
+                    "- Use the install_skill_from_repo tool or sys_submit_onboarding_request to install skills.\n",
+                    "- User skills directory: $APP_DATA_DIR/skills/<skill_id>/.\n",
+                    "- Do NOT use opencode, codex, openclaw, or any other platform's skill paths or manifest format.\n",
+                ).to_string(),
+            },
+        );
+    }
+
     let mut round: usize = 0;
     let mut all_tool_call_meta: Vec<serde_json::Value> = Vec::new();
     let mut last_response: Option<serde_json::Value> = None;
@@ -1794,7 +1936,7 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
         }),
         serde_json::json!({
             "name": "sys_submit_onboarding_request",
-            "description": "Submit onboarding actions. For skill installation use asset_type='skill' and payload {repo_url, skill_name}.",
+            "description": "Deeting platform: install skills or assistants. For skill installation use asset_type='skill' and payload {repo_url, skill_name}. Skills are cloned to $APP_DATA_DIR/skills/<skill_id>/ and must contain deeting.json + llm-tool.yaml + main.py (NOT SKILL.md). Do NOT use opencode, codex, or openclaw paths.",
             "source": "code_mode_core",
             "parameters": {
                 "asset_type": "string(required, oneof=assistant|skill)",
@@ -1945,60 +2087,17 @@ async fn install_local_skill_from_onboarding_request(
     payload: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let (repo_url, skill_name) = parse_skill_onboarding_payload(payload)?;
-    if !is_allowed_skill_repo_url(&repo_url) {
-        return Err("skill onboarding only allows GitHub HTTPS/SSH repositories".to_string());
-    }
 
-    let install_result = execute_or_queue_mcp_tool_call_with_context(
-        &crate::modules::mcp::ToolApprovalContext::default(),
-        Some("HIGH"),
-        vec!["local skill installation writes files under desktop skills directory".to_string()],
-        Some(&app_state.mcp),
-        app_state.mcp.store.as_ref(),
-        app_state.mcp.pending_tool_calls.as_ref(),
-        "install_skill_from_git".to_string(),
-        serde_json::json!({
-            "repo_url": repo_url,
-            "skill_name": skill_name,
-        }),
-        true,
-    )
-    .await?;
+    let result = install_skill_to_local(app, app_state, &repo_url, None).await?;
 
-    if install_result
-        .get("status")
-        .and_then(|value| value.as_str())
-        .map(|value| value.eq_ignore_ascii_case("REQUIRES_APPROVAL"))
-        .unwrap_or(false)
-    {
-        return Ok(serde_json::json!({
-            "action": "skill_install_pending_approval",
-            "install": install_result,
-        }));
-    }
-
-    if install_result
-        .get("status")
-        .and_then(|value| value.as_str())
-        .map(|value| value.eq_ignore_ascii_case("error"))
-        .unwrap_or(false)
-    {
-        return Err(install_result
-            .get("error")
-            .and_then(|value| value.as_str())
-            .unwrap_or("skill installer returned error")
-            .to_string());
-    }
-
-    let indexed_tools = register_local_skills_inner(app.clone(), app_state).await?;
     Ok(serde_json::json!({
         "action": "skill_installed",
         "repo_url": repo_url,
         "skill_name": skill_name,
-        "install": install_result,
-        "index_refresh": {
-            "status": "ok",
-            "indexed_tools": indexed_tools
+        "install": {
+            "skill_id": result.skill_id,
+            "tool_count": result.tool_count,
+            "install_path": result.install_path,
         }
     }))
 }

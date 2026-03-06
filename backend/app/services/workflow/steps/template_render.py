@@ -308,16 +308,27 @@ class TemplateRenderStep(BaseStep):
         # --- System Prompt & Capability Injection ---
         enhanced_prompt = context.get("enhanced_prompt") or ROUTER_BASE_PROMPT
 
+        # 0. Deeting platform identity — tells the LLM which runtime it is in
+        deeting_identity = (
+            "You are running inside **Deeting**, an AI agent platform.\n"
+            "When the user asks to install, create, or manage skills:\n"
+            "- Deeting skills use `deeting.json` (NOT SKILL.md), `llm-tool.yaml`, and `main.py`.\n"
+            "- Use the `install_skill_from_repo` tool or `sys_submit_onboarding_request` to install skills.\n"
+            "- User skills directory: `$APP_DATA_DIR/skills/<skill_id>/`.\n"
+            "- Do NOT use opencode, codex, openclaw, or any other platform's skill paths or manifest format.\n"
+        )
+
+        if enhanced_prompt:
+            enhanced_prompt = f"{deeting_identity}\n{enhanced_prompt}"
+        else:
+            enhanced_prompt = deeting_identity
+
         # 1. 注入当前时间 (Time Injection) - 避免时间幻觉
-        # 使用 UTC 时间 + 星期几，通用且无歧义
         now_utc = datetime.now(UTC)
         time_str = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC (%A)")
         time_instruction = f"Current Date: {time_str}"
 
-        if enhanced_prompt:
-            enhanced_prompt = f"{time_instruction}\n{enhanced_prompt}"
-        else:
-            enhanced_prompt = time_instruction
+        enhanced_prompt = f"{time_instruction}\n{enhanced_prompt}"
 
         # [NEW] 1.4 注入主动人设 (Active Persona Injection)
         active_persona = context.get("semantic_active_persona")

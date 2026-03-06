@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, GitBranch, Plug, Shield } from "lucide-react"
+import { Download, Plug, Shield } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,9 +38,6 @@ interface PluginCardProps {
 export function PluginCard({ plugin, onInstall, onUninstall }: PluginCardProps) {
   const t = useTranslations("plugins")
   const color = pickColor(plugin.id)
-  const repoName = plugin.source_repo
-    ? plugin.source_repo.replace(/^https?:\/\/github\.com\//, "")
-    : null
 
   return (
     <div className="group relative transition-all duration-300 hover:-translate-y-1 hover:shadow-xl rounded-xl bg-white dark:bg-zinc-900 border border-border overflow-hidden flex flex-col h-full">
@@ -78,20 +75,9 @@ export function PluginCard({ plugin, onInstall, onUninstall }: PluginCardProps) 
       </CardHeader>
 
       <CardContent className="px-4 py-2 flex-1">
-        <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
+        <p className="text-sm text-muted-foreground line-clamp-3 min-h-[2.5rem]">
           {plugin.description || t("card.noDescription")}
         </p>
-        {repoName && (
-          <div className="flex items-center gap-1 mt-3 text-xs text-muted-foreground">
-            <GitBranch size={12} />
-            <span className="truncate">{repoName}</span>
-            {plugin.source_revision && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1">
-                {plugin.source_revision}
-              </Badge>
-            )}
-          </div>
-        )}
       </CardContent>
 
       <CardFooter className="px-4 py-4 border-t bg-muted/30 flex justify-between items-center mt-auto">

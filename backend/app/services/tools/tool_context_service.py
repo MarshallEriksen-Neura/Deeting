@@ -136,6 +136,10 @@ class ToolContextService:
                     has_builtin_skills = True
                     for skill in builtin_skills:
                         manifest = skill.manifest_json or {}
+                        if manifest.get("restricted"):
+                            skill_allowed_roles = set(manifest.get("allowed_roles") or [])
+                            if not is_superuser and not (user_roles & skill_allowed_roles):
+                                continue
                         tools = manifest.get("tools", [])
                         for t in tools:
                             if isinstance(t, dict) and t.get("name"):

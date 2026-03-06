@@ -1,9 +1,10 @@
 {
+  "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.skill_creator",
   "name": "Skill Creator",
   "version": "1.0.0",
   "author": "Deeting Team",
-  "description": "Meta-skill that helps create or upgrade other skills following the Agent Skills standard.",
+  "description": "Create new Deeting skills with the standard structure (deeting.json + llm-tool.yaml + main.py) in the user skills directory.",
   "entry": {
     "backend": "main.py"
   },
@@ -11,6 +12,10 @@
     "fs.read",
     "fs.write"
   ],
+  "runtime": ["local"],
+  "execution": {
+    "timeout_seconds": 60
+  },
   "capabilities": {
     "llm_tools": "llm-tool.yaml"
   }

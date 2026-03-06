@@ -187,6 +187,61 @@ fn read_manifest_json(manifest_path: &Path) -> Option<serde_json::Value> {
     serde_json::from_str::<serde_json::Value>(&raw).ok()
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct DeetingManifestExecution {
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64,
+}
+
+fn default_timeout() -> u64 {
+    60
+}
+
+impl Default for DeetingManifestExecution {
+    fn default() -> Self {
+        Self {
+            timeout_seconds: default_timeout(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct DeetingManifest {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub entry: Option<serde_json::Value>,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub restricted: bool,
+    #[serde(default)]
+    pub allowed_roles: Vec<String>,
+    #[serde(default = "default_runtime")]
+    pub runtime: Vec<String>,
+    #[serde(default)]
+    pub execution: DeetingManifestExecution,
+    #[serde(default)]
+    pub env_requirements: Vec<String>,
+    #[serde(default)]
+    pub capabilities: Option<serde_json::Value>,
+}
+
+fn default_runtime() -> Vec<String> {
+    vec!["cloud".to_string(), "local".to_string()]
+}
+
+fn parse_deeting_manifest(raw: &str) -> Result<DeetingManifest, String> {
+    serde_json::from_str::<DeetingManifest>(raw)
+        .map_err(|e| format!("invalid deeting.json: {}", e))
+}
+
 async fn fetch_cloud_plugin_market_skill(
     client: &reqwest::Client,
     base_url: &str,
@@ -278,6 +333,170 @@ async fn try_clone_skill_repo(
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillInstallResult {
+    pub skill_id: String,
+    pub tool_count: usize,
+    pub install_path: String,
+}
+
+pub(crate) async fn install_skill_to_local(
+    app: &AppHandle,
+    app_state: &AppState,
+    repo_url: &str,
+    revision: Option<&str>,
+) -> Result<SkillInstallResult, String> {
+    let normalized_repo = repo_url.trim();
+    if normalized_repo.is_empty() {
+        return Err("repo_url is empty".to_string());
+    }
+    if !is_allowed_skill_repo_url(normalized_repo) {
+        return Err("repo URL is not in the allowed host list".to_string());
+    }
+
+    let skills_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(to_string)?
+        .join("skills");
+    if !skills_dir.exists() {
+        std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
+    }
+
+    let temp_name = format!("_installing_{}", uuid::Uuid::new_v4());
+    let temp_dir = skills_dir.join(&temp_name);
+
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.arg("clone").arg("--depth").arg("1");
+    if let Some(rev) = revision.map(|r| r.trim()).filter(|r| !r.is_empty()) {
+        cmd.arg("--branch").arg(rev);
+    }
+    cmd.arg(normalized_repo).arg(&temp_dir);
+    let output = cmd.output().await.map_err(to_string)?;
+    if !output.status.success() {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!(
+            "git clone failed: {}",
+            if stderr.is_empty() {
+                "unknown error"
+            } else {
+                &stderr
+            }
+        ));
+    }
+
+    let manifest_path = temp_dir.join("deeting.json");
+    if !manifest_path.exists() {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err("cloned repo has no deeting.json".to_string());
+    }
+    let manifest_str = std::fs::read_to_string(&manifest_path).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        to_string(e)
+    })?;
+    let manifest = match parse_deeting_manifest(&manifest_str) {
+        Ok(m) => m,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            return Err(format!("invalid deeting.json: {}", e));
+        }
+    };
+
+    let skill_id = manifest.id.clone();
+    if skill_id.trim().is_empty() {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err("manifest id is empty".to_string());
+    }
+
+    let final_dir = skills_dir.join(&skill_id);
+    if final_dir.exists() {
+        let _ = std::fs::remove_dir_all(&final_dir);
+    }
+    std::fs::rename(&temp_dir, &final_dir).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        format!("failed to move skill to final location: {}", e)
+    })?;
+
+    let store = &app_state.mcp.store;
+    let version = manifest.version.as_deref();
+    let runtime_str = manifest.runtime.join(",");
+    store
+        .upsert_local_skill_install(
+            &skill_id,
+            version,
+            Some(&runtime_str),
+            &manifest_str,
+            &final_dir.to_string_lossy(),
+        )
+        .await
+        .map_err(to_string)?;
+
+    let indexed_tools =
+        register_local_skills_inner(app.clone(), app_state).await.unwrap_or(0);
+
+    Ok(SkillInstallResult {
+        skill_id,
+        tool_count: indexed_tools,
+        install_path: final_dir.to_string_lossy().to_string(),
+    })
+}
+
+pub(crate) async fn uninstall_local_skill(
+    app: &AppHandle,
+    app_state: &AppState,
+    skill_id: &str,
+) -> Result<(), String> {
+    let store = &app_state.mcp.store;
+    let source_name = format!("skill:{}", skill_id);
+
+    if let Some(source) = store.find_source_by_name(&source_name).await.map_err(to_string)? {
+        if source.is_read_only {
+            return Err("cannot uninstall official (read-only) skills".to_string());
+        }
+
+        let deleted = store
+            .delete_tools_by_source_id(&source.id)
+            .await
+            .map_err(to_string)?;
+        log::info!(
+            "uninstall_local_skill {}: deleted {} tools",
+            skill_id,
+            deleted
+        );
+
+        store
+            .delete_source(&source.id)
+            .await
+            .map_err(to_string)?;
+    }
+
+    store
+        .delete_local_skill_install(skill_id)
+        .await
+        .map_err(to_string)?;
+
+    if let Err(e) = app_state.memory.store.delete_assets_by_package(skill_id).await {
+        warn!(
+            "uninstall_local_skill {}: failed to delete embeddings: {}",
+            skill_id, e
+        );
+    }
+
+    let install_path = app
+        .path()
+        .app_data_dir()
+        .map_err(to_string)?
+        .join("skills")
+        .join(skill_id);
+    if install_path.exists() {
+        std::fs::remove_dir_all(&install_path).map_err(to_string)?;
+    }
+
+    log::info!("uninstall_local_skill {}: complete", skill_id);
+    Ok(())
+}
+
 async fn sync_local_skill_installs_from_cloud_inner(
     store: &crate::modules::mcp::store::McpStore,
     client: &reqwest::Client,
@@ -302,7 +521,7 @@ async fn sync_local_skill_installs_from_cloud_inner(
         }
         cloud_installed_skill_ids.push(skill_id.clone());
 
-        let install_path = skills_dir.join(normalize_skill_dir_name(&skill_id));
+        let install_path = skills_dir.join(&skill_id);
         let install_path_str = install_path.to_string_lossy().to_string();
         let mut status = "synced".to_string();
         let mut reinstalled = false;
@@ -454,6 +673,31 @@ pub async fn register_local_skills(
     register_local_skills_inner(app, app_state.inner()).await
 }
 
+#[tauri::command]
+pub async fn install_skill_from_repo(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+    repo_url: String,
+    revision: Option<String>,
+) -> Result<SkillInstallResult, String> {
+    install_skill_to_local(
+        &app,
+        app_state.inner(),
+        &repo_url,
+        revision.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn uninstall_skill(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+    skill_id: String,
+) -> Result<(), String> {
+    uninstall_local_skill(&app, app_state.inner(), &skill_id).await
+}
+
 pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
@@ -480,6 +724,23 @@ pub(crate) async fn register_local_skills_inner(
     if !user_skills_dir.exists() {
         let _ = std::fs::create_dir_all(&user_skills_dir);
     }
+
+    // 3. Resolve deeting-sdk path for PYTHONPATH injection
+    //    Production: $RESOURCE/deeting-sdk/
+    //    Dev fallback: $CWD/packages/deeting-sdk/
+    let sdk_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|p| p.join("deeting-sdk"))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("packages")
+                .join("deeting-sdk")
+        });
+    let sdk_pythonpath = sdk_dir.to_string_lossy().to_string();
 
     let scan_targets = vec![
         (official_skills_dir, "system_plugin"),
@@ -508,17 +769,33 @@ pub(crate) async fn register_local_skills_inner(
 
             let deeting_json_str =
                 std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
-            let manifest: serde_json::Value =
-                serde_json::from_str(&deeting_json_str).map_err(to_string)?;
+            let manifest = match parse_deeting_manifest(&deeting_json_str) {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!(
+                        "skipping skill at {}: {}",
+                        skill_path.display(),
+                        e
+                    );
+                    continue;
+                }
+            };
 
-            let id = manifest["id"].as_str().unwrap_or("");
+            let id = &manifest.id;
             if id.trim().is_empty() {
                 continue;
             }
-            let tool_desc_prefix = manifest["description"].as_str().unwrap_or("");
-            let source_id = format!("{}_{}", source_prefix, id);
-            let version = manifest.get("version").and_then(|v| v.as_str());
-            let runtime = manifest.get("runtime").and_then(|v| v.as_str());
+            let tool_desc_prefix = manifest.description.as_deref().unwrap_or("");
+            let version = manifest.version.as_deref();
+            let runtime_str = manifest.runtime.join(",");
+            let runtime = Some(runtime_str.as_str());
+            let mut skill_capabilities = vec![source_prefix.to_string()];
+            if manifest.restricted {
+                skill_capabilities.push("restricted".to_string());
+                for role in &manifest.allowed_roles {
+                    skill_capabilities.push(format!("role:{}", role));
+                }
+            }
 
             store
                 .upsert_local_skill_install(
@@ -531,6 +808,24 @@ pub(crate) async fn register_local_skills_inner(
                 .await
                 .map_err(to_string)?;
 
+            let source_name = format!("skill:{}", id);
+            let trust_level = if source_prefix == "system_plugin" {
+                McpTrustLevel::Official
+            } else {
+                McpTrustLevel::Community
+            };
+            let is_read_only = source_prefix == "system_plugin";
+            let skill_source = store
+                .upsert_skill_source(
+                    &source_name,
+                    &skill_path.to_string_lossy(),
+                    trust_level,
+                    is_read_only,
+                )
+                .await
+                .map_err(to_string)?;
+            let source_id = skill_source.id.clone();
+
             // Extract tools from llm-tool.yaml
             let llm_tool_path = skill_path.join("llm-tool.yaml");
             if !llm_tool_path.exists() {
@@ -540,15 +835,19 @@ pub(crate) async fn register_local_skills_inner(
             let llm_tools: serde_json::Value =
                 serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
 
-            // Prepare generic environment variables
+            // Prepare environment variables: SDK PYTHONPATH + skill-declared requirements
             let mut env = HashMap::new();
-            if let Some(reqs) = manifest.get("env_requirements").and_then(|v| v.as_array()) {
-                for req in reqs {
-                    if let Some(env_name) = req.as_str() {
-                        if let Ok(val) = std::env::var(env_name) {
-                            env.insert(env_name.to_string(), val);
-                        }
-                    }
+            let existing_pypath = std::env::var("PYTHONPATH").unwrap_or_default();
+            let pathsep = if cfg!(windows) { ";" } else { ":" };
+            let pypath = if existing_pypath.is_empty() {
+                sdk_pythonpath.clone()
+            } else {
+                format!("{}{}{}", sdk_pythonpath, pathsep, &existing_pypath)
+            };
+            env.insert("PYTHONPATH".to_string(), pypath);
+            for env_name in &manifest.env_requirements {
+                if let Ok(val) = std::env::var(env_name) {
+                    env.insert(env_name.to_string(), val);
                 }
             }
 
@@ -556,7 +855,11 @@ pub(crate) async fn register_local_skills_inner(
                 for tool_def in tools_array {
                     let tool_name = tool_def["name"].as_str().unwrap();
                     let tool_desc = tool_def["description"].as_str().unwrap_or(tool_desc_prefix);
-                    let config_json = serde_json::to_string(tool_def).unwrap();
+                    let mut enriched_tool_def = tool_def.clone();
+                    enriched_tool_def["execution"] = serde_json::json!({
+                        "timeout_seconds": manifest.execution.timeout_seconds
+                    });
+                    let config_json = serde_json::to_string(&enriched_tool_def).unwrap();
 
                     let full_main_path = skill_path.join("main.py");
 
@@ -568,7 +871,7 @@ pub(crate) async fn register_local_skills_inner(
                         source_type: McpSourceType::Local,
                         status: McpToolStatus::Healthy,
                         ping_ms: None,
-                        capabilities: vec![source_prefix.to_string()],
+                        capabilities: skill_capabilities.clone(),
                         description: tool_desc.to_string(),
                         error: None,
                         command: Some("python3".to_string()),

@@ -5,17 +5,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+use crate::modules::sandbox::error::SandboxError;
+use crate::modules::sandbox::provider::SandboxProvider;
+use crate::modules::sandbox::types::{SandboxLeaseInfo, SandboxRunResult};
+
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_host::{HostBackendOptions, HostPythonBackend};
-use crate::modules::sandbox::error::SandboxError;
-use crate::modules::sandbox::types::{
-    SandboxExecutionOutput, SandboxIdentity, SandboxLeaseInfo, SandboxRunResult,
-};
-
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_wsl::{WslBackendOptions, WslBoxrunBackend};
 
@@ -69,7 +69,7 @@ impl SandboxManagerOptions {
 
 #[derive(Clone)]
 pub struct SandboxRuntimeManager {
-    backend: BackendRuntime,
+    backend: Arc<dyn SandboxProvider>,
     options: SandboxManagerOptions,
     session_leases: Arc<RwLock<HashMap<String, SessionLease>>>,
     active_ids: Arc<RwLock<HashSet<String>>>,
@@ -84,26 +84,51 @@ struct SessionLease {
     expires_at_unix_ms: i64,
 }
 
-#[derive(Clone)]
-enum BackendRuntime {
-    #[cfg(target_os = "windows")]
-    Wsl(WslBoxrunBackend),
-    #[cfg(target_os = "windows")]
-    Host(HostPythonBackend),
-    Disabled(String),
+/// Fallback provider that always returns `Unavailable`.
+struct DisabledProvider {
+    reason: String,
+}
+
+#[async_trait]
+impl SandboxProvider for DisabledProvider {
+    fn provider_name(&self) -> &str {
+        "disabled"
+    }
+
+    async fn get_or_create_box(
+        &self,
+        _box_name: &str,
+    ) -> Result<crate::modules::sandbox::types::SandboxIdentity, SandboxError> {
+        Err(SandboxError::Unavailable(self.reason.clone()))
+    }
+
+    async fn stop_box(&self, _box_id_or_name: &str) -> Result<(), SandboxError> {
+        Err(SandboxError::Unavailable(self.reason.clone()))
+    }
+
+    async fn run_python(
+        &self,
+        _box_id_or_name: &str,
+        _code: &str,
+        _timeout_seconds: u64,
+    ) -> Result<crate::modules::sandbox::types::SandboxExecutionOutput, SandboxError> {
+        Err(SandboxError::Unavailable(self.reason.clone()))
+    }
 }
 
 impl SandboxRuntimeManager {
     pub fn new(options: SandboxManagerOptions) -> Self {
-        let backend = match Self::build_backend(&options) {
-            Ok(backend) => backend,
+        let backend: Arc<dyn SandboxProvider> = match Self::build_provider(&options) {
+            Ok(provider) => provider,
             Err(err) => {
                 log::warn!(
                     "sandbox runtime disabled: code={} detail={}",
                     err.code(),
                     err
                 );
-                BackendRuntime::Disabled(err.to_string())
+                Arc::new(DisabledProvider {
+                    reason: err.to_string(),
+                })
             }
         };
 
@@ -118,7 +143,11 @@ impl SandboxRuntimeManager {
     }
 
     pub fn is_available(&self) -> bool {
-        !matches!(self.backend, BackendRuntime::Disabled(_))
+        self.backend.provider_name() != "disabled"
+    }
+
+    pub fn provider_name(&self) -> &str {
+        self.backend.provider_name()
     }
 
     pub async fn start_background_worker(&self) {
@@ -160,7 +189,7 @@ impl SandboxRuntimeManager {
 
         for (session_id, sandbox_id) in expired {
             self.remove_lease(&session_id, &sandbox_id).await;
-            let _ = self.backend_stop_box(&sandbox_id).await;
+            let _ = self.backend.stop_box(&sandbox_id).await;
         }
         Ok(())
     }
@@ -179,7 +208,7 @@ impl SandboxRuntimeManager {
         self.ensure_capacity().await?;
 
         let sandbox_name = session_to_box_name(&normalized_session);
-        let identity = self.backend_get_or_create(&sandbox_name).await?;
+        let identity = self.backend.get_or_create_box(&sandbox_name).await?;
         let expires_at = now_ms + self.options.default_timeout.as_millis() as i64;
 
         {
@@ -221,7 +250,7 @@ impl SandboxRuntimeManager {
         } else {
             self.remove_lease_by_sandbox_id(sandbox_id).await;
         }
-        self.backend_stop_box(sandbox_id).await
+        self.backend.stop_box(sandbox_id).await
     }
 
     pub async fn run_code(
@@ -261,7 +290,8 @@ impl SandboxRuntimeManager {
         for attempt in 0..SESSION_BUSY_RETRY_ATTEMPTS {
             let lease = self.get_or_create_sandbox(&normalized_session).await?;
             match self
-                .backend_run_python(&lease.sandbox_id, code, timeout_secs)
+                .backend
+                .run_python(&lease.sandbox_id, code, timeout_secs)
                 .await
             {
                 Ok(output) => {
@@ -324,10 +354,10 @@ impl SandboxRuntimeManager {
             active.iter().cloned().collect()
         };
         for sandbox_id in active_ids {
-            let _ = self.backend_stop_box(&sandbox_id).await;
+            let _ = self.backend.stop_box(&sandbox_id).await;
             self.remove_lease_by_sandbox_id(&sandbox_id).await;
         }
-        self.backend_shutdown().await
+        self.backend.shutdown().await
     }
 
     async fn get_valid_lease(&self, session_id: &str, now_ms: i64) -> Option<SandboxLeaseInfo> {
@@ -357,7 +387,7 @@ impl SandboxRuntimeManager {
 
         if let Some(stale_id) = stale_sandbox {
             self.remove_lease(session_id, &stale_id).await;
-            let _ = self.backend_stop_box(&stale_id).await;
+            let _ = self.backend.stop_box(&stale_id).await;
         }
         output
     }
@@ -439,7 +469,9 @@ impl SandboxRuntimeManager {
         }
     }
 
-    fn build_backend(options: &SandboxManagerOptions) -> Result<BackendRuntime, SandboxError> {
+    fn build_provider(
+        options: &SandboxManagerOptions,
+    ) -> Result<Arc<dyn SandboxProvider>, SandboxError> {
         #[cfg(not(target_os = "windows"))]
         {
             let _ = options;
@@ -462,10 +494,10 @@ impl SandboxRuntimeManager {
                     python_bin: options.python_bin.clone(),
                 }) {
                     Ok(backend) => {
-                        // Do not block startup: first real call will return actionable errors if probe fails.
-                        let probe_backend = backend.clone();
+                        let provider: Arc<dyn SandboxProvider> = Arc::new(backend);
+                        let probe_ref = Arc::clone(&provider);
                         tauri::async_runtime::spawn(async move {
-                            if let Err(err) = probe_backend.probe().await {
+                            if let Err(err) = probe_ref.probe().await {
                                 log::warn!(
                                     "boxrun WSL REST probe failed: code={} detail={}",
                                     err.code(),
@@ -474,7 +506,7 @@ impl SandboxRuntimeManager {
                             }
                         });
 
-                        return Ok(BackendRuntime::Wsl(backend));
+                        return Ok(provider);
                     }
                     Err(err) => {
                         log::warn!(
@@ -494,57 +526,7 @@ impl SandboxRuntimeManager {
                 python_bin: options.python_bin.clone(),
                 working_dir: options.working_dir.clone(),
             })?;
-            return Ok(BackendRuntime::Host(host_backend));
-        }
-    }
-
-    async fn backend_get_or_create(
-        &self,
-        _box_name: &str,
-    ) -> Result<SandboxIdentity, SandboxError> {
-        match &self.backend {
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => backend.get_or_create_box(_box_name).await,
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Host(backend) => backend.get_or_create_box(_box_name).await,
-            BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
-        }
-    }
-
-    async fn backend_stop_box(&self, _box_id: &str) -> Result<(), SandboxError> {
-        match &self.backend {
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => backend.stop_box(_box_id).await,
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Host(backend) => backend.stop_box(_box_id).await,
-            BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
-        }
-    }
-
-    async fn backend_run_python(
-        &self,
-        _box_id: &str,
-        _code: &str,
-        _timeout_secs: u64,
-    ) -> Result<SandboxExecutionOutput, SandboxError> {
-        match &self.backend {
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => backend.run_python(_box_id, _code, _timeout_secs).await,
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Host(backend) => {
-                backend.run_python(_box_id, _code, _timeout_secs).await
-            }
-            BackendRuntime::Disabled(reason) => Err(SandboxError::Unavailable(reason.clone())),
-        }
-    }
-
-    async fn backend_shutdown(&self) -> Result<(), SandboxError> {
-        match &self.backend {
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Wsl(backend) => backend.shutdown().await,
-            #[cfg(target_os = "windows")]
-            BackendRuntime::Host(backend) => backend.shutdown().await,
-            BackendRuntime::Disabled(_) => Ok(()),
+            return Ok(Arc::new(host_backend));
         }
     }
 }
