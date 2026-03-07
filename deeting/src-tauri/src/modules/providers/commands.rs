@@ -378,13 +378,23 @@ pub async fn test_local_provider_model(
         extract_error_message(&body_json)
             .or_else(|| Some(format!("upstream status {}", status.as_u16())))
     };
+    let response_body = if status.is_success() && capability == "chat" {
+        normalize_provider_test_response(
+            &state.providers.transformer,
+            &prepared,
+            body_json.clone(),
+            status.as_u16(),
+        )
+    } else {
+        body_json
+    };
 
     Ok(ProviderModelTestResponse {
         success: status.is_success(),
         latency_ms: started.elapsed().as_millis() as i64,
         status_code: status.as_u16() as i32,
         upstream_url: prepared.display_url(),
-        response_body: Some(body_json),
+        response_body: Some(response_body),
         error,
     })
 }
@@ -857,9 +867,28 @@ fn extract_error_message(value: &Value) -> Option<String> {
     None
 }
 
+fn normalize_provider_test_response(
+    transformer: &crate::modules::providers::response_transformer::ResponseTransformer,
+    prepared: &crate::modules::providers::request_runtime::PreparedProviderRequest,
+    raw: Value,
+    status_code: u16,
+) -> Value {
+    transformer.transform(
+        prepared.template_engine.as_str(),
+        Some(prepared.response_decoder.as_str()),
+        &prepared.response_transform,
+        raw,
+        status_code,
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::decode_model_ids_from_body;
+    use super::{decode_model_ids_from_body, normalize_provider_test_response};
+    use crate::modules::providers::request_runtime::PreparedProviderRequest;
+    use crate::modules::providers::response_transformer::ResponseTransformer;
+    use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn decode_model_ids_from_body_extracts_ids_from_data() {
@@ -937,5 +966,41 @@ mod tests {
                 serde_json::json!({}),
             )
         );
+    }
+
+    #[test]
+    fn normalize_provider_test_response_uses_responses_decoder() {
+        let transformer = ResponseTransformer::new();
+        let prepared = PreparedProviderRequest {
+            method: "POST".to_string(),
+            url: "https://api.openai.com/v1/responses".to_string(),
+            query_params: BTreeMap::new(),
+            headers: BTreeMap::new(),
+            body: json!({}),
+            template_engine: "openai_compat".to_string(),
+            response_decoder: "openai_responses".to_string(),
+            response_transform: json!({}),
+        };
+
+        let normalized = normalize_provider_test_response(
+            &transformer,
+            &prepared,
+            json!({
+                "model": "gpt-5.3-codex",
+                "output": [{
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "pong local responses"}]
+                }],
+                "usage": { "input_tokens": 1, "output_tokens": 2, "total_tokens": 3 },
+                "status": "completed"
+            }),
+            200,
+        );
+
+        assert_eq!(
+            normalized["choices"][0]["message"]["content"],
+            json!("pong local responses")
+        );
+        assert_eq!(normalized["usage"]["total_tokens"], json!(3));
     }
 }

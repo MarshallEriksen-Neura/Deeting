@@ -73,6 +73,8 @@ export const ProviderPresetSyncSchema = z.object({
   default_headers: z.record(z.string(), z.unknown()).default({}),
   default_params: z.record(z.string(), z.unknown()).default({}),
   capability_configs: z.record(z.string(), z.unknown()).default({}),
+  protocol_schema_version: z.string().nullable().optional(),
+  protocol_profiles: z.record(z.string(), z.unknown()).default({}),
   version: z.preprocess(safeNumber, z.number()).optional().default(1),
   is_active: z.boolean().default(true),
 })

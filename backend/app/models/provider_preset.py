@@ -97,6 +97,18 @@ class ProviderPreset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         server_default="{}",
         comment="按能力配置的模板/路由/异步策略",
     )
+    protocol_schema_version: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="协议模板 schema 版本（Provider Protocol Runtime V2）",
+    )
+    protocol_profiles: Mapped[dict[str, Any]] = mapped_column(
+        JSONBCompat,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+        comment="按 capability 持久化的 V2 protocol profile",
+    )
 
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1", comment="乐观锁版本号"

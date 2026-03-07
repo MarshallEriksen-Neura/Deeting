@@ -9,7 +9,8 @@ impl ProviderStore {
         let rows = sqlx::query(
             "SELECT slug, name, provider, base_url, icon, theme_color, category, url_template,
                     template_engine, response_transform, auth_type, auth_config, default_headers,
-                    default_params, capability_configs, version, is_active
+                    default_params, capability_configs, protocol_schema_version, protocol_profiles,
+                    version, is_active
              FROM provider_presets
              ORDER BY name ASC",
         )
@@ -23,6 +24,7 @@ impl ProviderStore {
             let default_headers_text: Option<String> = row.try_get("default_headers")?;
             let default_params_text: Option<String> = row.try_get("default_params")?;
             let capability_configs_text: Option<String> = row.try_get("capability_configs")?;
+            let protocol_profiles_text: Option<String> = row.try_get("protocol_profiles")?;
             presets.push(ProviderPreset {
                 slug: row.try_get("slug")?,
                 name: row.try_get("name")?,
@@ -41,6 +43,8 @@ impl ProviderStore {
                 default_headers: parse_json_object_text(default_headers_text),
                 default_params: parse_json_object_text(default_params_text),
                 capability_configs: parse_json_object_text(capability_configs_text),
+                protocol_schema_version: row.try_get("protocol_schema_version")?,
+                protocol_profiles: parse_json_object_text(protocol_profiles_text),
                 version: row.try_get::<i64, _>("version").unwrap_or(1),
                 is_active: row.try_get::<i64, _>("is_active")? != 0,
             });
@@ -52,7 +56,8 @@ impl ProviderStore {
         let row = sqlx::query(
             "SELECT slug, name, provider, base_url, icon, theme_color, category, url_template,
                     template_engine, response_transform, auth_type, auth_config, default_headers,
-                    default_params, capability_configs, version, is_active
+                    default_params, capability_configs, protocol_schema_version, protocol_profiles,
+                    version, is_active
              FROM provider_presets WHERE slug = ?",
         )
         .bind(slug)
@@ -68,6 +73,7 @@ impl ProviderStore {
         let default_headers_text: Option<String> = row.try_get("default_headers")?;
         let default_params_text: Option<String> = row.try_get("default_params")?;
         let capability_configs_text: Option<String> = row.try_get("capability_configs")?;
+        let protocol_profiles_text: Option<String> = row.try_get("protocol_profiles")?;
 
         Ok(Some(ProviderPreset {
             slug: row.try_get("slug")?,
@@ -87,6 +93,8 @@ impl ProviderStore {
             default_headers: parse_json_object_text(default_headers_text),
             default_params: parse_json_object_text(default_params_text),
             capability_configs: parse_json_object_text(capability_configs_text),
+            protocol_schema_version: row.try_get("protocol_schema_version")?,
+            protocol_profiles: parse_json_object_text(protocol_profiles_text),
             version: row.try_get::<i64, _>("version").unwrap_or(1),
             is_active: row.try_get::<i64, _>("is_active")? != 0,
         }))
@@ -105,8 +113,9 @@ impl ProviderStore {
                 "INSERT INTO provider_presets (
                     slug, name, provider, base_url, icon, theme_color, category, url_template,
                     template_engine, response_transform, auth_type, auth_config, default_headers,
-                    default_params, capability_configs, version, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    default_params, capability_configs, protocol_schema_version, protocol_profiles,
+                    version, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(slug) DO UPDATE SET
                     name = excluded.name,
                     provider = excluded.provider,
@@ -122,6 +131,8 @@ impl ProviderStore {
                     default_headers = excluded.default_headers,
                     default_params = excluded.default_params,
                     capability_configs = excluded.capability_configs,
+                    protocol_schema_version = excluded.protocol_schema_version,
+                    protocol_profiles = excluded.protocol_profiles,
                     version = excluded.version,
                     is_active = 1",
             )
@@ -140,6 +151,8 @@ impl ProviderStore {
             .bind(preset.default_headers.to_string())
             .bind(preset.default_params.to_string())
             .bind(preset.capability_configs.to_string())
+            .bind(&preset.protocol_schema_version)
+            .bind(preset.protocol_profiles.to_string())
             .bind(preset.version)
             .execute(&mut *tx)
             .await?;

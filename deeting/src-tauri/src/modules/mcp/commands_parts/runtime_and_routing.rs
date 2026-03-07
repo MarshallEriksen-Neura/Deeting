@@ -685,6 +685,7 @@ async fn request_provider_chat_completion(
 
     let transformed = app_state.providers.transformer.transform(
         prepared.template_engine.as_str(),
+        Some(prepared.response_decoder.as_str()),
         &prepared.response_transform,
         raw,
         status.as_u16(),

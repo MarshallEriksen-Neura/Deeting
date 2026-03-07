@@ -54,17 +54,37 @@ class TemplateRenderStep(BaseStep):
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """执行模板渲染"""
+        protocol_profile = ctx.get("routing", "protocol_profile") or {}
+        request_profile = (
+            protocol_profile.get("request")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        defaults_profile = (
+            protocol_profile.get("defaults")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
         upstream_url = (ctx.get("routing", "upstream_url") or ctx.selected_upstream or "")
-        template_engine = ctx.get("routing", "template_engine") or "simple_replace"
+        template_engine = (
+            request_profile.get("template_engine")
+            or "simple_replace"
+        )
         request_data = (
             ctx.get("resolve_assets", "request_data")
             or ctx.get("validation", "validated")
             or {}
         )
         tools = ctx.get("validation", "tools") or None
-        default_params = ctx.get("routing", "default_params") or {}
-        default_headers = ctx.get("routing", "default_headers") or {}
-        request_template = ctx.get("routing", "request_template")
+        default_params = (
+            defaults_profile.get("body")
+            or {}
+        )
+        default_headers = (
+            defaults_profile.get("headers")
+            or {}
+        )
+        request_template = request_profile.get("request_template")
 
         try:
             # 构建渲染上下文

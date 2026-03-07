@@ -561,11 +561,21 @@ async def test_quick_add_models_defaults_and_upstream_path():
 @pytest.mark.asyncio
 async def test_provider_model_test_ping(monkeypatch):
     monkeypatch.setattr(settings, "SECRET_KEY", "secret")
+    captured: dict = {}
 
     class FakeResp:
         def __init__(self):
             self.status_code = 200
-            self._json = {"ok": True}
+            self._json = {
+                "model": "gpt-4o",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "pong"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
             self.text = "{}"
 
         def json(self):
@@ -581,7 +591,12 @@ async def test_provider_model_test_ping(monkeypatch):
         async def __aexit__(self, *args):
             return False
 
-        async def post(self, *args, **kwargs):
+        async def request(self, method, url, **kwargs):
+            captured["method"] = method
+            captured["url"] = url
+            captured["headers"] = kwargs.get("headers") or {}
+            captured["params"] = kwargs.get("params") or {}
+            captured["json"] = kwargs.get("json") or {}
             return FakeResp()
 
     monkeypatch.setattr(
@@ -622,6 +637,97 @@ async def test_provider_model_test_ping(monkeypatch):
         result = await svc.test_model(model.id, None, prompt="ping")
         assert result["success"] is True
         assert result["status_code"] == 200
+        assert captured["method"] == "POST"
+        assert captured["json"]["messages"][0]["content"] == "ping"
+        assert result["response_body"]["output_text"] == "pong"
+
+
+@pytest.mark.asyncio
+async def test_provider_model_test_ping_uses_responses_profile_input(monkeypatch):
+    monkeypatch.setattr(settings, "SECRET_KEY", "secret")
+    captured: dict = {}
+
+    class FakeResp:
+        def __init__(self):
+            self.status_code = 200
+            self._json = {
+                "model": "gpt-5.3-codex",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "pong from responses"}],
+                    }
+                ],
+                "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
+                "status": "completed",
+            }
+            self.text = "{}"
+
+        def json(self):
+            return self._json
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, method, url, **kwargs):
+            captured["method"] = method
+            captured["url"] = url
+            captured["headers"] = kwargs.get("headers") or {}
+            captured["params"] = kwargs.get("params") or {}
+            captured["json"] = kwargs.get("json") or {}
+            return FakeResp()
+
+    monkeypatch.setattr(
+        "app.services.providers.provider_instance_service.create_async_http_client",
+        lambda *args, **kwargs: FakeClient(),
+    )
+
+    async with AsyncSessionLocal() as session:
+        svc = ProviderInstanceService(session)
+        inst = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="inst-test-responses",
+            base_url="https://api.example.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+            api_key="sk-test",
+            protocol="responses",
+        )
+        model = ProviderModel(
+            id=uuid.uuid4(),
+            instance_id=inst.id,
+            capabilities=["chat"],
+            model_id="gpt-5.3-codex",
+            display_name="gpt-5.3-codex",
+            upstream_path="responses",
+            pricing_config={},
+            limit_config={},
+            tokenizer_config={},
+            routing_config={},
+            source="manual",
+            extra_meta={},
+            weight=100,
+            priority=0,
+            is_active=True,
+        )
+        await svc.upsert_models(inst.id, None, [model])
+
+        result = await svc.test_model(model.id, None, prompt="ping")
+        assert result["success"] is True
+        assert result["status_code"] == 200
+        assert captured["method"] == "POST"
+        assert captured["url"].endswith("/responses")
+        assert captured["json"]["input"] == "ping"
+        assert "messages" not in captured["json"]
+        assert result["response_body"]["output_text"] == "pong from responses"
 
 
 @pytest.mark.asyncio

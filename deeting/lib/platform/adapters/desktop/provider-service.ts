@@ -42,6 +42,8 @@ async function syncPresetsFromCloud() {
     default_headers: (preset.default_headers || {}) as Record<string, unknown>,
     default_params: (preset.default_params || {}) as Record<string, unknown>,
     capability_configs: (preset.capability_configs || {}) as Record<string, unknown>,
+    protocol_schema_version: preset.protocol_schema_version ?? null,
+    protocol_profiles: (preset.protocol_profiles || {}) as Record<string, unknown>,
     version: preset.version ?? 1,
     is_active: preset.is_active !== false,
   }));

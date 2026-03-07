@@ -274,3 +274,44 @@ async def test_record_bandit_feedback_skips_without_any_arm_id(monkeypatch):
     await step._record_bandit_feedback(ctx, success=True, latency_ms=100.0)
 
     assert calls == []
+
+
+def test_upstream_call_builds_template_render_state_from_canonical_request():
+    step = UpstreamCallStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set(
+        "protocol",
+        "canonical_request",
+        SimpleNamespace(
+            model_dump=lambda exclude_none=True: {
+                "model": "gpt-5.3-codex",
+                "messages": [{"role": "user", "content": "hello upstream"}],
+                "stream": False,
+                "temperature": 0.1,
+                "max_output_tokens": 32,
+                "tools": [{"type": "function", "function": {"name": "search_sdk"}}],
+            }
+        ),
+    )
+    ctx.set("routing", "upstream_url", "https://api.example.com/v1/chat/completions")
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {"defaults": {"headers": {"X-Upstream": "fallback"}}},
+    )
+
+    step._ensure_template_render_state(ctx)
+
+    assert (
+        ctx.get("template_render", "upstream_url")
+        == "https://api.example.com/v1/chat/completions"
+    )
+    assert ctx.get("template_render", "headers") == {"X-Upstream": "fallback"}
+    assert ctx.get("template_render", "request_body") == {
+        "model": "gpt-5.3-codex",
+        "messages": [{"role": "user", "content": "hello upstream"}],
+        "stream": False,
+        "temperature": 0.1,
+        "max_tokens": 32,
+        "tools": [{"type": "function", "function": {"name": "search_sdk"}}],
+    }

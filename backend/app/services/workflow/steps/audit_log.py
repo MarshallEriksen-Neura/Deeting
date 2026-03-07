@@ -330,7 +330,13 @@ class AuditLogStep(BaseStep):
                 if ctx.selected_preset_item_id
                 else None
             ),
-            "template_engine": ctx.get("routing", "template_engine"),
+            "template_engine": (
+                ((ctx.get("routing", "protocol_profile") or {}).get("request") or {}).get(
+                    "template_engine"
+                )
+                if isinstance(ctx.get("routing", "protocol_profile"), dict)
+                else None
+            ),
             "upstream_url": ctx.get("routing", "upstream_url"),
         }
 

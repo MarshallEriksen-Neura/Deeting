@@ -33,9 +33,11 @@ from app.repositories.provider_model_entitlement_repository import (
     ProviderModelEntitlementRepository,
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.protocols.runtime.profile_resolver import build_protocol_profile
 from app.services.providers.auth_resolver import resolve_auth_for_protocol
 from app.services.providers.config_utils import deep_merge
 from app.services.providers.upstream_url import build_upstream_url
+from app.protocols.runtime.profile_resolver import build_protocol_profile_from_preset
 from app.utils.provider_model_access import (
     parse_unlock_price_credits,
     requires_model_purchase,
@@ -65,23 +67,17 @@ class RoutingCandidate:
     provider: str
     upstream_url: str
     channel: str
-    template_engine: str
-    request_template: dict
-    response_transform: dict
     async_config: dict
-    http_method: str
     pricing_config: dict
     limit_config: dict
     auth_type: str
     auth_config: dict
-    default_headers: dict
-    default_params: dict
     routing_config: dict
     config_override: dict
+    protocol_profile: dict
     weight: int
     priority: int
     output_mapping: dict = field(default_factory=dict)
-    request_builder: dict = field(default_factory=dict)
     credential_id: str | None = None
     credential_alias: str | None = None
     bandit_state: BanditArmState | None = None
@@ -266,6 +262,43 @@ class RoutingSelector:
                     or effective_config.get("params")
                     or {},
                 )
+                protocol_profile = build_protocol_profile_from_preset(
+                    preset=preset,
+                    provider=preset.provider if preset else "custom",
+                    capability=capability,
+                    protocol=protocol,
+                    upstream_path=m.upstream_path,
+                    http_method=http_method,
+                    template_engine=template_engine,
+                    request_template=request_template,
+                    response_transform=response_transform,
+                    request_builder=request_builder,
+                    default_headers=resolved_headers,
+                    default_params=default_params,
+                )
+                protocol_template_engine = (
+                    protocol_profile.request.template_engine or template_engine
+                )
+                protocol_request_template = (
+                    protocol_profile.request.request_template or request_template
+                )
+                protocol_response_transform = (
+                    protocol_profile.response.response_template or response_transform
+                )
+                protocol_http_method = (
+                    protocol_profile.transport.method or http_method
+                )
+                protocol_request_builder = (
+                    protocol_profile.request.request_builder.model_dump(exclude_none=True)
+                    if protocol_profile.request.request_builder
+                    else request_builder
+                )
+                protocol_default_headers = (
+                    protocol_profile.defaults.headers or resolved_headers
+                )
+                protocol_default_params = (
+                    protocol_profile.defaults.body or default_params
+                )
 
                 for cred in cred_entries:
                     auth_config = dict(base_auth_config)
@@ -283,21 +316,15 @@ class RoutingSelector:
                             provider=preset.provider if preset else "custom",
                             upstream_url=upstream_url,
                             channel=channel,
-                            template_engine=template_engine,
-                            request_template=request_template,
-                            response_transform=response_transform,
                             async_config=async_config,
-                            http_method=http_method,
                             output_mapping=output_mapping,
-                            request_builder=request_builder,
                             pricing_config=m.pricing_config or {},
                             limit_config=m.limit_config or {},
                             auth_type=resolved_auth_type,
                             auth_config=auth_config,
-                            default_headers=resolved_headers,
-                            default_params=default_params,
                             routing_config=m.routing_config or {},
                             config_override=m.config_override or {},
+                            protocol_profile=protocol_profile.model_dump(mode="python"),
                             weight=int(m.weight or 0) + int(cred["weight"] or 0),
                             priority=int(m.priority or 0) + int(cred["priority"] or 0),
                             credential_id=cred["id"],
@@ -494,6 +521,41 @@ class RoutingSelector:
             or effective_config.get("params")
             or {},
         )
+        protocol_profile = build_protocol_profile_from_preset(
+            preset=preset,
+            provider=preset.provider if preset else "custom",
+            capability=resolved_cap,
+            protocol=protocol,
+            upstream_path=model.upstream_path,
+            http_method=http_method,
+            template_engine=template_engine,
+            request_template=request_template,
+            response_transform=response_transform,
+            request_builder=request_builder,
+            default_headers=resolved_headers,
+            default_params=default_params,
+        )
+        protocol_template_engine = (
+            protocol_profile.request.template_engine or template_engine
+        )
+        protocol_request_template = (
+            protocol_profile.request.request_template or request_template
+        )
+        protocol_response_transform = (
+            protocol_profile.response.response_template or response_transform
+        )
+        protocol_http_method = protocol_profile.transport.method or http_method
+        protocol_request_builder = (
+            protocol_profile.request.request_builder.model_dump(exclude_none=True)
+            if protocol_profile.request.request_builder
+            else request_builder
+        )
+        protocol_default_headers = (
+            protocol_profile.defaults.headers or resolved_headers
+        )
+        protocol_default_params = (
+            protocol_profile.defaults.body or default_params
+        )
 
         for cred in cred_entries:
             auth_config = dict(base_auth_config)
@@ -511,21 +573,15 @@ class RoutingSelector:
                     provider=preset.provider if preset else "custom",
                     upstream_url=upstream_url,
                     channel=channel,
-                    template_engine=template_engine,
-                    request_template=request_template,
-                    response_transform=response_transform,
                     async_config=async_config,
-                    http_method=http_method,
                     output_mapping=output_mapping,
-                    request_builder=request_builder,
                     pricing_config=model.pricing_config or {},
                     limit_config=model.limit_config or {},
                     auth_type=resolved_auth_type,
                     auth_config=auth_config,
-                    default_headers=resolved_headers,
-                    default_params=default_params,
                     routing_config=model.routing_config or {},
                     config_override=model.config_override or {},
+                    protocol_profile=protocol_profile.model_dump(mode="python"),
                     weight=int(model.weight or 0) + int(cred["weight"] or 0),
                     priority=int(model.priority or 0) + int(cred["priority"] or 0),
                     credential_id=cred["id"],

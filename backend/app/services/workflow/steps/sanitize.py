@@ -69,7 +69,12 @@ class SanitizeStep(BaseStep):
 
         # 获取配置规则 (从 Provider PresetItem.response_transform 中提取)
         # 格式示例: {"sanitization": {"remove_fields": ["usage"], "mask_fields": ["id"]}}
-        response_transform_config = ctx.get("routing", "response_transform") or {}
+        protocol_profile = ctx.get("routing", "protocol_profile") or {}
+        response_transform_config = (
+            ((protocol_profile.get("response") or {}).get("response_template") or {})
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
         sanitization_rules = response_transform_config.get("sanitization", {})
 
         # 脱敏响应头

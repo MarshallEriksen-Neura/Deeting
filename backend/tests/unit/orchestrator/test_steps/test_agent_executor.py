@@ -162,6 +162,47 @@ def test_should_not_block_direct_tool_call_when_code_mode_unavailable():
     )
 
 
+def test_ensure_template_render_state_builds_from_canonical_request():
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set(
+        "protocol",
+        "canonical_request",
+        SimpleNamespace(
+            model_dump=lambda exclude_none=True: {
+                "model": "gpt-5.3-codex",
+                "messages": [{"role": "user", "content": "hello fallback"}],
+                "stream": False,
+                "temperature": 0.2,
+                "max_output_tokens": 128,
+                "tools": [{"type": "function", "function": {"name": "search_sdk"}}],
+            }
+        ),
+    )
+    ctx.set("routing", "upstream_url", "https://api.example.com/v1/chat/completions")
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {"defaults": {"headers": {"X-Source": "fallback"}}},
+    )
+
+    step._ensure_template_render_state(ctx)
+
+    assert (
+        ctx.get("template_render", "upstream_url")
+        == "https://api.example.com/v1/chat/completions"
+    )
+    assert ctx.get("template_render", "headers") == {"X-Source": "fallback"}
+    assert ctx.get("template_render", "request_body") == {
+        "model": "gpt-5.3-codex",
+        "messages": [{"role": "user", "content": "hello fallback"}],
+        "stream": False,
+        "temperature": 0.2,
+        "max_tokens": 128,
+        "tools": [{"type": "function", "function": {"name": "search_sdk"}}],
+    }
+
+
 def test_consume_pending_assistant_transition_applies_activation_payload():
     step = AgentExecutorStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)

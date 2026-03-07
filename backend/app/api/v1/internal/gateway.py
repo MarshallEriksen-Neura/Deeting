@@ -90,10 +90,13 @@ from app.schemas.gateway import (
     EmbeddingsResponse,
     GatewayError,
     ModelGroupListResponse,
+    ResponsesRequest,
     RoutingTestRequest,
     RoutingTestResponse,
     StepRegistryResponse,
 )
+from app.protocols.egress import render_responses_api_response
+from app.protocols.runtime.response_decoders import decode_response
 from app.services.conversation.service import ConversationService
 from app.services.conversation.session_service import ConversationSessionService
 from app.services.conversation.topic_namer import (
@@ -843,7 +846,13 @@ async def test_routing(
             str(provider_model_id) if provider_model_id is not None else None
         ),
         upstream_url=ctx.get("routing", "upstream_url"),
-        template_engine=ctx.get("routing", "template_engine"),
+        template_engine=(
+            ((ctx.get("routing", "protocol_profile") or {}).get("request") or {}).get(
+                "template_engine"
+            )
+            if isinstance(ctx.get("routing", "protocol_profile"), dict)
+                else None
+        ),
         routing_config=ctx.get("routing", "routing_config"),
         limit_config=ctx.get("routing", "limit_config"),
         pricing_config=ctx.get("routing", "pricing_config"),
@@ -921,6 +930,82 @@ async def chat_completions(
     response_body = ctx.get("response_transform", "response")
     status_code = ctx.get("upstream_call", "status_code") or 200
     return JSONResponse(content=response_body, status_code=status_code)
+
+
+@router.post(
+    "/responses",
+    response_model=None,
+)
+async def responses(
+    request: Request,
+    request_body: ResponsesRequest,
+    user: User = Depends(get_current_user),
+    orchestrator=Depends(get_internal_orchestrator),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse | StreamingResponse:
+    if request_body.stream:
+        return JSONResponse(
+            status_code=400,
+            content=GatewayError(
+                code="RESPONSES_STREAM_UNSUPPORTED",
+                message="Internal /responses streaming is not supported yet",
+                source="gateway",
+                trace_id=getattr(request.state, "trace_id", None) if request else None,
+            ).model_dump(),
+        )
+
+    ctx = WorkflowContext(
+        channel=Channel.INTERNAL,
+        capability="chat",
+        requested_model=request_body.model,
+        db_session=db,
+        tenant_id=str(user.id) if user else None,
+        user_id=str(user.id) if user else None,
+        session_id=request_body.session_id,
+        api_key_id=(str(user.id) if user else None),
+        trace_id=getattr(request.state, "trace_id", None) if request else None,
+    )
+    ctx.set(
+        "request", "base_url", str(request.base_url).rstrip("/") if request else None
+    )
+    if request_body.request_id:
+        ctx.set("request", "request_id", request_body.request_id)
+    ctx.set("adapter", "vendor", "responses")
+    ctx.set("adapter", "raw_request", request_body)
+    ctx.set("validation", "request", request_body)
+    ctx.set("routing", "require_provider_model_id", True)
+
+    if request_body.status_stream:
+        return StreamingResponse(
+            _status_stream_chat(ctx, orchestrator),
+            media_type="text/event-stream",
+        )
+
+    result = await orchestrator.execute(ctx)
+    if not result.success or not ctx.is_success:
+        return JSONResponse(
+            status_code=400,
+            content=GatewayError(
+                code=ctx.error_code or "GATEWAY_ERROR",
+                message=ctx.error_message or "Request failed",
+                source=ctx.error_source.value if ctx.error_source else "gateway",
+                trace_id=ctx.trace_id,
+                upstream_status=ctx.upstream_result.status_code,
+                upstream_code=ctx.upstream_result.error_code,
+            ).model_dump(),
+        )
+
+    response_body = ctx.get("response_transform", "response") or {}
+    canonical = decode_response(
+        "openai_chat",
+        response_body,
+        fallback_model=ctx.requested_model,
+    )
+    status_code = ctx.get("upstream_call", "status_code") or 200
+    return JSONResponse(
+        content=render_responses_api_response(canonical),
+        status_code=status_code,
+    )
 
 
 @router.post(

@@ -48,6 +48,7 @@ def test_internal_chat_workflow_contract_steps():
     cfg = get_workflow_for_channel(Channel.INTERNAL, "chat")
 
     assert cfg.template == WorkflowTemplate.INTERNAL_CHAT
+    assert cfg.steps[0] == "request_adapter"
     assert "conversation_load" in cfg.steps
     assert "conversation_append" in cfg.steps
     assert cfg.steps.index("conversation_load") < cfg.steps.index("routing")

@@ -2,6 +2,7 @@ import hashlib
 import logging
 import uuid
 from decimal import Decimal
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -15,6 +16,15 @@ from app.core.database import get_db
 from app.deps.auth import get_current_user
 from app.models import AlipayRechargeOrder, AlipayRechargeOrderStatus, User
 from app.models.provider_instance import ProviderInstance, ProviderModel
+from app.protocols.canonical import CanonicalInputItem
+from app.protocols.egress import render_chat_completion_response
+from app.protocols.ingress import to_canonical_chat_request
+from app.protocols.runtime import protocol_runtime_service
+from app.protocols.runtime.profile_resolver import (
+    build_protocol_profile_from_preset,
+    load_protocol_profile_from_preset,
+)
+from app.protocols.runtime.response_decoders import decode_response
 from app.repositories import (
     ProviderModelRepository,
     ProviderPresetRepository,
@@ -44,7 +54,6 @@ from app.services.billing_pipeline import (
 )
 from app.services.credits import CreditsService
 from app.services.payments import AlipayService
-from app.services.providers.upstream_url import build_upstream_url
 from app.services.secrets.manager import SecretManager
 from app.services.system import SystemSettingsService
 from app.utils.time_utils import Datetime
@@ -240,6 +249,38 @@ def _build_auth_headers(
     return {"Authorization": f"Bearer {secret}"}
 
 
+def _build_runtime_profile_for_public_model(
+    *,
+    preset,
+    instance: ProviderInstance,
+    provider_model: ProviderModel,
+) -> Any:
+    capability = (
+        provider_model.capabilities[0] if provider_model.capabilities else "chat"
+    ).lower()
+    stored_profile = load_protocol_profile_from_preset(preset, capability)
+    stored_metadata = stored_profile.metadata if stored_profile else {}
+    protocol = (
+        instance.protocol
+        or (stored_metadata.get("protocol") if isinstance(stored_metadata, dict) else None)
+        or preset.provider
+    )
+    return build_protocol_profile_from_preset(
+        preset=preset,
+        provider=preset.provider,
+        capability=capability,
+        protocol=protocol,
+        upstream_path=provider_model.upstream_path,
+        http_method="",
+        template_engine="",
+        request_template={},
+        response_transform={},
+        request_builder={},
+        default_headers=preset.default_headers or {},
+        default_params=preset.default_params or {},
+    )
+
+
 @router.get("/balance", response_model=CreditsBalanceResponse)
 async def get_balance(
     current_user: User = Depends(get_current_user),
@@ -403,18 +444,34 @@ async def credits_chat_completions_proxy(
                 detail=f"Insufficient credits: {exc}",
             ) from exc
 
-    # --- 5. 构建上游 URL 和认证头 ---
-    protocol = instance.protocol or (
-        (preset.capability_configs or {}).get("chat", {}).get("protocol")
-    ) or preset.provider
-    base_url = instance.base_url or preset.base_url
-    upstream_url = build_upstream_url(
-        base_url,
-        provider_model.upstream_path,
-        protocol,
-        auto_append_v1=instance.auto_append_v1,
+    # --- 5. 构建 runtime v2 profile / canonical request / upstream request ---
+    profile = _build_runtime_profile_for_public_model(
+        preset=preset,
+        instance=instance,
+        provider_model=provider_model,
     )
-
+    canonical_request = to_canonical_chat_request(body)
+    canonical_request.model = provider_model.model_id
+    if profile.protocol_family == "openai_responses" and not canonical_request.input_items:
+        input_text_parts: list[str] = []
+        for message in canonical_request.messages:
+            if message.role == "system":
+                continue
+            if isinstance(message.content, str) and message.content.strip():
+                input_text_parts.append(message.content)
+        if input_text_parts:
+            canonical_request.input_items = [
+                CanonicalInputItem(
+                    type="text",
+                    role="user",
+                    text="\n\n".join(input_text_parts),
+                )
+            ]
+    prepared = protocol_runtime_service.build_upstream_request(
+        canonical_request,
+        profile,
+        base_url=instance.base_url or preset.base_url,
+    )
     auth_headers = _build_auth_headers(
         preset.auth_type,
         preset.auth_config or {},
@@ -422,19 +479,19 @@ async def credits_chat_completions_proxy(
     )
     headers = {
         "Content-Type": "application/json",
+        **prepared.headers,
         **auth_headers,
-        **(preset.default_headers or {}),
     }
 
     # --- 6. 构建转发体 ---
     is_stream = body.get("stream") is True
-    forward_body = {
-        "model": provider_model.model_id,
-        "messages": messages,
-        "stream": is_stream,
-        **{k: body[k] for k in ("temperature", "max_tokens", "tools") if k in body},
-    }
+    forward_body = dict(prepared.body)
     if is_stream:
+        if profile.protocol_family == "openai_responses":
+            raise HTTPException(
+                status_code=400,
+                detail="streaming not supported for responses-backed credits models yet",
+            )
         forward_body["stream_options"] = {"include_usage": True}
 
     trace_id = (body.get("trace_id") or "").strip() or f"credits-{uuid.uuid4().hex[:16]}"
@@ -444,7 +501,11 @@ async def credits_chat_completions_proxy(
         async def _raw_stream():
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
-                    "POST", upstream_url, headers=headers, json=forward_body,
+                    prepared.method,
+                    prepared.url,
+                    headers=headers,
+                    params=prepared.query,
+                    json=forward_body,
                 ) as resp:
                     if not resp.is_success:
                         text = (await resp.aread()).decode(errors="replace")[:500]
@@ -471,7 +532,13 @@ async def credits_chat_completions_proxy(
 
     # --- 8. 非流式转发 ---
     async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(upstream_url, headers=headers, json=forward_body)
+        resp = await client.request(
+            prepared.method,
+            prepared.url,
+            headers=headers,
+            params=prepared.query,
+            json=forward_body,
+        )
 
     if not resp.is_success:
         try:
@@ -481,7 +548,13 @@ async def credits_chat_completions_proxy(
             detail = resp.text[:500]
         raise HTTPException(status_code=resp.status_code, detail=detail)
 
-    data = resp.json()
+    upstream_data = resp.json()
+    canonical_response = decode_response(
+        profile.response.decoder.name,
+        upstream_data if isinstance(upstream_data, dict) else {},
+        fallback_model=model_id,
+    )
+    data = render_chat_completion_response(canonical_response)
 
     # --- 9. 按 pricing_config 扣费 (通过 BillingPipeline) ---
     usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}

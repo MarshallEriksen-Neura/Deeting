@@ -76,6 +76,8 @@ impl ProviderStore {
                 default_headers TEXT NOT NULL DEFAULT '{}',
                 default_params TEXT NOT NULL DEFAULT '{}',
                 capability_configs TEXT NOT NULL DEFAULT '{}',
+                protocol_schema_version TEXT,
+                protocol_profiles TEXT NOT NULL DEFAULT '{}',
                 version INTEGER NOT NULL DEFAULT 1,
                 is_active BOOLEAN DEFAULT 1
             )",
@@ -113,6 +115,18 @@ impl ProviderStore {
             "provider_presets",
             "response_transform",
             "ALTER TABLE provider_presets ADD COLUMN response_transform TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "protocol_schema_version",
+            "ALTER TABLE provider_presets ADD COLUMN protocol_schema_version TEXT",
+        )
+        .await?;
+        self.ensure_column(
+            "provider_presets",
+            "protocol_profiles",
+            "ALTER TABLE provider_presets ADD COLUMN protocol_profiles TEXT NOT NULL DEFAULT '{}'",
         )
         .await?;
         sqlx::query(

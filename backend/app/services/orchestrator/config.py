@@ -101,6 +101,7 @@ EXTERNAL_IMAGE_WORKFLOW = WorkflowConfig(
 INTERNAL_CHAT_WORKFLOW = WorkflowConfig(
     template=WorkflowTemplate.INTERNAL_CHAT,
     steps=[
+        "request_adapter",  # 0) 入口协议适配，统一 canonical request
         "validation",  # 1) 入参校验
         "conversation_load",  # 2) 会话上下文加载
         "assistant_prompt_injection",  # 2.5) 助手提示词注入 (Spec Agent 能力)

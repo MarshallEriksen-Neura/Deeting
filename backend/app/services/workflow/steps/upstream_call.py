@@ -12,6 +12,7 @@ UpstreamCallStep: 上游调用步骤
 import json
 import logging
 import time
+from copy import deepcopy
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -273,8 +274,17 @@ async def stream_with_billing(
     """
     tool_call_emitted = False
     request_id = ctx.get("request", "request_id")
-    stream_transform = (ctx.get("routing", "response_transform") or {}).get(
-        "stream_transform"
+    protocol_profile = ctx.get("routing", "protocol_profile") or {}
+    response_profile = (
+        protocol_profile.get("response")
+        if isinstance(protocol_profile, dict)
+        else {}
+    ) or {}
+    response_template = response_profile.get("response_template") or {}
+    stream_transform = (
+        response_template.get("stream_transform")
+        if isinstance(response_template, dict)
+        else None
     ) or {}
     cancel_service = CancelService()
     can_check_cancel = bool(request_id and ctx.user_id)
@@ -386,7 +396,7 @@ class UpstreamCallStep(BaseStep):
     """
 
     name = "upstream_call"
-    depends_on = ["template_render"]
+    depends_on = ["routing"]
     retry_on = (httpx.TimeoutException, httpx.NetworkError)
 
     # 熔断状态：优先 Redis，进程内为兜底
@@ -406,12 +416,22 @@ class UpstreamCallStep(BaseStep):
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         """执行上游调用"""
+        self._ensure_template_render_state(ctx)
+        protocol_profile = ctx.get("routing", "protocol_profile") or {}
+        transport_profile = (
+            protocol_profile.get("transport")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
         upstream_url = ctx.get("template_render", "upstream_url")
         request_body = ctx.get("template_render", "request_body") or {}
         headers = ctx.get("template_render", "headers") or {}
         async_config = ctx.get("routing", "async_config") or {}
         async_enabled = async_config.get("enabled") is True
-        http_method = (ctx.get("routing", "http_method") or "POST").upper()
+        http_method = (
+            transport_profile.get("method")
+            or "POST"
+        ).upper()
 
         if async_enabled:
             submit_headers = async_config.get("submit_headers") or {}
@@ -761,6 +781,71 @@ class UpstreamCallStep(BaseStep):
             )
             await self._record_affinity_failure(ctx)
             raise
+
+    def _ensure_template_render_state(self, ctx: "WorkflowContext") -> None:
+        existing_body = ctx.get("template_render", "request_body")
+        if isinstance(existing_body, dict) and existing_body:
+            return
+
+        request_body = self._build_request_body_from_context(ctx)
+        if request_body:
+            ctx.set("template_render", "request_body", request_body)
+
+        if not ctx.get("template_render", "upstream_url"):
+            routing_upstream = ctx.get("routing", "upstream_url")
+            if routing_upstream:
+                ctx.set("template_render", "upstream_url", routing_upstream)
+
+        if not ctx.get("template_render", "headers"):
+            protocol_profile = ctx.get("routing", "protocol_profile") or {}
+            defaults_profile = (
+                protocol_profile.get("defaults")
+                if isinstance(protocol_profile, dict)
+                else {}
+            ) or {}
+            ctx.set(
+                "template_render",
+                "headers",
+                deepcopy(
+                    defaults_profile.get("headers")
+                    or {}
+                ),
+            )
+
+    def _build_request_body_from_context(
+        self,
+        ctx: "WorkflowContext",
+    ) -> dict[str, Any] | None:
+        canonical_request = ctx.get("protocol", "canonical_request")
+        if hasattr(canonical_request, "model_dump"):
+            canonical_data = canonical_request.model_dump(exclude_none=True)
+            messages = canonical_data.get("messages")
+            if isinstance(messages, list) and messages:
+                request_body: dict[str, Any] = {
+                    "model": canonical_data.get("model"),
+                    "messages": messages,
+                    "stream": canonical_data.get("stream", False),
+                }
+                if canonical_data.get("temperature") is not None:
+                    request_body["temperature"] = canonical_data["temperature"]
+                if canonical_data.get("max_output_tokens") is not None:
+                    request_body["max_tokens"] = canonical_data["max_output_tokens"]
+                tools = canonical_data.get("tools")
+                if isinstance(tools, list) and tools:
+                    request_body["tools"] = tools
+                return request_body
+
+        validated = ctx.get("validation", "validated") or {}
+        if isinstance(validated, dict) and validated.get("messages"):
+            return deepcopy(validated)
+
+        request = ctx.get("validation", "request")
+        if hasattr(request, "model_dump"):
+            request_data = request.model_dump(exclude_none=True)
+            if request_data.get("messages"):
+                return request_data
+
+        return None
 
     async def _update_provider_health(
         self,
@@ -1274,9 +1359,7 @@ class UpstreamCallStep(BaseStep):
             ctx.set("routing", "preset_item_id", backup["preset_item_id"])
             ctx.set("routing", "upstream_url", backup["upstream_url"])
             ctx.set("routing", "provider", backup["provider"])
-            ctx.set("routing", "template_engine", backup["template_engine"])
-            ctx.set("routing", "request_template", backup["request_template"])
-            ctx.set("routing", "response_transform", backup["response_transform"])
+            ctx.set("routing", "protocol_profile", backup.get("protocol_profile") or {})
             ctx.set("routing", "routing_config", backup["routing_config"])
             ctx.set("routing", "instance_id", backup.get("instance_id"))
             ctx.set("routing", "provider_model_id", backup.get("provider_model_id"))

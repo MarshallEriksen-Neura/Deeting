@@ -4,6 +4,9 @@ use handlebars::Handlebars;
 use reqwest::{Client, Method, Url};
 use serde_json::{json, Map, Value};
 
+use crate::modules::providers::protocols::{
+    build_canonical_request_from_value, build_protocol_profile_from_legacy,
+};
 use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
 
 #[derive(Debug, Clone)]
@@ -14,6 +17,7 @@ pub struct PreparedProviderRequest {
     pub headers: BTreeMap<String, String>,
     pub body: Value,
     pub template_engine: String,
+    pub response_decoder: String,
     pub response_transform: Value,
 }
 
@@ -47,44 +51,6 @@ pub fn prepare_provider_request(
     );
 
     let effective_config = build_effective_config(preset, model, capability);
-    let template_engine = effective_config
-        .get("template_engine")
-        .and_then(|value| value.as_str())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .or_else(|| {
-            preset
-                .and_then(|item| item.template_engine.as_deref())
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })
-        .unwrap_or_else(|| default_template_engine(protocol.as_str()).to_string());
-
-    let request_template = effective_config
-        .get("request_template")
-        .cloned()
-        .or_else(|| effective_config.get("body_template").cloned())
-        .unwrap_or_else(|| fallback_request_template(capability));
-
-    let response_transform = effective_config
-        .get("response_transform")
-        .cloned()
-        .or_else(|| effective_config.get("response_template").cloned())
-        .or_else(|| preset.and_then(|item| item.response_transform.clone()))
-        .unwrap_or_else(|| json!({}));
-
-    let http_method = effective_config
-        .get("http_method")
-        .and_then(|value| value.as_str())
-        .or_else(|| {
-            effective_config
-                .get("method")
-                .and_then(|value| value.as_str())
-        })
-        .unwrap_or("POST")
-        .trim()
-        .to_ascii_uppercase();
-
     let preset_default_headers = preset
         .map(|item| &item.default_headers)
         .unwrap_or(&Value::Null);
@@ -112,10 +78,40 @@ pub fn prepare_provider_request(
         .or_else(|| effective_config.get("params").cloned())
         .unwrap_or_else(|| json!({}));
     let default_params = deep_merge_json(preset_default_params, &capability_params);
-    let request_builder = effective_config
-        .get("request_builder")
-        .cloned()
+    let protocol_profile = build_protocol_profile_from_legacy(
+        preset,
+        model,
+        capability,
+        protocol.as_str(),
+        &effective_config,
+        &merged_headers,
+        &default_params,
+    );
+    let template_engine = protocol_profile.request.template_engine.clone();
+    let response_decoder = protocol_profile.response.decoder.name.clone();
+    let request_template = protocol_profile.request.request_template.clone();
+    let response_transform = protocol_profile.response.response_template.clone();
+    let http_method = protocol_profile.transport.method.trim().to_ascii_uppercase();
+    let request_builder = protocol_profile
+        .request
+        .request_builder
+        .as_ref()
+        .map(|hook| {
+            let mut value = hook.config.clone();
+            if !value.is_object() {
+                value = json!({});
+            }
+            if let Some(object) = value.as_object_mut() {
+                object.insert("type".to_string(), Value::String(hook.name.clone()));
+            }
+            value
+        })
         .unwrap_or_else(|| json!({}));
+    let _canonical_request = build_canonical_request_from_value(
+        &request_data,
+        capability,
+        protocol_profile.protocol_family.as_str(),
+    );
 
     let render_context = build_render_context(
         request_data.as_object().cloned().unwrap_or_default(),
@@ -163,6 +159,7 @@ pub fn prepare_provider_request(
         headers,
         body: drop_none_fields(rendered_body),
         template_engine,
+        response_decoder,
         response_transform,
     })
 }
@@ -272,46 +269,6 @@ fn resolve_protocol(instance: &ProviderInstance, preset: Option<&ProviderPreset>
         .unwrap_or_else(|| "openai".to_string())
         .trim()
         .to_ascii_lowercase()
-}
-
-fn default_template_engine(protocol: &str) -> &'static str {
-    if protocol.contains("anthropic") || protocol.contains("claude") {
-        return "anthropic_messages";
-    }
-    if protocol.contains("gemini") || protocol.contains("google") || protocol.contains("vertex") {
-        return "google_gemini";
-    }
-    "openai_compat"
-}
-
-fn fallback_request_template(capability: &str) -> Value {
-    match capability.trim().to_ascii_lowercase().as_str() {
-        "embedding" => json!({ "model": Value::Null, "input": Value::Null }),
-        "image_generation" => json!({
-            "model": Value::Null,
-            "prompt": Value::Null,
-            "n": Value::Null,
-            "response_format": Value::Null,
-        }),
-        "text_to_speech" => json!({
-            "model": Value::Null,
-            "input": Value::Null,
-            "voice": Value::Null,
-        }),
-        "speech_to_text" => json!({
-            "model": Value::Null,
-            "audio_data": Value::Null,
-            "response_format": Value::Null,
-        }),
-        "video_generation" => json!({ "model": Value::Null, "prompt": Value::Null }),
-        _ => json!({
-            "model": Value::Null,
-            "messages": Value::Null,
-            "stream": Value::Null,
-            "temperature": Value::Null,
-            "max_tokens": Value::Null,
-        }),
-    }
 }
 
 pub fn deep_merge_json(base: &Value, override_value: &Value) -> Value {
@@ -428,8 +385,9 @@ fn simple_merge_body(template: &Value, context: &Value) -> Value {
         }
 
         let value = context
-            .get(key)
-            .cloned()
+            .get("request")
+            .and_then(|value| value.as_object())
+            .and_then(|obj| obj.get(key).cloned())
             .or_else(|| input.and_then(|obj| obj.get(key).cloned()))
             .or_else(|| request.and_then(|obj| obj.get(key).cloned()));
         if let Some(value) = value {
@@ -546,8 +504,77 @@ fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) 
 
     match builder_type.trim() {
         "ark_content_array" => ark_content_array_builder(&input, config),
+        "responses_input_from_messages_or_items" => {
+            responses_input_from_messages_or_items_builder(rendered_body, &input)
+        }
         _ => rendered_body,
     }
+}
+
+fn responses_input_from_messages_or_items_builder(
+    rendered_body: Value,
+    request_data: &Map<String, Value>,
+) -> Value {
+    let mut body = rendered_body
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+
+    if body.get("input").is_some_and(|value| !value.is_null()) {
+        return Value::Object(body);
+    }
+
+    if let Some(input_value) = request_data.get("input") {
+        body.insert("input".to_string(), input_value.clone());
+        return Value::Object(body);
+    }
+
+    if let Some(items) = request_data.get("input_items").and_then(|value| value.as_array()) {
+        let collected: Vec<Value> = items
+            .iter()
+            .filter_map(|item| {
+                item.get("text")
+                    .cloned()
+                    .or_else(|| if item.is_object() { Some(item.clone()) } else { None })
+            })
+            .collect();
+        if !collected.is_empty() {
+            body.insert(
+                "input".to_string(),
+                if collected.len() == 1 {
+                    collected[0].clone()
+                } else {
+                    Value::Array(collected)
+                },
+            );
+            return Value::Object(body);
+        }
+    }
+
+    if let Some(messages) = request_data.get("messages").and_then(|value| value.as_array()) {
+        let parts: Vec<String> = messages
+            .iter()
+            .filter(|message| {
+                message
+                    .get("role")
+                    .and_then(|value| value.as_str())
+                    .map(|role| role != "system")
+                    .unwrap_or(false)
+            })
+            .filter_map(|message| {
+                message
+                    .get("content")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string())
+            })
+            .filter(|value| !value.trim().is_empty())
+            .collect();
+        if !parts.is_empty() {
+            body.insert("input".to_string(), Value::String(parts.join("\n\n")));
+        }
+    }
+
+    Value::Object(body)
 }
 
 fn ark_content_array_builder(request_data: &Map<String, Value>, config: &Value) -> Value {
@@ -940,7 +967,9 @@ pub fn build_upstream_url_with_params(
             "api-version".to_string(),
             Value::String(version.to_string()),
         );
-    } else if protocol.contains("openai") && !protocol.contains("azure") {
+    } else if (protocol.contains("openai") || protocol.contains("responses"))
+        && !protocol.contains("azure")
+    {
         let append_v1 = auto_append_v1.unwrap_or_else(|| !has_versioned_path(base.as_str()));
         if append_v1 && !base.ends_with("/v1") {
             base = format!("{base}/v1");
@@ -1147,6 +1176,8 @@ mod tests {
                     "response_transform": {}
                 }
             }),
+            protocol_schema_version: None,
+            protocol_profiles: json!({}),
             version: 1,
             is_active: true,
         }
@@ -1295,6 +1326,45 @@ mod tests {
             json!("search_sdk")
         );
         assert_eq!(prepared.body["tool_choice"], json!("auto"));
+    }
+
+    #[test]
+    fn prepare_provider_request_responses_family_builds_input_from_messages() {
+        let mut preset = mock_preset();
+        preset.provider = "openai".to_string();
+        preset.capability_configs = json!({
+            "chat": {
+                "template_engine": "simple_replace",
+                "request_template": {
+                    "model": null,
+                    "messages": null
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "responses", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "responses".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-5.3-codex",
+                "messages": [{ "role": "user", "content": "hello responses" }],
+                "stream": false,
+            }),
+            None,
+            None,
+        )
+        .expect("prepare responses request");
+
+        assert_eq!(prepared.url, "https://api.openai.com/v1/responses");
+        assert_eq!(prepared.body["model"], json!("gpt-5.3-codex"));
+        assert_eq!(prepared.body["input"], json!("hello responses"));
+        assert!(prepared.body.get("messages").is_none());
     }
 
     #[test]

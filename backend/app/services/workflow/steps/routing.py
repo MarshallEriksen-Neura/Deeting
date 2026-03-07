@@ -8,7 +8,7 @@ RoutingStep: 路由决策步骤
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -161,6 +161,12 @@ class RoutingStep(BaseStep):
                     allowed_preset_items=allowed_preset_items,
                 )
 
+            routing_result = self._normalize_routing_payload(routing_result)
+            backups = [
+                self._normalize_routing_payload(item)
+                for item in (backups or [])
+            ]
+
             # 写入上下文
             ctx.set("routing", "preset_id", routing_result["preset_id"])
             ctx.set("routing", "preset_item_id", routing_result["preset_item_id"])
@@ -170,15 +176,12 @@ class RoutingStep(BaseStep):
             )
             ctx.set("routing", "upstream_url", routing_result["upstream_url"])
             ctx.set("routing", "provider", routing_result["provider"])
-            ctx.set("routing", "template_engine", routing_result["template_engine"])
-            ctx.set("routing", "request_template", routing_result["request_template"])
             ctx.set(
-                "routing", "response_transform", routing_result["response_transform"]
+                "routing",
+                "protocol_profile",
+                routing_result.get("protocol_profile") or {},
             )
             ctx.set("routing", "async_config", routing_result.get("async_config") or {})
-            ctx.set(
-                "routing", "http_method", routing_result.get("http_method") or "POST"
-            )
             ctx.set("routing", "routing_config", routing_result["routing_config"])
             ctx.set(
                 "routing",
@@ -186,13 +189,10 @@ class RoutingStep(BaseStep):
                 routing_result.get("config_override") or {},
             )
             ctx.set("routing", "output_mapping", routing_result.get("output_mapping") or {})
-            ctx.set("routing", "request_builder", routing_result.get("request_builder") or {})
             ctx.set("routing", "limit_config", routing_result["limit_config"])
             ctx.set("routing", "pricing_config", routing_result["pricing_config"])
             ctx.set("routing", "auth_type", routing_result["auth_type"])
             ctx.set("routing", "auth_config", routing_result["auth_config"])
-            ctx.set("routing", "default_headers", routing_result["default_headers"])
-            ctx.set("routing", "default_params", routing_result["default_params"])
             ctx.set("routing", "candidates", [routing_result, *backups])
             ctx.set("routing", "candidate_index", 0)
             ctx.set("routing", "affinity_hit", affinity_hit)
@@ -275,50 +275,53 @@ class RoutingStep(BaseStep):
 
     def _fallback(self, ctx: "WorkflowContext") -> StepResult:
         """测试/开发环境的兜底路由，避免阻塞编排。"""
-        fallback = {
-            "preset_id": None,
-            "preset_item_id": None,
-            "instance_id": None,
-            "provider_model_id": None,
-            "upstream_url": "http://mock-upstream",
-            "provider": "mock",
-            "template_engine": "simple_replace",
-            "request_template": {"model": None},
-            "response_transform": {},
-            "pricing_config": {},
-            "limit_config": {},
-            "auth_type": "none",
-            "auth_config": {},
-            "default_headers": {},
-            "default_params": {},
-            "async_config": {},
-            "http_method": "POST",
-            "routing_config": {},
-            "config_override": {},
-            "weight": 1,
-            "priority": 1,
-        }
+        fallback = self._normalize_routing_payload(
+            {
+                "preset_id": None,
+                "preset_item_id": None,
+                "instance_id": None,
+                "provider_model_id": None,
+                "upstream_url": "http://mock-upstream",
+                "provider": "mock",
+                "protocol_profile": {
+                    "profile_id": "mock:chat:openai_chat",
+                    "provider": "mock",
+                    "protocol_family": "openai_chat",
+                    "capability": "chat",
+                    "transport": {"method": "POST"},
+                    "request": {
+                        "template_engine": "simple_replace",
+                        "request_template": {"model": None},
+                    },
+                    "response": {"response_template": {}},
+                    "defaults": {"headers": {}, "body": {}},
+                },
+                "pricing_config": {},
+                "limit_config": {},
+                "auth_type": "none",
+                "auth_config": {},
+                "async_config": {},
+                "routing_config": {},
+                "config_override": {},
+                "weight": 1,
+                "priority": 1,
+            }
+        )
         ctx.set("routing", "preset_id", fallback["preset_id"])
         ctx.set("routing", "preset_item_id", fallback["preset_item_id"])
         ctx.set("routing", "instance_id", fallback["instance_id"])
         ctx.set("routing", "provider_model_id", fallback["provider_model_id"])
         ctx.set("routing", "upstream_url", fallback["upstream_url"])
         ctx.set("routing", "provider", fallback["provider"])
-        ctx.set("routing", "template_engine", fallback["template_engine"])
-        ctx.set("routing", "request_template", fallback["request_template"])
-        ctx.set("routing", "response_transform", fallback["response_transform"])
+        ctx.set("routing", "protocol_profile", fallback["protocol_profile"])
         ctx.set("routing", "async_config", fallback["async_config"])
-        ctx.set("routing", "http_method", fallback["http_method"])
         ctx.set("routing", "routing_config", fallback["routing_config"])
         ctx.set("routing", "config_override", fallback["config_override"])
         ctx.set("routing", "output_mapping", fallback.get("output_mapping") or {})
-        ctx.set("routing", "request_builder", fallback.get("request_builder") or {})
         ctx.set("routing", "limit_config", fallback["limit_config"])
         ctx.set("routing", "pricing_config", fallback["pricing_config"])
         ctx.set("routing", "auth_type", fallback["auth_type"])
         ctx.set("routing", "auth_config", fallback["auth_config"])
-        ctx.set("routing", "default_headers", fallback["default_headers"])
-        ctx.set("routing", "default_params", fallback["default_params"])
         ctx.set("routing", "candidates", [fallback])
         ctx.set("routing", "candidate_index", 0)
         ctx.set("routing", "affinity_hit", False)
@@ -382,38 +385,11 @@ class RoutingStep(BaseStep):
                 "validation", "validated", {}
             ).get("messages")
             primary, backups, _ = await selector.choose(candidates, messages=messages)
-
-        def to_dict(c):
-            return {
-                "preset_id": c.preset_id,
-                "preset_slug": c.preset_slug,
-                "preset_item_id": c.preset_item_id,
-                "instance_id": c.instance_id,
-                "provider_model_id": c.model_id,
-                "upstream_url": c.upstream_url,
-                "provider": c.provider,
-                "template_engine": c.template_engine,
-                "request_template": c.request_template,
-                "response_transform": c.response_transform,
-                "async_config": c.async_config,
-                "http_method": c.http_method,
-                "pricing_config": c.pricing_config,
-                "limit_config": c.limit_config,
-                "auth_type": c.auth_type,
-                "auth_config": c.auth_config,
-                "default_headers": c.default_headers,
-                "default_params": c.default_params,
-                "routing_config": c.routing_config,
-                "config_override": c.config_override,
-                "output_mapping": c.output_mapping,
-                "request_builder": c.request_builder,
-                "weight": c.weight,
-                "priority": c.priority,
-                "credential_id": c.credential_id,
-                "credential_alias": c.credential_alias,
-            }
-
-        return to_dict(primary), [to_dict(b) for b in backups], False
+        return (
+            self._candidate_to_payload(primary),
+            [self._candidate_to_payload(b) for b in backups],
+            False,
+        )
 
     async def _select_upstream(
         self,
@@ -496,41 +472,17 @@ class RoutingStep(BaseStep):
                     primary = candidate
                     backups = [c for c in candidates if c != primary]
 
-                    def to_dict(c):
-                        return {
-                            "preset_id": c.preset_id,
-                            "preset_slug": c.preset_slug,
-                            "preset_item_id": c.preset_item_id,
-                            "instance_id": c.instance_id,
-                            "provider_model_id": c.model_id,
-                            "upstream_url": c.upstream_url,
-                            "provider": c.provider,
-                            "template_engine": c.template_engine,
-                            "request_template": c.request_template,
-                            "response_transform": c.response_transform,
-                            "async_config": c.async_config,
-                            "http_method": c.http_method,
-                            "pricing_config": c.pricing_config,
-                            "limit_config": c.limit_config,
-                            "auth_type": c.auth_type,
-                            "auth_config": c.auth_config,
-                            "default_headers": c.default_headers,
-                            "default_params": c.default_params,
-                            "routing_config": c.routing_config,
-                            "config_override": c.config_override,
-                            "weight": c.weight,
-                            "priority": c.priority,
-                            "credential_id": c.credential_id,
-                            "credential_alias": c.credential_alias,
-                        }
-
                     logger.info(
                         "routing_affinity_used session=%s model=%s provider=%s",
                         session_id,
                         model,
                         primary.provider,
                     )
-                    return to_dict(primary), [to_dict(b) for b in backups], True
+                    return (
+                        self._candidate_to_payload(primary),
+                        [self._candidate_to_payload(b) for b in backups],
+                        True,
+                    )
 
             # 锁定的上游不在候选中（可能已下线），重新探索
             logger.warning(
@@ -547,32 +499,6 @@ class RoutingStep(BaseStep):
         ).get("messages")
         primary, backups, _ = await selector.choose(candidates, messages=messages)
 
-        def to_dict(c):
-            return {
-                "preset_id": c.preset_id,
-                "preset_item_id": c.preset_item_id,
-                "instance_id": c.instance_id,
-                "provider_model_id": c.model_id,
-                "upstream_url": c.upstream_url,
-                "provider": c.provider,
-                "template_engine": c.template_engine,
-                "request_template": c.request_template,
-                "response_transform": c.response_transform,
-                "async_config": c.async_config,
-                "http_method": c.http_method,
-                "pricing_config": c.pricing_config,
-                "limit_config": c.limit_config,
-                "auth_type": c.auth_type,
-                "auth_config": c.auth_config,
-                "default_headers": c.default_headers,
-                "default_params": c.default_params,
-                "routing_config": c.routing_config,
-                "weight": c.weight,
-                "priority": c.priority,
-                "credential_id": c.credential_id,
-                "credential_alias": c.credential_alias,
-            }
-
         # 记录路由结果到亲和状态机（异步，不阻塞）
         if affinity_machine:
             try:
@@ -583,7 +509,103 @@ class RoutingStep(BaseStep):
             except Exception as exc:
                 logger.warning("routing_affinity_record_failed err=%s", exc)
 
-        return to_dict(primary), [to_dict(b) for b in backups], affinity_hit
+        return (
+            self._candidate_to_payload(primary),
+            [self._candidate_to_payload(b) for b in backups],
+            affinity_hit,
+        )
+
+    @staticmethod
+    def _normalize_routing_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload)
+        protocol_profile = normalized.get("protocol_profile") or {}
+        request_profile = (
+            protocol_profile.get("request")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        response_profile = (
+            protocol_profile.get("response")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        transport_profile = (
+            protocol_profile.get("transport")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        defaults_profile = (
+            protocol_profile.get("defaults")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+
+        request_builder = request_profile.get("request_builder")
+        if isinstance(request_builder, dict):
+            if request_builder.get("config") is not None:
+                normalized["request_builder"] = {
+                    "name": request_builder.get("name"),
+                    "config": request_builder.get("config") or {},
+                }
+            else:
+                normalized["request_builder"] = request_builder
+
+        normalized["template_engine"] = (
+            request_profile.get("template_engine")
+            or normalized.get("template_engine")
+            or "simple_replace"
+        )
+        normalized["request_template"] = (
+            request_profile.get("request_template")
+            or normalized.get("request_template")
+            or {}
+        )
+        normalized["response_transform"] = (
+            response_profile.get("response_template")
+            or normalized.get("response_transform")
+            or {}
+        )
+        normalized["http_method"] = (
+            transport_profile.get("method")
+            or normalized.get("http_method")
+            or "POST"
+        )
+        normalized["default_headers"] = (
+            defaults_profile.get("headers")
+            or normalized.get("default_headers")
+            or {}
+        )
+        normalized["default_params"] = (
+            defaults_profile.get("body")
+            or normalized.get("default_params")
+            or {}
+        )
+        return normalized
+
+    @staticmethod
+    def _candidate_to_payload(c: Any) -> dict[str, Any]:
+        return {
+            "preset_id": c.preset_id,
+            "preset_slug": getattr(c, "preset_slug", None),
+            "preset_item_id": c.preset_item_id,
+            "instance_id": c.instance_id,
+            "provider_model_id": c.model_id,
+            "upstream_url": c.upstream_url,
+            "provider": c.provider,
+            "protocol_profile": c.protocol_profile,
+            "async_config": c.async_config,
+            "pricing_config": c.pricing_config,
+            "limit_config": c.limit_config,
+            "auth_type": c.auth_type,
+            "auth_config": c.auth_config,
+            "routing_config": c.routing_config,
+            "config_override": getattr(c, "config_override", {}),
+            "output_mapping": getattr(c, "output_mapping", {}),
+            "weight": c.weight,
+            "priority": c.priority,
+            "credential_id": c.credential_id,
+            "credential_alias": c.credential_alias,
+        }
 
     def on_failure(
         self,

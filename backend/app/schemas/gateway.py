@@ -45,7 +45,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class ChatMessage(BaseModel):
@@ -66,7 +68,10 @@ class ChatCompletionRequest(BaseModel):
         default=False, description="是否通过 SSE 推送状态事件（用于前端状态流）"
     )
     temperature: float | None = None
-    max_tokens: int | None = None
+    max_tokens: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("max_tokens", "max_output_tokens"),
+    )
     request_id: str | None = Field(
         default=None, description="客户端请求 ID（用于取消/幂等）"
     )
@@ -83,12 +88,20 @@ class ChatCompletionRequest(BaseModel):
         default=False,
         description="重新生成标记：为 true 时自动软删除最后一条 assistant 消息并生成新回复",
     )
+    max_output_tokens: int | None = Field(
+        default=None, description="标准化输出 token 上限，V2 canonical ingress 优先读取"
+    )
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+    tool_choice: str | dict[str, Any] | None = None
+    output_format: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # ===== 兼容性入口 Schema =====
 
 
 class AnthropicContentBlock(BaseModel):
+    model_config = ConfigDict(extra="allow")
     type: str = Field(default="text")
     text: str | None = None
 
@@ -102,20 +115,42 @@ class AnthropicMessagesRequest(BaseModel):
     model: str
     messages: list[AnthropicMessage]
     system: str | None = None
-    max_tokens: int | None = Field(default=None, description="输出上限 token 数")
+    max_tokens: int | None = Field(
+        default=None,
+        description="输出上限 token 数",
+        validation_alias=AliasChoices("max_tokens", "max_output_tokens"),
+    )
+    max_output_tokens: int | None = Field(default=None, description="标准化输出 token 上限")
     temperature: float | None = None
     stream: bool = False
     status_stream: bool = False
+    request_id: str | None = None
+    session_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ResponsesRequest(BaseModel):
     model: str
     input: str | list | dict
     system: str | None = None
-    max_tokens: int | None = None
+    max_tokens: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("max_tokens", "max_output_tokens"),
+    )
+    max_output_tokens: int | None = None
     temperature: float | None = None
     stream: bool = False
     status_stream: bool = False
+    request_id: str | None = None
+    session_id: str | None = None
+    provider_model_id: str | None = Field(
+        default=None, description="指定 provider model ID（内部网关可选）"
+    )
+    assistant_id: UUID | None = Field(default=None, description="助手 ID（内部通道可选）")
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+    tool_choice: str | dict[str, Any] | None = None
+    output_format: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class UsageInfo(BaseModel):

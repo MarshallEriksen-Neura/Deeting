@@ -16,15 +16,35 @@ def _fake_routing_result():
             "preset_item_id": 11,
             "upstream_url": "https://api.fake.com",
             "provider": "fake",
-            "template_engine": "simple_replace",
-            "request_template": {"model": None},
-            "response_transform": {},
+            "template_engine": "legacy_engine",
+            "protocol_profile": {
+                "profile_id": "fake:chat:openai_chat",
+                "protocol_family": "openai_chat",
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": {"model": None, "messages": None},
+                    "request_builder": {
+                        "name": "responses_input_from_items",
+                        "config": {"x": 1},
+                    },
+                },
+                "response": {
+                    "response_template": {"sanitization": {"mask_fields": ["id"]}}
+                },
+                "transport": {"method": "POST"},
+                "defaults": {
+                    "headers": {"X-Protocol": "v2"},
+                    "body": {"temperature": 0.3},
+                },
+            },
+            "request_template": {"legacy": True},
+            "response_transform": {"legacy": True},
             "pricing_config": {"input_per_1k": 0.1, "output_per_1k": 0.2},
             "limit_config": {"rpm": 10, "tpm": 1000},
             "auth_type": "api_key",
             "auth_config": {"header": "Authorization"},
             "default_headers": {"User-Agent": "test"},
-            "default_params": {},
+            "default_params": {"legacy": True},
             "routing_config": {},
             "weight": 1,
             "priority": 1,
@@ -44,6 +64,10 @@ def _fake_candidate() -> SimpleNamespace:
         upstream_url="https://api.fake.com",
         provider="fake",
         template_engine="simple_replace",
+        protocol_profile={
+            "profile_id": "fake:chat:openai_chat",
+            "protocol_family": "openai_chat",
+        },
         request_template={"model": None},
         response_transform={},
         async_config={},
@@ -83,6 +107,22 @@ async def test_routing_success_populates_context(monkeypatch):
     assert ctx.selected_upstream == "https://api.fake.com"
     assert ctx.get("routing", "preset_id") == 1
     assert ctx.get("routing", "candidates")[0]["provider"] == "fake"
+    protocol_profile = ctx.get("routing", "protocol_profile")
+    assert protocol_profile["protocol_family"] == "openai_chat"
+    assert protocol_profile["request"]["template_engine"] == "openai_compat"
+    assert protocol_profile["request"]["request_template"] == {
+        "model": None,
+        "messages": None,
+    }
+    assert protocol_profile["response"]["response_template"] == {
+        "sanitization": {"mask_fields": ["id"]}
+    }
+    assert protocol_profile["defaults"]["headers"] == {"X-Protocol": "v2"}
+    assert protocol_profile["defaults"]["body"] == {"temperature": 0.3}
+    assert protocol_profile["request"]["request_builder"] == {
+        "name": "responses_input_from_items",
+        "config": {"x": 1},
+    }
     assert ctx.routing_weight == 1
 
 

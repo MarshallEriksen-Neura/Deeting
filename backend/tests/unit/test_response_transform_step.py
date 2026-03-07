@@ -32,6 +32,14 @@ async def test_transform_openai_response():
     ctx.set("upstream_call", "response", openai_response)
     ctx.set("upstream_call", "status_code", 200)
     ctx.set("routing", "provider", "openai")
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "request": {"template_engine": "openai_compat"},
+            "response": {"response_template": {}},
+        },
+    )
 
     result = await step.execute(ctx)
 
@@ -66,7 +74,14 @@ async def test_transform_anthropic_response():
     ctx.set("upstream_call", "response", anthropic_response)
     ctx.set("upstream_call", "status_code", 200)
     ctx.set("routing", "provider", "anthropic")
-    ctx.set("routing", "template_engine", "anthropic_messages")
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "request": {"template_engine": "anthropic_messages"},
+            "response": {"response_template": {}},
+        },
+    )
 
     result = await step.execute(ctx)
 
@@ -96,3 +111,39 @@ async def test_transform_stream_skips(monkeypatch):
     assert result.status == StepStatus.SUCCESS
     assert ctx.get("response_transform", "stream") is True
     assert ctx.get("response_transform", "response") is None
+
+
+@pytest.mark.asyncio
+async def test_transform_prefers_protocol_profile_decoder():
+    step = ResponseTransformStep()
+    ctx = WorkflowContext(channel=Channel.EXTERNAL, requested_model="gpt-5.3-codex")
+
+    upstream_response = {
+        "model": "gpt-5.3-codex",
+        "output": [
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": "hello from responses"}],
+            }
+        ],
+        "usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+        "status": "completed",
+    }
+
+    ctx.set("upstream_call", "response", upstream_response)
+    ctx.set("upstream_call", "status_code", 200)
+    ctx.set("routing", "provider", "openai")
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "response": {"decoder": {"name": "openai_responses"}},
+        },
+    )
+
+    result = await step.execute(ctx)
+
+    assert result.status == StepStatus.SUCCESS
+    transformed = ctx.get("response_transform", "response")
+    assert transformed["choices"][0]["message"]["content"] == "hello from responses"
+    assert transformed["usage"]["total_tokens"] == 5

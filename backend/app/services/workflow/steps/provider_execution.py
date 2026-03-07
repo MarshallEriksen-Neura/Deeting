@@ -11,6 +11,7 @@ ProviderExecutionStep: 配置驱动的执行步骤
 
 import logging
 import time
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 import httpx
@@ -61,20 +62,50 @@ class ProviderExecutionStep(BaseStep):
         """Execute the provider call using ConfigDrivenProvider"""
 
         # 1. Gather Configuration from Routing Context
-        routing_info = ctx.get_all("routing")
+        routing_info = ctx.get_namespace("routing")
         if not routing_info or not routing_info.get("upstream_url"):
             return StepResult(
                 status=StepStatus.FAILED,
                 message="Routing information missing or incomplete",
             )
+        protocol_profile = routing_info.get("protocol_profile") or {}
+        profile_request = (
+            protocol_profile.get("request")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        profile_transport = (
+            protocol_profile.get("transport")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        profile_defaults = (
+            protocol_profile.get("defaults")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        request_builder = profile_request.get("request_builder")
+        if isinstance(request_builder, dict) and request_builder.get("config") is not None:
+            request_builder = {
+                "type": request_builder.get("name"),
+                **(request_builder.get("config") or {}),
+            }
 
         provider_config = {
             "upstream_url": routing_info.get("upstream_url"),
-            "request_template": routing_info.get("request_template") or {},
-            "headers": routing_info.get("default_headers") or {},
+            "request_template": profile_request.get("request_template")
+            or routing_info.get("request_template")
+            or {},
+            "headers": deepcopy(
+                profile_defaults.get("headers")
+                or routing_info.get("default_headers")
+                or {}
+            ),
             "async_config": routing_info.get("async_config") or {},
-            "http_method": routing_info.get("http_method") or "POST",
-            "request_builder": routing_info.get("request_builder") or {},
+            "http_method": profile_transport.get("method")
+            or routing_info.get("http_method")
+            or "POST",
+            "request_builder": request_builder or routing_info.get("request_builder") or {},
         }
 
         # 2. Prepare Context (Secrets, Input)

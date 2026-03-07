@@ -98,6 +98,7 @@ class GatewayOrchestrator:
                     )
 
         self._align_template_render_dependencies(steps)
+        self._align_upstream_call_dependencies(steps)
         self._align_response_transform_dependencies(steps)
 
         return OrchestrationEngine(steps)
@@ -157,6 +158,25 @@ class GatewayOrchestrator:
             "response_transform dependency unresolved, steps=%s",
             sorted(step_names),
         )
+
+    @staticmethod
+    def _align_upstream_call_dependencies(steps: list[BaseStep]) -> None:
+        step_names = {step.name for step in steps}
+        upstream_step = next(
+            (step for step in steps if step.name == "upstream_call"),
+            None,
+        )
+        if not upstream_step:
+            return
+
+        if "template_render" in step_names:
+            upstream_step.depends_on = ["template_render"]
+            return
+        if "routing" in step_names:
+            upstream_step.depends_on = ["routing"]
+            return
+
+        upstream_step.depends_on = []
 
     async def execute(self, ctx: WorkflowContext) -> ExecutionResult:
         """

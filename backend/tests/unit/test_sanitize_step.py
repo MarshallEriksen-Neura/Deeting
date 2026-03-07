@@ -59,11 +59,20 @@ async def test_sanitize_body_rules():
     }
     ctx.set("response_transform", "response", response)
 
-    # Mock routing config with sanitization rules
-    response_transform_config = {
-        "sanitization": {"remove_fields": ["usage"], "mask_fields": ["id"]}
-    }
-    ctx.set("routing", "response_transform", response_transform_config)
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "response": {
+                "response_template": {
+                    "sanitization": {
+                        "remove_fields": ["usage"],
+                        "mask_fields": ["id"],
+                    }
+                }
+            }
+        },
+    )
 
     await step.execute(ctx)
     sanitized_body = ctx.get("sanitize", "response")
@@ -72,6 +81,38 @@ async def test_sanitize_body_rules():
     assert "id" in sanitized_body
     assert "..." in sanitized_body["id"]
     assert sanitized_body["secret_field"] == "hidden"
+
+
+@pytest.mark.asyncio
+async def test_sanitize_uses_protocol_profile_response_template_when_legacy_missing():
+    step = SanitizeStep()
+    ctx = WorkflowContext(channel=Channel.EXTERNAL)
+    response = {
+        "id": "sk-1234567890abcdef123456",
+        "usage": {"prompt": 10},
+        "secret_field": "hidden",
+    }
+    ctx.set("response_transform", "response", response)
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "response": {
+                "response_template": {
+                    "sanitization": {
+                        "remove_fields": ["usage"],
+                        "mask_fields": ["id"],
+                    }
+                }
+            }
+        },
+    )
+
+    await step.execute(ctx)
+    sanitized_body = ctx.get("sanitize", "response")
+
+    assert "usage" not in sanitized_body
+    assert "..." in sanitized_body["id"]
 
 
 def test_sanitize_for_log():

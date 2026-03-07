@@ -17,6 +17,12 @@ from typing import Any
 from app.schemas.gateway import (
     ChatCompletionRequest,
 )
+from app.protocols.canonical import CanonicalRequest
+from app.protocols.ingress import (
+    to_canonical_anthropic_request,
+    to_canonical_chat_request,
+    to_canonical_responses_request,
+)
 from app.services.adapters.chat import (
     adapt_anthropic_messages,
     adapt_openai_chat,
@@ -44,6 +50,7 @@ class RequestAdapterStep(BaseStep):
 
     写入上下文:
         - validation.request: 统一后的 ChatCompletionRequest
+        - protocol.canonical_request: V2 canonical request
     """
 
     name = "request_adapter"
@@ -67,6 +74,7 @@ class RequestAdapterStep(BaseStep):
 
         try:
             adapted = self._adapt_request(vendor, raw_request)
+            canonical = self._adapt_canonical_request(vendor, raw_request)
         except RequestAdapterError as exc:
             logger.warning(f"Request adaptation failed vendor={vendor}: {exc}")
             return StepResult(status=StepStatus.FAILED, message=str(exc))
@@ -80,6 +88,7 @@ class RequestAdapterStep(BaseStep):
 
         # 写回供后续校验/路由使用
         ctx.set("validation", "request", adapted)
+        ctx.set("protocol", "canonical_request", canonical)
         ctx.requested_model = adapted.model
 
         logger.debug(
@@ -104,6 +113,18 @@ class RequestAdapterStep(BaseStep):
 
         if vendor in {"responses", "response"}:
             return adapt_responses_request(raw)
+
+        raise RequestAdapterError(f"Unsupported vendor: {vendor}")
+
+    def _adapt_canonical_request(self, vendor: str, raw: Any) -> CanonicalRequest:
+        if vendor in {"openai", "chat"}:
+            return to_canonical_chat_request(raw)
+
+        if vendor in {"anthropic", "messages"}:
+            return to_canonical_anthropic_request(raw)
+
+        if vendor in {"responses", "response"}:
+            return to_canonical_responses_request(raw)
 
         raise RequestAdapterError(f"Unsupported vendor: {vendor}")
 

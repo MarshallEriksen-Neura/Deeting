@@ -19,7 +19,14 @@ import os
 import sys
 from typing import Any
 
-from .protocol import TOOL_CALL_MARKER, RENDER_BLOCK_MARKER, EXECUTION_TOKEN_HEADER
+from .protocol import (
+    EXECUTION_TOKEN_HEADER,
+    RENDER_BLOCK_MARKER,
+    TOOL_CALL_MARKER,
+    parse_runtime_context,
+    render_block_payload,
+    tool_call_payload,
+)
 
 
 class _HostToolCallSignal(BaseException):
@@ -81,14 +88,14 @@ class DeetingRuntime:
         title: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        vt = str(view_type or "").strip()
-        if not vt:
+        block = render_block_payload(
+            view_type,
+            payload=payload,
+            title=title,
+            metadata=metadata,
+        )
+        if not block["view_type"]:
             raise ValueError("view_type is required")
-        block: dict[str, Any] = {"view_type": vt, "payload": payload or {}}
-        if title is not None:
-            block["title"] = title
-        if metadata is not None:
-            block["metadata"] = metadata
         print(f"{RENDER_BLOCK_MARKER}{json.dumps(block, ensure_ascii=False, default=str)}")
         return block
 
@@ -120,11 +127,7 @@ class DeetingRuntime:
             if result is not None:
                 return result
 
-        payload = {
-            "index": idx,
-            "tool_name": str(tool_name or "").strip(),
-            "arguments": arguments or {},
-        }
+        payload = tool_call_payload(idx, tool_name, arguments or {})
         print(f"\n{TOOL_CALL_MARKER}{json.dumps(payload, ensure_ascii=False)}")
         raise _HostToolCallSignal(f"pending tool call: {tool_name}")
 
@@ -256,17 +259,13 @@ class DeetingRuntime:
 # ---------------------------------------------------------------------------
 
 def _create_singleton() -> DeetingRuntime:
-    raw = os.environ.get("DEETING_RUNTIME_CONTEXT", "").strip()
-    if raw:
-        try:
-            blob = json.loads(raw)
-            return DeetingRuntime(
-                context=blob.get("context"),
-                tool_results=blob.get("tool_results"),
-                max_tool_calls=blob.get("max_tool_calls", 8),
-            )
-        except Exception:
-            pass
+    blob = parse_runtime_context(os.environ.get("DEETING_RUNTIME_CONTEXT", "").strip())
+    if blob["context"] or blob["tool_results"] or blob["max_tool_calls"] != 8:
+        return DeetingRuntime(
+            context=blob["context"],
+            tool_results=blob["tool_results"],
+            max_tool_calls=blob["max_tool_calls"],
+        )
     return DeetingRuntime()
 
 

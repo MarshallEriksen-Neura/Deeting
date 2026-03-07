@@ -14,6 +14,8 @@ export type LocalProviderPreset = {
   default_headers?: Record<string, unknown> | null;
   default_params?: Record<string, unknown> | null;
   capability_configs?: Record<string, unknown> | null;
+  protocol_schema_version?: string | null;
+  protocol_profiles?: Record<string, unknown> | null;
   version?: number;
   is_active: boolean;
 };

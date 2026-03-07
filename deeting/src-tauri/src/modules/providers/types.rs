@@ -41,6 +41,10 @@ pub struct ProviderPreset {
     pub default_params: Value,
     #[serde(default = "default_json_object")]
     pub capability_configs: Value,
+    #[serde(default)]
+    pub protocol_schema_version: Option<String>,
+    #[serde(default = "default_json_object")]
+    pub protocol_profiles: Value,
     #[serde(default = "default_preset_version")]
     pub version: i64,
     pub is_active: bool,

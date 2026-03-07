@@ -11,8 +11,17 @@ async def test_template_render_drops_null_response_format():
     step = TemplateRenderStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.set("routing", "upstream_url", "https://example.com/v1/images/generations")
-    ctx.set("routing", "template_engine", "simple_replace")
-    ctx.set("routing", "request_template", {"model": None, "response_format": None})
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "request": {
+                "template_engine": "simple_replace",
+                "request_template": {"model": None, "response_format": None},
+            },
+            "defaults": {"headers": {}, "body": {}},
+        },
+    )
     ctx.set(
         "validation", "validated", {"model": "gpt-image-1", "response_format": None}
     )
@@ -29,8 +38,17 @@ async def test_template_render_keeps_response_format_value():
     step = TemplateRenderStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.set("routing", "upstream_url", "https://example.com/v1/images/generations")
-    ctx.set("routing", "template_engine", "simple_replace")
-    ctx.set("routing", "request_template", {"model": None, "response_format": None})
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "request": {
+                "template_engine": "simple_replace",
+                "request_template": {"model": None, "response_format": None},
+            },
+            "defaults": {"headers": {}, "body": {}},
+        },
+    )
     ctx.set(
         "validation", "validated", {"model": "gpt-image-1", "response_format": "url"}
     )
@@ -47,11 +65,19 @@ async def test_template_render_uses_jinja2_template():
     step = TemplateRenderStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.set("routing", "upstream_url", "https://example.com/v1/images/generations")
-    ctx.set("routing", "template_engine", "jinja2")
     ctx.set(
         "routing",
-        "request_template",
-        {"input": "{{ prompt }}", "count": "{{ num_outputs }}"},
+        "protocol_profile",
+        {
+            "request": {
+                "template_engine": "jinja2",
+                "request_template": {
+                    "input": "{{ prompt }}",
+                    "count": "{{ num_outputs }}",
+                },
+            },
+            "defaults": {"headers": {}, "body": {}},
+        },
     )
     ctx.set("validation", "validated", {"prompt": "hello", "num_outputs": 2})
 
@@ -67,7 +93,7 @@ async def test_template_render_requires_request_template():
     step = TemplateRenderStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.set("routing", "upstream_url", "https://example.com/v1/images/generations")
-    ctx.set("routing", "template_engine", "simple_replace")
+    ctx.set("routing", "protocol_profile", {"request": {}, "defaults": {"headers": {}, "body": {}}})
     ctx.set("validation", "validated", {"model": "gpt-image-1"})
 
     result = await step.execute(ctx)
@@ -80,8 +106,17 @@ async def test_template_render_injects_router_base_prompt():
     step = TemplateRenderStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.set("routing", "upstream_url", "https://example.com/v1/chat/completions")
-    ctx.set("routing", "template_engine", "simple_replace")
-    ctx.set("routing", "request_template", {"messages": []})
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "request": {
+                "template_engine": "simple_replace",
+                "request_template": {"messages": []},
+            },
+            "defaults": {"headers": {}, "body": {}},
+        },
+    )
     ctx.set(
         "validation", "validated", {"messages": [{"role": "user", "content": "hi"}]}
     )
@@ -99,8 +134,17 @@ async def test_template_render_injects_code_mode_reminder():
     step = TemplateRenderStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.set("routing", "upstream_url", "https://example.com/v1/chat/completions")
-    ctx.set("routing", "template_engine", "simple_replace")
-    ctx.set("routing", "request_template", {"messages": []})
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "request": {
+                "template_engine": "simple_replace",
+                "request_template": {"messages": []},
+            },
+            "defaults": {"headers": {}, "body": {}},
+        },
+    )
     ctx.set(
         "validation", "validated", {"messages": [{"role": "user", "content": "帮我执行复杂任务"}]}
     )
@@ -134,3 +178,47 @@ async def test_template_render_injects_code_mode_reminder():
     assert "deeting.call_tool(name, **kwargs)" in system_prompt
     assert "deeting.call_tool(name, {...})" in system_prompt
     assert "deeting.log(json.dumps(result, ensure_ascii=False))" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_template_render_prefers_protocol_profile_request_fields():
+    step = TemplateRenderStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set("routing", "upstream_url", "https://example.com/v1/responses")
+    ctx.set("routing", "template_engine", "simple_replace")
+    ctx.set("routing", "request_template", {"messages": []})
+    ctx.set(
+        "routing",
+        "protocol_profile",
+        {
+            "request": {
+                "template_engine": "simple_replace",
+                "request_template": {
+                    "model": None,
+                    "messages": None,
+                    "temperature": None,
+                },
+            },
+            "defaults": {
+                "headers": {"X-Protocol": "v2"},
+                "body": {"temperature": 0.3},
+            },
+        },
+    )
+    ctx.set(
+        "validation",
+        "validated",
+        {
+            "model": "gpt-5.3-codex",
+            "messages": [{"role": "user", "content": "hello render"}],
+        },
+    )
+
+    result = await step.execute(ctx)
+
+    assert result.status == StepStatus.SUCCESS
+    assert ctx.get("template_render", "headers")["X-Protocol"] == "v2"
+    rendered = ctx.get("template_render", "request_body")
+    assert rendered["model"] == "gpt-5.3-codex"
+    assert rendered["messages"][-1] == {"role": "user", "content": "hello render"}
+    assert rendered["messages"][0]["role"] == "system"

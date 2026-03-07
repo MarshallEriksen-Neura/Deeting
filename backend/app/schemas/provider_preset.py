@@ -28,6 +28,8 @@ class ProviderPresetDTO(BaseSchema):
     default_headers: dict[str, Any] = Field(default_factory=dict)
     default_params: dict[str, Any] = Field(default_factory=dict)
     capability_configs: dict[str, Any] = Field(default_factory=dict)
+    protocol_schema_version: str | None = None
+    protocol_profiles: dict[str, Any] = Field(default_factory=dict)
     version: int = 1
     is_active: bool = True
 

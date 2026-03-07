@@ -27,6 +27,29 @@ class ResponseTransformStub(BaseStep):
         return StepResult(status=StepStatus.SUCCESS)
 
 
+class RoutingStub(BaseStep):
+    name = "routing"
+
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
+        return StepResult(status=StepStatus.SUCCESS)
+
+
+class TemplateRenderStub(BaseStep):
+    name = "template_render"
+    depends_on = ["routing"]
+
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
+        return StepResult(status=StepStatus.SUCCESS)
+
+
+class UpstreamCallStub(BaseStep):
+    name = "upstream_call"
+    depends_on = ["template_render"]
+
+    async def execute(self, ctx: WorkflowContext) -> StepResult:
+        return StepResult(status=StepStatus.SUCCESS)
+
+
 def test_response_transform_depends_on_agent_executor():
     workflow = WorkflowConfig(
         template=WorkflowTemplate.INTERNAL_CHAT,
@@ -53,3 +76,31 @@ def test_response_transform_depends_on_provider_execution():
 
     engine = orchestrator._build_engine(WorkflowContext(channel=Channel.INTERNAL))
     assert engine.steps["response_transform"].depends_on == ["provider_execution"]
+
+
+def test_upstream_call_depends_on_template_render_when_present():
+    workflow = WorkflowConfig(
+        template=WorkflowTemplate.EXTERNAL_CHAT,
+        steps=["routing", "template_render", "upstream_call"],
+    )
+    orchestrator = GatewayOrchestrator(
+        workflow_config=workflow,
+        custom_steps=[RoutingStub(), TemplateRenderStub(), UpstreamCallStub()],
+    )
+
+    engine = orchestrator._build_engine(WorkflowContext(channel=Channel.EXTERNAL))
+    assert engine.steps["upstream_call"].depends_on == ["template_render"]
+
+
+def test_upstream_call_depends_on_routing_when_template_render_missing():
+    workflow = WorkflowConfig(
+        template=WorkflowTemplate.EXTERNAL_CHAT,
+        steps=["routing", "upstream_call"],
+    )
+    orchestrator = GatewayOrchestrator(
+        workflow_config=workflow,
+        custom_steps=[RoutingStub(), UpstreamCallStub()],
+    )
+
+    engine = orchestrator._build_engine(WorkflowContext(channel=Channel.EXTERNAL))
+    assert engine.steps["upstream_call"].depends_on == ["routing"]

@@ -292,9 +292,20 @@ class ModelFileProxyService:
         )
 
     async def _build_headers(self, candidate: RoutingCandidate) -> dict[str, str]:
+        protocol_profile = candidate.protocol_profile or {}
+        defaults = (
+            protocol_profile.get("defaults")
+            if isinstance(protocol_profile, dict)
+            else {}
+        ) or {}
+        default_headers = (
+            defaults.get("headers")
+            if isinstance(defaults, dict)
+            else {}
+        ) or {}
         headers = {
             str(k): str(v)
-            for k, v in (candidate.default_headers or {}).items()
+            for k, v in default_headers.items()
             if v is not None
         }
         headers = {

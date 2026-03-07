@@ -32,6 +32,15 @@ async def test_admin_provider_presets_exposes_full_sync_fields(
                         },
                     }
                 },
+                protocol_schema_version="2026-03-07",
+                protocol_profiles={
+                    "chat": {
+                        "profile_id": "custom:chat:openai_chat",
+                        "provider": "custom",
+                        "protocol_family": "openai_chat",
+                        "capability": "chat",
+                    }
+                },
                 theme_color="#123456",
                 version=3,
                 is_active=True,
@@ -55,4 +64,6 @@ async def test_admin_provider_presets_exposes_full_sync_fields(
         item["capability_configs"]["chat"]["response_transform"]["content_path"]
         == "choices.0.message.content"
     )
+    assert item["protocol_schema_version"] == "2026-03-07"
+    assert item["protocol_profiles"]["chat"]["protocol_family"] == "openai_chat"
     assert item["version"] == 3

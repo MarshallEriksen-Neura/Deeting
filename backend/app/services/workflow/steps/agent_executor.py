@@ -228,6 +228,7 @@ class AgentExecutorStep(BaseStep):
 
     async def execute(self, ctx: "WorkflowContext") -> StepResult:
         # 1. Get initial state
+        self._ensure_template_render_state(ctx)
         raw_request_body = ctx.get("template_render", "request_body")
         if not raw_request_body:
             return StepResult(
@@ -1204,6 +1205,7 @@ class AgentExecutorStep(BaseStep):
         return set(_CODE_MODE_DEFAULT_DIRECT_ALLOWLIST)
 
     def _is_code_mode_available(self, ctx: "WorkflowContext") -> bool:
+        self._ensure_template_render_state(ctx)
         request_body = ctx.get("template_render", "request_body") or {}
         tools = request_body.get("tools")
         if not isinstance(tools, list):
@@ -1224,3 +1226,68 @@ class AgentExecutorStep(BaseStep):
                 tool_names.add(name)
 
         return _CODE_MODE_REQUIRED_TOOL_NAMES.issubset(tool_names)
+
+    def _ensure_template_render_state(self, ctx: "WorkflowContext") -> None:
+        existing_body = ctx.get("template_render", "request_body")
+        if isinstance(existing_body, dict) and existing_body:
+            return
+
+        request_body = self._build_request_body_from_context(ctx)
+        if request_body:
+            ctx.set("template_render", "request_body", request_body)
+
+        if not ctx.get("template_render", "upstream_url"):
+            routing_upstream = ctx.get("routing", "upstream_url")
+            if routing_upstream:
+                ctx.set("template_render", "upstream_url", routing_upstream)
+
+        if not ctx.get("template_render", "headers"):
+            protocol_profile = ctx.get("routing", "protocol_profile") or {}
+            defaults_profile = (
+                protocol_profile.get("defaults")
+                if isinstance(protocol_profile, dict)
+                else {}
+            ) or {}
+            ctx.set(
+                "template_render",
+                "headers",
+                deepcopy(
+                    defaults_profile.get("headers")
+                    or {}
+                ),
+            )
+
+    def _build_request_body_from_context(
+        self,
+        ctx: "WorkflowContext",
+    ) -> dict[str, Any] | None:
+        canonical_request = ctx.get("protocol", "canonical_request")
+        if hasattr(canonical_request, "model_dump"):
+            canonical_data = canonical_request.model_dump(exclude_none=True)
+            messages = canonical_data.get("messages")
+            if isinstance(messages, list) and messages:
+                request_body: dict[str, Any] = {
+                    "model": canonical_data.get("model"),
+                    "messages": messages,
+                    "stream": canonical_data.get("stream", False),
+                }
+                if canonical_data.get("temperature") is not None:
+                    request_body["temperature"] = canonical_data["temperature"]
+                if canonical_data.get("max_output_tokens") is not None:
+                    request_body["max_tokens"] = canonical_data["max_output_tokens"]
+                tools = canonical_data.get("tools")
+                if isinstance(tools, list) and tools:
+                    request_body["tools"] = tools
+                return request_body
+
+        validated = ctx.get("validation", "validated") or {}
+        if isinstance(validated, dict) and validated.get("messages"):
+            return deepcopy(validated)
+
+        request = ctx.get("validation", "request")
+        if hasattr(request, "model_dump"):
+            request_data = request.model_dump(exclude_none=True)
+            if request_data.get("messages"):
+                return request_data
+
+        return None

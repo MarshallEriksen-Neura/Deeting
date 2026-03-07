@@ -27,6 +27,14 @@ from app.repositories.provider_instance_repository import (
     ProviderModelRepository,
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.protocols.canonical import CanonicalInputItem, CanonicalRequest
+from app.protocols.runtime import protocol_runtime_service
+from app.protocols.runtime.profile_resolver import (
+    build_protocol_profile_from_preset,
+    infer_protocol_family,
+    load_protocol_profile_from_preset,
+)
+from app.protocols.runtime.response_decoders import decode_response
 from app.services.providers.upstream_url import (
     build_upstream_url_with_params,
 )
@@ -931,55 +939,54 @@ class ProviderInstanceService:
             raise ValueError("secret_not_found")
 
         base_url = self._normalize_base_url(preset, instance)
-        url, params = self._build_upstream_url(
-            base_url, model.upstream_path, protocol, instance
-        )
-
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        proto_lower = (protocol or "").lower()
-        if "anthropic" in proto_lower:
-            headers["x-api-key"] = secret
-            headers["anthropic-version"] = "2023-06-01"
-        elif "azure" in proto_lower:
-            headers["api-key"] = secret
-        elif (
-            "gemini" in proto_lower
-            or "google" in proto_lower
-            or "vertex" in proto_lower
-        ):
-            headers["x-goog-api-key"] = secret
-        else:
-            headers["Authorization"] = f"Bearer {secret}"
-
         capability = (model.capabilities[0] if model.capabilities else "chat").lower()
-        if capability == "embedding":
-            payload = {"model": model.model_id, "input": prompt}
-        elif capability == "image_generation":
-            payload = {"model": model.model_id, "prompt": prompt, "n": 1}
-        elif capability == "text_to_speech":
-            payload = {"model": model.model_id, "input": prompt, "voice": "alloy"}
-        elif capability == "speech_to_text":
-            payload = {
-                "model": model.model_id,
-                "audio_data": prompt,
-                "response_format": "json",
-            }
-        elif capability == "video_generation":
-            payload = {"model": model.model_id, "prompt": prompt}
-        else:
-            payload = {
-                "model": model.model_id,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 16,
-            }
+        protocol_family = infer_protocol_family(protocol=protocol, upstream_path=model.upstream_path)
+        stored_profile = load_protocol_profile_from_preset(preset, capability)
+        stored_metadata = stored_profile.metadata if stored_profile else {}
+        resolved_protocol = (
+            protocol
+            or (stored_metadata.get("protocol") if isinstance(stored_metadata, dict) else None)
+            or getattr(preset, "provider", "openai")
+        )
+        profile = build_protocol_profile_from_preset(
+            preset=preset,
+            provider=getattr(preset, "provider", "custom") or "custom",
+            capability=capability,
+            protocol=resolved_protocol,
+            upstream_path=model.upstream_path,
+            http_method="",
+            template_engine="",
+            request_template={},
+            response_transform={},
+            request_builder={},
+            default_headers=preset.default_headers if preset else {},
+            default_params=preset.default_params if preset else {},
+        )
+        canonical_request = self._build_probe_canonical_request(
+            model=model,
+            capability=capability,
+            protocol_family=protocol_family,
+            prompt=prompt,
+        )
+        upstream_request = protocol_runtime_service.build_upstream_request(
+            canonical_request,
+            profile,
+            base_url=base_url,
+        )
+        headers = {"Content-Type": "application/json", **upstream_request.headers}
+        self._apply_secret_headers(headers, protocol=protocol, secret=secret)
 
         start = time.time()
         status_code = 0
         body = None
         try:
             async with create_async_http_client(timeout=10.0) as client:
-                resp = await client.post(
-                    url, headers=headers, params=params, json=payload
+                resp = await client.request(
+                    upstream_request.method,
+                    upstream_request.url,
+                    headers=headers,
+                    params=upstream_request.query,
+                    json=upstream_request.body,
                 )
             status_code = resp.status_code
             try:
@@ -988,12 +995,19 @@ class ProviderInstanceService:
                 body = {"text": resp.text[:500]}
             success = 200 <= resp.status_code < 300
             latency_ms = int((time.time() - start) * 1000)
+            response_body = body
+            if success and capability == "chat" and isinstance(body, dict):
+                response_body = decode_response(
+                    profile.response.decoder.name,
+                    body,
+                    fallback_model=model.model_id,
+                ).model_dump(mode="python")
             return {
                 "success": success,
                 "latency_ms": latency_ms,
                 "status_code": status_code,
-                "upstream_url": url,
-                "response_body": body,
+                "upstream_url": upstream_request.url,
+                "response_body": response_body,
                 "error": (
                     None
                     if success
@@ -1008,10 +1022,64 @@ class ProviderInstanceService:
                 "success": False,
                 "latency_ms": latency_ms,
                 "status_code": status_code or 0,
-                "upstream_url": url,
+                "upstream_url": upstream_request.url,
                 "response_body": body,
                 "error": str(exc),
             }
+
+    def _build_probe_canonical_request(
+        self,
+        *,
+        model: ProviderModel,
+        capability: str,
+        protocol_family: str,
+        prompt: str,
+    ) -> CanonicalRequest:
+        if capability == "embedding":
+            return CanonicalRequest(
+                capability="embedding",
+                model=model.model_id,
+                input_items=[CanonicalInputItem(type="text", role="user", text=prompt)],
+            )
+        if capability == "chat":
+            if protocol_family == "openai_responses":
+                return CanonicalRequest(
+                    capability="chat",
+                    model=model.model_id,
+                    input_items=[CanonicalInputItem(type="text", role="user", text=prompt)],
+                    max_output_tokens=16,
+                )
+            return CanonicalRequest(
+                capability="chat",
+                model=model.model_id,
+                messages=[{"role": "user", "content": prompt}],
+                max_output_tokens=16,
+            )
+        return CanonicalRequest(
+            capability=capability,  # type: ignore[arg-type]
+            model=model.model_id,
+            input_items=[CanonicalInputItem(type="text", role="user", text=prompt)],
+        )
+
+    def _apply_secret_headers(
+        self,
+        headers: dict[str, str],
+        *,
+        protocol: str | None,
+        secret: str,
+    ) -> None:
+        proto_lower = (protocol or "").lower()
+        if "anthropic" in proto_lower or "claude" in proto_lower:
+            headers["x-api-key"] = secret
+            headers.setdefault("anthropic-version", "2023-06-01")
+            return
+        if "azure" in proto_lower:
+            headers["api-key"] = secret
+            return
+        if "gemini" in proto_lower or "google" in proto_lower or "vertex" in proto_lower:
+            headers["x-goog-api-key"] = secret
+            return
+        headers["Authorization"] = f"Bearer {secret}"
 
     async def list_credentials(
         self,

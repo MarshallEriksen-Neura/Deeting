@@ -2,6 +2,7 @@ pub mod commands;
 pub mod embedding;
 pub mod error;
 pub mod model_guard;
+pub mod protocols;
 pub mod request_runtime;
 pub mod response_transformer;
 pub mod store;

@@ -16,6 +16,7 @@ impl ResponseTransformer {
     pub fn transform(
         &self,
         template_engine: &str,
+        response_decoder: Option<&str>,
         response_transform: &Value,
         raw_response: Value,
         status_code: u16,
@@ -31,12 +32,23 @@ impl ResponseTransformer {
             });
         }
 
-        let result = match template_engine {
-            "jinja2" | "handlebars" => self.transform_handlebars(response_transform, &raw_response),
-            "openai_compat" => Ok(raw_response.clone()),
+        let decoder_name = response_decoder
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(template_engine);
+
+        let result = match decoder_name {
+            "openai_responses" => self.adapt_openai_responses(raw_response.clone()),
             "anthropic_messages" => self.adapt_anthropic(raw_response.clone()),
             "google_gemini" => self.adapt_gemini(raw_response.clone()),
-            _ => Ok(raw_response.clone()),
+            _ => match template_engine {
+                "jinja2" | "handlebars" => {
+                    self.transform_handlebars(response_transform, &raw_response)
+                }
+                "anthropic_messages" => self.adapt_anthropic(raw_response.clone()),
+                "google_gemini" => self.adapt_gemini(raw_response.clone()),
+                _ => Ok(raw_response.clone()),
+            },
         };
 
         match result {
@@ -286,5 +298,116 @@ impl ResponseTransformer {
         }
 
         Ok(result)
+    }
+
+    fn adapt_openai_responses(&self, raw: Value) -> Result<Value, String> {
+        let mut output_text = String::new();
+        let mut tool_calls = Vec::new();
+
+        if let Some(items) = raw.get("output").and_then(|value| value.as_array()) {
+            for item in items {
+                if !item.is_object() {
+                    continue;
+                }
+                match item.get("type").and_then(|value| value.as_str()).unwrap_or("") {
+                    "message" => {
+                        if let Some(content) = item.get("content").and_then(|value| value.as_array()) {
+                            for part in content {
+                                if part.get("type").and_then(|value| value.as_str())
+                                    == Some("output_text")
+                                {
+                                    if let Some(text) = part.get("text").and_then(|value| value.as_str()) {
+                                        output_text.push_str(text);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "function_call" | "tool_call" => {
+                        tool_calls.push(json!({
+                            "id": item.get("id"),
+                            "type": "function",
+                            "function": {
+                                "name": item.get("name"),
+                                "arguments": item.get("arguments").cloned().unwrap_or(Value::Null),
+                            }
+                        }));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut message = json!({ "role": "assistant" });
+        if !output_text.is_empty() {
+            message["content"] = json!(output_text);
+        }
+        if !tool_calls.is_empty() {
+            message["tool_calls"] = Value::Array(tool_calls);
+            if output_text.is_empty() {
+                message["content"] = Value::Null;
+            }
+        }
+
+        let usage = raw.get("usage").cloned().unwrap_or_else(|| json!({}));
+        let input_tokens = usage
+            .get("input_tokens")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+        let output_tokens = usage
+            .get("output_tokens")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+
+        Ok(json!({
+            "id": raw.get("id").cloned().unwrap_or_else(|| json!("response-adapt")),
+            "object": "chat.completion",
+            "model": raw.get("model").cloned().unwrap_or(Value::Null),
+            "choices": [{
+                "index": 0,
+                "message": message,
+                "finish_reason": raw.get("status").cloned().unwrap_or_else(|| json!("stop"))
+            }],
+            "usage": {
+                "prompt_tokens": input_tokens,
+                "completion_tokens": output_tokens,
+                "total_tokens": usage
+                    .get("total_tokens")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(input_tokens + output_tokens)
+            }
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResponseTransformer;
+    use serde_json::json;
+
+    #[test]
+    fn transform_uses_openai_responses_decoder_when_requested() {
+        let transformer = ResponseTransformer::new();
+        let transformed = transformer.transform(
+            "openai_compat",
+            Some("openai_responses"),
+            &json!({}),
+            json!({
+                "model": "gpt-5.3-codex",
+                "output": [{
+                    "type": "message",
+                    "content": [{ "type": "output_text", "text": "hello rust responses" }]
+                }],
+                "usage": { "input_tokens": 2, "output_tokens": 3, "total_tokens": 5 },
+                "status": "completed"
+            }),
+            200,
+        );
+
+        assert_eq!(
+            transformed["choices"][0]["message"]["content"],
+            json!("hello rust responses")
+        );
+        assert_eq!(transformed["usage"]["total_tokens"], json!(5));
     }
 }
