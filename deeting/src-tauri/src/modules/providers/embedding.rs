@@ -50,9 +50,7 @@ impl EmbeddingService {
             .store
             .get_instance(&embedding_model.instance_id.to_string())
             .await?
-            .ok_or_else(|| {
-                ProviderError::Validation("Model instance not found".to_string())
-            })?;
+            .ok_or_else(|| ProviderError::Validation("Model instance not found".to_string()))?;
         let preset = self.store.get_preset(&instance.preset_slug).await?;
 
         let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
@@ -86,13 +84,9 @@ impl EmbeddingService {
             )));
         }
 
-        let result: EmbeddingResponse = serde_json::from_value(
-            response
-                .json
-                .ok_or_else(|| {
-                    ProviderError::Network("Failed to parse embedding response JSON".to_string())
-                })?,
-        )
+        let result: EmbeddingResponse = serde_json::from_value(response.json.ok_or_else(|| {
+            ProviderError::Network("Failed to parse embedding response JSON".to_string())
+        })?)
         .map_err(|e| {
             ProviderError::Network(format!("Failed to parse embedding response: {}", e))
         })?;

@@ -94,13 +94,13 @@ impl BoxLiteProvisioner {
             return Ok(endpoint);
         }
 
-        let binary = self
-            .resolve_binary()
-            .ok_or_else(|| SandboxError::Unavailable(format!(
+        let binary = self.resolve_binary().ok_or_else(|| {
+            SandboxError::Unavailable(format!(
                 "BoxLite binary not found. Install BoxLite to {dir}/{bin} or add it to PATH.",
                 dir = self.config.data_dir.display(),
                 bin = BOXLITE_BINARY_NAME,
-            )))?;
+            ))
+        })?;
 
         log::info!(
             "starting BoxLite: binary={} port={}",

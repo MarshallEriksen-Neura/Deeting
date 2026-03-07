@@ -93,8 +93,8 @@ pub async fn read_local_chat_asset(
         return Err(format!("Asset not found: {}", payload.sha256));
     }
 
-    let bytes =
-        std::fs::read(&path).map_err(|e| format!("Failed to read asset {}: {e}", path.display()))?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| format!("Failed to read asset {}: {e}", path.display()))?;
     let size_bytes = bytes.len() as u64;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     let data_url = format!("data:{};base64,{b64}", payload.content_type);

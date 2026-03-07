@@ -1957,7 +1957,9 @@ impl McpStore {
         &self,
         session_id: &str,
     ) -> Result<LocalConversationChatContext, McpError> {
-        let runtime_window = self.load_local_conversation_runtime_window(session_id).await?;
+        let runtime_window = self
+            .load_local_conversation_runtime_window(session_id)
+            .await?;
         let messages = runtime_window
             .messages
             .into_iter()
@@ -2271,7 +2273,10 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         tx.commit().await?;
-        if let Err(err) = self.touch_local_conversation_summary_idle_task(&session_id).await {
+        if let Err(err) = self
+            .touch_local_conversation_summary_idle_task(&session_id)
+            .await
+        {
             log::warn!(
                 "touch_local_conversation_summary_idle_task failed session={} err={}",
                 session_id,

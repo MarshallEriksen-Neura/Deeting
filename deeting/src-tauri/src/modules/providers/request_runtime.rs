@@ -76,13 +76,21 @@ pub fn prepare_provider_request(
     let http_method = effective_config
         .get("http_method")
         .and_then(|value| value.as_str())
-        .or_else(|| effective_config.get("method").and_then(|value| value.as_str()))
+        .or_else(|| {
+            effective_config
+                .get("method")
+                .and_then(|value| value.as_str())
+        })
         .unwrap_or("POST")
         .trim()
         .to_ascii_uppercase();
 
-    let preset_default_headers = preset.map(|item| &item.default_headers).unwrap_or(&Value::Null);
-    let preset_default_params = preset.map(|item| &item.default_params).unwrap_or(&Value::Null);
+    let preset_default_headers = preset
+        .map(|item| &item.default_headers)
+        .unwrap_or(&Value::Null);
+    let preset_default_params = preset
+        .map(|item| &item.default_params)
+        .unwrap_or(&Value::Null);
     let (auth_type, auth_config, resolved_headers) = resolve_auth_for_protocol(
         Some(protocol.as_str()),
         preset.map(|item| item.provider.as_str()),
@@ -116,7 +124,12 @@ pub fn prepare_provider_request(
         model,
     );
     let hb = build_handlebars();
-    let rendered_url = render_string(upstream_url.as_str(), template_engine.as_str(), &render_context, &hb)?;
+    let rendered_url = render_string(
+        upstream_url.as_str(),
+        template_engine.as_str(),
+        &render_context,
+        &hb,
+    )?;
     let rendered_body = render_body(
         &request_template,
         &default_params,
@@ -233,7 +246,12 @@ fn normalize_base_url(preset: Option<&ProviderPreset>, instance: &ProviderInstan
             .get("resource_name")
             .and_then(value_as_string)
             .or_else(|| instance.meta.get("resource").and_then(value_as_string))
-            .or_else(|| instance.meta.get("deployment_name").and_then(value_as_string));
+            .or_else(|| {
+                instance
+                    .meta
+                    .get("deployment_name")
+                    .and_then(value_as_string)
+            });
         if template.contains("{resource}") {
             if let Some(resource_name) = resource_name {
                 base = template.replace("{resource}", resource_name.as_str());
@@ -532,19 +550,23 @@ fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) 
     }
 }
 
-fn ark_content_array_builder(
-    request_data: &Map<String, Value>,
-    config: &Value,
-) -> Value {
+fn ark_content_array_builder(request_data: &Map<String, Value>, config: &Value) -> Value {
     let mut prompt = request_data
         .get("prompt")
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
 
-    if let Some(flags) = config.get("prompt_flags").and_then(|value| value.as_object()) {
+    if let Some(flags) = config
+        .get("prompt_flags")
+        .and_then(|value| value.as_object())
+    {
         for (field_name, flag_value) in flags {
-            let Some(flag) = flag_value.as_str().map(str::trim).filter(|value| !value.is_empty()) else {
+            let Some(flag) = flag_value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
                 continue;
             };
             let Some(raw_value) = request_data.get(field_name) else {
@@ -632,7 +654,10 @@ fn maybe_push_media_content(
         .get(field_key)
         .and_then(|value| value.as_str())
         .unwrap_or(field_default);
-    let Some(url) = request_data.get(field_name).and_then(|value| value.as_str()) else {
+    let Some(url) = request_data
+        .get(field_name)
+        .and_then(|value| value.as_str())
+    else {
         return;
     };
     let trimmed = url.trim();
@@ -715,7 +740,13 @@ fn render_string(
     }
 
     let rendered = replace_delimited(template, "${", "}", context, true);
-    Ok(replace_delimited(rendered.as_str(), "{{", "}}", context, true))
+    Ok(replace_delimited(
+        rendered.as_str(),
+        "{{",
+        "}}",
+        context,
+        true,
+    ))
 }
 
 fn replace_delimited(
@@ -905,7 +936,10 @@ pub fn build_upstream_url_with_params(
 
     if protocol.contains("azure") {
         let version = api_version.unwrap_or("2023-05-15").trim();
-        params.insert("api-version".to_string(), Value::String(version.to_string()));
+        params.insert(
+            "api-version".to_string(),
+            Value::String(version.to_string()),
+        );
     } else if protocol.contains("openai") && !protocol.contains("azure") {
         let append_v1 = auto_append_v1.unwrap_or_else(|| !has_versioned_path(base.as_str()));
         if append_v1 && !base.ends_with("/v1") {
@@ -1034,8 +1068,7 @@ fn is_version_segment(segment: &str) -> bool {
 mod tests {
     use super::{
         apply_request_builder, build_upstream_url_with_params, deep_merge_json,
-        prepare_provider_request,
-        resolve_auth_for_protocol,
+        prepare_provider_request, resolve_auth_for_protocol,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
     use serde_json::{json, Value};
@@ -1155,7 +1188,10 @@ mod tests {
             Some(false),
             Some("2024-02-01"),
         );
-        assert_eq!(url, "https://example.openai.azure.com/openai/deployments/foo/chat/completions");
+        assert_eq!(
+            url,
+            "https://example.openai.azure.com/openai/deployments/foo/chat/completions"
+        );
         assert_eq!(params["api-version"], json!("2024-02-01"));
     }
 
@@ -1183,7 +1219,10 @@ mod tests {
         .expect("prepare request");
 
         assert_eq!(prepared.url, "https://api.openai.com/v1/chat/completions");
-        assert_eq!(prepared.headers.get("X-Source"), Some(&"desktop".to_string()));
+        assert_eq!(
+            prepared.headers.get("X-Source"),
+            Some(&"desktop".to_string())
+        );
         assert_eq!(prepared.body["model"], json!("gpt-4o-mini"));
         assert_eq!(prepared.body["max_tokens"], json!(64));
     }
@@ -1253,7 +1292,10 @@ mod tests {
         )
         .expect("prepare request with wrapped tools");
 
-        assert_eq!(prepared.body["tools"][0]["function"]["name"], json!("search_sdk"));
+        assert_eq!(
+            prepared.body["tools"][0]["function"]["name"],
+            json!("search_sdk")
+        );
         assert_eq!(prepared.body["tool_choice"], json!("auto"));
     }
 

@@ -121,7 +121,12 @@ impl RelayClient {
 
     pub async fn pull_events(&self, max: usize) -> Result<Vec<RelayEvent>, String> {
         let agent_id = self.ensure_registered().await?;
-        let url = format!("{}/agents/{}/pull?max={}", self.base(), agent_id, max.max(1));
+        let url = format!(
+            "{}/agents/{}/pull?max={}",
+            self.base(),
+            agent_id,
+            max.max(1)
+        );
         let mut req = self.http.get(url);
         if let Some((key, value)) = self.auth_header() {
             req = req.header(key, value);
@@ -150,7 +155,9 @@ impl RelayClient {
         let agent_id = self.ensure_registered().await?;
         let url = format!(
             "{}/agents/{}/events/{}/reply",
-            self.base(), agent_id, event_id
+            self.base(),
+            agent_id,
+            event_id
         );
         let mut req = self.http.post(url).json(&ReplyEventRequest {
             reply_text: reply_text.to_string(),

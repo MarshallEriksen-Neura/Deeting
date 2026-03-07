@@ -1169,7 +1169,10 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveModelStep {
         "monitor_resolve_model"
     }
 
-    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut MonitorWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             ctx.emit_status(
                 "remember",
@@ -1204,7 +1207,10 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
         &["monitor_resolve_model"]
     }
 
-    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut MonitorWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             ctx.emit_status(
                 "evolve",
@@ -1238,7 +1244,10 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
         &["monitor_build_prompt"]
     }
 
-    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut MonitorWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             let connection = ctx
                 .connection
@@ -1337,7 +1346,10 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
         &["monitor_invoke_model"]
     }
 
-    fn execute<'a>(&'a self, ctx: &'a mut MonitorWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut MonitorWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             let content = ctx
                 .content

@@ -944,14 +944,12 @@ impl McpStore {
     }
 
     pub async fn delete_local_skill_install(&self, skill_id: &str) -> Result<(), McpError> {
-        sqlx::query(
-            "DELETE FROM local_skill_install WHERE user_id = ? AND skill_id = ?;",
-        )
-        .bind(LOCAL_DESKTOP_USER_ID)
-        .bind(skill_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+        sqlx::query("DELETE FROM local_skill_install WHERE user_id = ? AND skill_id = ?;")
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .bind(skill_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
     }
 }

@@ -162,11 +162,7 @@ async fn quick_add_models_respects_forced_capability_alias() {
     let instance_id = insert_instance(&store).await;
 
     store
-        .quick_add_models(
-            &instance_id,
-            vec!["gpt-4o-mini".to_string()],
-            Some("image"),
-        )
+        .quick_add_models(&instance_id, vec!["gpt-4o-mini".to_string()], Some("image"))
         .await
         .expect("quick add models");
 
@@ -262,7 +258,10 @@ async fn update_model_mirrors_routing_capabilities_to_capabilities() {
         .expect("update model");
 
     assert_eq!(updated.capabilities, vec!["video_generation".to_string()]);
-    assert_eq!(updated.routing_config["capabilities"][0], json!("video_generation"));
+    assert_eq!(
+        updated.routing_config["capabilities"][0],
+        json!("video_generation")
+    );
 }
 
 #[tokio::test]
@@ -300,7 +299,11 @@ async fn persist_secret_for_credential_writes_to_keychain_or_encrypted_db_fallba
 
     let _ = store.delete_secret_in_keychain(&credential_id);
 
-    let mut tx = store.pool.begin().await.expect("failed to begin transaction");
+    let mut tx = store
+        .pool
+        .begin()
+        .await
+        .expect("failed to begin transaction");
     store
         .persist_secret_for_credential(&mut tx, &credential_id, &secret)
         .await

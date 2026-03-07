@@ -1,5 +1,7 @@
 use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::store::utils::{now_rfc3339, parse_json_object_text, row_to_instance};
+use crate::modules::providers::store::utils::{
+    now_rfc3339, parse_json_object_text, row_to_instance,
+};
 use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::{
     CreateInstanceRequest, ProviderInstance, UpdateInstanceRequest,

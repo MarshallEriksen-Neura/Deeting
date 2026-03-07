@@ -75,7 +75,11 @@ impl LocalGatewayServer {
         }
     }
 
-    pub async fn start(&self, app_state: AppState, app_handle: AppHandle) -> Result<String, String> {
+    pub async fn start(
+        &self,
+        app_state: AppState,
+        app_handle: AppHandle,
+    ) -> Result<String, String> {
         let state = Arc::new(LocalGatewayState {
             app_state,
             app_handle,
@@ -240,9 +244,7 @@ async fn stream_chat_completion(
             }
             match join_result {
                 Ok(result) => result,
-                Err(err) if err.is_cancelled() => {
-                    Err("local chat request cancelled".to_string())
-                }
+                Err(err) if err.is_cancelled() => Err("local chat request cancelled".to_string()),
                 Err(err) => Err(format!("local chat join error: {err}")),
             }
         } else {

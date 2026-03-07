@@ -1,18 +1,11 @@
+import type { ModelGroup as ApiModelGroup } from "@/lib/api/models";
+
 export interface SettingsFormValues {
-  secretaryModel: string
-  desktopEmbeddingProviderModelId: string
-  relayBaseUrl: string
-  relaySharedSecret: string
+  secretaryModel: string;
+  desktopEmbeddingProviderModelId: string;
+  relayBaseUrl: string;
+  relaySharedSecret: string;
+  scoutBaseUrl: string;
 }
 
-export interface ModelGroup {
-  instance_id: string
-  instance_name: string
-  provider?: string
-  models: Array<{
-    id: string
-    owned_by?: string
-    upstream_model_id?: string
-    provider_model_id?: string
-  }>
-}
+export type ModelGroup = ApiModelGroup;

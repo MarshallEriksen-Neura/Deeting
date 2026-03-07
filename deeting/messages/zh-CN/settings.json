@@ -74,6 +74,13 @@
         "showSecret": "显示",
         "hideSecret": "隐藏",
         "footerHint": "仅本机桌面端使用，不会同步到云端。"
+      },
+      "scout": {
+        "title": "桌面 Scout 服务",
+        "description": "配置本地官方爬虫工具使用的 Scout 抓取服务地址，可填写你自建的 Scout，也可填写官方服务地址。",
+        "baseUrlLabel": "Scout 服务地址",
+        "baseUrlHelp": "例如 https://your-scout.example.com。留空时会回退到桌面启动环境中的 SCOUT_SERVICE_URL，若仍未配置则使用 skill 默认地址。",
+        "footerHint": "仅当前桌面端使用，不会同步到云端。修改后会刷新本地官方技能注册。"
       }
     },
     "personal": {
@@ -136,7 +143,8 @@
       "rebuildRecommended": "检测到 embedding 模型变更，建议立即重建本地向量索引。",
       "rebuildSuccess": "本地索引重建完成（成功 {indexed} / 失败 {failed}）",
       "rebuildFailed": "本地索引重建失败，请稍后重试",
-      "desktopRelayUpdated": "桌面 Relay 配置已更新"
+      "desktopRelayUpdated": "桌面 Relay 配置已更新",
+      "desktopScoutUpdated": "桌面 Scout 配置已更新"
     }
   }
 }

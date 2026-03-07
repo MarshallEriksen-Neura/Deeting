@@ -825,13 +825,18 @@ fn parse_timeout_from_tool(tool: &McpTool) -> u64 {
 /// Must match packages/code-mode-contract/contract.json → markers.runtime_tool_call
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
 const MAX_MARKER_REEXEC: usize = 8;
+const DESKTOP_CONFIG_SCOUT_BASE_URL_KEY: &str = "scout.base_url";
 
-async fn execute_local_mcp_tool(tool: &McpTool, arguments: &Value) -> Result<Value, String> {
+async fn execute_local_mcp_tool(
+    store: &crate::modules::mcp::store::McpStore,
+    tool: &McpTool,
+    arguments: &Value,
+) -> Result<Value, String> {
     let timeout_secs = parse_timeout_from_tool(tool);
     let mut tool_results: Vec<serde_json::Value> = Vec::new();
 
     for attempt in 0..=MAX_MARKER_REEXEC {
-        let output = spawn_skill_subprocess(tool, arguments, &tool_results, timeout_secs).await?;
+        let output = spawn_skill_subprocess(store, tool, arguments, &tool_results, timeout_secs).await?;
         let stdout_str = String::from_utf8_lossy(&output.stdout);
 
         // Check for Marker protocol: SDK call_tool() prints the marker then exits non-zero
@@ -901,6 +906,7 @@ async fn execute_local_mcp_tool(tool: &McpTool, arguments: &Value) -> Result<Val
 /// Spawn the skill subprocess with optional DEETING_RUNTIME_CONTEXT for
 /// Marker-mode re-execution (passing cached tool_results).
 async fn spawn_skill_subprocess(
+    store: &crate::modules::mcp::store::McpStore,
     tool: &McpTool,
     arguments: &Value,
     tool_results: &[serde_json::Value],
@@ -914,7 +920,7 @@ async fn spawn_skill_subprocess(
     if let Some(args) = &tool.args {
         cmd.args(args);
     }
-    if let Some(env) = &tool.env {
+    if let Some(env) = resolve_skill_env(store, tool).await? {
         cmd.envs(env);
     }
 
@@ -958,6 +964,47 @@ async fn spawn_skill_subprocess(
                 timeout_secs
             ))
         }
+    }
+}
+
+async fn resolve_skill_env(
+    store: &crate::modules::mcp::store::McpStore,
+    tool: &McpTool,
+) -> Result<Option<std::collections::HashMap<String, String>>, String> {
+    let mut env = tool.env.clone().unwrap_or_default();
+
+    let is_official_crawler_tool = tool
+        .identifier
+        .as_deref()
+        .map(|identifier| identifier.starts_with("official.skills.crawler/"))
+        .unwrap_or(matches!(tool.name.as_str(), "fetch_web_content" | "crawl_website"));
+
+    if is_official_crawler_tool {
+        env.remove("SCOUT_SERVICE_URL");
+
+        let override_url = store
+            .get_desktop_config(DESKTOP_CONFIG_SCOUT_BASE_URL_KEY)
+            .await
+            .map_err(to_string)?;
+        if let Some(normalized) = override_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.trim_end_matches('/').to_string())
+        {
+            env.insert("SCOUT_SERVICE_URL".to_string(), normalized);
+        } else if let Ok(runtime_env) = std::env::var("SCOUT_SERVICE_URL") {
+            let normalized = runtime_env.trim().trim_end_matches('/').to_string();
+            if !normalized.is_empty() {
+                env.insert("SCOUT_SERVICE_URL".to_string(), normalized);
+            }
+        }
+    }
+
+    if env.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(env))
     }
 }
 
@@ -1253,7 +1300,7 @@ async fn execute_or_queue_mcp_tool_call_with_context(
         }));
     }
 
-    execute_local_mcp_tool(&tool, &arguments).await
+    execute_local_mcp_tool(store, &tool, &arguments).await
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1324,7 +1371,7 @@ async fn approve_mcp_tool_inner_with_context(
         return Err("pending tool call already consumed".to_string());
     }
 
-    execute_local_mcp_tool(&tool, &pending.arguments).await
+    execute_local_mcp_tool(store, &tool, &pending.arguments).await
 }
 
 async fn reject_mcp_tool_inner(

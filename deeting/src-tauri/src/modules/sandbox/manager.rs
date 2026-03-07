@@ -503,9 +503,9 @@ impl SandboxRuntimeManager {
         {
             use crate::modules::sandbox::provisioner::{BoxLiteConfig, BoxLiteProvisioner};
 
-            let provisioner = Arc::new(BoxLiteProvisioner::new(
-                BoxLiteConfig::from_home_dir(&options.home_dir),
-            ));
+            let provisioner = Arc::new(BoxLiteProvisioner::new(BoxLiteConfig::from_home_dir(
+                &options.home_dir,
+            )));
 
             // Phase 1: if an explicit bridge URL is set (env or auto-discovered), use it
             if let Some(bridge_url) = options.bridge_url.clone() {
@@ -560,9 +560,7 @@ impl SandboxRuntimeManager {
             }
 
             // Phase 3: fallback to host python
-            log::warn!(
-                "no BoxLite endpoint available, falling back to host python runtime"
-            );
+            log::warn!("no BoxLite endpoint available, falling back to host python runtime");
             let host_backend = HostPythonBackend::new(HostBackendOptions {
                 python_bin: options.python_bin.clone(),
                 working_dir: options.working_dir.clone(),

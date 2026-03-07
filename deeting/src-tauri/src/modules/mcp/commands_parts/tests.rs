@@ -1161,4 +1161,40 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[tokio::test]
+    async fn resolve_skill_env_applies_desktop_scout_override_for_crawler_tools() {
+        let store = create_test_store("resolve-scout-env-crawler").await;
+        store
+            .set_desktop_config("scout.base_url", "https://scout.example.com/")
+            .await
+            .expect("set desktop scout base url");
+
+        let tool = upsert_test_tool(&store, "fetch_web_content", "python3").await;
+        let env = resolve_skill_env(&store, &tool)
+            .await
+            .expect("resolve skill env")
+            .expect("crawler env should exist");
+
+        assert_eq!(
+            env.get("SCOUT_SERVICE_URL").map(String::as_str),
+            Some("https://scout.example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_skill_env_does_not_apply_scout_override_to_other_tools() {
+        let store = create_test_store("resolve-scout-env-other").await;
+        store
+            .set_desktop_config("scout.base_url", "https://scout.example.com/")
+            .await
+            .expect("set desktop scout base url");
+
+        let tool = upsert_test_tool(&store, "not_crawler_tool", "python3").await;
+        let env = resolve_skill_env(&store, &tool)
+            .await
+            .expect("resolve skill env");
+
+        assert!(env.is_none());
+    }
 }

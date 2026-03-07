@@ -432,7 +432,9 @@ pub async fn record_local_bandit_feedback(
 /// Sync platform (credits) models from GET /api/v1/credits/models into local platform instances.
 /// Groups models by provider_slug and creates/updates one local instance per provider.
 #[tauri::command]
-pub async fn sync_platform_models(state: State<'_, AppState>) -> Result<Vec<ProviderModel>, String> {
+pub async fn sync_platform_models(
+    state: State<'_, AppState>,
+) -> Result<Vec<ProviderModel>, String> {
     sync_platform_models_impl(&state).await
 }
 
@@ -491,15 +493,21 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
     // Group models by provider_slug
     let mut grouped: HashMap<String, (String, Vec<&Value>)> = HashMap::new();
     for m in models_json {
-        let slug = m.get("provider_slug")
+        let slug = m
+            .get("provider_slug")
             .and_then(|v| v.as_str())
             .unwrap_or("platform")
             .to_string();
-        let name = m.get("provider_name")
+        let name = m
+            .get("provider_name")
             .and_then(|v| v.as_str())
             .unwrap_or("Platform")
             .to_string();
-        grouped.entry(slug).or_insert_with(|| (name, Vec::new())).1.push(m);
+        grouped
+            .entry(slug)
+            .or_insert_with(|| (name, Vec::new()))
+            .1
+            .push(m);
     }
 
     let instances = state
@@ -553,8 +561,15 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
         let models: Vec<ProviderModel> = group_models
             .iter()
             .filter_map(|m| {
-                let model_id = m.get("model_id").or_else(|| m.get("id"))?.as_str()?.to_string();
-                let display_name = m.get("display_name").and_then(|v| v.as_str()).map(String::from);
+                let model_id = m
+                    .get("model_id")
+                    .or_else(|| m.get("id"))?
+                    .as_str()?
+                    .to_string();
+                let display_name = m
+                    .get("display_name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let capabilities: Vec<String> = m
                     .get("capabilities")
                     .and_then(|c| c.as_array())
@@ -564,7 +579,10 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
                             .collect()
                     })
                     .unwrap_or_else(|| vec!["chat".to_string()]);
-                let pricing = m.get("pricing").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+                let pricing = m
+                    .get("pricing")
+                    .cloned()
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
                 Some(ProviderModel {
                     id: now,
                     instance_id,

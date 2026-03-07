@@ -1,12 +1,12 @@
 use crate::modules::providers::error::ProviderError;
+use crate::modules::providers::store::utils::{
+    normalize_source, normalize_upstream_path, now_rfc3339, parse_json_object_text, row_to_model,
+};
 use crate::modules::providers::store::{
     ProviderStore, CHAT_CAPABILITY, CHAT_UPSTREAM_PATH, EMBEDDING_CAPABILITY,
     EMBEDDING_UPSTREAM_PATH, IMAGE_GENERATION_CAPABILITY, IMAGE_GENERATION_UPSTREAM_PATH,
     SPEECH_TO_TEXT_CAPABILITY, SPEECH_TO_TEXT_UPSTREAM_PATH, TEXT_TO_SPEECH_CAPABILITY,
     TEXT_TO_SPEECH_UPSTREAM_PATH, VIDEO_GENERATION_CAPABILITY, VIDEO_GENERATION_UPSTREAM_PATH,
-};
-use crate::modules::providers::store::utils::{
-    normalize_source, normalize_upstream_path, now_rfc3339, parse_json_object_text, row_to_model,
 };
 use crate::modules::providers::types::{ProviderModel, ProviderModelUpdateRequest};
 use serde_json::Value;
@@ -71,12 +71,17 @@ impl ProviderStore {
             let id: String = row.try_get("id")?;
             let model_id: String = row.try_get("model_id")?;
             let caps_text: String = row.try_get("capabilities")?;
-            let routing_config = parse_json_object_text(row.try_get::<Option<String>, _>("routing_config")?);
-            let extra_meta = parse_json_object_text(row.try_get::<Option<String>, _>("extra_meta")?);
+            let routing_config =
+                parse_json_object_text(row.try_get::<Option<String>, _>("routing_config")?);
+            let extra_meta =
+                parse_json_object_text(row.try_get::<Option<String>, _>("extra_meta")?);
 
             let mut merged_caps: Vec<String> =
                 serde_json::from_str::<Vec<String>>(&caps_text).unwrap_or_default();
-            if let Some(routing_caps) = routing_config.get("capabilities").and_then(|value| value.as_array()) {
+            if let Some(routing_caps) = routing_config
+                .get("capabilities")
+                .and_then(|value| value.as_array())
+            {
                 merged_caps.extend(
                     routing_caps
                         .iter()
@@ -94,7 +99,8 @@ impl ProviderStore {
                 );
             }
 
-            let normalized = normalize_capabilities(merged_caps.iter().map(|item| item.as_str()), None);
+            let normalized =
+                normalize_capabilities(merged_caps.iter().map(|item| item.as_str()), None);
             let final_caps = if normalized.is_empty() {
                 guess_capabilities(&model_id)
             } else {
@@ -249,11 +255,13 @@ impl ProviderStore {
             if capabilities.is_empty() {
                 // Keep existing behavior aligned with cloud: ignore empty capability updates.
             } else {
-            let normalized = normalize_capabilities(
-                capabilities.iter().map(|item| item.as_str()),
-                Some(CHAT_CAPABILITY),
-            );
-            sqlx::query("UPDATE provider_models SET capabilities = ?, updated_at = ? WHERE id = ?")
+                let normalized = normalize_capabilities(
+                    capabilities.iter().map(|item| item.as_str()),
+                    Some(CHAT_CAPABILITY),
+                );
+                sqlx::query(
+                    "UPDATE provider_models SET capabilities = ?, updated_at = ? WHERE id = ?",
+                )
                 .bind(serde_json::to_string(&normalized).unwrap_or_else(|_| "[]".to_string()))
                 .bind(&now)
                 .bind(model_id.to_string())
@@ -317,7 +325,12 @@ impl ProviderStore {
                         .collect::<Vec<String>>()
                 })
                 .filter(|values| !values.is_empty())
-                .map(|values| normalize_capabilities(values.iter().map(|item| item.as_str()), Some(CHAT_CAPABILITY)));
+                .map(|values| {
+                    normalize_capabilities(
+                        values.iter().map(|item| item.as_str()),
+                        Some(CHAT_CAPABILITY),
+                    )
+                });
 
             if let Some(normalized_caps) = normalized_from_routing.as_ref() {
                 if let Some(object) = routing_config.as_object_mut() {
@@ -343,12 +356,14 @@ impl ProviderStore {
             .await?;
 
             if let Some(normalized_caps) = normalized_from_routing {
-                sqlx::query("UPDATE provider_models SET capabilities = ?, updated_at = ? WHERE id = ?")
-                    .bind(serde_json::to_string(&normalized_caps).unwrap_or_else(|_| "[]".to_string()))
-                    .bind(&now)
-                    .bind(model_id.to_string())
-                    .execute(&mut *tx)
-                    .await?;
+                sqlx::query(
+                    "UPDATE provider_models SET capabilities = ?, updated_at = ? WHERE id = ?",
+                )
+                .bind(serde_json::to_string(&normalized_caps).unwrap_or_else(|_| "[]".to_string()))
+                .bind(&now)
+                .bind(model_id.to_string())
+                .execute(&mut *tx)
+                .await?;
             }
         }
 
@@ -431,21 +446,14 @@ impl ProviderStore {
 
 fn normalize_capability(capability: Option<&str>) -> Option<String> {
     let normalized = capability
-        .map(|value| {
-            value
-                .trim()
-                .to_ascii_lowercase()
-                .replace(['-', ' '], "_")
-        })
+        .map(|value| value.trim().to_ascii_lowercase().replace(['-', ' '], "_"))
         .filter(|value| !value.is_empty())?;
 
     let canonical = match normalized.as_str() {
         "chat" | "chat_completion" | "chat_completions" | "text_generation" | "text"
         | "reasoning" | "code" | "vision" => CHAT_CAPABILITY,
         "embedding" | "embeddings" | "vector" => EMBEDDING_CAPABILITY,
-        "image_generation" | "image" | "image_gen" | "text_to_image" => {
-            IMAGE_GENERATION_CAPABILITY
-        }
+        "image_generation" | "image" | "image_gen" | "text_to_image" => IMAGE_GENERATION_CAPABILITY,
         "text_to_speech" | "tts" | "speech" => TEXT_TO_SPEECH_CAPABILITY,
         "speech_to_text" | "stt" | "audio" | "audio_to_text" | "transcription" => {
             SPEECH_TO_TEXT_CAPABILITY

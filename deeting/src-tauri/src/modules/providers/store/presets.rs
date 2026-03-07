@@ -1,6 +1,6 @@
 use crate::modules::providers::error::ProviderError;
-use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::store::utils::parse_json_object_text;
+use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::ProviderPreset;
 use sqlx::Row;
 

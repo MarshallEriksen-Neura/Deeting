@@ -74,6 +74,13 @@
         "showSecret": "Show",
         "hideSecret": "Hide",
         "footerHint": "Used only by this desktop app, never synced to cloud."
+      },
+      "scout": {
+        "title": "Desktop Scout Service",
+        "description": "Configure the Scout crawler endpoint used by local official crawler tools. You can point it to your own Scout deployment or the official service URL.",
+        "baseUrlLabel": "Scout service URL",
+        "baseUrlHelp": "For example https://your-scout.example.com. When left blank, the desktop app falls back to SCOUT_SERVICE_URL from the launch environment, then to the skill default.",
+        "footerHint": "Used only by this desktop app, never synced to cloud. Updating it refreshes local official skill registration."
       }
     },
     "personal": {
@@ -136,7 +143,8 @@
       "rebuildRecommended": "Embedding model changed. Rebuilding the local vector index is recommended.",
       "rebuildSuccess": "Local index rebuild completed (success {indexed} / failed {failed})",
       "rebuildFailed": "Local index rebuild failed. Please try again.",
-      "desktopRelayUpdated": "Desktop relay settings updated"
+      "desktopRelayUpdated": "Desktop relay settings updated",
+      "desktopScoutUpdated": "Desktop Scout settings updated"
     }
   }
 }

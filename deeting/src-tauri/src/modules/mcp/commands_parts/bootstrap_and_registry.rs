@@ -850,6 +850,20 @@ pub(crate) async fn register_local_skills_inner(
                     env.insert(env_name.to_string(), val);
                 }
             }
+            if manifest
+                .env_requirements
+                .iter()
+                .any(|name| name == "SCOUT_SERVICE_URL")
+                && !env.contains_key("SCOUT_SERVICE_URL")
+            {
+                if let Ok(Some(val)) = app_state.mcp.store.get_desktop_config("scout.base_url").await
+                {
+                    let normalized = val.trim().trim_end_matches('/').to_string();
+                    if !normalized.is_empty() {
+                        env.insert("SCOUT_SERVICE_URL".to_string(), normalized);
+                    }
+                }
+            }
 
             if let Some(tools_array) = llm_tools.get("tools").and_then(|v| v.as_array()) {
                 for tool_def in tools_array {

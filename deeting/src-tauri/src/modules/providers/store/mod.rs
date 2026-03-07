@@ -4,9 +4,9 @@ pub mod models;
 pub mod presets;
 pub mod secret_store;
 pub mod secretary;
-pub mod utils;
 #[cfg(test)]
 mod tests;
+pub mod utils;
 
 use crate::modules::providers::error::ProviderError;
 use crate::modules::providers::store::secret_store::SecretStore;

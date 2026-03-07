@@ -1,10 +1,10 @@
 pub mod bridge;
 pub mod commands;
 pub mod error;
+pub mod gateway;
 pub mod local_orchestrator;
 pub mod process;
 pub mod store;
-pub mod gateway;
 pub mod types;
 
 use std::collections::HashMap;
