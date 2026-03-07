@@ -160,6 +160,80 @@ is_deleted: bool
 
 `bandit_arm_state` 表的 `(scene, arm_id)` 唯一键设计已支持多 scene 扩展，无需改表结构，仅需在对应调用点新增 scene 和反馈回路。
 
+#### 缺口 6：记忆操作散落各处，缺乏统一 Service 层
+
+当前所有模块**直接调用底层 `MemoryStore`**（LanceDB 存储层），没有中间的业务 Service 抽象：
+
+| 调用方 | 文件 | 调用方式 |
+|-------|------|---------|
+| Tauri 命令 | `memory/commands.rs` | `state.memory.store.append()` / `delete()` |
+| Code Mode 工具 | `code_mode/bridge.rs` | `deps.memory.store.list()` / `append()` / `clear()` |
+| 聊天管道 | `mcp/local_orchestrator.rs` | `ctx.app_state.memory.store` (SemanticMemoryInjection + ActivePersona) |
+| 运行时路由 | `mcp/commands_parts/runtime_and_routing.rs` | `app_state.memory.store.as_ref()` |
+| Skill 管理 | `mcp/commands_parts/bootstrap_and_registry.rs` | `app_state.memory.store.delete_assets_by_package()` |
+
+这种"各处直穿存储层"的模式带来严重的维护风险：
+- **无法统一加入横切逻辑**：Write Guard、embedding 生成、vitality 更新、审计日志等增强功能需要在每个调用点逐一修改
+- **行为不一致**：不同调用方可能绕过去重、跳过 embedding、遗漏审计记录
+- **测试困难**：无法 mock 单一 Service 层进行单元测试
+
+**目标**：提取统一的 `MemoryService` 层（类似后端的 `AdvancedMemoryService` 设计），所有调用方通过 Service 接口操作记忆，Store 层退化为纯数据访问层：
+
+```
+当前：调用方 → MemoryStore（LanceDB 直操作）
+目标：调用方 → MemoryService（Write Guard + Embedding + Vitality + Audit）→ MemoryStore
+```
+
+#### 缺口 7：LanceDB Schema 无迁移机制
+
+`MemoryStore.init()` 仅检查表是否存在，不检查已有表的 schema 是否需要升级：
+```rust
+if !table_names.iter().any(|name| name == LOCAL_MEMORY_TABLE) {
+    self.conn.create_empty_table(LOCAL_MEMORY_TABLE, local_memory_schema()).execute().await?;
+}
+```
+
+当 `local_memories` 需要新增 `embedding`、`vitality`、`tags` 等字段时，已有用户的旧表不会自动升级，导致字段缺失、写入失败。需要实现类似关系型 DB 的 schema migration 机制（版本检测 + 增量迁移）。
+
+#### 缺口 8：向量维度硬编码，不支持模型切换
+
+`DEFAULT_LOCAL_ASSET_VECTOR_DIM = 1536` 硬编码为 OpenAI text-embedding-3 的维度。如果用户切换 embedding 模型（如 768 维的 all-MiniLM-L6-v2 或 3072 维的 text-embedding-3-large），当前只能通过 `recreate_local_asset_table()` 重建整张表（丢失所有数据）。`local_memories` 增加向量字段时同样需要解决维度动态化问题。
+
+建议方案：启动时检测配置的 embedding 模型维度，与表中实际维度对比，不一致时触发 re-embed 迁移任务而非直接重建。
+
+#### 缺口 9：LanceDB 版本严重滞后
+
+当前 `Cargo.toml` 锁定 `lancedb = "0.14.0"`，最新稳定版为 **0.26.2**（差 12 个小版本），底层 Lance 核心已从 v1 升级到 v3。滞后带来的问题：
+
+| 缺失能力 | 新版本特性 | 对 Memory OS 的价值 |
+|---------|----------|-------------------|
+| SQL 字符串拼接查询 | Expression Builder API（类型安全过滤） | 消除 `sql_escape` 注入风险，代码更优雅 |
+| 串行写入 | 并行插入（parallel inserts） | 批量 re-embed 回填任务加速 |
+| 手动 schema 管理 | 改进的 RecordBatch 写入 API | 简化 `append()` 写入代码 |
+| 无一致性保障 | 后台一致性检查 | 数据完整性自动保障 |
+| Lance v1 格式 | Lance v2.1 存储格式（级联编码+压缩） | 向量索引性能和存储空间优化 |
+
+建议在 Phase 0 中同步升级 LanceDB 到最新稳定版，避免在旧 API 上构建新架构后再做痛苦的迁移。
+
+#### 升级安全策略
+
+LanceDB 的 SDK 版本与 Lance 文件格式版本是**分离的**，升级 SDK 不会破坏已有数据：
+
+| 层面 | 说明 | 风险等级 |
+|------|------|---------|
+| SDK 升级（crate 版本） | 新版 SDK 可读取旧格式数据，API 可能有 breaking changes 需要适配 | 低（编译期发现） |
+| 文件格式升级（v1→v2.1） | 需要显式复制数据集迁移，旧格式持续可用 | 低（可选，非强制） |
+| 我们的 Schema 变更（加字段） | LanceDB 无内置迁移机制，需要自建（参见缺口 7） | 中（需要实现） |
+| Embedding 模型切换（维度变化） | 需要全表 re-embed，不可增量 | 高（需要批量任务） |
+
+**具体的升级保障机制：**
+
+1. **Schema 版本号**：在 LanceDB 表的元数据中记录 `schema_version`，启动时检测版本差异，自动执行增量迁移
+2. **迁移前自动备份**：每次 schema 升级前，将旧表重命名为 `local_memories_backup_{version}_{timestamp}`，迁移成功后可选清理
+3. **格式升级惰性执行**：不强制迁移 Lance 文件格式，新写入的数据片段自动使用新格式（v2.1），旧数据片段在 compaction 时自然升级
+4. **Re-embed 任务幂等**：embedding 回填任务记录进度（已处理到哪条 ID），中断后可断点续传
+5. **回滚能力**：`memory_snapshots` 表记录所有迁移操作，支持一键回退到备份版本
+
 ### 4.4 核心特性在桌面端的适配方案
 
 #### Write Guard 适配
@@ -372,11 +446,14 @@ LLM 负责语义质量判断，Write Guard 负责去重与合并，两者互补�
 ### 6.1 桌面端路线图 (主战场，优先实施)
 
 **Phase 0: 向量基础补全 + 数据流打通** ← 必须最先完成
-- `local_memories` 表增加 `embedding` 向量字段（FixedSizeList<f32>）
-- `append_local_memory` 命令改造：写入时自动调用 `EmbeddingService` 生成向量
+- LanceDB 升级：从 `0.14.0` 升级到最新稳定版（当前 0.26.2），适配新 API（Expression Builder 替代 SQL 拼接、RecordBatch 写入简化），避免在旧 API 上构建新架构（参见 4.3 缺口 9）
+- 提取统一 `MemoryService` 层：将 6 处散落的 `MemoryStore` 直调统一收拢到 Service 接口，Store 退化为纯数据访问层（参见 4.3 缺口 6）。后续所有增强（embedding、Write Guard、vitality、审计）只需修改 Service 层
+- LanceDB Schema 迁移机制：`init()` 增加版本检测，已有表自动增量迁移新字段，避免破坏存量数据（参见 4.3 缺口 7）
+- `local_memories` 表增加 `embedding` 向量字段（FixedSizeList<f32>），维度从 `EmbeddingService` 当前配置动态获取，不硬编码（参见 4.3 缺口 8）
+- `MemoryService.append()` 写入时自动调用 `EmbeddingService` 生成向量
 - 新增 `search_local_memories` Tauri 命令（基于向量搜索 + 过滤）
-- 存量数据批量 embedding 回填任务（后台 async task，启动时检测并执行）
-- `SemanticMemoryInjectionStep` 改造：从 `store.list(limit=5)` 替换为基于当前用户消息的向量搜索（参见 4.5 问题 3）
+- 存量数据批量 embedding 回填任务（后台 async task，启动时检测并执行，利用新版并行插入加速）
+- `SemanticMemoryInjectionStep` 改造：从 `store.list(limit=5)` 替换为 `MemoryService.search()` 向量搜索（参见 4.5 问题 3）
 - 自动事实提取管道：对标后端 `MemoryExtractorService`，在会话空闲后用 LLM 从对话中提取有价值事实，经 Write Guard 去重后写入 `local_memories`（参见 4.5 问题 1）
 
 **Phase 1: 写入守卫 + 元数据扩展**

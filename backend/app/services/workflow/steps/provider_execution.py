@@ -93,19 +93,11 @@ class ProviderExecutionStep(BaseStep):
 
         provider_config = {
             "upstream_url": routing_info.get("upstream_url"),
-            "request_template": profile_request.get("request_template")
-            or routing_info.get("request_template")
-            or {},
-            "headers": deepcopy(
-                profile_defaults.get("headers")
-                or routing_info.get("default_headers")
-                or {}
-            ),
+            "request_template": profile_request.get("request_template") or {},
+            "headers": deepcopy(profile_defaults.get("headers") or {}),
             "async_config": routing_info.get("async_config") or {},
-            "http_method": profile_transport.get("method")
-            or routing_info.get("http_method")
-            or "POST",
-            "request_builder": request_builder or routing_info.get("request_builder") or {},
+            "http_method": profile_transport.get("method") or "POST",
+            "request_builder": request_builder or {},
         }
 
         # 2. Prepare Context (Secrets, Input)

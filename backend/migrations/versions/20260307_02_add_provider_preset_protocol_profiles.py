@@ -149,6 +149,11 @@ def upgrade() -> None:
                             if isinstance(config.get("response_transform"), dict)
                             else {}
                         ),
+                        "output_mapping": (
+                            config.get("output_mapping")
+                            if isinstance(config.get("output_mapping"), dict)
+                            else {}
+                        ),
                     },
                     "stream": {
                         "stream_decoder": {
@@ -181,6 +186,11 @@ def upgrade() -> None:
                     "metadata": {
                         "migrated_from": "capability_configs",
                         "preset_slug": row["slug"],
+                        "async_config": (
+                            config.get("async_config")
+                            or config.get("async_flow")
+                            or {}
+                        ),
                     },
                 }
 

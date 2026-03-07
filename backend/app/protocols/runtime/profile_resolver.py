@@ -33,9 +33,11 @@ def build_protocol_profile(
     template_engine: str,
     request_template: dict[str, Any] | str,
     response_transform: dict[str, Any] | None = None,
+    output_mapping: dict[str, Any] | None = None,
     request_builder: dict[str, Any] | None = None,
     default_headers: dict[str, Any] | None = None,
     default_params: dict[str, Any] | None = None,
+    async_config: dict[str, Any] | None = None,
 ) -> ProtocolProfile:
     family = infer_protocol_family(protocol=protocol, upstream_path=upstream_path)
     template_matches_family = _template_matches_family(request_template, family)
@@ -61,6 +63,8 @@ def build_protocol_profile(
         )
     if response_transform:
         base.response.response_template = response_transform
+    if output_mapping:
+        base.response.output_mapping = output_mapping
     if default_headers:
         base.defaults.headers.update(default_headers)
     if default_params:
@@ -69,6 +73,7 @@ def build_protocol_profile(
         {
             "protocol": protocol or provider,
             "protocol_family": family,
+            "async_config": async_config or {},
         }
     )
     return base
@@ -87,6 +92,39 @@ def load_protocol_profile_from_preset(
     return resolve_profile(raw_profile)
 
 
+def resolve_effective_config_from_preset(
+    preset: Any | None,
+    capability: str,
+) -> dict[str, Any] | None:
+    profile = load_protocol_profile_from_preset(preset, capability)
+    if profile is not None:
+        config: dict[str, Any] = {
+            "template_engine": profile.request.template_engine,
+            "request_template": profile.request.request_template,
+            "response_transform": profile.response.response_template,
+            "output_mapping": profile.response.output_mapping,
+            "http_method": profile.transport.method,
+            "default_headers": profile.defaults.headers,
+            "default_params": profile.defaults.body,
+        }
+        if profile.request.request_builder:
+            config["request_builder"] = profile.request.request_builder.model_dump(
+                exclude_none=True
+            )
+        async_config = profile.metadata.get("async_config") if isinstance(profile.metadata, dict) else {}
+        if isinstance(async_config, dict):
+            config["async_config"] = async_config
+        return config
+
+    if not preset:
+        return None
+    configs = getattr(preset, "capability_configs", None) or {}
+    if capability and isinstance(configs, dict) and capability in configs:
+        raw = configs.get(capability)
+        return raw if isinstance(raw, dict) else None
+    return None
+
+
 def build_protocol_profile_from_preset(
     *,
     preset: Any | None,
@@ -98,9 +136,11 @@ def build_protocol_profile_from_preset(
     template_engine: str,
     request_template: dict[str, Any] | str,
     response_transform: dict[str, Any] | None = None,
+    output_mapping: dict[str, Any] | None = None,
     request_builder: dict[str, Any] | None = None,
     default_headers: dict[str, Any] | None = None,
     default_params: dict[str, Any] | None = None,
+    async_config: dict[str, Any] | None = None,
 ) -> ProtocolProfile:
     stored = load_protocol_profile_from_preset(preset, capability)
     if stored is None:
@@ -113,9 +153,11 @@ def build_protocol_profile_from_preset(
             template_engine=template_engine,
             request_template=request_template,
             response_transform=response_transform,
+            output_mapping=output_mapping,
             request_builder=request_builder,
             default_headers=default_headers,
             default_params=default_params,
+            async_config=async_config,
         )
 
     profile = stored.model_copy(deep=True)
@@ -138,6 +180,7 @@ def build_protocol_profile_from_preset(
         {
             "protocol": protocol or provider,
             "protocol_profile_source": "preset.protocol_profiles",
+            "async_config": async_config or profile.metadata.get("async_config") or {},
         }
     )
     return profile

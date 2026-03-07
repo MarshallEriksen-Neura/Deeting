@@ -34,10 +34,6 @@ async def test_provider_execution_prefers_protocol_profile(monkeypatch):
     ctx.set("routing", "upstream_url", "https://api.example.com/v1/responses")
     ctx.set("routing", "provider", "openai")
     ctx.set("routing", "auth_config", {"secret_ref_id": "db:secret"})
-    ctx.set("routing", "request_template", {"messages": None})
-    ctx.set("routing", "default_headers", {"X-Legacy": "1"})
-    ctx.set("routing", "http_method", "POST")
-    ctx.set("routing", "request_builder", {"type": "legacy"})
     ctx.set(
         "routing",
         "protocol_profile",

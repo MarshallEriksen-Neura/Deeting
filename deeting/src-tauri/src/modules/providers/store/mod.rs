@@ -129,6 +129,7 @@ impl ProviderStore {
             "ALTER TABLE provider_presets ADD COLUMN protocol_profiles TEXT NOT NULL DEFAULT '{}'",
         )
         .await?;
+        self.backfill_protocol_profiles().await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS provider_credentials (
                 id TEXT PRIMARY KEY,

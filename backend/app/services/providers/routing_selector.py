@@ -37,26 +37,16 @@ from app.protocols.runtime.profile_resolver import build_protocol_profile
 from app.services.providers.auth_resolver import resolve_auth_for_protocol
 from app.services.providers.config_utils import deep_merge
 from app.services.providers.upstream_url import build_upstream_url
-from app.protocols.runtime.profile_resolver import build_protocol_profile_from_preset
+from app.protocols.runtime.profile_resolver import (
+    build_protocol_profile_from_preset,
+    resolve_effective_config_from_preset,
+)
 from app.utils.provider_model_access import (
     parse_unlock_price_credits,
     requires_model_purchase,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_capability_config(
-    preset: ProviderPreset, capability: str | None
-) -> dict[str, Any] | None:
-    if not preset:
-        return None
-    configs = preset.capability_configs or {}
-    if capability and capability in configs:
-        return configs.get(capability)
-    return None
-
-
 @dataclass
 class RoutingCandidate:
     preset_id: str | None
@@ -181,7 +171,9 @@ class RoutingSelector:
 
             for m in instance_models:
                 # Use the requested capability to resolve config
-                capability_config = _resolve_capability_config(preset, capability)
+                capability_config = resolve_effective_config_from_preset(
+                    preset, capability
+                )
                 if not capability_config:
                     logger.warning(
                         "routing_skip_missing_capability_config instance_id=%s model_id=%s capability=%s preset=%s",
@@ -272,32 +264,19 @@ class RoutingSelector:
                     template_engine=template_engine,
                     request_template=request_template,
                     response_transform=response_transform,
+                    output_mapping=output_mapping,
                     request_builder=request_builder,
                     default_headers=resolved_headers,
                     default_params=default_params,
+                    async_config=async_config,
                 )
-                protocol_template_engine = (
-                    protocol_profile.request.template_engine or template_engine
-                )
-                protocol_request_template = (
-                    protocol_profile.request.request_template or request_template
-                )
-                protocol_response_transform = (
-                    protocol_profile.response.response_template or response_transform
-                )
-                protocol_http_method = (
-                    protocol_profile.transport.method or http_method
-                )
-                protocol_request_builder = (
-                    protocol_profile.request.request_builder.model_dump(exclude_none=True)
-                    if protocol_profile.request.request_builder
-                    else request_builder
-                )
-                protocol_default_headers = (
-                    protocol_profile.defaults.headers or resolved_headers
-                )
-                protocol_default_params = (
-                    protocol_profile.defaults.body or default_params
+                protocol_async_config = (
+                    protocol_profile.metadata.get("async_config")
+                    if isinstance(protocol_profile.metadata, dict)
+                    else None
+                ) or async_config
+                protocol_output_mapping = (
+                    protocol_profile.response.output_mapping or output_mapping
                 )
 
                 for cred in cred_entries:
@@ -316,8 +295,8 @@ class RoutingSelector:
                             provider=preset.provider if preset else "custom",
                             upstream_url=upstream_url,
                             channel=channel,
-                            async_config=async_config,
-                            output_mapping=output_mapping,
+                            async_config=protocol_async_config,
+                            output_mapping=protocol_output_mapping,
                             pricing_config=m.pricing_config or {},
                             limit_config=m.limit_config or {},
                             auth_type=resolved_auth_type,
@@ -406,7 +385,7 @@ class RoutingSelector:
         resolved_cap = capability or (
             model.capabilities[0] if model.capabilities else "chat"
         )
-        capability_config = _resolve_capability_config(preset, resolved_cap)
+        capability_config = resolve_effective_config_from_preset(preset, resolved_cap)
         if not capability_config:
             logger.warning(
                 "routing_skip_missing_capability_config instance_id=%s model_id=%s capability=%s preset=%s",
@@ -531,30 +510,19 @@ class RoutingSelector:
             template_engine=template_engine,
             request_template=request_template,
             response_transform=response_transform,
+            output_mapping=output_mapping,
             request_builder=request_builder,
             default_headers=resolved_headers,
             default_params=default_params,
+            async_config=async_config,
         )
-        protocol_template_engine = (
-            protocol_profile.request.template_engine or template_engine
-        )
-        protocol_request_template = (
-            protocol_profile.request.request_template or request_template
-        )
-        protocol_response_transform = (
-            protocol_profile.response.response_template or response_transform
-        )
-        protocol_http_method = protocol_profile.transport.method or http_method
-        protocol_request_builder = (
-            protocol_profile.request.request_builder.model_dump(exclude_none=True)
-            if protocol_profile.request.request_builder
-            else request_builder
-        )
-        protocol_default_headers = (
-            protocol_profile.defaults.headers or resolved_headers
-        )
-        protocol_default_params = (
-            protocol_profile.defaults.body or default_params
+        protocol_async_config = (
+            protocol_profile.metadata.get("async_config")
+            if isinstance(protocol_profile.metadata, dict)
+            else None
+        ) or async_config
+        protocol_output_mapping = (
+            protocol_profile.response.output_mapping or output_mapping
         )
 
         for cred in cred_entries:
@@ -573,8 +541,8 @@ class RoutingSelector:
                     provider=preset.provider if preset else "custom",
                     upstream_url=upstream_url,
                     channel=channel,
-                    async_config=async_config,
-                    output_mapping=output_mapping,
+                    async_config=protocol_async_config,
+                    output_mapping=protocol_output_mapping,
                     pricing_config=model.pricing_config or {},
                     limit_config=model.limit_config or {},
                     auth_type=resolved_auth_type,

@@ -518,68 +518,8 @@ class RoutingStep(BaseStep):
     @staticmethod
     def _normalize_routing_payload(payload: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(payload)
-        protocol_profile = normalized.get("protocol_profile") or {}
-        request_profile = (
-            protocol_profile.get("request")
-            if isinstance(protocol_profile, dict)
-            else {}
-        ) or {}
-        response_profile = (
-            protocol_profile.get("response")
-            if isinstance(protocol_profile, dict)
-            else {}
-        ) or {}
-        transport_profile = (
-            protocol_profile.get("transport")
-            if isinstance(protocol_profile, dict)
-            else {}
-        ) or {}
-        defaults_profile = (
-            protocol_profile.get("defaults")
-            if isinstance(protocol_profile, dict)
-            else {}
-        ) or {}
-
-        request_builder = request_profile.get("request_builder")
-        if isinstance(request_builder, dict):
-            if request_builder.get("config") is not None:
-                normalized["request_builder"] = {
-                    "name": request_builder.get("name"),
-                    "config": request_builder.get("config") or {},
-                }
-            else:
-                normalized["request_builder"] = request_builder
-
-        normalized["template_engine"] = (
-            request_profile.get("template_engine")
-            or normalized.get("template_engine")
-            or "simple_replace"
-        )
-        normalized["request_template"] = (
-            request_profile.get("request_template")
-            or normalized.get("request_template")
-            or {}
-        )
-        normalized["response_transform"] = (
-            response_profile.get("response_template")
-            or normalized.get("response_transform")
-            or {}
-        )
-        normalized["http_method"] = (
-            transport_profile.get("method")
-            or normalized.get("http_method")
-            or "POST"
-        )
-        normalized["default_headers"] = (
-            defaults_profile.get("headers")
-            or normalized.get("default_headers")
-            or {}
-        )
-        normalized["default_params"] = (
-            defaults_profile.get("body")
-            or normalized.get("default_params")
-            or {}
-        )
+        if not isinstance(normalized.get("protocol_profile"), dict):
+            normalized["protocol_profile"] = {}
         return normalized
 
     @staticmethod

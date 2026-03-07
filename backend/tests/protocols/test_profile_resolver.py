@@ -30,6 +30,7 @@ def test_build_protocol_profile_from_preset_prefers_stored_protocol_profile():
                 "response": {
                     "decoder": {"name": "openai_responses", "config": {}},
                     "response_template": {},
+                    "output_mapping": {"items_path": "output"},
                 },
                 "stream": {
                     "stream_decoder": {
@@ -46,7 +47,7 @@ def test_build_protocol_profile_from_preset_prefers_stored_protocol_profile():
                     "supports_json_mode": True,
                 },
                 "defaults": {"headers": {}, "query": {}, "body": {}},
-                "metadata": {},
+                "metadata": {"async_config": {"enabled": True}},
             }
         }
     )
@@ -61,9 +62,11 @@ def test_build_protocol_profile_from_preset_prefers_stored_protocol_profile():
         template_engine="simple_replace",
         request_template={"messages": None},
         response_transform={},
+        output_mapping={"legacy": True},
         request_builder={},
         default_headers={"X-Test": "1"},
         default_params={"temperature": 0.2},
+        async_config={"enabled": False},
     )
 
     assert profile.protocol_family == "openai_responses"
@@ -71,3 +74,5 @@ def test_build_protocol_profile_from_preset_prefers_stored_protocol_profile():
     assert profile.transport.path == "responses"
     assert profile.defaults.headers["X-Test"] == "1"
     assert profile.defaults.body["temperature"] == 0.2
+    assert profile.response.output_mapping == {"items_path": "output"}
+    assert profile.metadata["async_config"] == {"enabled": False}

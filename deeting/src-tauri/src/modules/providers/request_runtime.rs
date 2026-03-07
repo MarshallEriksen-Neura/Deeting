@@ -211,9 +211,12 @@ fn build_effective_config(
     capability: &str,
 ) -> Value {
     let capability_config = preset
-        .and_then(|item| item.capability_configs.as_object())
-        .and_then(|configs| configs.get(capability))
-        .cloned()
+        .and_then(|item| {
+            item.protocol_profiles
+                .as_object()
+                .and_then(|profiles| profiles.get(capability))
+                .and_then(protocol_profile_to_effective_config)
+        })
         .unwrap_or_else(|| json!({}));
 
     let allow_override = model
@@ -226,6 +229,65 @@ fn build_effective_config(
     } else {
         capability_config
     }
+}
+
+fn protocol_profile_to_effective_config(profile: &Value) -> Option<Value> {
+    let request = profile.get("request")?.as_object()?;
+    let response = profile
+        .get("response")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let transport = profile
+        .get("transport")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let defaults = profile
+        .get("defaults")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut config = Map::new();
+    if let Some(value) = request.get("template_engine") {
+        config.insert("template_engine".to_string(), value.clone());
+    }
+    if let Some(value) = request.get("request_template") {
+        config.insert("request_template".to_string(), value.clone());
+    }
+    if let Some(value) = request.get("request_builder") {
+        config.insert("request_builder".to_string(), runtime_hook_to_legacy_builder(value));
+    }
+    if let Some(value) = response.get("response_template") {
+        config.insert("response_transform".to_string(), value.clone());
+    }
+    if let Some(value) = transport.get("method") {
+        config.insert("http_method".to_string(), value.clone());
+    }
+    if let Some(value) = defaults.get("headers") {
+        config.insert("default_headers".to_string(), value.clone());
+    }
+    if let Some(value) = defaults.get("body") {
+        config.insert("default_params".to_string(), value.clone());
+    }
+    Some(Value::Object(config))
+}
+
+fn runtime_hook_to_legacy_builder(value: &Value) -> Value {
+    let Some(object) = value.as_object() else {
+        return json!({});
+    };
+    let mut out = Map::new();
+    if let Some(name) = object.get("name").and_then(|value| value.as_str()) {
+        out.insert("type".to_string(), Value::String(name.to_string()));
+    }
+    if let Some(config) = object.get("config").and_then(|value| value.as_object()) {
+        for (key, value) in config {
+            out.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(out)
 }
 
 fn normalize_base_url(preset: Option<&ProviderPreset>, instance: &ProviderInstance) -> String {
@@ -1096,7 +1158,7 @@ fn is_version_segment(segment: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_request_builder, build_upstream_url_with_params, deep_merge_json,
+        apply_request_builder, build_effective_config, build_upstream_url_with_params, deep_merge_json,
         prepare_provider_request, resolve_auth_for_protocol,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
@@ -1365,6 +1427,50 @@ mod tests {
         assert_eq!(prepared.body["model"], json!("gpt-5.3-codex"));
         assert_eq!(prepared.body["input"], json!("hello responses"));
         assert!(prepared.body.get("messages").is_none());
+    }
+
+    #[test]
+    fn build_effective_config_prefers_protocol_profiles_when_present() {
+        let mut preset = mock_preset();
+        preset.capability_configs = json!({
+            "chat": {
+                "template_engine": "simple_replace",
+                "request_template": { "messages": null }
+            }
+        });
+        preset.protocol_profiles = json!({
+            "chat": {
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": { "model": null, "input": null },
+                    "request_builder": {
+                        "name": "responses_input_from_messages_or_items",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "response_template": { "mode": "responses" }
+                },
+                "transport": { "method": "POST" },
+                "defaults": {
+                    "headers": { "X-Protocol": "v2" },
+                    "body": { "temperature": 0.3 }
+                }
+            }
+        });
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "responses".to_string();
+
+        let effective = build_effective_config(Some(&preset), &model, "chat");
+
+        assert_eq!(effective["template_engine"], json!("openai_compat"));
+        assert_eq!(effective["request_template"], json!({"model": null, "input": null}));
+        assert_eq!(
+            effective["request_builder"]["type"],
+            json!("responses_input_from_messages_or_items")
+        );
+        assert_eq!(effective["default_headers"]["X-Protocol"], json!("v2"));
+        assert_eq!(effective["default_params"]["temperature"], json!(0.3));
     }
 
     #[test]
