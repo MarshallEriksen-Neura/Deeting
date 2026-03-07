@@ -9,6 +9,10 @@ import {
   type DesktopOAuthExchangeRequest,
 } from "@/lib/api/auth-oauth-desktop"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
+import {
+  getCurrentDesktopDeepLinks,
+  listenForDesktopDeepLinks,
+} from "@/lib/api/desktop-deep-link"
 
 function serializePayload(payload: DesktopOAuthExchangeRequest) {
   return `${payload.provider}:${payload.session_id}:${payload.state}:${payload.grant}`
@@ -43,11 +47,23 @@ export function DesktopOAuthListener() {
     }
 
     ;(async () => {
-      const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link")
-      if (disposed) return
-      cleanup = await onOpenUrl(async (urls) => {
-        await handleUrls(urls)
-      })
+      const [currentUrls, unlisten] = await Promise.all([
+        getCurrentDesktopDeepLinks(),
+        listenForDesktopDeepLinks(async (urls) => {
+          await handleUrls(urls)
+        }),
+      ])
+
+      if (disposed) {
+        unlisten()
+        return
+      }
+
+      cleanup = unlisten
+
+      if (currentUrls?.length) {
+        await handleUrls(currentUrls)
+      }
     })().catch((error) => {
       const message = error instanceof Error ? error.message : "桌面 OAuth 监听初始化失败"
       toast.error(message)
