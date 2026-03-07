@@ -1,8 +1,10 @@
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::{Path, State},
+    http::{header, HeaderValue, Method},
     response::{
         sse::{Event, Sse},
         IntoResponse, Response,
@@ -15,6 +17,7 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, RwLock};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use uuid::Uuid;
 
 use crate::modules::mcp::local_orchestrator::{
@@ -57,6 +60,14 @@ pub struct LocalGatewayServer {
     pub base_url: RwLock<Option<String>>,
 }
 
+const LOCAL_GATEWAY_ALLOWED_ORIGINS: [&str; 5] = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+    "tauri://localhost",
+];
+
 impl LocalGatewayServer {
     pub fn new() -> Self {
         Self {
@@ -69,6 +80,7 @@ impl LocalGatewayServer {
             app_state,
             app_handle,
         });
+        let cors_layer = build_local_gateway_cors_layer()?;
 
         let app = Router::new()
             .route("/health", get(health_handler))
@@ -77,7 +89,8 @@ impl LocalGatewayServer {
                 "/v1/chat/completions/:request_id/cancel",
                 post(cancel_chat_completions_handler),
             )
-            .with_state(state);
+            .with_state(state)
+            .layer(cors_layer);
 
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -102,6 +115,19 @@ impl LocalGatewayServer {
 
         Ok(base_url)
     }
+}
+
+fn build_local_gateway_cors_layer() -> Result<CorsLayer, String> {
+    let origins = LOCAL_GATEWAY_ALLOWED_ORIGINS
+        .iter()
+        .map(|value| HeaderValue::from_str(value).map_err(|err| err.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::ACCEPT, header::AUTHORIZATION, header::CONTENT_TYPE])
+        .max_age(Duration::from_secs(600)))
 }
 
 async fn health_handler() -> Json<GatewayHealthResponse> {

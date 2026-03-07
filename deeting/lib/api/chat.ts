@@ -158,6 +158,7 @@ export async function streamDesktopLocalChatCompletion(
         method: "POST",
         body,
         credentials: "omit",
+        includeAuthHeader: false,
         headers: {
           "Content-Type": "application/json",
         },

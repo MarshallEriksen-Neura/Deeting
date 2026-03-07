@@ -13,6 +13,7 @@ export interface SSEOptions<T = unknown> {
    */
   parseJson?: boolean
   headers?: Record<string, string>
+  includeAuthHeader?: boolean
   method?: RequestInit["method"]
   body?: RequestInit["body"]
   credentials?: RequestCredentials
@@ -34,6 +35,7 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
   const {
     parseJson = true,
     headers,
+    includeAuthHeader = true,
     method = "GET",
     body,
     credentials = "include",
@@ -55,7 +57,7 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
 
   async function connectWithRetry(allowRefresh: boolean) {
     try {
-      const token = getAuthToken()
+      const token = includeAuthHeader ? getAuthToken() : null
       const response = await fetch(url, {
         method,
         headers: {
@@ -69,7 +71,7 @@ export function openSSE<T = unknown>(url: string, options: SSEOptions<T>) {
         cache: "no-store",
       })
 
-      if (response.status === 401 && allowRefresh) {
+      if (includeAuthHeader && response.status === 401 && allowRefresh) {
         const newToken = await refreshAccessToken().catch(() => null)
         if (newToken) {
           await connectWithRetry(false)

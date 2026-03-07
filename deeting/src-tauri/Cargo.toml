@@ -53,3 +53,4 @@ arrow-schema = "53.2"
 handlebars = "6.3.2"
 async-stream = "0.3.6"
 async-trait = "0.1"
+tower-http = { version = "0.6", features = ["cors"] }
