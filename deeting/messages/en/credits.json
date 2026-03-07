@@ -13,7 +13,10 @@
         "invalidAmount": "Please enter a valid amount greater than 0",
         "redirectingToAlipay": "Redirecting to Alipay...",
         "rechargeSuccess": "Recharge successful: +{amount} credits",
-        "rechargeFailed": "Recharge failed"
+        "rechargeFailed": "Recharge failed",
+        "rechargePending": "Payment is being confirmed and credits will update soon",
+        "rechargeStatusUnknown": "Unable to confirm payment status right now. Please refresh and try again",
+        "lastOrderStatus": "Latest order: {status}, paid {amount}, expected {creditedAmount} credits"
       },
       "used": "Used This Month",
       "remaining": "Remaining"

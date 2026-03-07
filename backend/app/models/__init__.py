@@ -29,6 +29,8 @@ from .assistant_tag import AssistantTag, AssistantTagLink
 from .bandit import BanditArmState, BanditStrategy
 from .base import Base
 from .billing import (
+    AlipayRechargeOrder,
+    AlipayRechargeOrderStatus,
     BillingTransaction,
     TenantQuota,
     TransactionStatus,
@@ -165,6 +167,8 @@ __all__ = [
     "QuotaResetPeriod",
     # Billing
     "TenantQuota",
+    "AlipayRechargeOrder",
+    "AlipayRechargeOrderStatus",
     "BillingTransaction",
     "TransactionType",
     "TransactionStatus",

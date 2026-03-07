@@ -13,7 +13,10 @@
         "invalidAmount": "请输入大于 0 的有效金额",
         "redirectingToAlipay": "正在跳转支付宝支付...",
         "rechargeSuccess": "充值成功：+{amount} 积分",
-        "rechargeFailed": "充值失败"
+        "rechargeFailed": "充值失败",
+        "rechargePending": "支付处理中，系统正在确认到账状态",
+        "rechargeStatusUnknown": "暂时无法确认支付状态，请稍后刷新重试",
+        "lastOrderStatus": "最近订单：{status}，支付 {amount}，预计到账 {creditedAmount} 积分"
       },
       "used": "本月已用",
       "remaining": "剩余"

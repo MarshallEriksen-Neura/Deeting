@@ -18,7 +18,7 @@
 
 import enum
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -26,8 +26,10 @@ from sqlalchemy import (
 )
 from sqlalchemy import (
     BigInteger,
+    DateTime,
     Boolean,
     Date,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -69,6 +71,14 @@ class TransactionStatus(str, enum.Enum):
     PENDING = "pending"  # 预扣中
     COMMITTED = "committed"  # 已确认
     REVERSED = "reversed"  # 已冲正
+
+
+class AlipayRechargeOrderStatus(str, enum.Enum):
+    """支付宝充值订单状态。"""
+
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
 
 
 # ============================================================
@@ -345,3 +355,92 @@ class BillingTransaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<BillingTransaction {self.trace_id} {self.type.value} {self.amount}>"
+
+
+class AlipayRechargeOrder(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """支付宝充值订单状态表。"""
+
+    __tablename__ = "alipay_recharge_order"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="租户 / 用户 ID",
+    )
+    out_trade_no: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="商户订单号",
+    )
+    trade_no: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="支付宝交易号",
+    )
+    status: Mapped[AlipayRechargeOrderStatus] = mapped_column(
+        SAEnum(AlipayRechargeOrderStatus),
+        default=AlipayRechargeOrderStatus.PENDING,
+        nullable=False,
+        index=True,
+        comment="订单状态",
+    )
+    trade_status: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="支付宝 trade_status",
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        nullable=False,
+        comment="充值金额",
+    )
+    currency: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        comment="货币",
+    )
+    credit_per_unit: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+        comment="每单位货币对应积分",
+    )
+    expected_credited_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+        comment="预期到账积分",
+    )
+    pay_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="支付跳转链接",
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="上次错误码",
+    )
+    error_detail: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="上次错误详情",
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="最后查单时间",
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="完成入账时间",
+    )
+
+    __table_args__ = (
+        Index("ix_alipay_recharge_order_tenant_created", "tenant_id", "created_at"),
+    )

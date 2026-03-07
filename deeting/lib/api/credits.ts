@@ -73,6 +73,18 @@ export const CreditsAlipayOrderResponseSchema = z.object({
   expectedCreditedAmount: z.number(),
 })
 
+export const CreditsAlipayOrderStatusSchema = z.object({
+  outTradeNo: z.string(),
+  status: z.enum(["pending", "success", "failed"]),
+  tradeStatus: z.string().nullable().optional(),
+  tradeNo: z.string().nullable().optional(),
+  amount: z.number(),
+  currency: z.string(),
+  expectedCreditedAmount: z.number(),
+  creditedAmount: z.number(),
+  refreshed: z.boolean(),
+})
+
 /** Platform model (credits-backed) for desktop sync and model picker */
 export const CreditsPlatformModelSchema = z.object({
   id: z.string(),
@@ -98,6 +110,7 @@ export type CreditsTransactions = z.infer<typeof CreditsTransactionsSchema>
 export type CreditsRechargePolicy = z.infer<typeof CreditsRechargePolicySchema>
 export type CreditsRechargeResponse = z.infer<typeof CreditsRechargeResponseSchema>
 export type CreditsAlipayOrderResponse = z.infer<typeof CreditsAlipayOrderResponseSchema>
+export type CreditsAlipayOrderStatus = z.infer<typeof CreditsAlipayOrderStatusSchema>
 export type CreditsPlatformModel = z.infer<typeof CreditsPlatformModelSchema>
 export type CreditsPlatformModelsResponse = z.infer<typeof CreditsPlatformModelsResponseSchema>
 
@@ -174,6 +187,21 @@ export async function createAlipayRechargeOrder(
     data: { amount },
   })
   return CreditsAlipayOrderResponseSchema.parse(data)
+}
+
+export async function fetchAlipayRechargeOrderStatus(
+  outTradeNo: string,
+  params?: { refresh?: boolean }
+): Promise<CreditsAlipayOrderStatus> {
+  const data = await request<CreditsAlipayOrderStatus>({
+    url: `${CREDITS_BASE}/recharge/alipay/status`,
+    method: "GET",
+    params: {
+      out_trade_no: outTradeNo,
+      refresh: params?.refresh ?? false,
+    },
+  })
+  return CreditsAlipayOrderStatusSchema.parse(data)
 }
 
 /** Platform models available for credits (desktop sync / model picker). */

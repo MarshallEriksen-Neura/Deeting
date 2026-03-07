@@ -268,6 +268,7 @@ class Settings(BaseSettings):
     ALIPAY_GATEWAY: str = "https://openapi.alipay.com/gateway.do"
     ALIPAY_PRIVATE_KEY: str = ""
     ALIPAY_PUBLIC_KEY: str = ""
+    ALIPAY_SELLER_ID: str = ""
     ALIPAY_NOTIFY_URL: str = ""
     ALIPAY_RETURN_URL: str = ""
     ALIPAY_TIMEOUT_EXPRESS: str = "15m"

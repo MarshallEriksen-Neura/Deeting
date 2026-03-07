@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import get_db
 from app.deps.auth import get_current_user
-from app.models import User
+from app.models import AlipayRechargeOrder, AlipayRechargeOrderStatus, User
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.repositories import (
     ProviderModelRepository,
@@ -24,6 +24,7 @@ from app.repositories.billing_repository import DuplicateTransactionError
 from app.schemas.credits import (
     CreditsAlipayOrderRequest,
     CreditsAlipayOrderResponse,
+    CreditsAlipayOrderStatusResponse,
     CreditsBalanceResponse,
     CreditsConsumptionResponse,
     CreditsModelUsageResponse,
@@ -46,6 +47,7 @@ from app.services.payments import AlipayService
 from app.services.providers.upstream_url import build_upstream_url
 from app.services.secrets.manager import SecretManager
 from app.services.system import SystemSettingsService
+from app.utils.time_utils import Datetime
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +79,131 @@ def get_alipay_service() -> AlipayService:
         notify_url=str(settings.ALIPAY_NOTIFY_URL or ""),
         return_url=str(settings.ALIPAY_RETURN_URL or ""),
         timeout_express=str(settings.ALIPAY_TIMEOUT_EXPRESS or "15m"),
+        seller_id=str(getattr(settings, "ALIPAY_SELLER_ID", "") or ""),
     )
 
 
 def _build_alipay_trace_id(trade_no: str, out_trade_no: str) -> str:
     digest = hashlib.sha256(f"{trade_no}:{out_trade_no}".encode()).hexdigest()[:40]
     return f"alipay-recharge-{digest}"
+
+
+def _map_alipay_order_status(trade_status: str | None) -> AlipayRechargeOrderStatus:
+    normalized = (trade_status or "").strip().upper()
+    if normalized in {"TRADE_SUCCESS", "TRADE_FINISHED"}:
+        return AlipayRechargeOrderStatus.SUCCESS
+    if normalized in {"TRADE_CLOSED"}:
+        return AlipayRechargeOrderStatus.FAILED
+    return AlipayRechargeOrderStatus.PENDING
+
+
+def _serialize_alipay_order_status(
+    order: AlipayRechargeOrder,
+    *,
+    refreshed: bool,
+) -> CreditsAlipayOrderStatusResponse:
+    credited_amount = (
+        float(order.expected_credited_amount)
+        if order.status == AlipayRechargeOrderStatus.SUCCESS
+        else 0.0
+    )
+    return CreditsAlipayOrderStatusResponse(
+        out_trade_no=order.out_trade_no,
+        status=order.status.value,
+        trade_status=order.trade_status,
+        trade_no=order.trade_no,
+        amount=float(order.amount),
+        currency=order.currency,
+        expected_credited_amount=float(order.expected_credited_amount),
+        credited_amount=credited_amount,
+        refreshed=refreshed,
+    )
+
+
+async def _get_alipay_order_for_user(
+    db: AsyncSession,
+    *,
+    out_trade_no: str,
+    user_id: uuid.UUID,
+) -> AlipayRechargeOrder | None:
+    result = await db.execute(
+        select(AlipayRechargeOrder).where(
+            AlipayRechargeOrder.out_trade_no == out_trade_no,
+            AlipayRechargeOrder.tenant_id == user_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+def _validate_alipay_seller_id(seller_id: str | None) -> bool:
+    expected = str(getattr(settings, "ALIPAY_SELLER_ID", "") or "").strip()
+    if not expected:
+        return True
+    return (seller_id or "").strip() == expected
+
+
+async def _apply_alipay_order_update(
+    *,
+    db: AsyncSession,
+    order: AlipayRechargeOrder,
+    trade_status: str | None,
+    trade_no: str | None,
+    total_amount: Decimal | None,
+    seller_id: str | None,
+    svc: CreditsService,
+    system_settings_service: SystemSettingsService,
+) -> None:
+    if not _validate_alipay_seller_id(seller_id):
+        raise ValueError("支付宝卖家身份不匹配")
+
+    if total_amount is not None:
+        normalized_amount = Decimal(str(total_amount)).quantize(Decimal("0.01"))
+        if normalized_amount != Decimal(str(order.amount)).quantize(Decimal("0.01")):
+            raise ValueError("支付宝支付金额与订单金额不一致")
+
+    order.trade_status = (trade_status or order.trade_status or "").strip() or None
+    order.trade_no = (trade_no or order.trade_no or "").strip() or None
+    order.last_checked_at = Datetime.now()
+    order.status = _map_alipay_order_status(order.trade_status)
+
+    if order.status != AlipayRechargeOrderStatus.SUCCESS:
+        await db.commit()
+        return
+
+    if not order.trade_no:
+        raise ValueError("支付宝交易号缺失")
+
+    policy = await system_settings_service.get_recharge_policy()
+    order.currency = str(policy["currency"])
+    order.credit_per_unit = Decimal(str(policy["credit_per_unit"])).quantize(
+        Decimal("0.000001")
+    )
+    order.expected_credited_amount = (
+        Decimal(str(order.amount)) * order.credit_per_unit
+    ).quantize(Decimal("0.000001"))
+
+    trace_id = _build_alipay_trace_id(
+        trade_no=order.trade_no,
+        out_trade_no=order.out_trade_no,
+    )
+    try:
+        await svc.recharge_with_trace_id(
+            tenant_id=str(order.tenant_id),
+            amount=order.amount,
+            credit_per_unit=float(order.credit_per_unit),
+            currency=order.currency,
+            trace_id=trace_id,
+            description=(
+                f"Alipay recharge trade_no={order.trade_no} amount={order.amount} "
+                f"{order.currency} ratio={order.credit_per_unit}"
+            ),
+        )
+    except DuplicateTransactionError:
+        pass
+
+    order.status = AlipayRechargeOrderStatus.SUCCESS
+    order.settled_at = Datetime.now()
+    await db.commit()
 
 
 async def _resolve_secret_ref(
@@ -426,6 +547,7 @@ async def recharge_credits(
 async def create_alipay_recharge_order(
     payload: CreditsAlipayOrderRequest,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     system_settings_service: SystemSettingsService = Depends(get_system_settings_service),
     alipay_service: AlipayService = Depends(get_alipay_service),
 ) -> CreditsAlipayOrderResponse:
@@ -450,6 +572,22 @@ async def create_alipay_recharge_order(
     expected_credited_amount = (
         Decimal(str(order.amount)) * Decimal(str(policy["credit_per_unit"]))
     ).quantize(Decimal("0.000001"))
+    db.add(
+        AlipayRechargeOrder(
+            tenant_id=current_user.id,
+            out_trade_no=order.out_trade_no,
+            status=AlipayRechargeOrderStatus.PENDING,
+            trade_status="WAIT_BUYER_PAY",
+            amount=order.amount,
+            currency=str(policy["currency"]),
+            credit_per_unit=Decimal(str(policy["credit_per_unit"])).quantize(
+                Decimal("0.000001")
+            ),
+            expected_credited_amount=expected_credited_amount,
+            pay_url=order.pay_url,
+        )
+    )
+    await db.commit()
     return CreditsAlipayOrderResponse(
         out_trade_no=order.out_trade_no,
         pay_url=order.pay_url,
@@ -459,6 +597,62 @@ async def create_alipay_recharge_order(
     )
 
 
+@router.get(
+    "/recharge/alipay/status",
+    response_model=CreditsAlipayOrderStatusResponse,
+)
+async def get_alipay_recharge_order_status(
+    out_trade_no: str = Query(..., min_length=1),
+    refresh: bool = Query(False),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    svc: CreditsService = Depends(get_credits_service),
+    system_settings_service: SystemSettingsService = Depends(get_system_settings_service),
+    alipay_service: AlipayService = Depends(get_alipay_service),
+) -> CreditsAlipayOrderStatusResponse:
+    order = await _get_alipay_order_for_user(
+        db,
+        out_trade_no=out_trade_no.strip(),
+        user_id=current_user.id,
+    )
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    refreshed = False
+    if refresh and order.status != AlipayRechargeOrderStatus.SUCCESS:
+        refreshed = True
+        try:
+            query_result = await alipay_service.query_trade(out_trade_no=order.out_trade_no)
+        except (httpx.HTTPError, ValueError) as exc:
+            order.error_code = "query_failed"
+            order.error_detail = str(exc)
+            order.last_checked_at = Datetime.now()
+            await db.commit()
+            await db.refresh(order)
+        else:
+            if query_result.code == "10000":
+                await _apply_alipay_order_update(
+                    db=db,
+                    order=order,
+                    trade_status=query_result.trade_status,
+                    trade_no=query_result.trade_no,
+                    total_amount=query_result.total_amount,
+                    seller_id=query_result.seller_id,
+                    svc=svc,
+                    system_settings_service=system_settings_service,
+                )
+            else:
+                order.error_code = query_result.sub_code or query_result.code or None
+                order.error_detail = query_result.msg
+                order.last_checked_at = Datetime.now()
+                await db.commit()
+                await db.refresh(order)
+
+    if order.status == AlipayRechargeOrderStatus.SUCCESS:
+        await db.refresh(order)
+    return _serialize_alipay_order_status(order, refreshed=refreshed)
+
+
 @router.post(
     "/recharge/alipay/notify",
     response_class=PlainTextResponse,
@@ -466,6 +660,7 @@ async def create_alipay_recharge_order(
 )
 async def handle_alipay_recharge_notify(
     request: Request,
+    db: AsyncSession = Depends(get_db),
     svc: CreditsService = Depends(get_credits_service),
     system_settings_service: SystemSettingsService = Depends(get_system_settings_service),
     alipay_service: AlipayService = Depends(get_alipay_service),
@@ -498,20 +693,35 @@ async def handle_alipay_recharge_notify(
 
     if paid_amount != expected_amount:
         return PlainTextResponse("failure", status_code=status.HTTP_400_BAD_REQUEST)
-
-    policy = await system_settings_service.get_recharge_policy()
-    trace_id = _build_alipay_trace_id(trade_no=trade_no, out_trade_no=out_trade_no)
     try:
-        await svc.recharge_with_trace_id(
-            tenant_id=tenant_id,
-            amount=paid_amount,
-            credit_per_unit=float(policy["credit_per_unit"]),
-            currency=str(policy["currency"]),
-            trace_id=trace_id,
-            description=(
-                f"Alipay recharge trade_no={trade_no} amount={paid_amount} "
-                f"{policy['currency']} ratio={policy['credit_per_unit']}"
-            ),
+        order = await _get_alipay_order_for_user(
+            db,
+            out_trade_no=out_trade_no,
+            user_id=uuid.UUID(tenant_id),
+        )
+        if not order:
+            expected_credited_amount = Decimal("0")
+            order = AlipayRechargeOrder(
+                tenant_id=uuid.UUID(tenant_id),
+                out_trade_no=out_trade_no,
+                status=AlipayRechargeOrderStatus.PENDING,
+                amount=paid_amount,
+                currency="CNY",
+                credit_per_unit=Decimal("0"),
+                expected_credited_amount=expected_credited_amount,
+            )
+            db.add(order)
+            await db.flush()
+
+        await _apply_alipay_order_update(
+            db=db,
+            order=order,
+            trade_status=trade_status,
+            trade_no=trade_no,
+            total_amount=paid_amount,
+            seller_id=str(payload.get("seller_id") or "").strip() or None,
+            svc=svc,
+            system_settings_service=system_settings_service,
         )
     except DuplicateTransactionError:
         return PlainTextResponse("success")
