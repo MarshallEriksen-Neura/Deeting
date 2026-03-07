@@ -1141,13 +1141,13 @@ fn now_rfc3339() -> String {
         .unwrap_or_default()
 }
 
-pub(crate) async fn start_local_conversation_summary_worker(state: McpRuntimeState) {
+pub(crate) async fn start_local_conversation_summary_worker(app_state: AppState) {
     let mut interval = tokio::time::interval(Duration::from_secs(
         LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
     ));
     loop {
         interval.tick().await;
-        if let Err(err) = process_next_local_conversation_summary_job(&state).await {
+        if let Err(err) = process_next_local_conversation_summary_job(&app_state).await {
             warn!("conversation summary worker error: {}", err);
         }
     }
@@ -1170,8 +1170,8 @@ pub(crate) async fn start_local_periodic_worker(state: McpRuntimeState) {
     }
 }
 
-async fn process_next_local_conversation_summary_job(state: &McpRuntimeState) -> Result<(), McpError> {
-    process_next_local_conversation_summary_job_with_store(state.store.as_ref()).await
+async fn process_next_local_conversation_summary_job(app_state: &AppState) -> Result<(), McpError> {
+    process_next_local_conversation_summary_job_inner(Some(app_state), app_state.mcp.store.as_ref()).await
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1341,18 +1341,77 @@ async fn reject_mcp_tool_inner(
 async fn process_next_local_conversation_summary_job_with_store(
     store: &crate::modules::mcp::store::McpStore,
 ) -> Result<(), McpError> {
+    process_next_local_conversation_summary_job_inner(None, store).await
+}
+
+async fn process_next_local_conversation_summary_job_inner(
+    app_state: Option<&AppState>,
+    store: &crate::modules::mcp::store::McpStore,
+) -> Result<(), McpError> {
     let Some(job) = store.claim_next_local_conversation_summary_job().await? else {
         return Ok(());
     };
 
     let processing = async {
-        let window = store.get_local_conversation_window(&job.session_id).await?;
-        let summary = build_local_summary_from_window(&window.messages);
+        let window = store
+            .load_local_conversation_runtime_window(&job.session_id)
+            .await?;
+        let model_summary = if let Some(app_state) = app_state {
+            let meta = window.meta.as_ref();
+            let model_id = meta
+                .and_then(|value| value.get("last_model_id"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty());
+            let provider_model_id = meta
+                .and_then(|value| value.get("last_provider_model_id"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty());
+
+            if let (Some(model_id), Some(provider_model_id)) = (model_id, provider_model_id) {
+                match generate_local_conversation_summary_with_model(
+                    app_state,
+                    provider_model_id,
+                    model_id,
+                    &window.messages,
+                    Some(job.session_id.as_str()),
+                )
+                .await
+                {
+                    Ok(Some(summary)) if !summary.trim().is_empty() => Some((summary, model_id.to_string())),
+                    Ok(_) => None,
+                    Err(err) => {
+                        log::warn!(
+                            "local conversation model summary failed session={} err={}",
+                            job.session_id,
+                            err
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (summary, summarizer_model) = model_summary.unwrap_or_else(|| {
+            (
+                build_local_summary_from_window(&window.messages),
+                "local-worker".to_string(),
+            )
+        });
         if summary.trim().is_empty() {
             return Err(McpError::validation("conversation summary content is empty"));
         }
         store
-            .persist_local_conversation_summary(&job.session_id, &summary, Some("local-worker"))
+            .persist_local_conversation_summary(
+                &job.session_id,
+                &summary,
+                Some(summarizer_model.as_str()),
+            )
             .await?;
         Ok::<(), McpError>(())
     }
@@ -1370,31 +1429,48 @@ async fn process_next_local_conversation_summary_job_with_store(
     }
 }
 
-fn build_local_summary_from_window(messages: &[LocalConversationHistoryMessage]) -> String {
+fn extract_text_from_history_message(message: &LocalConversationHistoryMessage) -> Option<String> {
+    message
+        .content
+        .as_ref()
+        .and_then(|value| {
+            if let Some(text) = value.as_str() {
+                Some(text.to_string())
+            } else {
+                serde_json::to_string(value).ok()
+            }
+        })
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn build_local_summary_source_lines(
+    messages: &[LocalConversationHistoryMessage],
+    max_items: Option<usize>,
+) -> Vec<String> {
     let mut lines = Vec::new();
     for message in messages {
         let role = message.role.trim();
-        let text = message
-            .content
-            .as_ref()
-            .and_then(|value| {
-                if let Some(text) = value.as_str() {
-                    Some(text.to_string())
-                } else {
-                    serde_json::to_string(value).ok()
-                }
-            })
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_default();
-        if text.is_empty() {
+        let Some(text) = extract_text_from_history_message(message) else {
             continue;
-        }
+        };
         lines.push(format!("{}: {}", role, text));
-        if lines.len() >= LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES {
+        if max_items
+            .map(|value| lines.len() >= value)
+            .unwrap_or(false)
+        {
             break;
         }
     }
+
+    lines
+}
+
+fn build_local_summary_from_window(messages: &[LocalConversationHistoryMessage]) -> String {
+    let lines = build_local_summary_source_lines(
+        messages,
+        Some(LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES),
+    );
 
     if lines.is_empty() {
         return String::new();
@@ -1402,6 +1478,154 @@ fn build_local_summary_from_window(messages: &[LocalConversationHistoryMessage])
 
     let joined = lines.join("\n");
     truncate_text_chars(&joined, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)
+}
+
+fn build_local_summary_prompt_input(messages: &[LocalConversationHistoryMessage]) -> String {
+    let lines = build_local_summary_source_lines(messages, None);
+    if lines.is_empty() {
+        return String::new();
+    }
+    truncate_text_chars(&lines.join("\n"), LOCAL_CONVERSATION_SUMMARY_PROMPT_INPUT_MAX_CHARS)
+}
+
+fn extract_text_from_chat_completion_response(response_body: &serde_json::Value) -> Option<String> {
+    if let Some(content) = response_body.get("content").and_then(|value| value.as_str()) {
+        let trimmed = content.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    if let Some(choice) = response_body
+        .get("choices")
+        .and_then(|value| value.as_array())
+        .and_then(|items| items.first())
+    {
+        if let Some(message_content) = choice
+            .get("message")
+            .and_then(|value| value.get("content"))
+            .and_then(|value| value.as_str())
+        {
+            let trimmed = message_content.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+
+        if let Some(text) = choice.get("text").and_then(|value| value.as_str()) {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    response_body
+        .get("completion")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn sanitize_generated_title(title: &str, fallback: &str) -> Option<String> {
+    let mut text = title.trim().replace(['\n', '\r'], " ");
+    text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    text = text
+        .trim_matches(|ch| matches!(ch, '“' | '”' | '"' | '\'' | '`'))
+        .trim_matches(|ch| matches!(ch, ' ' | '-' | '–' | '—' | '·' | '•' | ':' | '：'))
+        .to_string();
+
+    if text.is_empty() {
+        text = fallback.trim().to_string();
+    }
+    if text.is_empty() {
+        return None;
+    }
+
+    Some(truncate_text_chars(&text, LOCAL_CONVERSATION_TOPIC_TITLE_MAX_CHARS))
+}
+
+async fn request_local_auxiliary_text(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    prompt: &str,
+    max_tokens: u32,
+    session_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let response = request_provider_chat_completion(
+        app_state,
+        provider_model_id,
+        model_id,
+        vec![LocalChatInputMessage {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+        }],
+        None,
+        Some(LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE),
+        Some(max_tokens),
+        None,
+        session_id,
+    )
+    .await?;
+
+    Ok(extract_text_from_chat_completion_response(&response))
+}
+
+pub(crate) async fn generate_local_conversation_title_with_model(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    first_message: &str,
+    session_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let normalized_first_message = first_message.trim();
+    if normalized_first_message.is_empty() {
+        return Ok(None);
+    }
+
+    let prompt = LOCAL_CONVERSATION_TOPIC_NAMING_PROMPT_TEMPLATE
+        .replace("{first_message}", normalized_first_message);
+    let generated = request_local_auxiliary_text(
+        app_state,
+        provider_model_id,
+        model_id,
+        &prompt,
+        LOCAL_CONVERSATION_TOPIC_NAMING_MAX_TOKENS,
+        session_id,
+    )
+    .await?;
+
+    Ok(generated.and_then(|value| sanitize_generated_title(&value, normalized_first_message)))
+}
+
+async fn generate_local_conversation_summary_with_model(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: &[LocalConversationHistoryMessage],
+    session_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let conversation = build_local_summary_prompt_input(messages);
+    if conversation.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let prompt = LOCAL_CONVERSATION_SUMMARY_PROMPT_TEMPLATE.replace("{conversation}", &conversation);
+    let generated = request_local_auxiliary_text(
+        app_state,
+        provider_model_id,
+        model_id,
+        &prompt,
+        LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS,
+        session_id,
+    )
+    .await?;
+
+    Ok(generated
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(|value| truncate_text_chars(&value, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)))
 }
 
 pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
@@ -1478,7 +1702,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
             .map(|m| &m.content)
             .cloned()
             .unwrap_or_default();
-        let tools = build_local_sdk_search_result(app_state, &search_query).await;
+        let tools = build_local_code_mode_entry_tools();
 
         let response = request_provider_chat_completion(
             app_state,
@@ -1896,6 +2120,76 @@ async fn maybe_handle_local_code_mode_tool_calls(
     (synthesized, tool_call_meta, results)
 }
 
+fn build_local_code_mode_entry_tools() -> serde_json::Value {
+    serde_json::json!({
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_sdk",
+                    "description": "Search Deeting SDK capabilities by intent and return typed signatures, parameter docs, and python stubs. Use before execute_code_plan. Prefer calling tools by generated stubs or `deeting.call_tool(name, **kwargs)`.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Natural language intent to search tools."
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Max items to return (1-20).",
+                                "default": 8
+                            },
+                            "include_schema": {
+                                "type": "boolean",
+                                "description": "Whether to include full JSON schema.",
+                                "default": false
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "execute_code_plan",
+                    "description": "Execute a Python code plan in sandbox. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are auto-injected based on your code: use `from deeting_sdk import <tool_name>` directly without calling search_sdk first (search_sdk is optional for discovery). Important: call tools with keyword args (`deeting.call_tool('tool-name', query='...')`), not positional dict args. Generate one coherent script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "Python code to execute."
+                            },
+                            "session_id": {
+                                "type": "string",
+                                "description": "Optional explicit session ID."
+                            },
+                            "language": {
+                                "type": "string",
+                                "description": "Execution language. Only python is supported.",
+                                "default": "python"
+                            },
+                            "execution_timeout": {
+                                "type": "integer",
+                                "description": "Execution timeout hint in seconds.",
+                                "default": 30
+                            },
+                            "dry_run": {
+                                "type": "boolean",
+                                "description": "Only validate code and return plan metadata without executing.",
+                                "default": false
+                            }
+                        },
+                        "required": ["code"]
+                    }
+                }
+            }
+        ]
+    })
+}
+
 async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> serde_json::Value {
     let normalized = query.trim().to_lowercase();
     let enabled_assistant_ids = app_state
@@ -2031,10 +2325,17 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
         })
         .collect::<Vec<_>>();
 
+    let usage_hint = "先根据参数文档和 python_stub 规划步骤，再调用 execute_code_plan 一次性执行。脚本内优先 `from deeting_sdk import tool_name` 或 `deeting.call_tool(name, **kwargs)`；不要写 `deeting.call_tool(name, { ... })`。最后请用 `deeting.log(json.dumps(result, ensure_ascii=False))` 输出结构化结果。";
+
     serde_json::json!({
+        "format_version": "sdk_toolcard.v2",
+        "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,
         "query": query,
-        "mode": "unified_local_discovery",
+        "mode": "code_mode",
+        "count": matches.len(),
+        "tools": matches.clone(),
         "items": matches,
+        "usage_hint": usage_hint,
         "install_hints": install_hints,
         "assistant_install_gate": {
             "enabled_installed_count": enabled_assistant_ids.len(),
@@ -2176,6 +2477,26 @@ pub async fn get_local_gateway_url(state: State<'_, AppState>) -> Result<Option<
 }
 
 const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
+const LOCAL_CONVERSATION_SUMMARY_PROMPT_INPUT_MAX_CHARS: usize = 4000;
+const LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS: u32 = 768;
 const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
 const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
 const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
+const LOCAL_CONVERSATION_TOPIC_TITLE_MAX_CHARS: usize = 40;
+const LOCAL_CONVERSATION_TOPIC_NAMING_MAX_TOKENS: u32 = 96;
+const LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE: f32 = 0.2;
+const LOCAL_CONVERSATION_TOPIC_NAMING_PROMPT_TEMPLATE: &str = r#"
+请根据用户的第一句话生成一个简短话题标题，要求：
+1) 10-20 字以内；2) 不要引号与句号；3) 仅输出标题文本。
+用户内容：{first_message}
+"#;
+const LOCAL_CONVERSATION_SUMMARY_PROMPT_TEMPLATE: &str = r#"
+请对以下多轮对话内容进行摘要，要求：
+1) 保留关键信息和上下文，包括用户意图、重要决策和结论；
+2) 去除冗余和重复内容；
+3) 摘要长度控制在 500 字以内；
+4) 仅输出摘要文本，不要额外解释。
+
+对话内容：
+{conversation}
+"#;

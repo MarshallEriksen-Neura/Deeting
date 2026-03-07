@@ -1398,6 +1398,156 @@ impl McpStore {
         })
     }
 
+    pub async fn update_local_conversation_title_if_empty(
+        &self,
+        session_id: &str,
+        title: &str,
+    ) -> Result<Option<String>, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        let normalized_title = {
+            let trimmed = title.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        };
+        let Some(next_title) = normalized_title else {
+            return Err(McpError::validation("title is required"));
+        };
+
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE conversation_session
+            SET title = ?, updated_at = ?
+            WHERE id = ?
+              AND (title IS NULL OR TRIM(title) = '');
+            "#,
+        )
+        .bind(&next_title)
+        .bind(&now)
+        .bind(&normalized_session_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+
+        Ok(Some(next_title))
+    }
+
+    pub async fn update_local_conversation_model_context(
+        &self,
+        session_id: &str,
+        model_id: Option<&str>,
+        provider_model_id: Option<&str>,
+    ) -> Result<(), McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        let normalized_model_id = model_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let normalized_provider_model_id = provider_model_id.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE conversation_session
+            SET last_model_id = ?,
+                last_provider_model_id = ?,
+                updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(&normalized_model_id)
+        .bind(&normalized_provider_model_id)
+        .bind(&now)
+        .bind(&normalized_session_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_local_conversation_title_context(
+        &self,
+        session_id: &str,
+    ) -> Result<LocalConversationTitleContext, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        let session_row = sqlx::query(
+            r#"
+            SELECT id, title, message_count
+            FROM conversation_session
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .ok_or_else(|| McpError::NotFound("conversation session not found".to_string()))?;
+
+        let first_message_row = sqlx::query(
+            r#"
+            SELECT content
+            FROM conversation_message
+            WHERE session_id = ? AND is_deleted = 0 AND LOWER(role) = 'user'
+            ORDER BY turn_index ASC
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(LocalConversationTitleContext {
+            session_id: normalized_session_id,
+            title: session_row.try_get("title")?,
+            message_count: session_row.try_get::<i64, _>("message_count").unwrap_or(0),
+            first_user_message: first_message_row.and_then(|row| {
+                row.try_get::<Option<String>, _>("content")
+                    .ok()
+                    .flatten()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            }),
+        })
+    }
+
     pub async fn delete_local_conversation_message(
         &self,
         session_id: &str,
@@ -1807,6 +1957,42 @@ impl McpStore {
         &self,
         session_id: &str,
     ) -> Result<LocalConversationChatContext, McpError> {
+        let runtime_window = self.load_local_conversation_runtime_window(session_id).await?;
+        let messages = runtime_window
+            .messages
+            .into_iter()
+            .map(|message| {
+                let content = message
+                    .content
+                    .as_ref()
+                    .and_then(|value| {
+                        if let Some(text) = value.as_str() {
+                            Some(text.to_string())
+                        } else {
+                            serde_json::to_string(value).ok()
+                        }
+                    })
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_default();
+                LocalChatInputMessage {
+                    role: message.role,
+                    content,
+                }
+            })
+            .collect();
+
+        Ok(LocalConversationChatContext {
+            session_id: runtime_window.session_id,
+            assistant_id: runtime_window.assistant_id,
+            messages,
+        })
+    }
+
+    pub async fn load_local_conversation_runtime_window(
+        &self,
+        session_id: &str,
+    ) -> Result<LocalConversationRuntimeWindow, McpError> {
         let normalized_session_id = session_id.trim().to_string();
         if normalized_session_id.is_empty() {
             return Err(McpError::validation("session_id is required"));
@@ -1814,7 +2000,11 @@ impl McpStore {
 
         let session_row = sqlx::query(
             r#"
-            SELECT assistant_id
+            SELECT
+              assistant_id, title, status, message_count, total_tokens, last_summary_version,
+              summarizing, summary_job_id, last_summary_generated_at,
+              last_model_id, last_provider_model_id,
+              first_message_at, last_active_at, created_at, updated_at
             FROM conversation_session
             WHERE id = ?
             LIMIT 1;
@@ -1830,9 +2020,9 @@ impl McpStore {
 
         let rows = sqlx::query(
             r#"
-            SELECT role, content
+            SELECT role, content, turn_index, created_at, is_truncated, name, meta_info
             FROM (
-              SELECT role, content, turn_index
+              SELECT role, content, turn_index, created_at, is_truncated, name, meta_info
               FROM conversation_message
               WHERE session_id = ? AND is_deleted = 0
               ORDER BY turn_index DESC
@@ -1851,24 +2041,82 @@ impl McpStore {
             return Err(McpError::validation("conversation has no messages"));
         }
 
-        let messages = rows
-            .into_iter()
-            .map(|row| LocalChatInputMessage {
-                role: row
-                    .try_get::<String, _>("role")
-                    .unwrap_or_else(|_| "user".to_string()),
-                content: row
-                    .try_get::<Option<String>, _>("content")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default(),
-            })
-            .collect();
+        let mut messages = Vec::with_capacity(rows.len());
+        for row in rows {
+            let content_text: Option<String> = row.try_get("content")?;
+            let meta_info_text: Option<String> = row.try_get("meta_info")?;
+            messages.push(LocalConversationHistoryMessage {
+                role: row.try_get("role")?,
+                content: content_text.map(serde_json::Value::String),
+                turn_index: row.try_get("turn_index")?,
+                created_at: row.try_get("created_at")?,
+                is_truncated: Some(row.try_get::<i64, _>("is_truncated")? != 0),
+                name: row.try_get("name")?,
+                meta_info: match meta_info_text {
+                    Some(text) if !text.trim().is_empty() => serde_json::from_str(&text).ok(),
+                    _ => None,
+                },
+            });
+        }
 
-        Ok(LocalConversationChatContext {
+        let last_summary_version: i64 = session_row.try_get("last_summary_version").unwrap_or(0);
+        let summary = if last_summary_version > 0 {
+            let summary_row = sqlx::query(
+                r#"
+                SELECT
+                  id, version, summary_text, covered_from_turn, covered_to_turn,
+                  token_estimate, summarizer_model, created_at, updated_at
+                FROM conversation_summary
+                WHERE session_id = ? AND version = ?
+                LIMIT 1;
+                "#,
+            )
+            .bind(&normalized_session_id)
+            .bind(last_summary_version)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            summary_row.map(|row| {
+                serde_json::json!({
+                    "id": row.try_get::<String, _>("id").ok(),
+                    "version": row.try_get::<i64, _>("version").ok(),
+                    "summary_text": row.try_get::<String, _>("summary_text").ok(),
+                    "covered_from_turn": row.try_get::<i64, _>("covered_from_turn").ok(),
+                    "covered_to_turn": row.try_get::<i64, _>("covered_to_turn").ok(),
+                    "token_estimate": row.try_get::<i64, _>("token_estimate").ok().unwrap_or(0),
+                    "summarizer_model": row.try_get::<Option<String>, _>("summarizer_model").ok().flatten(),
+                    "created_at": row.try_get::<String, _>("created_at").ok(),
+                    "updated_at": row.try_get::<String, _>("updated_at").ok(),
+                })
+            })
+        } else {
+            None
+        };
+
+        let meta = Some(serde_json::json!({
+            "title": session_row.try_get::<Option<String>, _>("title").ok().flatten(),
+            "status": session_row.try_get::<String, _>("status").ok(),
+            "message_count": session_row.try_get::<i64, _>("message_count").ok().unwrap_or(0),
+            "total_tokens": session_row.try_get::<i64, _>("total_tokens").ok().unwrap_or(0),
+            "last_summary_version": last_summary_version,
+            "summarizing": session_row.try_get::<i64, _>("summarizing").ok().unwrap_or(0) != 0,
+            "summary_job_id": session_row.try_get::<Option<String>, _>("summary_job_id").ok().flatten(),
+            "last_summary_generated_at": session_row.try_get::<Option<String>, _>("last_summary_generated_at").ok().flatten(),
+            "last_model_id": session_row.try_get::<Option<String>, _>("last_model_id").ok().flatten(),
+            "last_provider_model_id": session_row.try_get::<Option<String>, _>("last_provider_model_id").ok().flatten(),
+            "first_message_at": session_row.try_get::<Option<String>, _>("first_message_at").ok().flatten(),
+            "last_active_at": session_row.try_get::<Option<String>, _>("last_active_at").ok().flatten(),
+            "created_at": session_row.try_get::<Option<String>, _>("created_at").ok().flatten(),
+            "updated_at": session_row.try_get::<Option<String>, _>("updated_at").ok().flatten(),
+        }));
+
+        Ok(LocalConversationRuntimeWindow {
             session_id: normalized_session_id,
             assistant_id,
             messages,
+            meta,
+            summary,
         })
     }
 
@@ -2023,6 +2271,23 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         tx.commit().await?;
+        if let Err(err) = self.touch_local_conversation_summary_idle_task(&session_id).await {
+            log::warn!(
+                "touch_local_conversation_summary_idle_task failed session={} err={}",
+                session_id,
+                err
+            );
+        }
+        if let Err(err) = self
+            .try_trigger_local_conversation_summary_flush(&session_id, "message_append")
+            .await
+        {
+            log::warn!(
+                "try_trigger_local_conversation_summary_flush failed session={} err={}",
+                session_id,
+                err
+            );
+        }
 
         Ok(LocalConversationHistoryMessage {
             role,
@@ -3193,6 +3458,7 @@ impl McpStore {
             SELECT
               id, title, status, message_count, total_tokens, last_summary_version,
               summarizing, summary_job_id, last_summary_generated_at,
+              last_model_id, last_provider_model_id,
               first_message_at, last_active_at, created_at, updated_at
             FROM conversation_session
             WHERE id = ?
@@ -3288,6 +3554,8 @@ impl McpStore {
             "summarizing": session_row.try_get::<i64, _>("summarizing").ok().unwrap_or(0) != 0,
             "summary_job_id": session_row.try_get::<Option<String>, _>("summary_job_id").ok().flatten(),
             "last_summary_generated_at": session_row.try_get::<Option<String>, _>("last_summary_generated_at").ok().flatten(),
+            "last_model_id": session_row.try_get::<Option<String>, _>("last_model_id").ok().flatten(),
+            "last_provider_model_id": session_row.try_get::<Option<String>, _>("last_provider_model_id").ok().flatten(),
             "first_message_at": session_row.try_get::<Option<String>, _>("first_message_at").ok().flatten(),
             "last_active_at": session_row.try_get::<Option<String>, _>("last_active_at").ok().flatten(),
             "created_at": session_row.try_get::<Option<String>, _>("created_at").ok().flatten(),

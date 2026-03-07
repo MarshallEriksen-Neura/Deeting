@@ -153,6 +153,28 @@ mod tests {
     }
 
     #[test]
+    fn build_local_code_mode_entry_tools_exposes_core_function_schemas() {
+        let payload = build_local_code_mode_entry_tools();
+        let tools = payload
+            .get("tools")
+            .and_then(|value| value.as_array())
+            .expect("wrapped tools array");
+
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0]["type"], serde_json::json!("function"));
+        assert_eq!(tools[0]["function"]["name"], serde_json::json!("search_sdk"));
+        assert_eq!(
+            tools[0]["function"]["parameters"]["required"],
+            serde_json::json!(["query"])
+        );
+        assert_eq!(tools[1]["function"]["name"], serde_json::json!("execute_code_plan"));
+        assert_eq!(
+            tools[1]["function"]["parameters"]["required"],
+            serde_json::json!(["code"])
+        );
+    }
+
+    #[test]
     fn normalize_skill_dir_name_replaces_unsafe_chars() {
         assert_eq!(normalize_skill_dir_name("demo.skill"), "demo.skill");
         assert_eq!(
@@ -511,6 +533,233 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("content is empty"));
+    }
+
+    #[tokio::test]
+    async fn conversation_model_context_roundtrips_in_runtime_window_meta() {
+        let store = create_test_store("conversation-model-context").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: None,
+            })
+            .await
+            .expect("create conversation");
+
+        store
+            .update_local_conversation_model_context(
+                &session.session_id,
+                Some("gpt-4o-mini"),
+                Some("11111111-1111-1111-1111-111111111111"),
+            )
+            .await
+            .expect("update conversation model context");
+
+        let window = store
+            .load_local_conversation_runtime_window(&session.session_id)
+            .await
+            .err();
+        assert!(window.is_some(), "window should still require messages");
+
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "user".to_string(),
+                content: "你好，帮我整理一个旅行计划".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append user message");
+
+        let window = store
+            .load_local_conversation_runtime_window(&session.session_id)
+            .await
+            .expect("load runtime window");
+        let meta = window.meta.expect("meta exists");
+
+        assert_eq!(
+            meta.get("last_model_id").and_then(|value| value.as_str()),
+            Some("gpt-4o-mini")
+        );
+        assert_eq!(
+            meta.get("last_provider_model_id")
+                .and_then(|value| value.as_str()),
+            Some("11111111-1111-1111-1111-111111111111")
+        );
+    }
+
+    #[tokio::test]
+    async fn update_local_conversation_title_if_empty_does_not_override_existing_title() {
+        let store = create_test_store("conversation-title-if-empty").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: None,
+            })
+            .await
+            .expect("create conversation");
+
+        let first = store
+            .update_local_conversation_title_if_empty(&session.session_id, "旅行计划")
+            .await
+            .expect("set title the first time");
+        assert_eq!(first.as_deref(), Some("旅行计划"));
+
+        let second = store
+            .update_local_conversation_title_if_empty(&session.session_id, "不会覆盖")
+            .await
+            .expect("second update should be ignored");
+        assert!(second.is_none());
+
+        let session_page = store
+            .list_local_conversations(LocalConversationSessionsQuery {
+                cursor: None,
+                size: Some(10),
+                assistant_id: None,
+                status: Some("active".to_string()),
+            })
+            .await
+            .expect("list conversations");
+        assert_eq!(session_page.items[0].title.as_deref(), Some("旅行计划"));
+    }
+
+    #[tokio::test]
+    async fn runtime_window_loads_latest_messages_and_latest_summary() {
+        let store = create_test_store("runtime-window").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("runtime-window".to_string()),
+            })
+            .await
+            .expect("create conversation");
+
+        for turn in 1..=14 {
+            store
+                .append_local_conversation_message(CreateConversationMessageRequest {
+                    session_id: session.session_id.clone(),
+                    role: if turn % 2 == 0 {
+                        "assistant".to_string()
+                    } else {
+                        "user".to_string()
+                    },
+                    content: format!("turn-{turn}"),
+                    name: None,
+                    meta_info: None,
+                    is_truncated: Some(false),
+                    parent_message_id: None,
+                })
+                .await
+                .expect("append message");
+        }
+
+        store
+            .persist_local_conversation_summary(
+                &session.session_id,
+                "summary snapshot",
+                Some("test-worker"),
+            )
+            .await
+            .expect("persist summary");
+
+        let window = store
+            .load_local_conversation_runtime_window(&session.session_id)
+            .await
+            .expect("load runtime window");
+
+        assert_eq!(window.messages.len(), 12);
+        assert_eq!(
+            window
+                .messages
+                .first()
+                .and_then(|item| item.content.as_ref())
+                .and_then(|value| value.as_str()),
+            Some("turn-3")
+        );
+        assert_eq!(
+            window
+                .messages
+                .last()
+                .and_then(|item| item.content.as_ref())
+                .and_then(|value| value.as_str()),
+            Some("turn-14")
+        );
+        assert_eq!(
+            window
+                .summary
+                .as_ref()
+                .and_then(|value| value.get("summary_text"))
+                .and_then(|value| value.as_str()),
+            Some("summary snapshot")
+        );
+    }
+
+    #[tokio::test]
+    async fn process_summary_job_uses_runtime_window_range() {
+        let store = create_test_store("summary-runtime-window").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("summary-runtime-window".to_string()),
+            })
+            .await
+            .expect("create conversation");
+
+        for turn in 1..=14 {
+            store
+                .append_local_conversation_message(CreateConversationMessageRequest {
+                    session_id: session.session_id.clone(),
+                    role: if turn % 2 == 0 {
+                        "assistant".to_string()
+                    } else {
+                        "user".to_string()
+                    },
+                    content: format!("marker-{turn}"),
+                    name: None,
+                    meta_info: None,
+                    is_truncated: Some(false),
+                    parent_message_id: None,
+                })
+                .await
+                .expect("append message");
+        }
+
+        store
+            .enqueue_local_conversation_summary_job(&session.session_id, "test")
+            .await
+            .expect("enqueue summary job");
+
+        process_next_local_conversation_summary_job_with_store(&store)
+            .await
+            .expect("process summary job");
+
+        let window = store
+            .load_local_conversation_runtime_window(&session.session_id)
+            .await
+            .expect("load runtime window");
+        let summary = window.summary.expect("summary exists");
+
+        assert_eq!(
+            summary
+                .get("covered_from_turn")
+                .and_then(|value| value.as_i64()),
+            Some(3)
+        );
+        assert_eq!(
+            summary
+                .get("covered_to_turn")
+                .and_then(|value| value.as_i64()),
+            Some(14)
+        );
+        let summary_text = summary
+            .get("summary_text")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        assert!(!summary_text.contains("marker-1"));
+        assert!(!summary_text.contains("marker-2"));
     }
 
     #[cfg(not(target_os = "windows"))]

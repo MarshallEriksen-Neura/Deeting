@@ -282,6 +282,12 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   useEffect(() => {
     if (!isOpen) return;
     void mutate();
+    const timer = window.setInterval(() => {
+      void mutate();
+    }, 3000);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [isOpen, mutate]);
 
   const handleToggleArchived = useCallback(() => {

@@ -119,6 +119,16 @@ Supported by `update_local_user_embedding_config`:
 - Supported request builders currently include `ark_content_array`.
 - Supported response-transform engines include `openai_compat`, `anthropic_messages`, `google_gemini`, and template-based transforms (`jinja2` / `handlebars`).
 
+## Conversation context behavior
+- Desktop local chat keeps full conversation history in local SQLite, while runtime prompt assembly uses a bounded active window plus the latest persisted summary.
+- Runtime window loading now follows cloud-style context assembly semantics:
+  - load latest summary metadata from `conversation_summary`
+  - load latest active-window messages from `conversation_message`
+  - assemble prompt as `system scaffolding + summary system message + active window messages`
+- The desktop runtime no longer treats the UI history endpoint as the prompt source of truth.
+- Local summary workers and runtime prompt loading share the same active-window definition so persisted `covered_from_turn` / `covered_to_turn` matches the messages actually summarized.
+- Message append now also updates summary idle scheduling and threshold-triggered flush checks automatically.
+
 ## Capability behavior
 - Desktop local capability filtering now mirrors cloud behavior:
   - normalize aliases such as `video -> video_generation`

@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
 use crate::modules::mcp::commands::{
-    resolve_local_model_connection, run_local_chat_complete_with_auto_code_mode,
+    generate_local_conversation_title_with_model, resolve_local_model_connection,
+    run_local_chat_complete_with_auto_code_mode,
 };
 use crate::modules::mcp::types::{CreateConversationMessageRequest, LocalChatInputMessage};
 use crate::modules::memory::types::LocalMemoryListQuery;
@@ -162,8 +163,9 @@ struct LocalWorkflowContext {
     event_tx: Option<UnboundedSender<String>>,
     assistant_id: Option<String>,
     assistant_name: Option<String>,
+    summary_text: Option<String>,
     messages: Vec<LocalChatInputMessage>,
-    prompt_fragments: Vec<String>,
+    system_messages: Vec<LocalChatInputMessage>,
     // last emitted status snapshot for de-duplication and richer payloads
     status_stage: Option<String>,
     status_step: Option<String>,
@@ -177,32 +179,46 @@ impl LocalWorkflowContext {
         app_state: AppState,
         trace_id: String,
         request_id: Option<String>,
-            input: &LocalOrchestratorInput,
-            messages: Vec<LocalChatInputMessage>,
-            assistant_id: Option<String>,
-            event_tx: Option<UnboundedSender<String>>,
-        ) -> Self {
-            Self {
+        input: &LocalOrchestratorInput,
+        messages: Vec<LocalChatInputMessage>,
+        assistant_id: Option<String>,
+        summary_text: Option<String>,
+        event_tx: Option<UnboundedSender<String>>,
+    ) -> Self {
+        Self {
             app_state,
             trace_id,
             request_id,
             session_id: input.session_id.clone(),
-                input_model: input.model.clone(),
-                stream: input.stream,
-                status_stream: input.status_stream,
-                started_at: Instant::now(),
-                event_tx,
-                assistant_id,
-                assistant_name: None,
-                messages,
-                prompt_fragments: Vec::new(),
-                status_stage: None,
-                status_step: None,
-                status_state: None,
-                status_code: None,
-                status_meta: None,
-            }
+            input_model: input.model.clone(),
+            stream: input.stream,
+            status_stream: input.status_stream,
+            started_at: Instant::now(),
+            event_tx,
+            assistant_id,
+            assistant_name: None,
+            summary_text,
+            messages,
+            system_messages: Vec::new(),
+            status_stage: None,
+            status_step: None,
+            status_state: None,
+            status_code: None,
+            status_meta: None,
         }
+    }
+
+    fn push_system_message(&mut self, content: impl Into<String>) {
+        let content = content.into();
+        let trimmed = content.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.system_messages.push(LocalChatInputMessage {
+            role: "system".to_string(),
+            content: trimmed.to_string(),
+        });
+    }
 
     fn enrich_payload(&self, payload: &mut Value) {
         if let Some(object) = payload.as_object_mut() {
@@ -337,15 +353,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SummaryInjectionStep {
 
     fn execute<'a>(&'a self, ctx: &'a mut LocalWorkflowContext) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let summary = ctx
-                .app_state
-                .mcp
-                .store
-                .get_latest_local_conversation_summary(&ctx.session_id)
-                .await
-                .map_err(|e| e.to_string())?;
-
-            let Some(summary_text) = summary else {
+            let Some(summary_text) = ctx.summary_text.clone() else {
                 ctx.emit_status(
                     "remember",
                     Some("summary_injection"),
@@ -356,8 +364,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SummaryInjectionStep {
                 return Ok(());
             };
 
-            ctx.prompt_fragments
-                .push(format!("## Conversation Summary\n{}", summary_text));
+            ctx.push_system_message(format!("[SUMMARY]\n{}", summary_text));
             ctx.emit_status(
                 "remember",
                 Some("summary_injection"),
@@ -400,8 +407,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for AssistantPromptInjectionStep {
             }
 
             ctx.assistant_name = Some(assistant.name.clone());
-            ctx.prompt_fragments
-                .push(format!("## Assistant Persona\n{}", prompt));
+            ctx.push_system_message(prompt.to_string());
             ctx.emit_status(
                 "remember",
                 Some("assistant_prompt_injection"),
@@ -463,8 +469,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 })
                 .collect::<Vec<String>>();
             if !lines.is_empty() {
-                ctx.prompt_fragments
-                    .push(format!("## Semantic Memories\n{}", lines.join("\n")));
+                ctx.push_system_message(format!("## Semantic Memories\n{}", lines.join("\n")));
             }
 
             ctx.emit_status(
@@ -547,7 +552,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ActivePersonaInjectionStep {
                 section.push_str(&format!("\nSummary: {}", persona_desc));
             }
             section.push_str("\nUse this as soft preference only if relevant.");
-            ctx.prompt_fragments.push(section);
+            ctx.push_system_message(section);
 
             ctx.emit_status(
                 "remember",
@@ -588,19 +593,23 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
                 "execute_code_plan".to_string(),
             ]);
 
-            let mut sections = vec![LOCAL_ROUTER_BASE_PROMPT.to_string()];
-            sections.extend(ctx.prompt_fragments.clone());
-            sections.push(format!("## Code Mode Capability\n{}", code_mode_prompt.trim()));
-
-            let system_prompt = sections.join("\n\n");
-            if !system_prompt.trim().is_empty() {
-                ctx.messages.insert(
-                    0,
-                    LocalChatInputMessage {
-                        role: "system".to_string(),
-                        content: system_prompt,
-                    },
-                );
+            let base_system_prompt = format!(
+                "{}\n\n## Code Mode Capability\n{}",
+                LOCAL_ROUTER_BASE_PROMPT,
+                code_mode_prompt.trim()
+            );
+            let mut prelude_messages = Vec::new();
+            if !base_system_prompt.trim().is_empty() {
+                prelude_messages.push(LocalChatInputMessage {
+                    role: "system".to_string(),
+                    content: base_system_prompt,
+                });
+            }
+            prelude_messages.extend(ctx.system_messages.clone());
+            if !prelude_messages.is_empty() {
+                let mut merged_messages = prelude_messages;
+                merged_messages.extend(ctx.messages.clone());
+                ctx.messages = merged_messages;
             }
 
             ctx.emit_status(
@@ -631,13 +640,27 @@ pub async fn execute_local_orchestrated_chat(
     ensure_required_local_models_configured(app_state).await?;
 
     let store = &app_state.mcp.store;
-    let (assistant_id, messages) = if input.regenerate {
+    let (assistant_id, summary_text, messages) = if input.regenerate {
         let regenerate_ctx = store
             .prepare_local_conversation_regenerate(&session_id)
             .await
             .map_err(|e| e.to_string())?;
-        let assistant_id = input.assistant_id.clone().or(regenerate_ctx.assistant_id);
-        (assistant_id, regenerate_ctx.messages)
+        let runtime_window = store
+            .load_local_conversation_runtime_window(&session_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let assistant_id = input
+            .assistant_id
+            .clone()
+            .or(regenerate_ctx.assistant_id)
+            .or(runtime_window.assistant_id.clone());
+        let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let messages = runtime_window
+            .messages
+            .into_iter()
+            .map(convert_history_message_to_chat_input)
+            .collect();
+        (assistant_id, summary_text, messages)
     } else {
         let user_content = input
             .user_content
@@ -659,12 +682,21 @@ pub async fn execute_local_orchestrated_chat(
             .await
             .map_err(|e| e.to_string())?;
 
-        let chat_ctx = store
-            .get_local_conversation_chat_context(&session_id)
+        let runtime_window = store
+            .load_local_conversation_runtime_window(&session_id)
             .await
             .map_err(|e| e.to_string())?;
-        let assistant_id = input.assistant_id.clone().or(chat_ctx.assistant_id);
-        (assistant_id, chat_ctx.messages)
+        let assistant_id = input
+            .assistant_id
+            .clone()
+            .or(runtime_window.assistant_id.clone());
+        let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let messages = runtime_window
+            .messages
+            .into_iter()
+            .map(convert_history_message_to_chat_input)
+            .collect();
+        (assistant_id, summary_text, messages)
     };
 
     let mut ctx = LocalWorkflowContext::new(
@@ -674,6 +706,7 @@ pub async fn execute_local_orchestrated_chat(
         &input,
         messages,
         assistant_id.clone(),
+        summary_text.clone(),
         event_tx,
     );
     ctx.emit_status(
@@ -684,7 +717,7 @@ pub async fn execute_local_orchestrated_chat(
         Some(json!({
             "count": ctx.messages.len(),
             "assistant_id": assistant_id,
-            "has_summary": false,
+            "has_summary": summary_text.is_some(),
         })),
     );
 
@@ -696,6 +729,20 @@ pub async fn execute_local_orchestrated_chat(
     .await?;
     let provider_model_id = model_connection.provider_model_id.clone();
     let model_id = model_connection.model_id.clone();
+    if let Err(err) = store
+        .update_local_conversation_model_context(
+            &session_id,
+            Some(model_id.as_str()),
+            Some(provider_model_id.as_str()),
+        )
+        .await
+    {
+        log::warn!(
+            "update_local_conversation_model_context failed session={} err={}",
+            session_id,
+            err
+        );
+    }
     ctx.emit_status(
         "remember",
         Some("routing"),
@@ -783,7 +830,78 @@ pub async fn execute_local_orchestrated_chat(
         })
         .await
         .map_err(|e| e.to_string())?;
-    let _ = store.touch_local_conversation_summary_idle_task(&session_id).await;
+
+    let title_app_state = app_state.clone();
+    let title_session_id = session_id.clone();
+    let title_model_id = model_id.clone();
+    let title_provider_model_id = provider_model_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let title_context = match title_app_state
+            .mcp
+            .store
+            .get_local_conversation_title_context(&title_session_id)
+            .await
+        {
+            Ok(value) => value,
+            Err(err) => {
+                log::warn!(
+                    "get_local_conversation_title_context failed session={} err={}",
+                    title_session_id,
+                    err
+                );
+                return;
+            }
+        };
+
+        if title_context
+            .title
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+        {
+            return;
+        }
+        if title_context.message_count > 2 {
+            return;
+        }
+
+        let Some(first_user_message) = title_context.first_user_message.as_deref() else {
+            return;
+        };
+
+        match generate_local_conversation_title_with_model(
+            &title_app_state,
+            &title_provider_model_id,
+            &title_model_id,
+            first_user_message,
+            Some(title_session_id.as_str()),
+        )
+        .await
+        {
+            Ok(Some(title)) => {
+                if let Err(err) = title_app_state
+                    .mcp
+                    .store
+                    .update_local_conversation_title_if_empty(&title_session_id, &title)
+                    .await
+                {
+                    log::warn!(
+                        "update_local_conversation_title_if_empty failed session={} err={}",
+                        title_session_id,
+                        err
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                log::warn!(
+                    "generate_local_conversation_title_with_model failed session={} err={}",
+                    title_session_id,
+                    err
+                );
+            }
+        }
+    });
 
     let created = unix_seconds();
     let mut message = json!({
@@ -811,6 +929,36 @@ pub async fn execute_local_orchestrated_chat(
     });
     ctx.enrich_payload(&mut response);
     Ok(response)
+}
+
+fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
+    summary
+        .and_then(|value| value.get("summary_text"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn convert_history_message_to_chat_input(
+    message: crate::modules::mcp::types::LocalConversationHistoryMessage,
+) -> LocalChatInputMessage {
+    let content = message
+        .content
+        .as_ref()
+        .and_then(|value| {
+            if let Some(text) = value.as_str() {
+                Some(text.to_string())
+            } else {
+                serde_json::to_string(value).ok()
+            }
+        })
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    LocalChatInputMessage {
+        role: message.role,
+        content,
+    }
 }
 
 pub fn extract_user_text_from_messages(messages: &[Value]) -> Option<String> {

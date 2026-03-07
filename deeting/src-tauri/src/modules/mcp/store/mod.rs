@@ -872,6 +872,8 @@ impl McpStore {
               summarizing INTEGER NOT NULL DEFAULT 0,
               summary_job_id TEXT,
               last_summary_generated_at TEXT,
+              last_model_id TEXT,
+              last_provider_model_id TEXT,
               first_message_at TEXT,
               last_active_at TEXT NOT NULL,
               created_at TEXT NOT NULL,
@@ -1155,6 +1157,20 @@ impl McpStore {
         .await?;
 
         self.ensure_column(
+            "conversation_session",
+            "last_model_id",
+            "ALTER TABLE conversation_session ADD COLUMN last_model_id TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "conversation_session",
+            "last_provider_model_id",
+            "ALTER TABLE conversation_session ADD COLUMN last_provider_model_id TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
             "mcp_tools",
             "identifier",
             "ALTER TABLE mcp_tools ADD COLUMN identifier TEXT;",
@@ -1303,6 +1319,21 @@ pub struct LocalConversationChatContext {
     pub session_id: String,
     pub assistant_id: Option<String>,
     pub messages: Vec<LocalChatInputMessage>,
+}
+
+pub struct LocalConversationRuntimeWindow {
+    pub session_id: String,
+    pub assistant_id: Option<String>,
+    pub messages: Vec<LocalConversationHistoryMessage>,
+    pub meta: Option<serde_json::Value>,
+    pub summary: Option<serde_json::Value>,
+}
+
+pub struct LocalConversationTitleContext {
+    pub session_id: String,
+    pub title: Option<String>,
+    pub message_count: i64,
+    pub first_user_message: Option<String>,
 }
 
 pub fn expand_path(path: &str) -> PathBuf {

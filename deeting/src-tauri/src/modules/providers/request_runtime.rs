@@ -1215,6 +1215,49 @@ mod tests {
     }
 
     #[test]
+    fn prepare_provider_request_injects_wrapped_tools_payload() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let model = mock_model(&["chat"]);
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [{ "role": "user", "content": "hi" }],
+                "stream": false,
+            }),
+            Some(&json!({
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_sdk",
+                            "description": "Search SDK signatures",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": { "type": "string" }
+                                },
+                                "required": ["query"]
+                            }
+                        }
+                    }
+                ]
+            })),
+            None,
+        )
+        .expect("prepare request with wrapped tools");
+
+        assert_eq!(prepared.body["tools"][0]["function"]["name"], json!("search_sdk"));
+        assert_eq!(prepared.body["tool_choice"], json!("auto"));
+    }
+
+    #[test]
     fn apply_request_builder_without_type_keeps_rendered_body() {
         let body = json!({ "prompt": "hello" });
         let context = json!({ "input": { "prompt": "hello" } });

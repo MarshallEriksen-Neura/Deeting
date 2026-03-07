@@ -81,7 +81,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let summary_worker_state = sync_state.clone();
     tauri::async_runtime::spawn(async move {
         crate::modules::mcp::commands::start_local_conversation_summary_worker(
-            summary_worker_state.mcp,
+            summary_worker_state,
         )
         .await;
     });
