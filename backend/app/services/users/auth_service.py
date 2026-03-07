@@ -19,6 +19,7 @@ from app.repositories.api_key import ApiKeyRepository
 from app.schemas.auth import TokenPair
 from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.providers.api_key import ApiKeyService
+from app.services.users.login_session_service import LoginSessionService
 from app.services.users.user_provisioning_service import UserProvisioningService
 from app.utils.security import (
     create_access_token,
@@ -37,6 +38,7 @@ class AuthService:
         self.db = db
         self.user_repo = UserRepository(db)
         self.provisioner = UserProvisioningService(db)
+        self.login_session_service = LoginSessionService(db)
 
     @staticmethod
     def _is_refresh_reuse_within_grace(refresh_data: dict[str, Any]) -> bool:
@@ -75,13 +77,12 @@ class AuthService:
                 )
 
             # 预占邀请码窗口（与 provision 管线一致）
-            provisioner = UserProvisioningService(self.db)
             # RegistrationPolicy.ensure_can_register 为同步方法，这里无需 await
-            provisioner.policy.ensure_can_register(
+            self.provisioner.policy.ensure_can_register(
                 invite_code=invite_code, provider="email"
             )
             if invite_code and not self._is_dev_env():
-                window = await provisioner.invite_service.consume(invite_code)
+                window = await self.provisioner.invite_service.consume(invite_code)
                 # 记录到 Redis，便于 login_with_code 使用并最终 finalize
                 await cache.set(
                     CacheKeys.temp_invite(email),
@@ -93,6 +94,74 @@ class AuthService:
 
     def _is_dev_env(self) -> bool:
         return settings.ENVIRONMENT.lower() in {"test", "development"}
+
+    async def _activate_user_for_login(self, user: User) -> User:
+        if user.is_active:
+            return user
+
+        activated_user = await self.user_repo.activate_user(user.id)
+        if activated_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+            )
+
+        await self._ensure_default_assistant(activated_user)
+        return activated_user
+
+    async def _provision_login_user(
+        self,
+        *,
+        email: str,
+        invite_code: str | None = None,
+        username: str | None = None,
+    ) -> User:
+        cached_invite = await cache.get(CacheKeys.temp_invite(email)) or {}
+        effective_invite_code = invite_code or cached_invite.get("code")
+
+        user = await self.provisioner.provision_user(
+            email=email,
+            auth_provider="email_code",
+            invite_code=effective_invite_code,
+            username=username,
+        )
+
+        user = await self._activate_user_for_login(user)
+
+        if effective_invite_code and cached_invite.get("window_id"):
+            await self.provisioner.invite_service.finalize(effective_invite_code, user.id)
+        await cache.delete(CacheKeys.temp_invite(email))
+        return user
+
+    async def _resolve_login_user(
+        self,
+        *,
+        email: str,
+        invite_code: str | None = None,
+        username: str | None = None,
+    ) -> tuple[User, bool]:
+        user = await self.user_repo.get_by_email(email)
+        if user is None:
+            return (
+                await self._provision_login_user(
+                    email=email,
+                    invite_code=invite_code,
+                    username=username,
+                ),
+                True,
+            )
+
+        return await self._activate_user_for_login(user), False
+
+    @staticmethod
+    def _extract_token_identity(token: str | None) -> tuple[str | None, str | None]:
+        if not token:
+            return None, None
+        try:
+            payload = decode_token(token)
+        except ValueError:
+            return None, None
+        return payload.get("jti"), payload.get("sid")
 
     async def login_with_code(
         self,
@@ -114,38 +183,11 @@ class AuthService:
                 detail="Invalid or expired code",
             )
 
-        user = await self.user_repo.get_by_email(email)
-        created = False
-
-        if not user:
-            provisioner = UserProvisioningService(self.db)
-
-            # 优先使用缓存的邀请占用信息
-            cached_invite = await cache.get(CacheKeys.temp_invite(email)) or {}
-            invite_code = invite_code or cached_invite.get("code")
-
-            user = await provisioner.provision_user(
-                email=email,
-                auth_provider="email_code",
-                invite_code=invite_code,
-                username=username,
-            )
-            created = True
-
-            # 首登自动激活
-            if not user.is_active:
-                user = await self.user_repo.activate_user(user.id)
-                await self._ensure_default_assistant(user)
-
-            # 完成邀请码占用
-            if invite_code and cached_invite.get("window_id"):
-                await provisioner.invite_service.finalize(invite_code, user.id)
-            await cache.delete(CacheKeys.temp_invite(email))
-
-        # 已有用户直接登录
-        if not user.is_active:
-            user = await self.user_repo.activate_user(user.id)
-            await self._ensure_default_assistant(user)
+        user, created = await self._resolve_login_user(
+            email=email,
+            invite_code=invite_code,
+            username=username,
+        )
 
         await self.reset_login_failures(email)
         tokens = await self.create_session_tokens(
@@ -171,13 +213,9 @@ class AuthService:
         device_name: str | None = None,
     ) -> TokenPair:
         """创建稳定登录会话并签发 token。"""
-        from app.services.users.login_session_service import LoginSessionService
-
         session_key = generate_jti()
         tokens, access_jti, refresh_jti = await self.create_tokens(user, session_key)
-
-        session_service = LoginSessionService(self.db)
-        await session_service.create_session(
+        await self.login_session_service.create_session(
             session_key=session_key,
             user_id=user.id,
             access_token_jti=access_jti,
@@ -235,8 +273,6 @@ class AuthService:
 
     async def refresh_tokens(self, refresh_token: str) -> TokenPair:
         """刷新 token（实现轮换策略）"""
-        from app.services.users.login_session_service import LoginSessionService
-
         try:
             payload = decode_token(refresh_token)
         except ValueError as e:
@@ -293,8 +329,7 @@ class AuthService:
                 detail="Token reuse detected, all sessions invalidated",
             )
 
-        session_service = LoginSessionService(self.db)
-        session_record = await session_service.get_active_session_by_key(
+        session_record = await self.login_session_service.get_active_session_by_key(
             session_key=session_key
         )
         if (
@@ -336,7 +371,7 @@ class AuthService:
             )
 
         tokens, access_jti, refresh_jti = await self.create_tokens(user, session_key)
-        await session_service.rotate_session_tokens(
+        await self.login_session_service.rotate_session_tokens(
             session_key=session_key,
             access_token_jti=access_jti,
             refresh_token_jti=refresh_jti,
@@ -395,30 +430,13 @@ class AuthService:
         - 从 refresh_token 提取 jti
         - 执行登出操作
         """
-        from app.services.users.login_session_service import LoginSessionService
-
-        # 从 Authorization header 提取 access token 的 jti / sid
-        access_jti = None
-        access_session_key = None
-        if authorization and authorization.startswith("Bearer "):
-            token = authorization[7:]
-            try:
-                payload = decode_token(token)
-                access_jti = payload.get("jti")
-                access_session_key = payload.get("sid")
-            except ValueError:
-                pass  # Token 已验证过，此处忽略错误
-
-        # 从 refresh_token 提取 jti / sid
-        refresh_jti = None
-        refresh_session_key = None
-        if refresh_token:
-            try:
-                payload = decode_token(refresh_token)
-                refresh_jti = payload.get("jti")
-                refresh_session_key = payload.get("sid")
-            except ValueError:
-                pass  # 忽略无效的 refresh token
+        access_token = (
+            authorization[7:]
+            if authorization and authorization.startswith("Bearer ")
+            else None
+        )
+        access_jti, access_session_key = self._extract_token_identity(access_token)
+        refresh_jti, refresh_session_key = self._extract_token_identity(refresh_token)
 
         session_key = access_session_key or refresh_session_key
 
@@ -426,8 +444,7 @@ class AuthService:
             await self.logout(access_jti, refresh_jti)
 
         if session_key:
-            session_service = LoginSessionService(self.db)
-            session_record = await session_service.revoke_by_session_key(
+            session_record = await self.login_session_service.revoke_by_session_key(
                 user_id=user_id,
                 session_key=session_key,
             )
@@ -446,10 +463,7 @@ class AuthService:
         user_id: UUID,
         session_id: UUID,
     ) -> bool:
-        from app.services.users.login_session_service import LoginSessionService
-
-        session_service = LoginSessionService(self.db)
-        session_record = await session_service.revoke_session(
+        session_record = await self.login_session_service.revoke_session(
             user_id=user_id,
             session_id=session_id,
         )
@@ -461,10 +475,9 @@ class AuthService:
 
     async def revoke_all_tokens(self, user_id: UUID) -> None:
         """撤销用户所有 token（递增 token_version）"""
-        from app.services.users.login_session_service import LoginSessionService
-
-        session_service = LoginSessionService(self.db)
-        for session_record in await session_service.list_sessions(user_id=user_id):
+        for session_record in await self.login_session_service.list_sessions(
+            user_id=user_id
+        ):
             await self._invalidate_login_session(session_record)
 
         await self.user_repo.increment_token_version(user_id)

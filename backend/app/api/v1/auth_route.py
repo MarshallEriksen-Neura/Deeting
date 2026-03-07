@@ -26,8 +26,8 @@ from fastapi import (
     Response,
     status,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import RedirectResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -36,11 +36,11 @@ from app.core.logging import logger
 from app.deps.auth import get_current_user
 from app.models import User
 from app.schemas.auth import (
-    LoginRequest,
     DesktopOAuthExchangeRequest,
     DesktopOAuthExchangeResponse,
     DesktopOAuthStartRequest,
     DesktopOAuthStartResponse,
+    LoginRequest,
     MessageResponse,
     OAuthCallbackRequest,
     OAuthCallbackResponse,
@@ -61,6 +61,17 @@ REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
 # 以 API 前缀为作用域，便于前端请求自动携带
 REFRESH_COOKIE_PATH = settings.API_V1_STR
+
+
+def _extract_client_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    return forwarded_for.split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
+
+
+def _extract_user_agent(request: Request) -> str | None:
+    return request.headers.get("user-agent")
 
 
 def _refresh_cookie_secure() -> bool:
@@ -122,13 +133,10 @@ async def send_login_code(
 ) -> MessageResponse:
     """发送邮箱验证码（无密码登录入口，支持携带邀请码用于首登注册）。"""
     service = AuthService(db)
-    client_ip = req.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
-        req.client.host if req.client else None
-    )
     await service.send_login_code(
         email=payload.email,
         invite_code=payload.invite_code,
-        client_ip=client_ip,
+        client_ip=_extract_client_ip(req),
     )
     return MessageResponse(message="Verification code sent")
 
@@ -147,17 +155,13 @@ async def login(
     - 首次登录可携带 invite_code 与 username
     """
     service = AuthService(db)
-    client_ip = raw_request.headers.get("x-forwarded-for", "").split(",")[
-        0
-    ].strip() or (raw_request.client.host if raw_request.client else None)
-    user_agent = raw_request.headers.get("user-agent")
     tokens = await service.login_with_code(
         email=request.email,
         code=request.code,
         invite_code=request.invite_code,
         username=request.username,
-        client_ip=client_ip,
-        user_agent=user_agent,
+        client_ip=_extract_client_ip(raw_request),
+        user_agent=_extract_user_agent(raw_request),
     )
     await db.commit()
     _set_refresh_cookie(response, tokens.refresh_token)
@@ -315,14 +319,10 @@ async def linuxdo_callback(
 
     # 复用现有登录颁发逻辑
     auth = AuthService(db)
-    client_ip = raw_request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
-        raw_request.client.host if raw_request.client else None
-    )
-    user_agent = raw_request.headers.get("user-agent")
     tokens = await auth.create_session_tokens(
         user,
-        client_ip=client_ip,
-        user_agent=user_agent,
+        client_ip=_extract_client_ip(raw_request),
+        user_agent=_extract_user_agent(raw_request),
     )
     await db.commit()
     _set_refresh_cookie(response, tokens.refresh_token)

@@ -21,6 +21,7 @@ from .image_generation_share_repository import ImageGenerationShareRepository
 from .image_generation_share_tag_repository import ImageGenerationShareTagLinkRepository
 from .invite_code import InviteCodeRepository
 from .knowledge_folder_repository import KnowledgeFolderRepository
+from .login_session_repository import LoginSessionRepository
 from .mcp_market_repository import McpMarketRepository
 from .media_asset_repository import MediaAssetRepository
 from .notification_repository import (
@@ -41,8 +42,8 @@ from .system_setting_repository import SystemSettingRepository
 from .trace_feedback_repository import TraceFeedbackRepository
 from .usage_repository import UsageRepository
 from .user_document_repository import UserDocumentRepository
-from .user_skill_installation_repository import UserSkillInstallationRepository
 from .user_repository import UserRepository
+from .user_skill_installation_repository import UserSkillInstallationRepository
 
 __all__ = [
     "ApiKeyRepository",
@@ -69,6 +70,7 @@ __all__ = [
     "InsufficientQuotaError",
     "InviteCodeRepository",
     "KnowledgeFolderRepository",
+    "LoginSessionRepository",
     "McpMarketRepository",
     "MediaAssetRepository",
     "NotificationReceiptRepository",
