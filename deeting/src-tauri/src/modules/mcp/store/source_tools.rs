@@ -86,6 +86,32 @@ impl McpStore {
         Ok(ids)
     }
 
+    pub async fn get_enabled_local_skill_manifest_json(
+        &self,
+        skill_id: &str,
+    ) -> Result<Option<String>, McpError> {
+        let normalized_skill_id = skill_id.trim().to_string();
+        if normalized_skill_id.is_empty() {
+            return Err(McpError::validation("skill_id is required"));
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT manifest_json
+            FROM local_skill_install
+            WHERE user_id = ? AND skill_id = ? AND is_enabled = 1
+            LIMIT 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_skill_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(row.and_then(|row| row.try_get::<String, _>("manifest_json").ok()))
+    }
+
     pub async fn upsert_local_skill_install_state(
         &self,
         skill_id: &str,

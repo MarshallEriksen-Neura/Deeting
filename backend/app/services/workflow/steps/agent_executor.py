@@ -25,7 +25,13 @@ _MIN_TOOL_RESULT_LIMIT_CHARS = 512
 _DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 300.0
 _DEFAULT_MAX_TURNS = 10
 _DEFAULT_MAX_TURNS_HARD_LIMIT = 60
-_CODE_MODE_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
+_CODE_MODE_REQUIRED_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
+_CODE_MODE_TOOL_NAMES = {
+    "search_sdk",
+    "execute_code_plan",
+    "activate_assistant",
+    "deactivate_assistant",
+}
 _CODE_MODE_DEFAULT_DIRECT_ALLOWLIST = {"consult_expert_network", "search_knowledge"}
 
 
@@ -241,6 +247,7 @@ class AgentExecutorStep(BaseStep):
 
         # Maintain chat history locally for the loop
         messages = request_body.get("messages", [])
+        base_tools = deepcopy(request_body.get("tools", []))
 
         # Build User MCP Tool Map once for this execution
         user_mcp_tool_map = await self._build_user_mcp_tool_map(ctx)
@@ -426,9 +433,22 @@ class AgentExecutorStep(BaseStep):
                     }
                 )
 
+                transition_block, transition_assistant_id = (
+                    self._consume_pending_assistant_transition(
+                        ctx,
+                        request_body=request_body,
+                        messages=messages,
+                        base_tools=base_tools,
+                    )
+                )
+                if transition_block:
+                    self._emit_blocks(ctx, [transition_block])
+                    injected_assistant_id = transition_assistant_id
+
             # --- D. Mid-loop Assistant Injection ---
-            # If consult_expert_network (or semantic_kernel) activated an assistant,
-            # inject its prompt + tools for subsequent LLM turns.
+            # Backward-compatible fallback for flows that still set assistant.id
+            # directly (for example semantic kernel), until every path migrates to
+            # the explicit activation contract.
             new_assistant_id = ctx.get("assistant", "id")
             if new_assistant_id and new_assistant_id != injected_assistant_id:
                 injected_assistant_id = new_assistant_id
@@ -474,6 +494,140 @@ class AgentExecutorStep(BaseStep):
             )
             return hard_limit
         return effective
+
+    def _consume_pending_assistant_transition(
+        self,
+        ctx: "WorkflowContext",
+        *,
+        request_body: dict[str, Any],
+        messages: list[dict],
+        base_tools: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        pending = ctx.get("assistant_activation", "pending")
+        if not isinstance(pending, dict):
+            return None, None
+
+        action = str(pending.get("action") or "").strip().lower()
+        ctx.set("assistant_activation", "pending", None)
+        if action == "activated":
+            return self._apply_assistant_activation_payload(
+                ctx,
+                request_body=request_body,
+                messages=messages,
+                payload=pending,
+                base_tools=base_tools,
+            )
+        if action == "deactivated":
+            return self._apply_assistant_deactivation_payload(
+                ctx,
+                request_body=request_body,
+                messages=messages,
+                payload=pending,
+                base_tools=base_tools,
+            )
+        return None, None
+
+    def _apply_assistant_activation_payload(
+        self,
+        ctx: "WorkflowContext",
+        *,
+        request_body: dict[str, Any],
+        messages: list[dict],
+        payload: dict[str, Any],
+        base_tools: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], str | None]:
+        assistant_id = str(payload.get("assistant_id") or "").strip()
+        assistant_name = str(payload.get("assistant_name") or "").strip() or "Assistant"
+        system_prompt = str(payload.get("system_prompt") or "").strip()
+        skill_tools = payload.get("skill_tools")
+        if not isinstance(skill_tools, list):
+            skill_tools = []
+
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"[Assistant Activated: {assistant_name}]\n\n"
+                    "Replace any previously activated request-scoped assistant "
+                    "instructions with the following prompt.\n\n"
+                    f"{system_prompt}"
+                ).strip(),
+            }
+        )
+        request_body["tools"] = self._merge_tool_definitions(base_tools, skill_tools)
+        ctx.set("assistant_activation", "active", payload)
+        return self._build_assistant_transition_block(payload), assistant_id or None
+
+    def _apply_assistant_deactivation_payload(
+        self,
+        ctx: "WorkflowContext",
+        *,
+        request_body: dict[str, Any],
+        messages: list[dict],
+        payload: dict[str, Any],
+        base_tools: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], None]:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "[Assistant Deactivated]\n\n"
+                    "Return to the default base assistant context for this request. "
+                    "Ignore any previous request-scoped assistant activation instructions."
+                ),
+            }
+        )
+        request_body["tools"] = deepcopy(base_tools)
+        ctx.set("assistant_activation", "active", None)
+        return self._build_assistant_transition_block(payload), None
+
+    @staticmethod
+    def _merge_tool_definitions(
+        base_tools: list[dict[str, Any]],
+        extra_tools: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged = deepcopy(base_tools) if isinstance(base_tools, list) else []
+        existing_names = set()
+        for tool in merged:
+            if not isinstance(tool, dict):
+                continue
+            function_obj = tool.get("function")
+            if isinstance(function_obj, dict):
+                name = str(function_obj.get("name") or "").strip()
+            else:
+                name = str(tool.get("name") or "").strip()
+            if name:
+                existing_names.add(name)
+
+        for tool in extra_tools:
+            if not isinstance(tool, dict):
+                continue
+            function_obj = tool.get("function")
+            if isinstance(function_obj, dict):
+                name = str(function_obj.get("name") or "").strip()
+            else:
+                name = str(tool.get("name") or "").strip()
+            if not name or name in existing_names:
+                continue
+            merged.append(deepcopy(tool))
+            existing_names.add(name)
+        return merged
+
+    @staticmethod
+    def _build_assistant_transition_block(
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        action = str(payload.get("action") or "").strip().lower()
+        assistant_name = str(payload.get("assistant_name") or "").strip() or None
+        assistant_id = str(payload.get("assistant_id") or "").strip() or None
+        reason = str(payload.get("reason") or "").strip() or None
+        return {
+            "type": "assistant_transition",
+            "action": action or "updated",
+            "assistantId": assistant_id,
+            "assistantName": assistant_name,
+            "reason": reason,
+        }
 
     async def _inject_assistant_mid_loop(
         self,
@@ -903,7 +1057,8 @@ class AgentExecutorStep(BaseStep):
             }
 
         # 2.1 Core SDK tools are executed by the active core plugin instance.
-        if tool_name in _CODE_MODE_TOOL_NAMES:
+        core_plugin_candidate_names = _CODE_MODE_TOOL_NAMES | self._resolve_code_mode_direct_allowlist()
+        if tool_name in core_plugin_candidate_names:
             import inspect
 
             from app.services.agent.agent_service import agent_service
@@ -949,12 +1104,6 @@ class AgentExecutorStep(BaseStep):
                             exc_info=True,
                         )
                         return {"error": f"Tool '{tool_name}' failed: {exc}"}
-
-                return {
-                    "error": (
-                        f"Core tool '{tool_name}' handler not found in system.deeting_core_sdk."
-                    )
-                }
 
         try:
             async with AsyncSessionLocal() as session:
@@ -1074,4 +1223,4 @@ class AgentExecutorStep(BaseStep):
             if name:
                 tool_names.add(name)
 
-        return _CODE_MODE_TOOL_NAMES.issubset(tool_names)
+        return _CODE_MODE_REQUIRED_TOOL_NAMES.issubset(tool_names)

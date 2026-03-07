@@ -17,6 +17,16 @@ from app.core.metrics import record_code_mode_execution, record_code_mode_tool_c
 from app.core.sandbox.manager import sandbox_manager
 from app.repositories.code_mode_execution_repository import CodeModeExecutionRepository
 from app.schemas.tool import ToolDefinition
+from app.services.assistant.activation_contract import (
+    build_assistant_activation_payload,
+    build_assistant_consult_payload,
+    build_assistant_deactivation_payload,
+)
+from app.services.assistant.assistant_retrieval_service import AssistantRetrievalService
+from app.services.assistant.skill_resolver import (
+    resolve_skill_refs,
+    skill_tools_to_openai_format,
+)
 from app.services.code_mode.runtime_bridge_token_service import (
     RuntimeBridgeClaims,
     runtime_bridge_token_service,
@@ -123,6 +133,50 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                             },
                         },
                         "required": ["query"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "activate_assistant",
+                    "description": (
+                        "Activate an assistant explicitly for the current request-scoped "
+                        "agent loop. This switches persona context only after an explicit "
+                        "activation call."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "assistant_id": {
+                                "type": "string",
+                                "description": "Assistant id returned by consult_expert_network.",
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Optional reason for the activation decision.",
+                            },
+                        },
+                        "required": ["assistant_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "deactivate_assistant",
+                    "description": (
+                        "Deactivate the current request-scoped assistant and return to "
+                        "the default base assistant context."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {
+                                "type": "string",
+                                "description": "Optional reason for the deactivation.",
+                            }
+                        },
                     },
                 },
             },
@@ -327,6 +381,160 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 "`deeting.log(json.dumps(result, ensure_ascii=False))` 输出结构化结果。"
             ),
         }
+
+    async def handle_consult_expert_network(
+        self,
+        intent_query: str,
+        k: int = 3,
+        confidence: float = 1.0,
+        __context__: Any | None = None,
+    ) -> dict[str, Any]:
+        q = str(intent_query or "").strip()
+        if not q:
+            return {
+                "error": "intent_query is required",
+                "error_code": "ASSISTANT_CONSULT_EMPTY_QUERY",
+            }
+
+        try:
+            safe_limit = max(1, min(int(k or 3), 8))
+        except (TypeError, ValueError):
+            safe_limit = 3
+
+        workflow_context = __context__ if __context__ is not None else None
+        db_session = getattr(workflow_context, "db_session", None)
+        if db_session is None:
+            return {
+                "error": "assistant consult requires db_session context",
+                "error_code": "ASSISTANT_CONSULT_CONTEXT_MISSING",
+            }
+
+        retrieval = AssistantRetrievalService(db_session)
+        try:
+            raw_candidates = await retrieval.search_candidates(q, limit=safe_limit)
+        except Exception as exc:
+            logger.error("consult_expert_network failed: %s", exc, exc_info=True)
+            return {
+                "error": f"consult_expert_network failed: {exc}",
+                "error_code": "ASSISTANT_CONSULT_FAILED",
+            }
+
+        candidates: list[dict[str, Any]] = []
+        for candidate in raw_candidates or []:
+            if not isinstance(candidate, dict):
+                continue
+            assistant_id = str(candidate.get("assistant_id") or "").strip()
+            name = str(candidate.get("name") or "").strip()
+            if not assistant_id or not name:
+                continue
+            candidates.append(
+                {
+                    "assistant_id": assistant_id,
+                    "name": name,
+                    "summary": candidate.get("summary"),
+                    "score": candidate.get("score"),
+                }
+            )
+
+        payload = build_assistant_consult_payload(
+            candidates=candidates,
+            reason=(
+                "Search expert assistants by intent and activate explicitly if needed."
+            ),
+        )
+        if workflow_context is not None and hasattr(workflow_context, "set"):
+            try:
+                workflow_context.set("assistant_activation", "last_consult", payload)
+            except Exception:
+                pass
+        return payload
+
+    async def handle_activate_assistant(
+        self,
+        assistant_id: str,
+        reason: str | None = None,
+        __context__: Any | None = None,
+    ) -> dict[str, Any]:
+        normalized_assistant_id = str(assistant_id or "").strip()
+        if not normalized_assistant_id:
+            return {
+                "error": "assistant_id is required",
+                "error_code": "ASSISTANT_ACTIVATION_MISSING_ID",
+            }
+
+        workflow_context = __context__ if __context__ is not None else None
+        db_session = getattr(workflow_context, "db_session", None)
+        if db_session is None:
+            return {
+                "error": "assistant activation requires db_session context",
+                "error_code": "ASSISTANT_ACTIVATION_CONTEXT_MISSING",
+            }
+
+        from sqlalchemy import select
+        from app.models.assistant import Assistant, AssistantVersion
+
+        stmt = (
+            select(
+                AssistantVersion.system_prompt,
+                AssistantVersion.skill_refs,
+                AssistantVersion.name,
+            )
+            .join(Assistant, Assistant.current_version_id == AssistantVersion.id)
+            .where(Assistant.id == normalized_assistant_id)
+        )
+        result = await db_session.execute(stmt)
+        row = result.first()
+        if not row:
+            return {
+                "error": f"assistant '{normalized_assistant_id}' not found",
+                "error_code": "ASSISTANT_NOT_FOUND",
+            }
+
+        system_prompt, skill_refs, assistant_name = row[0], row[1], row[2]
+        resolved_skill_tools = await resolve_skill_refs(skill_refs or [])
+        skill_tools = skill_tools_to_openai_format(resolved_skill_tools)
+        payload = build_assistant_activation_payload(
+            assistant_id=normalized_assistant_id,
+            assistant_name=str(assistant_name or "Assistant"),
+            system_prompt=str(system_prompt or ""),
+            skill_tools=skill_tools,
+            reason=reason or "Explicit assistant activation requested by the model.",
+        )
+        if workflow_context is not None and hasattr(workflow_context, "set"):
+            try:
+                workflow_context.set("assistant_activation", "pending", payload)
+            except Exception:
+                pass
+        return payload
+
+    async def handle_deactivate_assistant(
+        self,
+        reason: str | None = None,
+        __context__: Any | None = None,
+    ) -> dict[str, Any]:
+        workflow_context = __context__ if __context__ is not None else None
+        active_payload = None
+        if workflow_context is not None and hasattr(workflow_context, "get"):
+            try:
+                active_payload = workflow_context.get("assistant_activation", "active")
+            except Exception:
+                active_payload = None
+
+        payload = build_assistant_deactivation_payload(
+            assistant_id=(active_payload or {}).get("assistant_id")
+            if isinstance(active_payload, dict)
+            else None,
+            assistant_name=(active_payload or {}).get("assistant_name")
+            if isinstance(active_payload, dict)
+            else None,
+            reason=reason or "Explicit assistant deactivation requested by the model.",
+        )
+        if workflow_context is not None and hasattr(workflow_context, "set"):
+            try:
+                workflow_context.set("assistant_activation", "pending", payload)
+            except Exception:
+                pass
+        return payload
 
     async def handle_execute_code_plan(
         self,

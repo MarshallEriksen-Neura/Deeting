@@ -1,6 +1,7 @@
 export type BlockType =
   | 'text'
   | 'thought'
+  | 'assistant_transition'
   | 'tool_call'
   | 'tool_result'
   | 'console_log'
@@ -30,6 +31,14 @@ export interface ThoughtBlock extends BaseBlock {
   type: 'thought'
   content: string
   cost?: string
+}
+
+export interface AssistantTransitionBlock extends BaseBlock {
+  type: 'assistant_transition'
+  action: 'activated' | 'deactivated' | 'updated'
+  assistantId?: string
+  assistantName?: string
+  reason?: string
 }
 
 export interface ToolCallBlock extends BaseBlock {
@@ -89,6 +98,7 @@ export interface UIBlock extends BaseBlock {
 export type MessageBlock =
   | TextBlock
   | ThoughtBlock
+  | AssistantTransitionBlock
   | ToolCallBlock
   | ToolResultBlock
   | ConsoleLogBlock

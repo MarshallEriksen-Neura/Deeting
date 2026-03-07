@@ -33,6 +33,23 @@ jest.mock("framer-motion", () => ({
 }));
 
 describe("AIResponseBubble debug panel", () => {
+  it("renders assistant transition card", () => {
+    const parts: MessageBlock[] = [
+      {
+        id: "assistant-transition-1",
+        type: "assistant_transition",
+        action: "activated",
+        assistantName: "Expert Planner",
+        reason: "best match for this request",
+      },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.getByText("已切换到助手：Expert Planner")).toBeInTheDocument();
+    expect(screen.getByText("best match for this request")).toBeInTheDocument();
+  });
+
   it("renders runtime tool timeline from tool_result.debug", () => {
     const parts: MessageBlock[] = [
       {

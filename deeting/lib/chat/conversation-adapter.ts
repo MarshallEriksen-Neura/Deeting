@@ -28,6 +28,9 @@ const hasRenderableBlocks = (blocks: MessageBlock[]) =>
     if (block.type === "thought") {
       return true
     }
+    if (block.type === "assistant_transition") {
+      return Boolean(block.action || block.assistantName || block.reason)
+    }
     if (block.type === "tool_call") {
       return Boolean(block.toolName || block.toolArgs || block.status)
     }
@@ -94,6 +97,23 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
         content: normalizeTextValue(
           typeof block.content === "string" ? block.content : String(block.content ?? "")
         ),
+      }
+    }
+
+    if (block.type === "assistant_transition") {
+      return {
+        ...normalizedBase,
+        action:
+          block.action === "activated" || block.action === "deactivated"
+            ? block.action
+            : "updated",
+        assistantId: typeof block.assistantId === "string" ? block.assistantId : undefined,
+        assistantName:
+          typeof block.assistantName === "string"
+            ? normalizeTextValue(block.assistantName)
+            : undefined,
+        reason:
+          typeof block.reason === "string" ? normalizeTextValue(block.reason) : undefined,
       }
     }
 

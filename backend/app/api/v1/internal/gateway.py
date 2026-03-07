@@ -327,7 +327,55 @@ def _build_tool_result_blocks(tool_calls_log: Any) -> list[dict[str, Any]]:
         if isinstance(debug_payload, dict) and debug_payload:
             block["debug"] = debug_payload
         blocks.append(block)
+        blocks.extend(_build_assistant_transition_blocks(result, call))
     return blocks
+
+
+def _coerce_json_object(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _build_assistant_transition_blocks(
+    result: Any,
+    call: dict[str, Any],
+) -> list[dict[str, Any]]:
+    result_obj = _coerce_json_object(result)
+    if not result_obj:
+        return []
+    transition = result_obj.get("assistant_transition")
+    if not isinstance(transition, dict):
+        return []
+
+    action = str(transition.get("action") or "").strip() or "updated"
+    block: dict[str, Any] = {
+        "type": "assistant_transition",
+        "action": action,
+    }
+    assistant_id = transition.get("assistant_id")
+    if isinstance(assistant_id, str) and assistant_id.strip():
+        block["assistantId"] = assistant_id.strip()
+    assistant_name = transition.get("assistant_name")
+    if isinstance(assistant_name, str) and assistant_name.strip():
+        block["assistantName"] = assistant_name.strip()
+    reason = transition.get("reason")
+    if isinstance(reason, str) and reason.strip():
+        block["reason"] = reason.strip()
+    call_id = call.get("tool_call_id")
+    if isinstance(call_id, str) and call_id:
+        block["id"] = f"{call_id}-assistant-transition"
+    return [block]
 
 
 def _append_tool_result_blocks(

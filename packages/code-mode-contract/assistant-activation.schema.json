@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deeting.ai/contracts/assistant-activation.schema.json",
+  "title": "Assistant Activation Contract",
+  "description": "Shared request-scoped assistant activation payload for Deeting code mode on cloud and desktop.",
+  "type": "object",
+  "required": [
+    "action",
+    "scope",
+    "format_version"
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "consulted",
+        "activated",
+        "deactivated"
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "request"
+      ]
+    },
+    "format_version": {
+      "type": "string",
+      "enum": [
+        "assistant_activation.v1"
+      ]
+    },
+    "activation_mode": {
+      "type": "string",
+      "enum": [
+        "replace"
+      ]
+    },
+    "assistant_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "assistant_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "system_prompt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recommended_assistant_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "activated_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "skill_tools": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": []
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "assistant_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "score": {}
+        },
+        "required": [
+          "assistant_id",
+          "name"
+        ]
+      },
+      "default": []
+    }
+  }
+}

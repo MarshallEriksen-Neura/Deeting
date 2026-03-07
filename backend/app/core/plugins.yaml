@@ -127,6 +127,8 @@ plugins:
     tools:
       - "search_sdk"
       - "execute_code_plan"
+      - "activate_assistant"
+      - "deactivate_assistant"
 
   # === Monitor Automation ===
   # Migrated to packages/official-skills/monitor

@@ -113,6 +113,34 @@ impl McpStore {
         Ok(versions)
     }
 
+    pub async fn get_local_assistant_current_version(
+        &self,
+        assistant_id: &str,
+    ) -> Result<Option<LocalAssistantVersion>, McpError> {
+        let normalized_assistant_id = assistant_id.trim().to_string();
+        if normalized_assistant_id.is_empty() {
+            return Err(McpError::validation("assistant_id is required"));
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT av.id, av.assistant_id, av.version, av.name, av.description, av.system_prompt,
+                   av.model_config, av.skill_refs, av.tags, av.changelog, av.published_at,
+                   av.created_at, av.updated_at
+            FROM assistant a
+            JOIN assistant_version av ON av.id = a.current_version_id
+            WHERE a.id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_assistant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        row.map(|row| row_to_assistant_version(&row)).transpose()
+    }
+
     pub async fn sync_cloud_system_assistants(
         &self,
         assistants: &[CloudSystemAssistantSnapshot],

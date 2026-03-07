@@ -68,6 +68,8 @@ def test_should_block_direct_tool_call_when_code_mode_available():
             "tools": [
                 {"type": "function", "function": {"name": "search_sdk"}},
                 {"type": "function", "function": {"name": "execute_code_plan"}},
+                {"type": "function", "function": {"name": "activate_assistant"}},
+                {"type": "function", "function": {"name": "deactivate_assistant"}},
                 {"type": "function", "function": {"name": "tavily-search"}},
             ]
         },
@@ -122,6 +124,22 @@ def test_should_block_direct_tool_call_when_code_mode_available():
         )
         is False
     )
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
+            tool_name="activate_assistant",
+            user_mcp_tool_map={},
+        )
+        is False
+    )
+    assert (
+        step._should_block_direct_tool_call(
+            ctx,
+            tool_name="deactivate_assistant",
+            user_mcp_tool_map={},
+        )
+        is False
+    )
 
 
 def test_should_not_block_direct_tool_call_when_code_mode_unavailable():
@@ -142,6 +160,95 @@ def test_should_not_block_direct_tool_call_when_code_mode_unavailable():
         )
         is False
     )
+
+
+def test_consume_pending_assistant_transition_applies_activation_payload():
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set(
+        "assistant_activation",
+        "pending",
+        {
+            "action": "activated",
+            "assistant_id": "assistant-1",
+            "assistant_name": "Expert",
+            "system_prompt": "You are the activated expert.",
+            "skill_tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "expert_lookup",
+                        "description": "lookup",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+            "reason": "best match",
+        },
+    )
+    request_body = {
+        "tools": [
+            {"type": "function", "function": {"name": "search_sdk"}},
+            {"type": "function", "function": {"name": "execute_code_plan"}},
+            {"type": "function", "function": {"name": "activate_assistant"}},
+            {"type": "function", "function": {"name": "deactivate_assistant"}},
+        ]
+    }
+    messages: list[dict] = []
+
+    block, assistant_id = step._consume_pending_assistant_transition(
+        ctx,
+        request_body=request_body,
+        messages=messages,
+        base_tools=deepcopy(request_body["tools"]),
+    )
+
+    assert assistant_id == "assistant-1"
+    assert block["type"] == "assistant_transition"
+    assert block["action"] == "activated"
+    assert request_body["tools"][-1]["function"]["name"] == "expert_lookup"
+    assert messages[-1]["role"] == "system"
+    assert "Assistant Activated: Expert" in messages[-1]["content"]
+
+
+def test_consume_pending_assistant_transition_applies_deactivation_payload():
+    step = AgentExecutorStep()
+    ctx = WorkflowContext(channel=Channel.INTERNAL)
+    ctx.set(
+        "assistant_activation",
+        "pending",
+        {
+            "action": "deactivated",
+            "assistant_id": "assistant-1",
+            "assistant_name": "Expert",
+            "reason": "done",
+        },
+    )
+    base_tools = [
+        {"type": "function", "function": {"name": "search_sdk"}},
+        {"type": "function", "function": {"name": "execute_code_plan"}},
+        {"type": "function", "function": {"name": "activate_assistant"}},
+        {"type": "function", "function": {"name": "deactivate_assistant"}},
+    ]
+    request_body = {
+        "tools": [
+            *deepcopy(base_tools),
+            {"type": "function", "function": {"name": "expert_lookup"}},
+        ]
+    }
+    messages: list[dict] = []
+
+    block, assistant_id = step._consume_pending_assistant_transition(
+        ctx,
+        request_body=request_body,
+        messages=messages,
+        base_tools=deepcopy(base_tools),
+    )
+
+    assert assistant_id is None
+    assert block["action"] == "deactivated"
+    assert request_body["tools"] == base_tools
+    assert "Assistant Deactivated" in messages[-1]["content"]
 
 
 @pytest.mark.asyncio

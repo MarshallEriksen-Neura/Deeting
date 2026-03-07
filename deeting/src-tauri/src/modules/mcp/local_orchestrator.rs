@@ -591,6 +591,9 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
             let code_mode_prompt = render_code_mode_capability_prompt(&[
                 "search_sdk".to_string(),
                 "execute_code_plan".to_string(),
+                "consult_expert_network".to_string(),
+                "activate_assistant".to_string(),
+                "deactivate_assistant".to_string(),
             ]);
 
             let base_system_prompt = format!(

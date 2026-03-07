@@ -497,6 +497,23 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     );
                   }
 
+                  if (part.type === 'assistant_transition') {
+                    return (
+                      <motion.div
+                        key={`assistant-transition-${index}`}
+                        initial={{ y: 8, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                      >
+                        <AssistantTransitionCard
+                          action={part.action}
+                          assistantName={part.assistantName}
+                          reason={part.reason}
+                        />
+                      </motion.div>
+                    );
+                  }
+
                   // --- B. MCP 工具调用（含折叠结果） ---
                   if (part.type === 'tool_call') {
                     // 分组模式：在第一个 tool_call 位置渲染分组组件，跳过后续的
@@ -745,6 +762,32 @@ const ThoughtBlock = memo<{ content?: string; cost?: string }>(
           </div>
         </CollapsibleContent>
       </Collapsible>
+    );
+  }
+);
+
+const AssistantTransitionCard = memo<{
+  action?: "activated" | "deactivated" | "updated";
+  assistantName?: string;
+  reason?: string;
+}>(
+  function AssistantTransitionCard({ action, assistantName, reason }) {
+    const title =
+      action === "activated"
+        ? `已切换到助手${assistantName ? `：${assistantName}` : ""}`
+        : action === "deactivated"
+          ? `已退出助手${assistantName ? `：${assistantName}` : ""}`
+          : `助手上下文已更新${assistantName ? `：${assistantName}` : ""}`;
+    const accentClass =
+      action === "activated"
+        ? "border-sky-200 bg-sky-50/70 dark:border-sky-900 dark:bg-sky-900/20"
+        : "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-900/20";
+
+    return (
+      <div className={cn("rounded-lg border px-3 py-2 text-sm", accentClass)}>
+        <div className="font-medium text-foreground">{title}</div>
+        {reason ? <div className="mt-1 text-xs text-muted-foreground">{reason}</div> : null}
+      </div>
     );
   }
 );

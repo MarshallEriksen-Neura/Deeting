@@ -14,7 +14,13 @@ from app.services.mcp.discovery import mcp_discovery_service
 from app.services.tools.tool_sync_service import tool_sync_service
 
 logger = logging.getLogger(__name__)
-_CODE_MODE_CORE_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
+_CODE_MODE_REQUIRED_TOOL_NAMES = {"search_sdk", "execute_code_plan"}
+_CODE_MODE_CORE_TOOL_NAMES = {
+    "search_sdk",
+    "execute_code_plan",
+    "activate_assistant",
+    "deactivate_assistant",
+}
 
 
 def extract_last_user_message(messages: Iterable[dict] | None) -> str:
@@ -160,7 +166,7 @@ class ToolContextService:
         non_core_system_tools = [
             tool for tool in system_tools if tool.name not in core_tool_names
         ]
-        code_mode_enabled = _CODE_MODE_CORE_TOOL_NAMES.issubset(allowed_tool_names)
+        code_mode_enabled = _CODE_MODE_REQUIRED_TOOL_NAMES.issubset(allowed_tool_names)
         code_mode_minimal_toolset = bool(
             getattr(settings, "CODE_MODE_MINIMAL_TOOLSET", False)
         )

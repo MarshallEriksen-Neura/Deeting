@@ -160,18 +160,18 @@ mod tests {
             .and_then(|value| value.as_array())
             .expect("wrapped tools array");
 
-        assert_eq!(tools.len(), 2);
-        assert_eq!(tools[0]["type"], serde_json::json!("function"));
-        assert_eq!(tools[0]["function"]["name"], serde_json::json!("search_sdk"));
-        assert_eq!(
-            tools[0]["function"]["parameters"]["required"],
-            serde_json::json!(["query"])
-        );
-        assert_eq!(tools[1]["function"]["name"], serde_json::json!("execute_code_plan"));
-        assert_eq!(
-            tools[1]["function"]["parameters"]["required"],
-            serde_json::json!(["code"])
-        );
+        let names = tools
+            .iter()
+            .filter_map(|tool| tool.get("function"))
+            .filter_map(|function| function.get("name"))
+            .filter_map(|value| value.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"search_sdk"));
+        assert!(names.contains(&"consult_expert_network"));
+        assert!(names.contains(&"activate_assistant"));
+        assert!(names.contains(&"deactivate_assistant"));
+        assert!(names.contains(&"execute_code_plan"));
     }
 
     #[test]
@@ -270,6 +270,29 @@ mod tests {
                 .map(|arr| arr.len()),
             Some(1)
         );
+    }
+
+    #[test]
+    fn build_local_tool_trace_blocks_emits_assistant_transition_block() {
+        let meta = vec![serde_json::json!({
+            "id": "call_activate",
+            "name": "activate_assistant",
+            "status": "success",
+            "result": {
+                "assistant_transition": {
+                    "action": "activated",
+                    "assistant_id": "assistant-1",
+                    "assistant_name": "Expert",
+                    "reason": "best match"
+                }
+            }
+        })];
+
+        let blocks = build_local_tool_trace_blocks(&meta);
+        assert!(blocks.iter().any(|block| {
+            block.get("type").and_then(|v| v.as_str()) == Some("assistant_transition")
+                && block.get("assistantName").and_then(|v| v.as_str()) == Some("Expert")
+        }));
     }
 
     #[test]

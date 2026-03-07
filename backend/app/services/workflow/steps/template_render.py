@@ -421,7 +421,12 @@ class TemplateRenderStep(BaseStep):
 
     @staticmethod
     def _resolve_code_mode_direct_allowlist() -> list[str]:
-        core_tools = {"search_sdk", "execute_code_plan"}
+        core_tools = {
+            "search_sdk",
+            "execute_code_plan",
+            "activate_assistant",
+            "deactivate_assistant",
+        }
         raw = getattr(settings, "CODE_MODE_DIRECT_TOOL_ALLOWLIST", "")
         if isinstance(raw, str):
             extras = [item.strip().lower() for item in raw.split(",")]
