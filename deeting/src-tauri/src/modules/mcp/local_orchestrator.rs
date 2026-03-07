@@ -797,6 +797,9 @@ pub async fn execute_local_orchestrated_chat(
         &chat_context,
         input.temperature,
         input.max_tokens,
+        ctx.event_tx.clone(),
+        Some(trace_id.as_str()),
+        input.request_id.as_deref(),
     )
     .await?;
 
@@ -814,13 +817,19 @@ pub async fn execute_local_orchestrated_chat(
     );
 
     let mut assistant_blocks = Vec::<Value>::new();
+    let tool_trace_streamed = response_json
+        .get("tool_trace_streamed")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     if let Some(tool_trace_blocks) = response_json
         .get("tool_trace_blocks")
         .and_then(|value| value.as_array())
         .filter(|value| !value.is_empty())
     {
         let trace_blocks = tool_trace_blocks.to_vec();
-        ctx.emit_blocks(trace_blocks.clone());
+        if !tool_trace_streamed {
+            ctx.emit_blocks(trace_blocks.clone());
+        }
         assistant_blocks.extend(trace_blocks);
     }
 

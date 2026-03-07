@@ -859,7 +859,7 @@ fn extract_error_message(value: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_upstream_endpoint, decode_model_ids_from_body};
+    use super::decode_model_ids_from_body;
 
     #[test]
     fn decode_model_ids_from_body_extracts_ids_from_data() {

@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::State;
 
-use crate::modules::code_mode::bridge::{BridgeDeps, RuntimeBridgeClaims};
+use crate::modules::code_mode::bridge::{
+    BridgeDeps, RuntimeBridgeClaims, RuntimeBridgeStreamTarget,
+};
 use crate::modules::code_mode::contract::{
     BRIDGE_EXECUTION_TOKEN_HEADER, EXECUTION_FORMAT_VERSION, RUNTIME_PROTOCOL_VERSION,
     RUNTIME_RENDER_BLOCK_MARKER, RUNTIME_TOOL_CALL_MARKER,
@@ -103,7 +105,7 @@ pub async fn execute_local_code_mode(
     state: State<'_, AppState>,
     payload: ExecuteLocalCodeModeRequest,
 ) -> Result<ExecuteLocalCodeModeResponse, String> {
-    execute_local_code_mode_inner(&state, payload)
+    execute_local_code_mode_inner(&state, payload, None)
         .await
         .map_err(|err| err.to_string())
 }
@@ -111,8 +113,9 @@ pub async fn execute_local_code_mode(
 pub(crate) async fn execute_local_code_mode_inner(
     state: &AppState,
     payload: ExecuteLocalCodeModeRequest,
+    stream_target: Option<RuntimeBridgeStreamTarget>,
 ) -> Result<ExecuteLocalCodeModeResponse, CodeModeError> {
-    run_execute_local_code_mode(state, payload).await
+    run_execute_local_code_mode(state, payload, stream_target).await
 }
 
 #[tauri::command]
@@ -184,6 +187,7 @@ pub async fn replay_local_code_mode_execution(
             context: None,
             max_calls: Some(16),
         },
+        None,
     )
     .await
     .map_err(|err| err.to_string())?;
@@ -408,6 +412,7 @@ pub async fn sync_local_code_mode_executions(
 async fn run_execute_local_code_mode(
     state: &AppState,
     payload: ExecuteLocalCodeModeRequest,
+    stream_target: Option<RuntimeBridgeStreamTarget>,
 ) -> Result<ExecuteLocalCodeModeResponse, CodeModeError> {
     let started = Instant::now();
     let source_code = payload.code.trim().to_string();
@@ -482,6 +487,7 @@ async fn run_execute_local_code_mode(
             },
             context,
             Some(600),
+            stream_target,
         )
         .await?;
 

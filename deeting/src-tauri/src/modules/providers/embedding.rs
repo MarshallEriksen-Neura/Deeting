@@ -125,7 +125,7 @@ pub(crate) fn select_embedding_model<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_upstream_endpoint, select_embedding_model};
+    use super::select_embedding_model;
     use crate::modules::providers::types::ProviderModel;
     use serde_json::json;
     use uuid::Uuid;

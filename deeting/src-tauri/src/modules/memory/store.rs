@@ -1,7 +1,10 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use arrow_array::{Array, BooleanArray, RecordBatch, RecordBatchIterator, StringArray};
+use arrow_array::{
+    Array, BooleanArray, FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator,
+    StringArray,
+};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use futures_util::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
@@ -207,14 +210,38 @@ impl MemoryStore {
         asset_type: Option<&str>,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
         let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
-        let mut query = table.vector_search(vector)?.limit(limit);
+        let mut vector_query = table.vector_search(vector.clone())?.limit(limit);
 
         if let Some(t) = asset_type {
-            query = query.only_if(format!("asset_type = '{}'", sql_escape(t)));
+            vector_query = vector_query.only_if(format!("asset_type = '{}'", sql_escape(t)));
         }
 
-        let batches = query.execute().await?.try_collect::<Vec<_>>().await?;
+        match vector_query.execute().await {
+            Ok(stream) => {
+                let batches = stream.try_collect::<Vec<_>>().await?;
+                let results = read_asset_search_batches(&batches)?;
+                if !results.is_empty() {
+                    return Ok(results);
+                }
+            }
+            Err(_) => {}
+        }
 
+        self.search_assets_linear_fallback(vector, limit, asset_type).await
+    }
+
+    pub async fn list_assets_catalog(&self) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let stmt = table.query().select(Select::columns(&[
+            "id",
+            "name",
+            "description",
+            "asset_type",
+            "source_type",
+            "pkg_name",
+            "metadata_json",
+        ]));
+        let batches = stmt.execute().await?.try_collect::<Vec<_>>().await?;
         let mut results = Vec::new();
         for batch in batches {
             let id_col = as_string_col(&batch, "id")?;
@@ -224,13 +251,8 @@ impl MemoryStore {
             let s_type_col = as_string_col(&batch, "source_type")?;
             let pkg_col = as_string_col(&batch, "pkg_name")?;
             let meta_col = as_string_col(&batch, "metadata_json")?;
-            // LanceDB adds _distance column automatically
-            let score_col = batch.column_by_name("_distance");
 
             for row in 0..batch.num_rows() {
-                let score = score_col
-                    .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
-                    .map(|c| c.value(row));
                 results.push(serde_json::json!({
                     "id": id_col.value(row),
                     "name": name_col.value(row),
@@ -240,9 +262,84 @@ impl MemoryStore {
                     "pkg_name": nullable_string(pkg_col, row),
                     "metadata": nullable_string(meta_col, row)
                         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+                }));
+            }
+        }
+        Ok(results)
+    }
+
+    async fn search_assets_linear_fallback(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+        asset_type: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let batches = table.query().execute().await?.try_collect::<Vec<_>>().await?;
+        let mut results = Vec::new();
+        for batch in batches {
+            let id_col = as_string_col(&batch, "id")?;
+            let name_col = as_string_col(&batch, "name")?;
+            let desc_col = as_string_col(&batch, "description")?;
+            let a_type_col = as_string_col(&batch, "asset_type")?;
+            let s_type_col = as_string_col(&batch, "source_type")?;
+            let pkg_col = as_string_col(&batch, "pkg_name")?;
+            let meta_col = as_string_col(&batch, "metadata_json")?;
+            let vector_col = batch
+                .column_by_name("vector")
+                .and_then(|c| c.as_any().downcast_ref::<FixedSizeListArray>())
+                .ok_or_else(|| MemoryError::Storage("missing or invalid vector column".to_string()))?;
+            let values_col = vector_col
+                .values()
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .ok_or_else(|| MemoryError::Storage("invalid vector values column".to_string()))?;
+            let value_len = usize::try_from(vector_col.value_length())
+                .map_err(|_| MemoryError::Storage("invalid vector value length".to_string()))?;
+
+            for row in 0..batch.num_rows() {
+                let asset_type_value = a_type_col.value(row);
+                if let Some(expected_asset_type) = asset_type {
+                    if asset_type_value != expected_asset_type {
+                        continue;
+                    }
+                }
+                let start = row.saturating_mul(value_len);
+                let end = start.saturating_add(value_len);
+                if end > values_col.len() {
+                    continue;
+                }
+                let candidate = (start..end)
+                    .map(|idx| if values_col.is_null(idx) { 0.0 } else { values_col.value(idx) })
+                    .collect::<Vec<_>>();
+                let score = cosine_similarity(&vector, &candidate);
+                results.push(serde_json::json!({
+                    "id": id_col.value(row),
+                    "name": name_col.value(row),
+                    "description": desc_col.value(row),
+                    "asset_type": asset_type_value,
+                    "source_type": s_type_col.value(row),
+                    "pkg_name": nullable_string(pkg_col, row),
+                    "metadata": nullable_string(meta_col, row)
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                     "_distance": score,
                 }));
             }
+        }
+
+        results.sort_by(|left, right| {
+            let lhs = left
+                .get("_distance")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(f64::NEG_INFINITY);
+            let rhs = right
+                .get("_distance")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(f64::NEG_INFINITY);
+            rhs.partial_cmp(&lhs).unwrap_or(Ordering::Equal)
+        });
+        if results.len() > limit {
+            results.truncate(limit);
         }
         Ok(results)
     }
@@ -478,6 +575,58 @@ fn normalize_optional(value: Option<String>) -> Option<String> {
 
 fn sql_escape(raw: &str) -> String {
     raw.replace('\'', "''")
+}
+
+fn read_asset_search_batches(
+    batches: &[RecordBatch],
+) -> Result<Vec<serde_json::Value>, MemoryError> {
+    let mut results = Vec::new();
+    for batch in batches {
+        let id_col = as_string_col(batch, "id")?;
+        let name_col = as_string_col(batch, "name")?;
+        let desc_col = as_string_col(batch, "description")?;
+        let a_type_col = as_string_col(batch, "asset_type")?;
+        let s_type_col = as_string_col(batch, "source_type")?;
+        let pkg_col = as_string_col(batch, "pkg_name")?;
+        let meta_col = as_string_col(batch, "metadata_json")?;
+        let score_col = batch.column_by_name("_distance");
+
+        for row in 0..batch.num_rows() {
+            let score = score_col
+                .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
+                .map(|c| c.value(row));
+            results.push(serde_json::json!({
+                "id": id_col.value(row),
+                "name": name_col.value(row),
+                "description": desc_col.value(row),
+                "asset_type": a_type_col.value(row),
+                "source_type": s_type_col.value(row),
+                "pkg_name": nullable_string(pkg_col, row),
+                "metadata": nullable_string(meta_col, row)
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+                "_distance": score,
+            }));
+        }
+    }
+    Ok(results)
+}
+
+fn cosine_similarity(query: &[f32], candidate: &[f32]) -> f32 {
+    if query.is_empty() || candidate.is_empty() || query.len() != candidate.len() {
+        return 0.0;
+    }
+    let mut dot = 0.0_f32;
+    let mut query_norm = 0.0_f32;
+    let mut candidate_norm = 0.0_f32;
+    for (lhs, rhs) in query.iter().zip(candidate.iter()) {
+        dot += lhs * rhs;
+        query_norm += lhs * lhs;
+        candidate_norm += rhs * rhs;
+    }
+    if query_norm <= f32::EPSILON || candidate_norm <= f32::EPSILON {
+        return 0.0;
+    }
+    dot / (query_norm.sqrt() * candidate_norm.sqrt())
 }
 
 fn read_items_from_batch(batch: &RecordBatch) -> Result<Vec<LocalMemoryItem>, MemoryError> {

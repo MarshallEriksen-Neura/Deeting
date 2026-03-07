@@ -11,6 +11,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
@@ -46,11 +47,20 @@ pub struct RuntimeBridgeIssueResult {
 }
 
 #[derive(Debug, Clone)]
+pub struct RuntimeBridgeStreamTarget {
+    pub tx: UnboundedSender<String>,
+    pub trace_id: Option<String>,
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 struct RuntimeBridgeEntry {
     claims: RuntimeBridgeClaims,
     used_calls: i64,
     expires_at_unix_ms: i128,
     context: Value,
+    stream_target: Option<RuntimeBridgeStreamTarget>,
+    emitted_execution_section: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +175,7 @@ impl CodeModeBridgeState {
         claims: RuntimeBridgeClaims,
         context: Value,
         ttl_seconds: Option<i64>,
+        stream_target: Option<RuntimeBridgeStreamTarget>,
     ) -> Result<RuntimeBridgeIssueResult, CodeModeError> {
         let state = self.server_state().await?;
         let token = Uuid::new_v4().to_string();
@@ -177,6 +188,8 @@ impl CodeModeBridgeState {
             used_calls: 0,
             expires_at_unix_ms,
             context,
+            stream_target,
+            emitted_execution_section: false,
         };
         let mut store = state.store.write().await;
         store.tokens.insert(token.clone(), entry);
@@ -232,23 +245,176 @@ async fn code_mode_call_tool(
         }));
     }
 
+    maybe_emit_runtime_execution_section(&state, &token).await;
+    let runtime_call_id = format!("runtime-tool-{call_index}");
+    emit_runtime_blocks(
+        &state,
+        &token,
+        vec![json!({
+            "id": format!("{runtime_call_id}-call"),
+            "type": "tool_call",
+            "callId": runtime_call_id,
+            "toolName": payload.tool_name.trim(),
+            "toolArgs": payload.arguments.clone(),
+            "status": "running",
+        })],
+    )
+    .await;
+
     let dispatch = dispatch_tool_call(&state, &claims, &payload.tool_name, payload.arguments).await;
     match dispatch {
-        Ok(result) => Json(json!({
-            "ok": true,
-            "result": result,
-            "meta": {
-                "call_index": call_index,
-                "max_calls": max_calls,
-                "session_id": claims.session_id,
-            }
-        })),
-        Err((code, error)) => Json(json!({
-            "ok": false,
-            "error_code": code,
-            "error": error,
-        })),
+        Ok(result) => {
+            let mut blocks = vec![json!({
+                "id": format!("{runtime_call_id}-result"),
+                "type": "tool_result",
+                "callId": runtime_call_id,
+                "toolName": payload.tool_name.trim(),
+                "status": "success",
+                "result": result.clone(),
+            })];
+            blocks.extend(extract_runtime_ui_blocks_from_result(&result));
+            emit_runtime_blocks(&state, &token, blocks).await;
+            Json(json!({
+                "ok": true,
+                "result": result,
+                "meta": {
+                    "call_index": call_index,
+                    "max_calls": max_calls,
+                    "session_id": claims.session_id,
+                }
+            }))
+        }
+        Err((code, error)) => {
+            emit_runtime_blocks(
+                &state,
+                &token,
+                vec![json!({
+                    "id": format!("{runtime_call_id}-result"),
+                    "type": "tool_result",
+                    "callId": runtime_call_id,
+                    "toolName": payload.tool_name.trim(),
+                    "status": "error",
+                    "result": {
+                        "error": error.clone(),
+                        "error_code": code.clone(),
+                    },
+                })],
+            )
+            .await;
+            Json(json!({
+                "ok": false,
+                "error_code": code,
+                "error": error,
+            }))
+        }
     }
+}
+
+async fn maybe_emit_runtime_execution_section(
+    state: &BridgeServerState,
+    token: &str,
+) {
+    let normalized = token.trim();
+    if normalized.is_empty() {
+        return;
+    }
+    let stream_target = {
+        let mut store = state.store.write().await;
+        let Some(entry) = store.tokens.get_mut(normalized) else {
+            return;
+        };
+        if entry.emitted_execution_section {
+            None
+        } else {
+            entry.emitted_execution_section = true;
+            entry.stream_target.clone()
+        }
+    };
+    let Some(stream_target) = stream_target else {
+        return;
+    };
+    send_runtime_blocks(
+        &stream_target,
+        vec![json!({
+            "type": "execution_section",
+            "title": "Runtime Tool Actions",
+        })],
+    );
+}
+
+async fn emit_runtime_blocks(
+    state: &BridgeServerState,
+    token: &str,
+    blocks: Vec<Value>,
+) {
+    if blocks.is_empty() {
+        return;
+    }
+    let normalized = token.trim();
+    if normalized.is_empty() {
+        return;
+    }
+    let stream_target = {
+        let store = state.store.read().await;
+        store
+            .tokens
+            .get(normalized)
+            .and_then(|entry| entry.stream_target.clone())
+    };
+    let Some(stream_target) = stream_target else {
+        return;
+    };
+    send_runtime_blocks(&stream_target, blocks);
+}
+
+fn send_runtime_blocks(
+    stream_target: &RuntimeBridgeStreamTarget,
+    blocks: Vec<Value>,
+) {
+    let mut payload = json!({
+        "type": "blocks",
+        "blocks": blocks,
+    });
+    if let Some(object) = payload.as_object_mut() {
+        if let Some(trace_id) = stream_target
+            .trace_id
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            object.insert("trace_id".to_string(), json!(trace_id));
+        }
+        if let Some(request_id) = stream_target
+            .request_id
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            object.insert("request_id".to_string(), json!(request_id));
+        }
+    }
+    if let Ok(serialized) = serde_json::to_string(&payload) {
+        let _ = stream_target.tx.send(serialized);
+    }
+}
+
+fn extract_runtime_ui_blocks_from_result(result: &Value) -> Vec<Value> {
+    let Some(object) = result.as_object() else {
+        return Vec::new();
+    };
+
+    let mut blocks = Vec::new();
+    if let Some(ui_blocks) = object
+        .get("ui")
+        .and_then(|value| value.get("blocks"))
+        .and_then(|value| value.as_array())
+    {
+        blocks.extend(ui_blocks.iter().cloned());
+    }
+    if let Some(render) = object.get("__render__") {
+        blocks.push(render.clone());
+    }
+    blocks
 }
 
 async fn code_mode_file_write(

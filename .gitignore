@@ -98,6 +98,8 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/.pnpm-debug.log*
 
+t/
+
 
 # bridge
 bin/
@@ -138,5 +140,6 @@ ai_higress_front/
 /$null
 /rustup-init.exe
 /vs_buildtools.exe
+/desktop-dev-no-proxy.cmd
 
 

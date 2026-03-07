@@ -1683,6 +1683,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     chat_ctx: &LocalConversationChatContext,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
+    event_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    trace_id: Option<&str>,
+    request_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
     let max_rounds = match app_state
@@ -1695,7 +1698,10 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         _ => DEFAULT_MAX_AGENTIC_ROUNDS,
     };
 
-    let trace_id = Uuid::new_v4().to_string();
+    let trace_id = trace_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let session_id = chat_ctx.session_id.clone();
 
     let provider_model_id = &model_connection.provider_model_id;
@@ -1728,6 +1734,8 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     let mut all_tool_call_meta: Vec<serde_json::Value> = Vec::new();
     let mut last_response: Option<serde_json::Value> = None;
     let mut active_assistant: Option<LocalAssistantActivationState> = None;
+    let mut realtime_emitter =
+        LocalRealtimeToolTraceEmitter::new(event_tx, Some(trace_id.as_str()), request_id);
 
     loop {
         round = round.saturating_add(1);
@@ -1742,6 +1750,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
             if !all_tool_call_meta.is_empty() {
                 fallback["tool_trace_blocks"] =
                     serde_json::Value::Array(build_local_tool_trace_blocks(&all_tool_call_meta));
+            }
+            if realtime_emitter.emitted_any {
+                fallback["tool_trace_streamed"] = serde_json::json!(true);
             }
             return Ok(fallback);
         }
@@ -1771,6 +1782,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
                 enriched["tool_trace_blocks"] =
                     serde_json::Value::Array(build_local_tool_trace_blocks(&all_tool_call_meta));
             }
+            if realtime_emitter.emitted_any {
+                enriched["tool_trace_streamed"] = serde_json::json!(true);
+            }
             return Ok(enriched);
         }
 
@@ -1783,6 +1797,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
                 &response,
                 chat_ctx,
                 active_assistant.as_ref(),
+                &mut realtime_emitter,
             )
             .await;
         if !synthesized {
@@ -1905,6 +1920,49 @@ fn build_local_tool_trace_blocks(tool_call_meta: &[serde_json::Value]) -> Vec<se
     }
 
     blocks
+}
+
+fn append_streamable_local_tool_result_blocks(
+    blocks: &mut Vec<serde_json::Value>,
+    item: &serde_json::Value,
+) {
+    let tool_name = item
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown_tool");
+    let call_id = item
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let status = item
+        .get("status")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+
+    if status.eq_ignore_ascii_case("success") {
+        blocks.push(serde_json::json!({
+            "id": format!("{call_id}-tool-result"),
+            "type": "tool_result",
+            "callId": call_id,
+            "toolName": tool_name,
+            "status": "success",
+            "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
+        }));
+        blocks.extend(extract_assistant_transition_blocks(item, call_id, tool_name));
+        blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));
+    } else if status.eq_ignore_ascii_case("error") {
+        blocks.push(serde_json::json!({
+            "id": format!("{call_id}-tool-result"),
+            "type": "tool_result",
+            "callId": call_id,
+            "toolName": tool_name,
+            "status": "error",
+            "result": {
+                "error": item.get("error").cloned().unwrap_or_else(|| serde_json::json!("tool call failed")),
+                "error_code": item.get("error_code").cloned().unwrap_or_else(|| serde_json::json!(null)),
+            },
+        }));
+    }
 }
 
 fn extract_assistant_transition_blocks(
@@ -2147,49 +2205,46 @@ async fn build_local_consult_expert_network_result(
     limit: usize,
     current_assistant_id: Option<&str>,
 ) -> serde_json::Value {
-    let normalized_query = intent_query.trim();
-    if normalized_query.is_empty() {
-        return serde_json::json!({
-            "error": "intent_query is required",
-            "error_code": "ASSISTANT_CONSULT_EMPTY_QUERY",
-        });
-    }
+    build_local_consult_expert_network_result_with_runtime(
+        app_state.mcp.store.as_ref(),
+        &app_state.providers.embedding,
+        app_state.memory.store.as_ref(),
+        intent_query,
+        limit,
+        current_assistant_id,
+    )
+    .await
+}
 
-    let vector = match app_state.providers.embedding.embed_text(normalized_query).await {
-        Ok(value) => value,
-        Err(err) => {
-            return serde_json::json!({
-                "error": format!("assistant consult failed: {}", err),
-                "error_code": "ASSISTANT_CONSULT_EMBEDDING_FAILED",
-            });
-        }
-    };
+fn build_local_consult_response(
+    candidates: Vec<serde_json::Value>,
+    reason: &str,
+    search_mode: &str,
+) -> serde_json::Value {
+    let recommended_assistant_id = candidates
+        .first()
+        .and_then(|value| value.get("assistant_id"))
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    serde_json::json!({
+        "action": "consulted",
+        "scope": "request",
+        "format_version": LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
+        "candidates": candidates,
+        "recommended_assistant_id": recommended_assistant_id,
+        "reason": reason,
+        "search_mode": search_mode,
+    })
+}
 
-    let enabled_assistant_ids = app_state
-        .mcp
-        .store
-        .list_enabled_local_assistant_ids()
-        .await
-        .unwrap_or_else(|_| HashSet::new());
-    let current_assistant = current_assistant_id.unwrap_or("").trim();
-    let max_hits = limit.clamp(1, 8);
-    let hits = match app_state
-        .memory
-        .store
-        .search_assets(vector, max_hits, Some("assistant"))
-        .await
-    {
-        Ok(value) => value,
-        Err(err) => {
-            return serde_json::json!({
-                "error": format!("assistant consult failed: {}", err),
-                "error_code": "ASSISTANT_CONSULT_SEARCH_FAILED",
-            });
-        }
-    };
-
+fn build_local_consult_candidates_from_assets(
+    assets: Vec<serde_json::Value>,
+    enabled_assistant_ids: &HashSet<String>,
+    current_assistant_id: &str,
+    limit: usize,
+) -> Vec<serde_json::Value> {
     let mut candidates = Vec::new();
-    for hit in hits {
+    for hit in assets {
         let assistant_id = hit
             .get("id")
             .and_then(|value| value.as_str())
@@ -2198,7 +2253,7 @@ async fn build_local_consult_expert_network_result(
         let Some(assistant_id) = assistant_id else {
             continue;
         };
-        if assistant_id == current_assistant {
+        if assistant_id == current_assistant_id {
             continue;
         }
         if !enabled_assistant_ids.contains(assistant_id.as_str()) {
@@ -2216,20 +2271,127 @@ async fn build_local_consult_expert_network_result(
             "summary": hit.get("description").cloned().unwrap_or(serde_json::Value::Null),
             "score": hit.get("_distance").cloned().unwrap_or(serde_json::Value::Null),
         }));
+        if candidates.len() >= limit {
+            break;
+        }
+    }
+    candidates
+}
+
+async fn build_local_consult_expert_network_result_with_runtime(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::store::MemoryStore,
+    intent_query: &str,
+    limit: usize,
+    current_assistant_id: Option<&str>,
+) -> serde_json::Value {
+    let normalized_query = intent_query.trim();
+    if normalized_query.is_empty() {
+        return serde_json::json!({
+            "error": "intent_query is required",
+            "error_code": "ASSISTANT_CONSULT_EMPTY_QUERY",
+        });
     }
 
-    serde_json::json!({
-        "action": "consulted",
-        "scope": "request",
-        "format_version": LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-        "candidates": candidates,
-        "recommended_assistant_id": candidates
-            .first()
-            .and_then(|value| value.get("assistant_id"))
-            .cloned()
-            .unwrap_or(serde_json::Value::Null),
-        "reason": "Search expert assistants by intent and activate explicitly if needed.",
-    })
+    let enabled_assistant_ids = mcp_store
+        .list_enabled_local_assistant_ids()
+        .await
+        .unwrap_or_else(|_| HashSet::new());
+    let max_hits = limit.clamp(1, 8);
+    if enabled_assistant_ids.is_empty() {
+        return build_local_consult_response(
+            Vec::new(),
+            "No installed local assistants are enabled for expert consultation.",
+            "catalog_empty",
+        );
+    }
+
+    let current_assistant = current_assistant_id.unwrap_or("").trim();
+    let assistants = match mcp_store.list_local_assistants().await {
+        Ok(value) => value,
+        Err(err) => {
+            log::warn!("local assistant catalog unavailable for consult_expert_network: {}", err);
+            return build_local_consult_response(
+                Vec::new(),
+                "Local assistant catalog is unavailable, so expert consultation was skipped.",
+                "catalog_unavailable",
+            );
+        }
+    };
+    let assistant_assets = assistants
+        .into_iter()
+        .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
+        .filter(|assistant| assistant.id != current_assistant)
+        .map(|assistant| {
+            serde_json::json!({
+                "id": assistant.id,
+                "name": assistant.name,
+                "description": assistant.description.unwrap_or_default(),
+            })
+        })
+        .collect::<Vec<_>>();
+    if assistant_assets.is_empty() {
+        return build_local_consult_response(
+            Vec::new(),
+            "No alternative local assistants are available for expert consultation.",
+            "catalog_empty",
+        );
+    }
+
+    let fallback_reason = if let Ok(vector) = embedding_service.embed_text(normalized_query).await {
+        match memory_store.search_assets(vector, max_hits, Some("assistant")).await {
+            Ok(hits) => {
+                let candidates = build_local_consult_candidates_from_assets(
+                    hits,
+                    &enabled_assistant_ids,
+                    current_assistant,
+                    max_hits,
+                );
+                if !candidates.is_empty() {
+                    return build_local_consult_response(
+                        candidates,
+                        "Search expert assistants by intent and activate explicitly if needed.",
+                        "vector",
+                    );
+                }
+                "No vector-ranked assistant matched, so the local assistant catalog fallback was used."
+                    .to_string()
+            }
+            Err(err) => {
+                log::warn!(
+                    "local assistant vector search failed for consult_expert_network: {}",
+                    err
+                );
+                "Vector search was unavailable, so the local assistant catalog fallback was used."
+                    .to_string()
+            }
+        }
+    } else {
+        "Embedding lookup was unavailable, so the local assistant catalog fallback was used."
+            .to_string()
+    };
+
+    let lexical_hits = lexical_rank_asset_hits(
+        &normalized_query.to_lowercase(),
+        assistant_assets,
+        max_hits,
+    );
+    let candidates = build_local_consult_candidates_from_assets(
+        lexical_hits,
+        &enabled_assistant_ids,
+        current_assistant,
+        max_hits,
+    );
+    if candidates.is_empty() {
+        return build_local_consult_response(
+            Vec::new(),
+            "No matching local assistants were found for this request.",
+            "lexical",
+        );
+    }
+
+    build_local_consult_response(candidates, &fallback_reason, "lexical")
 }
 
 async fn resolve_local_skill_refs_to_tools(
@@ -2354,6 +2516,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
     chat_response: &serde_json::Value,
     chat_ctx: &LocalConversationChatContext,
     active_assistant: Option<&LocalAssistantActivationState>,
+    realtime_emitter: &mut LocalRealtimeToolTraceEmitter,
 ) -> (
     bool,
     Vec<serde_json::Value>,
@@ -2372,7 +2535,16 @@ async fn maybe_handle_local_code_mode_tool_calls(
 
     for call in tool_calls {
         let tool_name = call.name.trim().to_lowercase();
+        let call_id = call.id.clone().unwrap_or_default();
         if tool_name == "execute_code_plan" {
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({
+                "id": format!("{}-tool-call", call_id),
+                "type": "tool_call",
+                "callId": call.id,
+                "toolName": tool_name,
+                "status": "running",
+            })]);
             let code = call
                 .arguments
                 .get("code")
@@ -2404,6 +2576,17 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     "error_code": "CODE_MODE_APPROVAL_REQUIRED",
                     "error": error,
                 }));
+                realtime_emitter.emit_blocks(vec![serde_json::json!({
+                    "id": format!("{}-tool-result", call_id),
+                    "type": "tool_result",
+                    "callId": call.id,
+                    "toolName": tool_name,
+                    "status": "error",
+                    "result": {
+                        "error": error,
+                        "error_code": "CODE_MODE_APPROVAL_REQUIRED",
+                    },
+                })]);
                 results.push(format!("Code Execution Blocked [CODE_MODE_APPROVAL_REQUIRED]: {}", error));
                 continue;
             }
@@ -2421,35 +2604,52 @@ async fn maybe_handle_local_code_mode_tool_calls(
                             context: None,
                             max_calls: None,
                         },
+                        build_runtime_bridge_stream_target(realtime_emitter),
                     )
                     .await;
 
                 match execution_res {
                     Ok(res) => {
                         synthesized = true;
-                        tool_call_meta.push(serde_json::json!({
+                        let meta = serde_json::json!({
                             "id": call.id,
                             "name": tool_name,
                             "status": "success",
                             "result": res,
-                        }));
+                        });
+                        let mut streamed_blocks = Vec::new();
+                        append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                        realtime_emitter.emit_blocks(streamed_blocks);
+                        tool_call_meta.push(meta);
                         results.push(format!(
                             "Code Execution Result:\n{}",
                             res.result.join("\n")
                         ));
                     }
                     Err(err) => {
-                        tool_call_meta.push(serde_json::json!({
+                        let meta = serde_json::json!({
                             "id": call.id,
                             "name": tool_name,
                             "status": "error",
                             "error": err.to_string(),
-                        }));
+                        });
+                        let mut streamed_blocks = Vec::new();
+                        append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                        realtime_emitter.emit_blocks(streamed_blocks);
+                        tool_call_meta.push(meta);
                         results.push(format!("Code Execution Failed: {}", err));
                     }
                 }
             }
         } else if tool_name == "search_sdk" {
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({
+                "id": format!("{}-tool-call", call_id),
+                "type": "tool_call",
+                "callId": call.id,
+                "toolName": tool_name,
+                "status": "running",
+            })]);
             let query = call
                 .arguments
                 .get("query")
@@ -2457,18 +2657,30 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .unwrap_or("");
             let search_res = build_local_sdk_search_result(app_state, query).await;
             synthesized = true;
-            tool_call_meta.push(serde_json::json!({
+            let meta = serde_json::json!({
                 "id": call.id,
                 "name": tool_name,
                 "status": "success",
                 "result": search_res,
-            }));
+            });
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
             results.push(format!(
                 "SDK Search Result for '{}':\n{}",
                 query,
                 serde_json::to_string_pretty(&search_res).unwrap()
             ));
         } else if tool_name == "consult_expert_network" {
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({
+                "id": format!("{}-tool-call", call_id),
+                "type": "tool_call",
+                "callId": call.id,
+                "toolName": tool_name,
+                "status": "running",
+            })]);
             let intent_query = call
                 .arguments
                 .get("intent_query")
@@ -2488,18 +2700,30 @@ async fn maybe_handle_local_code_mode_tool_calls(
             )
             .await;
             synthesized = true;
-            tool_call_meta.push(serde_json::json!({
+            let meta = serde_json::json!({
                 "id": call.id,
                 "name": tool_name,
                 "status": "success",
                 "result": consult_res,
-            }));
+            });
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
             results.push(format!(
                 "Assistant Consult Result for '{}':\n{}",
                 intent_query,
                 serde_json::to_string_pretty(&consult_res).unwrap()
             ));
         } else if tool_name == "activate_assistant" {
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({
+                "id": format!("{}-tool-call", call_id),
+                "type": "tool_call",
+                "callId": call.id,
+                "toolName": tool_name,
+                "status": "running",
+            })]);
             let assistant_id = call
                 .arguments
                 .get("assistant_id")
@@ -2534,12 +2758,16 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         },
                     });
                     synthesized = true;
-                    tool_call_meta.push(serde_json::json!({
+                    let meta = serde_json::json!({
                         "id": call.id,
                         "name": tool_name,
                         "status": "success",
                         "result": result,
-                    }));
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
                     results.push(format!(
                         "Assistant '{}' activated for the current request.",
                         state.assistant_name
@@ -2547,18 +2775,30 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     assistant_update = Some(LocalAssistantActivationUpdate::Activate(state));
                 }
                 Err(err) => {
-                    tool_call_meta.push(serde_json::json!({
+                    let meta = serde_json::json!({
                         "id": call.id,
                         "name": tool_name,
                         "status": "error",
                         "error_code": "ASSISTANT_ACTIVATION_FAILED",
                         "error": err,
-                    }));
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
                     results.push(format!("Assistant activation failed: {}", err));
                     synthesized = true;
                 }
             }
         } else if tool_name == "deactivate_assistant" {
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({
+                "id": format!("{}-tool-call", call_id),
+                "type": "tool_call",
+                "callId": call.id,
+                "toolName": tool_name,
+                "status": "running",
+            })]);
             let reason = call
                 .arguments
                 .get("reason")
@@ -2579,18 +2819,30 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 },
             });
             synthesized = true;
-            tool_call_meta.push(serde_json::json!({
+            let meta = serde_json::json!({
                 "id": call.id,
                 "name": tool_name,
                 "status": "success",
                 "result": result,
-            }));
+            });
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
             results.push("Assistant deactivated for the current request.".to_string());
             assistant_update = Some(LocalAssistantActivationUpdate::Deactivate {
                 assistant_id: active_assistant.map(|value| value.assistant_id.clone()),
                 assistant_name: active_assistant.map(|value| value.assistant_name.clone()),
             });
         } else if tool_name == "sys_submit_onboarding_request" {
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({
+                "id": format!("{}-tool-call", call_id),
+                "type": "tool_call",
+                "callId": call.id,
+                "toolName": tool_name,
+                "status": "running",
+            })]);
             let asset_type = call
                 .arguments
                 .get("asset_type")
@@ -2609,21 +2861,29 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     match app_state.mcp.store.create_local_assistant(req).await {
                         Ok(id) => {
                             synthesized = true;
-                            tool_call_meta.push(serde_json::json!({
+                            let meta = serde_json::json!({
                                 "id": call.id,
                                 "name": tool_name,
                                 "status": "success",
                                 "result": {"action": "created", "id": id},
-                            }));
+                            });
+                            let mut streamed_blocks = Vec::new();
+                            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                            realtime_emitter.emit_blocks(streamed_blocks);
+                            tool_call_meta.push(meta);
                             results.push(format!("Assistant created successfully with ID: {}", id));
                         }
                         Err(err) => {
-                            tool_call_meta.push(serde_json::json!({
+                            let meta = serde_json::json!({
                                 "id": call.id,
                                 "name": tool_name,
                                 "status": "error",
                                 "error": err.to_string(),
-                            }));
+                            });
+                            let mut streamed_blocks = Vec::new();
+                            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                            realtime_emitter.emit_blocks(streamed_blocks);
+                            tool_call_meta.push(meta);
                         }
                     }
                 }
@@ -2631,12 +2891,16 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 match install_local_skill_from_onboarding_request(app, app_state, &payload).await {
                     Ok(result) => {
                         synthesized = true;
-                        tool_call_meta.push(serde_json::json!({
+                        let meta = serde_json::json!({
                             "id": call.id,
                             "name": tool_name,
                             "status": "success",
                             "result": result,
-                        }));
+                        });
+                        let mut streamed_blocks = Vec::new();
+                        append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                        realtime_emitter.emit_blocks(streamed_blocks);
+                        tool_call_meta.push(meta);
                         results.push(format!(
                             "Skill onboarding request executed:\n{}",
                             serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
@@ -2644,12 +2908,16 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     }
                     Err(err) => {
                         synthesized = true;
-                        tool_call_meta.push(serde_json::json!({
+                        let meta = serde_json::json!({
                             "id": call.id,
                             "name": tool_name,
                             "status": "error",
                             "error": err,
-                        }));
+                        });
+                        let mut streamed_blocks = Vec::new();
+                        append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                        realtime_emitter.emit_blocks(streamed_blocks);
+                        tool_call_meta.push(meta);
                         results.push(format!("Skill onboarding failed: {}", err));
                     }
                 }
@@ -2660,11 +2928,23 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 "tool '{}' is not installed or enabled in local desktop runtime",
                 tool_name
             );
-            tool_call_meta.push(build_local_tool_call_install_gate_error_meta(
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({
+                "id": format!("{}-tool-call", call_id),
+                "type": "tool_call",
+                "callId": call.id,
+                "toolName": tool_name,
+                "status": "running",
+            })]);
+            let meta = build_local_tool_call_install_gate_error_meta(
                 call.id.as_deref(),
                 &tool_name,
                 &error,
-            ));
+            );
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
             results.push(format!(
                 "Tool call '{}' failed [{}]: {}",
                 tool_name, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE, error
@@ -2826,17 +3106,103 @@ enum LocalAssistantActivationUpdate {
     },
 }
 
+struct LocalRealtimeToolTraceEmitter {
+    tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    trace_id: Option<String>,
+    request_id: Option<String>,
+    emitted_execution_section: bool,
+    emitted_any: bool,
+}
+
+impl LocalRealtimeToolTraceEmitter {
+    fn new(
+        tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+        trace_id: Option<&str>,
+        request_id: Option<&str>,
+    ) -> Self {
+        Self {
+            tx,
+            trace_id: trace_id
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            request_id: request_id
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            emitted_execution_section: false,
+            emitted_any: false,
+        }
+    }
+
+    fn emit_execution_section_once(&mut self) {
+        if self.emitted_execution_section {
+            return;
+        }
+        self.emitted_execution_section = true;
+        self.emit_blocks(vec![serde_json::json!({
+            "type": "execution_section",
+            "title": "Local Tool Actions"
+        })]);
+    }
+
+    fn emit_blocks(&mut self, blocks: Vec<serde_json::Value>) {
+        if blocks.is_empty() {
+            return;
+        }
+        let Some(tx) = &self.tx else {
+            return;
+        };
+        let mut payload = serde_json::json!({
+            "type": "blocks",
+            "blocks": blocks,
+        });
+        if let Some(object) = payload.as_object_mut() {
+            if let Some(trace_id) = self.trace_id.as_ref() {
+                object.insert("trace_id".to_string(), serde_json::json!(trace_id));
+            }
+            if let Some(request_id) = self.request_id.as_ref() {
+                object.insert("request_id".to_string(), serde_json::json!(request_id));
+            }
+        }
+        if let Ok(serialized) = serde_json::to_string(&payload) {
+            let _ = tx.send(serialized);
+            self.emitted_any = true;
+        }
+    }
+}
+
+fn build_runtime_bridge_stream_target(
+    realtime_emitter: &LocalRealtimeToolTraceEmitter,
+) -> Option<crate::modules::code_mode::bridge::RuntimeBridgeStreamTarget> {
+    let tx = realtime_emitter.tx.as_ref()?.clone();
+    Some(crate::modules::code_mode::bridge::RuntimeBridgeStreamTarget {
+        tx,
+        trace_id: realtime_emitter.trace_id.clone(),
+        request_id: realtime_emitter.request_id.clone(),
+    })
+}
+
 async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> serde_json::Value {
+    build_local_sdk_search_result_with_runtime(
+        app_state.mcp.store.as_ref(),
+        &app_state.providers.embedding,
+        app_state.memory.store.as_ref(),
+        query,
+    )
+    .await
+}
+
+async fn build_local_sdk_search_result_with_runtime(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::store::MemoryStore,
+    query: &str,
+) -> serde_json::Value {
     let normalized = query.trim().to_lowercase();
-    let enabled_assistant_ids = app_state
-        .mcp
-        .store
+    let enabled_assistant_ids = mcp_store
         .list_enabled_local_assistant_ids()
         .await
         .unwrap_or_else(|_| HashSet::new());
-    let enabled_skill_ids = app_state
-        .mcp
-        .store
+    let enabled_skill_ids = mcp_store
         .list_enabled_local_skill_ids()
         .await
         .unwrap_or_else(|_| HashSet::new());
@@ -2877,60 +3243,68 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
 
     // Single Path Local Discovery via Unified Assets
     if !normalized.is_empty() {
-        if let Ok(vector) = app_state.providers.embedding.embed_text(&normalized).await {
-            if let Ok(asset_hits) = app_state.memory.store.search_assets(vector, 15, None).await {
-                for hit in asset_hits {
-                    let source_type = hit
-                        .get("source_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    let asset_type = hit
-                        .get("asset_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    let name = hit["name"].as_str().unwrap_or("").to_string();
-                    let desc = hit["description"].as_str().unwrap_or("").to_string();
-                    let pkg_name = hit.get("pkg_name").and_then(|v| v.as_str());
-                    let asset_id = hit["id"].as_str().unwrap_or("").trim();
-                    let is_enabled_installed = if asset_type == "assistant" {
-                        !asset_id.is_empty() && enabled_assistant_ids.contains(asset_id)
-                    } else if asset_type == "tool" {
-                        pkg_name
-                            .map(|pkg| enabled_skill_ids.contains(pkg.trim()))
-                            .unwrap_or(true)
-                    } else {
-                        true
-                    };
-
-                    let item = serde_json::json!({
-                        "name": name,
-                        "description": desc,
-                        "source": format!("local_{}", source_type),
-                        "pkg_name": pkg_name,
-                        "score": hit.get("_distance"),
-                        "needs_provisioning": source_type == "cloud_mirror",
-                        "asset_type": hit.get("asset_type"),
-                        "callable": source_type != "cloud_mirror" && is_enabled_installed,
-                        "assistant_id": if asset_type == "assistant" { Some(asset_id) } else { None::<&str> },
-                    });
-
-                    if source_type == "cloud_mirror" {
-                        install_hints.push(item);
-                        continue;
-                    }
-
-                    if !is_enabled_installed {
-                        if asset_type == "assistant" {
-                            assistant_install_filtered_count += 1;
-                        } else if asset_type == "tool" {
-                            skill_install_filtered_count += 1;
-                        }
-                        continue;
-                    }
-
-                    catalog.push(item);
-                }
+        let mut asset_hits = Vec::new();
+        if let Ok(vector) = embedding_service.embed_text(&normalized).await {
+            if let Ok(hits) = memory_store.search_assets(vector, 15, None).await {
+                asset_hits = hits;
             }
+        }
+        if asset_hits.is_empty() {
+            if let Ok(all_assets) = memory_store.list_assets_catalog().await {
+                asset_hits = lexical_rank_asset_hits(&normalized, all_assets, 15);
+            }
+        }
+
+        for hit in asset_hits {
+            let source_type = hit
+                .get("source_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let asset_type = hit
+                .get("asset_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let name = hit["name"].as_str().unwrap_or("").to_string();
+            let desc = hit["description"].as_str().unwrap_or("").to_string();
+            let pkg_name = hit.get("pkg_name").and_then(|v| v.as_str());
+            let asset_id = hit["id"].as_str().unwrap_or("").trim();
+            let is_enabled_installed = if asset_type == "assistant" {
+                !asset_id.is_empty() && enabled_assistant_ids.contains(asset_id)
+            } else if asset_type == "tool" {
+                pkg_name
+                    .map(|pkg| enabled_skill_ids.contains(pkg.trim()))
+                    .unwrap_or(true)
+            } else {
+                true
+            };
+
+            let item = serde_json::json!({
+                "name": name,
+                "description": desc,
+                "source": format!("local_{}", source_type),
+                "pkg_name": pkg_name,
+                "score": hit.get("_distance"),
+                "needs_provisioning": source_type == "cloud_mirror",
+                "asset_type": hit.get("asset_type"),
+                "callable": source_type != "cloud_mirror" && is_enabled_installed,
+                "assistant_id": if asset_type == "assistant" { Some(asset_id) } else { None::<&str> },
+            });
+
+            if source_type == "cloud_mirror" {
+                install_hints.push(item);
+                continue;
+            }
+
+            if !is_enabled_installed {
+                if asset_type == "assistant" {
+                    assistant_install_filtered_count += 1;
+                } else if asset_type == "tool" {
+                    skill_install_filtered_count += 1;
+                }
+                continue;
+            }
+
+            catalog.push(item);
         }
     }
 
@@ -2982,6 +3356,103 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
             "filtered_out_count": skill_install_filtered_count,
         }
     })
+}
+
+fn lexical_rank_asset_hits(
+    normalized_query: &str,
+    assets: Vec<serde_json::Value>,
+    limit: usize,
+) -> Vec<serde_json::Value> {
+    let mut ranked = assets
+        .into_iter()
+        .filter_map(|mut item| {
+            let score = lexical_asset_match_score(normalized_query, &item)?;
+            if let Some(object) = item.as_object_mut() {
+                object.insert("_distance".to_string(), serde_json::json!(score));
+            }
+            Some(item)
+        })
+        .collect::<Vec<_>>();
+
+    ranked.sort_by(|left, right| {
+        let lhs = left
+            .get("_distance")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(f64::NEG_INFINITY);
+        let rhs = right
+            .get("_distance")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(f64::NEG_INFINITY);
+        rhs.partial_cmp(&lhs).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if ranked.len() > limit {
+        ranked.truncate(limit);
+    }
+    ranked
+}
+
+fn lexical_asset_match_score(normalized_query: &str, item: &serde_json::Value) -> Option<f64> {
+    if normalized_query.trim().is_empty() {
+        return None;
+    }
+    let name = item
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let description = item
+        .get("description")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let haystack = format!("{name}\n{description}");
+    if haystack.trim().is_empty() {
+        return None;
+    }
+    if name.contains(normalized_query) {
+        return Some(1000.0);
+    }
+    if description.contains(normalized_query) {
+        return Some(900.0);
+    }
+
+    let overlap = lexical_units(normalized_query)
+        .into_iter()
+        .filter(|unit| !unit.is_empty() && haystack.contains(unit))
+        .count();
+    if overlap == 0 {
+        return None;
+    }
+
+    let prefix_bonus = if name.starts_with(normalized_query) || description.starts_with(normalized_query)
+    {
+        100.0
+    } else {
+        0.0
+    };
+    Some(prefix_bonus + overlap as f64)
+}
+
+fn lexical_units(input: &str) -> Vec<String> {
+    let mut units = Vec::new();
+    let mut ascii_buffer = String::new();
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            ascii_buffer.push(ch);
+            continue;
+        }
+        if !ascii_buffer.is_empty() {
+            units.push(ascii_buffer.clone());
+            ascii_buffer.clear();
+        }
+        if !ch.is_whitespace() {
+            units.push(ch.to_string());
+        }
+    }
+    if !ascii_buffer.is_empty() {
+        units.push(ascii_buffer);
+    }
+    units
 }
 
 fn derive_skill_name_from_repo_url(repo_url: &str) -> String {

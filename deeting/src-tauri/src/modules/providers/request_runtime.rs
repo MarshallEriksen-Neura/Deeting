@@ -1084,8 +1084,6 @@ mod tests {
             icon: None,
             priority: 0,
             meta,
-            template_engine: None,
-            response_transform: None,
             is_enabled: true,
             is_local: true,
             credential_source: "local".to_string(),

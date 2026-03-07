@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{extract::State as AxumState, routing::get, Json, Router};
+    use axum::{extract::State as AxumState, routing::{get, post}, Json, Router};
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::time::Duration;
     use tokio::net::TcpListener;
     use tokio::sync::RwLock;
 
@@ -25,6 +26,226 @@ mod tests {
             .await
             .expect("ensure local source");
         store
+    }
+
+    async fn create_test_memory_state(
+        test_name: &str,
+        vector_dim: i32,
+    ) -> crate::modules::memory::MemoryState {
+        let mut lancedb_path = std::env::temp_dir();
+        lancedb_path.push(format!(
+            "deeting-tauri-lancedb-{test_name}-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&lancedb_path).expect("create lancedb dir");
+        let lancedb_uri = lancedb_path.to_string_lossy().replace('\\', "/");
+        let state = crate::modules::memory::MemoryState::new(&lancedb_uri)
+            .await
+            .expect("create test memory state");
+        state
+            .store
+            .recreate_local_asset_table(vector_dim)
+            .await
+            .expect("recreate local asset table");
+        state
+    }
+
+    async fn insert_embedding_instance(
+        store: &crate::modules::providers::store::ProviderStore,
+        base_url: &str,
+    ) -> String {
+        let instance_id = Uuid::new_v4().to_string();
+        let credential_id = Uuid::new_v4().to_string();
+        let now = crate::modules::providers::store::utils::now_rfc3339().expect("time");
+        let meta = serde_json::json!({
+            "protocol": "openai",
+            "auto_append_v1": true,
+        })
+        .to_string();
+        sqlx::query(
+            "INSERT INTO provider_instances (
+                id, preset_slug, name, base_url, description, icon, priority, meta,
+                is_enabled, is_local, credentials_ref, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&instance_id)
+        .bind("openai")
+        .bind("Mock Embedding Provider")
+        .bind(base_url)
+        .bind::<Option<&str>>(None)
+        .bind::<Option<&str>>(None)
+        .bind(0_i64)
+        .bind(&meta)
+        .bind(1_i64)
+        .bind(1_i64)
+        .bind(format!("db:{credential_id}"))
+        .bind(&now)
+        .bind(&now)
+        .execute(&store.pool)
+        .await
+        .expect("insert embedding instance");
+
+        sqlx::query(
+            "INSERT INTO provider_credentials (id, instance_id, alias, secret_key, created_at)
+             VALUES (?, ?, 'default', 'test-secret', ?)",
+        )
+        .bind(&credential_id)
+        .bind(&instance_id)
+        .bind(&now)
+        .execute(&store.pool)
+        .await
+        .expect("insert embedding credential");
+
+        instance_id
+    }
+
+    async fn create_test_provider_state(
+        test_name: &str,
+        base_url: &str,
+    ) -> crate::modules::providers::ProviderState {
+        let mut db_path = std::env::temp_dir();
+        db_path.push(format!(
+            "deeting-tauri-provider-{test_name}-{}.db",
+            Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
+        let state = crate::modules::providers::ProviderState::new(&database_url)
+            .await
+            .expect("create test provider state");
+        let instance_id = insert_embedding_instance(state.store.as_ref(), base_url).await;
+        state
+            .store
+            .quick_add_models(&instance_id, vec!["text-embedding-3-small".to_string()], None)
+            .await
+            .expect("quick add embedding model");
+        let models = state
+            .store
+            .list_models(Some(instance_id), None)
+            .await
+            .expect("list provider models");
+        let embedding_model = models
+            .into_iter()
+            .find(|model| model.model_id == "text-embedding-3-small")
+            .expect("embedding model");
+        let _ = state
+            .store
+            .get_or_create_user_embedding_config()
+            .await
+            .expect("init embedding config");
+        state
+            .store
+            .update_user_embedding_config(
+                crate::modules::providers::types::UserEmbeddingConfigUpdateRequest {
+                    provider_model_id: Some(Some(embedding_model.id.to_string())),
+                },
+            )
+            .await
+            .expect("set embedding model");
+        state
+    }
+
+    #[derive(Clone)]
+    struct MockEmbeddingServerState {
+        vectors: HashMap<String, Vec<f32>>,
+    }
+
+    async fn mock_embedding_handler(
+        AxumState(state): AxumState<MockEmbeddingServerState>,
+        Json(payload): Json<serde_json::Value>,
+    ) -> Json<serde_json::Value> {
+        let input = payload
+            .get("input")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+        let embedding = state
+            .vectors
+            .get(&input)
+            .cloned()
+            .unwrap_or_else(|| vec![0.0, 0.0, 0.0]);
+        Json(serde_json::json!({
+            "data": [
+                {
+                    "embedding": embedding,
+                }
+            ]
+        }))
+    }
+
+    async fn start_mock_embedding_server(
+        vectors: HashMap<String, Vec<f32>>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock embedding listener");
+        let addr = listener
+            .local_addr()
+            .expect("read mock embedding listener addr");
+        let app = Router::new()
+            .route("/embeddings", post(mock_embedding_handler))
+            .route("/v1/embeddings", post(mock_embedding_handler))
+            .with_state(MockEmbeddingServerState { vectors });
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        (format!("http://{}", addr), server)
+    }
+
+    async fn start_failing_embedding_server() -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind failing embedding listener");
+        let addr = listener
+            .local_addr()
+            .expect("read failing embedding listener addr");
+        let app = Router::new();
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        (format!("http://{}", addr), server)
+    }
+
+    async fn seed_cloud_assistant_for_consult(
+        store: &crate::modules::mcp::store::McpStore,
+        assistant_id: &str,
+        name: &str,
+        description: &str,
+    ) {
+        store
+            .sync_cloud_system_assistants(&[CloudSystemAssistantSnapshot {
+                assistant_id: assistant_id.to_string(),
+                icon_id: None,
+                share_slug: None,
+                summary: Some(description.to_string()),
+                published_at: None,
+                install_count: 0,
+                rating_avg: 0.0,
+                rating_count: 0,
+                version: CloudSystemAssistantVersionSnapshot {
+                    id: format!("{assistant_id}-v1"),
+                    version: "1.0.0".to_string(),
+                    name: name.to_string(),
+                    description: Some(description.to_string()),
+                    system_prompt: Some("You are a helpful specialist.".to_string()),
+                    tags: vec!["weather".to_string(), "天气".to_string()],
+                    published_at: None,
+                },
+            }])
+            .await
+            .expect("sync cloud assistant");
+        store
+            .install_local_assistant(
+                assistant_id,
+                LocalAssistantInstallCreateRequest {
+                    follow_latest: Some(true),
+                    pinned_version_id: None,
+                },
+            )
+            .await
+            .expect("install local assistant");
     }
 
     async fn upsert_test_tool(
@@ -172,6 +393,241 @@ mod tests {
         assert!(names.contains(&"activate_assistant"));
         assert!(names.contains(&"deactivate_assistant"));
         assert!(names.contains(&"execute_code_plan"));
+    }
+
+    #[tokio::test]
+    async fn search_sdk_smoke_returns_callable_tool_for_matching_query() {
+        let query = "帮我抓取网页并提取标题";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![1.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-smoke-tool", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-smoke-tool", 3).await;
+        let store = create_test_store("sdk-smoke-tool").await;
+
+        store
+            .upsert_local_skill_install_state(
+                "skill.web-tools",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.web-tools\"}",
+                "/tmp/skill.web-tools",
+                None,
+            )
+            .await
+            .expect("enable local skill");
+        memory_state
+            .store
+            .upsert_asset(
+                "tool.search_web".to_string(),
+                "search_web".to_string(),
+                "抓取网页内容并提取标题".to_string(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                Some("skill.web-tools".to_string()),
+                vec![1.0, 0.0, 0.0],
+                None,
+            )
+            .await
+            .expect("insert tool asset");
+
+        let result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.store.as_ref(),
+            query,
+        )
+        .await;
+
+        let tools = result["tools"].as_array().expect("tools array");
+        let matched = tools
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("search_web"))
+            .expect("matched tool");
+        assert_eq!(result["format_version"], serde_json::json!("sdk_toolcard.v2"));
+        assert_eq!(matched["source"], serde_json::json!("local_mcp"));
+        assert_eq!(matched["callable"], serde_json::json!(true));
+        assert_eq!(matched["pkg_name"], serde_json::json!("skill.web-tools"));
+        assert_eq!(result["skill_install_gate"]["filtered_out_count"], serde_json::json!(0));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_smoke_surfaces_cloud_skill_as_install_hint() {
+        let query = "帮我找个天气 skill";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 1.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-smoke-skill", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-smoke-skill", 3).await;
+        let store = create_test_store("sdk-smoke-skill").await;
+
+        memory_state
+            .store
+            .upsert_asset(
+                "skill.weather".to_string(),
+                "Weather Skill".to_string(),
+                "查询天气预报与降雨提醒".to_string(),
+                "skill".to_string(),
+                "cloud_mirror".to_string(),
+                None,
+                vec![0.0, 1.0, 0.0],
+                Some(serde_json::json!({"id": "skill.weather"})),
+            )
+            .await
+            .expect("insert cloud skill asset");
+
+        let result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.store.as_ref(),
+            query,
+        )
+        .await;
+
+        let install_hints = result["install_hints"]
+            .as_array()
+            .expect("install hints array");
+        let hint = install_hints
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("Weather Skill"))
+            .expect("weather skill hint");
+        assert_eq!(hint["needs_provisioning"], serde_json::json!(true));
+        assert_eq!(hint["callable"], serde_json::json!(false));
+        assert_eq!(hint["asset_type"], serde_json::json!("skill"));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_smoke_filters_disabled_local_skill_tool() {
+        let query = "帮我查股票行情";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 0.0, 1.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-smoke-disabled", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-smoke-disabled", 3).await;
+        let store = create_test_store("sdk-smoke-disabled").await;
+
+        store
+            .upsert_local_skill_install_state(
+                "skill.stocks",
+                Some("1.0.0"),
+                false,
+                Some("python"),
+                "{\"id\":\"skill.stocks\"}",
+                "/tmp/skill.stocks",
+                None,
+            )
+            .await
+            .expect("insert disabled local skill");
+        memory_state
+            .store
+            .upsert_asset(
+                "tool.stock_quotes".to_string(),
+                "stock_quotes".to_string(),
+                "查询股票实时行情".to_string(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                Some("skill.stocks".to_string()),
+                vec![0.0, 0.0, 1.0],
+                None,
+            )
+            .await
+            .expect("insert disabled tool asset");
+
+        let result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.store.as_ref(),
+            query,
+        )
+        .await;
+
+        let tools = result["tools"].as_array().expect("tools array");
+        assert!(tools
+            .iter()
+            .all(|item| item["name"] != serde_json::json!("stock_quotes")));
+        assert_eq!(result["skill_install_gate"]["filtered_out_count"], serde_json::json!(1));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn consult_expert_network_skips_embedding_when_no_local_assistants_are_enabled() {
+        let query = "天气查询";
+        let (base_url, server_handle) = start_failing_embedding_server().await;
+        let provider_state = create_test_provider_state("consult-empty", &base_url).await;
+        let memory_state = create_test_memory_state("consult-empty", 3).await;
+        let store = create_test_store("consult-empty").await;
+
+        let result = build_local_consult_expert_network_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.store.as_ref(),
+            query,
+            3,
+            None,
+        )
+        .await;
+
+        assert_eq!(result["action"], serde_json::json!("consulted"));
+        assert_eq!(result["search_mode"], serde_json::json!("catalog_empty"));
+        assert_eq!(result["candidates"], serde_json::json!([]));
+        assert_eq!(result["recommended_assistant_id"], serde_json::Value::Null);
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn consult_expert_network_falls_back_to_lexical_catalog_when_embedding_is_unavailable() {
+        let query = "天气查询";
+        let (base_url, server_handle) = start_failing_embedding_server().await;
+        let provider_state = create_test_provider_state("consult-lexical", &base_url).await;
+        let memory_state = create_test_memory_state("consult-lexical", 3).await;
+        let store = create_test_store("consult-lexical").await;
+
+        seed_cloud_assistant_for_consult(
+            &store,
+            "assistant.weather",
+            "Weather Expert",
+            "查询天气预报与天气趋势",
+        )
+        .await;
+
+        let result = build_local_consult_expert_network_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.store.as_ref(),
+            query,
+            3,
+            None,
+        )
+        .await;
+
+        let candidates = result["candidates"].as_array().expect("candidates array");
+        assert_eq!(result["action"], serde_json::json!("consulted"));
+        assert_eq!(result["search_mode"], serde_json::json!("lexical"));
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0]["assistant_id"],
+            serde_json::json!("assistant.weather")
+        );
+        assert_eq!(candidates[0]["name"], serde_json::json!("Weather Expert"));
+        assert_eq!(
+            result["recommended_assistant_id"],
+            serde_json::json!("assistant.weather")
+        );
+
+        server_handle.abort();
     }
 
     #[test]
@@ -642,7 +1098,7 @@ mod tests {
                 cursor: None,
                 size: Some(10),
                 assistant_id: None,
-                status: Some("active".to_string()),
+                status: Some(LocalConversationStatus::Active),
             })
             .await
             .expect("list conversations");
@@ -856,14 +1312,16 @@ mod tests {
             1usize
         });
 
-        register_local_chat_task_abort_handle(
-            &local_chat_tasks,
-            "req-cancel-1",
-            task.abort_handle(),
-        )
-        .await;
+        {
+            let mut tasks = local_chat_tasks.write().await;
+            tasks.insert("req-cancel-1".to_string(), task.abort_handle());
+        }
 
-        let canceled = abort_local_chat_task_by_request_id(&local_chat_tasks, "req-cancel-1").await;
+        let removed = local_chat_tasks.write().await.remove("req-cancel-1");
+        let canceled = removed.is_some();
+        if let Some(abort_handle) = removed {
+            abort_handle.abort();
+        }
         assert!(canceled);
         assert!(local_chat_tasks.read().await.is_empty());
 
@@ -876,7 +1334,11 @@ mod tests {
     #[tokio::test]
     async fn abort_local_chat_task_by_request_id_returns_false_when_missing() {
         let local_chat_tasks = RwLock::new(HashMap::<String, tokio::task::AbortHandle>::new());
-        let canceled = abort_local_chat_task_by_request_id(&local_chat_tasks, "req-missing").await;
+        let canceled = local_chat_tasks
+            .write()
+            .await
+            .remove("req-missing")
+            .is_some();
         assert!(!canceled);
     }
 
