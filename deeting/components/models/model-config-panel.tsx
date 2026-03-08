@@ -14,6 +14,38 @@ import type { ProviderModel, ModelCapability } from "./types"
 import { CAPABILITY_META } from "./types"
 import type { ProviderModelUpdate } from "@/lib/api/providers"
 
+const CHAT_COMPLETIONS_PATH = "chat/completions"
+const RESPONSES_PATH = "responses"
+
+type RequestMode = "chat_completions" | "responses" | "custom"
+
+function normalizeUpstreamPath(value?: string | null) {
+  return String(value || "").trim().replace(/^\/+/, "")
+}
+
+function detectRequestMode(value?: string | null): RequestMode {
+  const path = normalizeUpstreamPath(value).toLowerCase()
+  if (!path || path === CHAT_COMPLETIONS_PATH) return "chat_completions"
+  if (path === RESPONSES_PATH) return "responses"
+  return "custom"
+}
+
+function inferRequestBase(requestUrl?: string | null, upstreamPath?: string | null) {
+  const url = String(requestUrl || "").trim()
+  if (!url) return ""
+  const normalizedPath = normalizeUpstreamPath(upstreamPath)
+  if (normalizedPath && url.endsWith(`/${normalizedPath}`)) {
+    return url.slice(0, -(normalizedPath.length + 1))
+  }
+  if (url.endsWith(`/${CHAT_COMPLETIONS_PATH}`)) {
+    return url.slice(0, -(CHAT_COMPLETIONS_PATH.length + 1))
+  }
+  if (url.endsWith(`/${RESPONSES_PATH}`)) {
+    return url.slice(0, -(RESPONSES_PATH.length + 1))
+  }
+  return url
+}
+
 interface NumberInputProps {
   label: string
   value: string
@@ -97,6 +129,9 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
   const [displayName, setDisplayName] = React.useState(model.display_name || "")
   const [unifiedModelId, setUnifiedModelId] = React.useState(model.unified_model_id || model.id)
   const [upstreamPath, setUpstreamPath] = React.useState(model.upstream_path || "")
+  const [requestMode, setRequestMode] = React.useState<RequestMode>(
+    detectRequestMode(model.upstream_path)
+  )
   const [weight, setWeight] = React.useState(model.weight?.toString() || "")
   const [priority, setPriority] = React.useState(model.priority?.toString() || "")
   const [inputPrice, setInputPrice] = React.useState(model.pricing.input?.toString() || "")
@@ -156,6 +191,33 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     if (!initialSnapshot.current) return false
     return JSON.stringify(snapshot()) !== JSON.stringify(initialSnapshot.current)
   }, [snapshot])
+
+  const requestBase = React.useMemo(
+    () => inferRequestBase(model.request_url, model.upstream_path),
+    [model.request_url, model.upstream_path]
+  )
+
+  const requestUrlPreview = React.useMemo(() => {
+    if (!requestBase) return model.request_url || ""
+    const path = normalizeUpstreamPath(upstreamPath)
+    return path ? `${requestBase}/${path}` : requestBase
+  }, [model.request_url, requestBase, upstreamPath])
+
+  const handleUpstreamPathChange = React.useCallback((value: string) => {
+    setUpstreamPath(value)
+    setRequestMode(detectRequestMode(value))
+  }, [])
+
+  const applyRequestMode = React.useCallback((mode: RequestMode) => {
+    setRequestMode(mode)
+    if (mode === "chat_completions") {
+      setUpstreamPath(CHAT_COMPLETIONS_PATH)
+      return
+    }
+    if (mode === "responses") {
+      setUpstreamPath(RESPONSES_PATH)
+    }
+  }, [])
 
   const buildPayload = React.useCallback((): ProviderModelUpdate => {
     const payload: ProviderModelUpdate = {}
@@ -266,6 +328,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     setDisplayName(initial.displayName)
     setUnifiedModelId(initial.unifiedModelId)
     setUpstreamPath(initial.upstreamPath)
+    setRequestMode(detectRequestMode(initial.upstreamPath))
     setWeight(initial.weight)
     setPriority(initial.priority)
     setInputPrice(initial.inputPrice)
@@ -301,16 +364,46 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
               onChange={setUnifiedModelId}
               placeholder={model.unified_model_id || model.id}
             />
+            {capabilities.includes("chat") ? (
+              <div className="space-y-1.5 md:col-span-2">
+                <Label className="text-xs text-[var(--muted)]">{t("basic.requestMode")}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: "chat_completions" as const, label: t("basic.requestModes.chatCompletions") },
+                    { id: "responses" as const, label: t("basic.requestModes.responses") },
+                    { id: "custom" as const, label: t("basic.requestModes.custom") },
+                  ].map((option) => {
+                    const active = requestMode === option.id
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => applyRequestMode(option.id)}
+                        className={cn(
+                          "h-9 rounded-md border px-3 text-xs transition-colors",
+                          active
+                            ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--foreground)]"
+                            : "border-white/10 bg-white/5 text-[var(--muted)] hover:bg-white/10"
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-[var(--muted)]">{t("basic.requestModeHint")}</p>
+              </div>
+            ) : null}
             <TextInput
               label={t("basic.upstreamPath")}
               value={upstreamPath}
-              onChange={setUpstreamPath}
+              onChange={handleUpstreamPathChange}
               placeholder={t("basic.upstreamPathPlaceholder")}
             />
             <ReadonlyInput
               label={t("basic.requestUrl")}
-              value={model.request_url || ""}
-              placeholder={model.request_url ? undefined : "-"}
+              value={requestUrlPreview}
+              placeholder={requestUrlPreview ? undefined : "-"}
             />
             <NumberInput
               label={t("basic.weight")}

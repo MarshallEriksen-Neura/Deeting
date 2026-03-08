@@ -7,8 +7,8 @@ import { BalanceReactorCard } from "./components/balance-reactor-card"
 import { MembershipPlanCard } from "./components/membership-plan-card"
 import { ModelUsageChart } from "./components/model-usage-chart"
 import { ConsumptionTrendChart } from "./components/consumption-trend-chart"
+import { CreditsAuditTabs } from "./components/credits-audit-tabs"
 import { QuickActionsCard } from "./components/quick-actions-card"
-import { TransactionStream } from "./components/transaction-stream"
 
 export default async function CreditsPage({
   params,
@@ -75,8 +75,8 @@ function CreditsContent() {
         </div>
       </div>
 
-      {/* Transaction Stream - Full width */}
-      <TransactionStream />
+      {/* Audit Views - Full width */}
+      <CreditsAuditTabs />
     </Container>
   )
 }

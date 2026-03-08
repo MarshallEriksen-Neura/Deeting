@@ -40,6 +40,92 @@ async fn insert_instance(store: &ProviderStore) -> String {
 }
 
 #[tokio::test]
+async fn create_instance_persists_protocol_meta_fields() {
+    let store = init_store().await;
+
+    let instance = store
+        .create_instance(crate::modules::providers::types::CreateInstanceRequest {
+            preset_slug: "openai".to_string(),
+            name: "Anthropic Instance".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            description: None,
+            icon: None,
+            priority: Some(0),
+            protocol: Some("anthropic".to_string()),
+            model_prefix: None,
+            auto_append_v1: Some(false),
+            resource_name: None,
+            deployment_name: None,
+            api_version: None,
+            project_id: None,
+            region: None,
+            is_local: Some(false),
+            credential_source: Some("local".to_string()),
+            secret_key: None,
+        })
+        .await
+        .expect("create instance");
+
+    assert_eq!(instance.meta["protocol"], json!("anthropic"));
+    assert_eq!(instance.meta["auto_append_v1"], json!(false));
+}
+
+#[tokio::test]
+async fn update_instance_persists_protocol_meta_fields() {
+    let store = init_store().await;
+    let created = store
+        .create_instance(crate::modules::providers::types::CreateInstanceRequest {
+            preset_slug: "openai".to_string(),
+            name: "Editable Instance".to_string(),
+            base_url: "https://api.example.com".to_string(),
+            description: None,
+            icon: None,
+            priority: Some(0),
+            protocol: Some("openai".to_string()),
+            model_prefix: None,
+            auto_append_v1: Some(true),
+            resource_name: None,
+            deployment_name: None,
+            api_version: None,
+            project_id: None,
+            region: None,
+            is_local: Some(false),
+            credential_source: Some("local".to_string()),
+            secret_key: None,
+        })
+        .await
+        .expect("create instance");
+
+    let updated = store
+        .update_instance(
+            &created.id.to_string(),
+            crate::modules::providers::types::UpdateInstanceRequest {
+                name: None,
+                base_url: None,
+                credential_source: None,
+                description: None,
+                icon: None,
+                priority: None,
+                protocol: Some("anthropic".to_string()),
+                model_prefix: None,
+                auto_append_v1: Some(false),
+                resource_name: None,
+                deployment_name: None,
+                api_version: None,
+                project_id: None,
+                region: None,
+                is_enabled: None,
+                secret_key: None,
+            },
+        )
+        .await
+        .expect("update instance");
+
+    assert_eq!(updated.meta["protocol"], json!("anthropic"));
+    assert_eq!(updated.meta["auto_append_v1"], json!(false));
+}
+
+#[tokio::test]
 async fn init_migrates_legacy_provider_models_before_index_creation() {
     let store = ProviderStore::new("sqlite::memory:")
         .await

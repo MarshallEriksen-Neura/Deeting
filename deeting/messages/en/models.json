@@ -76,14 +76,21 @@
       },
       "basic": {
         "title": "Basic",
-        "desc": "Give the model a readable name and control its availability.",
-        "displayName": "Display name",
-        "unifiedId": "External model ID (routing alias)",
-        "upstreamPath": "Request path",
-        "upstreamPathPlaceholder": "Leave empty for default v1/chat/completions",
-        "requestUrl": "Request URL",
-        "weight": "Routing weight",
-        "priority": "Routing priority"
+      "desc": "Give the model a readable name and control its availability.",
+      "displayName": "Display name",
+      "unifiedId": "External model ID (routing alias)",
+      "requestMode": "Chat request mode",
+      "requestModeHint": "Use a quick switch for OpenAI chat models, or keep editing the path manually for advanced cases.",
+      "requestModes": {
+        "chatCompletions": "Chat Completions",
+        "responses": "Responses",
+        "custom": "Custom Path"
+      },
+      "upstreamPath": "Request path",
+      "upstreamPathPlaceholder": "Leave empty for default chat/completions",
+      "requestUrl": "Request URL",
+      "weight": "Routing weight",
+      "priority": "Routing priority"
       },
       "pricing": {
         "title": "Pricing",

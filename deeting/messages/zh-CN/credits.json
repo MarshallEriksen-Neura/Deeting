@@ -61,6 +61,76 @@
         "prompt": "提示词",
         "response": "响应"
       }
+    },
+    "auditTabs": {
+      "spending": "消费流水",
+      "recharge": "充值记录"
+    },
+    "rechargeHistory": {
+      "title": "充值记录",
+      "subtitle": "最近的充值订单和到账状态",
+      "searchPlaceholder": "按订单号或交易号搜索",
+      "exportCSV": "导出 CSV",
+      "exportingCSV": "导出中...",
+      "loadMore": "加载更多",
+      "status": "状态",
+      "order": "订单",
+      "time": "时间",
+      "amount": "金额",
+      "credited": "到账积分",
+      "empty": "暂无充值订单",
+      "filters": {
+        "all": "全部",
+        "success": "成功",
+        "pending": "处理中",
+        "failed": "失败",
+        "startDate": "开始日期",
+        "endDate": "结束日期"
+      },
+      "presets": {
+        "last7Days": "近 7 天",
+        "last30Days": "近 30 天",
+        "thisMonth": "本月",
+        "clear": "清空"
+      },
+      "sorts": {
+        "time": "按时间排序",
+        "amount": "按金额排序"
+      },
+      "actions": {
+        "viewDetails": "查看详情",
+        "exportReceipt": "导出凭证",
+        "copyOrder": "复制订单号",
+        "copyTradeNo": "复制交易号"
+      },
+      "labels": {
+        "tradeNo": "交易号",
+        "channel": "渠道",
+        "settledAt": "到账时间"
+      },
+      "detail": {
+        "title": "充值订单详情",
+        "description": "查看完整订单状态与到账信息。",
+        "copySuccess": "已复制到剪贴板",
+        "copyFailed": "复制失败",
+        "fields": {
+          "order": "订单",
+          "status": "状态",
+          "tradeStatus": "交易状态",
+          "amount": "金额",
+          "credited": "到账积分",
+          "expectedCredited": "预计到账",
+          "currency": "币种",
+          "channel": "渠道",
+          "tradeNo": "交易号",
+          "failureReason": "失败原因",
+          "createdAt": "创建时间",
+          "settledAt": "到账时间"
+        }
+      },
+      "mobile": {
+        "summary": "移动端摘要"
+      }
     }
   }
 }

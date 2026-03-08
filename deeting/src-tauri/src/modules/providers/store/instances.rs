@@ -6,6 +6,7 @@ use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::{
     CreateInstanceRequest, ProviderInstance, UpdateInstanceRequest,
 };
+use serde_json::{Map, Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -33,8 +34,7 @@ impl ProviderStore {
 
         let mut tx = self.pool.begin().await?;
 
-        // meta and is_enabled are missing in CreateInstanceRequest, use defaults
-        let meta = "{}";
+        let meta = build_create_instance_meta(&payload).to_string();
         let is_enabled = true;
 
         let credential_source = payload
@@ -98,6 +98,14 @@ impl ProviderStore {
     ) -> Result<ProviderInstance, ProviderError> {
         let now = now_rfc3339()?;
         let mut tx = self.pool.begin().await?;
+        let existing_meta = sqlx::query("SELECT meta FROM provider_instances WHERE id = ?")
+            .bind(instance_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .and_then(|row| row.try_get::<Option<String>, _>("meta").ok())
+            .map(parse_json_object_text)
+            .unwrap_or_else(|| json!({}));
+        let merged_meta = build_update_instance_meta(&payload, existing_meta);
 
         if let Some(name) = payload.name {
             sqlx::query("UPDATE provider_instances SET name = ?, updated_at = ? WHERE id = ?")
@@ -174,7 +182,12 @@ impl ProviderStore {
             .await?;
         }
 
-        // meta is missing in UpdateInstanceRequest
+        sqlx::query("UPDATE provider_instances SET meta = ?, updated_at = ? WHERE id = ?")
+            .bind(merged_meta.to_string())
+            .bind(&now)
+            .bind(instance_id)
+            .execute(&mut *tx)
+            .await?;
 
         if let Some(secret_key) = payload.secret_key {
             let row =
@@ -311,4 +324,105 @@ impl ProviderStore {
             credential_source: None,
         }))
     }
+}
+
+fn build_update_instance_meta(
+    update_payload: &UpdateInstanceRequest,
+    existing: Value,
+) -> Value {
+    let mut meta = existing
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+
+    let protocol = update_payload
+        .protocol
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    if let Some(value) = protocol {
+        meta.insert("protocol".to_string(), Value::String(value));
+    }
+
+    if let Some(value) = update_payload.auto_append_v1 {
+        meta.insert("auto_append_v1".to_string(), Value::Bool(value));
+    }
+
+    let model_prefix = update_payload
+        .model_prefix
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    if let Some(value) = model_prefix {
+        meta.insert("model_prefix".to_string(), Value::String(value));
+    }
+
+    for (key, value) in [
+        (
+            "resource_name",
+            update_payload.resource_name.as_deref(),
+        ),
+        (
+            "deployment_name",
+            update_payload.deployment_name.as_deref(),
+        ),
+        (
+            "api_version",
+            update_payload.api_version.as_deref(),
+        ),
+        (
+            "project_id",
+            update_payload.project_id.as_deref(),
+        ),
+        (
+            "region",
+            update_payload.region.as_deref(),
+        ),
+    ] {
+        if let Some(trimmed) = value.map(str::trim).filter(|item| !item.is_empty()) {
+            meta.insert(key.to_string(), Value::String(trimmed.to_string()));
+        }
+    }
+
+    Value::Object(meta)
+}
+
+fn build_create_instance_meta(payload: &CreateInstanceRequest) -> Value {
+    let mut meta = Map::new();
+
+    if let Some(value) = payload
+        .protocol
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        meta.insert("protocol".to_string(), Value::String(value.to_string()));
+    }
+    if let Some(value) = payload.auto_append_v1 {
+        meta.insert("auto_append_v1".to_string(), Value::Bool(value));
+    }
+    if let Some(value) = payload
+        .model_prefix
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        meta.insert("model_prefix".to_string(), Value::String(value.to_string()));
+    }
+
+    for (key, value) in [
+        ("resource_name", payload.resource_name.as_deref()),
+        ("deployment_name", payload.deployment_name.as_deref()),
+        ("api_version", payload.api_version.as_deref()),
+        ("project_id", payload.project_id.as_deref()),
+        ("region", payload.region.as_deref()),
+    ] {
+        if let Some(trimmed) = value.map(str::trim).filter(|item| !item.is_empty()) {
+            meta.insert(key.to_string(), Value::String(trimmed.to_string()));
+        }
+    }
+
+    Value::Object(meta)
 }

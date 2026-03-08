@@ -38,6 +38,9 @@ import { Switch } from "@/components/ui/switch"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { getIconComponent } from "@/lib/constants/provider-icons"
 
+const CHAT_COMPLETIONS_PATH = "chat/completions"
+const RESPONSES_PATH = "responses"
+
 export interface ProviderPresetConfig {
   slug: string
   name: string
@@ -131,6 +134,24 @@ export function ConnectProviderDrawer({
     const path = isAnthropicProtocol ? "v1/messages" : "chat/completions"
     return `${normalizedBaseUrl}/${path}`
   }, [normalizedBaseUrl, isAnthropicProtocol])
+
+  const openAIEndpointPreviews = React.useMemo(() => {
+    if (!normalizedBaseUrl || !isOpenAIProtocol) {
+      return []
+    }
+    return [
+      {
+        key: "chat",
+        label: t("drawer.endpointPreviewChatLabel"),
+        value: `${normalizedBaseUrl}/${CHAT_COMPLETIONS_PATH}`,
+      },
+      {
+        key: "responses",
+        label: t("drawer.endpointPreviewResponsesLabel"),
+        value: `${normalizedBaseUrl}/${RESPONSES_PATH}`,
+      },
+    ]
+  }, [isOpenAIProtocol, normalizedBaseUrl, t])
   const [icon, setIcon] = React.useState(initialValues?.icon || preset?.icon_key || "lucide:server")
   const [customIconUrl, setCustomIconUrl] = React.useState("")
   const [brandColor, setBrandColor] = React.useState(initialValues?.theme_color || preset?.brand_color || "#3b82f6")
@@ -544,7 +565,22 @@ export function ConnectProviderDrawer({
                 {normalizedBaseUrl && (
                   <div className="text-[11px] text-muted-foreground">
                     <span className="text-foreground/80">{t("drawer.endpointPreviewLabel")}</span>
-                    <span className="ml-2 font-mono break-all">{endpointPreview}</span>
+                    {isOpenAIProtocol ? (
+                      <div className="mt-2 space-y-1.5">
+                        {openAIEndpointPreviews.map((preview) => (
+                          <div key={preview.key} className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+                              {preview.label}
+                            </span>
+                            <span className="font-mono break-all text-foreground/90">
+                              {preview.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="ml-2 font-mono break-all">{endpointPreview}</span>
+                    )}
                     <div className="mt-1 text-[10px] text-muted-foreground/80">
                       {isOpenAIProtocol
                         ? autoAppendV1

@@ -61,6 +61,76 @@
         "prompt": "Prompt",
         "response": "Response"
       }
+    },
+    "auditTabs": {
+      "spending": "Spending Activity",
+      "recharge": "Recharge Orders"
+    },
+    "rechargeHistory": {
+      "title": "Recharge History",
+      "subtitle": "Recent recharge orders and settlement status",
+      "searchPlaceholder": "Search by order no or trade no",
+      "exportCSV": "Export CSV",
+      "exportingCSV": "Exporting...",
+      "loadMore": "Load more",
+      "status": "Status",
+      "order": "Order",
+      "time": "Time",
+      "amount": "Amount",
+      "credited": "Credited",
+      "empty": "No recharge orders yet",
+      "filters": {
+        "all": "All",
+        "success": "Success",
+        "pending": "Pending",
+        "failed": "Failed",
+        "startDate": "Start date",
+        "endDate": "End date"
+      },
+      "presets": {
+        "last7Days": "Last 7 days",
+        "last30Days": "Last 30 days",
+        "thisMonth": "This month",
+        "clear": "Clear"
+      },
+      "sorts": {
+        "time": "Sort by time",
+        "amount": "Sort by amount"
+      },
+      "actions": {
+        "viewDetails": "View details",
+        "exportReceipt": "Export receipt",
+        "copyOrder": "Copy order no",
+        "copyTradeNo": "Copy trade no"
+      },
+      "labels": {
+        "tradeNo": "Trade No",
+        "channel": "Channel",
+        "settledAt": "Settled At"
+      },
+      "detail": {
+        "title": "Recharge order details",
+        "description": "Review the full order status and settlement metadata.",
+        "copySuccess": "Copied to clipboard",
+        "copyFailed": "Copy failed",
+        "fields": {
+          "order": "Order",
+          "status": "Status",
+          "tradeStatus": "Trade status",
+          "amount": "Amount",
+          "credited": "Credited",
+          "expectedCredited": "Expected credited",
+          "currency": "Currency",
+          "channel": "Channel",
+          "tradeNo": "Trade No",
+          "failureReason": "Failure reason",
+          "createdAt": "Created at",
+          "settledAt": "Settled at"
+        }
+      },
+      "mobile": {
+        "summary": "Mobile summary"
+      }
     }
   }
 }

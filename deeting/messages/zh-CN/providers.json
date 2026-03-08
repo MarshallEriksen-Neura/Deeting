@@ -53,6 +53,8 @@
       "protocolLabel": "协议接口",
       "endpointLabel": "API 根地址 (Base URL)",
       "endpointPreviewLabel": "请求示例",
+      "endpointPreviewChatLabel": "Chat",
+      "endpointPreviewResponsesLabel": "Responses",
       "endpointPreviewHintOpenAI": "对话请求将发往：根地址 + /v1/chat/completions。OpenAI 协议会自动补 /v1，若根地址已含 /v1 则不重复拼接。",
       "endpointPreviewHintOpenAIDisabled": "已关闭自动补 /v1，请确保根地址包含所需路径。",
       "endpointPreviewHintGeneric": "示例路径依据当前协议生成，仅用于说明。可在模型配置中为单个模型设置「请求路径」覆盖默认。",

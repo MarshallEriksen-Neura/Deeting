@@ -85,6 +85,29 @@ export const CreditsAlipayOrderStatusSchema = z.object({
   refreshed: z.boolean(),
 })
 
+export const CreditsRechargeOrderItemSchema = z.object({
+  id: z.string(),
+  outTradeNo: z.string(),
+  tradeNo: z.string().nullable().optional(),
+  status: z.enum(["pending", "success", "failed"]),
+  tradeStatus: z.string().nullable().optional(),
+  amount: z.number(),
+  currency: z.string(),
+  expectedCreditedAmount: z.number(),
+  creditedAmount: z.number(),
+  channel: z.string(),
+  errorCode: z.string().nullable().optional(),
+  errorDetail: z.string().nullable().optional(),
+  failureReason: z.string().nullable().optional(),
+  createdAt: z.string(),
+  settledAt: z.string().nullable().optional(),
+})
+
+export const CreditsRechargeOrdersSchema = z.object({
+  items: z.array(CreditsRechargeOrderItemSchema),
+  nextOffset: z.number().nullable().optional(),
+})
+
 /** Platform model (credits-backed) for desktop sync and model picker */
 export const CreditsPlatformModelSchema = z.object({
   id: z.string(),
@@ -111,6 +134,8 @@ export type CreditsRechargePolicy = z.infer<typeof CreditsRechargePolicySchema>
 export type CreditsRechargeResponse = z.infer<typeof CreditsRechargeResponseSchema>
 export type CreditsAlipayOrderResponse = z.infer<typeof CreditsAlipayOrderResponseSchema>
 export type CreditsAlipayOrderStatus = z.infer<typeof CreditsAlipayOrderStatusSchema>
+export type CreditsRechargeOrderItem = z.infer<typeof CreditsRechargeOrderItemSchema>
+export type CreditsRechargeOrders = z.infer<typeof CreditsRechargeOrdersSchema>
 export type CreditsPlatformModel = z.infer<typeof CreditsPlatformModelSchema>
 export type CreditsPlatformModelsResponse = z.infer<typeof CreditsPlatformModelsResponseSchema>
 
@@ -202,6 +227,56 @@ export async function fetchAlipayRechargeOrderStatus(
     },
   })
   return CreditsAlipayOrderStatusSchema.parse(data)
+}
+
+export async function fetchCreditsRechargeOrders(params?: {
+  limit?: number
+  offset?: number
+  status?: "pending" | "success" | "failed" | null
+  startDate?: string | null
+  endDate?: string | null
+  query?: string | null
+  sortBy?: "time" | "amount"
+  sortDirection?: "asc" | "desc"
+}): Promise<CreditsRechargeOrders> {
+  const data = await request<CreditsRechargeOrders>({
+    url: `${CREDITS_BASE}/recharge/orders`,
+    method: "GET",
+    params: {
+      limit: params?.limit ?? 20,
+      offset: params?.offset ?? 0,
+      ...(params?.status ? { status: params.status } : {}),
+      ...(params?.startDate ? { startDate: params.startDate } : {}),
+      ...(params?.endDate ? { endDate: params.endDate } : {}),
+      ...(params?.query ? { query: params.query } : {}),
+      ...(params?.sortBy ? { sortBy: params.sortBy } : {}),
+      ...(params?.sortDirection ? { sortDirection: params.sortDirection } : {}),
+    },
+  })
+  return CreditsRechargeOrdersSchema.parse(data)
+}
+
+export async function exportCreditsRechargeOrdersCsv(params?: {
+  status?: "pending" | "success" | "failed" | null
+  startDate?: string | null
+  endDate?: string | null
+  query?: string | null
+  sortBy?: "time" | "amount"
+  sortDirection?: "asc" | "desc"
+}): Promise<Blob> {
+  return request<Blob>({
+    url: `${CREDITS_BASE}/recharge/orders/export`,
+    method: "GET",
+    responseType: "blob",
+    params: {
+      ...(params?.status ? { status: params.status } : {}),
+      ...(params?.startDate ? { startDate: params.startDate } : {}),
+      ...(params?.endDate ? { endDate: params.endDate } : {}),
+      ...(params?.query ? { query: params.query } : {}),
+      ...(params?.sortBy ? { sortBy: params.sortBy } : {}),
+      ...(params?.sortDirection ? { sortDirection: params.sortDirection } : {}),
+    },
+  })
 }
 
 /** Platform models available for credits (desktop sync / model picker). */

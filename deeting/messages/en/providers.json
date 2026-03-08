@@ -53,6 +53,8 @@
       "protocolLabel": "Protocol Interface",
       "endpointLabel": "API Base URL",
       "endpointPreviewLabel": "Request preview",
+      "endpointPreviewChatLabel": "Chat",
+      "endpointPreviewResponsesLabel": "Responses",
       "endpointPreviewHintOpenAI": "Chat requests go to: base URL + /v1/chat/completions. OpenAI protocol auto-appends /v1 unless the base URL already includes it.",
       "endpointPreviewHintOpenAIDisabled": "Auto-append /v1 is off. Make sure your base URL includes the required path.",
       "endpointPreviewHintGeneric": "Preview is from the selected protocol. You can override the path per model in model settings.",
