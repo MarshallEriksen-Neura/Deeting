@@ -6,12 +6,12 @@ from typing import Any
 def build_protocol_profiles(
     *,
     provider: str,
-    capability_configs: dict[str, Any],
+    profile_configs: dict[str, Any],
     default_headers: dict[str, Any] | None = None,
     default_params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     profiles: dict[str, Any] = {}
-    for capability, config in (capability_configs or {}).items():
+    for capability, config in (profile_configs or {}).items():
         if not isinstance(config, dict):
             continue
         request_template = (

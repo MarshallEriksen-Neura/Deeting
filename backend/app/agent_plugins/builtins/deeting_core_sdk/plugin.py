@@ -2289,9 +2289,6 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "routing": {
                 "provider": self._context_ns_value(workflow_context, "routing", "provider"),
                 "preset_id": self._context_ns_value(workflow_context, "routing", "preset_id"),
-                "preset_item_id": self._context_ns_value(
-                    workflow_context, "routing", "preset_item_id"
-                ),
                 "provider_model_id": self._context_ns_value(
                     workflow_context, "routing", "provider_model_id"
                 ),

@@ -238,7 +238,6 @@ async def test_record_bandit_feedback_fallbacks_to_provider_model_id(monkeypatch
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.db_session = SimpleNamespace()
     ctx.selected_provider_model_id = "59968e6d-10f5-4967-aefc-d68f85ce7d35"
-    ctx.selected_preset_item_id = None
     ctx.billing.total_cost = 1.25
     ctx.set("routing", "routing_config", {"strategy": "bandit"})
 
@@ -266,7 +265,6 @@ async def test_record_bandit_feedback_skips_without_any_arm_id(monkeypatch):
     step = UpstreamCallStep()
     ctx = WorkflowContext(channel=Channel.INTERNAL)
     ctx.db_session = SimpleNamespace()
-    ctx.selected_preset_item_id = None
     ctx.selected_provider_model_id = None
 
     monkeypatch.setattr(upstream_call_module, "BanditRepository", DummyBanditRepository)

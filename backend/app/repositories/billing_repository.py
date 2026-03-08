@@ -64,7 +64,7 @@ class BillingRepository:
         api_key_id: str | uuid.UUID | None = None,
         provider: str | None = None,
         model: str | None = None,
-        preset_item_id: str | uuid.UUID | None = None,
+        provider_model_id: str | uuid.UUID | None = None,
     ) -> BillingTransaction:
         """
         创建 PENDING 交易（流式请求预扣，不扣余额）
@@ -74,8 +74,8 @@ class BillingRepository:
         """
         if isinstance(tenant_id, str):
             tenant_id = uuid.UUID(tenant_id)
-        if isinstance(preset_item_id, str):
-            preset_item_id = uuid.UUID(preset_item_id)
+        if isinstance(provider_model_id, str):
+            provider_model_id = uuid.UUID(provider_model_id)
         if isinstance(api_key_id, str):
             api_key_id = uuid.UUID(api_key_id)
 
@@ -104,7 +104,7 @@ class BillingRepository:
             output_price=Decimal("0"),
             provider=provider,
             model=model,
-            preset_item_id=preset_item_id,
+            provider_model_id=provider_model_id,
             balance_before=balance_before,
             balance_after=balance_before,
             description="Stream billing (pending)",
@@ -182,7 +182,7 @@ class BillingRepository:
         output_price: Decimal | float = Decimal("0"),
         provider: str | None = None,
         model: str | None = None,
-        preset_item_id: str | uuid.UUID | None = None,
+        provider_model_id: str | uuid.UUID | None = None,
         api_key_id: str | uuid.UUID | None = None,
         description: str | None = None,
     ) -> BillingTransaction:
@@ -201,7 +201,7 @@ class BillingRepository:
             output_price: 输出价格
             provider: 提供商
             model: 模型名称
-            preset_item_id: 路由配置项 ID
+            provider_model_id: Provider model ID
             api_key_id: API Key ID
             description: 交易说明
 
@@ -213,8 +213,8 @@ class BillingRepository:
         """
         if isinstance(tenant_id, str):
             tenant_id = uuid.UUID(tenant_id)
-        if isinstance(preset_item_id, str):
-            preset_item_id = uuid.UUID(preset_item_id)
+        if isinstance(provider_model_id, str):
+            provider_model_id = uuid.UUID(provider_model_id)
         if isinstance(api_key_id, str):
             api_key_id = uuid.UUID(api_key_id)
 
@@ -249,7 +249,7 @@ class BillingRepository:
             output_price=output_price,
             provider=provider,
             model=model,
-            preset_item_id=preset_item_id,
+            provider_model_id=provider_model_id,
             balance_before=balance_before,
             balance_after=balance_after,
             description=description
@@ -344,7 +344,7 @@ class BillingRepository:
         output_price: Decimal | float = Decimal("0"),
         provider: str | None = None,
         model: str | None = None,
-        preset_item_id: str | uuid.UUID | None = None,
+        provider_model_id: str | uuid.UUID | None = None,
         api_key_id: str | uuid.UUID | None = None,
         description: str | None = None,
         allow_negative: bool = False,
@@ -369,7 +369,7 @@ class BillingRepository:
             output_price: 输出价格
             provider: 提供商
             model: 模型名称
-            preset_item_id: 路由配置项 ID
+            provider_model_id: Provider model ID
             api_key_id: API Key ID
             description: 交易说明
             allow_negative: 是否允许余额为负
@@ -383,8 +383,8 @@ class BillingRepository:
         """
         if isinstance(tenant_id, str):
             tenant_id = uuid.UUID(tenant_id)
-        if isinstance(preset_item_id, str):
-            preset_item_id = uuid.UUID(preset_item_id)
+        if isinstance(provider_model_id, str):
+            provider_model_id = uuid.UUID(provider_model_id)
         if isinstance(api_key_id, str):
             api_key_id = uuid.UUID(api_key_id)
 
@@ -429,7 +429,7 @@ class BillingRepository:
                     output_price=output_price,
                     provider=provider,
                     model=model,
-                    preset_item_id=preset_item_id,
+                    provider_model_id=provider_model_id,
                     balance_before=balance_before,
                     balance_after=balance_before - amount,
                     description=description,
@@ -714,7 +714,7 @@ class BillingRepository:
             output_price=original.output_price,
             provider=original.provider,
             model=original.model,
-            preset_item_id=original.preset_item_id,
+            provider_model_id=original.provider_model_id,
             balance_before=balance_before,
             balance_after=balance_after,
             description=description or f"Reverse of {original_trace_id}",

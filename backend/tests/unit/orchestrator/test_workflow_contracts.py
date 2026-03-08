@@ -68,7 +68,6 @@ def test_internal_non_chat_routes_to_preview_workflow():
 async def test_routing_step_contract_populates_required_namespace_keys(monkeypatch):
     routing_result = {
         "preset_id": 1,
-        "preset_item_id": "pm-1",
         "instance_id": "inst-1",
         "provider_model_id": "pm-1",
         "upstream_url": "https://api.example.com/v1/chat/completions",
@@ -103,7 +102,6 @@ async def test_routing_step_contract_populates_required_namespace_keys(monkeypat
             **routing_result,
             "instance_id": "inst-2",
             "provider_model_id": "pm-2",
-            "preset_item_id": "pm-2",
             "weight": 5,
             "priority": 90,
         }
@@ -129,7 +127,6 @@ async def test_routing_step_contract_populates_required_namespace_keys(monkeypat
     routing_ns = ctx.get_namespace("routing")
     required_keys = {
         "preset_id",
-        "preset_item_id",
         "instance_id",
         "provider_model_id",
         "upstream_url",

@@ -254,7 +254,7 @@ async def record_and_adjust(
     *,
     provider: str | None = None,
     model: str | None = None,
-    preset_item_id: str | None = None,
+    provider_model_id: str | None = None,
     api_key_id: str | None = None,
     description: str | None = None,
 ) -> float | None:
@@ -286,7 +286,7 @@ async def record_and_adjust(
         output_price=output_per_1k,
         provider=provider,
         model=model,
-        preset_item_id=preset_item_id,
+        provider_model_id=provider_model_id,
         api_key_id=api_key_id,
         description=description,
     )

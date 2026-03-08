@@ -80,7 +80,7 @@ def _build_model(model_id, instance_id):
 
 
 @pytest.mark.asyncio
-async def test_load_candidates_sets_preset_item_id_to_model_id():
+async def test_load_candidates_sets_provider_model_id():
     session = AsyncMock()
     selector = RoutingSelector(session)
 
@@ -108,12 +108,11 @@ async def test_load_candidates_sets_preset_item_id_to_model_id():
     )
 
     assert len(candidates) == 1
-    assert candidates[0].model_id == str(model_id)
-    assert candidates[0].preset_item_id == str(model_id)
+    assert candidates[0].provider_model_id == str(model_id)
 
 
 @pytest.mark.asyncio
-async def test_load_candidates_by_provider_model_id_sets_preset_item_id():
+async def test_load_candidates_by_provider_model_id_sets_provider_model_id():
     session = AsyncMock()
     selector = RoutingSelector(session)
 
@@ -141,8 +140,7 @@ async def test_load_candidates_by_provider_model_id_sets_preset_item_id():
     )
 
     assert len(candidates) == 1
-    assert candidates[0].model_id == str(model_id)
-    assert candidates[0].preset_item_id == str(model_id)
+    assert candidates[0].provider_model_id == str(model_id)
 
 
 @pytest.mark.asyncio

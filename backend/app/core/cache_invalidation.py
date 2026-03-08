@@ -139,8 +139,8 @@ class CacheInvalidator:
         await self._clear_prefix(f"rl:tenant:{tenant_id}:")
         await self.bump_version()
 
-    async def on_upstream_template_updated(self, preset_item_id: str) -> None:
-        await self._delete_keys([CacheKeys.upstream_template(preset_item_id)])
+    async def on_upstream_template_updated(self, provider_model_id: str) -> None:
+        await self._delete_keys([CacheKeys.upstream_template(provider_model_id)])
         await self.bump_version()
 
     async def on_conversation_reset(self, session_id: str) -> None:
@@ -161,11 +161,11 @@ class CacheInvalidator:
         await self._delete_keys([CacheKeys.conversation_summary(session_id)])
         await self.bump_version()
 
-    async def on_bandit_updated(self, preset_item_id: str | None = None) -> None:
+    async def on_bandit_updated(self, provider_model_id: str | None = None) -> None:
         """Bandit 臂状态变更或策略参数更新时失效缓存"""
-        if preset_item_id:
+        if provider_model_id:
             await self._delete_keys(
-                [CacheKeys.bandit_state("router:llm", preset_item_id)]
+                [CacheKeys.bandit_state("router:llm", provider_model_id)]
             )
         else:
             await self._clear_prefix("bandit:")

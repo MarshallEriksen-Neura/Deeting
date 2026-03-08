@@ -325,9 +325,9 @@ class AuditLogStep(BaseStep):
             "preset_id": (
                 str(ctx.selected_preset_id) if ctx.selected_preset_id else None
             ),
-            "preset_item_id": (
-                str(ctx.selected_preset_item_id)
-                if ctx.selected_preset_item_id
+            "provider_model_id": (
+                str(ctx.selected_provider_model_id)
+                if ctx.selected_provider_model_id
                 else None
             ),
             "template_engine": (

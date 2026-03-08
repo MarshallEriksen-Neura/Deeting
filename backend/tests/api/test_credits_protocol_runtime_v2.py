@@ -74,7 +74,7 @@ async def test_credits_chat_proxy_uses_runtime_v2_for_responses_models(
             protocol_schema_version="2026-03-07",
             protocol_profiles=build_protocol_profiles(
                 provider="openai",
-                capability_configs={
+                profile_configs={
                     "chat": {
                         "request_builder": {"name": "responses_input_from_items"},
                     }

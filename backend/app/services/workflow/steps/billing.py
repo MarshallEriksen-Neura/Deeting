@@ -85,7 +85,7 @@ class BillingStep(BaseStep):
                     else None
                 ),
                 model=ctx.requested_model,
-                preset_item_id=ctx.get("routing", "provider_model_id"),
+                provider_model_id=ctx.get("routing", "provider_model_id"),
             )
             ctx.set("billing", "pending_transaction_id", str(tx.id))
             ctx.set("billing", "pending_trace_id", ctx.trace_id)
@@ -210,7 +210,7 @@ class BillingStep(BaseStep):
                     else None
                 ),
                 model=ctx.requested_model,
-                preset_item_id=ctx.get("routing", "provider_model_id"),
+                provider_model_id=ctx.get("routing", "provider_model_id"),
                 api_key_id=ctx.api_key_id,
             )
             return float(tx.balance_after)
@@ -245,7 +245,7 @@ class BillingStep(BaseStep):
                 else None
             ),
             model=ctx.requested_model,
-            preset_item_id=ctx.get("routing", "provider_model_id"),
+            provider_model_id=ctx.get("routing", "provider_model_id"),
             api_key_id=ctx.api_key_id,
         )
         if balance_after is not None:

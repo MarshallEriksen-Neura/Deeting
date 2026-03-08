@@ -179,7 +179,7 @@ class ModelFileProxyService:
             status_code=response.status_code,
             response_body=parsed,
             provider=candidate.provider,
-            provider_model_id=candidate.model_id,
+            provider_model_id=candidate.provider_model_id,
         )
 
     async def _select_candidate(

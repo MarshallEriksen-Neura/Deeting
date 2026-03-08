@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 
 from loguru import logger
@@ -6,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.prompts.memory_extraction import MEMORY_EXTRACTION_SYSTEM_PROMPT
+from app.services.memory.external_memory import (
+    WRITE_GUARD_NOOP_THRESHOLD,
+    WRITE_GUARD_UPDATE_THRESHOLD,
+)
 from app.services.memory.qdrant_service import system_qdrant
 from app.services.providers.embedding import EmbeddingService
 from app.services.providers.sanitizer import sanitizer
@@ -41,7 +46,8 @@ class MemoryExtractorService:
         db_session: AsyncSession | None = None,
     ):
         """
-        主入口：执行 提取 -> 去重 -> 入库
+        主入口：执行 提取 -> Write Guard 去重 -> 入库
+        Write Guard: score < 0.85 = ADD, 0.85-0.95 = UPDATE (merge), >= 0.95 = NOOP
         """
         # 1. 提取 (Extraction)
         facts = await self._llm_extract_facts(
@@ -50,19 +56,19 @@ class MemoryExtractorService:
         if not facts:
             return
 
-        # 2. 逐条处理 (Deduplication & Ingest)
+        # 2. 逐条处理 (Write Guard Deduplication & Ingest)
         new_facts_count = 0
+        updated_facts_count = 0
         for fact in facts:
-            is_duplicate, collection_name = await self._check_is_duplicate(
-                user_id, fact
-            )
-            if not is_duplicate and collection_name:
-                await self._save_fact(user_id, fact, collection_name, secretary_id)
+            action = await self._write_guard_save(user_id, fact, secretary_id)
+            if action == "add":
                 new_facts_count += 1
+            elif action == "update":
+                updated_facts_count += 1
 
-        if new_facts_count > 0:
+        if new_facts_count > 0 or updated_facts_count > 0:
             logger.info(
-                f"Memory: Extracted {new_facts_count} new facts for User {user_id}"
+                f"Memory: {new_facts_count} new, {updated_facts_count} merged for User {user_id}"
             )
 
     async def _llm_extract_facts(
@@ -137,19 +143,66 @@ class MemoryExtractorService:
             logger.error(f"Memory Extraction LLM Error: {e}")
             return []
 
+    async def _write_guard_save(
+        self,
+        user_id: uuid.UUID,
+        fact: str,
+        secretary_id: uuid.UUID = None,
+    ) -> str:
+        """
+        Write Guard: 3-tier deduplication for a single fact.
+        Returns: "add", "update", or "noop".
+        """
+        vs = self._vector_service_factory(user_id)
+        fact_masked = sanitizer.mask_text(fact)
+
+        try:
+            results = await vs.search(
+                fact_masked,
+                limit=1,
+                score_threshold=WRITE_GUARD_UPDATE_THRESHOLD,
+            )
+        except Exception as exc:
+            logger.warning(f"write guard search failed, falling back to ADD: {exc}")
+            results = []
+
+        payload = {"type": "extracted_fact", "vitality": 1.0, "last_accessed_at": time.time()}
+        if secretary_id:
+            payload["secretary_id"] = str(secretary_id)
+
+        if results:
+            score = results[0].get("score", 0.0)
+            existing_id = results[0].get("id")
+            existing_content = results[0].get("content", "")
+
+            if score >= WRITE_GUARD_NOOP_THRESHOLD:
+                logger.debug(
+                    f"write guard: NOOP (score={score:.3f}) — discarding duplicate fact"
+                )
+                return "noop"
+
+            if score >= WRITE_GUARD_UPDATE_THRESHOLD:
+                logger.debug(
+                    f"write guard: UPDATE (score={score:.3f}) — merging into {existing_id}"
+                )
+                merged = f"{existing_content}\n\n---\n\n{fact_masked.strip()}"
+                await vs.upsert(merged, payload=payload, id=existing_id)
+                return "update"
+
+        # ADD: new distinct fact
+        await vs.upsert(fact_masked, payload=payload)
+        return "add"
+
     async def _check_is_duplicate(
         self, user_id: uuid.UUID, fact: str, threshold: float = 0.92
     ) -> tuple[bool, str | None]:
         """
-        去重检查：如果在向量库里找到了极其相似的（相似度 > 0.92），则认为是重复。
+        Legacy dedup check (kept for backward compatibility).
         """
         vs = self._vector_service_factory(user_id)
         fact_masked = sanitizer.mask_text(fact)
         results = await vs.search(fact_masked, limit=1, score_threshold=threshold)
         if results:
-            logger.debug(
-                f"Memory Duplicate Found: '{fact_masked}' matches existing (score: {results[0]['score']})"
-            )
             return True, getattr(vs, "_collection_name", None)
         return False, getattr(vs, "_collection_name", None)
 
@@ -161,14 +214,13 @@ class MemoryExtractorService:
         secretary_id: uuid.UUID = None,
     ):
         """
-        写入 Qdrant。
+        Legacy direct write (kept for backward compatibility).
         """
         vector_service = self._vector_service_factory(user_id)
-        payload = {"type": "extracted_fact", "created_at": "TODO_TIMESTAMP"}
+        payload = {"type": "extracted_fact", "vitality": 1.0, "last_accessed_at": time.time()}
         if secretary_id:
             payload["secretary_id"] = str(secretary_id)
         fact_masked = sanitizer.mask_text(fact)
-        # QdrantUserVectorService 会自动补全 user_id / embedding_model / content
         await vector_service.upsert(fact_masked, payload=payload)
 
 

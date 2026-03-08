@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -36,4 +37,66 @@ class MemoryUpdateRequest(BaseSchema):
     content: str = Field(..., description="更新后的记忆内容")
 
 
-__all__ = ["MemoryItem", "MemoryListResponse", "MemoryUpdateRequest"]
+class MemorySnapshotItem(BaseSchema):
+    """
+    Memory audit trail snapshot.
+    """
+
+    id: UUID
+    user_id: UUID
+    memory_point_id: str
+    action: str = Field(..., description="Action: update, delete, rollback")
+    old_content: str | None = None
+    new_content: str | None = None
+    old_metadata: dict[str, Any] | None = None
+    new_metadata: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemorySnapshotListResponse(BaseSchema):
+    """
+    Memory snapshot list response.
+    """
+
+    items: list[MemorySnapshotItem]
+
+
+class MemoryRollbackRequest(BaseSchema):
+    """
+    Request to rollback a memory to a previous snapshot state.
+    """
+
+    snapshot_id: UUID = Field(..., description="Snapshot ID to rollback to")
+
+
+class MemoryRollbackResponse(BaseSchema):
+    """
+    Rollback result.
+    """
+
+    success: bool
+    memory_point_id: str
+    restored_content: str | None = None
+
+
+class WriteGuardResult(BaseSchema):
+    """
+    Write Guard deduplication result.
+    """
+
+    action: str = Field(..., description="add, update, or noop")
+    memory_id: str | None = None
+    similarity_score: float | None = None
+
+
+__all__ = [
+    "MemoryItem",
+    "MemoryListResponse",
+    "MemoryUpdateRequest",
+    "MemorySnapshotItem",
+    "MemorySnapshotListResponse",
+    "MemoryRollbackRequest",
+    "MemoryRollbackResponse",
+    "WriteGuardResult",
+]

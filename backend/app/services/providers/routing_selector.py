@@ -53,8 +53,7 @@ class RoutingCandidate:
     preset_id: str | None
     preset_slug: str | None
     instance_id: str
-    preset_item_id: str  # 兼容旧字段，实际存 provider_model.id
-    model_id: str
+    provider_model_id: str
     provider: str
     upstream_url: str
     channel: str
@@ -292,9 +291,7 @@ class RoutingSelector:
                             preset_id=str(preset.id) if preset else None,
                             preset_slug=instance.preset_slug,
                             instance_id=str(instance.id),
-                            # 兼容历史字段：在 BYOP 架构下复用 provider_model.id 作为 arm_id
-                            preset_item_id=str(m.id),
-                            model_id=str(m.id),
+                            provider_model_id=str(m.id),
                             provider=preset.provider if preset else "custom",
                             upstream_url=upstream_url,
                             channel=channel,
@@ -319,10 +316,10 @@ class RoutingSelector:
         if results:
             states = await self.bandit_repo.get_states_map(
                 "router:llm",
-                [c.model_id for c in results],
+                [c.provider_model_id for c in results],
             )
             for c in results:
-                c.bandit_state = states.get(c.model_id)
+                c.bandit_state = states.get(c.provider_model_id)
 
         return results
 
@@ -540,9 +537,7 @@ class RoutingSelector:
                     preset_id=str(preset.id) if preset else None,
                     preset_slug=instance.preset_slug,
                     instance_id=str(instance.id),
-                    # 兼容历史字段：在 BYOP 架构下复用 provider_model.id 作为 arm_id
-                    preset_item_id=str(model.id),
-                    model_id=str(model.id),
+                    provider_model_id=str(model.id),
                     provider=preset.provider if preset else "custom",
                     upstream_url=upstream_url,
                     channel=channel,
@@ -566,10 +561,10 @@ class RoutingSelector:
         if results:
             states = await self.bandit_repo.get_states_map(
                 "router:llm",
-                [c.model_id for c in results],
+                [c.provider_model_id for c in results],
             )
             for c in results:
-                c.bandit_state = states.get(c.model_id)
+                c.bandit_state = states.get(c.provider_model_id)
 
         return results
 
@@ -716,7 +711,7 @@ class RoutingSelector:
             affinity_bonus = 0.0
             if (
                 affinity_provider_id
-                and affinity_provider_id == c.model_id
+                and affinity_provider_id == c.provider_model_id
                 and state
                 and state.total_trials >= 0
             ):
@@ -815,7 +810,7 @@ class RoutingSelector:
             primary = self._weighted_choice(candidates)
 
         affinity_hit = bool(
-            affinity_provider_id and affinity_provider_id == primary.model_id
+            affinity_provider_id and affinity_provider_id == primary.provider_model_id
         )
 
         # 备份列表：去掉主路由后按 priority / weight 排序

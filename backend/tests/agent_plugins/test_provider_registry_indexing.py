@@ -128,7 +128,7 @@ async def test_save_provider_field_mapping_enqueues_index(
                 protocol_schema_version="2026-03-07",
                 protocol_profiles=build_protocol_profiles(
                     provider="openai",
-                    capability_configs={},
+                    profile_configs={},
                 ),
                 icon="lucide:cpu",
             )

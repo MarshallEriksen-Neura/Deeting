@@ -13,7 +13,7 @@ def _fake_routing_result():
     return (
         {
             "preset_id": 1,
-            "preset_item_id": 11,
+            "provider_model_id": "11",
             "upstream_url": "https://api.fake.com",
             "provider": "fake",
             "template_engine": "legacy_engine",
@@ -58,9 +58,8 @@ def _fake_candidate() -> SimpleNamespace:
     return SimpleNamespace(
         preset_id=1,
         preset_slug="fake",
-        preset_item_id=11,
         instance_id="inst-1",
-        model_id="model-1",
+        provider_model_id="model-1",
         upstream_url="https://api.fake.com",
         provider="fake",
         template_engine="simple_replace",

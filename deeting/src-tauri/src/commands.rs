@@ -116,6 +116,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::memory::commands::delete_local_memory,
         crate::modules::memory::commands::clear_local_memories,
         crate::modules::memory::commands::search_local_memories,
+        crate::modules::memory::commands::list_memory_snapshots,
+        crate::modules::memory::commands::rollback_memory,
         // Local Code Mode Commands
         crate::modules::code_mode::commands::get_local_code_mode_bridge_status,
         crate::modules::code_mode::commands::execute_local_code_mode,

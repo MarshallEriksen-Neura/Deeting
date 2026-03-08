@@ -220,7 +220,6 @@ class RoutingTestResponse(BaseModel):
     capability: str
     provider: str | None = None
     preset_id: str | None = None
-    preset_item_id: str | None = None
     instance_id: str | None = None
     provider_model_id: str | None = None
     upstream_url: str | None = None

@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import random
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -19,6 +21,15 @@ from app.services.providers.sanitizer import sanitizer
 from app.services.vector.qdrant_user_service import QdrantUserVectorService
 
 DEDUP_SCORE_THRESHOLD = 0.92
+WRITE_GUARD_NOOP_THRESHOLD = 0.95
+WRITE_GUARD_UPDATE_THRESHOLD = 0.85
+
+# Vitality decay constants (matches desktop implementation)
+VITALITY_BASE_WEIGHT = 0.7
+VITALITY_DECAY_WEIGHT = 0.3
+VITALITY_DECAY_RATE = 0.05  # ~14 day half-life
+VITALITY_OVERFETCH_MULTIPLIER = 3
+
 TRAIN_SAMPLE_RATE = 1.0
 TRAIN_LABEL_FACT = "__label__fact"
 TRAIN_LABEL_CHAT = "__label__chat"
@@ -251,15 +262,51 @@ async def write_external_memory(
     )
 
     try:
+        # Write Guard: 3-tier deduplication
         results = await vector_service.search(
             masked,
             limit=1,
-            score_threshold=DEDUP_SCORE_THRESHOLD,
+            score_threshold=WRITE_GUARD_UPDATE_THRESHOLD,
         )
-        if results:
-            return False
 
-        payload = {"source": "external", "path": path}
+        if results:
+            score = results[0].get("score", 0.0)
+            existing_id = results[0].get("id")
+            existing_content = results[0].get("content", "")
+
+            if score >= WRITE_GUARD_NOOP_THRESHOLD:
+                # NOOP: too similar, discard
+                logger.debug(
+                    f"write guard: NOOP (score={score:.3f}) — discarding duplicate"
+                )
+                return False
+
+            if score >= WRITE_GUARD_UPDATE_THRESHOLD:
+                # UPDATE: merge content into existing memory
+                logger.debug(
+                    f"write guard: UPDATE (score={score:.3f}) — merging into {existing_id}"
+                )
+                merged_content = f"{existing_content}\n\n---\n\n{masked.strip()}"
+                now = time.time()
+                payload = {
+                    "source": "external",
+                    "path": path,
+                    "vitality": 1.0,
+                    "last_accessed_at": now,
+                }
+                await vector_service.upsert(
+                    merged_content, payload=payload, id=existing_id
+                )
+                return True
+
+        # ADD: new distinct memory
+        now = time.time()
+        payload = {
+            "source": "external",
+            "path": path,
+            "vitality": 1.0,
+            "last_accessed_at": now,
+        }
         await vector_service.upsert(masked, payload=payload)
         return True
     except Exception as exc:  # pragma: no cover - fail-open
@@ -267,10 +314,96 @@ async def write_external_memory(
         return False
 
 
+def _compute_vitality_score(
+    vector_score: float,
+    vitality: float,
+    last_accessed_at: float,
+) -> float:
+    """
+    Vitality-weighted rerank score.
+    Formula: vector_score * (0.7 + 0.3 * vitality * exp(-0.05 * days_since_access))
+    """
+    now = time.time()
+    days_since = max(0.0, (now - last_accessed_at) / 86400.0)
+    decay_factor = math.exp(-VITALITY_DECAY_RATE * days_since)
+    return vector_score * (
+        VITALITY_BASE_WEIGHT + VITALITY_DECAY_WEIGHT * vitality * decay_factor
+    )
+
+
+async def _vitality_touch(
+    vector_service: QdrantUserVectorService,
+    point_ids: list[str],
+) -> None:
+    """Fire-and-forget: bump vitality and last_accessed_at for recalled points."""
+    try:
+        now = time.time()
+        await vector_service.update_payload(
+            point_ids=point_ids,
+            payload={"last_accessed_at": now},
+        )
+    except Exception as exc:
+        logger.debug(f"vitality touch failed (non-fatal): {exc}")
+
+
+async def search_user_memories(
+    *,
+    user_id: uuid.UUID,
+    query: str,
+    limit: int = 5,
+) -> list[dict]:
+    """
+    Vitality-aware memory search: over-fetch → rerank by vitality decay → return top-K.
+    Also fires async vitality touch on recalled points.
+    """
+    if not query or not qdrant_is_configured():
+        return []
+
+    embedding_service = EmbeddingService()
+    vector_service = QdrantUserVectorService(
+        client=get_qdrant_client(),
+        user_id=user_id,
+        embedding_service=embedding_service,
+        embedding_model=getattr(embedding_service, "model", None),
+        fail_open=True,
+    )
+
+    try:
+        overfetch_limit = limit * VITALITY_OVERFETCH_MULTIPLIER
+        results = await vector_service.search(
+            query, limit=overfetch_limit, score_threshold=None
+        )
+        if not results:
+            return []
+
+        # Rerank by vitality decay
+        for item in results:
+            payload = item.get("payload", {})
+            vitality = float(payload.get("vitality", 1.0))
+            last_accessed = float(payload.get("last_accessed_at", 0.0))
+            item["final_score"] = _compute_vitality_score(
+                item.get("score", 0.0), vitality, last_accessed
+            )
+
+        results.sort(key=lambda x: x["final_score"], reverse=True)
+        top_k = results[:limit]
+
+        # Async vitality touch on recalled points
+        recalled_ids = [r["id"] for r in top_k if r.get("id")]
+        if recalled_ids:
+            asyncio.create_task(_vitality_touch(vector_service, recalled_ids))
+
+        return top_k
+    except Exception as exc:
+        logger.warning(f"search_user_memories failed: {exc}")
+        return []
+
+
 __all__ = [
     "derive_external_user_id",
     "extract_user_message",
     "persist_external_memory",
+    "search_user_memories",
     "should_persist_text",
     "write_external_memory",
 ]

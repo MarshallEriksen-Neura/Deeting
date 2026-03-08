@@ -1356,7 +1356,6 @@ class UpstreamCallStep(BaseStep):
             backup = candidates[next_idx]
             ctx.set("routing", "candidate_index", next_idx)
             ctx.set("routing", "preset_id", backup["preset_id"])
-            ctx.set("routing", "preset_item_id", backup["preset_item_id"])
             ctx.set("routing", "upstream_url", backup["upstream_url"])
             ctx.set("routing", "provider", backup["provider"])
             ctx.set("routing", "protocol_profile", backup.get("protocol_profile") or {})
@@ -1365,7 +1364,6 @@ class UpstreamCallStep(BaseStep):
             ctx.set("routing", "provider_model_id", backup.get("provider_model_id"))
 
             ctx.selected_preset_id = backup["preset_id"]
-            ctx.selected_preset_item_id = backup["preset_item_id"]
             ctx.selected_instance_id = backup.get("instance_id")
             ctx.selected_provider_model_id = backup.get("provider_model_id")
             ctx.selected_upstream = backup["upstream_url"]
@@ -1390,12 +1388,9 @@ class UpstreamCallStep(BaseStep):
         """
         if not ctx.db_session:
             return
-        arm_id = ctx.selected_preset_item_id or ctx.get("routing", "preset_item_id")
-        if not arm_id:
-            # BYOP 路由下可能没有 preset_item_id，回退到 provider_model_id。
-            arm_id = ctx.selected_provider_model_id or ctx.get(
-                "routing", "provider_model_id"
-            )
+        arm_id = ctx.selected_provider_model_id or ctx.get(
+            "routing", "provider_model_id"
+        )
         if not arm_id:
             return
 

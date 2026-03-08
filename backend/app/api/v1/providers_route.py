@@ -407,7 +407,7 @@ async def purchase_model(
                 trace_id=trace_id,
                 provider="model_market",
                 model=model.model_id,
-                preset_item_id=model.id,
+                provider_model_id=model.id,
                 description=f"Model unlock purchase model_id={model.model_id}",
                 allow_negative=False,
             )

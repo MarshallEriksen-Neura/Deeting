@@ -611,7 +611,7 @@ async def test_execute_code_plan_injects_workflow_runtime_context(monkeypatch):
     wf_ctx.set("external_auth", "allowed_models", ["gpt-4o-mini"])
     wf_ctx.set("external_auth", "rate_limit_rpm", 60)
     wf_ctx.set("routing", "provider", "openai")
-    wf_ctx.set("routing", "preset_item_id", "pi-001")
+    wf_ctx.set("routing", "provider_model_id", "pm-001")
 
     result = await plugin.handle_execute_code_plan(
         code="deeting.log(RUNTIME_CONTEXT.get('permissions'))",

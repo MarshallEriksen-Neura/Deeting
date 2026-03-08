@@ -109,9 +109,9 @@ class CacheKeys:
         return f"{cls.prefix}:routing:{capability}:{channel}"
 
     @classmethod
-    def upstream_template(cls, preset_item_id: str) -> str:
+    def upstream_template(cls, provider_model_id: str) -> str:
         """模板/上游路径渲染结果缓存 Key"""
-        return f"{cls.prefix}:upstream_tpl:{preset_item_id}"
+        return f"{cls.prefix}:upstream_tpl:{provider_model_id}"
 
     # ===== Pricing & Quota =====
     @classmethod

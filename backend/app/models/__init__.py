@@ -65,6 +65,7 @@ from .knowledge_folder import KnowledgeFolder
 from .knowledge import KnowledgeArtifact, KnowledgeChunk
 from .mcp_market import McpMarketTool, McpToolCategory, UserMcpSubscription
 from .media_asset import MediaAsset
+from .memory_snapshot import MemorySnapshot
 from .notification import (
     Notification,
     NotificationLevel,
@@ -114,6 +115,7 @@ __all__ = [
     "NotificationType",
     "NotificationLevel",
     "MediaAsset",
+    "MemorySnapshot",
     "GenerationTask",
     "ImageGenerationOutput",
     "ImageGenerationShare",

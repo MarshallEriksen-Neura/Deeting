@@ -413,6 +413,35 @@ async def delete_points(
         resp.raise_for_status()
 
 
+async def set_payload(
+    qdrant: httpx.AsyncClient,
+    *,
+    collection_name: str,
+    point_ids: list[str],
+    payload: dict[str, Any],
+    wait: bool = True,
+) -> None:
+    """Set (merge) payload fields on specific points without re-embedding."""
+    name = str(collection_name or "").strip()
+    if not name:
+        raise ValueError("empty collection_name")
+    if not point_ids:
+        raise ValueError("empty point_ids")
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("payload must be non-empty dict")
+
+    params = {"wait": "true" if wait else "false"}
+    body: dict[str, Any] = {
+        "payload": payload,
+        "points": point_ids,
+    }
+    resp = await qdrant.post(
+        f"/collections/{name}/points/payload", params=params, json=body
+    )
+    if resp.request is not None:
+        resp.raise_for_status()
+
+
 __all__ = [
     "QDRANT_DEFAULT_VECTOR_NAME",
     "create_collection",
@@ -421,6 +450,7 @@ __all__ = [
     "get_collection_vector_size",
     "scroll_points",
     "search_points",
+    "set_payload",
     "upsert_point",
     "upsert_points",
 ]

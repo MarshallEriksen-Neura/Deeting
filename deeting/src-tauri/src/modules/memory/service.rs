@@ -373,6 +373,67 @@ impl MemoryService {
         Ok(LocalMemorySearchResult { items })
     }
 
+    // --- snapshot & rollback ---
+
+    /// List snapshots for a memory (audit trail).
+    pub async fn list_snapshots(
+        &self,
+        memory_id: &str,
+        limit: i64,
+    ) -> Result<Vec<MemorySnapshot>, MemoryError> {
+        let snap = self.snapshots.as_ref().ok_or_else(|| {
+            MemoryError::Validation("snapshot store not available".to_string())
+        })?;
+        snap.list_by_memory(memory_id, limit).await
+    }
+
+    /// Rollback a memory to a previous snapshot state.
+    /// Restores old_content from the snapshot and re-embeds.
+    pub async fn rollback_memory(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<Option<LocalMemoryItem>, MemoryError> {
+        let snap = self.snapshots.as_ref().ok_or_else(|| {
+            MemoryError::Validation("snapshot store not available".to_string())
+        })?;
+
+        let snapshot = snap.get_snapshot(snapshot_id).await?.ok_or_else(|| {
+            MemoryError::NotFound(format!("snapshot {} not found", snapshot_id))
+        })?;
+
+        let old_content = snapshot.old_content.as_deref().ok_or_else(|| {
+            MemoryError::Validation("snapshot has no old_content to restore".to_string())
+        })?;
+
+        // Re-embed the restored content
+        let new_embedding = if let Some(ref embedding_svc) = self.embedding {
+            embedding_svc.embed_text(old_content).await.ok()
+        } else {
+            None
+        };
+
+        // Record the rollback as a new snapshot
+        let _ = snap
+            .record(
+                &snapshot.memory_id,
+                "rollback",
+                None, // current content will be overwritten
+                Some(old_content),
+                None,
+                None,
+            )
+            .await;
+
+        self.store
+            .update_memory_content(
+                &snapshot.memory_id,
+                old_content,
+                new_embedding,
+                Some("rollback".to_string()),
+            )
+            .await
+    }
+
     // --- local_assets operations ---
 
     pub async fn upsert_asset(

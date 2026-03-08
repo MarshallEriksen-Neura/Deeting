@@ -103,7 +103,6 @@ class WorkflowContext:
 
     # ===== 路由决策结果 =====
     selected_preset_id: int | None = None
-    selected_preset_item_id: int | None = None
     selected_instance_id: str | None = None
     selected_provider_model_id: str | None = None
     selected_upstream: str | None = None

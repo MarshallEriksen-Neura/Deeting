@@ -9,7 +9,7 @@ from app.models import ProviderPreset
 from app.models.provider_instance import ProviderInstance
 from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
-DEFAULT_CAPABILITY_CONFIGS = {
+DEFAULT_PROFILE_CONFIGS = {
     "chat": {
         "template_engine": "simple_replace",
         "request_template": {
@@ -54,7 +54,7 @@ async def _seed_presets(session):
                 protocol_schema_version="2026-03-07",
                 protocol_profiles=build_protocol_profiles(
                     provider="openai",
-                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                    profile_configs=DEFAULT_PROFILE_CONFIGS,
                 ),
                 category="Cloud API",
                 theme_color="#000000",
@@ -72,7 +72,7 @@ async def _seed_presets(session):
                 protocol_schema_version="2026-03-07",
                 protocol_profiles=build_protocol_profiles(
                     provider="azure",
-                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                    profile_configs=DEFAULT_PROFILE_CONFIGS,
                 ),
                 category="Cloud API",
                 theme_color="#0078d4",

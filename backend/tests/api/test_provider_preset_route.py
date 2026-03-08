@@ -27,7 +27,7 @@ async def test_admin_provider_presets_exposes_full_sync_fields(
                     provider="custom",
                     default_headers={"X-Test": "1"},
                     default_params={"temperature": 0.2},
-                    capability_configs={
+                    profile_configs={
                         "chat": {
                             "template_engine": "simple_replace",
                             "request_template": {"model": None, "messages": None},

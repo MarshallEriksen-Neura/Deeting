@@ -61,7 +61,7 @@ async def stream_billing_callback(
                     else None
                 ),
                 model=ctx.requested_model,
-                preset_item_id=ctx.get("routing", "preset_item_id"),
+                provider_model_id=ctx.get("routing", "provider_model_id"),
                 api_key_id=ctx.api_key_id,
                 description="Stream billing completed",
             )

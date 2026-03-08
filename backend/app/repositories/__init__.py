@@ -24,6 +24,7 @@ from .knowledge_folder_repository import KnowledgeFolderRepository
 from .login_session_repository import LoginSessionRepository
 from .mcp_market_repository import McpMarketRepository
 from .media_asset_repository import MediaAssetRepository
+from .memory_snapshot_repository import MemorySnapshotRepository
 from .notification_repository import (
     NotificationReceiptRepository,
     NotificationRepository,
@@ -73,6 +74,7 @@ __all__ = [
     "LoginSessionRepository",
     "McpMarketRepository",
     "MediaAssetRepository",
+    "MemorySnapshotRepository",
     "NotificationReceiptRepository",
     "NotificationRepository",
     "ProviderInstanceRepository",

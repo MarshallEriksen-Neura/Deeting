@@ -840,7 +840,6 @@ async def test_routing(
         capability=ctx.capability or request_body.capability,
         provider=ctx.get("routing", "provider"),
         preset_id=ctx.get("routing", "preset_id"),
-        preset_item_id=ctx.get("routing", "preset_item_id"),
         instance_id=str(instance_id) if instance_id is not None else None,
         provider_model_id=(
             str(provider_model_id) if provider_model_id is not None else None

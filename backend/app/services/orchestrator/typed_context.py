@@ -37,7 +37,6 @@ class RoutingData:
 
     provider: str | None = None
     provider_model_id: str | None = None
-    preset_item_id: str | None = None
     upstream_url: str | None = None
     upstream_path: str | None = None
     pricing_config: dict | None = None
@@ -161,7 +160,6 @@ class TypedContext:
         return RoutingData(
             provider=self._ctx.get("routing", "provider"),
             provider_model_id=self._ctx.get("routing", "provider_model_id"),
-            preset_item_id=self._ctx.get("routing", "preset_item_id"),
             upstream_url=self._ctx.get("routing", "upstream_url"),
             upstream_path=self._ctx.get("routing", "upstream_path"),
             pricing_config=self._ctx.get("routing", "pricing_config"),
@@ -264,10 +262,6 @@ class TypedContext:
     def get_model(self) -> str | None:
         """获取使用的 model"""
         return self._ctx.requested_model or self._ctx.get("validation", "model")
-
-    def get_preset_item_id(self) -> str | None:
-        """获取使用的 preset_item_id"""
-        return self._ctx.get("routing", "preset_item_id")
 
     # ===== 原始上下文访问 =====
 

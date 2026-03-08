@@ -8,7 +8,7 @@ from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
 from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
-DEFAULT_CAPABILITY_CONFIGS = {
+DEFAULT_PROFILE_CONFIGS = {
     "chat": {
         "template_engine": "simple_replace",
         "request_template": {
@@ -39,7 +39,7 @@ async def _seed_chat_provider(session, user_id: uuid.UUID) -> ProviderModel:
         protocol_schema_version="2026-03-07",
         protocol_profiles=build_protocol_profiles(
             provider="openai",
-            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            profile_configs=DEFAULT_PROFILE_CONFIGS,
         ),
         is_active=True,
     )

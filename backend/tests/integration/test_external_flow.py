@@ -27,7 +27,7 @@ class RoutingStub(BaseStep):
         ctx.set("routing", "upstream_url", upstream_url)
         ctx.selected_upstream = upstream_url
         ctx.selected_preset_id = 1
-        ctx.selected_preset_item_id = 2
+        ctx.selected_provider_model_id = "2"
         return StepResult(
             status=StepStatus.SUCCESS, data={"upstream_url": upstream_url}
         )

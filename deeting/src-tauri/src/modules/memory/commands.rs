@@ -4,7 +4,7 @@ use crate::modules::memory::error::MemoryError;
 use crate::modules::memory::types::{
     CreateLocalMemoryRequest, LocalMemoryClearRequest, LocalMemoryClearResponse,
     LocalMemoryDeleteResponse, LocalMemoryItem, LocalMemoryListQuery, LocalMemoryListResponse,
-    LocalMemorySearchQuery, LocalMemorySearchResult, WriteGuardResult,
+    LocalMemorySearchQuery, LocalMemorySearchResult, MemorySnapshot, WriteGuardResult,
 };
 use crate::state::AppState;
 
@@ -78,6 +78,33 @@ pub async fn search_local_memories(
         .memory
         .service
         .search(query)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_memory_snapshots(
+    state: State<'_, AppState>,
+    memory_id: String,
+    limit: Option<i64>,
+) -> Result<Vec<MemorySnapshot>, String> {
+    state
+        .memory
+        .service
+        .list_snapshots(&memory_id, limit.unwrap_or(20))
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn rollback_memory(
+    state: State<'_, AppState>,
+    snapshot_id: String,
+) -> Result<Option<LocalMemoryItem>, String> {
+    state
+        .memory
+        .service
+        .rollback_memory(&snapshot_id)
         .await
         .map_err(to_string)
 }

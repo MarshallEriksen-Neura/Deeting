@@ -14,6 +14,7 @@ from app.storage.qdrant_kb_store import (
     delete_points,
     scroll_points,
     search_points,
+    set_payload,
     upsert_point,
 )
 from app.storage.qdrant_user_store import ensure_user_collection
@@ -306,6 +307,39 @@ class QdrantUserVectorService(VectorStoreClient):
             if self._fail_open:
                 self._log.warning("list_points failed", exc_info=exc)
                 return [], None
+            raise
+
+    async def update_payload(
+        self, point_ids: list[str], payload: dict[str, Any]
+    ) -> None:
+        """Update payload fields on existing points without re-embedding."""
+        if not point_ids or not payload:
+            return
+        collection = self._collection_name or ""
+        if not collection:
+            vector_size = await self._resolve_vector_size()
+            collection, degraded = await self._ensure_collection(
+                vector_size=vector_size
+            )
+            if degraded:
+                return
+
+        try:
+            await set_payload(
+                self._client,
+                collection_name=collection,
+                point_ids=point_ids,
+                payload=payload,
+                wait=False,
+            )
+        except Exception as exc:
+            if self._fail_open:
+                self._log.warning(
+                    "update_payload failed but ignored",
+                    extra={"collection": collection},
+                    exc_info=exc,
+                )
+                return
             raise
 
     async def clear_all(self) -> None:

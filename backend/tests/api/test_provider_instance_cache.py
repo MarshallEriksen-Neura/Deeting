@@ -1,5 +1,4 @@
 import uuid
-from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
@@ -19,7 +18,7 @@ from app.services.providers.provider_instance_service import ProviderInstanceSer
 from tests.api.conftest import AsyncSessionLocal, engine
 from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
-DEFAULT_CAPABILITY_CONFIGS = {
+DEFAULT_PROFILE_CONFIGS = {
     "chat": {
         "template_engine": "simple_replace",
         "request_template": {
@@ -76,7 +75,7 @@ async def seed_presets():
                     protocol_schema_version="2026-03-07",
                     protocol_profiles=build_protocol_profiles(
                         provider="openai",
-                        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                        profile_configs=DEFAULT_PROFILE_CONFIGS,
                     ),
                     is_active=True,
                 )
@@ -94,7 +93,7 @@ async def seed_presets():
                     protocol_schema_version="2026-03-07",
                     protocol_profiles=build_protocol_profiles(
                         provider="azure",
-                        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                        profile_configs=DEFAULT_PROFILE_CONFIGS,
                     ),
                     is_active=True,
                 )
@@ -288,7 +287,7 @@ async def test_provider_preset_cache_and_invalidate():
             protocol_schema_version="2026-03-07",
             protocol_profiles=build_protocol_profiles(
                 provider="openai",
-                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                profile_configs=DEFAULT_PROFILE_CONFIGS,
             ),
             is_active=True,
         )
@@ -804,41 +803,3 @@ async def test_provider_instance_auto_migrates_plaintext_ref_on_update(monkeypat
         updated = await svc.update_instance(inst.id, None, name="inst-migrated")
 
         assert updated.credentials_ref.startswith("db:")
-
-
-@pytest.mark.asyncio
-async def test_provider_instance_repository_legacy_column_fallback(monkeypatch):
-    inst_id: uuid.UUID
-    async with AsyncSessionLocal() as session:
-        svc = ProviderInstanceService(session)
-        inst = await svc.create_instance(
-            user_id=None,
-            preset_slug="openai",
-            name="inst-legacy-columns",
-            base_url="https://api.example.com",
-            icon=None,
-            credentials_ref="ENV_OPENAI_KEY",
-        )
-        inst_id = inst.id
-
-    async with AsyncSessionLocal() as session:
-        monkeypatch.setattr(
-            "app.repositories.provider_instance_repository._has_provider_instance_is_public_column",
-            AsyncMock(return_value=False),
-        )
-        monkeypatch.setattr(
-            "app.repositories.provider_instance_repository._has_provider_instance_meta_column",
-            AsyncMock(return_value=False),
-        )
-
-        repo = ProviderInstanceRepository(session)
-        row = await repo.get(inst_id)
-        assert row is not None
-        assert row.is_public is True
-        assert row.meta == {}
-
-        listed = await repo.get_available_instances(user_id=None, include_public=True)
-        target = next((item for item in listed if item.id == inst_id), None)
-        assert target is not None
-        assert target.is_public is True
-        assert target.meta == {}

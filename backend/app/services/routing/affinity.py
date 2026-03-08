@@ -42,7 +42,7 @@ class AffinityContext:
 
     state: AffinityState
     locked_provider: str | None = None  # 锁定的上游 provider
-    locked_item_id: str | None = None  # 锁定的 preset_item_id
+    locked_provider_model_id: str | None = None  # 锁定的 provider_model_id
     explore_count: int = 0  # 探索次数
     success_count: int = 0  # 成功次数
     failure_count: int = 0  # 失败次数
@@ -112,7 +112,9 @@ class RoutingAffinityStateMachine:
             state_raw = _to_text(_get("state"), "init")
             state = AffinityState(state_raw or "init")
             locked_provider = _get("locked_provider")
-            locked_item_id = _get("locked_item_id")
+            locked_provider_model_id = _get("locked_provider_model_id") or _get(
+                "locked_item_id"
+            )
             explore_count = _to_int(_get("explore_count"))
             success_count = _to_int(_get("success_count"))
             failure_count = _to_int(_get("failure_count"))
@@ -132,7 +134,7 @@ class RoutingAffinityStateMachine:
             return AffinityContext(
                 state=state,
                 locked_provider=_to_text(locked_provider),
-                locked_item_id=_to_text(locked_item_id),
+                locked_provider_model_id=_to_text(locked_provider_model_id),
                 explore_count=explore_count,
                 success_count=success_count,
                 failure_count=failure_count,
@@ -153,10 +155,10 @@ class RoutingAffinityStateMachine:
         判断是否应该使用亲和路由
 
         Returns:
-            (should_use, provider, item_id)
+            (should_use, provider, provider_model_id)
             - should_use: 是否应该使用亲和路由
             - provider: 锁定的 provider（如果有）
-            - item_id: 锁定的 preset_item_id（如果有）
+            - provider_model_id: 锁定的 provider_model_id（如果有）
         """
         ctx = await self.get_context()
 
@@ -172,14 +174,14 @@ class RoutingAffinityStateMachine:
                 return False, None, None
 
             # 锁定有效，使用亲和路由
-            return True, ctx.locked_provider, ctx.locked_item_id
+            return True, ctx.locked_provider, ctx.locked_provider_model_id
 
         return False, None, None
 
     async def record_request(
         self,
         provider: str,
-        item_id: str,
+        provider_model_id: str,
         success: bool,
     ) -> None:
         """
@@ -187,7 +189,7 @@ class RoutingAffinityStateMachine:
 
         Args:
             provider: 使用的 provider
-            item_id: 使用的 preset_item_id
+            provider_model_id: 使用的 provider_model_id
             success: 请求是否成功
         """
         ctx = await self.get_context()
@@ -205,7 +207,7 @@ class RoutingAffinityStateMachine:
 
             if ctx.explore_count >= self.explore_threshold:
                 # 达到探索阈值，锁定当前上游
-                await self._transition_to_locked(ctx, provider, item_id)
+                await self._transition_to_locked(ctx, provider, provider_model_id)
             else:
                 # 继续探索
                 await self._save_context(ctx)
@@ -235,7 +237,7 @@ class RoutingAffinityStateMachine:
         """转换到探索期"""
         ctx.state = AffinityState.EXPLORING
         ctx.locked_provider = None
-        ctx.locked_item_id = None
+        ctx.locked_provider_model_id = None
         ctx.explore_count = 0
         ctx.success_count = 0
         ctx.failure_count = 0
@@ -252,21 +254,21 @@ class RoutingAffinityStateMachine:
         self,
         ctx: AffinityContext,
         provider: str,
-        item_id: str,
+        provider_model_id: str,
     ) -> None:
         """转换到锁定期"""
         ctx.state = AffinityState.LOCKED
         ctx.locked_provider = provider
-        ctx.locked_item_id = item_id
+        ctx.locked_provider_model_id = provider_model_id
         ctx.lock_expires_at = Datetime.utcnow() + timedelta(seconds=self.lock_duration)
         ctx.last_updated = Datetime.utcnow()
         await self._save_context(ctx)
         logger.info(
-            "affinity_locked session=%s model=%s provider=%s item=%s expires=%s",
+            "affinity_locked session=%s model=%s provider=%s provider_model_id=%s expires=%s",
             self.session_id,
             self.model,
             provider,
-            item_id,
+            provider_model_id,
             ctx.lock_expires_at,
         )
 
@@ -292,8 +294,8 @@ class RoutingAffinityStateMachine:
 
             if ctx.locked_provider:
                 payload["locked_provider"] = ctx.locked_provider
-            if ctx.locked_item_id:
-                payload["locked_item_id"] = ctx.locked_item_id
+            if ctx.locked_provider_model_id:
+                payload["locked_provider_model_id"] = ctx.locked_provider_model_id
             if ctx.lock_expires_at:
                 payload["lock_expires_at"] = ctx.lock_expires_at.isoformat()
 

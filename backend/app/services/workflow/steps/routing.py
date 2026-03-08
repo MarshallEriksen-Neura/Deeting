@@ -2,7 +2,7 @@
 RoutingStep: 路由决策步骤
 
 职责：
-- 按 capability + model 选择 provider preset item
+- 按 capability + model 选择 provider model
 - 按 priority/weight 排序
 - 支持 Bandit 算法选择最优上游
 """
@@ -69,13 +69,13 @@ class RoutingStep(BaseStep):
 
     写入上下文:
         - routing.preset_id: 选中的 preset ID
-        - routing.preset_item_id: 选中的 preset item ID
+        - routing.provider_model_id: 选中的 provider model ID
         - routing.upstream_url: 上游 URL
         - routing.provider: 提供商名称
 
     同时更新 ctx 顶层字段:
         - selected_preset_id
-        - selected_preset_item_id
+        - selected_provider_model_id
         - selected_upstream
     """
 
@@ -169,7 +169,6 @@ class RoutingStep(BaseStep):
 
             # 写入上下文
             ctx.set("routing", "preset_id", routing_result["preset_id"])
-            ctx.set("routing", "preset_item_id", routing_result["preset_item_id"])
             ctx.set("routing", "instance_id", routing_result.get("instance_id"))
             ctx.set(
                 "routing", "provider_model_id", routing_result.get("provider_model_id")
@@ -204,7 +203,6 @@ class RoutingStep(BaseStep):
 
             # 更新顶层字段
             ctx.selected_preset_id = routing_result["preset_id"]
-            ctx.selected_preset_item_id = routing_result["preset_item_id"]
             ctx.selected_instance_id = routing_result.get("instance_id")
             ctx.selected_provider_model_id = routing_result.get("provider_model_id")
             ctx.selected_upstream = routing_result["upstream_url"]
@@ -278,7 +276,6 @@ class RoutingStep(BaseStep):
         fallback = self._normalize_routing_payload(
             {
                 "preset_id": None,
-                "preset_item_id": None,
                 "instance_id": None,
                 "provider_model_id": None,
                 "upstream_url": "http://mock-upstream",
@@ -308,7 +305,6 @@ class RoutingStep(BaseStep):
             }
         )
         ctx.set("routing", "preset_id", fallback["preset_id"])
-        ctx.set("routing", "preset_item_id", fallback["preset_item_id"])
         ctx.set("routing", "instance_id", fallback["instance_id"])
         ctx.set("routing", "provider_model_id", fallback["provider_model_id"])
         ctx.set("routing", "upstream_url", fallback["upstream_url"])
@@ -327,7 +323,6 @@ class RoutingStep(BaseStep):
         ctx.set("routing", "affinity_hit", False)
         ctx.set("routing", "affinity_provider_model_id", None)
         ctx.selected_preset_id = fallback["preset_id"]
-        ctx.selected_preset_item_id = fallback["preset_item_id"]
         ctx.selected_instance_id = fallback["instance_id"]
         ctx.selected_provider_model_id = fallback["provider_model_id"]
         ctx.selected_upstream = fallback["upstream_url"]
@@ -376,7 +371,7 @@ class RoutingStep(BaseStep):
                     c.weight,
                     c.credential_alias or "",
                     c.credential_id or "",
-                    c.model_id,
+                    c.provider_model_id,
                 ),
             )
             backups = []
@@ -467,7 +462,7 @@ class RoutingStep(BaseStep):
         # 如果亲和命中，尝试从候选中找到锁定的上游
         if affinity_hit and locked_item_id:
             for candidate in candidates:
-                if str(candidate.preset_item_id) == locked_item_id:
+                if str(candidate.provider_model_id) == locked_item_id:
                     # 找到锁定的上游，直接使用
                     primary = candidate
                     backups = [c for c in candidates if c != primary]
@@ -505,7 +500,7 @@ class RoutingStep(BaseStep):
                 # 这里只记录选择，成功/失败在 upstream_call 步骤记录
                 ctx.set("routing", "affinity_machine", affinity_machine)
                 ctx.set("routing", "affinity_provider", primary.provider)
-                ctx.set("routing", "affinity_item_id", str(primary.preset_item_id))
+                ctx.set("routing", "affinity_item_id", str(primary.provider_model_id))
             except Exception as exc:
                 logger.warning("routing_affinity_record_failed err=%s", exc)
 
@@ -527,9 +522,8 @@ class RoutingStep(BaseStep):
         return {
             "preset_id": c.preset_id,
             "preset_slug": getattr(c, "preset_slug", None),
-            "preset_item_id": c.preset_item_id,
             "instance_id": c.instance_id,
-            "provider_model_id": c.model_id,
+            "provider_model_id": c.provider_model_id,
             "upstream_url": c.upstream_url,
             "provider": c.provider,
             "protocol_profile": c.protocol_profile,

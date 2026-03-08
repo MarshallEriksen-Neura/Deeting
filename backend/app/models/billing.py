@@ -316,10 +316,10 @@ class BillingTransaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         index=True,
         comment="模型名称",
     )
-    preset_item_id: Mapped[uuid.UUID | None] = mapped_column(
+    provider_model_id: Mapped[uuid.UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),
         nullable=True,
-        comment="路由配置项 ID",
+        comment="Provider model ID",
     )
 
     # 扣费前后余额
