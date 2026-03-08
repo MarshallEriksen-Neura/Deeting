@@ -207,6 +207,8 @@ async fn search_summaries(
     query: &str,
     limit: usize,
 ) -> Result<Vec<(String, String, f32)>, String> {
+    use sqlx::Row;
+
     // Tokenize query for LIKE matching
     let tokens: Vec<&str> = query.split_whitespace().filter(|t| t.len() >= 2).collect();
     if tokens.is_empty() {
@@ -226,9 +228,9 @@ async fn search_summaries(
         conditions.join(" AND ")
     );
 
-    let mut q = sqlx::query_as::<_, (String, String)>(&sql);
+    let mut q = sqlx::query(&sql);
     for binding in &bindings {
-        q = q.bind(binding);
+        q = q.bind(binding.clone());
     }
     q = q.bind(limit as i64);
 
@@ -238,13 +240,15 @@ async fn search_summaries(
     let total_tokens = tokens.len() as f32;
     Ok(rows
         .into_iter()
-        .map(|(id, text)| {
+        .filter_map(|row| {
+            let id: String = row.try_get("id").ok()?;
+            let text: String = row.try_get("summary_text").ok()?;
             let lower_text = text.to_lowercase();
             let matched = tokens
                 .iter()
                 .filter(|t| lower_text.contains(&t.to_lowercase()))
                 .count() as f32;
-            (id, text, matched / total_tokens)
+            Some((id, text, matched / total_tokens))
         })
         .collect())
 }

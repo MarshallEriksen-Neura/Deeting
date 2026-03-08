@@ -64,7 +64,7 @@ const LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS: usize = 1200;
 const LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS: usize = 120;
 
 pub struct McpStore {
-    pool: SqlitePool,
+    pub(crate) pool: SqlitePool,
 }
 
 #[derive(Debug, Clone)]

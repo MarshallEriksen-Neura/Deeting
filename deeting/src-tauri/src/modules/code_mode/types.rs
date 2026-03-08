@@ -114,24 +114,3 @@ pub struct LocalCodeModeBridgeStatus {
     pub running: bool,
     pub base_url: Option<String>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeModeSyncPayloadItem {
-    pub execution_id: String,
-    pub session_id: String,
-    pub trace_id: Option<String>,
-    pub language: String,
-    pub status: String,
-    pub format_version: Option<String>,
-    pub runtime_protocol_version: Option<String>,
-    pub code: String,
-    pub runtime_context: Value,
-    pub tool_plan_results: Value,
-    pub runtime_tool_calls: RuntimeToolCallsEnvelope,
-    pub render_blocks: Value,
-    pub error: Option<String>,
-    pub error_code: Option<String>,
-    pub duration_ms: i64,
-    pub request_meta: Value,
-    pub created_at: Option<String>,
-}

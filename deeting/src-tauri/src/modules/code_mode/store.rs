@@ -5,8 +5,7 @@ use sqlx::Row;
 
 use crate::modules::code_mode::error::CodeModeError;
 use crate::modules::code_mode::types::{
-    CodeModeExecutionDetail, CodeModeExecutionItem, CodeModeExecutionPage, CodeModeSyncPayloadItem,
-    RuntimeToolCallsEnvelope,
+    CodeModeExecutionDetail, CodeModeExecutionItem, CodeModeExecutionPage, RuntimeToolCallsEnvelope,
 };
 
 #[derive(Clone)]
@@ -78,43 +77,6 @@ impl CodeModeExecutionStore {
             "ALTER TABLE code_mode_executions ADD COLUMN code TEXT",
         )
         .await?;
-        self.ensure_column(
-            "code_mode_executions",
-            "sync_status",
-            "ALTER TABLE code_mode_executions ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending'",
-        )
-        .await?;
-        self.ensure_column(
-            "code_mode_executions",
-            "sync_attempts",
-            "ALTER TABLE code_mode_executions ADD COLUMN sync_attempts INTEGER NOT NULL DEFAULT 0",
-        )
-        .await?;
-        self.ensure_column(
-            "code_mode_executions",
-            "last_sync_error",
-            "ALTER TABLE code_mode_executions ADD COLUMN last_sync_error TEXT",
-        )
-        .await?;
-        self.ensure_column(
-            "code_mode_executions",
-            "last_synced_at",
-            "ALTER TABLE code_mode_executions ADD COLUMN last_synced_at TEXT",
-        )
-        .await?;
-        self.ensure_column(
-            "code_mode_executions",
-            "cloud_id",
-            "ALTER TABLE code_mode_executions ADD COLUMN cloud_id TEXT",
-        )
-        .await?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_code_mode_exec_sync_status ON code_mode_executions(sync_status, created_at)",
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| CodeModeError::Storage(err.to_string()))?;
 
         sqlx::query(
             r#"
@@ -122,17 +84,6 @@ impl CodeModeExecutionStore {
             SET code = json_extract(runtime_context_json, '$.code')
             WHERE (code IS NULL OR code = '')
               AND json_extract(runtime_context_json, '$.code') IS NOT NULL
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| CodeModeError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            UPDATE code_mode_executions
-            SET sync_status = 'pending'
-            WHERE sync_status IS NULL OR trim(sync_status) = ''
             "#,
         )
         .execute(&self.pool)
@@ -166,9 +117,8 @@ impl CodeModeExecutionStore {
               id, execution_id, user_id, session_id, trace_id, language, status,
               format_version, runtime_protocol_version, runtime_context_json,
               tool_plan_results_json, runtime_tool_calls_json, render_blocks_json,
-              error, error_code, duration_ms, request_meta_json, created_at,
-              code, sync_status, sync_attempts, last_sync_error, last_synced_at, cloud_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, NULL)
+              error, error_code, duration_ms, request_meta_json, created_at, code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(record.id)
@@ -305,119 +255,6 @@ impl CodeModeExecutionStore {
         };
 
         Ok(Some(self.row_to_execution_detail(&row)?))
-    }
-
-    pub async fn list_pending_sync(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<CodeModeSyncPayloadItem>, CodeModeError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, execution_id, user_id, session_id, trace_id, language, status,
-                   format_version, runtime_protocol_version, runtime_context_json,
-                   tool_plan_results_json, runtime_tool_calls_json, render_blocks_json,
-                   error, error_code, duration_ms, request_meta_json, created_at, code
-            FROM code_mode_executions
-            WHERE COALESCE(sync_status, 'pending') <> 'synced'
-            ORDER BY datetime(created_at) ASC, rowid ASC
-            LIMIT ?
-            "#,
-        )
-        .bind(limit.max(1) as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|err| CodeModeError::Storage(err.to_string()))?;
-
-        let mut items = Vec::with_capacity(rows.len());
-        for row in rows {
-            let detail = self.row_to_execution_detail(&row)?;
-            let mut code = row
-                .try_get::<Option<String>, _>("code")
-                .map_err(|err| CodeModeError::Storage(err.to_string()))?
-                .unwrap_or_default();
-            if code.trim().is_empty() {
-                code = detail
-                    .runtime_context
-                    .get("code")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("")
-                    .to_string();
-            }
-            items.push(CodeModeSyncPayloadItem {
-                execution_id: detail.execution_id,
-                session_id: detail.session_id,
-                trace_id: detail.trace_id,
-                language: detail.language,
-                status: detail.status,
-                format_version: detail.format_version,
-                runtime_protocol_version: detail.runtime_protocol_version,
-                code,
-                runtime_context: detail.runtime_context,
-                tool_plan_results: detail.tool_plan_results,
-                runtime_tool_calls: detail.runtime_tool_calls,
-                render_blocks: detail.render_blocks,
-                error: detail.error,
-                error_code: detail.error_code,
-                duration_ms: detail.duration_ms,
-                request_meta: detail.request_meta,
-                created_at: detail.created_at,
-            });
-        }
-
-        Ok(items)
-    }
-
-    pub async fn mark_sync_success_by_execution_id(
-        &self,
-        execution_id: &str,
-        cloud_id: Option<&str>,
-        synced_at: &str,
-    ) -> Result<(), CodeModeError> {
-        sqlx::query(
-            r#"
-            UPDATE code_mode_executions
-            SET sync_status = 'synced',
-                sync_attempts = COALESCE(sync_attempts, 0) + 1,
-                last_sync_error = NULL,
-                last_synced_at = ?,
-                cloud_id = COALESCE(?, cloud_id)
-            WHERE execution_id = ?
-            "#,
-        )
-        .bind(synced_at)
-        .bind(cloud_id)
-        .bind(execution_id.trim())
-        .execute(&self.pool)
-        .await
-        .map_err(|err| CodeModeError::Storage(err.to_string()))?;
-        Ok(())
-    }
-
-    pub async fn mark_sync_failed_by_execution_id(
-        &self,
-        execution_id: &str,
-        error_message: &str,
-    ) -> Result<(), CodeModeError> {
-        let message = if error_message.chars().count() > 1000 {
-            error_message.chars().take(1000).collect::<String>()
-        } else {
-            error_message.to_string()
-        };
-        sqlx::query(
-            r#"
-            UPDATE code_mode_executions
-            SET sync_status = 'failed',
-                sync_attempts = COALESCE(sync_attempts, 0) + 1,
-                last_sync_error = ?
-            WHERE execution_id = ?
-            "#,
-        )
-        .bind(message)
-        .bind(execution_id.trim())
-        .execute(&self.pool)
-        .await
-        .map_err(|err| CodeModeError::Storage(err.to_string()))?;
-        Ok(())
     }
 
     fn row_to_execution_detail(
