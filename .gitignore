@@ -31,6 +31,7 @@ backend/pytest-cache-files-*
 
 # Backend logs
 backend/logs/
+backend/.data
 logs/
 *.log
 

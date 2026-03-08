@@ -16,6 +16,12 @@ export const LocalMemoryItemSchema = z.object({
   session_id: z.string().nullable().optional(),
   assistant_id: z.string().nullable().optional(),
   meta_info: z.record(z.string(), z.any()).nullable().optional(),
+  embedding_model: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  tags: z.array(z.string()).nullable().optional(),
+  vitality: z.number().nullable().optional(),
+  last_accessed_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -43,15 +49,55 @@ export const LocalMemoryClearResponseSchema = z.object({
 
 export type LocalMemoryClearResponse = z.infer<typeof LocalMemoryClearResponseSchema>
 
+export const LocalMemorySearchItemSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  session_id: z.string().nullable().optional(),
+  assistant_id: z.string().nullable().optional(),
+  meta_info: z.record(z.string(), z.any()).nullable().optional(),
+  score: z.number(),
+  category: z.string().nullable().optional(),
+  vitality: z.number().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export type LocalMemorySearchItem = z.infer<typeof LocalMemorySearchItemSchema>
+
+export const LocalMemorySearchResultSchema = z.object({
+  items: z.array(LocalMemorySearchItemSchema).default([]),
+})
+
+export type LocalMemorySearchResult = z.infer<typeof LocalMemorySearchResultSchema>
+
+export const WriteGuardResultSchema = z.object({
+  action: z.enum(["add", "update", "noop"]),
+  item: LocalMemoryItemSchema.nullable().optional(),
+  similarity_score: z.number().nullable().optional(),
+  updated_memory_id: z.string().nullable().optional(),
+})
+
+export type WriteGuardResult = z.infer<typeof WriteGuardResultSchema>
+
 export type AppendLocalMemoryRequest = {
   content: string
   session_id?: string | null
   assistant_id?: string | null
   meta_info?: Record<string, any> | null
+  category?: string | null
+  source?: string | null
+  tags?: string[] | null
 }
 
 export type LocalMemoryListQuery = {
   cursor?: string | null
+  limit?: number | null
+  session_id?: string | null
+  assistant_id?: string | null
+}
+
+export type LocalMemorySearchQuery = {
+  query: string
   limit?: number | null
   session_id?: string | null
   assistant_id?: string | null
@@ -78,9 +124,30 @@ export async function appendLocalMemory(
       session_id: payload.session_id ?? null,
       assistant_id: payload.assistant_id ?? null,
       meta_info: payload.meta_info ?? null,
+      category: payload.category ?? null,
+      source: payload.source ?? null,
+      tags: payload.tags ?? null,
     },
   })
   return LocalMemoryItemSchema.parse(data)
+}
+
+export async function appendLocalMemoryGuarded(
+  payload: AppendLocalMemoryRequest
+): Promise<WriteGuardResult> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<WriteGuardResult>("append_local_memory_guarded", {
+    payload: {
+      content: payload.content,
+      session_id: payload.session_id ?? null,
+      assistant_id: payload.assistant_id ?? null,
+      meta_info: payload.meta_info ?? null,
+      category: payload.category ?? null,
+      source: payload.source ?? null,
+      tags: payload.tags ?? null,
+    },
+  })
+  return WriteGuardResultSchema.parse(data)
 }
 
 export async function listLocalMemories(
@@ -96,6 +163,21 @@ export async function listLocalMemories(
     },
   })
   return LocalMemoryListResponseSchema.parse(data)
+}
+
+export async function searchLocalMemories(
+  query: LocalMemorySearchQuery
+): Promise<LocalMemorySearchResult> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<LocalMemorySearchResult>("search_local_memories", {
+    query: {
+      query: query.query,
+      limit: query.limit ?? null,
+      session_id: query.session_id ?? null,
+      assistant_id: query.assistant_id ?? null,
+    },
+  })
+  return LocalMemorySearchResultSchema.parse(data)
 }
 
 export async function deleteLocalMemory(id: string): Promise<LocalMemoryDeleteResponse> {

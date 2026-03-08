@@ -1,7 +1,4 @@
-"""
-Legacy placeholder for removed provider_preset_item schemas.
-Kept to satisfy imports in tests; new code should use provider_instance/provider_model flows.
-"""
+"""Provider preset DTOs for admin APIs."""
 
 from typing import Any
 from uuid import UUID
@@ -29,14 +26,9 @@ class ProviderPresetDTO(BaseSchema):
     is_active: bool = True
 
 
-# Backward-compat exports
 ProviderPresetBase = ProviderPresetDTO
 ProviderPresetCreate = ProviderPresetDTO
 ProviderPresetUpdate = ProviderPresetDTO
-ProviderPresetItemBase = ProviderPresetDTO
-ProviderPresetItemCreate = ProviderPresetDTO
-ProviderPresetItemUpdate = ProviderPresetDTO
-ProviderPresetItemDTO = ProviderPresetDTO
 
 
 class ProviderWish(BaseSchema):

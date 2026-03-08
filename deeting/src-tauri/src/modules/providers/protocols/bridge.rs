@@ -32,7 +32,7 @@ pub fn template_matches_family(template: &Value, protocol_family: &str) -> bool 
     }
 }
 
-pub fn build_protocol_profile_from_legacy(
+pub fn build_protocol_profile(
     preset: Option<&ProviderPreset>,
     model: &ProviderModel,
     capability: &str,
@@ -381,7 +381,7 @@ fn runtime_hook_from_value(value: &Value) -> Option<RuntimeHook> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_canonical_request_from_value, build_protocol_profile_from_legacy, infer_protocol_family, template_matches_family};
+    use super::{build_canonical_request_from_value, build_protocol_profile, infer_protocol_family, template_matches_family};
     use crate::modules::providers::types::{ProviderModel, ProviderPreset};
     use serde_json::{Value, json};
     use uuid::Uuid;
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn build_protocol_profile_uses_builtin_responses_template_when_legacy_template_mismatches() {
-        let profile = build_protocol_profile_from_legacy(
+        let profile = build_protocol_profile(
             Some(&mock_preset()),
             &mock_model("responses"),
             "chat",
@@ -485,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn build_protocol_profile_from_legacy_prefers_stored_protocol_profile() {
+    fn build_protocol_profile_prefers_stored_protocol_profile() {
         let mut preset = mock_preset();
         preset.protocol_profiles = json!({
             "chat": {
@@ -531,7 +531,7 @@ mod tests {
                 }
             }
         });
-        let profile = build_protocol_profile_from_legacy(
+        let profile = build_protocol_profile(
             Some(&preset),
             &mock_model("responses"),
             "chat",

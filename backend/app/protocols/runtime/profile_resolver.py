@@ -56,11 +56,6 @@ def build_protocol_profile(
             name=str(request_builder["name"]),
             config=request_builder.get("config") or {},
         )
-    elif request_builder:
-        base.request.request_builder = RuntimeHook(
-            name="legacy_request_builder",
-            config=request_builder,
-        )
     if response_transform:
         base.response.response_template = response_transform
     if output_mapping:
@@ -116,12 +111,6 @@ def resolve_effective_config_from_preset(
             config["async_config"] = async_config
         return config
 
-    if not preset:
-        return None
-    configs = getattr(preset, "capability_configs", None) or {}
-    if capability and isinstance(configs, dict) and capability in configs:
-        raw = configs.get(capability)
-        return raw if isinstance(raw, dict) else None
     return None
 
 
@@ -136,10 +125,7 @@ def resolve_profile_defaults_from_preset(
             dict(profile.defaults.body or {}),
         )
 
-    return (
-        dict(getattr(preset, "default_headers", None) or {}),
-        dict(getattr(preset, "default_params", None) or {}),
-    )
+    return ({}, {})
 
 
 def build_protocol_profile_from_preset(
@@ -160,27 +146,28 @@ def build_protocol_profile_from_preset(
     async_config: dict[str, Any] | None = None,
 ) -> ProtocolProfile:
     stored = load_protocol_profile_from_preset(preset, capability)
-    target_family = infer_protocol_family(protocol=protocol, upstream_path=upstream_path)
-    if stored is not None and stored.protocol_family != target_family:
-        stored = None
     if stored is None:
-        return build_protocol_profile(
+        raise ValueError(
+            f"preset_protocol_profile_missing capability={capability} provider={provider}"
+        )
+    target_family = infer_protocol_family(protocol=protocol, upstream_path=upstream_path)
+    if stored.protocol_family != target_family:
+        stored = _rebase_profile_family(
+            profile=stored,
+            target_family=target_family,
             provider=provider,
             capability=capability,
-            protocol=protocol,
             upstream_path=upstream_path,
             http_method=http_method,
-            template_engine=template_engine,
-            request_template=request_template,
-            response_transform=response_transform,
-            output_mapping=output_mapping,
-            request_builder=request_builder,
+            protocol=protocol,
             default_headers=default_headers,
             default_params=default_params,
             async_config=async_config,
         )
+    else:
+        stored = stored.model_copy(deep=True)
 
-    profile = stored.model_copy(deep=True)
+    profile = stored
     profile.profile_id = stored.profile_id or f"{provider}:{capability}:{stored.protocol_family}"
     profile.provider = provider
     profile.capability = capability  # type: ignore[assignment]
@@ -204,6 +191,55 @@ def build_protocol_profile_from_preset(
         }
     )
     return profile
+
+
+def _rebase_profile_family(
+    *,
+    profile: ProtocolProfile,
+    target_family: str,
+    provider: str,
+    capability: str,
+    upstream_path: str,
+    http_method: str | None,
+    protocol: str | None,
+    default_headers: dict[str, Any] | None,
+    default_params: dict[str, Any] | None,
+    async_config: dict[str, Any] | None,
+) -> ProtocolProfile:
+    rebased = BUILTIN_PROTOCOL_PROFILES[target_family].model_copy(deep=True)
+    rebased.provider = provider
+    rebased.capability = capability  # type: ignore[assignment]
+    rebased.transport.path = upstream_path
+    rebased.transport.method = (http_method or rebased.transport.method or "POST").upper()
+    if _template_matches_family(profile.request.request_template, target_family):
+        rebased.request.request_template = profile.request.request_template
+        rebased.request.template_engine = profile.request.template_engine
+    if profile.request.request_builder and _template_matches_family(
+        profile.request.request_template, target_family
+    ):
+        rebased.request.request_builder = profile.request.request_builder
+    rebased.response.response_template = profile.response.response_template or rebased.response.response_template
+    rebased.response.output_mapping = profile.response.output_mapping or rebased.response.output_mapping
+    rebased.defaults.headers = {
+        **(rebased.defaults.headers or {}),
+        **(profile.defaults.headers or {}),
+        **(default_headers or {}),
+    }
+    rebased.defaults.body = {
+        **(rebased.defaults.body or {}),
+        **(profile.defaults.body or {}),
+        **(default_params or {}),
+    }
+    rebased.metadata.update(profile.metadata or {})
+    rebased.metadata.update(
+        {
+            "protocol": protocol or provider,
+            "protocol_profile_source": "preset.protocol_profiles",
+            "async_config": async_config or profile.metadata.get("async_config") or {},
+            "rebased_from_family": profile.protocol_family,
+        }
+    )
+    return rebased
 
 
 def _template_matches_family(

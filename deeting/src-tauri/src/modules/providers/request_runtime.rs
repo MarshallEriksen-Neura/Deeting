@@ -5,7 +5,7 @@ use reqwest::{Client, Method, Url};
 use serde_json::{json, Map, Value};
 
 use crate::modules::providers::protocols::{
-    build_canonical_request_from_value, build_protocol_profile_from_legacy,
+    build_canonical_request_from_value, build_protocol_profile,
 };
 use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
 
@@ -72,7 +72,7 @@ pub fn prepare_provider_request(
         .or_else(|| effective_config.get("params").cloned())
         .unwrap_or_else(|| json!({}));
     let default_params = capability_params;
-    let protocol_profile = build_protocol_profile_from_legacy(
+    let protocol_profile = build_protocol_profile(
         preset,
         model,
         capability,
@@ -251,7 +251,7 @@ fn protocol_profile_to_effective_config(profile: &Value) -> Option<Value> {
         config.insert("request_template".to_string(), value.clone());
     }
     if let Some(value) = request.get("request_builder") {
-        config.insert("request_builder".to_string(), runtime_hook_to_legacy_builder(value));
+        config.insert("request_builder".to_string(), runtime_hook_to_builder(value));
     }
     if let Some(value) = response.get("response_template") {
         config.insert("response_transform".to_string(), value.clone());
@@ -268,7 +268,7 @@ fn protocol_profile_to_effective_config(profile: &Value) -> Option<Value> {
     Some(Value::Object(config))
 }
 
-fn runtime_hook_to_legacy_builder(value: &Value) -> Value {
+fn runtime_hook_to_builder(value: &Value) -> Value {
     let Some(object) = value.as_object() else {
         return json!({});
     };

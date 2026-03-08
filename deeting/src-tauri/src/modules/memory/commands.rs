@@ -4,7 +4,7 @@ use crate::modules::memory::error::MemoryError;
 use crate::modules::memory::types::{
     CreateLocalMemoryRequest, LocalMemoryClearRequest, LocalMemoryClearResponse,
     LocalMemoryDeleteResponse, LocalMemoryItem, LocalMemoryListQuery, LocalMemoryListResponse,
-    LocalMemorySearchQuery, LocalMemorySearchResult,
+    LocalMemorySearchQuery, LocalMemorySearchResult, WriteGuardResult,
 };
 use crate::state::AppState;
 
@@ -14,6 +14,19 @@ pub async fn append_local_memory(
     payload: CreateLocalMemoryRequest,
 ) -> Result<LocalMemoryItem, String> {
     state.memory.service.append(payload).await.map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn append_local_memory_guarded(
+    state: State<'_, AppState>,
+    payload: CreateLocalMemoryRequest,
+) -> Result<WriteGuardResult, String> {
+    state
+        .memory
+        .service
+        .append_guarded(payload)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]

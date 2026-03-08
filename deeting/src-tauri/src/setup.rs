@@ -48,7 +48,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let memory_embedding = crate::modules::providers::embedding::EmbeddingService::new(
             provider_state.store.clone(),
         );
-        let memory_state = MemoryState::with_options(&lancedb_uri, None, Some(memory_embedding))
+        let memory_state = MemoryState::with_options(&lancedb_uri, None, Some(memory_embedding), Some(&database_url))
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());

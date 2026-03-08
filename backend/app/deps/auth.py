@@ -11,7 +11,7 @@ Auth/ACL 依赖与策略函数
 - require_permissions: 校验用户是否具备指定权限 code
 
 策略函数：
-- can_use_item / assert_can_use_item: 校验 ProviderPresetItem 的可见性规则
+- 无（ProviderPresetItem 已移除）
 """
 
 import uuid
@@ -317,16 +317,6 @@ def require_permissions(codes: Iterable[str]) -> Callable:
         return user
 
     return _dep
-
-
-def can_use_item(*args, **kwargs) -> bool:
-    """Legacy stub for removed ProviderPresetItem."""
-    return True
-
-
-def assert_can_use_item(*args, **kwargs) -> None:
-    return None
-
 
 async def get_permission_flags(
     user: User = Depends(get_current_user),

@@ -3,7 +3,7 @@ pub mod canonical;
 pub mod profile;
 
 pub use bridge::{
-    build_canonical_request_from_value, build_protocol_profile_from_legacy,
+    build_canonical_request_from_value, build_protocol_profile,
     infer_protocol_family, template_matches_family,
 };
 pub use canonical::{

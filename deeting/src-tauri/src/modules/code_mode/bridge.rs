@@ -578,6 +578,9 @@ async fn dispatch_tool_call(
                     .or_else(|| Some(claims.session_id.clone())),
                 assistant_id: value_to_string(arguments.get("assistant_id")),
                 meta_info: arguments.get("meta_info").cloned(),
+                category: None,
+                source: None,
+                tags: None,
             };
             let result = state
                 .deps

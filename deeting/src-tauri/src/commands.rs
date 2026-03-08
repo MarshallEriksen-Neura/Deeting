@@ -111,6 +111,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::providers::commands::record_local_bandit_feedback,
         // Local Memory Commands
         crate::modules::memory::commands::append_local_memory,
+        crate::modules::memory::commands::append_local_memory_guarded,
         crate::modules::memory::commands::list_local_memories,
         crate::modules::memory::commands::delete_local_memory,
         crate::modules::memory::commands::clear_local_memories,
