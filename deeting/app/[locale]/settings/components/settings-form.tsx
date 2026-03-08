@@ -190,8 +190,11 @@ export function SettingsForm({
       setHasPendingRebuild(false);
       toast.success(
         t("toast.rebuildSuccess", {
-          indexed: summary.indexed,
-          failed: summary.failed,
+          dimension: summary.vector_dimension,
+          memoryIndexed: summary.memory_indexed,
+          memoryFailed: summary.memory_failed,
+          assetIndexed: summary.asset_indexed,
+          assetFailed: summary.asset_failed,
         }),
       );
     } catch (error) {
@@ -385,12 +388,35 @@ export function SettingsForm({
                   )}
 
                   {!isRebuilding && rebuildSummary && (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      {t("desktop.rebuildCompleted", {
-                        indexed: rebuildSummary.indexed,
-                        failed: rebuildSummary.failed,
-                      })}
-                    </p>
+                    <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                      <p>
+                        {t("desktop.rebuildCompleted", {
+                          memoryIndexed: rebuildSummary.memory_indexed,
+                          memoryFailed: rebuildSummary.memory_failed,
+                          assetIndexed: rebuildSummary.asset_indexed,
+                          assetFailed: rebuildSummary.asset_failed,
+                        })}
+                      </p>
+                      <p>
+                        {t("desktop.rebuildMemorySummary", {
+                          total: rebuildSummary.memory_total,
+                          indexed: rebuildSummary.memory_indexed,
+                          failed: rebuildSummary.memory_failed,
+                        })}
+                      </p>
+                      <p>
+                        {t("desktop.rebuildAssetSummary", {
+                          total: rebuildSummary.asset_total,
+                          indexed: rebuildSummary.asset_indexed,
+                          failed: rebuildSummary.asset_failed,
+                        })}
+                      </p>
+                      <p>
+                        {t("desktop.rebuildVectorDimension", {
+                          dimension: rebuildSummary.vector_dimension,
+                        })}
+                      </p>
+                    </div>
                   )}
                 </div>
               )}

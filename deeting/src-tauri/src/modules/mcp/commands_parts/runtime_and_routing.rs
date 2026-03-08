@@ -17,6 +17,12 @@ pub struct LocalEmbeddingRebuildResponse {
     pub total: i64,
     pub indexed: i64,
     pub failed: i64,
+    pub memory_total: i64,
+    pub memory_indexed: i64,
+    pub memory_failed: i64,
+    pub asset_total: i64,
+    pub asset_indexed: i64,
+    pub asset_failed: i64,
 }
 
 fn emit_local_embedding_rebuild_progress(
@@ -146,10 +152,16 @@ pub async fn rebuild_local_embedding_assets(
         .into_iter()
         .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
         .collect::<Vec<_>>();
-    let total = memories.len() + tools.len() + assistant_candidates.len() + local_knowledge_files.len();
+    let memory_total = memories.len();
+    let asset_total = tools.len() + assistant_candidates.len() + local_knowledge_files.len();
+    let total = memory_total + asset_total;
     let mut processed = 0usize;
     let mut indexed = 0usize;
     let mut failed = 0usize;
+    let mut memory_indexed = 0usize;
+    let mut memory_failed = 0usize;
+    let mut asset_indexed = 0usize;
+    let mut asset_failed = 0usize;
 
     let mut rebuilt_memories = Vec::with_capacity(memories.len());
     for memory in memories {
@@ -166,11 +178,13 @@ pub async fn rebuild_local_embedding_assets(
         let embedding = match app_state.providers.embedding.embed_text(&memory.content).await {
             Ok(vector) => {
                 indexed = indexed.saturating_add(1);
+                memory_indexed = memory_indexed.saturating_add(1);
                 Some(vector)
             }
             Err(error) => {
                 log::warn!("memory rebuild embedding failed for {}: {}", memory.id, error);
                 failed = failed.saturating_add(1);
+                memory_failed = memory_failed.saturating_add(1);
                 None
             }
         };
@@ -234,8 +248,10 @@ pub async fn rebuild_local_embedding_assets(
         processed = processed.saturating_add(1);
         if upserted {
             indexed = indexed.saturating_add(1);
+            asset_indexed = asset_indexed.saturating_add(1);
         } else {
             failed = failed.saturating_add(1);
+            asset_failed = asset_failed.saturating_add(1);
         }
     }
 
@@ -282,8 +298,10 @@ pub async fn rebuild_local_embedding_assets(
         processed = processed.saturating_add(1);
         if upserted {
             indexed = indexed.saturating_add(1);
+            asset_indexed = asset_indexed.saturating_add(1);
         } else {
             failed = failed.saturating_add(1);
+            asset_failed = asset_failed.saturating_add(1);
         }
     }
 
@@ -326,8 +344,10 @@ pub async fn rebuild_local_embedding_assets(
         processed = processed.saturating_add(1);
         if upserted {
             indexed = indexed.saturating_add(1);
+            asset_indexed = asset_indexed.saturating_add(1);
         } else {
             failed = failed.saturating_add(1);
+            asset_failed = asset_failed.saturating_add(1);
         }
     }
 
@@ -346,6 +366,12 @@ pub async fn rebuild_local_embedding_assets(
         total: total as i64,
         indexed: indexed as i64,
         failed: failed as i64,
+        memory_total: memory_total as i64,
+        memory_indexed: memory_indexed as i64,
+        memory_failed: memory_failed as i64,
+        asset_total: asset_total as i64,
+        asset_indexed: asset_indexed as i64,
+        asset_failed: asset_failed as i64,
     })
 }
 

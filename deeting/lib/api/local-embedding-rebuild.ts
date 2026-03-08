@@ -31,6 +31,12 @@ export interface LocalEmbeddingRebuildResponse {
   total: number
   indexed: number
   failed: number
+  memory_total: number
+  memory_indexed: number
+  memory_failed: number
+  asset_total: number
+  asset_indexed: number
+  asset_failed: number
 }
 
 export async function rebuildLocalEmbeddingAssets(): Promise<LocalEmbeddingRebuildResponse> {
