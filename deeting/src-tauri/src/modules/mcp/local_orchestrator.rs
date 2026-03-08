@@ -458,6 +458,9 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                     limit: Some(5),
                     session_id: Some(ctx.session_id.clone()),
                     assistant_id: ctx.assistant_id.clone(),
+                    category: None,
+                    source: None,
+                    tags: None,
                 };
                 match ctx.app_state.memory.service.search(search_query).await {
                     Ok(result) if !result.items.is_empty() => {

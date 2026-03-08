@@ -6,7 +6,7 @@ use crate::modules::memory::store::MemoryStore;
 use crate::modules::memory::types::{
     CreateLocalMemoryRequest, LocalMemoryClearRequest, LocalMemoryItem, LocalMemoryListQuery,
     LocalMemoryListResponse, LocalMemorySearchQuery, LocalMemorySearchResult, MemorySnapshot,
-    WriteAction, WriteGuardResult,
+    UpdateLocalMemoryRequest, WriteAction, WriteGuardResult,
 };
 use crate::modules::providers::embedding::EmbeddingService;
 
@@ -19,6 +19,7 @@ const WRITE_GUARD_UPDATE_THRESHOLD: f32 = 0.85;
 const VITALITY_BASE_WEIGHT: f32 = 0.7;
 const VITALITY_DECAY_WEIGHT: f32 = 0.3;
 const VITALITY_DECAY_RATE: f32 = 0.05;
+const VITALITY_TOUCH_INCREMENT: f32 = 0.08;
 
 /// Over-fetch factor for vitality reranking.
 const RERANK_OVERFETCH_FACTOR: usize = 3;
@@ -302,6 +303,54 @@ impl MemoryService {
         self.store.delete(id).await
     }
 
+    pub async fn update(
+        &self,
+        id: &str,
+        payload: UpdateLocalMemoryRequest,
+    ) -> Result<LocalMemoryItem, MemoryError> {
+        let existing = self
+            .store
+            .get(id)
+            .await?
+            .ok_or_else(|| MemoryError::Validation(format!("memory not found: {}", id)))?;
+
+        let old_metadata = serialize_memory_metadata(&existing)?;
+        let new_metadata = serialize_memory_update_metadata(&existing, &payload)?;
+
+        if let Some(ref snap) = self.snapshots {
+            if let Err(error) = snap
+                .record(
+                    &existing.id,
+                    "update",
+                    Some(&existing.content),
+                    Some(&payload.content),
+                    old_metadata.as_deref(),
+                    new_metadata.as_deref(),
+                )
+                .await
+            {
+                log::warn!("memory update snapshot failed: {}", error);
+            }
+        }
+
+        let (embedding, embedding_model) = if let Some(ref embedding_svc) = self.embedding {
+            match embedding_svc.embed_text(&payload.content).await {
+                Ok(vector) => (Some(vector), Some("auto".to_string())),
+                Err(error) => {
+                    log::warn!("memory update embedding failed, clearing embedding: {}", error);
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
+        self.store
+            .update_memory(id, payload, embedding, embedding_model)
+            .await?
+            .ok_or_else(|| MemoryError::Validation(format!("memory not found: {}", id)))
+    }
+
     pub async fn clear(&self, payload: LocalMemoryClearRequest) -> Result<i64, MemoryError> {
         self.store.clear(payload).await
     }
@@ -333,18 +382,13 @@ impl MemoryService {
                 overfetch,
                 query.session_id.as_deref(),
                 query.assistant_id.as_deref(),
+                query.category.as_deref(),
+                query.source.as_deref(),
+                query.tags.as_deref(),
             )
             .await?;
 
-        // Apply vitality-weighted reranking
-        let now = time::OffsetDateTime::now_utc();
-        for item in &mut items {
-            let vitality = item.vitality.unwrap_or(1.0);
-            let days_since_access = parse_days_since(&item.updated_at, now);
-            let decay = (-VITALITY_DECAY_RATE * days_since_access).exp();
-            item.score = item.score
-                * (VITALITY_BASE_WEIGHT + VITALITY_DECAY_WEIGHT * vitality * decay);
-        }
+        apply_vitality_rerank(&mut items, time::OffsetDateTime::now_utc());
 
         // Re-sort by adjusted score
         items.sort_by(|a, b| {
@@ -358,9 +402,7 @@ impl MemoryService {
         if !items.is_empty() {
             let updates: Vec<(String, f32)> = items
                 .iter()
-                .map(|item| {
-                    (item.id.clone(), item.vitality.unwrap_or(1.0))
-                })
+                .map(|item| (item.id.clone(), touched_vitality(item.vitality)))
                 .collect();
             let store = self.store.clone();
             tokio::spawn(async move {
@@ -596,4 +638,181 @@ fn parse_days_since(timestamp: &str, now: time::OffsetDateTime) -> f32 {
             (duration.whole_seconds() as f32 / 86400.0).max(0.0)
         })
         .unwrap_or(0.0)
+}
+
+fn serialize_memory_metadata(item: &LocalMemoryItem) -> Result<Option<String>, MemoryError> {
+    let metadata = serde_json::json!({
+        "meta_info": item.meta_info,
+        "category": item.category,
+        "source": item.source,
+        "tags": item.tags,
+        "vitality": item.vitality,
+        "last_accessed_at": item.last_accessed_at,
+    });
+    serde_json::to_string(&metadata)
+        .map(Some)
+        .map_err(|error| MemoryError::Storage(format!("failed to serialize memory metadata: {}", error)))
+}
+
+fn serialize_memory_update_metadata(
+    existing: &LocalMemoryItem,
+    payload: &UpdateLocalMemoryRequest,
+) -> Result<Option<String>, MemoryError> {
+    let metadata = serde_json::json!({
+        "meta_info": payload.meta_info.clone().or_else(|| existing.meta_info.clone()),
+        "category": payload.category.clone().or_else(|| existing.category.clone()),
+        "source": payload.source.clone().or_else(|| existing.source.clone()),
+        "tags": payload.tags.clone().or_else(|| existing.tags.clone()),
+        "vitality": existing.vitality,
+        "last_accessed_at": existing.last_accessed_at,
+    });
+    serde_json::to_string(&metadata)
+        .map(Some)
+        .map_err(|error| MemoryError::Storage(format!("failed to serialize updated memory metadata: {}", error)))
+}
+
+fn touched_vitality(current: Option<f32>) -> f32 {
+    (current.unwrap_or(1.0) + VITALITY_TOUCH_INCREMENT).min(1.0)
+}
+
+fn reference_timestamp(item: &crate::modules::memory::types::LocalMemorySearchItem) -> &str {
+    item.last_accessed_at
+        .as_deref()
+        .unwrap_or(item.updated_at.as_str())
+}
+
+fn apply_vitality_rerank(
+    items: &mut [crate::modules::memory::types::LocalMemorySearchItem],
+    now: time::OffsetDateTime,
+) {
+    for item in items.iter_mut() {
+        let vitality = item.vitality.unwrap_or(1.0);
+        let days_since_access = parse_days_since(reference_timestamp(item), now);
+        let decay = (-VITALITY_DECAY_RATE * days_since_access).exp();
+        item.score *= VITALITY_BASE_WEIGHT + VITALITY_DECAY_WEIGHT * vitality * decay;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::memory::types::LocalMemorySearchItem;
+    use crate::modules::memory::snapshot_store::SnapshotStore;
+    use crate::modules::memory::store::MemoryStore;
+    use std::sync::Arc;
+
+    fn test_path(label: &str) -> String {
+        let path = std::env::temp_dir().join(format!("deeting-memory-{}-{}", label, uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        path.to_string_lossy().into_owned()
+    }
+
+    async fn create_service_with_snapshots() -> MemoryService {
+        let lancedb_uri = test_path("service-lancedb");
+        let store = Arc::new(MemoryStore::new(&lancedb_uri).await.expect("create store"));
+        store.init().await.expect("init store");
+        let snapshots = Arc::new(
+            SnapshotStore::new("sqlite::memory:")
+                .await
+                .expect("create snapshot store"),
+        );
+        let mut service = MemoryService::new(store);
+        service.set_snapshot_store(snapshots);
+        service
+    }
+
+    #[tokio::test]
+    async fn update_keeps_identity_and_records_snapshot() {
+        let service = create_service_with_snapshots().await;
+        let created = service
+            .append(CreateLocalMemoryRequest {
+                content: "prefers coffee".into(),
+                session_id: None,
+                assistant_id: None,
+                meta_info: Some(serde_json::json!({"source": "chat"})),
+                category: Some("preference".into()),
+                source: Some("manual".into()),
+                tags: Some(vec!["coffee".into()]),
+            })
+            .await
+            .expect("append memory");
+
+        let updated = service
+            .update(
+                &created.id,
+                UpdateLocalMemoryRequest {
+                    content: "prefers black coffee".into(),
+                    meta_info: None,
+                    category: Some("preference".into()),
+                    source: None,
+                    tags: Some(vec!["coffee".into(), "black".into()]),
+                },
+            )
+            .await
+            .expect("update memory");
+
+        let snapshots = service
+            .list_snapshots(&created.id, 10)
+            .await
+            .expect("list snapshots");
+
+        assert_eq!(updated.id, created.id);
+        assert_eq!(updated.content, "prefers black coffee");
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].action, "update");
+        assert_eq!(snapshots[0].old_content.as_deref(), Some("prefers coffee"));
+        assert_eq!(snapshots[0].new_content.as_deref(), Some("prefers black coffee"));
+    }
+
+    #[test]
+    fn vitality_rerank_prefers_last_accessed_at_over_updated_at() {
+        let now = time::OffsetDateTime::parse(
+            "2026-03-08T00:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("parse time");
+        let mut items = vec![
+            LocalMemorySearchItem {
+                id: "recent-access".into(),
+                content: "recent access".into(),
+                session_id: None,
+                assistant_id: None,
+                meta_info: None,
+                score: 1.0,
+                category: None,
+                source: None,
+                tags: None,
+                vitality: Some(1.0),
+                last_accessed_at: Some("2026-03-07T23:00:00Z".into()),
+                created_at: "2026-02-01T00:00:00Z".into(),
+                updated_at: "2026-02-01T00:00:00Z".into(),
+            },
+            LocalMemorySearchItem {
+                id: "stale-access".into(),
+                content: "stale access".into(),
+                session_id: None,
+                assistant_id: None,
+                meta_info: None,
+                score: 1.0,
+                category: None,
+                source: None,
+                tags: None,
+                vitality: Some(1.0),
+                last_accessed_at: Some("2026-02-01T00:00:00Z".into()),
+                created_at: "2026-03-07T23:00:00Z".into(),
+                updated_at: "2026-03-07T23:00:00Z".into(),
+            },
+        ];
+
+        apply_vitality_rerank(&mut items, now);
+
+        assert!(items[0].score > items[1].score);
+    }
+
+    #[test]
+    fn touched_vitality_increments_and_caps() {
+        assert!((touched_vitality(Some(0.5)) - 0.58).abs() < f32::EPSILON);
+        assert_eq!(touched_vitality(Some(0.97)), 1.0);
+        assert_eq!(touched_vitality(None), 1.0);
+    }
 }

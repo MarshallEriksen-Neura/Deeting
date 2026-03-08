@@ -114,6 +114,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::memory::commands::append_local_memory_guarded,
         crate::modules::memory::commands::list_local_memories,
         crate::modules::memory::commands::delete_local_memory,
+        crate::modules::memory::commands::update_local_memory,
         crate::modules::memory::commands::clear_local_memories,
         crate::modules::memory::commands::search_local_memories,
         crate::modules::memory::commands::list_memory_snapshots,

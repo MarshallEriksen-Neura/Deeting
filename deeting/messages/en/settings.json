@@ -54,6 +54,7 @@
       "rebuildCompleted": "Rebuild finished: {indexed} succeeded, {failed} failed.",
       "rebuildStage": {
         "prepare": "Preparing",
+        "indexing_memories": "Reindexing memories",
         "indexing_tools": "Reindexing tools",
         "indexing_assistants": "Reindexing assistants",
         "indexing_knowledge": "Reindexing knowledge",
@@ -73,7 +74,7 @@
         "sharedSecretHelp": "Must match RELAY_SHARED_SECRET configured for deeting-relay. Used to authenticate desktop ↔ relay traffic.",
         "showSecret": "Show",
         "hideSecret": "Hide",
-        "footerHint": "Used only by this desktop app, never synced to cloud."
+        "footerHint": "Used only by this desktop app, never synced to cloud. Restart the desktop app after changes so the relay worker reconnects with the new settings."
       },
       "scout": {
         "title": "Desktop Scout Service",
@@ -143,7 +144,7 @@
       "rebuildRecommended": "Embedding model changed. Rebuilding the local vector index is recommended.",
       "rebuildSuccess": "Local index rebuild completed (success {indexed} / failed {failed})",
       "rebuildFailed": "Local index rebuild failed. Please try again.",
-      "desktopRelayUpdated": "Desktop relay settings updated",
+      "desktopRelayUpdated": "Desktop relay settings updated. Restart the desktop app to apply them.",
       "desktopScoutUpdated": "Desktop Scout settings updated"
     }
   }

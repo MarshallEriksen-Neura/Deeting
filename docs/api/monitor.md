@@ -308,6 +308,10 @@
 
 ## 飞书回调动作
 
+以下接口描述的是后端 / 云端 Feishu 集成路径，不是桌面端 Tauri 本地接口。
+
+如果采用桌面本地执行方案，推荐边界是 `Feishu -> deeting-relay -> Desktop -> deeting-relay -> Feishu`。桌面端负责执行，公网回调入口由 relay 或后端承担。
+
 `POST /api/v1/monitors/feishu/callback` 支持以下事件：
 
 - `useful` / `useless`：写入 trace feedback

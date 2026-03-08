@@ -19,11 +19,14 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/input-otp"
+import { Turnstile } from "@marsidev/react-turnstile"
 import { cn } from "@/lib/utils"
 import { useLoginForm } from "@/hooks/use-login-form"
 import { useAuthService } from "@/hooks/use-auth"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ""
 
 export interface LoginFormProps {
   /** 登录成功后的回调 */
@@ -82,6 +85,8 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
     handleSendCode,
     handleVerifyCode,
     handleResendCode,
+    captchaRef,
+    setCaptchaToken,
   } = useLoginForm({ onSuccess, onError })
 
   // 邀请码输入框展开后自动聚焦
@@ -220,6 +225,18 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
               )}
             </AnimatePresence>
 
+            {/* Cloudflare Turnstile CAPTCHA */}
+            {TURNSTILE_SITE_KEY && (
+              <Turnstile
+                ref={captchaRef}
+                siteKey={TURNSTILE_SITE_KEY}
+                onSuccess={setCaptchaToken}
+                onExpire={() => setCaptchaToken(null)}
+                onError={() => setCaptchaToken(null)}
+                options={{ size: "flexible", theme: "light" }}
+              />
+            )}
+
             {/* 发送验证码按钮 */}
             <GlassButton
               type="submit"
@@ -311,6 +328,19 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
               </GlassButton>
 
               <div className="text-center">
+                {/* Turnstile for resend */}
+                {TURNSTILE_SITE_KEY && (
+                  <div className="mb-2 flex justify-center">
+                    <Turnstile
+                      ref={captchaRef}
+                      siteKey={TURNSTILE_SITE_KEY}
+                      onSuccess={setCaptchaToken}
+                      onExpire={() => setCaptchaToken(null)}
+                      onError={() => setCaptchaToken(null)}
+                      options={{ size: "flexible", theme: "light" }}
+                    />
+                  </div>
+                )}
                 <GlassButton
                   type="button"
                   variant="ghost"

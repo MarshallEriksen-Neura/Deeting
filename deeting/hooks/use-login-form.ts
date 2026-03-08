@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -8,6 +8,7 @@ import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { useAuthService, type AuthError } from "@/hooks/use-auth"
 import { useUserProfile } from "@/hooks/use-user"
+import type { TurnstileInstance } from "@marsidev/react-turnstile"
 
 export type EmailFormValues = { email: string; inviteCode?: string }
 export type CodeFormValues = { code: string }
@@ -26,6 +27,8 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
   const [inviteCode, setInviteCode] = useState("")
   const [showInviteCode, setShowInviteCode] = useState(false)
   const [countdown, setCountdown] = useState(0)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const captchaRef = useRef<TurnstileInstance | null>(null)
 
   const { sendCodeMutation, verifyCodeMutation } = useAuthService()
   const { refreshProfile } = useUserProfile()
@@ -61,6 +64,11 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
     [sendCodeMutation.isMutating, verifyCodeMutation.isMutating]
   )
 
+  function resetCaptcha() {
+    setCaptchaToken(null)
+    captchaRef.current?.reset()
+  }
+
   async function handleSendCode(data: EmailFormValues) {
     // 如果显示了邀请码输入框但未填写，提示用户
     if (showInviteCode && !data.inviteCode?.trim()) {
@@ -71,10 +79,16 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
       return
     }
 
+    if (!captchaToken) {
+      toast.error(t("toast.captchaRequired"))
+      return
+    }
+
     try {
       await sendCodeMutation.trigger({
         email: data.email,
         invite_code: data.inviteCode || undefined,
+        captcha_token: captchaToken,
       })
 
       setEmail(data.email)
@@ -90,6 +104,8 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
       }
       toast.error(err.message || t("toast.error"))
       onError?.(err)
+    } finally {
+      resetCaptcha()
     }
   }
 
@@ -112,10 +128,17 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
 
   async function handleResendCode() {
     if (countdown > 0) return
+
+    if (!captchaToken) {
+      toast.error(t("toast.captchaRequired"))
+      return
+    }
+
     try {
       await sendCodeMutation.trigger({
         email,
         invite_code: inviteCode || undefined,
+        captcha_token: captchaToken,
       })
       setCountdown(60)
       toast.success(t("toast.resendSuccess"))
@@ -123,6 +146,8 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
       const err = error as AuthError
       toast.error(err.message || t("toast.error"))
       onError?.(err)
+    } finally {
+      resetCaptcha()
     }
   }
 
@@ -140,5 +165,7 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
     handleSendCode,
     handleVerifyCode,
     handleResendCode,
+    captchaRef,
+    setCaptchaToken,
   }
 }

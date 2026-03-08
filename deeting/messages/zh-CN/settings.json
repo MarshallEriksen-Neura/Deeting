@@ -54,6 +54,7 @@
       "rebuildCompleted": "重建完成：成功 {indexed} 项，失败 {failed} 项。",
       "rebuildStage": {
         "prepare": "准备中",
+        "indexing_memories": "重建记忆索引",
         "indexing_tools": "重建工具索引",
         "indexing_assistants": "重建助手索引",
         "indexing_knowledge": "重建知识索引",
@@ -73,7 +74,7 @@
         "sharedSecretHelp": "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致，用于桌面端与 relay 之间的鉴权。",
         "showSecret": "显示",
         "hideSecret": "隐藏",
-        "footerHint": "仅本机桌面端使用，不会同步到云端。"
+        "footerHint": "仅本机桌面端使用，不会同步到云端。修改后需重启桌面端以重新建立 relay 后台连接。"
       },
       "scout": {
         "title": "桌面 Scout 服务",
@@ -143,7 +144,7 @@
       "rebuildRecommended": "检测到 embedding 模型变更，建议立即重建本地向量索引。",
       "rebuildSuccess": "本地索引重建完成（成功 {indexed} / 失败 {failed}）",
       "rebuildFailed": "本地索引重建失败，请稍后重试",
-      "desktopRelayUpdated": "桌面 Relay 配置已更新",
+      "desktopRelayUpdated": "桌面 Relay 配置已更新，重启桌面端后生效",
       "desktopScoutUpdated": "桌面 Scout 配置已更新"
     }
   }

@@ -132,11 +132,22 @@ async def send_login_code(
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     """发送邮箱验证码（无密码登录入口，支持携带邀请码用于首登注册）。"""
+    client_ip = _extract_client_ip(req)
+
+    # Cloudflare Turnstile CAPTCHA 校验
+    from app.services.captcha import verify_turnstile_token
+
+    if not await verify_turnstile_token(payload.captcha_token, client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CAPTCHA verification failed",
+        )
+
     service = AuthService(db)
     await service.send_login_code(
         email=payload.email,
         invite_code=payload.invite_code,
-        client_ip=_extract_client_ip(req),
+        client_ip=client_ip,
     )
     return MessageResponse(message="Verification code sent")
 

@@ -3,6 +3,8 @@ import {
   clearLocalMemories,
   deleteLocalMemory,
   listLocalMemories,
+  searchLocalMemories,
+  updateLocalMemory,
 } from "@/lib/api/local-memory"
 import { invoke } from "@tauri-apps/api/core"
 
@@ -55,6 +57,9 @@ describe("local memory apis", () => {
         session_id: "session-1",
         assistant_id: "assistant-1",
         meta_info: { source: "chat" },
+        category: null,
+        source: null,
+        tags: null,
       },
     })
   })
@@ -104,6 +109,81 @@ describe("local memory apis", () => {
       payload: {
         session_id: null,
         assistant_id: "assistant-2",
+      },
+    })
+  })
+
+  it("searches and updates local memories via tauri command", async () => {
+    mockInvoke
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "memory-4",
+            content: "记住他喜欢黑咖啡",
+            session_id: null,
+            assistant_id: null,
+            meta_info: { source: "chat" },
+            category: "preference",
+            source: "manual",
+            tags: ["coffee", "taste"],
+            vitality: 0.82,
+            last_accessed_at: "2026-03-03T00:00:00Z",
+            score: 0.93,
+            created_at: "2026-03-02T00:00:00Z",
+            updated_at: "2026-03-03T00:00:00Z",
+          },
+        ],
+      } as never)
+      .mockResolvedValueOnce({
+        id: "memory-4",
+        content: "记住他只喝美式黑咖啡",
+        session_id: null,
+        assistant_id: null,
+        meta_info: { source: "chat" },
+        category: "preference",
+        source: "manual",
+        tags: ["coffee"],
+        vitality: 0.82,
+        last_accessed_at: "2026-03-03T00:00:00Z",
+        created_at: "2026-03-02T00:00:00Z",
+        updated_at: "2026-03-04T00:00:00Z",
+      } as never)
+
+    const search = await searchLocalMemories({
+      query: "黑咖啡",
+      limit: 5,
+      category: "preference",
+      source: "manual",
+      tags: ["coffee"],
+    })
+    const updated = await updateLocalMemory("memory-4", {
+      content: "记住他只喝美式黑咖啡",
+      category: "preference",
+      source: "manual",
+      tags: ["coffee"],
+    })
+
+    expect(search.items[0]?.source).toBe("manual")
+    expect(updated.id).toBe("memory-4")
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "search_local_memories", {
+      query: {
+        query: "黑咖啡",
+        limit: 5,
+        session_id: null,
+        assistant_id: null,
+        category: "preference",
+        source: "manual",
+        tags: ["coffee"],
+      },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "update_local_memory", {
+      id: "memory-4",
+      payload: {
+        content: "记住他只喝美式黑咖啡",
+        meta_info: null,
+        category: "preference",
+        source: "manual",
+        tags: ["coffee"],
       },
     })
   })

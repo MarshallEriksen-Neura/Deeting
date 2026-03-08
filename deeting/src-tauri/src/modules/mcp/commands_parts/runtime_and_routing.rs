@@ -104,6 +104,13 @@ pub async fn rebuild_local_embedding_assets(
         return Err("embedding model returned empty vector".to_string());
     }
 
+    let memories = app_state
+        .memory
+        .store
+        .list_all_memories()
+        .await
+        .map_err(to_string)?;
+
     app_state
         .memory
         .service
@@ -139,10 +146,60 @@ pub async fn rebuild_local_embedding_assets(
         .into_iter()
         .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
         .collect::<Vec<_>>();
-    let total = tools.len() + assistant_candidates.len() + local_knowledge_files.len();
+    let total = memories.len() + tools.len() + assistant_candidates.len() + local_knowledge_files.len();
     let mut processed = 0usize;
     let mut indexed = 0usize;
     let mut failed = 0usize;
+
+    let mut rebuilt_memories = Vec::with_capacity(memories.len());
+    for memory in memories {
+        emit_local_embedding_rebuild_progress(
+            &app,
+            "indexing_memories",
+            total,
+            processed,
+            indexed,
+            failed,
+            Some(memory.content.chars().take(48).collect()),
+        );
+
+        let embedding = match app_state.providers.embedding.embed_text(&memory.content).await {
+            Ok(vector) => {
+                indexed = indexed.saturating_add(1);
+                Some(vector)
+            }
+            Err(error) => {
+                log::warn!("memory rebuild embedding failed for {}: {}", memory.id, error);
+                failed = failed.saturating_add(1);
+                None
+            }
+        };
+
+        processed = processed.saturating_add(1);
+        rebuilt_memories.push((memory, embedding));
+    }
+
+    app_state
+        .memory
+        .store
+        .recreate_local_memory_table(vector_dimension as i32)
+        .await
+        .map_err(to_string)?;
+
+    for (memory, embedding) in rebuilt_memories {
+        let embedding_model = if embedding.is_some() {
+            Some("rebuild".to_string())
+        } else {
+            None
+        };
+
+        app_state
+            .memory
+            .store
+            .insert_memory_record(&memory, embedding, embedding_model)
+            .await
+            .map_err(to_string)?;
+    }
 
     for tool in tools {
         emit_local_embedding_rebuild_progress(

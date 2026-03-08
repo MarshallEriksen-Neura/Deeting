@@ -19,6 +19,7 @@ export type MessageResponse = z.infer<typeof MessageResponseSchema>
 export const SendLoginCodeSchema = z.object({
   email: z.string().email(),
   invite_code: z.string().optional(),
+  captcha_token: z.string(),
 })
 export type SendLoginCodeRequest = z.infer<typeof SendLoginCodeSchema>
 

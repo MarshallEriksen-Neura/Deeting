@@ -15,7 +15,7 @@ export const LocalMemoryItemSchema = z.object({
   content: z.string(),
   session_id: z.string().nullable().optional(),
   assistant_id: z.string().nullable().optional(),
-  meta_info: z.record(z.string(), z.any()).nullable().optional(),
+  meta_info: z.record(z.string(), z.unknown()).nullable().optional(),
   embedding_model: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
   source: z.string().nullable().optional(),
@@ -54,10 +54,13 @@ export const LocalMemorySearchItemSchema = z.object({
   content: z.string(),
   session_id: z.string().nullable().optional(),
   assistant_id: z.string().nullable().optional(),
-  meta_info: z.record(z.string(), z.any()).nullable().optional(),
+  meta_info: z.record(z.string(), z.unknown()).nullable().optional(),
   score: z.number(),
   category: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  tags: z.array(z.string()).nullable().optional(),
   vitality: z.number().nullable().optional(),
+  last_accessed_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -83,7 +86,7 @@ export type AppendLocalMemoryRequest = {
   content: string
   session_id?: string | null
   assistant_id?: string | null
-  meta_info?: Record<string, any> | null
+  meta_info?: Record<string, unknown> | null
   category?: string | null
   source?: string | null
   tags?: string[] | null
@@ -101,6 +104,17 @@ export type LocalMemorySearchQuery = {
   limit?: number | null
   session_id?: string | null
   assistant_id?: string | null
+  category?: string | null
+  source?: string | null
+  tags?: string[] | null
+}
+
+export type UpdateLocalMemoryRequest = {
+  content: string
+  meta_info?: Record<string, unknown> | null
+  category?: string | null
+  source?: string | null
+  tags?: string[] | null
 }
 
 export type ClearLocalMemoriesRequest = {
@@ -175,9 +189,30 @@ export async function searchLocalMemories(
       limit: query.limit ?? null,
       session_id: query.session_id ?? null,
       assistant_id: query.assistant_id ?? null,
+      category: query.category ?? null,
+      source: query.source ?? null,
+      tags: query.tags ?? null,
     },
   })
   return LocalMemorySearchResultSchema.parse(data)
+}
+
+export async function updateLocalMemory(
+  id: string,
+  payload: UpdateLocalMemoryRequest
+): Promise<LocalMemoryItem> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<LocalMemoryItem>("update_local_memory", {
+    id,
+    payload: {
+      content: payload.content,
+      meta_info: payload.meta_info ?? null,
+      category: payload.category ?? null,
+      source: payload.source ?? null,
+      tags: payload.tags ?? null,
+    },
+  })
+  return LocalMemoryItemSchema.parse(data)
 }
 
 export async function deleteLocalMemory(id: string): Promise<LocalMemoryDeleteResponse> {
@@ -194,8 +229,8 @@ export const LocalMemorySnapshotSchema = z.object({
   action: z.string(),
   old_content: z.string().nullable().optional(),
   new_content: z.string().nullable().optional(),
-  old_metadata: z.record(z.string(), z.any()).nullable().optional(),
-  new_metadata: z.record(z.string(), z.any()).nullable().optional(),
+  old_metadata: z.union([z.string(), z.record(z.string(), z.unknown())]).nullable().optional(),
+  new_metadata: z.union([z.string(), z.record(z.string(), z.unknown())]).nullable().optional(),
   created_at: z.string(),
 })
 

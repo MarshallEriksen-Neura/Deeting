@@ -1,10 +1,11 @@
 import { request } from "@/lib/http"
 import {
-  appendLocalMemory,
   clearLocalMemories,
   deleteLocalMemory,
   listLocalMemories,
   type LocalMemoryItem,
+  type LocalMemorySearchItem,
+  updateLocalMemory,
 } from "@/lib/api/local-memory"
 import type {
   MemoryItem,
@@ -20,11 +21,30 @@ const isTauriRuntime = () =>
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
 
-function toMemoryItem(item: LocalMemoryItem): MemoryItem {
+type DesktopMemoryLike = LocalMemoryItem | LocalMemorySearchItem
+
+export function toMemoryItem(item: DesktopMemoryLike): MemoryItem {
   return {
     id: item.id,
     content: item.content,
-    payload: item.meta_info ?? {},
+    payload: {
+      ...(item.meta_info ?? {}),
+      ...(item.category ? { category: item.category } : {}),
+      ...(item.source ? { source: item.source } : {}),
+      ...(item.tags ? { tags: item.tags } : {}),
+      ...(item.vitality != null ? { vitality: item.vitality } : {}),
+      ...(item.last_accessed_at ? { last_accessed_at: item.last_accessed_at } : {}),
+    },
+    session_id: item.session_id ?? null,
+    assistant_id: item.assistant_id ?? null,
+    category: item.category ?? null,
+    source: item.source ?? null,
+    tags: item.tags ?? null,
+    vitality: item.vitality ?? null,
+    last_accessed_at: item.last_accessed_at ?? null,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+    score: "score" in item ? item.score : undefined,
   }
 }
 
@@ -54,38 +74,10 @@ export async function updateMemory(
   data: MemoryUpdateRequest
 ): Promise<MemoryItem> {
   if (isTauriRuntime()) {
-    let cursor: string | null = null
-    let target: LocalMemoryItem | null = null
-
-    do {
-      const page = await listLocalMemories({
-        limit: LOCAL_PAGE_LIMIT,
-        cursor,
-      })
-      target = page.items.find((item) => item.id === memoryId) ?? null
-      if (target) break
-      cursor = page.next_cursor ?? null
-    } while (cursor)
-
-    if (!target) {
-      throw new Error(`memory not found: ${memoryId}`)
-    }
-
-    const appended = await appendLocalMemory({
+    const updated = await updateLocalMemory(memoryId, {
       content: data.content,
-      session_id: target.session_id ?? null,
-      assistant_id: target.assistant_id ?? null,
-      meta_info: target.meta_info ?? null,
     })
-
-    try {
-      await deleteLocalMemory(memoryId)
-    } catch (error) {
-      await deleteLocalMemory(appended.id).catch(() => undefined)
-      throw error
-    }
-
-    return toMemoryItem(appended)
+    return toMemoryItem(updated)
   }
 
   return request<MemoryItem>({

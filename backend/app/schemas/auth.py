@@ -16,6 +16,11 @@ class SendLoginCodeRequest(BaseSchema):
         max_length=64,
         description="邀请码（开启注册控制时，首次登录必填）",
     )
+    captcha_token: str = Field(
+        ...,
+        min_length=1,
+        description="Cloudflare Turnstile CAPTCHA token",
+    )
 
 
 class LoginRequest(BaseSchema):

@@ -1,10 +1,10 @@
 import { clearAllMemories, deleteMemory, fetchMemories, updateMemory } from "@/lib/api/memory"
 import { request } from "@/lib/http"
 import {
-  appendLocalMemory,
   clearLocalMemories,
   deleteLocalMemory,
   listLocalMemories,
+  updateLocalMemory,
 } from "@/lib/api/local-memory"
 
 jest.mock("@/lib/http", () => ({
@@ -12,17 +12,17 @@ jest.mock("@/lib/http", () => ({
 }))
 
 jest.mock("@/lib/api/local-memory", () => ({
-  appendLocalMemory: jest.fn(),
   clearLocalMemories: jest.fn(),
   deleteLocalMemory: jest.fn(),
   listLocalMemories: jest.fn(),
+  updateLocalMemory: jest.fn(),
 }))
 
 const mockRequest = request as jest.MockedFunction<typeof request>
-const mockAppendLocalMemory = appendLocalMemory as jest.MockedFunction<typeof appendLocalMemory>
 const mockClearLocalMemories = clearLocalMemories as jest.MockedFunction<typeof clearLocalMemories>
 const mockDeleteLocalMemory = deleteLocalMemory as jest.MockedFunction<typeof deleteLocalMemory>
 const mockListLocalMemories = listLocalMemories as jest.MockedFunction<typeof listLocalMemories>
+const mockUpdateLocalMemory = updateLocalMemory as jest.MockedFunction<typeof updateLocalMemory>
 const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
 const windowWithTauri = window as Window & {
   __TAURI__?: unknown
@@ -32,10 +32,10 @@ const windowWithTauri = window as Window & {
 describe("memory api", () => {
   afterEach(() => {
     mockRequest.mockReset()
-    mockAppendLocalMemory.mockReset()
     mockClearLocalMemories.mockReset()
     mockDeleteLocalMemory.mockReset()
     mockListLocalMemories.mockReset()
+    mockUpdateLocalMemory.mockReset()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
     delete windowWithTauri.__TAURI__
     delete windowWithTauri.__TAURI_INTERNALS__
@@ -52,6 +52,10 @@ describe("memory api", () => {
           session_id: null,
           assistant_id: null,
           meta_info: { source: "local" },
+          category: "fact",
+          tags: ["profile"],
+          vitality: 0.7,
+          last_accessed_at: null,
           created_at: "2026-03-04T00:00:00Z",
           updated_at: "2026-03-04T00:00:00Z",
         },
@@ -67,7 +71,16 @@ describe("memory api", () => {
         {
           id: "memory-local-1",
           content: "local content",
-          payload: { source: "local" },
+          payload: { source: "local", category: "fact", tags: ["profile"], vitality: 0.7 },
+          session_id: null,
+          assistant_id: null,
+          category: "fact",
+          source: null,
+          tags: ["profile"],
+          vitality: 0.7,
+          last_accessed_at: null,
+          created_at: "2026-03-04T00:00:00Z",
+          updated_at: "2026-03-04T00:00:00Z",
         },
       ],
       next_cursor: "next-1",
@@ -79,49 +92,50 @@ describe("memory api", () => {
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("updates memory in tauri by append then delete", async () => {
+  it("updates memory in tauri via local update command", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockListLocalMemories.mockResolvedValue({
-      items: [
-        {
-          id: "memory-local-2",
-          content: "before",
-          session_id: "session-1",
-          assistant_id: "assistant-1",
-          meta_info: { foo: "bar" },
-          created_at: "2026-03-04T00:00:00Z",
-          updated_at: "2026-03-04T00:00:00Z",
-        },
-      ],
-      next_cursor: null,
-      has_more: false,
-    })
-    mockAppendLocalMemory.mockResolvedValue({
-      id: "memory-local-3",
+    mockUpdateLocalMemory.mockResolvedValue({
+      id: "memory-local-2",
       content: "after",
       session_id: "session-1",
       assistant_id: "assistant-1",
       meta_info: { foo: "bar" },
-      created_at: "2026-03-04T00:00:01Z",
+      category: "fact",
+      source: "manual",
+      tags: ["important"],
+      vitality: 0.9,
+      last_accessed_at: "2026-03-04T00:00:00Z",
+      created_at: "2026-03-04T00:00:00Z",
       updated_at: "2026-03-04T00:00:01Z",
     })
-    mockDeleteLocalMemory.mockResolvedValue({ id: "memory-local-2", deleted: true })
 
     const result = await updateMemory("memory-local-2", { content: "after" })
 
     expect(result).toEqual({
-      id: "memory-local-3",
+      id: "memory-local-2",
       content: "after",
-      payload: { foo: "bar" },
-    })
-    expect(mockAppendLocalMemory).toHaveBeenCalledWith({
-      content: "after",
+      payload: {
+        foo: "bar",
+        category: "fact",
+        source: "manual",
+        tags: ["important"],
+        vitality: 0.9,
+        last_accessed_at: "2026-03-04T00:00:00Z",
+      },
       session_id: "session-1",
       assistant_id: "assistant-1",
-      meta_info: { foo: "bar" },
+      category: "fact",
+      source: "manual",
+      tags: ["important"],
+      vitality: 0.9,
+      last_accessed_at: "2026-03-04T00:00:00Z",
+      created_at: "2026-03-04T00:00:00Z",
+      updated_at: "2026-03-04T00:00:01Z",
     })
-    expect(mockDeleteLocalMemory).toHaveBeenCalledWith("memory-local-2")
+    expect(mockUpdateLocalMemory).toHaveBeenCalledWith("memory-local-2", {
+      content: "after",
+    })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
@@ -142,43 +156,15 @@ describe("memory api", () => {
     })
   })
 
-  it("cleans up appended record when local delete fails during update", async () => {
+  it("surfaces local update failures in tauri", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockListLocalMemories.mockResolvedValue({
-      items: [
-        {
-          id: "memory-local-4",
-          content: "before",
-          session_id: null,
-          assistant_id: null,
-          meta_info: null,
-          created_at: "2026-03-04T00:00:00Z",
-          updated_at: "2026-03-04T00:00:00Z",
-        },
-      ],
-      next_cursor: null,
-      has_more: false,
-    })
-    mockAppendLocalMemory.mockResolvedValue({
-      id: "memory-local-5",
-      content: "after",
-      session_id: null,
-      assistant_id: null,
-      meta_info: null,
-      created_at: "2026-03-04T00:00:01Z",
-      updated_at: "2026-03-04T00:00:01Z",
-    })
-    mockDeleteLocalMemory.mockRejectedValueOnce(new Error("delete failed")).mockResolvedValueOnce({
-      id: "memory-local-5",
-      deleted: true,
-    })
+    mockUpdateLocalMemory.mockRejectedValueOnce(new Error("update failed"))
 
     await expect(updateMemory("memory-local-4", { content: "after" })).rejects.toThrow(
-      "delete failed"
+      "update failed"
     )
-    expect(mockDeleteLocalMemory).toHaveBeenNthCalledWith(1, "memory-local-4")
-    expect(mockDeleteLocalMemory).toHaveBeenNthCalledWith(2, "memory-local-5")
+    expect(mockUpdateLocalMemory).toHaveBeenCalledWith("memory-local-4", { content: "after" })
   })
 
   it("uses local clear and delete in tauri", async () => {

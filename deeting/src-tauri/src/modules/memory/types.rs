@@ -65,6 +65,19 @@ pub struct CreateLocalMemoryRequest {
     pub tags: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateLocalMemoryRequest {
+    pub content: String,
+    #[serde(default)]
+    pub meta_info: Option<Value>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LocalMemoryListQuery {
     pub cursor: Option<String>,
@@ -105,6 +118,12 @@ pub struct LocalMemorySearchQuery {
     pub limit: Option<usize>,
     pub session_id: Option<String>,
     pub assistant_id: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,7 +137,13 @@ pub struct LocalMemorySearchItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vitality: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_accessed_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

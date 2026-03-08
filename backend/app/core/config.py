@@ -273,6 +273,9 @@ class Settings(BaseSettings):
     ALIPAY_RETURN_URL: str = ""
     ALIPAY_TIMEOUT_EXPRESS: str = "15m"
     ALIPAY_RECHARGE_SUBJECT: str = "Deeting Credits Recharge"
+    # Cloudflare Turnstile CAPTCHA
+    TURNSTILE_SECRET_KEY: str = ""
+
     # 飞书回调验签（监控互动卡片）
     FEISHU_CALLBACK_SECRET: str = ""
     FEISHU_CALLBACK_MAX_SKEW_SECONDS: int = 300

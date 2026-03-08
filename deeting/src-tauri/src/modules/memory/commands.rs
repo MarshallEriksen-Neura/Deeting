@@ -5,7 +5,7 @@ use crate::modules::memory::types::{
     CreateLocalMemoryRequest, KnowledgeSearchResult, LocalMemoryClearRequest,
     LocalMemoryClearResponse, LocalMemoryDeleteResponse, LocalMemoryItem, LocalMemoryListQuery,
     LocalMemoryListResponse, LocalMemorySearchQuery, LocalMemorySearchResult, MemorySnapshot,
-    UnifiedSearchResult, UnifiedSearchSource, WriteGuardResult,
+    UnifiedSearchResult, UnifiedSearchSource, UpdateLocalMemoryRequest, WriteGuardResult,
 };
 use crate::state::AppState;
 
@@ -50,6 +50,20 @@ pub async fn delete_local_memory(
 ) -> Result<LocalMemoryDeleteResponse, String> {
     let deleted = state.memory.service.delete(&id).await.map_err(to_string)?;
     Ok(LocalMemoryDeleteResponse { id, deleted })
+}
+
+#[tauri::command]
+pub async fn update_local_memory(
+    state: State<'_, AppState>,
+    id: String,
+    payload: UpdateLocalMemoryRequest,
+) -> Result<LocalMemoryItem, String> {
+    state
+        .memory
+        .service
+        .update(&id, payload)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -140,6 +154,9 @@ pub async fn search_unified(
         limit: Some(k),
         session_id: None,
         assistant_id: None,
+        category: None,
+        source: None,
+        tags: None,
     };
 
     let (memory_res, knowledge_res, summary_res) = tokio::join!(

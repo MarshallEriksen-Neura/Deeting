@@ -59,10 +59,15 @@ export function MemoryClient() {
   const [searchInput, setSearchInput] = useState("")
   const debouncedQuery = useDebounce(searchInput, 300)
   const isSearchMode = debouncedQuery.length > 0
-  const { results: searchResults, isSearching } = useMemorySearch(debouncedQuery, 20)
 
   // Category filter
   const [category, setCategory] = useState<string>("all")
+  const searchCategory = category === "all" ? null : category
+  const {
+    results: searchResults,
+    isSearching,
+    mutate: mutateSearch,
+  } = useMemorySearch(debouncedQuery, 20, { category: searchCategory })
 
   // Edit state
   const [editingItem, setEditingItem] = useState<MemoryItem | null>(null)
@@ -76,19 +81,16 @@ export function MemoryClient() {
   // Snapshot state
   const [snapshotMemoryId, setSnapshotMemoryId] = useState<string | null>(null)
 
+  const refreshAll = useCallback(async () => {
+    await Promise.all([mutate(), mutateSearch()])
+  }, [mutate, mutateSearch])
+
   // Filter memories by category
   const filteredMemories = useMemo(() => {
-    const source = isSearchMode
-      ? searchResults.map((r) => ({
-          id: r.id,
-          content: r.content,
-          payload: { category: r.category, vitality: r.vitality, score: r.score } as Record<string, any>,
-          score: r.score,
-        }))
-      : memories
+    const source = isSearchMode ? searchResults : memories
 
     if (category === "all") return source
-    return source.filter((m) => m.payload?.category === category)
+    return source.filter((m) => (m.category ?? m.payload?.category) === category)
   }, [isSearchMode, searchResults, memories, category])
 
   // Handlers
@@ -98,7 +100,7 @@ export function MemoryClient() {
     try {
       await updateMemory(editingItem.id, { content: editContent })
       toast.success(t("success.updated"))
-      mutate()
+      await refreshAll()
       setEditingItem(null)
     } catch {
       toast.error("Failed to update memory")
@@ -111,19 +113,19 @@ export function MemoryClient() {
     try {
       await deleteMemory(id)
       toast.success(t("success.deleted"))
-      mutate()
+      await refreshAll()
     } catch {
       toast.error("Failed to delete memory")
     } finally {
       setDeleteId(null)
     }
-  }, [mutate, t])
+  }, [refreshAll, t])
 
   const handleClearAll = async () => {
     try {
       await clearAllMemories()
       toast.success(t("success.cleared"))
-      mutate()
+      await refreshAll()
     } catch {
       toast.error("Failed to clear memories")
     } finally {
@@ -340,7 +342,9 @@ export function MemoryClient() {
         memoryId={snapshotMemoryId}
         open={!!snapshotMemoryId}
         onOpenChange={(open) => !open && setSnapshotMemoryId(null)}
-        onRollbackSuccess={() => mutate()}
+        onRollbackSuccess={() => {
+          void refreshAll()
+        }}
       />
     </div>
   )

@@ -28,16 +28,27 @@ export const MemoryCard = memo(function MemoryCard({
   onHistory,
 }: MemoryCardProps) {
   const t = useTranslations("memory")
-  const source = item.payload?.plugin_id || item.payload?.type || "extracted_fact"
-  const isExtracted = source === "extracted_fact"
+  const source = item.source || item.payload?.source || item.payload?.plugin_id || item.payload?.type || "extracted_fact"
+  const isExtracted = source === "extracted_fact" || source === "auto_extraction"
   const sourceLabel = isExtracted
     ? t("source.autoExtracted")
     : (source.split("/").pop() ?? t("source.unknown"))
 
-  const category = item.payload?.category as string | undefined
-  const tags = item.payload?.tags as string[] | undefined
-  const vitality = item.payload?.vitality as number | undefined
+  const category = item.category ?? (typeof item.payload?.category === "string" ? item.payload.category : undefined)
+  const rawTags = item.tags ?? item.payload?.tags
+  const tags = Array.isArray(rawTags)
+    ? rawTags.filter((tag): tag is string => typeof tag === "string")
+    : undefined
+  const vitality = item.vitality ?? (typeof item.payload?.vitality === "number" ? item.payload.vitality : undefined)
   const categoryColor = category ? CATEGORY_COLORS[category] ?? CATEGORY_COLORS.fact : null
+  const categoryLabel = category
+    ? {
+        fact: t("filter.fact"),
+        preference: t("filter.preference"),
+        event: t("filter.event"),
+        relation: t("filter.relation"),
+      }[category] ?? category
+    : null
 
   return (
     <GlassCard className="p-5 flex flex-col justify-between group h-full transition-all hover:ring-1 hover:ring-blue-500/30">
@@ -56,7 +67,7 @@ export const MemoryCard = memo(function MemoryCard({
             </div>
             {categoryColor && category && (
               <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${categoryColor}`}>
-                {t(`filter.${category}` as any)}
+                {categoryLabel}
               </span>
             )}
           </div>
