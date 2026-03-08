@@ -16,6 +16,7 @@ from app.repositories.provider_instance_repository import (
     ProviderModelRepository,
 )
 from app.repositories.provider_preset_repository import ProviderPresetRepository
+from app.protocols.runtime.profile_resolver import resolve_profile_defaults_from_preset
 from app.services.providers.auth_resolver import resolve_auth_for_protocol
 from app.services.providers.upstream_url import build_upstream_url_with_params
 from app.services.secrets.manager import SecretManager
@@ -255,7 +256,9 @@ class EmbeddingService:
                 provider=preset.provider,
                 auth_type=preset.auth_type,
                 auth_config=preset.auth_config,
-                default_headers=preset.default_headers,
+                default_headers=resolve_profile_defaults_from_preset(
+                    preset, "embedding"
+                )[0],
             )
             headers = {"Content-Type": "application/json"}
             headers.update(resolved_headers)

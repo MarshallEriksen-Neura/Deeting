@@ -29,9 +29,9 @@ def build_protocol_profile(
     capability: str,
     protocol: str | None,
     upstream_path: str,
-    http_method: str,
-    template_engine: str,
-    request_template: dict[str, Any] | str,
+    http_method: str = "",
+    template_engine: str = "",
+    request_template: dict[str, Any] | str = {},
     response_transform: dict[str, Any] | None = None,
     output_mapping: dict[str, Any] | None = None,
     request_builder: dict[str, Any] | None = None,
@@ -125,6 +125,23 @@ def resolve_effective_config_from_preset(
     return None
 
 
+def resolve_profile_defaults_from_preset(
+    preset: Any | None,
+    capability: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    profile = load_protocol_profile_from_preset(preset, capability)
+    if profile is not None:
+        return (
+            dict(profile.defaults.headers or {}),
+            dict(profile.defaults.body or {}),
+        )
+
+    return (
+        dict(getattr(preset, "default_headers", None) or {}),
+        dict(getattr(preset, "default_params", None) or {}),
+    )
+
+
 def build_protocol_profile_from_preset(
     *,
     preset: Any | None,
@@ -132,9 +149,9 @@ def build_protocol_profile_from_preset(
     capability: str,
     protocol: str | None,
     upstream_path: str,
-    http_method: str,
-    template_engine: str,
-    request_template: dict[str, Any] | str,
+    http_method: str = "",
+    template_engine: str = "",
+    request_template: dict[str, Any] | str = {},
     response_transform: dict[str, Any] | None = None,
     output_mapping: dict[str, Any] | None = None,
     request_builder: dict[str, Any] | None = None,
@@ -143,6 +160,9 @@ def build_protocol_profile_from_preset(
     async_config: dict[str, Any] | None = None,
 ) -> ProtocolProfile:
     stored = load_protocol_profile_from_preset(preset, capability)
+    target_family = infer_protocol_family(protocol=protocol, upstream_path=upstream_path)
+    if stored is not None and stored.protocol_family != target_family:
+        stored = None
     if stored is None:
         return build_protocol_profile(
             provider=provider,

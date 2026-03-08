@@ -13,17 +13,41 @@ def _build_preset(preset_id):
         slug="test-preset",
         provider="openai",
         is_active=True,
-        capability_configs={
+        protocol_profiles={
             "chat": {
-                "template_engine": "simple_replace",
-                "request_template": {"messages": "{{messages}}"},
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_chat",
+                "provider": "openai",
+                "protocol_family": "openai_chat",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "chat/completions",
+                    "query_template": {},
+                    "header_template": {},
+                },
+                "request": {
+                    "template_engine": "simple_replace",
+                    "request_template": {"messages": "{{messages}}"},
+                },
+                "response": {
+                    "decoder": {"name": "openai_chat", "config": {}},
+                    "response_template": {},
+                },
+                "stream": {
+                    "stream_decoder": {
+                        "name": "openai_chat_stream",
+                        "config": {},
+                    }
+                },
+                "auth": {"auth_policy": "inherit", "config": {}},
+                "features": {"supports_messages": True, "supports_input_items": False},
+                "defaults": {"headers": {}, "query": {}, "body": {}},
             }
         },
-        protocol_profiles={},
         auth_type="bearer",
         auth_config={},
-        default_headers={},
-        default_params={},
     )
 
 

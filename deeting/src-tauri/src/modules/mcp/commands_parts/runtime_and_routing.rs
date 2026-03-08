@@ -68,7 +68,7 @@ pub(crate) async fn rebuild_local_knowledge_vector_index(app_state: &AppState) -
         if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
             let _ = app_state
                 .memory
-                .store
+                .service
                 .upsert_asset(
                     file.id,
                     file.name,
@@ -106,7 +106,7 @@ pub async fn rebuild_local_embedding_assets(
 
     app_state
         .memory
-        .store
+        .service
         .recreate_local_asset_table(vector_dimension as i32)
         .await
         .map_err(to_string)?;
@@ -158,7 +158,7 @@ pub async fn rebuild_local_embedding_assets(
         let upserted = if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
             app_state
                 .memory
-                .store
+                .service
                 .upsert_asset(
                     tool.id,
                     tool.name,
@@ -206,7 +206,7 @@ pub async fn rebuild_local_embedding_assets(
         let upserted = if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
             app_state
                 .memory
-                .store
+                .service
                 .upsert_asset(
                     assistant.id,
                     assistant.name,
@@ -1593,7 +1593,7 @@ fn sanitize_generated_title(title: &str, fallback: &str) -> Option<String> {
     Some(truncate_text_chars(&text, LOCAL_CONVERSATION_TOPIC_TITLE_MAX_CHARS))
 }
 
-async fn request_local_auxiliary_text(
+pub(crate) async fn request_local_auxiliary_text(
     app_state: &AppState,
     provider_model_id: &str,
     model_id: &str,
@@ -2209,7 +2209,7 @@ async fn build_local_consult_expert_network_result(
     build_local_consult_expert_network_result_with_runtime(
         app_state.mcp.store.as_ref(),
         &app_state.providers.embedding,
-        app_state.memory.store.as_ref(),
+        app_state.memory.service.as_ref(),
         intent_query,
         limit,
         current_assistant_id,
@@ -2282,7 +2282,7 @@ fn build_local_consult_candidates_from_assets(
 async fn build_local_consult_expert_network_result_with_runtime(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    memory_store: &crate::modules::memory::store::MemoryStore,
+    memory_store: &crate::modules::memory::service::MemoryService,
     intent_query: &str,
     limit: usize,
     current_assistant_id: Option<&str>,
@@ -3186,7 +3186,7 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
     build_local_sdk_search_result_with_runtime(
         app_state.mcp.store.as_ref(),
         &app_state.providers.embedding,
-        app_state.memory.store.as_ref(),
+        app_state.memory.service.as_ref(),
         query,
     )
     .await
@@ -3195,7 +3195,7 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
 async fn build_local_sdk_search_result_with_runtime(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    memory_store: &crate::modules::memory::store::MemoryStore,
+    memory_store: &crate::modules::memory::service::MemoryService,
     query: &str,
 ) -> serde_json::Value {
     let normalized = query.trim().to_lowercase();

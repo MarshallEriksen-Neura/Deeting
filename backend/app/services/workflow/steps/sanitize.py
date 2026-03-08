@@ -38,7 +38,7 @@ class SanitizeStep(BaseStep):
     从上下文读取:
         - response_transform.response: 转换后的响应
         - upstream_call.headers: 上游响应头
-        - routing.response_transform: 包含脱敏规则
+        - routing.protocol_profile.response.response_template: 包含脱敏规则
 
     写入上下文:
         - sanitize.response: 脱敏后的响应

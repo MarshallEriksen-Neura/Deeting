@@ -20,9 +20,11 @@ use crate::modules::memory::types::{
 const LOCAL_MEMORY_TABLE: &str = "local_memories";
 const LOCAL_ASSET_TABLE: &str = "local_assets";
 const DEFAULT_LOCAL_ASSET_VECTOR_DIM: i32 = 1536;
+pub(crate) const DEFAULT_MEMORY_EMBEDDING_DIM: i32 = 1536;
 
 pub struct MemoryStore {
     conn: Connection,
+    embedding_dim: i32,
 }
 
 impl MemoryStore {
@@ -32,17 +34,40 @@ impl MemoryStore {
             return Err(MemoryError::validation("lancedb path is required"));
         }
         let conn = connect(&normalized_uri).execute().await?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            embedding_dim: DEFAULT_MEMORY_EMBEDDING_DIM,
+        })
     }
 
     pub async fn init(&self) -> Result<(), MemoryError> {
+        self.init_with_dim(self.embedding_dim).await
+    }
+
+    pub async fn init_with_dim(&self, embedding_dim: i32) -> Result<(), MemoryError> {
         let table_names = self.conn.table_names().execute().await?;
 
         if !table_names.iter().any(|name| name == LOCAL_MEMORY_TABLE) {
+            // Fresh install: create V2 schema directly
             self.conn
-                .create_empty_table(LOCAL_MEMORY_TABLE, local_memory_schema())
+                .create_empty_table(LOCAL_MEMORY_TABLE, local_memory_schema_v2(embedding_dim))
                 .execute()
                 .await?;
+        } else {
+            // Existing table: check if migration is needed
+            let current_version =
+                crate::modules::memory::migration::detect_schema_version(&self.conn, LOCAL_MEMORY_TABLE)
+                    .await?;
+            if current_version < crate::modules::memory::migration::CURRENT_MEMORY_SCHEMA_VERSION {
+                crate::modules::memory::migration::migrate_to_latest(
+                    &self.conn,
+                    LOCAL_MEMORY_TABLE,
+                    current_version,
+                    crate::modules::memory::migration::CURRENT_MEMORY_SCHEMA_VERSION,
+                    embedding_dim,
+                )
+                .await?;
+            }
         }
 
         if !table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
@@ -169,7 +194,7 @@ impl MemoryStore {
 
         let table_names = self.conn.table_names().execute().await?;
         if table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
-            self.conn.drop_table(LOCAL_ASSET_TABLE).await?;
+            self.conn.drop_table(LOCAL_ASSET_TABLE, &[]).await?;
         }
 
         self.conn
@@ -363,8 +388,17 @@ impl MemoryStore {
         let id = Uuid::new_v4().to_string();
         let now = now_rfc3339();
 
+        let schema = local_memory_schema_v2(self.embedding_dim);
+        let null_embedding = arrow_array::new_null_array(
+            &DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                self.embedding_dim,
+            ),
+            1,
+        );
+
         let batch = RecordBatch::try_new(
-            local_memory_schema(),
+            schema.clone(),
             vec![
                 Arc::new(StringArray::from(vec![Some(id.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(content.clone())])) as Arc<dyn Array>,
@@ -374,9 +408,10 @@ impl MemoryStore {
                 Arc::new(BooleanArray::from(vec![false])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
+                null_embedding,
+                Arc::new(StringArray::from(vec![None as Option<&str>])) as Arc<dyn Array>,
             ],
         )?;
-        let schema = batch.schema();
         let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
         let table = self.table().await?;
         table.add(reader).execute().await?;
@@ -387,6 +422,7 @@ impl MemoryStore {
             session_id,
             assistant_id,
             meta_info: payload.meta_info,
+            embedding_model: None,
             created_at: now.clone(),
             updated_at: now,
         })
@@ -467,7 +503,7 @@ impl MemoryStore {
             .column("updated_at", format!("'{}'", sql_escape(&now)))
             .execute()
             .await?;
-        Ok(affected > 0)
+        Ok(affected.rows_updated > 0)
     }
 
     pub async fn clear(&self, payload: LocalMemoryClearRequest) -> Result<i64, MemoryError> {
@@ -484,11 +520,306 @@ impl MemoryStore {
             operation = operation.only_if(where_clause);
         }
         let affected = operation.execute().await?;
-        Ok(affected as i64)
+        Ok(affected.rows_updated as i64)
     }
 
     async fn table(&self) -> Result<Table, MemoryError> {
         Ok(self.conn.open_table(LOCAL_MEMORY_TABLE).execute().await?)
+    }
+
+    /// Append a memory with a pre-computed embedding vector.
+    pub async fn append_with_embedding(
+        &self,
+        payload: CreateLocalMemoryRequest,
+        embedding: Vec<f32>,
+        embedding_model: Option<String>,
+    ) -> Result<LocalMemoryItem, MemoryError> {
+        let content = payload.content.trim().to_string();
+        if content.is_empty() {
+            return Err(MemoryError::validation("content is required"));
+        }
+        let session_id = normalize_optional(payload.session_id);
+        let assistant_id = normalize_optional(payload.assistant_id);
+        let meta_info_json = payload
+            .meta_info
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
+
+        let id = Uuid::new_v4().to_string();
+        let now = now_rfc3339();
+
+        let embedding_opts: Vec<Option<f32>> = embedding.into_iter().map(Some).collect();
+        let vec_dim = i32::try_from(embedding_opts.len())
+            .map_err(|_| MemoryError::validation("embedding dimension too large"))?;
+        if vec_dim != self.embedding_dim {
+            return Err(MemoryError::validation(format!(
+                "embedding dimension mismatch: expected {}, got {}",
+                self.embedding_dim, vec_dim
+            )));
+        }
+
+        let schema = local_memory_schema_v2(self.embedding_dim);
+        let embedding_col = Arc::new(
+            FixedSizeListArray::from_iter_primitive::<arrow_array::types::Float32Type, _, _>(
+                vec![Some(embedding_opts)],
+                self.embedding_dim,
+            ),
+        ) as Arc<dyn Array>;
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec![Some(id.clone())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(content.clone())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![session_id.clone()])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![assistant_id.clone()])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![meta_info_json.clone()])) as Arc<dyn Array>,
+                Arc::new(BooleanArray::from(vec![false])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
+                embedding_col,
+                Arc::new(StringArray::from(vec![embedding_model.clone()])) as Arc<dyn Array>,
+            ],
+        )?;
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        let table = self.table().await?;
+        table.add(reader).execute().await?;
+
+        Ok(LocalMemoryItem {
+            id,
+            content,
+            session_id,
+            assistant_id,
+            meta_info: payload.meta_info,
+            embedding_model,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    /// Vector-based semantic search over local_memories.
+    /// Falls back to linear scan if the vector index is unavailable.
+    pub async fn search_memories(
+        &self,
+        query_embedding: Vec<f32>,
+        limit: usize,
+        session_id: Option<&str>,
+        assistant_id: Option<&str>,
+    ) -> Result<Vec<crate::modules::memory::types::LocalMemorySearchItem>, MemoryError> {
+        let filter = build_filter_sql(session_id, assistant_id, true);
+        let table = self.table().await?;
+
+        // Try LanceDB native vector search first
+        let mut vector_query = table.vector_search(query_embedding.clone())?.limit(limit);
+        if !filter.is_empty() {
+            vector_query = vector_query.only_if(filter.clone());
+        }
+
+        match vector_query.execute().await {
+            Ok(stream) => {
+                let batches = stream.try_collect::<Vec<_>>().await?;
+                let results = read_memory_search_batches(&batches)?;
+                if !results.is_empty() {
+                    return Ok(results);
+                }
+            }
+            Err(e) => {
+                log::warn!("memory vector search unavailable, falling back to linear: {}", e);
+            }
+        }
+
+        // Linear fallback: scan all rows with embeddings, compute cosine similarity
+        self.search_memories_linear_fallback(query_embedding, limit, session_id, assistant_id)
+            .await
+    }
+
+    async fn search_memories_linear_fallback(
+        &self,
+        query_embedding: Vec<f32>,
+        limit: usize,
+        session_id: Option<&str>,
+        assistant_id: Option<&str>,
+    ) -> Result<Vec<crate::modules::memory::types::LocalMemorySearchItem>, MemoryError> {
+        use crate::modules::memory::types::LocalMemorySearchItem;
+
+        let filter = build_filter_sql(session_id, assistant_id, true);
+        let table = self.table().await?;
+        let mut stmt = table.query();
+        if !filter.is_empty() {
+            stmt = stmt.only_if(filter);
+        }
+        let batches = stmt.execute().await?.try_collect::<Vec<_>>().await?;
+
+        let mut results = Vec::new();
+        for batch in &batches {
+            let id_col = as_string_col(batch, "id")?;
+            let content_col = as_string_col(batch, "content")?;
+            let session_col = as_string_col(batch, "session_id")?;
+            let assistant_col = as_string_col(batch, "assistant_id")?;
+            let meta_col = as_string_col(batch, "meta_info_json")?;
+            let created_col = as_string_col(batch, "created_at")?;
+            let updated_col = as_string_col(batch, "updated_at")?;
+
+            let embedding_col = match batch
+                .column_by_name("embedding")
+                .and_then(|c| c.as_any().downcast_ref::<FixedSizeListArray>())
+            {
+                Some(col) => col,
+                None => continue,
+            };
+            let values_col = match embedding_col
+                .values()
+                .as_any()
+                .downcast_ref::<Float32Array>()
+            {
+                Some(col) => col,
+                None => continue,
+            };
+            let value_len = usize::try_from(embedding_col.value_length())
+                .map_err(|_| MemoryError::Storage("invalid embedding value length".into()))?;
+
+            for row in 0..batch.num_rows() {
+                // Skip rows without embeddings
+                if embedding_col.is_null(row) {
+                    continue;
+                }
+
+                let start = row.saturating_mul(value_len);
+                let end = start.saturating_add(value_len);
+                if end > values_col.len() {
+                    continue;
+                }
+                let candidate: Vec<f32> = (start..end)
+                    .map(|idx| if values_col.is_null(idx) { 0.0 } else { values_col.value(idx) })
+                    .collect();
+                let score = cosine_similarity(&query_embedding, &candidate);
+
+                let meta_info = nullable_string(meta_col, row)
+                    .map(|raw| serde_json::from_str(&raw))
+                    .transpose()?;
+
+                results.push(LocalMemorySearchItem {
+                    id: required_string(id_col, row, "id")?,
+                    content: required_string(content_col, row, "content")?,
+                    session_id: nullable_string(session_col, row),
+                    assistant_id: nullable_string(assistant_col, row),
+                    meta_info,
+                    score,
+                    created_at: required_string(created_col, row, "created_at")?,
+                    updated_at: required_string(updated_col, row, "updated_at")?,
+                });
+            }
+        }
+
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(Ordering::Equal)
+        });
+        if results.len() > limit {
+            results.truncate(limit);
+        }
+        Ok(results)
+    }
+
+    /// List memories that have no embedding (for backfill).
+    pub async fn list_memories_without_embedding(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<LocalMemoryItem>, MemoryError> {
+        let table = self.table().await?;
+        let batches = table
+            .query()
+            .only_if("is_deleted = false AND embedding IS NULL")
+            .limit(limit)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let mut items = Vec::new();
+        for batch in &batches {
+            items.extend(read_items_from_batch(batch)?);
+        }
+        Ok(items)
+    }
+
+    /// Update a memory's embedding (delete + re-insert workaround for LanceDB).
+    pub async fn update_memory_embedding(
+        &self,
+        id: &str,
+        embedding: Vec<f32>,
+        embedding_model: Option<String>,
+    ) -> Result<bool, MemoryError> {
+        let table = self.table().await?;
+
+        // Read the existing row
+        let batches = table
+            .query()
+            .only_if(format!("id = '{}'", sql_escape(id)))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let batch = match batches.first() {
+            Some(b) if b.num_rows() > 0 => b,
+            _ => return Ok(false),
+        };
+
+        let id_col = as_string_col(batch, "id")?;
+        let content_col = as_string_col(batch, "content")?;
+        let session_col = as_string_col(batch, "session_id")?;
+        let assistant_col = as_string_col(batch, "assistant_id")?;
+        let meta_col = as_string_col(batch, "meta_info_json")?;
+        let deleted_col = batch
+            .column_by_name("is_deleted")
+            .and_then(|c| c.as_any().downcast_ref::<BooleanArray>())
+            .ok_or_else(|| MemoryError::Storage("missing is_deleted column".into()))?;
+        let created_col = as_string_col(batch, "created_at")?;
+        let _updated_col = as_string_col(batch, "updated_at")?;
+
+        let embedding_opts: Vec<Option<f32>> = embedding.into_iter().map(Some).collect();
+        let schema = local_memory_schema_v2(self.embedding_dim);
+        let embedding_col = Arc::new(
+            FixedSizeListArray::from_iter_primitive::<arrow_array::types::Float32Type, _, _>(
+                vec![Some(embedding_opts)],
+                self.embedding_dim,
+            ),
+        ) as Arc<dyn Array>;
+
+        let now = now_rfc3339();
+        let new_batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec![Some(id_col.value(0).to_string())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(content_col.value(0).to_string())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![nullable_string(session_col, 0)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![nullable_string(assistant_col, 0)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![nullable_string(meta_col, 0)])) as Arc<dyn Array>,
+                Arc::new(BooleanArray::from(vec![deleted_col.value(0)])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(created_col.value(0).to_string())])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![Some(now)])) as Arc<dyn Array>,
+                embedding_col,
+                Arc::new(StringArray::from(vec![embedding_model])) as Arc<dyn Array>,
+            ],
+        )?;
+
+        // Delete old row, insert updated row
+        table
+            .delete(&format!("id = '{}'", sql_escape(id)))
+            .await?;
+        table
+            .add(RecordBatchIterator::new(
+                vec![Ok(new_batch)].into_iter(),
+                schema,
+            ))
+            .execute()
+            .await?;
+
+        Ok(true)
     }
 }
 
@@ -498,7 +829,8 @@ struct CursorKey {
     id: String,
 }
 
-fn local_memory_schema() -> SchemaRef {
+/// V2 schema: V1 fields + nullable embedding vector + nullable embedding_model.
+pub(crate) fn local_memory_schema_v2(embedding_dim: i32) -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),
         Field::new("content", DataType::Utf8, false),
@@ -508,6 +840,15 @@ fn local_memory_schema() -> SchemaRef {
         Field::new("is_deleted", DataType::Boolean, false),
         Field::new("created_at", DataType::Utf8, false),
         Field::new("updated_at", DataType::Utf8, false),
+        Field::new(
+            "embedding",
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                embedding_dim,
+            ),
+            true,
+        ),
+        Field::new("embedding_model", DataType::Utf8, true),
     ]))
 }
 
@@ -637,18 +978,24 @@ fn read_items_from_batch(batch: &RecordBatch) -> Result<Vec<LocalMemoryItem>, Me
     let meta_col = as_string_col(batch, "meta_info_json")?;
     let created_col = as_string_col(batch, "created_at")?;
     let updated_col = as_string_col(batch, "updated_at")?;
+    // embedding_model may not be present in older queries or selected columns
+    let model_col = batch
+        .column_by_name("embedding_model")
+        .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
     let mut items = Vec::with_capacity(batch.num_rows());
     for row in 0..batch.num_rows() {
         let meta_info = nullable_string(meta_col, row)
             .map(|raw| serde_json::from_str(&raw))
             .transpose()?;
+        let embedding_model = model_col.and_then(|col| nullable_string(col, row));
         items.push(LocalMemoryItem {
             id: required_string(id_col, row, "id")?,
             content: required_string(content_col, row, "content")?,
             session_id: nullable_string(session_col, row),
             assistant_id: nullable_string(assistant_col, row),
             meta_info,
+            embedding_model,
             created_at: required_string(created_col, row, "created_at")?,
             updated_at: required_string(updated_col, row, "updated_at")?,
         });
@@ -687,6 +1034,49 @@ fn compare_desc(a: &LocalMemoryItem, b: &LocalMemoryItem) -> Ordering {
     b.created_at
         .cmp(&a.created_at)
         .then_with(|| b.id.cmp(&a.id))
+}
+
+fn read_memory_search_batches(
+    batches: &[RecordBatch],
+) -> Result<Vec<crate::modules::memory::types::LocalMemorySearchItem>, MemoryError> {
+    use crate::modules::memory::types::LocalMemorySearchItem;
+
+    let mut results = Vec::new();
+    for batch in batches {
+        let id_col = as_string_col(batch, "id")?;
+        let content_col = as_string_col(batch, "content")?;
+        let session_col = as_string_col(batch, "session_id")?;
+        let assistant_col = as_string_col(batch, "assistant_id")?;
+        let meta_col = as_string_col(batch, "meta_info_json")?;
+        let created_col = as_string_col(batch, "created_at")?;
+        let updated_col = as_string_col(batch, "updated_at")?;
+        let score_col = batch.column_by_name("_distance");
+
+        for row in 0..batch.num_rows() {
+            let distance = score_col
+                .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
+                .map(|c| c.value(row))
+                .unwrap_or(0.0);
+            // LanceDB returns L2 distance; convert to similarity (1 / (1 + distance))
+            let score = 1.0 / (1.0 + distance);
+
+            let meta_info = nullable_string(meta_col, row)
+                .map(|raw| serde_json::from_str(&raw))
+                .transpose()?;
+
+            results.push(LocalMemorySearchItem {
+                id: required_string(id_col, row, "id")?,
+                content: required_string(content_col, row, "content")?,
+                session_id: nullable_string(session_col, row),
+                assistant_id: nullable_string(assistant_col, row),
+                meta_info,
+                score,
+                created_at: required_string(created_col, row, "created_at")?,
+                updated_at: required_string(updated_col, row, "updated_at")?,
+            });
+        }
+    }
+    Ok(results)
 }
 
 fn encode_cursor(item: &LocalMemoryItem) -> String {

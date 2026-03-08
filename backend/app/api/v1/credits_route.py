@@ -23,6 +23,7 @@ from app.protocols.runtime import protocol_runtime_service
 from app.protocols.runtime.profile_resolver import (
     build_protocol_profile_from_preset,
     load_protocol_profile_from_preset,
+    resolve_profile_defaults_from_preset,
 )
 from app.protocols.runtime.response_decoders import decode_response
 from app.repositories import (
@@ -260,6 +261,9 @@ def _build_runtime_profile_for_public_model(
     ).lower()
     stored_profile = load_protocol_profile_from_preset(preset, capability)
     stored_metadata = stored_profile.metadata if stored_profile else {}
+    profile_default_headers, profile_default_params = resolve_profile_defaults_from_preset(
+        preset, capability
+    )
     protocol = (
         instance.protocol
         or (stored_metadata.get("protocol") if isinstance(stored_metadata, dict) else None)
@@ -271,13 +275,8 @@ def _build_runtime_profile_for_public_model(
         capability=capability,
         protocol=protocol,
         upstream_path=provider_model.upstream_path,
-        http_method="",
-        template_engine="",
-        request_template={},
-        response_transform={},
-        request_builder={},
-        default_headers=preset.default_headers or {},
-        default_params=preset.default_params or {},
+        default_headers=profile_default_headers,
+        default_params=profile_default_params,
     )
 
 

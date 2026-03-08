@@ -38,8 +38,8 @@ class TemplateRenderStep(BaseStep):
 
     从上下文读取:
         - routing.upstream_url: 上游 URL（可能含占位符）
-        - routing.template_engine: 模板引擎类型
-        - routing.template_config: 模板配置
+        - routing.protocol_profile.request: 请求模板与模板引擎
+        - routing.protocol_profile.defaults: 请求默认参数与默认头
         - validation.validated: 已校验的请求数据
         - assistant.enhanced_prompt: 增强后的 assistant system_prompt (可选)
 

@@ -4,7 +4,7 @@ pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
         if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
             let _ = app_state
                 .memory
-                .store
+                .service
                 .upsert_asset(
                     tool.id.clone(),
                     tool.name.clone(),
@@ -546,7 +546,7 @@ pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Resul
             if let Ok(vector) = app_state_clone.providers.embedding.embed_text(&text).await {
                 let _ = app_state_clone
                     .memory
-                    .store
+                    .service
                     .upsert_asset(
                         id,
                         name,

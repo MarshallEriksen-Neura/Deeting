@@ -439,20 +439,36 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let query = LocalMemoryListQuery {
-                cursor: None,
-                limit: Some(5),
-                session_id: Some(ctx.session_id.clone()),
-                assistant_id: ctx.assistant_id.clone(),
+            // Try vector search using the last user message
+            let user_text = ctx
+                .messages
+                .iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.clone());
+
+            let memory_items: Vec<(String, String)> = if let Some(query_text) = user_text {
+                // Attempt semantic search
+                let search_query = crate::modules::memory::types::LocalMemorySearchQuery {
+                    query: query_text,
+                    limit: Some(5),
+                    session_id: Some(ctx.session_id.clone()),
+                    assistant_id: ctx.assistant_id.clone(),
+                };
+                match ctx.app_state.memory.service.search(search_query).await {
+                    Ok(result) if !result.items.is_empty() => {
+                        result.items.into_iter().map(|i| (i.id, i.content)).collect()
+                    }
+                    Ok(_) | Err(_) => {
+                        // Fallback to list (no embeddings yet or embedding service unavailable)
+                        self.fallback_list(ctx).await?
+                    }
+                }
+            } else {
+                self.fallback_list(ctx).await?
             };
-            let memories = ctx
-                .app_state
-                .memory
-                .store
-                .list(query)
-                .await
-                .map_err(|e| e.to_string())?;
-            if memories.items.is_empty() {
+
+            if memory_items.is_empty() {
                 ctx.emit_status(
                     "remember",
                     Some("semantic_memory_injection"),
@@ -463,11 +479,10 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 return Ok(());
             }
 
-            let lines = memories
-                .items
+            let lines = memory_items
                 .iter()
-                .filter_map(|item| {
-                    let text = item.content.trim();
+                .filter_map(|(_id, content)| {
+                    let text = content.trim();
                     if text.is_empty() {
                         None
                     } else {
@@ -484,10 +499,36 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 Some("semantic_memory_injection"),
                 "success",
                 "semantic.memory.loaded",
-                Some(json!({ "count": memories.items.len() })),
+                Some(json!({ "count": memory_items.len() })),
             );
             Ok(())
         })
+    }
+}
+
+impl SemanticMemoryInjectionStep {
+    async fn fallback_list(
+        &self,
+        ctx: &LocalWorkflowContext,
+    ) -> Result<Vec<(String, String)>, String> {
+        let query = LocalMemoryListQuery {
+            cursor: None,
+            limit: Some(5),
+            session_id: Some(ctx.session_id.clone()),
+            assistant_id: ctx.assistant_id.clone(),
+        };
+        let memories = ctx
+            .app_state
+            .memory
+            .service
+            .list(query)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(memories
+            .items
+            .into_iter()
+            .map(|i| (i.id, i.content))
+            .collect())
     }
 }
 
@@ -528,7 +569,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ActivePersonaInjectionStep {
             let hits = match ctx
                 .app_state
                 .memory
-                .store
+                .service
                 .search_assets(vector, 6, Some("assistant"))
                 .await
             {
@@ -941,6 +982,30 @@ pub async fn execute_local_orchestrated_chat(
                 );
             }
         }
+    });
+
+    // Fire-and-forget: extract user facts from the conversation
+    let fact_app_state = app_state.clone();
+    let fact_memory_service = app_state.memory.service.clone();
+    let fact_session_id = session_id.clone();
+    let fact_assistant_id = assistant_id.clone();
+    let fact_provider_model_id = provider_model_id.clone();
+    let fact_model_id = model_id.clone();
+    let fact_response_text = response_text.clone();
+    let fact_user_content = input.user_content.clone().unwrap_or_default();
+    tauri::async_runtime::spawn(async move {
+        // Build a minimal conversation snippet for extraction
+        let conversation = format!("User: {}\nAssistant: {}", fact_user_content, fact_response_text);
+        crate::modules::memory::fact_extractor::extract_and_store_facts(
+            &fact_app_state,
+            fact_memory_service,
+            &fact_provider_model_id,
+            &fact_model_id,
+            &conversation,
+            &fact_session_id,
+            fact_assistant_id.as_deref(),
+        )
+        .await;
     });
 
     let created = unix_seconds();

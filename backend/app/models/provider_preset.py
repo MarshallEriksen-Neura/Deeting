@@ -76,27 +76,6 @@ class ProviderPreset(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="认证配置（无明文密钥）",
     )
 
-    default_headers: Mapped[dict[str, Any]] = mapped_column(
-        JSONBCompat,
-        nullable=False,
-        default=dict,
-        server_default="{}",
-        comment="通用 Header 模板",
-    )
-    default_params: Mapped[dict[str, Any]] = mapped_column(
-        JSONBCompat,
-        nullable=False,
-        default=dict,
-        server_default="{}",
-        comment="通用请求体参数默认值",
-    )
-    capability_configs: Mapped[dict[str, Any]] = mapped_column(
-        JSONBCompat,
-        nullable=False,
-        default=dict,
-        server_default="{}",
-        comment="按能力配置的模板/路由/异步策略",
-    )
     protocol_schema_version: Mapped[str | None] = mapped_column(
         String(32),
         nullable=True,

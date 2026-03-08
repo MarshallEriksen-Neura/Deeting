@@ -476,7 +476,7 @@ pub(crate) async fn uninstall_local_skill(
         .await
         .map_err(to_string)?;
 
-    if let Err(e) = app_state.memory.store.delete_assets_by_package(skill_id).await {
+    if let Err(e) = app_state.memory.service.delete_assets_by_package(skill_id).await {
         warn!(
             "uninstall_local_skill {}: failed to delete embeddings: {}",
             skill_id, e

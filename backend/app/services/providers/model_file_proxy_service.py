@@ -318,7 +318,9 @@ class ModelFileProxyService:
         auth_config = candidate.auth_config or {}
         provider = candidate.provider or auth_config.get("provider")
         secret_ref = auth_config.get("secret_ref_id") or auth_config.get("secret")
-        secret = await self.secret_manager.get(provider, secret_ref, self.db_session)
+        secret = None
+        if auth_type != "none":
+            secret = await self.secret_manager.get(provider, secret_ref, self.db_session)
         if auth_type != "none" and not secret:
             raise ModelFileProxyError(
                 status_code=502,

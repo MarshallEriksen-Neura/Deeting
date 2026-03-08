@@ -7,13 +7,8 @@ export type LocalProviderPreset = {
   theme_color?: string | null;
   category?: string | null;
   url_template?: string | null;
-  template_engine?: string | null;
-  response_transform?: unknown;
   auth_type?: string | null;
   auth_config?: Record<string, unknown> | null;
-  default_headers?: Record<string, unknown> | null;
-  default_params?: Record<string, unknown> | null;
-  capability_configs?: Record<string, unknown> | null;
   protocol_schema_version?: string | null;
   protocol_profiles?: Record<string, unknown> | null;
   version?: number;

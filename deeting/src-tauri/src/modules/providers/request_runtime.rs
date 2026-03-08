@@ -51,18 +51,12 @@ pub fn prepare_provider_request(
     );
 
     let effective_config = build_effective_config(preset, model, capability);
-    let preset_default_headers = preset
-        .map(|item| &item.default_headers)
-        .unwrap_or(&Value::Null);
-    let preset_default_params = preset
-        .map(|item| &item.default_params)
-        .unwrap_or(&Value::Null);
     let (auth_type, auth_config, resolved_headers) = resolve_auth_for_protocol(
         Some(protocol.as_str()),
         preset.map(|item| item.provider.as_str()),
         preset.map(|item| item.auth_type.as_str()),
         preset.map(|item| &item.auth_config),
-        Some(preset_default_headers),
+        None,
     );
 
     let capability_headers = effective_config
@@ -77,7 +71,7 @@ pub fn prepare_provider_request(
         .cloned()
         .or_else(|| effective_config.get("params").cloned())
         .unwrap_or_else(|| json!({}));
-    let default_params = deep_merge_json(preset_default_params, &capability_params);
+    let default_params = capability_params;
     let protocol_profile = build_protocol_profile_from_legacy(
         preset,
         model,
@@ -1219,27 +1213,52 @@ mod tests {
             theme_color: None,
             category: Some("Cloud API".to_string()),
             url_template: None,
-            template_engine: None,
-            response_transform: Some(json!({})),
             auth_type: "bearer".to_string(),
             auth_config: json!({}),
-            default_headers: json!({ "X-Source": "desktop" }),
-            default_params: json!({}),
-            capability_configs: json!({
+            protocol_schema_version: None,
+            protocol_profiles: json!({
                 "chat": {
-                    "template_engine": "simple_replace",
-                    "request_template": {
-                        "model": null,
-                        "messages": null,
-                        "stream": null,
-                        "temperature": null,
-                        "max_tokens": null
+                    "runtime_version": "v2",
+                    "schema_version": "2026-03-07",
+                    "profile_id": "openai:chat:openai_chat",
+                    "provider": "openai",
+                    "protocol_family": "openai_chat",
+                    "capability": "chat",
+                    "transport": {
+                        "method": "POST",
+                        "path": "v1/chat/completions",
+                        "query_template": {},
+                        "header_template": {}
                     },
-                    "response_transform": {}
+                    "request": {
+                        "template_engine": "simple_replace",
+                        "request_template": {
+                            "model": null,
+                            "messages": null,
+                            "stream": null,
+                            "temperature": null,
+                            "max_tokens": null
+                        }
+                    },
+                    "response": {
+                        "decoder": { "name": "openai_chat", "config": {} },
+                        "response_template": {}
+                    },
+                    "stream": {
+                        "stream_decoder": { "name": "openai_chat_events", "config": {} }
+                    },
+                    "auth": { "auth_policy": "inherit", "config": {} },
+                    "features": {
+                        "supports_messages": true,
+                        "supports_input_items": false
+                    },
+                    "defaults": {
+                        "headers": { "X-Source": "desktop" },
+                        "query": {},
+                        "body": {}
+                    }
                 }
             }),
-            protocol_schema_version: None,
-            protocol_profiles: json!({}),
             version: 1,
             is_active: true,
         }
@@ -1394,12 +1413,48 @@ mod tests {
     fn prepare_provider_request_responses_family_builds_input_from_messages() {
         let mut preset = mock_preset();
         preset.provider = "openai".to_string();
-        preset.capability_configs = json!({
+        preset.protocol_profiles = json!({
             "chat": {
-                "template_engine": "simple_replace",
-                "request_template": {
-                    "model": null,
-                    "messages": null
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_responses",
+                "provider": "openai",
+                "protocol_family": "openai_responses",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "responses",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": {
+                        "model": null,
+                        "input": null,
+                        "stream": null
+                    },
+                    "request_builder": {
+                        "name": "responses_input_from_messages_or_items",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "openai_responses", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_responses_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": false,
+                    "supports_input_items": true
+                },
+                "defaults": {
+                    "headers": { "X-Source": "desktop" },
+                    "query": {},
+                    "body": {}
                 }
             }
         });
@@ -1432,12 +1487,6 @@ mod tests {
     #[test]
     fn build_effective_config_prefers_protocol_profiles_when_present() {
         let mut preset = mock_preset();
-        preset.capability_configs = json!({
-            "chat": {
-                "template_engine": "simple_replace",
-                "request_template": { "messages": null }
-            }
-        });
         preset.protocol_profiles = json!({
             "chat": {
                 "request": {

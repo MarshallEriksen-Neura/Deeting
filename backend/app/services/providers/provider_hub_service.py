@@ -34,6 +34,16 @@ class ProviderHubService:
         merged: list[dict[str, Any]] = []
 
         for preset in db_presets:
+            protocol_profiles = preset.protocol_profiles or {}
+            capabilities = (
+                sorted(
+                    key.strip()
+                    for key in protocol_profiles.keys()
+                    if isinstance(key, str) and key.strip()
+                )
+                if isinstance(protocol_profiles, dict)
+                else []
+            )
             merged.append(
                 {
                     "slug": preset.slug,
@@ -45,12 +55,8 @@ class ProviderHubService:
                     "theme_color": preset.theme_color,
                     "base_url": preset.base_url,
                     "url_template": preset.url_template,
-                    "auth_type": None,
-                    "auth_config": {},
-                    "default_headers": {},
-                    "default_params": {},
                     "tags": [],
-                    "capabilities": [],
+                    "capabilities": capabilities,
                     "is_popular": False,
                     "sort_order": 0,
                 }

@@ -6,6 +6,7 @@ from app.models import Base, ProviderModel, ProviderPreset
 from app.repositories.provider_instance_repository import ProviderModelRepository
 from app.services.providers.provider_instance_service import ProviderInstanceService
 from tests.api.conftest import AsyncSessionLocal, engine
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -88,9 +89,11 @@ async def _seed_preset(
         base_url=base_url,
         auth_type="bearer",
         auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-        default_headers={},
-        default_params={},
-        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+        protocol_schema_version="2026-03-07",
+        protocol_profiles=build_protocol_profiles(
+            provider=slug.split("-", 1)[0],
+            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+        ),
         is_active=True,
     )
     session.add(preset)

@@ -1,5 +1,6 @@
 import inspect
 import json
+import re
 import time
 import uuid
 from collections.abc import Iterable
@@ -33,6 +34,7 @@ from app.protocols.runtime.profile_resolver import (
     build_protocol_profile_from_preset,
     infer_protocol_family,
     load_protocol_profile_from_preset,
+    resolve_profile_defaults_from_preset,
 )
 from app.protocols.runtime.response_decoders import decode_response
 from app.services.providers.upstream_url import (
@@ -291,6 +293,9 @@ class ProviderInstanceService:
             if base.endswith("/v1"):
                 return [f"{base}/models"]
             return [f"{base}/v1/models", f"{base}/models"]
+
+        if re.search(r"/v\d+(?:$|/)", base):
+            return [f"{base}/models"]
 
         if base.endswith("/v1"):
             return [f"{base}/models", f"{base[:-3]}/models"]
@@ -943,6 +948,9 @@ class ProviderInstanceService:
         protocol_family = infer_protocol_family(protocol=protocol, upstream_path=model.upstream_path)
         stored_profile = load_protocol_profile_from_preset(preset, capability)
         stored_metadata = stored_profile.metadata if stored_profile else {}
+        profile_default_headers, profile_default_params = resolve_profile_defaults_from_preset(
+            preset, capability
+        )
         resolved_protocol = (
             protocol
             or (stored_metadata.get("protocol") if isinstance(stored_metadata, dict) else None)
@@ -954,13 +962,8 @@ class ProviderInstanceService:
             capability=capability,
             protocol=resolved_protocol,
             upstream_path=model.upstream_path,
-            http_method="",
-            template_engine="",
-            request_template={},
-            response_transform={},
-            request_builder={},
-            default_headers=preset.default_headers if preset else {},
-            default_params=preset.default_params if preset else {},
+            default_headers=profile_default_headers,
+            default_params=profile_default_params,
         )
         canonical_request = self._build_probe_canonical_request(
             model=model,

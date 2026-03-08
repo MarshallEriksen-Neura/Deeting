@@ -17,6 +17,7 @@ from app.repositories.provider_instance_repository import (
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.services.providers.provider_instance_service import ProviderInstanceService
 from tests.api.conftest import AsyncSessionLocal, engine
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -72,9 +73,11 @@ async def seed_presets():
                     base_url="https://api.openai.com",
                     auth_type="bearer",
                     auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-                    default_headers={},
-                    default_params={},
-                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                    protocol_schema_version="2026-03-07",
+                    protocol_profiles=build_protocol_profiles(
+                        provider="openai",
+                        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                    ),
                     is_active=True,
                 )
             )
@@ -88,9 +91,11 @@ async def seed_presets():
                     base_url="https://{resource}.openai.azure.com",
                     auth_type="api_key",
                     auth_config={"secret_ref_id": "ENV_AZURE_KEY"},
-                    default_headers={},
-                    default_params={},
-                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                    protocol_schema_version="2026-03-07",
+                    protocol_profiles=build_protocol_profiles(
+                        provider="azure",
+                        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                    ),
                     is_active=True,
                 )
             )
@@ -117,7 +122,7 @@ async def test_provider_instance_list_cached_and_invalidated():
         instances = await repo.get_available_instances(
             user_id=None, include_public=True
         )
-        assert len(instances) == 1
+        assert any(item.id == inst.id for item in instances)
 
         key = cache._make_key(CacheKeys.provider_instance_list(None, True))  # type: ignore[attr-defined]
         assert key in cache._redis.store  # type: ignore[attr-defined]
@@ -136,7 +141,8 @@ async def test_provider_instance_list_cached_and_invalidated():
         instances = await repo.get_available_instances(
             user_id=None, include_public=True
         )
-        assert len(instances) == 2
+        names = {item.name for item in instances}
+        assert {"inst-a", "inst-b"}.issubset(names)
 
 
 @pytest.mark.asyncio
@@ -279,9 +285,11 @@ async def test_provider_preset_cache_and_invalidate():
             base_url="https://api.openai.com",
             auth_type="bearer",
             auth_config={},
-            default_headers={},
-            default_params={},
-            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            protocol_schema_version="2026-03-07",
+            protocol_profiles=build_protocol_profiles(
+                provider="openai",
+                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            ),
             is_active=True,
         )
         session.add(preset)

@@ -224,7 +224,6 @@ class RoutingTestResponse(BaseModel):
     instance_id: str | None = None
     provider_model_id: str | None = None
     upstream_url: str | None = None
-    template_engine: str | None = None
     routing_config: dict | None = None
     limit_config: dict | None = None
     pricing_config: dict | None = None

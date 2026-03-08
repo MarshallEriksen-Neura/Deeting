@@ -32,8 +32,8 @@ class ResponseTransformStep(BaseStep):
     从上下文读取:
         - upstream_call.response: 上游响应
         - upstream_call.status_code: HTTP 状态码
-        - routing.template_engine: 模板引擎类型
-        - routing.response_transform: 响应模板/变换规则
+        - routing.protocol_profile.request: 模板引擎元信息
+        - routing.protocol_profile.response: decoder / response_template
 
     写入上下文:
         - response_transform.response: 转换后的响应

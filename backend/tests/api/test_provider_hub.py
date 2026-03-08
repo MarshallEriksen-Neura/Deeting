@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.cache import cache
 from app.models import ProviderPreset
 from app.models.provider_instance import ProviderInstance
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -50,9 +51,11 @@ async def _seed_presets(session):
                 base_url="https://api.openai.com",
                 auth_type="bearer",
                 auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-                default_headers={},
-                default_params={},
-                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                protocol_schema_version="2026-03-07",
+                protocol_profiles=build_protocol_profiles(
+                    provider="openai",
+                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                ),
                 category="Cloud API",
                 theme_color="#000000",
             )
@@ -66,9 +69,11 @@ async def _seed_presets(session):
                 base_url="https://{resource}.openai.azure.com",
                 auth_type="api_key",
                 auth_config={"secret_ref_id": "ENV_AZURE_KEY"},
-                default_headers={},
-                default_params={},
-                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                protocol_schema_version="2026-03-07",
+                protocol_profiles=build_protocol_profiles(
+                    provider="azure",
+                    capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+                ),
                 category="Cloud API",
                 theme_color="#0078d4",
             )

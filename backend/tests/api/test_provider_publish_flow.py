@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.provider_preset import ProviderPreset
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -45,9 +46,11 @@ async def _seed_preset(session, slug: str = "openai") -> None:
             base_url="https://api.openai.com",
             auth_type="bearer",
             auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-            default_headers={},
-            default_params={},
-            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            protocol_schema_version="2026-03-07",
+            protocol_profiles=build_protocol_profiles(
+                provider="openai",
+                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            ),
             is_active=True,
         )
     )

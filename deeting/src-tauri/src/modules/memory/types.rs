@@ -8,6 +8,8 @@ pub struct LocalMemoryItem {
     pub session_id: Option<String>,
     pub assistant_id: Option<String>,
     pub meta_info: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -50,4 +52,31 @@ pub struct LocalMemoryClearRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalMemoryClearResponse {
     pub cleared: i64,
+}
+
+// --- Search types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalMemorySearchQuery {
+    pub query: String,
+    pub limit: Option<usize>,
+    pub session_id: Option<String>,
+    pub assistant_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalMemorySearchItem {
+    pub id: String,
+    pub content: String,
+    pub session_id: Option<String>,
+    pub assistant_id: Option<String>,
+    pub meta_info: Option<Value>,
+    pub score: f32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalMemorySearchResult {
+    pub items: Vec<LocalMemorySearchItem>,
 }

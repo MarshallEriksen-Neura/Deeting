@@ -43,7 +43,12 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let provider_state = ProviderState::new(&database_url)
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
-        let memory_state = MemoryState::new(&lancedb_uri)
+
+        // Memory 初始化 (with shared embedding capability)
+        let memory_embedding = crate::modules::providers::embedding::EmbeddingService::new(
+            provider_state.store.clone(),
+        );
+        let memory_state = MemoryState::with_options(&lancedb_uri, None, Some(memory_embedding))
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
@@ -76,6 +81,14 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let sandbox_state = sync_state.sandbox.clone();
     tauri::async_runtime::spawn(async move {
         sandbox_state.manager.start_background_worker().await;
+    });
+
+    // Memory embedding backfill (fire-and-forget)
+    let memory_service = sync_state.memory.service.clone();
+    tauri::async_runtime::spawn(async move {
+        // Small delay to let the app finish initializing
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        crate::modules::memory::backfill::run_embedding_backfill(memory_service).await;
     });
 
     let summary_worker_state = sync_state.clone();

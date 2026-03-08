@@ -1568,7 +1568,6 @@ const ProviderPresetItemSchema = z.object({
   url_template: z.string().nullable().optional(),
   theme_color: z.string().nullable().optional(),
   icon: z.string().nullable().optional(),
-  capability_configs: z.record(z.string(), z.unknown()).default({}),
   protocol_schema_version: z.string().nullable().optional(),
   protocol_profiles: z.record(z.string(), z.unknown()).default({}),
   is_active: z.boolean().default(true),

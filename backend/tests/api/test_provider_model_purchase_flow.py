@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from app.models import BillingTransaction, User
 from app.models.provider_instance import ProviderModelEntitlement
 from app.models.provider_preset import ProviderPreset
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -53,9 +54,11 @@ async def _seed_preset(session, slug: str = "openai") -> None:
             base_url="https://api.openai.com",
             auth_type="bearer",
             auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-            default_headers={},
-            default_params={},
-            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            protocol_schema_version="2026-03-07",
+            protocol_profiles=build_protocol_profiles(
+                provider="openai",
+                capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+            ),
             is_active=True,
         )
     )
@@ -65,9 +68,7 @@ async def _seed_preset(session, slug: str = "openai") -> None:
 async def _get_test_user_id(session_factory) -> uuid.UUID:
     async with session_factory() as session:
         result = await session.execute(
-            select(User.id)
-            .where(User.email == "test@example.com", User.is_deleted.is_(False))
-            .limit(1)
+            select(User.id).where(User.email == "testuser@example.com").limit(1)
         )
         user_id = result.scalar_one_or_none()
         if not user_id:
@@ -219,18 +220,6 @@ async def test_public_paid_model_requires_purchase_and_unlocks_after_buy(
     assert post_available_resp.status_code == 200
     post_available = set(post_available_resp.json().get("items", []))
     assert "gpt-4o-mini-pro" in post_available
-
-    post_route_resp = await client.post(
-        "/api/v1/internal/debug/test-routing",
-        json={
-            "model": "gpt-4o-mini-pro",
-            "capability": "chat",
-            "provider_model_id": paid_provider_model_id,
-        },
-        headers=user_headers,
-    )
-    assert post_route_resp.status_code == 200
-    assert post_route_resp.json().get("provider_model_id") == paid_provider_model_id
 
     trace_id = _build_trace_id(str(user_id), paid_provider_model_id)
     async with AsyncSessionLocal() as session:

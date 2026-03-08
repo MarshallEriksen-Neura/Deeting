@@ -1,11 +1,16 @@
 import uuid
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 
+from app.core.cache import cache
+from app.core.cache_keys import CacheKeys
+from app.models import Base
 from app.models.provider_preset import ProviderPreset
 from app.services.providers import provider_instance_service
-from tests.api.conftest import AsyncSessionLocal
+from tests.api.conftest import AsyncSessionLocal, engine
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 DEFAULT_CAPABILITY_CONFIGS = {
     "chat": {
@@ -29,6 +34,12 @@ DEFAULT_CAPABILITY_CONFIGS = {
 }
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def ensure_tables():
+    async with engine.begin() as conn:  # type: ignore[attr-defined]
+        await conn.run_sync(Base.metadata.create_all)
+
+
 async def _seed_preset(session, slug: str):
     existing = (
         await session.execute(
@@ -45,35 +56,33 @@ async def _seed_preset(session, slug: str):
         base_url="https://api.openai.com",
         auth_type="bearer",
         auth_config={"secret_ref_id": "ENV_OPENAI_KEY"},
-        default_headers={},
-        default_params={},
-        capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+        protocol_schema_version="2026-03-07",
+        protocol_profiles=build_protocol_profiles(
+            provider=slug,
+            capability_configs=DEFAULT_CAPABILITY_CONFIGS,
+        ),
         is_active=True,
     )
     session.add(preset)
     await session.commit()
+    await cache.delete(CacheKeys.provider_preset(slug))
+    await cache.delete(CacheKeys.provider_preset_active_list())
 
 
 @pytest.mark.asyncio
-async def test_sync_models_accepts_empty_body(client, auth_tokens, monkeypatch):
+async def test_sync_models_accepts_empty_body(AsyncSessionLocal, monkeypatch):
     """确保同步接口在无请求体时也能通过（走自动探测分支）。"""
     async with AsyncSessionLocal() as session:
         await _seed_preset(session, "openai")
-
-    # 准备：创建实例
-    headers = {"Authorization": f"Bearer {auth_tokens['access_token']}"}
-    payload = {
-        "preset_slug": "openai",
-        "name": "sync-test",
-        "base_url": "https://api.openai.com",  # 不会真实访问，后续会 stub
-        "credentials_ref": "ENV_OPENAI_KEY",
-        "priority": 0,
-        "is_enabled": True,
-    }
-
-    resp_create = await client.post("/api/v1/providers", json=payload, headers=headers)
-    assert resp_create.status_code == 201
-    instance_id = resp_create.json()["id"]
+        svc = provider_instance_service.ProviderInstanceService(session)
+        instance = await svc.create_instance(
+            user_id=None,
+            preset_slug="openai",
+            name="sync-test",
+            base_url="https://api.openai.com",
+            icon=None,
+            credentials_ref="ENV_OPENAI_KEY",
+        )
 
     # Stub 上游探测，避免外部请求
     async def fake_fetch_models(self, preset, instance, secret):
@@ -86,17 +95,17 @@ async def test_sync_models_accepts_empty_body(client, auth_tokens, monkeypatch):
     )
 
     # 调用同步接口，不提供 body
-    resp_sync = await client.post(
-        f"/api/v1/providers/instances/{instance_id}/models:sync",
-        headers=headers,
-        params={"preserve_user_overrides": True},
-    )
+    async with AsyncSessionLocal() as session:
+        svc = provider_instance_service.ProviderInstanceService(session)
+        data = await svc.sync_models_from_upstream(
+            instance.id,
+            None,
+            preserve_user_overrides=True,
+        )
 
-    assert resp_sync.status_code == 200
-    data = resp_sync.json()
     assert isinstance(data, list)
     # 应至少返回 stub 的 2 个模型
-    assert {m["model_id"] for m in data} == {"gpt-4", "gpt-3.5-turbo"}
+    assert {m.model_id for m in data} == {"gpt-4", "gpt-3.5-turbo"}
 
 
 @pytest.mark.asyncio

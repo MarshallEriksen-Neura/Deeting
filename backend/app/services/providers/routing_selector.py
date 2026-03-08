@@ -40,6 +40,7 @@ from app.services.providers.upstream_url import build_upstream_url
 from app.protocols.runtime.profile_resolver import (
     build_protocol_profile_from_preset,
     resolve_effective_config_from_preset,
+    resolve_profile_defaults_from_preset,
 )
 from app.utils.provider_model_access import (
     parse_unlock_price_credits,
@@ -239,7 +240,9 @@ class RoutingSelector:
                         provider=preset.provider if preset else None,
                         auth_type=preset.auth_type if preset else None,
                         auth_config=preset.auth_config if preset else None,
-                        default_headers=preset.default_headers if preset else None,
+                        default_headers=resolve_profile_defaults_from_preset(
+                            preset, capability
+                        )[0],
                     )
                 )
                 capability_headers = (
@@ -249,7 +252,7 @@ class RoutingSelector:
                 )
                 resolved_headers = deep_merge(resolved_headers, capability_headers)
                 default_params = deep_merge(
-                    preset.default_params if preset else {},
+                    resolve_profile_defaults_from_preset(preset, capability)[1],
                     effective_config.get("default_params")
                     or effective_config.get("params")
                     or {},
@@ -485,7 +488,9 @@ class RoutingSelector:
                 provider=preset.provider if preset else None,
                 auth_type=preset.auth_type if preset else None,
                 auth_config=preset.auth_config if preset else None,
-                default_headers=preset.default_headers if preset else None,
+                default_headers=resolve_profile_defaults_from_preset(
+                    preset, resolved_cap
+                )[0],
             )
         )
         capability_headers = (
@@ -495,7 +500,7 @@ class RoutingSelector:
         )
         resolved_headers = deep_merge(resolved_headers, capability_headers)
         default_params = deep_merge(
-            preset.default_params if preset else {},
+            resolve_profile_defaults_from_preset(preset, resolved_cap)[1],
             effective_config.get("default_params")
             or effective_config.get("params")
             or {},

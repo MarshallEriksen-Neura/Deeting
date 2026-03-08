@@ -43,7 +43,7 @@ mod tests {
             .await
             .expect("create test memory state");
         state
-            .store
+            .service
             .recreate_local_asset_table(vector_dim)
             .await
             .expect("recreate local asset table");
@@ -437,7 +437,7 @@ mod tests {
         let result = build_local_sdk_search_result_with_runtime(
             &store,
             &provider_state.embedding,
-            memory_state.store.as_ref(),
+            memory_state.service.as_ref(),
             query,
         )
         .await;
@@ -486,7 +486,7 @@ mod tests {
         let result = build_local_sdk_search_result_with_runtime(
             &store,
             &provider_state.embedding,
-            memory_state.store.as_ref(),
+            memory_state.service.as_ref(),
             query,
         )
         .await;
@@ -547,7 +547,7 @@ mod tests {
         let result = build_local_sdk_search_result_with_runtime(
             &store,
             &provider_state.embedding,
-            memory_state.store.as_ref(),
+            memory_state.service.as_ref(),
             query,
         )
         .await;
@@ -572,7 +572,7 @@ mod tests {
         let result = build_local_consult_expert_network_result_with_runtime(
             &store,
             &provider_state.embedding,
-            memory_state.store.as_ref(),
+            memory_state.service.as_ref(),
             query,
             3,
             None,
@@ -606,7 +606,7 @@ mod tests {
         let result = build_local_consult_expert_network_result_with_runtime(
             &store,
             &provider_state.embedding,
-            memory_state.store.as_ref(),
+            memory_state.service.as_ref(),
             query,
             3,
             None,

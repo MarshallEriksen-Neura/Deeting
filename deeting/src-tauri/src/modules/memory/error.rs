@@ -8,6 +8,8 @@ pub enum MemoryError {
     NotFound(String),
     #[error("storage error: {0}")]
     Storage(String),
+    #[error("migration error: {0}")]
+    Migration(String),
 }
 
 impl MemoryError {

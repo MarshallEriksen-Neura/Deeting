@@ -5,6 +5,7 @@ import pytest
 from app.core.config import settings
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.models.provider_preset import ProviderPreset
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 
 @pytest.mark.asyncio
@@ -70,13 +71,15 @@ async def test_credits_chat_proxy_uses_runtime_v2_for_responses_models(
             base_url="https://api.openai.com",
             auth_type="bearer",
             auth_config={},
-            default_headers={},
-            default_params={},
-            capability_configs={
-                "chat": {
-                    "request_builder": {"name": "responses_input_from_items"},
-                }
-            },
+            protocol_schema_version="2026-03-07",
+            protocol_profiles=build_protocol_profiles(
+                provider="openai",
+                capability_configs={
+                    "chat": {
+                        "request_builder": {"name": "responses_input_from_items"},
+                    }
+                },
+            ),
             is_active=True,
         )
         session.add(preset)

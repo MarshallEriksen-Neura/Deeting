@@ -12,6 +12,7 @@ from app.agent_plugins.core.interfaces import PluginContext
 from app.models import Base
 from app.models.provider_preset import ProviderPreset
 from app.models.user import User
+from tests.utils.provider_protocol_profiles import build_protocol_profiles
 
 engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",
@@ -124,9 +125,11 @@ async def test_save_provider_field_mapping_enqueues_index(
                 base_url="https://api.openai.com",
                 auth_type="api_key",
                 auth_config={},
-                default_headers={},
-                default_params={},
-                capability_configs={},
+                protocol_schema_version="2026-03-07",
+                protocol_profiles=build_protocol_profiles(
+                    provider="openai",
+                    capability_configs={},
+                ),
                 icon="lucide:cpu",
             )
         )

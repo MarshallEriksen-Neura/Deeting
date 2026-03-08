@@ -77,6 +77,61 @@ async fn init_migrates_legacy_provider_models_before_index_creation() {
 }
 
 #[tokio::test]
+async fn init_rebuilds_provider_presets_without_legacy_columns() {
+    let store = ProviderStore::new("sqlite::memory:")
+        .await
+        .expect("failed to create provider store");
+
+    sqlx::query(
+        "CREATE TABLE provider_presets (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            icon TEXT,
+            theme_color TEXT,
+            category TEXT,
+            url_template TEXT,
+            template_engine TEXT,
+            response_transform TEXT,
+            auth_type TEXT NOT NULL DEFAULT 'api_key',
+            auth_config TEXT NOT NULL DEFAULT '{}',
+            default_headers TEXT NOT NULL DEFAULT '{}',
+            default_params TEXT NOT NULL DEFAULT '{}',
+            capability_configs TEXT NOT NULL DEFAULT '{}',
+            protocol_schema_version TEXT,
+            protocol_profiles TEXT NOT NULL DEFAULT '{}',
+            version INTEGER NOT NULL DEFAULT 1,
+            is_active BOOLEAN DEFAULT 1
+        )",
+    )
+    .execute(&store.pool)
+    .await
+    .expect("failed to create legacy provider_presets");
+
+    store
+        .init()
+        .await
+        .expect("provider init should rebuild provider_presets");
+
+    let columns = sqlx::query("PRAGMA table_info(provider_presets)")
+        .fetch_all(&store.pool)
+        .await
+        .expect("failed to inspect provider_presets");
+    let names: Vec<String> = columns
+        .iter()
+        .filter_map(|row| row.try_get::<String, _>("name").ok())
+        .collect();
+
+    assert!(names.iter().any(|name| name == "protocol_profiles"));
+    assert!(!names.iter().any(|name| name == "template_engine"));
+    assert!(!names.iter().any(|name| name == "response_transform"));
+    assert!(!names.iter().any(|name| name == "default_headers"));
+    assert!(!names.iter().any(|name| name == "default_params"));
+    assert!(!names.iter().any(|name| name == "capability_configs"));
+}
+
+#[tokio::test]
 async fn quick_add_models_infers_capabilities_and_upstream_paths() {
     let store = init_store().await;
     let instance_id = insert_instance(&store).await;

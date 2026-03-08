@@ -21,13 +21,8 @@ class ProviderPresetDTO(BaseSchema):
     url_template: str | None = None
     theme_color: str | None = None
     icon: str | None = None
-    template_engine: str | None = None
-    response_transform: dict[str, Any] = Field(default_factory=dict)
     auth_type: str | None = None
     auth_config: dict[str, Any] = Field(default_factory=dict)
-    default_headers: dict[str, Any] = Field(default_factory=dict)
-    default_params: dict[str, Any] = Field(default_factory=dict)
-    capability_configs: dict[str, Any] = Field(default_factory=dict)
     protocol_schema_version: str | None = None
     protocol_profiles: dict[str, Any] = Field(default_factory=dict)
     version: int = 1

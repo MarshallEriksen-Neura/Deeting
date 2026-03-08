@@ -556,7 +556,7 @@ async fn dispatch_tool_call(
             let result = state
                 .deps
                 .memory
-                .store
+                .service
                 .list(query)
                 .await
                 .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))?;
@@ -582,7 +582,7 @@ async fn dispatch_tool_call(
             let result = state
                 .deps
                 .memory
-                .store
+                .service
                 .append(payload)
                 .await
                 .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))?;
@@ -598,7 +598,7 @@ async fn dispatch_tool_call(
             let cleared = state
                 .deps
                 .memory
-                .store
+                .service
                 .clear(payload)
                 .await
                 .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))?;

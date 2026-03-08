@@ -846,13 +846,6 @@ async def test_routing(
             str(provider_model_id) if provider_model_id is not None else None
         ),
         upstream_url=ctx.get("routing", "upstream_url"),
-        template_engine=(
-            ((ctx.get("routing", "protocol_profile") or {}).get("request") or {}).get(
-                "template_engine"
-            )
-            if isinstance(ctx.get("routing", "protocol_profile"), dict)
-                else None
-        ),
         routing_config=ctx.get("routing", "routing_config"),
         limit_config=ctx.get("routing", "limit_config"),
         pricing_config=ctx.get("routing", "pricing_config"),

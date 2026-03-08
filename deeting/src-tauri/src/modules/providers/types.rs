@@ -27,20 +27,10 @@ pub struct ProviderPreset {
     pub category: Option<String>,
     #[serde(default)]
     pub url_template: Option<String>,
-    #[serde(default)]
-    pub template_engine: Option<String>,
-    #[serde(default)]
-    pub response_transform: Option<Value>,
     #[serde(default = "default_auth_type")]
     pub auth_type: String,
     #[serde(default = "default_json_object")]
     pub auth_config: Value,
-    #[serde(default = "default_json_object")]
-    pub default_headers: Value,
-    #[serde(default = "default_json_object")]
-    pub default_params: Value,
-    #[serde(default = "default_json_object")]
-    pub capability_configs: Value,
     #[serde(default)]
     pub protocol_schema_version: Option<String>,
     #[serde(default = "default_json_object")]
