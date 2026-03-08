@@ -19,12 +19,23 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("provider_preset")
+    }
+    legacy_columns = [
+        "template_engine",
+        "response_transform",
+        "default_headers",
+        "default_params",
+        "capability_configs",
+    ]
+
     with op.batch_alter_table("provider_preset") as batch_op:
-        batch_op.drop_column("template_engine")
-        batch_op.drop_column("response_transform")
-        batch_op.drop_column("default_headers")
-        batch_op.drop_column("default_params")
-        batch_op.drop_column("capability_configs")
+        for column_name in legacy_columns:
+            if column_name in existing_columns:
+                batch_op.drop_column(column_name)
 
 
 def downgrade() -> None:

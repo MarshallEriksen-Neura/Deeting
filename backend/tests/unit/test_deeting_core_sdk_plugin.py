@@ -300,8 +300,8 @@ async def test_execute_code_plan_executes_in_sandbox(monkeypatch):
     assert "import urllib.request" in captured["code"]
     assert "X-Code-Mode-Execution-Token" in captured["code"]
     assert "RUNTIME_CONTEXT = json.loads" in captured["code"]
-    assert "RUNTIME_TOOL_RESULTS = json.loads" in captured["code"]
-    assert "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)" in captured["code"]
+    assert "RUNTIME_TOOL_RESULTS = json.loads" not in captured["code"]
+    assert "deeting = DeetingRuntime(context=RUNTIME_CONTEXT)" in captured["code"]
 
 
 @pytest.mark.asyncio
@@ -652,34 +652,27 @@ async def test_execute_code_plan_injects_runtime_bridge_context(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_execute_code_plan_runtime_call_tool_roundtrip(monkeypatch):
+async def test_execute_code_plan_runtime_call_tool_marker_is_rejected(monkeypatch):
     plugin = _make_plugin()
-    captured = {"codes": [], "dispatch_calls": []}
-
-    async def _fake_dispatch_real_tool(*, tool_name, arguments, workflow_context):
-        captured["dispatch_calls"].append((tool_name, arguments))
-        return {"title": "Demo Doc", "url": arguments.get("url")}
+    captured = {"codes": []}
 
     async def _fake_run_code(session_id, code, language, execution_timeout):
         captured["codes"].append(code)
-        if len(captured["codes"]) == 1:
-            marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
-                {
-                    "index": 0,
-                    "tool_name": "fetch_web_content",
-                    "arguments": {"url": "https://example.com"},
-                },
-                ensure_ascii=False,
-            )
-            return {
-                "stdout": [marker],
-                "stderr": ["runtime interrupted for host tool call"],
-                "result": [],
-                "exit_code": 1,
-            }
-        return {"stdout": ["done"], "stderr": [], "result": [], "exit_code": 0}
+        marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
+            {
+                "index": 0,
+                "tool_name": "fetch_web_content",
+                "arguments": {"url": "https://example.com"},
+            },
+            ensure_ascii=False,
+        )
+        return {
+            "stdout": [marker],
+            "stderr": ["runtime interrupted for host tool call"],
+            "result": [],
+            "exit_code": 1,
+        }
 
-    monkeypatch.setattr(plugin, "_dispatch_real_tool", _fake_dispatch_real_tool)
     _patch_run_code_stream(monkeypatch, _fake_run_code)
 
     result = await plugin.handle_execute_code_plan(
@@ -689,27 +682,17 @@ async def test_execute_code_plan_runtime_call_tool_roundtrip(monkeypatch):
         )
     )
 
-    assert result["status"] == "success"
-    assert len(captured["codes"]) == 2
-    assert len(captured["dispatch_calls"]) == 1
-    assert captured["dispatch_calls"][0][0] == "fetch_web_content"
-    assert "RUNTIME_TOOL_RESULTS = json.loads" in captured["codes"][0]
-    assert "Demo Doc" in captured["codes"][1]
-    assert result["runtime"]["runtime_tool_calls"]["count"] == 1
-    trace_call = result["runtime"]["runtime_tool_calls"]["calls"][0]
-    trace_tool_name = trace_call.get("tool_name") or trace_call.get("name")
-    assert trace_tool_name == "fetch_web_content"
-    if "status" in trace_call:
-        assert trace_call["status"] == "success"
-    if "duration_ms" in trace_call:
-        assert isinstance(trace_call["duration_ms"], int)
-        assert trace_call["duration_ms"] >= 0
+    assert result["status"] == "failed"
+    assert result["error_code"] == "CODE_MODE_RUNTIME_TOOL_CALL_DISABLED"
+    assert "fetch_web_content" in str(result.get("error") or "")
+    assert len(captured["codes"]) == 1
+    assert "RUNTIME_TOOL_RESULTS = json.loads" not in captured["codes"][0]
 
 
 @pytest.mark.asyncio
-async def test_execute_code_plan_bridge_fallback_marker_dispatches_tool(monkeypatch):
+async def test_execute_code_plan_bridge_fallback_marker_is_rejected(monkeypatch):
     plugin = _make_plugin()
-    captured = {"codes": [], "dispatch_calls": []}
+    captured = {"codes": []}
 
     async def _fake_issue_runtime_bridge_context(
         *,
@@ -721,34 +704,25 @@ async def test_execute_code_plan_bridge_fallback_marker_dispatches_tool(monkeypa
             "endpoint": "http://bridge.local/api/v1/internal/bridge/call",
             "execution_token": "bridge-token-xyz",
             "timeout_seconds": 2,
-            "mode": "http_with_marker_fallback",
+            "mode": "http_bridge_only",
         }
 
     async def _fake_store_context(_token, _context):
         return None
 
-    async def _fake_dispatch_real_tool(*, tool_name, arguments, workflow_context):
-        captured["dispatch_calls"].append((tool_name, arguments))
-        return {"title": "Demo Doc", "url": arguments.get("url")}
-
     async def _fake_run_code_stream(session_id, code, language, execution_timeout):
         captured["codes"].append(code)
-        if len(captured["codes"]) == 1:
-            marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
-                {
-                    "index": 0,
-                    "tool_name": "fetch_web_content",
-                    "arguments": {"url": "https://example.com"},
-                },
-                ensure_ascii=False,
-            )
-            yield {"type": "stdout", "content": marker}
-            yield {"type": "stderr", "content": "runtime interrupted for host tool call"}
-            yield {"type": "exit", "exit_code": 1, "result": []}
-            return
-
-        yield {"type": "stdout", "content": "[deeting.log] Demo Doc"}
-        yield {"type": "exit", "exit_code": 0, "result": []}
+        marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
+            {
+                "index": 0,
+                "tool_name": "fetch_web_content",
+                "arguments": {"url": "https://example.com"},
+            },
+            ensure_ascii=False,
+        )
+        yield {"type": "stdout", "content": marker}
+        yield {"type": "stderr", "content": "runtime interrupted for host tool call"}
+        yield {"type": "exit", "exit_code": 1, "result": []}
 
     monkeypatch.setattr(
         plugin,
@@ -760,7 +734,6 @@ async def test_execute_code_plan_bridge_fallback_marker_dispatches_tool(monkeypa
         "store_context",
         _fake_store_context,
     )
-    monkeypatch.setattr(plugin, "_dispatch_real_tool", _fake_dispatch_real_tool)
     monkeypatch.setattr(
         sdk_module.sandbox_manager,
         "run_code_stream",
@@ -774,28 +747,15 @@ async def test_execute_code_plan_bridge_fallback_marker_dispatches_tool(monkeypa
         )
     )
 
-    assert result["status"] == "success"
-    assert "Demo Doc" in result["stdout"]
-    assert len(captured["codes"]) == 2
-    assert len(captured["dispatch_calls"]) == 1
-    assert captured["dispatch_calls"][0][0] == "fetch_web_content"
-    assert "Demo Doc" in captured["codes"][1]
-    assert result["runtime"]["runtime_tool_calls"]["count"] == 1
-    bridge_meta = result["runtime"].get("bridge")
-    if isinstance(bridge_meta, dict):
-        assert bridge_meta.get("fallback_to_marker") is True
-        assert bridge_meta.get("fallback_attempt") == 1
+    assert result["status"] == "failed"
+    assert result["error_code"] == "CODE_MODE_RUNTIME_TOOL_CALL_DISABLED"
+    assert "fetch_web_content" in str(result.get("error") or "")
+    assert len(captured["codes"]) == 1
 
 
 @pytest.mark.asyncio
-async def test_execute_code_plan_runtime_call_tool_trace_contains_error_details(monkeypatch):
+async def test_execute_code_plan_runtime_call_tool_disabled_error_contains_request(monkeypatch):
     plugin = _make_plugin()
-
-    async def _fake_dispatch_real_tool(*, tool_name, arguments, workflow_context):
-        return {
-            "error": f"{tool_name} failed for {arguments.get('url')}",
-            "error_code": "UPSTREAM_TIMEOUT",
-        }
 
     async def _fake_run_code(session_id, code, language, execution_timeout):
         marker = sdk_module._RUNTIME_TOOL_CALL_MARKER + json.dumps(
@@ -806,16 +766,13 @@ async def test_execute_code_plan_runtime_call_tool_trace_contains_error_details(
             },
             ensure_ascii=False,
         )
-        if "RUNTIME_TOOL_RESULTS = json.loads('[]')" in code:
-            return {
-                "stdout": [marker],
-                "stderr": ["runtime interrupted for host tool call"],
-                "result": [],
-                "exit_code": 1,
-            }
-        return {"stdout": ["done"], "stderr": [], "result": [], "exit_code": 0}
+        return {
+            "stdout": [marker],
+            "stderr": ["runtime interrupted for host tool call"],
+            "result": [],
+            "exit_code": 1,
+        }
 
-    monkeypatch.setattr(plugin, "_dispatch_real_tool", _fake_dispatch_real_tool)
     _patch_run_code_stream(monkeypatch, _fake_run_code)
 
     result = await plugin.handle_execute_code_plan(
@@ -825,18 +782,10 @@ async def test_execute_code_plan_runtime_call_tool_trace_contains_error_details(
         )
     )
 
-    assert result["status"] == "success"
-    trace_call = result["runtime"]["runtime_tool_calls"]["calls"][0]
-    trace_tool_name = trace_call.get("tool_name") or trace_call.get("name")
-    assert trace_tool_name == "fetch_web_content"
-    if "status" in trace_call:
-        assert trace_call["status"] == "failed"
-    if "error_code" in trace_call:
-        assert trace_call["error_code"] == "UPSTREAM_TIMEOUT"
-    if "error" in trace_call:
-        assert "fetch_web_content failed" in trace_call["error"]
-    if "duration_ms" in trace_call:
-        assert isinstance(trace_call["duration_ms"], int)
+    assert result["status"] == "failed"
+    assert result["error_code"] == "CODE_MODE_RUNTIME_TOOL_CALL_DISABLED"
+    assert result["request"]["tool_name"] == "fetch_web_content"
+    assert result["request"]["arguments"]["url"] == "https://example.com"
 
 
 @pytest.mark.asyncio
@@ -1082,7 +1031,12 @@ def test_plugins_yaml_registers_deeting_core_sdk_plugin():
     assert plugin is not None
     assert plugin.get("module") == "app.agent_plugins.builtins.deeting_core_sdk.plugin"
     assert plugin.get("class_name") == "DeetingCoreSdkPlugin"
-    assert set(plugin.get("tools", [])) == {"search_sdk", "execute_code_plan"}
+    assert set(plugin.get("tools", [])) == {
+        "search_sdk",
+        "execute_code_plan",
+        "activate_assistant",
+        "deactivate_assistant",
+    }
 
 
 def test_build_wrapped_code_injects_deeting_module_alias():

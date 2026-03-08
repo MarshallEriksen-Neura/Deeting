@@ -19,11 +19,13 @@ from app.repositories.assistant_repository import (
 )
 from app.repositories.assistant_routing_repository import AssistantRoutingRepository
 from app.repositories.review_repository import ReviewTaskRepository
-from app.services.assistant.constants import ASSISTANT_MARKET_ENTITY
+from app.services.assistant.constants import (
+    ASSISTANT_COLLECTION_NAME,
+    ASSISTANT_MARKET_ENTITY,
+)
 from app.services.assistant.default_assistant_service import DefaultAssistantService
 from app.services.providers.embedding import EmbeddingService
 from app.storage.qdrant_kb_store import ensure_collection_vector_size, search_points
-from app.tasks.assistant import ASSISTANT_COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
 

@@ -12,10 +12,6 @@ from app.repositories.notification_repository import (
     NotificationReceiptRepository,
     NotificationRepository,
 )
-from app.tasks.notification import (
-    publish_notification_to_all_users_task,
-    publish_notification_to_user_task,
-)
 
 
 class NotificationService:
@@ -60,6 +56,8 @@ class NotificationService:
         )
 
         if enqueue:
+            from app.tasks.notification import publish_notification_to_user_task
+
             scheduler = get_transaction_scheduler(self.session)
             scheduler.delay_after_commit(
                 publish_notification_to_user_task,
@@ -123,6 +121,8 @@ class NotificationService:
         )
 
         if enqueue:
+            from app.tasks.notification import publish_notification_to_all_users_task
+
             scheduler = get_transaction_scheduler(self.session)
             scheduler.delay_after_commit(
                 publish_notification_to_all_users_task,

@@ -14,15 +14,11 @@ def build_runtime_preamble(
 ) -> str:
     raw = textwrap.dedent(
         """
-        class _DeetingHostToolCallSignal(BaseException):
-            pass
-
         class DeetingRuntime:
-            def __init__(self, context=None, tool_results=None, max_tool_calls=__MAX_RUNTIME_TOOL_CALLS__):
+            def __init__(self, context=None, max_tool_calls=__MAX_RUNTIME_TOOL_CALLS__):
                 self.version = "1.2.0"
                 self._inline_context = context or {}
                 self._full_context = None
-                self._tool_results = list(tool_results or [])
                 self._call_index = 0
                 self._max_tool_calls = int(max_tool_calls or 0)
 
@@ -102,60 +98,81 @@ def build_runtime_preamble(
                 idx = self._call_index
                 self._call_index += 1
 
-                # 1. Return cached result if available (for re-execution mode)
-                if idx < len(self._tool_results):
-                    return self._tool_results[idx]
-
                 if idx >= self._max_tool_calls:
                     raise RuntimeError("runtime tool call limit exceeded")
 
-                # 2. Try HTTP Bridge if available
+                # Runtime tool calls require bridge access in cloud execution.
                 bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}
                 endpoint = str((bridge or {}).get("endpoint") or "").strip()
                 execution_token = str((bridge or {}).get("execution_token") or "").strip()
-                
-                if endpoint and execution_token:
-                    try:
-                        import urllib.request
-                        import time
-                        
-                        request_payload = {
-                            "tool_name": str(tool_name or "").strip(),
-                            "arguments": arguments or {},
-                            "execution_token": execution_token,
-                        }
-                        req = urllib.request.Request(
-                            endpoint,
-                            data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
-                            headers={
-                                "Content-Type": "application/json",
-                                "__BRIDGE_EXECUTION_TOKEN_HEADER__": execution_token,
-                            },
-                            method="POST",
-                        )
-                        with urllib.request.urlopen(req, timeout=120) as response:
-                            body = response.read().decode("utf-8")
-                        parsed = json.loads(body) if body else {}
-                        if isinstance(parsed, dict) and parsed.get("ok"):
-                            return parsed.get("result")
-                        # If HTTP returns error, we don't return it yet, try marker fallback
-                    except Exception as exc:
-                        # Log error to stderr so user can see why bridge failed
-                        import sys
-                        print(f"[deeting.bridge] Warning: HTTP bridge failed: {exc}", file=sys.stderr)
+                timeout_seconds = float((bridge or {}).get("timeout_seconds") or 120)
 
-                # 3. ELEGANT FALLBACK: Marker Mode
-                # This works by printing a special token that the host intercepts.
-                payload = {
-                    "index": idx,
-                    "tool_name": str(tool_name or "").strip(),
-                    "arguments": arguments or {},
-                }
-                # Use a clean, simple print to avoid escaping nightmares
-                print(f"\\n__RUNTIME_TOOL_CALL_MARKER__{json.dumps(payload, ensure_ascii=False)}")
-                
-                # In marker mode, we MUST stop execution because the host will re-run us with the result.
-                raise _DeetingHostToolCallSignal(f"pending tool call: {tool_name}")
+                if not endpoint or not execution_token:
+                    raise RuntimeError(
+                        "runtime tool calls require bridge access; marker fallback is disabled in cloud runtime"
+                    )
+
+                import urllib.request
+                import time
+
+                started = time.perf_counter()
+                try:
+                    request_payload = {
+                        "tool_name": str(tool_name or "").strip(),
+                        "arguments": arguments or {},
+                        "execution_token": execution_token,
+                    }
+                    req = urllib.request.Request(
+                        endpoint,
+                        data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/json",
+                            "__BRIDGE_EXECUTION_TOKEN_HEADER__": execution_token,
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                        body = response.read().decode("utf-8")
+                    parsed = json.loads(body) if body else {}
+                    if isinstance(parsed, dict) and parsed.get("ok"):
+                        return parsed.get("result")
+                    if isinstance(parsed, dict):
+                        result = parsed.get("result")
+                        meta = parsed.get("meta") if isinstance(parsed.get("meta"), dict) else None
+                        if isinstance(result, dict):
+                            nested_error = result.get("error") or result.get("message")
+                            nested_error_code = result.get("error_code")
+                            if nested_error:
+                                response = {
+                                    "error": str(nested_error),
+                                    "error_code": nested_error_code if isinstance(nested_error_code, str) else None,
+                                }
+                                if meta:
+                                    response["bridge_meta"] = meta
+                                return response
+                        error = parsed.get("error")
+                        error_code = parsed.get("error_code")
+                        if error:
+                            response = {
+                                "error": str(error),
+                                "error_code": error_code if isinstance(error_code, str) else None,
+                            }
+                            if meta:
+                                response["bridge_meta"] = meta
+                            return response
+                except Exception as exc:
+                    elapsed_ms = max(0, int((time.perf_counter() - started) * 1000))
+                    import sys
+                    print(
+                        "[deeting.bridge] Error: HTTP bridge failed and marker fallback is disabled in cloud runtime: "
+                        f"tool={tool_name} timeout_seconds={timeout_seconds} elapsed_ms={elapsed_ms} error={exc}",
+                        file=sys.stderr,
+                    )
+                    raise RuntimeError(
+                        "runtime bridge call failed and marker fallback is disabled in cloud runtime"
+                    ) from exc
+
+                raise RuntimeError("runtime bridge call failed")
 
             def _bridge_info(self):
                 bridge = self._inline_context.get("bridge") if isinstance(self._inline_context, dict) else {}

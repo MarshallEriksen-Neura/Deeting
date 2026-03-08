@@ -13,7 +13,7 @@ from typing import Any
 
 from app.agent_plugins.core.interfaces import AgentPlugin, PluginMetadata
 from app.core.config import settings
-from app.core.metrics import record_code_mode_execution, record_code_mode_tool_call
+from app.core.metrics import record_code_mode_execution
 from app.core.sandbox.manager import sandbox_manager
 from app.repositories.code_mode_execution_repository import CodeModeExecutionRepository
 from app.schemas.tool import ToolDefinition
@@ -50,7 +50,6 @@ _MAX_TOOL_PLAN_STEPS = 20
 _MAX_RUNTIME_TOOL_CALLS = 8
 _MAX_RUNTIME_SDK_STUB_TOOLS = 80
 _MAX_RUNTIME_SDK_STUB_CHARS = 40000
-_MAX_RUNTIME_TOOL_TRACE_ERROR_CHARS = 240
 _RUNTIME_PROTOCOL_VERSION = code_mode_protocol.RUNTIME_PROTOCOL_VERSION
 _SDK_TOOLCARD_FORMAT_VERSION = code_mode_protocol.SDK_TOOLCARD_FORMAT_VERSION
 _EXECUTION_FORMAT_VERSION = code_mode_protocol.EXECUTION_FORMAT_VERSION
@@ -799,30 +798,24 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             except Exception:
                 has_bridge = False
 
-        runtime_tool_results: list[Any] = []
-        runtime_tool_trace: list[dict[str, Any]] = []
         runtime_render_blocks: list[dict[str, Any]] = []
 
-        # Always keep marker restart attempts available.
-        # Bridge mode should be fast-path (usually one run), but if bridge call
-        # fails inside sandbox and runtime falls back to marker mode, host side
-        # still needs subsequent attempts to dispatch and replay.
-        max_attempts = _MAX_RUNTIME_TOOL_CALLS + 1
+        # Marker-based host tool execution is disabled in cloud runtime.
+        # We still inspect stdout for markers so manually emitted requests fail
+        # explicitly instead of being silently ignored.
+        max_attempts = 1
 
         # Result accumulation
         all_stdout_chunks = []
         all_stderr_chunks = []
 
         for attempt in range(max_attempts):
-            is_reexecution = attempt > 0
             wrapped_code = self._build_wrapped_code(
                 source,
                 tool_plan_results=tool_plan_results,
                 runtime_context=runtime_context,
-                runtime_tool_results=runtime_tool_results,
                 runtime_sdk_bundle=runtime_sdk_bundle,
                 lazy_context=has_bridge,
-                is_reexecution=is_reexecution,
             )
 
             with execution_span.child(
@@ -830,7 +823,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 attributes={
                     "code_mode.sandbox_attempt": attempt + 1,
                     "code_mode.execution_timeout": timeout_value,
-                    "code_mode.execution_mode": "bridge" if has_bridge else "marker",
+                    "code_mode.execution_mode": "bridge" if has_bridge else "standalone",
                 },
             ) as sandbox_span:
                 # Current attempt state
@@ -899,32 +892,23 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             runtime_tool_request = self._extract_runtime_tool_request(attempt_result)
             
             if runtime_tool_request:
-                # 1. Host-side tool execution
-                if has_bridge:
-                    # Switch to marker mode for subsequent steps
-                    has_bridge = False
-                
-                tool_name = runtime_tool_request.get("tool_name")
-                arguments = runtime_tool_request.get("arguments", {})
-                
-                # Execute the real tool implementation (will use packages/ if applicable)
-                tool_result = await self._dispatch_real_tool(
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    workflow_context=__context__
+                tool_name = str(runtime_tool_request.get("tool_name") or "").strip() or "<unknown>"
+                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
+                return await _finalize_response(
+                    {
+                        "status": "failed",
+                        "format_version": _EXECUTION_FORMAT_VERSION,
+                        "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
+                        "runtime": runtime_meta,
+                        "error": (
+                            "marker-based host tool execution is disabled in cloud runtime "
+                            f"for security reasons (requested tool: {tool_name})"
+                        ),
+                        "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_DISABLED",
+                        "request": runtime_tool_request,
+                    },
+                    runtime_meta_override=runtime_meta,
                 )
-                
-                # Feed the result back for the next attempt
-                runtime_tool_results.append(tool_result)
-                runtime_tool_trace.append({
-                    "index": runtime_tool_request.get("index"),
-                    "name": tool_name,
-                    "arguments": arguments,
-                    "result": tool_result
-                })
-                
-                # Continue to the next attempt (re-run sandbox with result)
-                continue
             
             # If no more tool requests, we are DONE
             final_output = {
@@ -935,11 +919,6 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                 "truncated": False
             }
             
-            if runtime_tool_trace:
-                runtime_meta["runtime_tool_calls"] = {
-                    "count": len(runtime_tool_trace),
-                    "calls": runtime_tool_trace,
-                }
             if runtime_render_blocks:
                 runtime_meta["render_blocks"] = {
                     "count": len(runtime_render_blocks),
@@ -958,146 +937,15 @@ class DeetingCoreSdkPlugin(AgentPlugin):
                     runtime_meta_override=runtime_meta,
                 )
 
-            # --- Marker Mode Restart Loop (only reachable if has_bridge=False) ---
-            if len(runtime_tool_results) >= _MAX_RUNTIME_TOOL_CALLS:
-                runtime_meta["runtime_tool_calls"] = {
-                    "count": len(runtime_tool_trace),
-                    "calls": runtime_tool_trace,
-                }
-                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
-                return await _finalize_response(
-                    {
-                    "status": "failed",
-                    "format_version": _EXECUTION_FORMAT_VERSION,
-                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
-                    "runtime": runtime_meta,
-                    "error": "runtime tool call limit exceeded",
-                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_LIMIT",
-                    "request": runtime_tool_request,
-                    },
-                    runtime_meta_override=runtime_meta,
-                )
-
-            tool_name = str(runtime_tool_request.get("tool_name") or "").strip()
-            if not tool_name:
-                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
-                return await _finalize_response(
-                    {
-                    "status": "failed",
-                    "format_version": _EXECUTION_FORMAT_VERSION,
-                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
-                    "runtime": runtime_meta,
-                    "error": "runtime tool call request missing tool_name",
-                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
-                    "request": runtime_tool_request,
-                    },
-                    runtime_meta_override=runtime_meta,
-                )
-            if tool_name in {"search_sdk", "execute_code_plan"}:
-                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
-                return await _finalize_response(
-                    {
-                    "status": "failed",
-                    "format_version": _EXECUTION_FORMAT_VERSION,
-                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
-                    "runtime": runtime_meta,
-                    "error": f"runtime tool call '{tool_name}' is not allowed",
-                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
-                    "request": runtime_tool_request,
-                    },
-                    runtime_meta_override=runtime_meta,
-                )
-            # Check search snapshot but allow core system tools to always be reachable
-            _core_whitelist = {"fetch_web_content", "search_knowledge", "add_knowledge_chunk", "crawl_website"}
-            is_allowed = (not has_search_snapshot) or (tool_name in allowed_runtime_tools) or (tool_name in _core_whitelist)
-
-            if not is_allowed:
-                self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
-                error_msg = f"runtime tool call '{tool_name}' is not in latest search_sdk results"
-                if tool_name == "tavily-search":
-                    error_msg += ". Please use 'fetch_web_content' for web scraping instead."
-                
-                return await _finalize_response(
-                    {
-                    "status": "failed",
-                    "format_version": _EXECUTION_FORMAT_VERSION,
-                    "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
-                    "runtime": runtime_meta,
-                    "error": error_msg,
-                    "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_INVALID",
-                    "request": runtime_tool_request,
-                    },
-                    runtime_meta_override=runtime_meta,
-                )
-
-            call_arguments = runtime_tool_request.get("arguments") or {}
-            if not isinstance(call_arguments, dict):
-                call_arguments = {}
-
-            dispatch_started = perf_counter()
-            with execution_span.child(
-                "code_mode.runtime_tool_call",
-                attributes={"code_mode.tool_name": tool_name},
-            ) as runtime_tool_span:
-                runtime_tool_result = await self._dispatch_real_tool(
-                    tool_name=tool_name,
-                    arguments=call_arguments,
-                    workflow_context=__context__,
-                )
-            dispatch_duration_ms = max(0, int((perf_counter() - dispatch_started) * 1000))
-            normalized_tool_result = self._to_jsonable(runtime_tool_result)
-            runtime_tool_results.append(normalized_tool_result)
-
-            trace_status = "success"
-            trace_error = None
-            trace_error_code = None
-            if isinstance(normalized_tool_result, dict) and bool(
-                normalized_tool_result.get("error")
-            ):
-                trace_status = "failed"
-                trace_error = str(normalized_tool_result.get("error") or "").strip()
-                if len(trace_error) > _MAX_RUNTIME_TOOL_TRACE_ERROR_CHARS:
-                    trace_error = (
-                        trace_error[:_MAX_RUNTIME_TOOL_TRACE_ERROR_CHARS] + "... (truncated)"
-                    )
-                raw_error_code = normalized_tool_result.get("error_code")
-                if isinstance(raw_error_code, str) and raw_error_code.strip():
-                    trace_error_code = raw_error_code.strip()
-            runtime_tool_span.set_attribute("code_mode.tool_status", trace_status)
-            runtime_tool_span.set_attribute("code_mode.tool_duration_ms", dispatch_duration_ms)
-            if trace_error_code:
-                runtime_tool_span.set_attribute("code_mode.tool_error_code", trace_error_code)
-
-            trace_entry: dict[str, Any] = {
-                "index": int(runtime_tool_request.get("index", len(runtime_tool_results) - 1)),
-                "tool_name": tool_name,
-                "status": trace_status,
-                "duration_ms": dispatch_duration_ms,
-            }
-            if trace_error:
-                trace_entry["error"] = trace_error
-            if trace_error_code:
-                trace_entry["error_code"] = trace_error_code
-
-            runtime_tool_trace.append(trace_entry)
-            try:
-                record_code_mode_tool_call(
-                    tool_name=tool_name,
-                    status=trace_status,
-                    error_code=trace_error_code,
-                )
-            except Exception:
-                pass
-
         self._finalize_runtime_meta(runtime_meta, started_monotonic=started_monotonic)
         return await _finalize_response(
             {
-            "status": "failed",
-            "format_version": _EXECUTION_FORMAT_VERSION,
-            "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
-            "runtime": runtime_meta,
-            "error": "runtime tool call loop exceeded",
-            "error_code": "CODE_MODE_RUNTIME_TOOL_CALL_LIMIT",
+                "status": "failed",
+                "format_version": _EXECUTION_FORMAT_VERSION,
+                "runtime_protocol_version": _RUNTIME_PROTOCOL_VERSION,
+                "runtime": runtime_meta,
+                "error": "code execution ended without producing a final result",
+                "error_code": "CODE_MODE_RUNTIME_EXECUTION_INCOMPLETE",
             },
             runtime_meta_override=runtime_meta,
         )
@@ -2180,7 +2028,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "execution_token": issue.token,
             "timeout_seconds": bridge_timeout,
             "expires_at": issue.expires_at,
-            "mode": "http_with_marker_fallback",
+            "mode": "http_bridge_only",
         }
 
     def _context_attr(
@@ -2530,10 +2378,8 @@ class DeetingCoreSdkPlugin(AgentPlugin):
         *,
         tool_plan_results: dict[str, Any] | None = None,
         runtime_context: dict[str, Any] | None = None,
-        runtime_tool_results: list[Any] | None = None,
         runtime_sdk_bundle: dict[str, Any] | None = None,
         lazy_context: bool = False,
-        is_reexecution: bool = False,
     ) -> str:
         full_context = runtime_context or {}
         if lazy_context:
@@ -2543,7 +2389,6 @@ class DeetingCoreSdkPlugin(AgentPlugin):
 
         context_json = json.dumps(inline_context, ensure_ascii=False)
         results_json = json.dumps(tool_plan_results or {}, ensure_ascii=False)
-        runtime_tool_results_json = json.dumps(runtime_tool_results or [], ensure_ascii=False)
 
         sdk_module_name = str((runtime_sdk_bundle or {}).get("module_name") or "").strip()
         sdk_tool_count = int((runtime_sdk_bundle or {}).get("tool_count") or 0)
@@ -2587,8 +2432,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             
             f"RUNTIME_CONTEXT = json.loads({context_json!r})\n"
             f"TOOL_PLAN_RESULTS = json.loads({results_json!r})\n"
-            f"RUNTIME_TOOL_RESULTS = json.loads({runtime_tool_results_json!r})\n"
-            "deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=RUNTIME_TOOL_RESULTS)\n"
+            "deeting = DeetingRuntime(context=RUNTIME_CONTEXT)\n"
             "_deeting_module = types.ModuleType('deeting')\n"
             "for _name in ('log', 'section', 'get_context', 'render', 'call_tool', 'write_file', 'read_file'):\n"
             "    setattr(_deeting_module, _name, getattr(deeting, _name))\n"
@@ -2596,17 +2440,7 @@ class DeetingCoreSdkPlugin(AgentPlugin):
             "sys.modules['deeting'] = _deeting_module\n"
         )
 
-        if is_reexecution and sdk_module_name:
-            runtime_block += (
-                "import builtins\n"
-                "import os\n"
-                "import sys\n"
-                "builtins.__DEETING_RUNTIME__ = deeting\n"
-                "_sdk_dir = '/tmp/deeting_runtime_sdk'\n"
-                "if _sdk_dir not in sys.path:\n"
-                "    sys.path.insert(0, _sdk_dir)\n"
-            )
-        elif sdk_module_name:
+        if sdk_module_name:
             sdk_pyi = str((runtime_sdk_bundle or {}).get("pyi") or "")
             sdk_py = str((runtime_sdk_bundle or {}).get("py") or "")
             sdk_pyi_json = json.dumps(sdk_pyi, ensure_ascii=False)

@@ -298,6 +298,16 @@ export function SettingsForm({
       }
 
       if (relaySettingsChanged) {
+        if (isTauriRuntime) {
+          import("@tauri-apps/api/core")
+            .then(({ invoke }) => invoke("restart_relay_event_worker"))
+            .catch((error) => {
+              console.warn(
+                "[desktop-settings] restart relay worker after relay update failed",
+                error,
+              );
+            });
+        }
         toast(t("toast.desktopRelayUpdated"));
       }
       if (scoutSettingsChanged) {

@@ -85,6 +85,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::uninstall_skill,
         crate::modules::mcp::commands::sync_official_skills_index,
         crate::modules::mcp::commands::rebuild_local_embedding_assets,
+        crate::modules::relay::restart_relay_event_worker,
         crate::modules::mcp::bridge::set_mcp_backend_url,
         crate::modules::mcp::bridge::start_mcp_log_stream,
         crate::modules::mcp::bridge::stop_mcp_log_stream,

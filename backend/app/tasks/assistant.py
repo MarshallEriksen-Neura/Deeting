@@ -10,6 +10,7 @@ from app.repositories.assistant_repository import (
     AssistantRepository,
     AssistantVersionRepository,
 )
+from app.services.assistant.constants import ASSISTANT_COLLECTION_NAME
 from app.services.providers.embedding import EmbeddingService
 from app.services.notifications.task_notification import push_task_progress
 from app.storage.qdrant_kb_store import (
@@ -20,8 +21,6 @@ from app.storage.qdrant_kb_store import (
 from app.tasks.async_runner import run_async
 
 logger = logging.getLogger(__name__)
-
-ASSISTANT_COLLECTION_NAME = "expert_network"
 
 
 def _extract_tools(skill_refs: list) -> list[str]:

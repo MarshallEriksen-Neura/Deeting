@@ -77,7 +77,7 @@
         "sharedSecretHelp": "Must match RELAY_SHARED_SECRET configured for deeting-relay. Used to authenticate desktop ↔ relay traffic.",
         "showSecret": "Show",
         "hideSecret": "Hide",
-        "footerHint": "Used only by this desktop app, never synced to cloud. Restart the desktop app after changes so the relay worker reconnects with the new settings."
+        "footerHint": "Used only by this desktop app, never synced to cloud. Saving automatically reloads the relay worker with the new settings."
       },
       "scout": {
         "title": "Desktop Scout Service",
@@ -147,7 +147,7 @@
       "rebuildRecommended": "Embedding model changed. Rebuilding local memories and vector indexes is recommended.",
       "rebuildSuccess": "Rebuild completed at dimension {dimension} (memories {memoryIndexed}/{memoryFailed}, assets {assetIndexed}/{assetFailed})",
       "rebuildFailed": "Rebuilding local memories and vector indexes failed. Please try again.",
-      "desktopRelayUpdated": "Desktop relay settings updated. Restart the desktop app to apply them.",
+      "desktopRelayUpdated": "Desktop relay settings updated. The relay worker was reloaded automatically.",
       "desktopScoutUpdated": "Desktop Scout settings updated"
     }
   }

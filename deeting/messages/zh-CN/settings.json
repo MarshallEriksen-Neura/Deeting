@@ -77,7 +77,7 @@
         "sharedSecretHelp": "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致，用于桌面端与 relay 之间的鉴权。",
         "showSecret": "显示",
         "hideSecret": "隐藏",
-        "footerHint": "仅本机桌面端使用，不会同步到云端。修改后需重启桌面端以重新建立 relay 后台连接。"
+        "footerHint": "仅本机桌面端使用，不会同步到云端。保存后会自动重载 relay 后台连接。"
       },
       "scout": {
         "title": "桌面 Scout 服务",
@@ -147,7 +147,7 @@
       "rebuildRecommended": "检测到 embedding 模型变更，建议立即重建本地记忆与向量索引。",
       "rebuildSuccess": "重建完成（向量维度 {dimension}；记忆 成功 {memoryIndexed} / 失败 {memoryFailed}；资产 成功 {assetIndexed} / 失败 {assetFailed}）",
       "rebuildFailed": "本地记忆与向量索引重建失败，请稍后重试",
-      "desktopRelayUpdated": "桌面 Relay 配置已更新，重启桌面端后生效",
+      "desktopRelayUpdated": "桌面 Relay 配置已更新，已自动重载后台连接",
       "desktopScoutUpdated": "桌面 Scout 配置已更新"
     }
   }

@@ -375,7 +375,7 @@ TOOL_ARGUMENTS = json.loads({tool_arguments_json!r})
 LEGACY_EXAMPLE_CODE = json.loads({legacy_code_json!r})
 INVOKE_RESULT_MARKER = {_INVOKE_RESULT_MARKER!r}
 
-deeting = DeetingRuntime(context=RUNTIME_CONTEXT, tool_results=[])
+deeting = DeetingRuntime(context=RUNTIME_CONTEXT)
 
 def _read_manifest():
     manifest_path = os.path.join(REPO_ROOT, "deeting.json")
@@ -640,7 +640,7 @@ async def _issue_runtime_bridge_context(context: RuntimeContext) -> dict[str, An
         "execution_token": issue.token,
         "timeout_seconds": bridge_timeout,
         "expires_at": issue.expires_at,
-        "mode": "http_with_marker_fallback",
+        "mode": "http_bridge_only",
     }
 
 

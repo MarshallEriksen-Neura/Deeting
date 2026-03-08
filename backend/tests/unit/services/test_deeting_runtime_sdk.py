@@ -149,11 +149,19 @@ def test_runtime_call_tool_logs_bridge_timeout_details(monkeypatch):
         }
     )
 
-    with pytest.raises(BaseException):
+    with pytest.raises(RuntimeError, match="marker fallback is disabled"):
         runtime.call_tool("tavily-search", query="天津天气")
 
     text = "\n".join(captured_logs)
-    assert "bridge call failed, fallback marker mode:" in text
+    assert "HTTP bridge failed and marker fallback is disabled in cloud runtime" in text
     assert "tool=tavily-search" in text
     assert "timeout_seconds=2.0" in text
     assert "elapsed_ms=" in text
+
+
+def test_runtime_call_tool_requires_bridge_when_marker_fallback_disabled():
+    runtime_cls = _build_runtime_class()
+    runtime = runtime_cls(context={})
+
+    with pytest.raises(RuntimeError, match="require bridge access"):
+        runtime.call_tool("fetch_web_content", url="https://example.com")

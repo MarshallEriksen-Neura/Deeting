@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use log::warn;
 use reqwest::Client;
@@ -7,6 +7,35 @@ use serde_json::{json, Value};
 use tokio::time::{sleep, Duration};
 
 use crate::state::AppState;
+
+type RelayWorkerHandle = tauri::async_runtime::JoinHandle<()>;
+
+fn relay_worker_slot() -> &'static Mutex<Option<RelayWorkerHandle>> {
+    static RELAY_WORKER_HANDLE: OnceLock<Mutex<Option<RelayWorkerHandle>>> = OnceLock::new();
+    RELAY_WORKER_HANDLE.get_or_init(|| Mutex::new(None))
+}
+
+pub fn spawn_relay_event_worker(app_state: AppState, app_handle: tauri::AppHandle) {
+    let mut slot = relay_worker_slot()
+        .lock()
+        .expect("relay worker mutex should not be poisoned");
+    if let Some(handle) = slot.take() {
+        handle.abort();
+    }
+    let handle = tauri::async_runtime::spawn(async move {
+        start_relay_event_worker(app_state, app_handle).await;
+    });
+    *slot = Some(handle);
+}
+
+#[tauri::command]
+pub fn restart_relay_event_worker(
+    state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    spawn_relay_event_worker(state.inner().clone(), app_handle);
+    Ok(())
+}
 
 /// Lightweight integration client for the external `deeting-relay` service.
 ///
