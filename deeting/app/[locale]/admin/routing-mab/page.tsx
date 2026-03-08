@@ -31,7 +31,7 @@ export default async function RoutingMabPage({
     <AdminPageShell
       title={tRouting("pageTitle")}
       description={tRouting("pageDescription")}
-      icon={GitBranch}
+      icon={<GitBranch />}
     >
       <PageContent />
     </AdminPageShell>

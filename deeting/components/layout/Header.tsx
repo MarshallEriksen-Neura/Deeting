@@ -148,6 +148,7 @@ export function Header({
             <UserMenu
               userName={profile?.username ?? profile?.email ?? userName ?? tHeader("guest")}
               userEmail={profile?.email ?? userEmail ?? ""}
+              isAdmin={Boolean(profile?.is_superuser)}
               userAvatarSrc={userAvatarSrc}
               onLogout={logout}
             />

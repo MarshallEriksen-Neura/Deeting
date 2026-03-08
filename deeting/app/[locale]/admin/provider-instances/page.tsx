@@ -28,7 +28,7 @@ export default async function ProviderInstancesPage({
     <AdminPageShell
       title={tAdmin("providerInstances.title")}
       description={tAdmin("providerInstances.description")}
-      icon={Cloud}
+      icon={<Cloud />}
     >
       <PageContent />
     </AdminPageShell>

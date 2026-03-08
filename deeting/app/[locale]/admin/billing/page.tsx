@@ -29,7 +29,7 @@ export default async function Page({
     <AdminPageShell
       title={tAdmin("billing.title")}
       description={tAdmin("billing.description")}
-      icon={CreditCard}
+      icon={<CreditCard />}
     >
       <PageContent />
     </AdminPageShell>

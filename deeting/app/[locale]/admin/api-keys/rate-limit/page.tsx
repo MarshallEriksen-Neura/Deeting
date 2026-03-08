@@ -27,7 +27,7 @@ export default async function ApiRateLimitPage({
     <AdminPageShell
       title={tAdmin("rateLimit.title")}
       description={tAdmin("rateLimit.description")}
-      icon={Gauge}
+      icon={<Gauge />}
     >
       <PageContent />
     </AdminPageShell>

@@ -28,7 +28,7 @@ export default async function Page({
     <AdminPageShell
       title={tAdmin("agentTasks.title")}
       description={tAdmin("agentTasks.description")}
-      icon={Workflow}
+      icon={<Workflow />}
     >
       <PageContent />
     </AdminPageShell>

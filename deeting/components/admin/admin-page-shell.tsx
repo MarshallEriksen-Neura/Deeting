@@ -2,12 +2,11 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { type LucideIcon } from "lucide-react"
 
 interface AdminPageShellProps {
   title: string
   description?: string
-  icon?: LucideIcon
+  icon?: React.ReactNode
   actions?: React.ReactNode
   children: React.ReactNode
   className?: string
@@ -16,19 +15,25 @@ interface AdminPageShellProps {
 export function AdminPageShell({
   title,
   description,
-  icon: Icon,
+  icon,
   actions,
   children,
   className,
 }: AdminPageShellProps) {
+  const renderedIcon = React.isValidElement<{ className?: string }>(icon)
+    ? React.cloneElement(icon, {
+        className: cn("size-5 text-[var(--primary)]", icon.props.className),
+      })
+    : icon
+
   return (
     <div className={cn("flex-1 space-y-6 p-6", className)}>
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          {Icon && (
+          {renderedIcon && (
             <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--primary)]/10">
-              <Icon className="size-5 text-[var(--primary)]" />
+              {renderedIcon}
             </div>
           )}
           <div>

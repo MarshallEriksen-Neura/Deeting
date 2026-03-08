@@ -32,7 +32,7 @@ export default async function RegistrationPage({
     <AdminPageShell
       title={tRegistration("title")}
       description={tAdmin("registration.description")}
-      icon={Ticket}
+      icon={<Ticket />}
     >
       <PageContent />
     </AdminPageShell>

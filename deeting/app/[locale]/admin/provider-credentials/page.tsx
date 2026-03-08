@@ -28,7 +28,7 @@ export default async function ProviderCredentialsPage({
     <AdminPageShell
       title={tAdmin("providerCredentials.title")}
       description={tAdmin("providerCredentials.description")}
-      icon={Key}
+      icon={<Key />}
     >
       <PageContent />
     </AdminPageShell>

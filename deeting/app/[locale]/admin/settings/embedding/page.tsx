@@ -27,7 +27,7 @@ export default async function EmbeddingSettingsPage({
     <AdminPageShell
       title={tAdmin("embeddingSettings.title")}
       description={tAdmin("embeddingSettings.description")}
-      icon={Cpu}
+      icon={<Cpu />}
     >
       <PageContent />
     </AdminPageShell>

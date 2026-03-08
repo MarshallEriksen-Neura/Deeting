@@ -27,7 +27,7 @@ export default async function KnowledgeReviewsPage({
     <AdminPageShell
       title={tAdmin("knowledgeReviews.title")}
       description={tAdmin("knowledgeReviews.description")}
-      icon={BookOpen}
+      icon={<BookOpen />}
     >
       <PageContent />
     </AdminPageShell>

@@ -76,6 +76,7 @@
     "header": {
       "login": "Log in",
       "profile": "Profile",
+      "adminDashboard": "Admin Dashboard",
       "apiKeys": "API Keys",
       "docs": "Documentation",
       "logout": "Log out",

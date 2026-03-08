@@ -27,7 +27,7 @@ export default async function ProviderPresetsPage({
     <AdminPageShell
       title={tAdmin("providerPresets.title")}
       description={tAdmin("providerPresets.description")}
-      icon={Package}
+      icon={<Package />}
     >
       <PageContent />
     </AdminPageShell>

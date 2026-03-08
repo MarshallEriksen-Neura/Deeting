@@ -28,7 +28,7 @@ export default async function UserManagementPage({
     <AdminPageShell
       title={tAdmin("users.title")}
       description={tAdmin("users.description")}
-      icon={Users}
+      icon={<Users />}
     >
       <PageContent />
     </AdminPageShell>

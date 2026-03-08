@@ -28,7 +28,7 @@ export default async function AdminDashboardPage({
     <AdminPageShell
       title={tAdmin("dashboard.title")}
       description={tAdmin("dashboard.description")}
-      icon={LayoutDashboard}
+      icon={<LayoutDashboard />}
     >
       <PageContent />
     </AdminPageShell>

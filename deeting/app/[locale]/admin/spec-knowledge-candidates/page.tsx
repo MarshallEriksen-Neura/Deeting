@@ -27,7 +27,7 @@ export default async function SpecKnowledgeCandidatesPage({
     <AdminPageShell
       title={tAdmin("specKnowledge.title")}
       description={tAdmin("specKnowledge.description")}
-      icon={Tags}
+      icon={<Tags />}
     >
       <PageContent />
     </AdminPageShell>

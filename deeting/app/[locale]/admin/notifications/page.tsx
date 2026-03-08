@@ -32,7 +32,7 @@ export default async function NotificationsPage({
     <AdminPageShell
       title={tAdmin("notifications.title")}
       description={tNotifications("description")}
-      icon={Bell}
+      icon={<Bell />}
     >
       <PageContent />
     </AdminPageShell>

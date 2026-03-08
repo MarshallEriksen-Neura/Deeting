@@ -28,7 +28,7 @@ export default async function AssistantManagementPage({
     <AdminPageShell
       title={tAdmin("assistants.title")}
       description={tAdmin("assistants.description")}
-      icon={Sparkles}
+      icon={<Sparkles />}
     >
       <PageContent />
     </AdminPageShell>

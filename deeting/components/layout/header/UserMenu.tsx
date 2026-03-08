@@ -17,11 +17,12 @@ import {
 interface UserMenuProps {
   userName: string
   userEmail: string
+  isAdmin?: boolean
   userAvatarSrc?: string
   onLogout?: () => void
 }
 
-export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserMenuProps) {
+export function UserMenu({ userName, userEmail, isAdmin = false, userAvatarSrc, onLogout }: UserMenuProps) {
   const t = useTranslations("common.header")
   const [mounted, setMounted] = useState(false)
   const menuId = useMemo(() => `user-menu-${userEmail || userName || "guest"}`, [userEmail, userName])
@@ -67,11 +68,18 @@ export function UserMenu({ userName, userEmail, userAvatarSrc, onLogout }: UserM
       >
         <GlassDropdownUserHeader name={safeName} email={userEmail} />
         <GlassDropdownMenuSeparator />
-        <Link href="/profile" passHref legacyBehavior>
-          <GlassDropdownMenuItem>
+        <GlassDropdownMenuItem asChild>
+          <Link href="/profile">
             {t("profile")}
+          </Link>
+        </GlassDropdownMenuItem>
+        {isAdmin ? (
+          <GlassDropdownMenuItem asChild>
+            <Link href="/admin">
+              {t("adminDashboard")}
+            </Link>
           </GlassDropdownMenuItem>
-        </Link>
+        ) : null}
         <GlassDropdownMenuItem>
           {t("apiKeys")}
         </GlassDropdownMenuItem>

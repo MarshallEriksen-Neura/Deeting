@@ -28,7 +28,7 @@ export default async function AdminMonitoringPage({
     <AdminPageShell
       title={tAdmin("monitoring.title")}
       description={tAdmin("monitoring.description")}
-      icon={Eye}
+      icon={<Eye />}
     >
       <PageContent />
     </AdminPageShell>

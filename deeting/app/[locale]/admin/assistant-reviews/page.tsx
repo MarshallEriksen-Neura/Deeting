@@ -28,7 +28,7 @@ export default async function AssistantReviewsPage({
     <AdminPageShell
       title={tAdmin("assistantReviews.title")}
       description={tAdmin("assistantReviews.description")}
-      icon={CheckSquare}
+      icon={<CheckSquare />}
     >
       <PageContent />
     </AdminPageShell>

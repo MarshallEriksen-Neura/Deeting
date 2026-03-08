@@ -76,6 +76,7 @@
     "header": {
       "login": "登录",
       "profile": "个人资料",
+      "adminDashboard": "管理后台",
       "apiKeys": "API 密钥",
       "docs": "文档",
       "logout": "退出登录",

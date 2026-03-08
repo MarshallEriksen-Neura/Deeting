@@ -28,7 +28,7 @@ export default async function AdminApiKeysPage({
     <AdminPageShell
       title={tAdmin("apiKeys.title")}
       description={tAdmin("apiKeys.description")}
-      icon={KeyRound}
+      icon={<KeyRound />}
     >
       <PageContent />
     </AdminPageShell>

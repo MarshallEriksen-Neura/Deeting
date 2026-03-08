@@ -28,7 +28,7 @@ export default async function Page({
     <AdminPageShell
       title={tAdmin("conversations.title")}
       description={tAdmin("conversations.description")}
-      icon={MessageSquare}
+      icon={<MessageSquare />}
     >
       <PageContent />
     </AdminPageShell>

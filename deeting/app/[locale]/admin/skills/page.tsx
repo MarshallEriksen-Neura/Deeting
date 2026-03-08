@@ -27,7 +27,7 @@ export default async function Page({
     <AdminPageShell
       title={tAdmin("skills.title")}
       description={tAdmin("skills.description")}
-      icon={Plug}
+      icon={<Plug />}
     >
       <PageContent />
     </AdminPageShell>

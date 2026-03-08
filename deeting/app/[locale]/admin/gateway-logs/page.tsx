@@ -28,7 +28,7 @@ export default async function Page({
     <AdminPageShell
       title={tAdmin("gatewayLogs.title")}
       description={tAdmin("gatewayLogs.description")}
-      icon={Activity}
+      icon={<Activity />}
     >
       <PageContent />
     </AdminPageShell>
