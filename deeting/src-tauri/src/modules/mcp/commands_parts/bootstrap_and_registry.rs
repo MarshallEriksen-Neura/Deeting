@@ -1,38 +1,23 @@
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::process::Stdio;
-use std::time::Duration;
-
-use log::warn;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::io::AsyncWriteExt;
-use uuid::Uuid;
-
-use crate::modules::code_mode::types::ExecuteLocalCodeModeRequest;
-use crate::modules::mcp::error::McpError;
-use crate::modules::mcp::store::{
-    expand_path, LocalConversationChatContext, NewSource, ToolUpsert,
+use super::{
+    assistants_knowledge_admin_impl::{index_mcp_tools, sync_cloud_subscriptions_inner},
+    runtime_and_routing_impl::{now_rfc3339, sync_source_inner},
+    support::*,
 };
-use crate::modules::mcp::types::*;
-use crate::modules::mcp::McpRuntimeState;
-use crate::state::AppState;
 
 #[derive(Debug, Clone, Deserialize)]
-struct CloudSubscriptionTool {
-    identifier: String,
-    name: String,
-    source_url: Option<String>,
-    capabilities: Vec<String>,
-    description: String,
-    config_json: String,
-    config_hash: String,
+pub(crate) struct CloudSubscriptionTool {
+    pub(crate) identifier: String,
+    pub(crate) name: String,
+    pub(crate) source_url: Option<String>,
+    pub(crate) capabilities: Vec<String>,
+    pub(crate) description: String,
+    pub(crate) config_json: String,
+    pub(crate) config_hash: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct CloudSubscriptionItem {
-    tool: CloudSubscriptionTool,
+pub(crate) struct CloudSubscriptionItem {
+    pub(crate) tool: CloudSubscriptionTool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,11 +141,11 @@ pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[L
     }
 }
 
-fn to_string<T: std::fmt::Display>(err: T) -> String {
+pub(crate) fn to_string<T: std::fmt::Display>(err: T) -> String {
     err.to_string()
 }
 
-fn normalize_skill_dir_name(skill_id: &str) -> String {
+pub(crate) fn normalize_skill_dir_name(skill_id: &str) -> String {
     let mut out = String::with_capacity(skill_id.len());
     for ch in skill_id.chars() {
         if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
@@ -511,7 +496,7 @@ pub(crate) async fn uninstall_local_skill(
     Ok(())
 }
 
-async fn sync_local_skill_installs_from_cloud_inner(
+pub(crate) async fn sync_local_skill_installs_from_cloud_inner(
     store: &crate::modules::mcp::store::McpStore,
     client: &reqwest::Client,
     base_url: &str,

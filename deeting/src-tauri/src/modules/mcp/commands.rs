@@ -1,5 +1,65 @@
-include!("commands_parts/bootstrap_and_registry.rs");
-include!("commands_parts/sources_tools_and_chat.rs");
-include!("commands_parts/assistants_knowledge_admin.rs");
-include!("commands_parts/runtime_and_routing.rs");
+mod support;
+
+#[path = "commands_parts/bootstrap_and_registry.rs"]
+pub(crate) mod bootstrap_and_registry_impl;
+#[path = "commands_parts/sources_tools_and_chat.rs"]
+pub(crate) mod sources_tools_and_chat_impl;
+#[path = "commands_parts/assistants_knowledge_admin.rs"]
+pub(crate) mod assistants_knowledge_admin_impl;
+#[path = "commands_parts/runtime_and_routing.rs"]
+pub(crate) mod runtime_and_routing_impl;
+
+pub mod admin;
+pub mod assistants;
+pub mod config;
+pub mod conversations;
+pub mod knowledge;
+pub mod runtime;
+pub mod skills;
+pub mod sources;
+pub mod tools;
+
+pub use admin::*;
+pub use assistants::*;
+pub use config::*;
+pub use conversations::*;
+pub use knowledge::*;
+pub use runtime::*;
+pub use skills::*;
+pub use sources::*;
+pub use tools::*;
+
+#[cfg(test)]
+pub(crate) use support::*;
+pub(crate) use assistants_knowledge_admin_impl::index_mcp_tools;
+pub(crate) use bootstrap_and_registry_impl::{index_local_assistants, register_local_skills_inner};
+pub(crate) use runtime_and_routing_impl::{
+    generate_local_conversation_title_with_model, rebuild_local_knowledge_vector_index,
+    request_local_auxiliary_text, resolve_local_model_connection,
+    run_local_chat_complete_with_auto_code_mode, start_local_conversation_summary_worker,
+    start_local_periodic_worker, sync_source_inner,
+};
+
+#[cfg(test)]
+pub(crate) use bootstrap_and_registry_impl::{
+    normalize_skill_dir_name, sync_local_skill_installs_from_cloud_inner,
+};
+#[cfg(test)]
+pub(crate) use runtime_and_routing_impl::{
+    build_auto_code_mode_tool_feedback,
+    build_local_consult_expert_network_result_with_runtime,
+    build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
+    parse_skill_onboarding_payload, process_next_local_conversation_summary_job_with_store,
+    resolve_skill_env, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+};
+
+#[cfg(test)]
+pub(crate) use runtime_and_routing_impl::{
+    approve_mcp_tool_inner, build_local_code_mode_entry_tools,
+    build_local_sdk_search_result_with_runtime, derive_skill_name_from_repo_url,
+    execute_or_queue_mcp_tool_call, extract_chat_tool_calls, hash_config,
+    normalize_chat_completion_response, read_local_mcp_config, reject_mcp_tool_inner,
+};
+
+#[cfg(test)]
 include!("commands_parts/tests.rs");

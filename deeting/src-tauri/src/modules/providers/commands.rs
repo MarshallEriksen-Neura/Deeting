@@ -884,9 +884,12 @@ fn normalize_provider_test_response(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_model_ids_from_body, normalize_provider_test_response};
+    use super::{
+        apply_models_auth_headers, decode_model_ids_from_body, normalize_provider_test_response,
+    };
     use crate::modules::providers::request_runtime::PreparedProviderRequest;
     use crate::modules::providers::response_transformer::ResponseTransformer;
+    use reqwest::Client;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -1002,5 +1005,33 @@ mod tests {
             json!("pong local responses")
         );
         assert_eq!(normalized["usage"]["total_tokens"], json!(3));
+    }
+
+    #[test]
+    fn apply_models_auth_headers_uses_anthropic_headers() {
+        let client = Client::new();
+        let request = apply_models_auth_headers(
+            client.get("https://api.anthropic.com/v1/models"),
+            "anthropic",
+            Some("sk-ant-test"),
+        )
+        .build()
+        .expect("build request");
+
+        assert_eq!(
+            request
+                .headers()
+                .get("x-api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("sk-ant-test")
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get("anthropic-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("2023-06-01")
+        );
+        assert!(request.headers().get("authorization").is_none());
     }
 }

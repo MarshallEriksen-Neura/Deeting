@@ -1,3 +1,10 @@
+use super::{
+    bootstrap_and_registry_impl::{
+        install_skill_to_local, normalize_skill_dir_name, to_string, LocalModelConnection,
+    },
+    support::*,
+};
+
 const LOCAL_EMBEDDING_REBUILD_PROGRESS_EVENT: &str = "local-embedding-rebuild-progress";
 
 #[derive(Debug, Clone, Serialize)]
@@ -629,7 +636,7 @@ async fn request_platform_chat_via_proxy(
     Ok(normalize_chat_completion_response(out))
 }
 
-async fn request_provider_chat_completion(
+pub(crate) async fn request_provider_chat_completion(
     app_state: &AppState,
     provider_model_id: &str,
     model_id: &str,
@@ -777,7 +784,7 @@ async fn request_provider_chat_completion(
     Ok(normalize_chat_completion_response(transformed))
 }
 
-fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
+pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
     if raw.get("content").is_some() && raw.get("tool_calls").is_some() {
         return raw;
     }
@@ -1051,7 +1058,7 @@ async fn spawn_skill_subprocess(
     }
 }
 
-async fn resolve_skill_env(
+pub(crate) async fn resolve_skill_env(
     store: &crate::modules::mcp::store::McpStore,
     tool: &McpTool,
 ) -> Result<Option<std::collections::HashMap<String, String>>, String> {
@@ -1151,7 +1158,7 @@ pub(crate) async fn sync_source_inner(
     Ok(tools)
 }
 
-fn read_local_mcp_config(path: &Path) -> Result<String, McpError> {
+pub(crate) fn read_local_mcp_config(path: &Path) -> Result<String, McpError> {
     match std::fs::read_to_string(path) {
         Ok(content) => Ok(content),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -1168,7 +1175,7 @@ fn read_local_mcp_config(path: &Path) -> Result<String, McpError> {
     }
 }
 
-async fn apply_config_payload(
+pub(crate) async fn apply_config_payload(
     state: &McpRuntimeState,
     source: &McpSource,
     payload: McpConfigPayload,
@@ -1259,14 +1266,14 @@ async fn apply_config_payload(
     Ok(tools)
 }
 
-fn hash_config(config_json: &str) -> String {
+pub(crate) fn hash_config(config_json: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(config_json.as_bytes());
     hex::encode(hasher.finalize())
 }
 
-fn now_rfc3339() -> String {
+pub(crate) fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
@@ -1306,7 +1313,7 @@ async fn process_next_local_conversation_summary_job(app_state: &AppState) -> Re
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-async fn execute_or_queue_mcp_tool_call(
+pub(crate) async fn execute_or_queue_mcp_tool_call(
     store: &crate::modules::mcp::store::McpStore,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     tool_name: String,
@@ -1327,7 +1334,7 @@ async fn execute_or_queue_mcp_tool_call(
     .await
 }
 
-async fn execute_or_queue_mcp_tool_call_with_context(
+pub(crate) async fn execute_or_queue_mcp_tool_call_with_context(
     approval_context: &crate::modules::mcp::ToolApprovalContext,
     risk_level: Option<&str>,
     risk_reasons: Vec<String>,
@@ -1388,7 +1395,7 @@ async fn execute_or_queue_mcp_tool_call_with_context(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-async fn approve_mcp_tool_inner(
+pub(crate) async fn approve_mcp_tool_inner(
     store: &crate::modules::mcp::store::McpStore,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     approval_token: &str,
@@ -1403,7 +1410,7 @@ async fn approve_mcp_tool_inner(
     .await
 }
 
-async fn approve_mcp_tool_inner_with_context(
+pub(crate) async fn approve_mcp_tool_inner_with_context(
     approval_context: &crate::modules::mcp::ToolApprovalContext,
     runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
     store: &crate::modules::mcp::store::McpStore,
@@ -1458,7 +1465,7 @@ async fn approve_mcp_tool_inner_with_context(
     execute_local_mcp_tool(store, &tool, &pending.arguments).await
 }
 
-async fn reject_mcp_tool_inner(
+pub(crate) async fn reject_mcp_tool_inner(
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     approval_token: &str,
 ) -> bool {
@@ -1469,7 +1476,8 @@ async fn reject_mcp_tool_inner(
         .is_some()
 }
 
-async fn process_next_local_conversation_summary_job_with_store(
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) async fn process_next_local_conversation_summary_job_with_store(
     store: &crate::modules::mcp::store::McpStore,
 ) -> Result<(), McpError> {
     process_next_local_conversation_summary_job_inner(None, store).await
@@ -1940,7 +1948,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     }
 }
 
-fn build_local_tool_trace_blocks(tool_call_meta: &[serde_json::Value]) -> Vec<serde_json::Value> {
+pub(crate) fn build_local_tool_trace_blocks(
+    tool_call_meta: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
     if tool_call_meta.is_empty() {
         return Vec::new();
     }
@@ -2189,10 +2199,10 @@ fn map_render_block_to_ui_block(
     Some(serde_json::Value::Object(block))
 }
 
-const LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE: &str =
+pub(crate) const LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE: &str =
     "LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED";
 
-fn build_local_tool_call_install_gate_error_meta(
+pub(crate) fn build_local_tool_call_install_gate_error_meta(
     call_id: Option<&str>,
     tool_name: &str,
     error: &str,
@@ -2362,7 +2372,7 @@ fn build_local_consult_candidates_from_assets(
     candidates
 }
 
-async fn build_local_consult_expert_network_result_with_runtime(
+pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
     memory_store: &crate::modules::memory::service::MemoryService,
@@ -3073,7 +3083,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
     (synthesized, tool_call_meta, results, assistant_update)
 }
 
-fn build_local_code_mode_entry_tools() -> serde_json::Value {
+pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
     serde_json::json!({
         "tools": [
             {
@@ -3309,7 +3319,7 @@ async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> ser
     .await
 }
 
-async fn build_local_sdk_search_result_with_runtime(
+pub(crate) async fn build_local_sdk_search_result_with_runtime(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
     memory_store: &crate::modules::memory::service::MemoryService,
@@ -3573,7 +3583,7 @@ fn lexical_units(input: &str) -> Vec<String> {
     units
 }
 
-fn derive_skill_name_from_repo_url(repo_url: &str) -> String {
+pub(crate) fn derive_skill_name_from_repo_url(repo_url: &str) -> String {
     let normalized_repo = repo_url.trim().trim_end_matches('/');
     let raw = normalized_repo
         .rsplit_once('/')
@@ -3585,7 +3595,9 @@ fn derive_skill_name_from_repo_url(repo_url: &str) -> String {
     normalize_skill_dir_name(raw)
 }
 
-fn parse_skill_onboarding_payload(payload: &serde_json::Value) -> Result<(String, String), String> {
+pub(crate) fn parse_skill_onboarding_payload(
+    payload: &serde_json::Value,
+) -> Result<(String, String), String> {
     let obj = payload
         .as_object()
         .ok_or_else(|| "skill onboarding payload must be an object".to_string())?;
@@ -3628,7 +3640,7 @@ async fn install_local_skill_from_onboarding_request(
     }))
 }
 
-fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCall> {
+pub(crate) fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCall> {
     let mut calls = Vec::new();
     if let Some(tc_array) = response.get("tool_calls").and_then(|v| v.as_array()) {
         for tc in tc_array {
@@ -3659,7 +3671,7 @@ fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<LocalChatToolCal
     calls
 }
 
-fn build_auto_code_mode_tool_feedback(
+pub(crate) fn build_auto_code_mode_tool_feedback(
     round: usize,
     tool_call_meta: &[serde_json::Value],
     results: &[String],

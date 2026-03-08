@@ -1,3 +1,16 @@
+use super::{
+    bootstrap_and_registry_impl::{create_assistant_message, to_string, CloudSubscriptionItem},
+    runtime_and_routing_impl::{
+        approve_mcp_tool_inner_with_context, reject_mcp_tool_inner,
+        request_provider_chat_completion, resolve_local_model_connection,
+    },
+    sources_tools_and_chat_impl::{
+        archive_local_conversation_session, create_local_conversation_session,
+        list_local_conversation_sessions, rename_local_conversation_session,
+    },
+    support::*,
+};
+
 pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
     for tool in tools {
         let text = format!("name: {}\ndescription: {}", tool.name, tool.description);
@@ -122,7 +135,7 @@ pub async fn sync_cloud_subscriptions_v2(
     sync_cloud_subscriptions_inner(&state.mcp, access_token).await
 }
 
-async fn sync_cloud_subscriptions_inner(
+pub(crate) async fn sync_cloud_subscriptions_inner(
     state: &McpRuntimeState,
     access_token: String,
 ) -> Result<Vec<McpTool>, String> {

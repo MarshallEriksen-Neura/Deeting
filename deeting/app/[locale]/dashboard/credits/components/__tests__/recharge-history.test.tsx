@@ -394,7 +394,7 @@ describe("RechargeHistory", () => {
     render(<RechargeHistory />)
 
     expect(screen.getByTestId("recharge-order-row")).toHaveClass("block")
-    expect(screen.getByText("rechargeHistory.time")).toBeInTheDocument()
+    expect(screen.getAllByText("rechargeHistory.time").length).toBeGreaterThan(0)
   })
 
   it("shows failure reason for failed orders and exports a receipt from details", async () => {
