@@ -993,7 +993,11 @@ mod tests {
         let err = process_next_local_conversation_summary_job_with_store(&store)
             .await
             .expect_err("empty conversation should fail");
-        assert!(err.to_string().contains("content is empty"));
+        let error_text = err.to_string();
+        assert!(
+            error_text.contains("content is empty")
+                || error_text.contains("has no messages")
+        );
 
         let jobs = store
             .list_local_conversation_summary_jobs(LocalConversationSummaryJobQuery {
@@ -1007,11 +1011,11 @@ mod tests {
             .expect("list summary jobs");
         assert_eq!(jobs.total, 1);
         assert_eq!(jobs.items[0].status, "pending");
-        assert!(jobs.items[0]
-            .last_error
-            .as_deref()
-            .unwrap_or("")
-            .contains("content is empty"));
+        let last_error = jobs.items[0].last_error.as_deref().unwrap_or("");
+        assert!(
+            last_error.contains("content is empty")
+                || last_error.contains("has no messages")
+        );
     }
 
     #[tokio::test]

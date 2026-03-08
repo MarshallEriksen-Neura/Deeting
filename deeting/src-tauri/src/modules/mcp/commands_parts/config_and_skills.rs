@@ -89,3 +89,9 @@ pub async fn set_desktop_config(
         .map_err(to_string)
 }
 
+#[tauri::command]
+pub async fn get_local_gateway_url(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let url = state.mcp.local_gateway.base_url.read().await.clone();
+    Ok(url)
+}
+

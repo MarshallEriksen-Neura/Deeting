@@ -22,8 +22,6 @@ pub(crate) mod knowledge_documents_impl;
 pub(crate) mod config_and_skills_impl;
 #[path = "commands_parts/conversation_management.rs"]
 pub(crate) mod conversation_management_impl;
-#[path = "commands_parts/runtime_and_routing.rs"]
-pub(crate) mod runtime_and_routing_impl;
 
 pub mod admin;
 pub mod assistants;
@@ -49,12 +47,10 @@ pub(crate) use support::*;
 pub(crate) use assistants_knowledge_admin_impl::index_mcp_tools;
 pub(crate) use bootstrap_and_registry_impl::{index_local_assistants, register_local_skills_inner};
 pub(crate) use runtime::{
-    generate_local_conversation_title_with_model, request_local_auxiliary_text,
-    resolve_local_model_connection,
-};
-pub(crate) use runtime_and_routing_impl::{
-    rebuild_local_knowledge_vector_index, run_local_chat_complete_with_auto_code_mode,
-    start_local_conversation_summary_worker, start_local_periodic_worker, sync_source_inner,
+    generate_local_conversation_title_with_model, rebuild_local_knowledge_vector_index,
+    request_local_auxiliary_text, resolve_local_model_connection,
+    run_local_chat_complete_with_auto_code_mode, start_local_conversation_summary_worker,
+    start_local_periodic_worker, sync_source_inner,
 };
 
 #[cfg(test)]
@@ -71,19 +67,14 @@ pub(crate) use runtime::{
     LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 #[cfg(test)]
-pub(crate) use runtime_and_routing_impl::{
-    process_next_local_conversation_summary_job_with_store,
+pub(crate) use runtime::{
+    approve_mcp_tool_inner,
+    execute_or_queue_mcp_tool_call, normalize_chat_completion_response, reject_mcp_tool_inner,
+    process_next_local_conversation_summary_job_with_store, resolve_skill_env,
 };
 
 #[cfg(test)]
 pub(crate) use runtime::{
-    approve_mcp_tool_inner,
-    execute_or_queue_mcp_tool_call, normalize_chat_completion_response, reject_mcp_tool_inner,
-    resolve_skill_env,
-};
-
-#[cfg(test)]
-pub(crate) use runtime_and_routing_impl::{
     build_local_code_mode_entry_tools, build_local_sdk_search_result_with_runtime,
 };
 

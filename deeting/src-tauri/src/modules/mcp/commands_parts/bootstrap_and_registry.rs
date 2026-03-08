@@ -1,7 +1,7 @@
 use super::{
     assistants_knowledge_admin_impl::{index_mcp_tools, sync_cloud_subscriptions_inner},
     runtime::now_rfc3339,
-    runtime_and_routing_impl::sync_source_inner,
+    runtime::sync_source_inner,
     support::*,
 };
 
