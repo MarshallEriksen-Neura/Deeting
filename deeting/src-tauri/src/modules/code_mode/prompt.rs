@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-const DEFAULT_CODE_MODE_CAPABILITY_PROMPT: &str = "**Code Mode Capability (MANDATORY)**:\n**In Code Mode, direct tool calls are blocked for most tools. Only these tools may be called directly: {{allowed_direct_tools}}. Direct calls to blocked tools WILL BE BLOCKED and return an error.**\n\nRequired workflow:\n1) Use `search_sdk` to discover precise tool signatures.\n2) Produce one coherent Python execution plan using discovered tools.\n3) Execute once with `execute_code_plan`.\n\nConventions:\n- Prefer `from deeting_sdk import <tool_name>` when available.\n- Or call tools with `deeting.call_tool(name, **kwargs)`.\n- Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.\n- Always emit final structured output with `deeting.log(json.dumps(result, ensure_ascii=False))`.\n";
+const DEFAULT_CODE_MODE_CAPABILITY_PROMPT: &str = "**Code Mode Capability (MANDATORY)**:\n**In Code Mode, direct tool calls are blocked for most tools. Only these tools may be called directly: {{allowed_direct_tools}}. Direct calls to blocked tools WILL BE BLOCKED and return an error.**\n\n## When to Use Code Mode\nUse Code Mode only when the task requires tool discovery, execution, installation, file or system changes, or assistant switching.\n\n## Required Workflow\nRequired workflow:\n1) If an expert persona may help, call `consult_expert_network` to inspect candidates.\n2) Explicitly call `activate_assistant` before switching persona context.\n3) Use `search_sdk` to discover precise tool signatures.\n4) Produce one coherent Python execution plan using discovered tools.\n5) Execute once with `execute_code_plan`.\n6) Summarize what you changed, the key result, and any blocker or next step.\n\n## Behavior Rules\nBehavior rules:\n- Answer directly instead of using Code Mode when no execution or tool interaction is needed.\n- If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing.\n- Do not keep looping once enough evidence or results have been obtained.\n- Activate an assistant only when a specialist materially improves the task, and use `deactivate_assistant` when returning to the default context.\n\n## Execution Safety\nConventions:\n- Prefer `from deeting_sdk import <tool_name>` when available.\n- Or call tools with `deeting.call_tool(name, **kwargs)`.\n- Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.\n- Before any destructive or high-risk command, verify the current environment and working directory first.\n- Before modifying or deleting files, print or otherwise confirm the current working directory and the exact target path.\n- Preview the target before destructive changes when possible (for example by listing the directory or inspecting the file first).\n- Never use broad destructive targets like `rm -rf *`; always specify the exact file or directory path you intend to modify or remove.\n\n## Output Contract\n- Always emit final structured output with `deeting.log(json.dumps(result, ensure_ascii=False))`.\n";
 
 fn prompt_template_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -54,5 +54,33 @@ mod tests {
         assert!(prompt.contains("`search_sdk`"));
         assert!(prompt.contains("`execute_code_plan`"));
         assert!(!prompt.contains("{{allowed_direct_tools}}"));
+    }
+
+    #[test]
+    fn render_prompt_includes_destructive_command_safety_guard() {
+        let prompt = render_code_mode_capability_prompt(&["execute_code_plan".to_string()]);
+
+        assert!(prompt.contains("verify the current environment and working directory first"));
+        assert!(prompt.contains("confirm the current working directory and the exact target path"));
+        assert!(prompt.contains("Preview the target before destructive changes when possible"));
+        assert!(prompt.contains("Never use broad destructive targets like `rm -rf *`"));
+        assert!(prompt.contains("specify the exact file or directory path"));
+    }
+
+    #[test]
+    fn render_prompt_includes_code_mode_usage_and_stop_rules() {
+        let prompt = render_code_mode_capability_prompt(&["search_sdk".to_string()]);
+
+        assert!(prompt.contains("## When to Use Code Mode"));
+        assert!(prompt.contains("## Required Workflow"));
+        assert!(prompt.contains("## Behavior Rules"));
+        assert!(prompt.contains("## Execution Safety"));
+        assert!(prompt.contains("## Output Contract"));
+        assert!(prompt.contains("Use Code Mode only when the task requires tool discovery"));
+        assert!(prompt.contains("call `consult_expert_network` to inspect candidates"));
+        assert!(prompt.contains("Explicitly call `activate_assistant` before switching persona context"));
+        assert!(prompt.contains("Summarize what you changed, the key result, and any blocker or next step"));
+        assert!(prompt.contains("If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing"));
+        assert!(prompt.contains("Do not keep looping once enough evidence or results have been obtained"));
     }
 }

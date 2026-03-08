@@ -1,5 +1,5 @@
 use super::{
-    bootstrap_and_registry_impl::to_string,
+    common_impl::to_string,
     sources_tools_and_chat_impl::{
         archive_local_conversation_session, create_local_conversation_session,
         list_local_conversation_sessions, rename_local_conversation_session,

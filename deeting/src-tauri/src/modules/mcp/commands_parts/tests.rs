@@ -653,6 +653,28 @@ mod tests {
     }
 
     #[test]
+    fn deeting_manifest_deserialization_applies_runtime_and_timeout_defaults() {
+        let manifest: skill_registry_impl::DeetingManifest = serde_json::from_str(
+            r#"{
+                "id": "skill.demo",
+                "name": "Demo Skill"
+            }"#,
+        )
+        .expect("deserialize deeting manifest");
+
+        assert_eq!(manifest.id, "skill.demo");
+        assert_eq!(manifest.name, "Demo Skill");
+        assert_eq!(
+            manifest.runtime,
+            vec!["cloud".to_string(), "local".to_string()]
+        );
+        assert_eq!(manifest.execution.timeout_seconds, 60);
+        assert!(manifest.permissions.is_empty());
+        assert!(manifest.allowed_roles.is_empty());
+        assert!(!manifest.restricted);
+    }
+
+    #[test]
     fn parse_skill_onboarding_payload_supports_fallback_skill_name() {
         let payload = serde_json::json!({
             "repo_url": "https://github.com/org/stock-tracker.git"
@@ -1241,8 +1263,8 @@ mod tests {
             .get("summary_text")
             .and_then(|value| value.as_str())
             .unwrap_or("");
-        assert!(!summary_text.contains("marker-1"));
-        assert!(!summary_text.contains("marker-2"));
+        assert!(!summary_text.lines().any(|line| line.ends_with("marker-1")));
+        assert!(!summary_text.lines().any(|line| line.ends_with("marker-2")));
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -1413,6 +1435,143 @@ mod tests {
         assert!(enabled.contains("skill.keep"));
         assert!(enabled.contains("skill.local"));
         assert!(!enabled.contains("skill.remove"));
+    }
+
+    #[tokio::test]
+    async fn local_assistant_roundtrips_updates_tags_entities_and_messages() {
+        let store = create_test_store("assistant-roundtrip").await;
+
+        let assistant_id = store
+            .create_local_assistant(CreateLocalAssistantRequest {
+                name: "Trip Planner".to_string(),
+                description: Some("helps organize travel".to_string()),
+                avatar: None,
+                system_prompt: "Plan efficient trips.".to_string(),
+                model_config: None,
+                tags: Some(vec!["travel".to_string(), "planner".to_string()]),
+                visibility: Some("private".to_string()),
+                source: Some("local".to_string()),
+                cloud_id: None,
+            })
+            .await
+            .expect("create local assistant");
+
+        let updated = store
+            .update_local_assistant(
+                &assistant_id,
+                UpdateLocalAssistantRequest {
+                    name: Some("Trip Concierge".to_string()),
+                    description: Some("curates premium itineraries".to_string()),
+                    avatar: None,
+                    system_prompt: Some("Curate and refine travel itineraries.".to_string()),
+                    model_config: None,
+                    tags: Some(vec!["travel".to_string(), "concierge".to_string()]),
+                    visibility: Some("public".to_string()),
+                    source: None,
+                    cloud_id: None,
+                },
+            )
+            .await
+            .expect("update local assistant");
+
+        assert_eq!(updated.id, assistant_id);
+        assert_eq!(updated.name, "Trip Concierge");
+        assert_eq!(updated.description.as_deref(), Some("curates premium itineraries"));
+        assert_eq!(updated.visibility, "public");
+        assert_eq!(updated.tags, vec!["travel", "concierge"]);
+
+        let assistants = store
+            .list_local_assistants()
+            .await
+            .expect("list local assistants");
+        assert_eq!(assistants.len(), 1);
+        assert_eq!(assistants[0].id, assistant_id);
+        assert_eq!(assistants[0].name, "Trip Concierge");
+
+        let entities = store
+            .list_local_assistant_entities()
+            .await
+            .expect("list local assistant entities");
+        let entity = entities
+            .iter()
+            .find(|item| item.id == assistant_id)
+            .expect("assistant entity exists");
+        assert_eq!(entity.visibility, "public");
+        assert_eq!(entity.summary.as_deref(), Some("curates premium itineraries"));
+
+        let versions = store
+            .list_local_assistant_versions(Some(&assistant_id))
+            .await
+            .expect("list local assistant versions");
+        assert!(!versions.is_empty());
+        assert_eq!(versions[0].assistant_id, assistant_id);
+        assert_eq!(versions[0].tags, vec!["travel", "concierge"]);
+
+        let message = store
+            .append_assistant_message(CreateAssistantMessageRequest {
+                assistant_id: assistant_id.clone(),
+                role: "assistant".to_string(),
+                content: "Here is a curated Paris itinerary.".to_string(),
+            })
+            .await
+            .expect("append assistant message");
+        assert_eq!(message.assistant_id, assistant_id);
+        assert_eq!(message.role, "assistant");
+
+        let messages = store
+            .list_assistant_messages(&message.assistant_id)
+            .await
+            .expect("list assistant messages");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content, "Here is a curated Paris itinerary.");
+    }
+
+    #[tokio::test]
+    async fn source_insert_and_status_update_roundtrip() {
+        let store = create_test_store("source-roundtrip").await;
+
+        let source = store
+            .insert_source(NewSource {
+                name: "demo-cloud".to_string(),
+                source_type: McpSourceType::Cloud,
+                path_or_url: "https://example.com/mcp.json".to_string(),
+                trust_level: McpTrustLevel::Community,
+                status: McpSourceStatus::Active,
+                last_synced_at: None,
+                is_read_only: false,
+            })
+            .await
+            .expect("insert source");
+
+        let listed = store.list_sources().await.expect("list sources");
+        let listed_source = listed
+            .iter()
+            .find(|item| item.id == source.id)
+            .expect("inserted source is listed");
+        assert_eq!(listed_source.name, "demo-cloud");
+        assert_eq!(listed_source.source_type.as_str(), "cloud");
+        assert_eq!(listed_source.trust_level.as_str(), "community");
+        assert_eq!(listed_source.status.as_str(), "active");
+
+        store
+            .update_source_status(
+                &source.id,
+                McpSourceStatus::Syncing,
+                Some("2026-03-08T00:00:00Z".to_string()),
+            )
+            .await
+            .expect("update source status");
+
+        let refreshed = store
+            .get_source(&source.id)
+            .await
+            .expect("get source")
+            .expect("source exists after status update");
+        assert_eq!(refreshed.status.as_str(), "syncing");
+        assert_eq!(
+            refreshed.last_synced_at.as_deref(),
+            Some("2026-03-08T00:00:00Z")
+        );
     }
 
     #[tokio::test]

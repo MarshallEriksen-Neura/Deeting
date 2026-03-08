@@ -1,4 +1,4 @@
-use super::super::{bootstrap_and_registry_impl::to_string, support::*};
+use super::super::{common_impl::to_string, support::*};
 
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
 const MAX_MARKER_REEXEC: usize = 8;
@@ -75,7 +75,12 @@ pub(crate) async fn resolve_skill_env(
     tool: &McpTool,
 ) -> Result<Option<HashMap<String, String>>, String> {
     let mut env = tool.env.clone().unwrap_or_default();
-    let is_official_crawler_tool = tool.identifier.as_deref().map(|id| id.starts_with("official.skills.crawler/")).unwrap_or(matches!(tool.name.as_str(), "fetch_web_content" | "crawl_website"));
+    let is_official_crawler_tool = tool
+        .identifier
+        .as_deref()
+        .map(|id| id.starts_with("official.skills.crawler/"))
+        .unwrap_or(false)
+        || matches!(tool.name.as_str(), "fetch_web_content" | "crawl_website");
     if is_official_crawler_tool {
         env.remove("SCOUT_SERVICE_URL");
         let override_url = store.get_desktop_config(DESKTOP_CONFIG_SCOUT_BASE_URL_KEY).await.map_err(to_string)?;

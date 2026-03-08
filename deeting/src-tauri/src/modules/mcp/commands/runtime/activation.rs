@@ -1,4 +1,4 @@
-use super::super::{bootstrap_and_registry_impl::to_string, support::*};
+use super::super::{common_impl::to_string, support::*};
 use super::tool_schemas::normalize_tool_schema_for_llm;
 
 #[derive(Debug, Clone)]

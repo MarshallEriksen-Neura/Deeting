@@ -1,4 +1,4 @@
-use super::bootstrap_and_registry_impl::to_string;
+use super::common_impl::to_string;
 use super::support::*;
 
 #[tauri::command]

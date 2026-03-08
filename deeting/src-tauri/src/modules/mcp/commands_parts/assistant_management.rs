@@ -1,8 +1,163 @@
 use super::{
-    bootstrap_and_registry_impl::{create_assistant_message, to_string},
+    common_impl::to_string,
     runtime::{request_provider_chat_completion, resolve_local_model_connection},
     support::*,
 };
+
+pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[LocalAssistant]) {
+    let enabled_assistant_ids = app_state
+        .mcp
+        .store
+        .list_enabled_local_assistant_ids()
+        .await
+        .unwrap_or_default();
+
+    for assistant in assistants {
+        if !enabled_assistant_ids.contains(assistant.id.as_str()) {
+            continue;
+        }
+        let tags = if assistant.tags.is_empty() {
+            String::new()
+        } else {
+            assistant.tags.join(", ")
+        };
+        let text = format!(
+            "name: {}\ndescription: {}\ntags: {}",
+            assistant.name,
+            assistant.description.as_deref().unwrap_or(""),
+            tags
+        );
+        if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
+            let _ = app_state
+                .memory
+                .store
+                .upsert_asset(
+                    assistant.id.clone(),
+                    assistant.name.clone(),
+                    assistant.description.clone().unwrap_or_default(),
+                    "assistant".to_string(),
+                    "local_assistant".to_string(),
+                    None,
+                    vector,
+                    None,
+                )
+                .await;
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn list_local_assistants(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalAssistant>, String> {
+    state.mcp.store.list_local_assistants().await.map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_assistant_entities(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalAssistantEntity>, String> {
+    state
+        .mcp
+        .store
+        .list_local_assistant_entities()
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_local_assistant_tags(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalAssistantTag>, String> {
+    state
+        .mcp
+        .store
+        .list_local_assistant_tags()
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_local_assistant(
+    app_state: State<'_, AppState>,
+    payload: CreateLocalAssistantRequest,
+) -> Result<String, String> {
+    let assistant_id = app_state
+        .mcp
+        .store
+        .create_local_assistant(payload)
+        .await
+        .map_err(to_string)?;
+
+    if let Ok(Some(assistant)) = app_state.mcp.store.get_local_assistant(&assistant_id).await {
+        let app_state_clone = app_state.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            index_local_assistants(&app_state_clone, &[assistant]).await;
+        });
+    }
+    Ok(assistant_id)
+}
+
+#[tauri::command]
+pub async fn update_local_assistant(
+    app_state: State<'_, AppState>,
+    id: String,
+    payload: UpdateLocalAssistantRequest,
+) -> Result<LocalAssistant, String> {
+    let assistant = app_state
+        .mcp
+        .store
+        .update_local_assistant(&id, payload)
+        .await
+        .map_err(to_string)?;
+
+    let app_state_clone = app_state.inner().clone();
+    let assistant_clone = assistant.clone();
+    tauri::async_runtime::spawn(async move {
+        index_local_assistants(&app_state_clone, &[assistant_clone]).await;
+    });
+
+    Ok(assistant)
+}
+
+#[tauri::command]
+pub async fn delete_local_assistant(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    state
+        .mcp
+        .store
+        .delete_local_assistant(&id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn list_assistant_messages(
+    state: State<'_, AppState>,
+    assistant_id: String,
+) -> Result<Vec<LocalAssistantMessage>, String> {
+    state
+        .mcp
+        .store
+        .list_assistant_messages(&assistant_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn create_assistant_message(
+    state: State<'_, AppState>,
+    payload: CreateAssistantMessageRequest,
+) -> Result<LocalAssistantMessage, String> {
+    state
+        .mcp
+        .store
+        .append_assistant_message(payload)
+        .await
+        .map_err(to_string)
+}
 
 #[tauri::command]
 pub async fn get_local_assistant_routing_report(

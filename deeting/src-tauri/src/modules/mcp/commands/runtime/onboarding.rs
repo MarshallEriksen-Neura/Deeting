@@ -1,4 +1,4 @@
-use super::super::{bootstrap_and_registry_impl::*, support::*};
+use super::super::{skill_registry_impl::*, support::*};
 
 pub(crate) fn derive_skill_name_from_repo_url(repo_url: &str) -> String {
     let normalized_repo = repo_url.trim().trim_end_matches('/');

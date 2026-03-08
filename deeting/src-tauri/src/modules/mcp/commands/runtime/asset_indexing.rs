@@ -1,4 +1,4 @@
-use super::super::{bootstrap_and_registry_impl::to_string, support::*};
+use super::super::{common_impl::to_string, support::*};
 
 const LOCAL_EMBEDDING_REBUILD_PROGRESS_EVENT: &str = "local-embedding-rebuild-progress";
 

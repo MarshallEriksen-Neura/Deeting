@@ -1,4 +1,4 @@
-use super::super::{bootstrap_and_registry_impl::{to_string, LocalModelConnection}, support::*};
+use super::super::{common_impl::{to_string, LocalModelConnection}, support::*};
 use super::config::now_rfc3339;
 
 pub(crate) async fn resolve_local_model_connection(

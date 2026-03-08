@@ -1,7 +1,7 @@
 mod support;
 
-#[path = "commands_parts/bootstrap_and_registry.rs"]
-pub(crate) mod bootstrap_and_registry_impl;
+#[path = "commands_parts/common.rs"]
+pub(crate) mod common_impl;
 #[path = "commands_parts/sources_tools_and_chat.rs"]
 pub(crate) mod sources_tools_and_chat_impl;
 #[path = "commands_parts/assistants_knowledge_admin.rs"]
@@ -22,6 +22,10 @@ pub(crate) mod knowledge_documents_impl;
 pub(crate) mod config_and_skills_impl;
 #[path = "commands_parts/conversation_management.rs"]
 pub(crate) mod conversation_management_impl;
+#[path = "commands_parts/skill_registry.rs"]
+pub(crate) mod skill_registry_impl;
+#[path = "commands_parts/source_management.rs"]
+pub(crate) mod source_management_impl;
 
 pub mod admin;
 pub mod assistants;
@@ -45,16 +49,17 @@ pub use tools::*;
 #[cfg(test)]
 pub(crate) use support::*;
 pub(crate) use assistants_knowledge_admin_impl::index_mcp_tools;
-pub(crate) use bootstrap_and_registry_impl::{index_local_assistants, register_local_skills_inner};
+pub(crate) use assistant_management_impl::index_local_assistants;
 pub(crate) use runtime::{
     generate_local_conversation_title_with_model, rebuild_local_knowledge_vector_index,
     request_local_auxiliary_text, resolve_local_model_connection,
     run_local_chat_complete_with_auto_code_mode, start_local_conversation_summary_worker,
     start_local_periodic_worker, sync_source_inner,
 };
+pub(crate) use skill_registry_impl::register_local_skills_inner;
 
 #[cfg(test)]
-pub(crate) use bootstrap_and_registry_impl::{
+pub(crate) use skill_registry_impl::{
     normalize_skill_dir_name, sync_local_skill_installs_from_cloud_inner,
 };
 #[cfg(test)]

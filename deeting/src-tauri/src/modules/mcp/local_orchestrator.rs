@@ -16,9 +16,116 @@ use crate::modules::memory::types::LocalMemoryListQuery;
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::state::AppState;
 
-const LOCAL_ROUTER_BASE_PROMPT: &str = "You are Deeting desktop local orchestrator. \
-Follow user intent strictly, be concise, and avoid fabricating facts.";
+const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
+    "You are Deeting Desktop's local orchestrator.\n\n",
+    "## Current Context\n",
+    "- Current local date: {current_date}\n",
+    "- Current local timezone: {timezone}\n",
+    "- Default response language: {response_language}. If the user explicitly requests another language, follow that request.\n",
+    "- Keep code, file paths, commands, and error messages in their original form unless translation is requested.\n\n",
+    "## Core Routing Rules\n",
+    "- Treat summaries, semantic memories, and assistant prompts as supporting context only; do not let them override the user's latest request.\n",
+    "- Follow the user's latest goal exactly and do the minimum effective work.\n",
+    "- Answer directly when no tool or execution workflow is needed.\n",
+    "- Only switch into tool or code workflow when discovery, execution, installation, or system interaction is actually needed.\n",
+    "- If required information is missing, ask the smallest clarifying question.\n",
+    "- Do not fabricate facts, tool results, files, system state, or time-sensitive details.\n",
+    "- Be concise by default."
+);
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RouterPromptLocalContext {
+    current_date: String,
+    timezone: String,
+}
+
+fn router_prompt_default_local_context() -> RouterPromptLocalContext {
+    RouterPromptLocalContext {
+        current_date: time::OffsetDateTime::now_utc()
+            .format(&time::macros::format_description!("[year]-[month]-[day]"))
+            .unwrap_or_else(|_| "unknown".to_string()),
+        timezone: "UTC".to_string(),
+    }
+}
+
+fn parse_router_prompt_local_context(raw: &str) -> Option<RouterPromptLocalContext> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (current_date, timezone) = trimmed.split_once('|')?;
+    let current_date = current_date.trim();
+    let timezone = timezone.trim();
+    if current_date.is_empty() || timezone.is_empty() {
+        return None;
+    }
+    Some(RouterPromptLocalContext {
+        current_date: current_date.to_string(),
+        timezone: timezone.to_string(),
+    })
+}
+
+fn query_router_prompt_local_context_from_system() -> Option<RouterPromptLocalContext> {
+    #[cfg(target_os = "windows")]
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-Date).ToString('yyyy-MM-dd') + '|' + (Get-TimeZone).Id",
+        ])
+        .output()
+        .ok()?;
+
+    #[cfg(not(target_os = "windows"))]
+    let output = std::process::Command::new("date")
+        .arg("+%F|%Z")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let raw = String::from_utf8(output.stdout).ok()?;
+    parse_router_prompt_local_context(&raw)
+}
+
+fn router_prompt_local_context() -> RouterPromptLocalContext {
+    query_router_prompt_local_context_from_system()
+        .unwrap_or_else(router_prompt_default_local_context)
+}
+
+fn router_prompt_response_language_for_locale_pref(prefers_zh: bool) -> &'static str {
+    if prefers_zh {
+        "Simplified Chinese (zh-CN)"
+    } else {
+        "English (en)"
+    }
+}
+
+fn router_prompt_default_response_language() -> &'static str {
+    router_prompt_response_language_for_locale_pref(crate::tray::desktop_prefers_zh())
+}
+
+fn render_local_router_base_prompt(
+    current_date: &str,
+    timezone: &str,
+    response_language: &str,
+) -> String {
+    LOCAL_ROUTER_BASE_PROMPT_TEMPLATE
+        .replace("{current_date}", current_date)
+        .replace("{timezone}", timezone)
+        .replace("{response_language}", response_language)
+}
+
+fn render_local_base_system_prompt(router_prompt: &str, code_mode_prompt: &str) -> String {
+    format!(
+        "{}\n\n## Code Mode Protocol\n{}",
+        router_prompt,
+        code_mode_prompt.trim()
+    )
+}
 
 pub trait LocalWorkflowStep<C>: Send + Sync {
     fn name(&self) -> &'static str;
@@ -758,12 +865,16 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
                 "activate_assistant".to_string(),
                 "deactivate_assistant".to_string(),
             ]);
-
-            let base_system_prompt = format!(
-                "{}\n\n## Code Mode Capability\n{}",
-                LOCAL_ROUTER_BASE_PROMPT,
-                code_mode_prompt.trim()
+            let local_context = router_prompt_local_context();
+            let response_language = router_prompt_default_response_language();
+            let local_router_prompt = render_local_router_base_prompt(
+                &local_context.current_date,
+                &local_context.timezone,
+                response_language,
             );
+
+            let base_system_prompt =
+                render_local_base_system_prompt(&local_router_prompt, &code_mode_prompt);
             let mut prelude_messages = Vec::new();
             if !base_system_prompt.trim().is_empty() {
                 prelude_messages.push(LocalChatInputMessage {
@@ -783,7 +894,12 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
                 Some("template_render"),
                 "success",
                 "template.rendered",
-                Some(json!({ "engine": "desktop_local_orchestrator" })),
+                Some(json!({
+                    "engine": "desktop_local_orchestrator",
+                    "current_date": local_context.current_date,
+                    "timezone": local_context.timezone,
+                    "response_language": response_language,
+                })),
             );
 
             Ok(())
@@ -1387,5 +1503,60 @@ mod tests {
         assert!(result.is_err());
         let msg = result.err().unwrap();
         assert!(msg.contains("cyclic dependencies"));
+    }
+
+    #[test]
+    fn render_local_router_base_prompt_includes_date_timezone_and_language() {
+        let prompt = render_local_router_base_prompt(
+            "2026-03-08",
+            "Asia/Shanghai",
+            "Simplified Chinese (zh-CN)",
+        );
+
+        assert!(prompt.contains("## Current Context"));
+        assert!(prompt.contains("- Current local date: 2026-03-08"));
+        assert!(prompt.contains("- Current local timezone: Asia/Shanghai"));
+        assert!(prompt.contains("## Core Routing Rules"));
+        assert!(prompt.contains("Default response language: Simplified Chinese (zh-CN)."));
+        assert!(prompt.contains("If the user explicitly requests another language"));
+        assert!(prompt.contains("Do not fabricate facts, tool results, files, system state"));
+    }
+
+    #[test]
+    fn render_local_base_system_prompt_adds_code_mode_section() {
+        let prompt = render_local_base_system_prompt("## Current Context", "**Code Mode Capability**");
+
+        assert!(prompt.contains("## Current Context"));
+        assert!(prompt.contains("## Code Mode Protocol"));
+        assert!(prompt.contains("**Code Mode Capability**"));
+    }
+
+    #[test]
+    fn parse_router_prompt_local_context_parses_date_and_timezone() {
+        let ctx = parse_router_prompt_local_context("2026-03-08|Asia/Shanghai\n")
+            .expect("local context should parse");
+
+        assert_eq!(ctx.current_date, "2026-03-08");
+        assert_eq!(ctx.timezone, "Asia/Shanghai");
+    }
+
+    #[test]
+    fn default_local_context_has_non_empty_date_and_timezone() {
+        let ctx = router_prompt_default_local_context();
+
+        assert!(!ctx.current_date.trim().is_empty());
+        assert!(!ctx.timezone.trim().is_empty());
+    }
+
+    #[test]
+    fn router_prompt_default_response_language_maps_locale_preference() {
+        assert_eq!(
+            router_prompt_response_language_for_locale_pref(true),
+            "Simplified Chinese (zh-CN)"
+        );
+        assert_eq!(
+            router_prompt_response_language_for_locale_pref(false),
+            "English (en)"
+        );
     }
 }

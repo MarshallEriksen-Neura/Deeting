@@ -1,4 +1,4 @@
-use super::super::{bootstrap_and_registry_impl::{to_string, LocalModelConnection}, support::*};
+use super::super::{common_impl::{to_string, LocalModelConnection}, support::*};
 use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools, build_local_consult_expert_network_result,

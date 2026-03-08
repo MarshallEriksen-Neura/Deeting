@@ -1,4 +1,4 @@
-use super::{bootstrap_and_registry_impl::to_string, support::*};
+use super::{common_impl::to_string, support::*};
 
 #[tauri::command]
 pub async fn get_local_conversation_summary_queue_stats(

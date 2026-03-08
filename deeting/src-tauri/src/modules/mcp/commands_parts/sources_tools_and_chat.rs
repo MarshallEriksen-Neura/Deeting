@@ -1,6 +1,6 @@
 use super::{
     assistants_knowledge_admin_impl::index_mcp_tools,
-    bootstrap_and_registry_impl::to_string,
+    common_impl::to_string,
     runtime::{apply_config_payload, execute_or_queue_mcp_tool_call_with_context},
     support::*,
 };

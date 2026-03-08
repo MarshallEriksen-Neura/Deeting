@@ -1,6 +1,6 @@
 use super::{
     assistants_knowledge_admin_impl::spawn_embed_knowledge_chunks,
-    bootstrap_and_registry_impl::to_string,
+    common_impl::to_string,
     support::*,
 };
 
