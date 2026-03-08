@@ -5,13 +5,14 @@ import { useTranslations } from "next-intl"
 import useSWR from "swr"
 import { Save } from "lucide-react"
 
+import { ModelPicker, type ModelPickerGroup } from "@/components/models/model-picker"
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
-import { Input } from "@/components/ui/input"
 import {
   fetchAdminEmbeddingSetting,
   updateAdminEmbeddingSetting,
 } from "@/lib/api/admin-dashboard"
+import { fetchChatModels } from "@/lib/api/models"
 
 export function PageContent() {
   const t = useTranslations("admin.embeddingSettingsPage")
@@ -25,15 +26,59 @@ export function PageContent() {
     isLoading,
     mutate,
   } = useSWR("/api/v1/admin/settings/embedding", fetchAdminEmbeddingSetting)
+  const {
+    data: modelData,
+    error: modelError,
+    isLoading: isLoadingModels,
+  } = useSWR("/api/v1/models?capability=embedding", () =>
+    fetchChatModels({ capability: "embedding" })
+  )
 
   useEffect(() => {
-    if (data?.model_name) {
-      setSelected(data.model_name)
-    }
+    setSelected(data?.model_name?.trim() ?? "")
   }, [data?.model_name])
 
+  const availableModelGroups: ModelPickerGroup[] = (modelData?.instances ?? []).map((group) => ({
+    instance_id: group.instance_id,
+    instance_name: group.instance_name,
+    provider: group.provider,
+    models: group.models.map((model) => ({
+      id: model.id,
+      owned_by: model.owned_by,
+      provider_model_id: model.provider_model_id ?? undefined,
+      health_status: model.health_status ?? undefined,
+      is_platform: model.is_platform,
+      pricing: model.pricing ?? undefined,
+    })),
+  }))
+  const selectedValue = selected.trim()
+  const currentValue = data?.model_name?.trim() ?? ""
+  const isCurrentValueListed = availableModelGroups.some((group) =>
+    group.models.some((model) => {
+      const modelValue = model.provider_model_id ?? model.id
+      return modelValue === currentValue || model.id === currentValue
+    })
+  )
+  const modelGroups: ModelPickerGroup[] =
+    currentValue && !isCurrentValueListed
+      ? [
+          {
+            instance_id: "__current__",
+            instance_name: t("picker.currentGroup"),
+            provider: t("fields.current"),
+            models: [
+              {
+                id: currentValue,
+                provider_model_id: currentValue,
+              },
+            ],
+          },
+          ...availableModelGroups,
+        ]
+      : availableModelGroups
+
   const handleSave = async () => {
-    const nextModel = selected.trim()
+    const nextModel = selectedValue
     if (!nextModel || isSaving) return
 
     setIsSaving(true)
@@ -68,26 +113,37 @@ export function PageContent() {
                 {isLoading ? t("loading") : data?.model_name || "—"}
               </span>
             </div>
+            {!isLoading && currentValue && !isCurrentValueListed ? (
+              <p className="text-xs text-amber-300">{t("fields.currentUnlistedHint")}</p>
+            ) : null}
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-medium text-[var(--muted)]">{t("fields.newModelName")}</label>
-            <Input
-              type="text"
-              value={selected}
-              onChange={(event) => setSelected(event.target.value)}
-              placeholder={t("fields.placeholder")}
-              className="font-mono"
+            <ModelPicker
+              value={selectedValue}
+              onChange={setSelected}
+              modelGroups={modelGroups}
+              valueField="provider_model_id"
+              title={t("picker.title")}
+              subtitle={isLoadingModels ? t("picker.loading") : t("picker.subtitle")}
+              searchPlaceholder={t("picker.searchPlaceholder")}
+              emptyText={isLoadingModels ? t("picker.loading") : t("picker.empty")}
+              noResultsText={t("picker.noResults")}
+              disabled={isSaving || isLoadingModels}
+              showHeader={false}
+              scrollAreaClassName="h-64"
             />
           </div>
 
           {feedback && <p className="text-xs text-[var(--muted)]">{feedback}</p>}
           {error && !feedback && <p className="text-xs text-rose-300">{t("feedback.loadFailed")}</p>}
+          {modelError && <p className="text-xs text-rose-300">{t("feedback.modelsLoadFailed")}</p>}
 
           <div className="flex justify-end pt-2">
             <Button
               onClick={() => void handleSave()}
-              disabled={!selected.trim() || isSaving}
+              disabled={!selectedValue || isSaving || selectedValue === currentValue}
               size="sm"
             >
               <Save className="size-3.5" />

@@ -1277,12 +1277,23 @@
       "fields": {
         "current": "当前模型",
         "newModelName": "新模型名称",
-        "placeholder": "text-embedding-3-large"
+        "placeholder": "text-embedding-3-large",
+        "currentUnlistedHint": "当前已保存的模型不在可选列表中，可能已下线或暂不可用。"
+      },
+      "picker": {
+        "title": "可选模型",
+        "currentGroup": "当前配置",
+        "subtitle": "仅显示支持 Embedding 的模型",
+        "loading": "正在加载可选模型...",
+        "searchPlaceholder": "搜索 Embedding 模型",
+        "empty": "暂无可用的 Embedding 模型",
+        "noResults": "没有匹配的 Embedding 模型"
       },
       "feedback": {
         "updated": "Embedding 模型已更新",
         "updateFailed": "更新失败",
-        "loadFailed": "加载 Embedding 设置失败"
+        "loadFailed": "加载 Embedding 设置失败",
+        "modelsLoadFailed": "加载可选模型失败"
       },
       "actions": {
         "saving": "保存中...",

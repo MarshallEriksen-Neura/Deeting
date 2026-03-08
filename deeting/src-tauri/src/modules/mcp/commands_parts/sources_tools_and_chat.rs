@@ -1,9 +1,8 @@
 use super::{
     assistants_knowledge_admin_impl::index_mcp_tools,
     bootstrap_and_registry_impl::to_string,
-    runtime_and_routing_impl::{
-        apply_config_payload, execute_or_queue_mcp_tool_call_with_context,
-    },
+    runtime::apply_config_payload,
+    runtime_and_routing_impl::execute_or_queue_mcp_tool_call_with_context,
     support::*,
 };
 

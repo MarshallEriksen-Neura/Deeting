@@ -1277,12 +1277,23 @@
       "fields": {
         "current": "Current",
         "newModelName": "New Model Name",
-        "placeholder": "text-embedding-3-large"
+        "placeholder": "text-embedding-3-large",
+        "currentUnlistedHint": "The saved model is not in the current list and may be unavailable or removed."
+      },
+      "picker": {
+        "title": "Available Models",
+        "currentGroup": "Current Configuration",
+        "subtitle": "Only models with embedding capability are shown",
+        "loading": "Loading available models...",
+        "searchPlaceholder": "Search embedding models",
+        "empty": "No embedding models available",
+        "noResults": "No embedding models matched"
       },
       "feedback": {
         "updated": "Embedding model updated",
         "updateFailed": "Update failed",
-        "loadFailed": "Failed to load embedding setting"
+        "loadFailed": "Failed to load embedding setting",
+        "modelsLoadFailed": "Failed to load available models"
       },
       "actions": {
         "saving": "Saving...",
