@@ -135,24 +135,3 @@ pub struct CodeModeSyncPayloadItem {
     pub request_meta: Value,
     pub created_at: Option<String>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeModeSyncResultItem {
-    pub execution_id: String,
-    pub status: String,
-    pub id: Option<String>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeModeSyncSummary {
-    pub synced: i64,
-    pub exists: i64,
-    pub failed: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncLocalCodeModeExecutionsResponse {
-    pub results: Vec<CodeModeSyncResultItem>,
-    pub summary: CodeModeSyncSummary,
-}

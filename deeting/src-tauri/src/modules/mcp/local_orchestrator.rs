@@ -130,6 +130,7 @@ fn build_desktop_local_chat_engine(
         Box::new(AssistantPromptInjectionStep),
         Box::new(SemanticMemoryInjectionStep),
         Box::new(ActivePersonaInjectionStep),
+        Box::new(PromptVariantSelectionStep),
         Box::new(TemplateRenderStep),
     ])
 }
@@ -164,6 +165,8 @@ struct LocalWorkflowContext {
     summary_text: Option<String>,
     messages: Vec<LocalChatInputMessage>,
     system_messages: Vec<LocalChatInputMessage>,
+    // Bandit-selected prompt variant for `router:prompt` scene
+    selected_prompt_variant: Option<String>,
     // last emitted status snapshot for de-duplication and richer payloads
     status_stage: Option<String>,
     status_step: Option<String>,
@@ -198,6 +201,7 @@ impl LocalWorkflowContext {
             summary_text,
             messages,
             system_messages: Vec::new(),
+            selected_prompt_variant: None,
             status_stage: None,
             status_step: None,
             status_state: None,
@@ -627,6 +631,101 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ActivePersonaInjectionStep {
     }
 }
 
+struct PromptVariantSelectionStep;
+
+/// Prompt variant identifiers for the `router:prompt` bandit scene.
+const PROMPT_VARIANT_DETAILED: &str = "detailed";
+const PROMPT_VARIANT_CONCISE: &str = "concise";
+
+impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
+    fn name(&self) -> &'static str {
+        "prompt_variant_selection"
+    }
+
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut LocalWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let variants = [PROMPT_VARIANT_DETAILED, PROMPT_VARIANT_CONCISE];
+
+            // Attempt epsilon-greedy selection from the bandit store
+            let selected = match ctx
+                .app_state
+                .providers
+                .store
+                .list_bandit_arm_states(Some("router:prompt".to_string()))
+                .await
+            {
+                Ok(arms) if !arms.is_empty() => {
+                    let epsilon = arms.first().map(|a| a.epsilon).unwrap_or(0.1);
+                    let roll: f64 = {
+                        use std::collections::hash_map::DefaultHasher;
+                        use std::hash::{Hash, Hasher};
+                        let mut h = DefaultHasher::new();
+                        ctx.trace_id.hash(&mut h);
+                        (h.finish() % 1000) as f64 / 1000.0
+                    };
+                    if roll < epsilon {
+                        // Explore: pick based on trace_id hash parity
+                        let idx = (roll * 1000.0) as usize % variants.len();
+                        variants[idx]
+                    } else {
+                        // Exploit: pick the variant with the highest success rate
+                        let arm_map: std::collections::HashMap<String, &crate::modules::providers::types::BanditArmState> =
+                            arms.iter()
+                                .filter_map(|a| a.arm_id.as_ref().map(|id| (id.clone(), a)))
+                                .collect();
+                        let mut best = variants[0];
+                        let mut best_rate = -1.0_f64;
+                        for v in &variants {
+                            let rate = arm_map.get(*v).map(|a| {
+                                if a.total_trials > 0 {
+                                    a.successes as f64 / a.total_trials as f64
+                                } else {
+                                    0.0
+                                }
+                            }).unwrap_or(0.0);
+                            if rate > best_rate {
+                                best_rate = rate;
+                                best = v;
+                            }
+                        }
+                        best
+                    }
+                }
+                _ => {
+                    // No bandit data yet — default to "detailed"
+                    PROMPT_VARIANT_DETAILED
+                }
+            };
+
+            ctx.selected_prompt_variant = Some(selected.to_string());
+
+            // Inject a style hint system message based on the selected variant
+            let style_hint = match selected {
+                PROMPT_VARIANT_CONCISE => {
+                    "Respond concisely. Prefer short, direct answers."
+                }
+                _ => {
+                    "Respond in detail. Provide thorough, comprehensive answers."
+                }
+            };
+            ctx.push_system_message(format!("## Response Style\n{}", style_hint));
+
+            ctx.emit_status(
+                "remember",
+                Some("prompt_variant_selection"),
+                "success",
+                "prompt.variant.selected",
+                Some(json!({ "variant": selected })),
+            );
+
+            Ok(())
+        })
+    }
+}
+
 struct TemplateRenderStep;
 
 impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
@@ -640,6 +739,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
             "assistant_prompt_injection",
             "semantic_memory_injection",
             "active_persona_hint",
+            "prompt_variant_selection",
         ]
     }
 
@@ -1007,6 +1107,26 @@ pub async fn execute_local_orchestrated_chat(
         )
         .await;
     });
+
+    // Fire-and-forget: record bandit feedback for prompt variant selection
+    if let Some(variant) = ctx.selected_prompt_variant.clone() {
+        let bandit_store = app_state.providers.store.clone();
+        let prompt_success = !response_text.trim().is_empty();
+        let prompt_latency = ctx.started_at.elapsed().as_millis() as f64;
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = bandit_store
+                .record_feedback_simple(
+                    "router:prompt",
+                    &variant,
+                    prompt_success,
+                    Some(prompt_latency),
+                )
+                .await
+            {
+                log::warn!("bandit feedback failed for router:prompt: {}", e);
+            }
+        });
+    }
 
     let created = unix_seconds();
     let mut message = json!({

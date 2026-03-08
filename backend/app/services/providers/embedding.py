@@ -9,6 +9,10 @@ from typing import Any
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.http_client import create_async_http_client
+from app.protocols.canonical import CanonicalClientContext, CanonicalInputItem, CanonicalRequest
+from app.protocols.contracts import ProtocolProfile, RuntimeHook
+from app.protocols.runtime import UpstreamRequest, protocol_runtime_service
+from app.protocols.runtime.profile_resolver import build_protocol_profile_from_preset
 from app.models.provider_instance import ProviderInstance, ProviderModel
 from app.repositories.provider_credential_repository import ProviderCredentialRepository
 from app.repositories.provider_instance_repository import (
@@ -18,7 +22,6 @@ from app.repositories.provider_instance_repository import (
 from app.repositories.provider_preset_repository import ProviderPresetRepository
 from app.protocols.runtime.profile_resolver import resolve_profile_defaults_from_preset
 from app.services.providers.auth_resolver import resolve_auth_for_protocol
-from app.services.providers.upstream_url import build_upstream_url_with_params
 from app.services.secrets.manager import SecretManager
 from app.services.system import get_cached_embedding_model
 
@@ -29,9 +32,14 @@ logger = logging.getLogger(__name__)
 class _EmbeddingRuntime:
     model: str
     protocol: str
-    url: str
-    params: dict[str, Any]
-    headers: dict[str, str]
+    url: str | None = None
+    params: dict[str, Any] | None = None
+    headers: dict[str, str] | None = None
+    base_url: str | None = None
+    profile: ProtocolProfile | None = None
+    auth_type: str | None = None
+    auth_config: dict[str, Any] | None = None
+    secret: str | None = None
 
 
 # TODO: Duplicate implementation exists; consider consolidating embedding services.
@@ -169,14 +177,6 @@ class EmbeddingService:
     def _build_explicit_runtime(self, model: str) -> _EmbeddingRuntime:
         if not self.base_url or not self.api_key:
             raise RuntimeError("explicit embedding runtime requires api_key and base_url")
-
-        url, params = build_upstream_url_with_params(
-            base_url=self.base_url,
-            upstream_path=self.upstream_path or "embeddings",
-            protocol=self.protocol,
-            auto_append_v1=None,
-            api_version=self.api_version,
-        )
         auth_type, auth_config, resolved_headers = resolve_auth_for_protocol(
             protocol=self.protocol,
             provider="custom",
@@ -184,20 +184,19 @@ class EmbeddingService:
             auth_config=self.auth_config,
             default_headers=self.default_headers,
         )
-        headers = {"Content-Type": "application/json"}
-        headers.update(resolved_headers)
-        self._apply_auth_headers(
-            headers=headers,
-            auth_type=auth_type,
-            auth_config=auth_config,
-            secret=self.api_key,
-        )
         return _EmbeddingRuntime(
             model=model,
             protocol=self.protocol,
-            url=url,
-            params=params,
-            headers=headers,
+            base_url=self.base_url,
+            profile=self._build_embedding_profile(
+                protocol=self.protocol,
+                upstream_path=self.upstream_path or "embeddings",
+                default_headers=resolved_headers,
+                default_params={},
+            ),
+            auth_type=auth_type,
+            auth_config=auth_config,
+            secret=self.api_key,
         )
 
     async def _resolve_runtime_from_provider(self, model: str) -> _EmbeddingRuntime:
@@ -244,39 +243,44 @@ class EmbeddingService:
 
             upstream_path = str(selected.upstream_path or "").strip() or "embeddings"
             meta = instance.meta or {}
-            url, params = build_upstream_url_with_params(
-                base_url=base_url,
-                upstream_path=upstream_path,
-                protocol=protocol,
-                auto_append_v1=meta.get("auto_append_v1"),
-                api_version=meta.get("api_version"),
+            profile_default_headers, profile_default_params = (
+                resolve_profile_defaults_from_preset(preset, "embedding")
             )
             auth_type, auth_config, resolved_headers = resolve_auth_for_protocol(
                 protocol=meta.get("protocol"),
                 provider=preset.provider,
                 auth_type=preset.auth_type,
                 auth_config=preset.auth_config,
-                default_headers=resolve_profile_defaults_from_preset(
-                    preset, "embedding"
-                )[0],
+                default_headers=profile_default_headers,
             )
-            headers = {"Content-Type": "application/json"}
-            headers.update(resolved_headers)
-            self._apply_auth_headers(
-                headers=headers,
-                auth_type=auth_type,
-                auth_config=auth_config,
-                secret=secret,
-            )
-            if "anthropic" in protocol and "anthropic-version" not in headers:
-                headers["anthropic-version"] = "2023-06-01"
+            try:
+                profile = build_protocol_profile_from_preset(
+                    preset=preset,
+                    provider=preset.provider,
+                    capability="embedding",
+                    protocol=protocol,
+                    upstream_path=upstream_path,
+                    default_headers=resolved_headers,
+                    default_params=profile_default_params,
+                )
+            except ValueError:
+                profile = self._build_embedding_profile(
+                    protocol=protocol,
+                    upstream_path=upstream_path,
+                    default_headers=resolved_headers,
+                    default_params=profile_default_params,
+                )
+            if "anthropic" in protocol and "anthropic-version" not in resolved_headers:
+                resolved_headers["anthropic-version"] = "2023-06-01"
 
             return _EmbeddingRuntime(
                 model=model,
                 protocol=protocol,
-                url=url,
-                params=params,
-                headers=headers,
+                base_url=base_url,
+                profile=profile,
+                auth_type=auth_type,
+                auth_config=auth_config,
+                secret=secret,
             )
 
     @staticmethod
@@ -365,8 +369,8 @@ class EmbeddingService:
                 vectors.extend(await self._request_embeddings(runtime, [text]))
             return vectors
 
-        payload = self._build_payload(runtime, texts)
-        data = await self._post_embeddings_request(runtime, payload)
+        upstream_request = self._build_upstream_request(runtime, texts)
+        data = await self._post_embeddings_request(upstream_request)
         vectors = self._extract_vectors(data)
         if not vectors:
             raise RuntimeError("embedding provider returned no vectors")
@@ -412,10 +416,52 @@ class EmbeddingService:
                 weights.append(max(1, len(chunk)))
             return self._aggregate_chunk_vectors(vectors, weights)
 
-    async def _post_embeddings_request(
+    def _build_upstream_request(
         self,
         runtime: _EmbeddingRuntime,
-        payload: dict[str, Any],
+        texts: list[str],
+    ) -> UpstreamRequest:
+        if runtime.profile and runtime.base_url:
+            request = CanonicalRequest(
+                capability="embedding",
+                model=runtime.model,
+                input_items=[
+                    CanonicalInputItem(type="text", role="user", text=text)
+                    for text in texts
+                ],
+                client_context=CanonicalClientContext(channel="embedding"),
+            )
+            upstream_request = protocol_runtime_service.build_upstream_request(
+                request,
+                runtime.profile,
+                base_url=runtime.base_url,
+            )
+            headers = {"Content-Type": "application/json"}
+            headers.update(
+                {str(key): str(value) for key, value in upstream_request.headers.items()}
+            )
+            if runtime.secret:
+                self._apply_auth_headers(
+                    headers=headers,
+                    auth_type=runtime.auth_type,
+                    auth_config=runtime.auth_config,
+                    secret=runtime.secret,
+                )
+            upstream_request.headers = headers
+            return upstream_request
+
+        payload = self._build_payload(runtime, texts)
+        return UpstreamRequest(
+            method="POST",
+            url=str(runtime.url or ""),
+            headers=dict(runtime.headers or {}),
+            query=dict(runtime.params or {}),
+            body=payload,
+        )
+
+    async def _post_embeddings_request(
+        self,
+        upstream_request: UpstreamRequest,
     ) -> dict[str, Any]:
         timeout_seconds = float(
             getattr(settings, "QDRANT_TIMEOUT_SECONDS", 10.0) or 10.0
@@ -423,11 +469,12 @@ class EmbeddingService:
         max_attempts = max(1, int(self._EMBEDDING_UPSTREAM_RETRY_ATTEMPTS))
         for attempt in range(1, max_attempts + 1):
             async with create_async_http_client(timeout=timeout_seconds) as client:
-                response = await client.post(
-                    runtime.url,
-                    params=runtime.params or None,
-                    headers=runtime.headers,
-                    json=payload,
+                response = await client.request(
+                    upstream_request.method,
+                    upstream_request.url,
+                    params=upstream_request.query or None,
+                    headers=upstream_request.headers,
+                    json=upstream_request.body,
                 )
 
             if response.status_code >= 400:
@@ -591,3 +638,39 @@ class EmbeddingService:
     def _is_gemini_like(protocol: str) -> bool:
         proto = (protocol or "").lower()
         return "gemini" in proto or "google" in proto or "vertex" in proto
+
+    def _build_embedding_profile(
+        self,
+        *,
+        protocol: str,
+        upstream_path: str,
+        default_headers: dict[str, Any],
+        default_params: dict[str, Any],
+    ) -> ProtocolProfile:
+        mode = "gemini" if self._is_gemini_like(protocol) else "openai"
+        return ProtocolProfile(
+            profile_id=f"embedding:{mode}:{upstream_path}",
+            provider=protocol or "openai",
+            protocol_family="openai_chat",
+            capability="embedding",
+            transport={
+                "method": "POST",
+                "path": upstream_path,
+                "query_template": {},
+                "header_template": {},
+            },
+            request={
+                "template_engine": "simple_replace",
+                "request_template": {},
+                "request_builder": RuntimeHook(
+                    name="embedding_request_from_input_items",
+                    config={"mode": mode},
+                ),
+            },
+            response={"decoder": RuntimeHook(name="openai_chat"), "response_template": {}},
+            defaults={
+                "headers": dict(default_headers or {}),
+                "query": {},
+                "body": dict(default_params or {}),
+            },
+        )

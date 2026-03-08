@@ -1,6 +1,6 @@
 tools:
   - name: probe_provider
-    description: "Probe a provider to verify connectivity and field mapping."
+    description: "Probe a provider to verify connectivity, protocol-family fit, and compatibility with the unified provider runtime."
     parameters:
       type: object
       properties:
@@ -8,4 +8,6 @@ tools:
         base_url: { type: string }
         api_key: { type: string }
         model: { type: string }
+        capability: { type: string }
+        protocol: { type: string }
       required: ["provider_type", "base_url", "api_key", "model"]

@@ -10,7 +10,10 @@
     "edit": "Edit",
     "delete": "Delete",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "history": "History",
+    "rollback": "Rollback",
+    "confirmRollback": "Confirm Rollback"
   },
   "confirm": {
     "clearAll": {
@@ -20,16 +23,48 @@
     "delete": {
       "title": "Delete this memory?",
       "description": "AI will no longer remember this information after deletion."
+    },
+    "rollback": {
+      "title": "Rollback to this snapshot?",
+      "description": "This will restore the memory to the content from this snapshot."
     }
   },
   "fields": {
     "content": "Memory Content",
     "createdAt": "Created At",
-    "score": "Score"
+    "score": "Score",
+    "vitality": "Vitality",
+    "category": "Category",
+    "tags": "Tags"
   },
   "source": {
     "autoExtracted": "Auto-Extracted",
-    "unknown": "Unknown Source"
+    "unknown": "Unknown Source",
+    "manual": "Manual",
+    "conversation": "Conversation"
+  },
+  "search": {
+    "placeholder": "Search memories...",
+    "noResults": "No matching memories found",
+    "showing": "Showing {count} results"
+  },
+  "filter": {
+    "all": "All Categories",
+    "fact": "Fact",
+    "preference": "Preference",
+    "event": "Event",
+    "relation": "Relation"
+  },
+  "snapshot": {
+    "title": "Memory History",
+    "empty": "No history for this memory",
+    "action": {
+      "update": "Updated",
+      "delete": "Deleted",
+      "rollback": "Rolled back"
+    },
+    "rollbackSuccess": "Memory rolled back successfully",
+    "rollbackFailed": "Failed to rollback memory"
   },
   "success": {
     "updated": "Memory updated",

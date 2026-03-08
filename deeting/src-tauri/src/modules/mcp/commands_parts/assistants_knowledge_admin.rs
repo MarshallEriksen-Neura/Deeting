@@ -20,6 +20,99 @@ pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
     }
 }
 
+/// Fire-and-forget: embed all chunks of a successfully indexed document into LanceDB.
+///
+/// Reads chunks from SQLite, embeds each via the embedding service, and upserts
+/// into local_assets with `package_id = "knowledge:{document_id}"`.
+fn spawn_embed_knowledge_chunks(app_state: &AppState, file: &LocalKnowledgeFile) {
+    if file.status != "indexed" {
+        return;
+    }
+    let document_id = file.id.clone();
+    let document_name = file.name.clone();
+    let store = app_state.mcp.store.clone();
+    let providers = app_state.providers.clone();
+    let memory_service = app_state.memory.service.clone();
+
+    tokio::spawn(async move {
+        let chunks_result = store
+            .list_local_user_document_chunks(
+                &document_id,
+                crate::modules::mcp::types::LocalUserDocumentChunkListQuery {
+                    offset: None,
+                    limit: Some(500),
+                },
+            )
+            .await;
+
+        let chunks = match chunks_result {
+            Ok(response) => response.items,
+            Err(e) => {
+                log::warn!(
+                    "embed_knowledge_chunks: failed to list chunks for {}: {}",
+                    document_id,
+                    e
+                );
+                return;
+            }
+        };
+
+        let pkg_name = format!("knowledge:{}", document_id);
+        // Delete old embeddings for this document before re-inserting
+        let _ = memory_service.delete_assets_by_package(&pkg_name).await;
+
+        for chunk in &chunks {
+            let embed_result = providers.embedding.embed_text(&chunk.content).await;
+            let vector = match embed_result {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!(
+                        "embed_knowledge_chunks: failed to embed chunk {} of {}: {}",
+                        chunk.id,
+                        document_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let metadata = serde_json::json!({
+                "chunk_index": chunk.index,
+                "document_name": document_name,
+                "document_id": document_id,
+                "token_count": chunk.token_count,
+            });
+
+            if let Err(e) = memory_service
+                .upsert_asset(
+                    chunk.id.clone(),
+                    document_name.clone(),
+                    chunk.content.clone(),
+                    "knowledge_chunk".to_string(),
+                    "local_document".to_string(),
+                    Some(pkg_name.clone()),
+                    vector,
+                    Some(metadata),
+                )
+                .await
+            {
+                log::warn!(
+                    "embed_knowledge_chunks: failed to upsert chunk {} of {}: {}",
+                    chunk.id,
+                    document_id,
+                    e
+                );
+            }
+        }
+
+        log::info!(
+            "embed_knowledge_chunks: indexed {} chunks for document {}",
+            chunks.len(),
+            document_id
+        );
+    });
+}
+
 #[tauri::command]
 pub async fn sync_cloud_subscriptions_v2(
     _app: AppHandle,
@@ -209,12 +302,16 @@ pub async fn create_local_user_document(
         .await?;
     }
 
-    let state = &state.mcp;
-    state
+    let file = state
+        .mcp
         .store
         .create_local_user_document(payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    spawn_embed_knowledge_chunks(state.inner(), &file);
+
+    Ok(file)
 }
 
 #[tauri::command]
@@ -725,7 +822,18 @@ pub async fn delete_local_user_document(
         .store
         .delete_local_user_document(&file_id)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    // Fire-and-forget: clean up knowledge embeddings from LanceDB
+    let pkg_name = format!("knowledge:{}", file_id);
+    let memory_service = state.memory.service.clone();
+    tokio::spawn(async move {
+        if let Err(e) = memory_service.delete_assets_by_package(&pkg_name).await {
+            log::warn!("delete_local_user_document: failed to clean up embeddings: {}", e);
+        }
+    });
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -736,12 +844,16 @@ pub async fn retry_local_user_document(
     crate::modules::providers::model_guard::ensure_required_local_models_configured(state.inner())
         .await?;
 
-    state
+    let file = state
         .mcp
         .store
         .retry_local_user_document(&file_id)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    spawn_embed_knowledge_chunks(state.inner(), &file);
+
+    Ok(file)
 }
 
 #[tauri::command]

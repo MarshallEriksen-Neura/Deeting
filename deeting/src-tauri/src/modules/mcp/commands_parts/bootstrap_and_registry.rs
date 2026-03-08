@@ -346,6 +346,7 @@ pub(crate) async fn install_skill_to_local(
     repo_url: &str,
     revision: Option<&str>,
 ) -> Result<SkillInstallResult, String> {
+    let skill_install_start = std::time::Instant::now();
     let normalized_repo = repo_url.trim();
     if normalized_repo.is_empty() {
         return Err("repo_url is empty".to_string());
@@ -434,6 +435,19 @@ pub(crate) async fn install_skill_to_local(
 
     let indexed_tools =
         register_local_skills_inner(app.clone(), app_state).await.unwrap_or(0);
+
+    // Fire-and-forget: record bandit feedback for skill installation
+    let bandit_store = app_state.providers.store.clone();
+    let bandit_skill_id = skill_id.clone();
+    let bandit_elapsed = skill_install_start.elapsed().as_millis() as f64;
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = bandit_store
+            .record_feedback_simple("router:skill", &bandit_skill_id, true, Some(bandit_elapsed))
+            .await
+        {
+            log::warn!("bandit feedback failed for router:skill install: {}", e);
+        }
+    });
 
     Ok(SkillInstallResult {
         skill_id,

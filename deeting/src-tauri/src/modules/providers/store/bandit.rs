@@ -138,4 +138,34 @@ impl ProviderStore {
         tx.commit().await?;
         Ok(state)
     }
+
+    /// Convenience wrapper: compute a reward from a boolean success flag and
+    /// optional latency, then delegate to [`record_bandit_feedback`].
+    ///
+    /// `reward = if success { 1.0 } else { 0.0 }`
+    /// When `latency_ms` is provided the reward is scaled down proportionally
+    /// (capped so that latency >= 30 000 ms still yields 10 % of the base reward).
+    pub async fn record_feedback_simple(
+        &self,
+        scene: &str,
+        arm_id: &str,
+        success: bool,
+        latency_ms: Option<f64>,
+    ) -> Result<BanditArmState, ProviderError> {
+        let mut reward = if success { 1.0 } else { 0.0 };
+        if let Some(ms) = latency_ms {
+            reward *= 1.0 - (ms / 30000.0).min(0.9);
+        }
+        let payload = BanditFeedbackRequest {
+            scene: Some(scene.to_string()),
+            arm_id: arm_id.to_string(),
+            success,
+            latency_ms,
+            cost: None,
+            reward: Some(reward),
+            routing_config: None,
+            reward_metric_type: None,
+        };
+        self.record_bandit_feedback(payload).await
+    }
 }

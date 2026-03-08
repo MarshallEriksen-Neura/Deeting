@@ -4,14 +4,12 @@ import {
   fetchCodeModeExecutions,
   getLocalCodeModeBridgeStatus,
   replayCodeModeExecution,
-  syncLocalCodeModeExecutions,
 } from "@/lib/api/code-mode"
-import { getAuthToken, request } from "@/lib/http"
+import { request } from "@/lib/http"
 import { invoke } from "@tauri-apps/api/core"
 
 jest.mock("@/lib/http", () => ({
   request: jest.fn(),
-  getAuthToken: jest.fn(),
 }))
 
 jest.mock("@tauri-apps/api/core", () => ({
@@ -19,10 +17,8 @@ jest.mock("@tauri-apps/api/core", () => ({
 }))
 
 const mockRequest = request as jest.MockedFunction<typeof request>
-const mockGetAuthToken = getAuthToken as jest.MockedFunction<typeof getAuthToken>
 const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
 const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
-const originalUserSyncFlag = process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC
 const windowWithTauri = window as Window & {
   __TAURI__?: unknown
   __TAURI_INTERNALS__?: unknown
@@ -31,10 +27,8 @@ const windowWithTauri = window as Window & {
 describe("code mode api", () => {
   afterEach(() => {
     mockRequest.mockReset()
-    mockGetAuthToken.mockReset()
     mockInvoke.mockReset()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
-    process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC = originalUserSyncFlag
     delete windowWithTauri.__TAURI__
     delete windowWithTauri.__TAURI_INTERNALS__
   })
@@ -151,25 +145,6 @@ describe("code mode api", () => {
         context: null,
         max_calls: 16,
       },
-    })
-  })
-
-  it("syncs local executions via tauri command", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC = "true"
-    windowWithTauri.__TAURI__ = {}
-    mockGetAuthToken.mockReturnValue("token-123")
-    mockInvoke.mockResolvedValue({
-      results: [{ execution_id: "exec-1", status: "synced", id: "cloud-1" }],
-      summary: { synced: 1, exists: 0, failed: 0 },
-    } as unknown)
-
-    const result = await syncLocalCodeModeExecutions({ limit: 10 })
-
-    expect(result.summary.synced).toBe(1)
-    expect(mockInvoke).toHaveBeenCalledWith("sync_local_code_mode_executions", {
-      accessToken: "token-123",
-      limit: 10,
     })
   })
 })

@@ -233,9 +233,9 @@ def run_discovery_task(
         lines = [
             "You are a provider discovery agent.",
             f"Target capability: {cap}.",
-            "Use get_unified_schema(capability) to understand the gateway's internal request/response schema.",
-            "Extract provider details (name, slug, base_url, auth_type, auth_config_key, category, default_params).",
-            "Generate capability mapping: request_template + response_transform.",
+            "Use get_unified_schema(capability) to understand the gateway's canonical schema and protocol profile contract.",
+            "Extract provider details (name, slug, base_url, auth_type, auth_config_key, category, default headers/default params).",
+            "Generate capability mapping as a capability-specific protocol profile: protocol_family + transport + request template/builder + response template/output mapping, then validate it with verify_provider_template.",
             "Persist mappings via save_provider_field_mapping after ensuring provider preset exists.",
         ]
         if hint: lines.append(f"Provider name hint: {hint}.")
@@ -248,6 +248,9 @@ def run_discovery_task(
             instruction,
             user_id=user_id,
             model_hint=model_hint,
-            tool_plugin_ids=["official.skills.database"], # Simplified for now
+            tool_plugin_names=[
+                "core.registry.provider",
+                "system/database_manager",
+            ],
         )
     )

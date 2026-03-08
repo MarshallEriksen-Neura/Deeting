@@ -118,13 +118,14 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::memory::commands::search_local_memories,
         crate::modules::memory::commands::list_memory_snapshots,
         crate::modules::memory::commands::rollback_memory,
+        crate::modules::memory::commands::search_knowledge_semantic,
+        crate::modules::memory::commands::search_unified,
         // Local Code Mode Commands
         crate::modules::code_mode::commands::get_local_code_mode_bridge_status,
         crate::modules::code_mode::commands::execute_local_code_mode,
         crate::modules::code_mode::commands::list_local_code_mode_executions,
         crate::modules::code_mode::commands::get_local_code_mode_execution,
         crate::modules::code_mode::commands::replay_local_code_mode_execution,
-        crate::modules::code_mode::commands::sync_local_code_mode_executions,
         // Local Monitor Commands
         crate::modules::monitor::commands::list_local_monitor_tasks,
         crate::modules::monitor::commands::get_local_monitor_task,

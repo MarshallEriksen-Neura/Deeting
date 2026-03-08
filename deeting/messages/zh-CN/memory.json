@@ -10,7 +10,10 @@
     "edit": "编辑",
     "delete": "删除",
     "save": "保存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "history": "历史记录",
+    "rollback": "回滚",
+    "confirmRollback": "确认回滚"
   },
   "confirm": {
     "clearAll": {
@@ -20,16 +23,48 @@
     "delete": {
       "title": "删除此项记忆？",
       "description": "删除后 AI 将不再记得这条信息。"
+    },
+    "rollback": {
+      "title": "回滚至此快照？",
+      "description": "这将把记忆恢复到此快照时的内容。"
     }
   },
   "fields": {
     "content": "记忆内容",
     "createdAt": "创建时间",
-    "score": "分数"
+    "score": "分数",
+    "vitality": "活力值",
+    "category": "分类",
+    "tags": "标签"
   },
   "source": {
     "autoExtracted": "自动提取",
-    "unknown": "未知来源"
+    "unknown": "未知来源",
+    "manual": "手动添加",
+    "conversation": "对话提取"
+  },
+  "search": {
+    "placeholder": "搜索记忆...",
+    "noResults": "未找到匹配的记忆",
+    "showing": "显示 {count} 条结果"
+  },
+  "filter": {
+    "all": "全部分类",
+    "fact": "事实",
+    "preference": "偏好",
+    "event": "事件",
+    "relation": "关系"
+  },
+  "snapshot": {
+    "title": "记忆历史",
+    "empty": "此条记忆暂无历史记录",
+    "action": {
+      "update": "已更新",
+      "delete": "已删除",
+      "rollback": "已回滚"
+    },
+    "rollbackSuccess": "记忆已成功回滚",
+    "rollbackFailed": "记忆回滚失败"
   },
   "success": {
     "updated": "记忆已更新",

@@ -1,6 +1,30 @@
+import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
 import { fetchMemories } from "@/lib/api/memory"
+import {
+  searchLocalMemories,
+  type LocalMemorySearchItem,
+} from "@/lib/api/local-memory"
 import type { MemoryListResponse, MemoryItem } from "@/types/memory"
+
+export function useMemorySearch(query: string, limit: number = 10) {
+  const { data, error, isValidating, mutate } = useSWR(
+    query ? ["local-memory-search", query, limit] : null,
+    async () => {
+      const result = await searchLocalMemories({ query, limit })
+      return result.items
+    },
+    { revalidateOnFocus: false, dedupingInterval: 500 }
+  )
+
+  return {
+    results: data ?? [],
+    isLoading: !data && !error && !!query,
+    isSearching: isValidating,
+    error,
+    mutate,
+  }
+}
 
 export function useMemories(pageSize: number = 20) {
   const getKey = (pageIndex: number, previousPageData: MemoryListResponse | null) => {

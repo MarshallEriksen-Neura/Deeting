@@ -2774,6 +2774,23 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         state.assistant_name
                     ));
                     assistant_update = Some(LocalAssistantActivationUpdate::Activate(state));
+
+                    // Fire-and-forget: record bandit feedback for assistant activation
+                    let bandit_store = app_state.providers.store.clone();
+                    let bandit_assistant_id = activated_assistant_id.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = bandit_store
+                            .record_feedback_simple(
+                                "router:assistant",
+                                &bandit_assistant_id,
+                                true,
+                                None,
+                            )
+                            .await
+                        {
+                            log::warn!("bandit feedback failed for router:assistant: {}", e);
+                        }
+                    });
                 }
                 Err(err) => {
                     let meta = serde_json::json!({
@@ -2789,6 +2806,23 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     tool_call_meta.push(meta);
                     results.push(format!("Assistant activation failed: {}", err));
                     synthesized = true;
+
+                    // Fire-and-forget: record bandit failure for assistant activation
+                    let bandit_store = app_state.providers.store.clone();
+                    let bandit_assistant_id = assistant_id.to_string();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = bandit_store
+                            .record_feedback_simple(
+                                "router:assistant",
+                                &bandit_assistant_id,
+                                false,
+                                None,
+                            )
+                            .await
+                        {
+                            log::warn!("bandit feedback failed for router:assistant: {}", e);
+                        }
+                    });
                 }
             }
         } else if tool_name == "deactivate_assistant" {

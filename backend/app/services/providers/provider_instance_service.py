@@ -37,6 +37,7 @@ from app.protocols.runtime.profile_resolver import (
     resolve_profile_defaults_from_preset,
 )
 from app.protocols.runtime.response_decoders import decode_response
+from app.services.providers.auth_resolver import resolve_auth_for_protocol
 from app.services.providers.upstream_url import (
     build_upstream_url_with_params,
 )
@@ -74,12 +75,9 @@ class ProviderInstanceService:
         api_version: str | None = None,
     ) -> dict[str, Any]:
         """验证凭证有效性并尝试发现模型列表。"""
-        # 1. 构造探测 URL
         base_probe_url = base_url.rstrip("/")
         headers: dict[str, str] = {}
-        probe_urls: list[str] = []
 
-        # Vertex AI 特殊处理
         if "vertexai" in preset_slug.lower():
             url = base_probe_url
             if project_id and region:
@@ -91,8 +89,7 @@ class ProviderInstanceService:
             result["probe_url"] = url
             return result
 
-        # Azure 特殊处理
-        elif "azure" in preset_slug.lower() and resource_name:
+        if "azure" in preset_slug.lower() and resource_name:
             url = base_probe_url
             if "{resource}" in url:
                 url = url.replace("{resource}", resource_name)
@@ -104,57 +101,44 @@ class ProviderInstanceService:
                 result["probe_url"] = url
                 return result
 
-        # 协议处理
-        elif protocol == "claude" or protocol == "anthropic":
-            probe_urls = self._build_model_discovery_endpoints(
-                base_url=base_probe_url,
-                protocol=protocol,
-                auto_append_v1=False,
-            )
-            headers["x-api-key"] = api_key
-            headers["anthropic-version"] = "2023-06-01"
-        else:
-            probe_urls = self._build_model_discovery_endpoints(
-                base_url=base_probe_url,
-                protocol=protocol,
-                auto_append_v1=auto_append_v1,
-            )
-            headers["Authorization"] = f"Bearer {api_key}"
+        probe_urls, headers, params = self._build_model_discovery_request(
+            base_url=base_probe_url,
+            protocol=protocol,
+            provider=preset_slug,
+            auto_append_v1=auto_append_v1,
+            api_version=api_version,
+            auth_type=None,
+            auth_config=None,
+            default_headers=None,
+            secret=api_key,
+        )
 
         start = time.time()
         last_error: str | None = None
         last_latency = 0
         last_probe_url = base_probe_url
         try:
-            async with create_async_http_client(timeout=10.0) as client:
-                for probe_url in probe_urls:
-                    last_probe_url = probe_url
-                    try:
-                        resp = await client.get(probe_url, headers=headers)
-                    except Exception as e:
-                        last_error = f"Verification error: {e!s}"
-                        continue
-
-                    last_latency = int((time.time() - start) * 1000)
-                    if resp.status_code != 200:
-                        last_error = f"Verification failed: HTTP {resp.status_code} - {resp.text[:100]}"
-                        continue
-
-                    data = resp.json()
-                    models = []
-                    if isinstance(data, dict):
-                        if "data" in data and isinstance(data["data"], list):
-                            models = [m["id"] for m in data["data"] if "id" in m]
-                        elif "models" in data and isinstance(data["models"], list):
-                            models = [m["id"] for m in data["models"] if "id" in m]
-
-                    return {
-                        "success": True,
-                        "message": "Verification successful",
-                        "latency_ms": last_latency,
-                        "discovered_models": models,
-                        "probe_url": probe_url,
-                    }
+            data, last_probe_url = await self._fetch_model_discovery_payload(
+                candidates=probe_urls,
+                headers=headers,
+                params=params,
+            )
+            last_latency = int((time.time() - start) * 1000)
+            models = []
+            if isinstance(data, dict):
+                if "data" in data and isinstance(data["data"], list):
+                    models = [m["id"] for m in data["data"] if "id" in m]
+                elif "models" in data and isinstance(data["models"], list):
+                    models = [m["id"] for m in data["models"] if "id" in m]
+                elif "value" in data and isinstance(data["value"], list):
+                    models = [m["id"] for m in data["value"] if "id" in m]
+            return {
+                "success": True,
+                "message": "Verification successful",
+                "latency_ms": last_latency,
+                "discovered_models": models,
+                "probe_url": last_probe_url,
+            }
         except Exception as e:
             last_error = f"Verification error: {e!s}"
 
@@ -279,6 +263,28 @@ class ProviderInstanceService:
         return (base or "").rstrip("/")
 
     @staticmethod
+    def _apply_auth_headers(
+        headers: dict[str, str],
+        auth_type: str | None,
+        auth_config: dict[str, Any] | None,
+        secret: str | None,
+    ) -> None:
+        if not secret:
+            return
+        resolved_auth_type = str(auth_type or "bearer").strip().lower()
+        resolved_auth_config = auth_config if isinstance(auth_config, dict) else {}
+        if resolved_auth_type == "none":
+            return
+        if resolved_auth_type == "api_key":
+            header_name = str(resolved_auth_config.get("header") or "x-api-key").strip()
+            headers[header_name or "x-api-key"] = secret
+            return
+        if resolved_auth_type == "basic":
+            headers["Authorization"] = f"Basic {secret}"
+            return
+        headers["Authorization"] = f"Bearer {secret}"
+
+    @staticmethod
     def _build_model_discovery_endpoints(
         base_url: str,
         protocol: str | None,
@@ -305,6 +311,98 @@ class ProviderInstanceService:
             return [f"{base}/v1/models", f"{base}/models"]
         return [f"{base}/models", f"{base}/v1/models"]
 
+    def _build_model_discovery_request(
+        self,
+        *,
+        base_url: str,
+        protocol: str | None,
+        provider: str | None,
+        auto_append_v1: bool | None,
+        api_version: str | None,
+        auth_type: str | None,
+        auth_config: dict[str, Any] | None,
+        default_headers: dict[str, Any] | None,
+        secret: str | None,
+    ) -> tuple[list[str], dict[str, str], dict[str, Any]]:
+        headers: dict[str, str] = {
+            str(key): str(value) for key, value in (default_headers or {}).items()
+        }
+        params: dict[str, Any] = {}
+
+        proto_lower = (protocol or "").strip().lower()
+        provider_lower = (provider or "").strip().lower()
+
+        if "azure" in proto_lower or "azure" in provider_lower:
+            params["api-version"] = api_version or "2023-05-15"
+            self._apply_auth_headers(
+                headers,
+                "api_key",
+                {"header": "api-key", **(auth_config or {})},
+                secret,
+            )
+            return [f"{base_url}/openai/deployments"], headers, params
+
+        if "gemini" in provider_lower or "google" in provider_lower or "vertex" in provider_lower:
+            self._apply_auth_headers(
+                headers,
+                "api_key",
+                {"header": "x-goog-api-key", **(auth_config or {})},
+                secret,
+            )
+            return ["https://generativelanguage.googleapis.com/v1beta/models"], headers, params
+
+        if "ark" in proto_lower or "volcengine" in provider_lower:
+            self._apply_auth_headers(headers, auth_type, auth_config, secret)
+            return [f"{base_url.rstrip('/')}/api/v3/models"], headers, params
+
+        resolved_auth_type, resolved_auth_config, resolved_headers = resolve_auth_for_protocol(
+            protocol=protocol,
+            provider=provider,
+            auth_type=auth_type,
+            auth_config=auth_config,
+            default_headers=headers,
+        )
+        headers = resolved_headers
+        self._apply_auth_headers(headers, resolved_auth_type, resolved_auth_config, secret)
+        candidates = self._build_model_discovery_endpoints(
+            base_url=base_url,
+            protocol=protocol,
+            auto_append_v1=False if ("anthropic" in (proto_lower + provider_lower) or "claude" in proto_lower) else auto_append_v1,
+        )
+        return candidates, headers, params
+
+    async def _fetch_model_discovery_payload(
+        self,
+        *,
+        candidates: list[str],
+        headers: dict[str, str],
+        params: dict[str, Any],
+    ) -> tuple[dict[str, Any], str]:
+        if not candidates:
+            raise ValueError("failed_to_fetch_models_from_upstream")
+
+        data: Any = {}
+        last_error: Exception | None = None
+        last_url = candidates[0]
+        async with create_async_http_client(timeout=10.0) as client:
+            for candidate in candidates:
+                last_url = candidate
+                try:
+                    resp = await client.get(candidate, headers=headers, params=params)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    break
+                except Exception as exc:
+                    last_error = exc
+            else:
+                if last_error:
+                    raise last_error
+                raise ValueError("failed_to_fetch_models_from_upstream")
+
+        if not isinstance(data, dict):
+            raise ValueError("failed_to_fetch_models_from_upstream")
+        return data, last_url
+
     async def _fetch_models_from_upstream(
         self,
         preset,
@@ -328,72 +426,23 @@ class ProviderInstanceService:
         if not base_url:
             raise ValueError("base_url_not_configured")
 
-        headers: dict[str, str] = {}
-        params: dict[str, Any] = {}
-        url = ""
-        candidates: list[str] = []
-
-        proto_lower = (protocol or "").lower()
-        provider_lower = (provider or "").lower()
-
-        if "anthropic" in (proto_lower + provider_lower):
-            candidates = self._build_model_discovery_endpoints(
-                base_url=base_url,
-                protocol=protocol,
-                auto_append_v1=False,
-            )
-            headers["x-api-key"] = secret or ""
-            headers["anthropic-version"] = "2023-06-01"
-        elif "azure" in proto_lower or "azure" in provider_lower:
-            version = meta.get("api_version") or "2023-05-15"
-            url = f"{base_url}/openai/deployments"
-            params["api-version"] = version
-            headers["api-key"] = secret or ""
-            candidates = [url]
-        elif (
-            "gemini" in provider_lower
-            or "google" in provider_lower
-            or "vertex" in provider_lower
-        ):
-            # Gemini API key 通过 header 传递，避免拼接到 URL
-            url = "https://generativelanguage.googleapis.com/v1beta/models"
-            if secret:
-                headers["x-goog-api-key"] = secret
-            candidates = [url]
-        elif "ark" in proto_lower or "volcengine" in provider_lower:
-            # Volcengine Ark: GET /api/v3/models (OpenAI-compatible format)
-            url = f"{base_url.rstrip('/')}/api/v3/models"
-            if secret:
-                headers["Authorization"] = f"Bearer {secret}"
-            candidates = [url]
-        else:
-            candidates = self._build_model_discovery_endpoints(
-                base_url=base_url,
-                protocol=protocol,
-                auto_append_v1=meta.get("auto_append_v1"),
-            )
-            if secret:
-                headers["Authorization"] = f"Bearer {secret}"
-
-        if not candidates:
-            raise ValueError("failed_to_fetch_models_from_upstream")
-
-        data: Any = {}
-        last_error: Exception | None = None
-        async with create_async_http_client(timeout=10.0) as client:
-            for candidate in candidates:
-                url = candidate
-                try:
-                    resp = await client.get(url, headers=headers, params=params)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    break
-                except Exception as exc:
-                    last_error = exc
-            else:
-                if last_error:
-                    raise last_error
-                raise ValueError("failed_to_fetch_models_from_upstream")
+        profile_default_headers, _ = resolve_profile_defaults_from_preset(preset, "chat")
+        candidates, headers, params = self._build_model_discovery_request(
+            base_url=base_url,
+            protocol=protocol,
+            provider=provider,
+            auto_append_v1=meta.get("auto_append_v1"),
+            api_version=meta.get("api_version"),
+            auth_type=getattr(preset, "auth_type", None),
+            auth_config=getattr(preset, "auth_config", None),
+            default_headers=profile_default_headers,
+            secret=secret,
+        )
+        data, _ = await self._fetch_model_discovery_payload(
+            candidates=candidates,
+            headers=headers,
+            params=params,
+        )
 
         models: list[dict[str, Any]] = []
         if isinstance(data, dict):

@@ -128,6 +128,45 @@ pub struct LocalMemorySearchResult {
     pub items: Vec<LocalMemorySearchItem>,
 }
 
+// --- Knowledge search types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeSearchResult {
+    pub chunk_id: String,
+    pub content: String,
+    pub score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_index: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+// --- Unified search types ---
+
+/// Discriminator for the source of a unified search result.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum UnifiedSearchSource {
+    Memory,
+    Knowledge,
+    Summary,
+}
+
+/// A single result from unified retrieval (memory + knowledge + summary).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnifiedSearchResult {
+    pub id: String,
+    pub source: UnifiedSearchSource,
+    pub content: String,
+    pub score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
 // --- Snapshot types ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

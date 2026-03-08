@@ -484,6 +484,81 @@ impl MemoryService {
         self.store.local_asset_vector_dimension().await
     }
 
+    // --- knowledge search ---
+
+    /// Semantic search for knowledge chunks via LanceDB local_assets.
+    ///
+    /// Embeds the query, searches local_assets filtered by package_id prefix "knowledge:",
+    /// then joins with SQLite chunk metadata to produce enriched results.
+    pub async fn search_knowledge(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<crate::modules::memory::types::KnowledgeSearchResult>, MemoryError> {
+        let embedding_svc = match self.embedding.as_ref() {
+            Some(svc) => svc,
+            None => {
+                log::warn!("search_knowledge: embedding service not available, returning empty");
+                return Ok(Vec::new());
+            }
+        };
+
+        let query_vector = match embedding_svc.embed_text(query).await {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("search_knowledge: failed to embed query: {}", e);
+                return Ok(Vec::new());
+            }
+        };
+
+        let clamped_limit = limit.clamp(1, 100);
+        // Over-fetch to allow post-filtering by package_id prefix
+        let overfetch = clamped_limit * 3;
+        let results = self.store.search_assets(query_vector, overfetch, None).await?;
+
+        let mut hits = Vec::new();
+        for item in results {
+            let pkg_name = item.get("pkg_name").and_then(|v| v.as_str()).unwrap_or("");
+            if !pkg_name.starts_with("knowledge:") {
+                continue;
+            }
+            let document_id = pkg_name.strip_prefix("knowledge:").map(|s| s.to_string());
+            let chunk_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let content = item.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let score = item
+                .get("_distance")
+                .and_then(|v| v.as_f64())
+                .map(|d| d as f32)
+                .unwrap_or(0.0);
+            let metadata = item.get("metadata").cloned();
+            let chunk_index = metadata
+                .as_ref()
+                .and_then(|m| m.get("chunk_index"))
+                .and_then(|v| v.as_i64());
+            let document_name = metadata
+                .as_ref()
+                .and_then(|m| m.get("document_name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            hits.push(crate::modules::memory::types::KnowledgeSearchResult {
+                chunk_id,
+                content,
+                score,
+                document_id,
+                document_name,
+                chunk_index,
+                metadata,
+            });
+
+            if hits.len() >= clamped_limit {
+                break;
+            }
+        }
+
+        Ok(hits)
+    }
+
     // --- backfill helpers ---
 
     /// Embed a single memory's content and update its embedding in the store.

@@ -1,6 +1,6 @@
 tools:
   - name: get_unified_schema
-    description: "Get the internal standard schema for a specific capability."
+    description: "Get the internal canonical request/response schema and protocol profile expectations for a capability."
     parameters:
       type: object
       properties:
@@ -8,11 +8,23 @@ tools:
       required: ["capability"]
 
   - name: verify_provider_template
-    description: "Dry-run a Jinja2 template against a real provider API."
+    description: "Dry-run a provider protocol profile or request template against a real provider API."
     parameters:
       type: object
       properties:
+        capability: { type: string }
         base_url: { type: string }
         test_api_key: { type: string }
+        protocol_family: { type: string }
+        upstream_path: { type: string }
+        template_engine: { type: string }
         request_template: { type: object }
+        header_template: { type: object }
+        query_template: { type: object }
+        request_builder: { type: object }
+        response_template: { type: object }
+        output_mapping: { type: object }
+        default_headers: { type: object }
+        default_params: { type: object }
+        test_payload: { type: object }
       required: ["base_url", "test_api_key", "request_template"]

@@ -1,14 +1,11 @@
 import { z } from "zod"
 
-import { getAuthToken, request } from "@/lib/http"
+import { request } from "@/lib/http"
 
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
-
-const isUserCloudSyncEnabled = () =>
-  process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC === "true"
 
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
@@ -120,41 +117,12 @@ export type ExecuteLocalCodeModeResponse = z.infer<
   typeof ExecuteLocalCodeModeResponseSchema
 >
 
-export const CodeModeSyncResultItemSchema = z.object({
-  execution_id: z.string(),
-  status: z.string(),
-  id: z.string().nullable().optional(),
-  error: z.string().nullable().optional(),
-})
-
-export const CodeModeSyncSummarySchema = z.object({
-  synced: z.number(),
-  exists: z.number(),
-  failed: z.number(),
-})
-
-export const SyncLocalCodeModeExecutionsResponseSchema = z.object({
-  results: z.array(CodeModeSyncResultItemSchema),
-  summary: CodeModeSyncSummarySchema,
-})
-
-export type SyncLocalCodeModeExecutionsResponse = z.infer<
-  typeof SyncLocalCodeModeExecutionsResponseSchema
->
-
 // ── API functions ───────────────────────────────────────────
 
 export async function fetchCodeModeExecutions(
   query: CodeModeExecutionsQuery = {}
 ): Promise<CodeModeExecutionPage> {
   if (isTauriRuntime()) {
-    if (!query.cursor && isUserCloudSyncEnabled()) {
-      try {
-        await syncLocalCodeModeExecutions({ limit: query.size ?? 20 })
-      } catch (error) {
-        console.warn("[code-mode] sync local executions failed", error)
-      }
-    }
     const data = await invokeTauri<unknown>("list_local_code_mode_executions", {
       query: {
         cursor: query.cursor ?? null,
@@ -248,28 +216,6 @@ export async function executeLocalCodeMode(payload: {
     },
   })
   return ExecuteLocalCodeModeResponseSchema.parse(data)
-}
-
-export async function syncLocalCodeModeExecutions(options: {
-  accessToken?: string | null
-  limit?: number
-} = {}): Promise<SyncLocalCodeModeExecutionsResponse> {
-  const empty = {
-    results: [],
-    summary: { synced: 0, exists: 0, failed: 0 },
-  }
-  if (!isTauriRuntime() || !isUserCloudSyncEnabled()) {
-    return empty
-  }
-  const token = (options.accessToken ?? getAuthToken() ?? "").trim()
-  if (!token) {
-    return empty
-  }
-  const data = await invokeTauri<unknown>("sync_local_code_mode_executions", {
-    accessToken: token,
-    limit: options.limit ?? null,
-  })
-  return SyncLocalCodeModeExecutionsResponseSchema.parse(data)
 }
 
 /**

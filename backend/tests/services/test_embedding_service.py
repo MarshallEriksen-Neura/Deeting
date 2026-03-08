@@ -23,8 +23,8 @@ async def test_embedding_service_prefers_cached_model_when_not_explicit(monkeypa
             headers={"Authorization": "Bearer test"},
         )
 
-    async def _fake_post(self, runtime, payload):
-        captured["payload"] = payload
+    async def _fake_post(self, request):
+        captured["payload"] = request.body
         return {"data": [{"embedding": [0.1, 0.2]}]}
 
     monkeypatch.setattr(
@@ -62,9 +62,8 @@ async def test_embedding_service_keeps_explicit_model(monkeypatch):
     async def _fake_cached_model() -> str:
         return "db-embedding-model"
 
-    async def _fake_post(self, runtime, payload):
-        captured["runtime_model"] = runtime.model
-        captured["payload"] = payload
+    async def _fake_post(self, request):
+        captured["payload"] = request.body
         return {"data": [{"embedding": [0.3, 0.4]}]}
 
     async def _should_not_resolve_provider(self, model: str):
@@ -96,7 +95,6 @@ async def test_embedding_service_keeps_explicit_model(monkeypatch):
     vector = await service.embed_text("hello")
 
     assert vector == [0.3, 0.4]
-    assert captured["runtime_model"] == "explicit-model"
     assert captured["payload"] == {"model": "explicit-model", "input": "hello"}
     assert service.model == "explicit-model"
 
@@ -110,9 +108,8 @@ async def test_embedding_service_explicit_runtime_without_model_uses_cached_mode
     async def _fake_cached_model() -> str:
         return "db-embedding-model"
 
-    async def _fake_post(self, runtime, payload):
-        captured["runtime_model"] = runtime.model
-        captured["payload"] = payload
+    async def _fake_post(self, request):
+        captured["payload"] = request.body
         return {"data": [{"embedding": [0.5, 0.6]}]}
 
     async def _should_not_resolve_provider(self, model: str):
@@ -138,7 +135,6 @@ async def test_embedding_service_explicit_runtime_without_model_uses_cached_mode
     vector = await service.embed_text("hello")
 
     assert vector == [0.5, 0.6]
-    assert captured["runtime_model"] == "db-embedding-model"
     assert captured["payload"] == {
         "model": "db-embedding-model",
         "input": "hello",
@@ -202,8 +198,8 @@ async def test_embedding_service_splits_and_aggregates_when_input_too_long(monke
             headers={"Authorization": "Bearer test"},
         )
 
-    async def _fake_post(self, _runtime, payload):
-        text = str(payload.get("input") or "")
+    async def _fake_post(self, request):
+        text = str(request.body.get("input") or "")
         calls.append(text)
         if len(text) > 5:
             raise RuntimeError(
@@ -252,8 +248,8 @@ async def test_embedding_service_recursively_splits_when_chunk_still_too_long(mo
             headers={"Authorization": "Bearer test"},
         )
 
-    async def _fake_post(self, _runtime, payload):
-        text = str(payload.get("input") or "")
+    async def _fake_post(self, request):
+        text = str(request.body.get("input") or "")
         calls.append(text)
         if len(text) > 2:
             raise RuntimeError(
@@ -311,7 +307,7 @@ async def test_embedding_service_retries_on_upstream_5xx(monkeypatch):
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, *_args, **_kwargs):
+        async def request(self, *_args, **_kwargs):
             return self._responses.pop(0)
 
     responses = [
@@ -331,16 +327,14 @@ async def test_embedding_service_retries_on_upstream_5xx(monkeypatch):
     monkeypatch.setattr(embedding_module.asyncio, "sleep", _fake_sleep)
 
     service = EmbeddingService()
-    runtime = embedding_module._EmbeddingRuntime(
-        model="m",
-        protocol="openai",
+    request = embedding_module.UpstreamRequest(
+        method="POST",
         url="https://example.com/v1/embeddings",
-        params={},
         headers={},
+        query={},
+        body={"model": "m", "input": "hello"},
     )
-
-    payload = {"model": "m", "input": "hello"}
-    data = await service._post_embeddings_request(runtime, payload)
+    data = await service._post_embeddings_request(request)
     assert data == {"data": [{"embedding": [0.1, 0.2]}]}
     assert sleep_calls == [0.2]
 
@@ -365,7 +359,7 @@ async def test_embedding_service_raises_after_5xx_retry_exhausted(monkeypatch):
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, *_args, **_kwargs):
+        async def request(self, *_args, **_kwargs):
             return self._responses.pop(0)
 
     responses = [
@@ -386,14 +380,14 @@ async def test_embedding_service_raises_after_5xx_retry_exhausted(monkeypatch):
     monkeypatch.setattr(embedding_module.asyncio, "sleep", _fake_sleep)
 
     service = EmbeddingService()
-    runtime = embedding_module._EmbeddingRuntime(
-        model="m",
-        protocol="openai",
+    request = embedding_module.UpstreamRequest(
+        method="POST",
         url="https://example.com/v1/embeddings",
-        params={},
         headers={},
+        query={},
+        body={"model": "m", "input": "hello"},
     )
 
     with pytest.raises(RuntimeError, match="status=500"):
-        await service._post_embeddings_request(runtime, {"model": "m", "input": "hello"})
+        await service._post_embeddings_request(request)
     assert sleep_calls == [0.2, 0.4]

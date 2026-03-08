@@ -186,6 +186,69 @@ export async function deleteLocalMemory(id: string): Promise<LocalMemoryDeleteRe
   return LocalMemoryDeleteResponseSchema.parse(data)
 }
 
+// --- Snapshot & Rollback Types ---
+
+export const LocalMemorySnapshotSchema = z.object({
+  id: z.string(),
+  memory_id: z.string(),
+  action: z.string(),
+  old_content: z.string().nullable().optional(),
+  new_content: z.string().nullable().optional(),
+  old_metadata: z.record(z.string(), z.any()).nullable().optional(),
+  new_metadata: z.record(z.string(), z.any()).nullable().optional(),
+  created_at: z.string(),
+})
+
+export type LocalMemorySnapshot = z.infer<typeof LocalMemorySnapshotSchema>
+
+export async function listMemorySnapshots(
+  memoryId: string,
+  limit: number = 20
+): Promise<LocalMemorySnapshot[]> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<LocalMemorySnapshot[]>("list_memory_snapshots", {
+    memoryId,
+    limit,
+  })
+  return z.array(LocalMemorySnapshotSchema).parse(data)
+}
+
+export async function rollbackMemory(
+  snapshotId: string
+): Promise<LocalMemoryItem | null> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<LocalMemoryItem | null>("rollback_memory", {
+    snapshotId,
+  })
+  return data ? LocalMemoryItemSchema.parse(data) : null
+}
+
+// --- Unified Search ---
+
+export type UnifiedSearchSource = "memory" | "knowledge" | "summary"
+
+export const UnifiedSearchResultSchema = z.object({
+  id: z.string(),
+  source: z.enum(["memory", "knowledge", "summary"]),
+  content: z.string(),
+  score: z.number(),
+  metadata: z.record(z.string(), z.any()).nullable().optional(),
+})
+
+export type UnifiedSearchResultItem = z.infer<typeof UnifiedSearchResultSchema>
+
+export async function searchUnified(
+  query: string,
+  limit: number = 10
+): Promise<UnifiedSearchResultItem[]> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<UnifiedSearchResultItem[]>("search_unified", {
+    query,
+    limit,
+  })
+  return z.array(UnifiedSearchResultSchema).parse(data)
+}
+
 export async function clearLocalMemories(
   payload: ClearLocalMemoriesRequest = {}
 ): Promise<LocalMemoryClearResponse> {
@@ -197,4 +260,30 @@ export async function clearLocalMemories(
     },
   })
   return LocalMemoryClearResponseSchema.parse(data)
+}
+
+// --- Knowledge Semantic Search ---
+
+export const KnowledgeSearchResultSchema = z.object({
+  chunk_id: z.string(),
+  content: z.string(),
+  score: z.number(),
+  document_id: z.string().nullable().optional(),
+  document_name: z.string().nullable().optional(),
+  chunk_index: z.number().int().nullable().optional(),
+  metadata: z.record(z.string(), z.any()).nullable().optional(),
+})
+
+export type KnowledgeSearchResult = z.infer<typeof KnowledgeSearchResultSchema>
+
+export async function searchKnowledgeSemantic(
+  query: string,
+  limit?: number
+): Promise<KnowledgeSearchResult[]> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<KnowledgeSearchResult[]>("search_knowledge_semantic", {
+    query,
+    limit: limit ?? 10,
+  })
+  return z.array(KnowledgeSearchResultSchema).parse(data)
 }
