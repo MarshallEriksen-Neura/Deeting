@@ -10,4 +10,5 @@ export const defaultNavItems: NavItem[] = [
   { label: "images", href: "/gallery" },
   { label: "mcp", href: "/mcp" },
   { label: "dashboard", href: "/dashboard" },
+  { label: "download", href: "/download" },
 ]

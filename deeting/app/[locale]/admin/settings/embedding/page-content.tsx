@@ -97,7 +97,7 @@ export function PageContent() {
 
   return (
     <>
-      <GlassCard padding="default" hover="none" className="max-w-lg">
+      <GlassCard padding="default" hover="none" className="max-w-2xl">
         <div className="space-y-4">
           <div>
             <h3 className="text-sm font-semibold text-[var(--foreground)]">{t("section.title")}</h3>
@@ -132,7 +132,7 @@ export function PageContent() {
               noResultsText={t("picker.noResults")}
               disabled={isSaving || isLoadingModels}
               showHeader={false}
-              scrollAreaClassName="h-64"
+              scrollAreaClassName="h-80"
             />
           </div>
 

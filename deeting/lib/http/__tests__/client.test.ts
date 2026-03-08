@@ -57,6 +57,42 @@ describe("http client auth refresh", () => {
     expect(mockInstance.post).not.toHaveBeenCalled()
   })
 
+  test("anonymous 请求不会自动附带 Authorization", async () => {
+    const { mod, mockInstance } = await loadClientModule()
+    mod.setAuthToken("stale-token")
+
+    const onRequest = mockInstance.interceptors.request.use.mock.calls[0][0]
+    const result = onRequest({
+      url: "/api/v1/auth/login",
+      anonymous: true,
+      headers: {},
+    })
+
+    expect(result).toMatchObject({
+      url: "/api/v1/auth/login",
+      anonymous: true,
+      headers: {},
+    })
+  })
+
+  test("anonymous 请求会移除继承的 Authorization", async () => {
+    const { mod, mockInstance } = await loadClientModule()
+    mod.setAuthToken("stale-token")
+
+    const onRequest = mockInstance.interceptors.request.use.mock.calls[0][0]
+    const result = onRequest({
+      url: "/api/v1/auth/login",
+      anonymous: true,
+      headers: { Authorization: "Bearer inherited-token" },
+    })
+
+    expect(result).toMatchObject({
+      url: "/api/v1/auth/login",
+      anonymous: true,
+      headers: {},
+    })
+  })
+
   test("refresh 失败会清理本地会话并进入冷却", async () => {
     const { mod, mockInstance } = await loadClientModule()
 
@@ -116,5 +152,23 @@ describe("http client auth refresh", () => {
       headers: { Authorization: "Bearer new-token" },
     })
     expect(result).toEqual({ data: { ok: true } })
+  })
+
+  test("anonymous 请求遇到 401 时不会触发 refresh", async () => {
+    const { mod, mockInstance } = await loadClientModule()
+    mod.setAuthToken("expired-token")
+
+    const onRejected = mockInstance.interceptors.response.use.mock.calls[0][1]
+    await expect(
+      onRejected({
+        message: "Unauthorized",
+        response: { status: 401, data: { detail: "Invalid code" }, headers: {} },
+        config: { url: "/api/v1/auth/login", anonymous: true, headers: {} },
+        isAxiosError: true,
+      })
+    ).rejects.toMatchObject({ status: 401 })
+
+    expect(mockInstance.post).not.toHaveBeenCalled()
+    expect(mockInstance.request).not.toHaveBeenCalled()
   })
 })

@@ -3,7 +3,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu, X, Download } from "lucide-react"
+import { Menu, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
 
@@ -58,6 +58,10 @@ export function Header({
   }
 
   const visibleNavItems = navItems.filter((item) => {
+    // Hide download link on Tauri desktop
+    if (isTauri && item.href === "/download") {
+      return false
+    }
     if (!item.href.startsWith("/admin")) {
       return true
     }
@@ -140,23 +144,6 @@ export function Header({
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Action buttons + language — desktop only */}
           <div className="hidden md:flex items-center gap-1">
-            {/* Download button — hidden on Tauri desktop */}
-            {!isTauri && (
-              <GlassButton
-                asChild
-                size="sm"
-                className="h-8 px-3 text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0 shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 transition-all duration-200"
-              >
-                <a
-                  href="https://github.com/MarshallEriksen-Neura/Deeting/releases"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Download className="size-3.5" />
-                  Download
-                </a>
-              </GlassButton>
-            )}
             <ActionButtons />
             <LanguageSwitcher />
             <div className="mx-1 h-5 w-px bg-black/10 dark:bg-white/10" />
@@ -215,22 +202,6 @@ export function Header({
 
           {/* Action buttons + language switcher */}
           <div className="flex items-center gap-1 flex-wrap">
-            {!isTauri && (
-              <GlassButton
-                asChild
-                size="sm"
-                className="h-8 px-3 text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-0 shadow-md"
-              >
-                <a
-                  href="https://github.com/MarshallEriksen-Neura/Deeting/releases"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Download className="size-3.5" />
-                  Download
-                </a>
-              </GlassButton>
-            )}
             <ActionButtons />
             <LanguageSwitcher />
           </div>

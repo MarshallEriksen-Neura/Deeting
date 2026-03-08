@@ -1,6 +1,12 @@
 import { z } from "zod"
 import { request, setAuthToken, clearAuthToken } from "@/lib/http"
 
+const ANONYMOUS_AUTH_REQUEST = {
+  anonymous: true,
+  skipAuthRefresh: true,
+  withCredentials: false,
+} as const
+
 const AUTH_BASE = "/api/v1/auth"
 
 export const TokenPairSchema = z.object({
@@ -38,6 +44,7 @@ export async function sendLoginCode(
     url: `${AUTH_BASE}/login/code`,
     method: "POST",
     data: payload,
+    ...ANONYMOUS_AUTH_REQUEST,
   })
   return MessageResponseSchema.parse(data)
 }
@@ -49,6 +56,7 @@ export async function loginWithCode(
     url: `${AUTH_BASE}/login`,
     method: "POST",
     data: payload,
+    ...ANONYMOUS_AUTH_REQUEST,
   })
   const tokens = TokenPairSchema.parse(data)
   // access_token 写入内存，refresh_token 依赖后端 HttpOnly Cookie

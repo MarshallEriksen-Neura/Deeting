@@ -1,4 +1,4 @@
-use super::super::{runtime_and_routing_impl::request_provider_chat_completion, support::*};
+use super::super::{runtime::request_provider_chat_completion, support::*};
 use super::summary_format::{build_local_summary_prompt_input, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS};
 use super::text_utils::{extract_text_from_chat_completion_response, truncate_text_chars};
 

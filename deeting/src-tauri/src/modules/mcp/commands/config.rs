@@ -1,4 +1,4 @@
-pub use super::assistants_knowledge_admin_impl::{
+pub use super::config_and_skills_impl::{
     get_desktop_config, set_cloud_base_url, set_desktop_config,
 };
 pub use super::runtime_and_routing_impl::get_local_gateway_url;

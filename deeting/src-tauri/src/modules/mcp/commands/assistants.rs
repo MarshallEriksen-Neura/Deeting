@@ -1,4 +1,4 @@
-pub use super::assistants_knowledge_admin_impl::{
+pub use super::assistant_management_impl::{
     append_assistant_message, get_local_assistant_preview, get_local_assistant_routing_report,
     install_local_assistant, list_local_assistant_installs, list_local_assistant_installations,
     list_local_assistant_versions, preview_local_assistant, rate_local_assistant,

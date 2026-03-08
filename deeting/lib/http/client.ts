@@ -43,7 +43,9 @@ function loadAuthTokenFromStorage() {
   }
 }
 
-type RefreshableAxiosRequestConfig = AxiosRequestConfig & {
+export type RequestConfig = AxiosRequestConfig & {
+  /** 匿名请求：不自动附带 Authorization，也不参与 401 刷新重放 */
+  anonymous?: boolean
   /** 内部标记：避免在刷新请求或重放请求中重复触发刷新逻辑 */
   skipAuthRefresh?: boolean
 }
@@ -174,7 +176,18 @@ if (isTauri && typeof window !== 'undefined') {
 }
 
 apiClient.interceptors.request.use((config) => {
-  const headers = config.headers ?? {}
+  const headers = config.headers
+  const requestConfig = config as RequestConfig
+
+  if (requestConfig.anonymous) {
+    if (headers && typeof (headers as { delete?: unknown }).delete === "function") {
+      ;(headers as { delete(name: string): void }).delete("Authorization")
+    } else if (headers) {
+      delete (headers as Record<string, unknown>).Authorization
+    }
+
+    return config
+  }
 
   // 尝试从内存获取，若失败且在客户端环境，尝试从 storage 恢复（防止 SWR 请求早于 hydration）
   const token = getAuthToken()
@@ -182,25 +195,24 @@ apiClient.interceptors.request.use((config) => {
     headers.Authorization = `Bearer ${token}`
   }
 
-  return {
-    ...config,
-    headers,
-  }
+  return config
 })
 
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const status = error.response?.status
-    const originalConfig = (error.config ?? {}) as RefreshableAxiosRequestConfig
+    const originalConfig = (error.config ?? {}) as RequestConfig
     const requestUrl = originalConfig.url || ""
 
     const isRefreshRequest =
       requestUrl === REFRESH_PATH ||
       requestUrl?.endsWith("/auth/refresh") ||
       originalConfig.skipAuthRefresh
+    const isAnonymousRequest = Boolean(originalConfig.anonymous)
     const hasAuthContext = Boolean(
-      originalConfig.headers?.Authorization || getAuthToken()
+      !isAnonymousRequest &&
+        (originalConfig.headers?.Authorization || getAuthToken())
     )
 
     if (status === 401 && !isRefreshRequest && hasAuthContext && canAttemptRefresh()) {
@@ -213,7 +225,7 @@ apiClient.interceptors.response.use(
             ...originalConfig,
             headers,
             skipAuthRefresh: true,
-          } as RefreshableAxiosRequestConfig)
+          } as RequestConfig)
         }
       } catch {
         // fall through to ApiError
@@ -254,7 +266,7 @@ export async function refreshAccessToken(): Promise<string | null> {
         const response = await apiClient.post<TokenPairResponse>(
           REFRESH_PATH,
           undefined,
-          { skipAuthRefresh: true } as RefreshableAxiosRequestConfig
+          { skipAuthRefresh: true } as RequestConfig
         )
         const token = response.data.access_token
         if (token) {
@@ -295,7 +307,7 @@ function persistAccessToken(token: string) {
 }
 
 export async function request<T = unknown>(
-  config: AxiosRequestConfig
+  config: RequestConfig
 ): Promise<T> {
   const response = await apiClient.request<T>({
     method: "GET",
