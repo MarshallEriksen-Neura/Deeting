@@ -1075,6 +1075,8 @@ fn build_execution_contract_from_search_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::mcp::commands::runtime::build_local_tool_call_install_gate_error_meta;
+    use crate::modules::mcp::commands::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
     #[test]
     fn build_execution_contract_from_search_result_requires_callable_now() {
@@ -1099,5 +1101,20 @@ mod tests {
             contract.allowed_tools,
             vec!["fetch_page".to_string(), "search_web".to_string()]
         );
+    }
+
+    #[test]
+    fn install_gate_error_meta_uses_stable_not_installed_code() {
+        let meta = build_local_tool_call_install_gate_error_meta(
+            Some("call-123"),
+            "stock_quotes",
+            "tool 'stock_quotes' is not installed or enabled in local desktop runtime",
+        );
+        assert_eq!(
+            meta["error_code"],
+            serde_json::json!(LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE)
+        );
+        assert_eq!(meta["status"], serde_json::json!("error"));
+        assert_eq!(meta["name"], serde_json::json!("stock_quotes"));
     }
 }

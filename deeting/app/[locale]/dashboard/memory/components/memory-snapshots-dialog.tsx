@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { RotateCcw, Loader2, ArrowUpDown } from "lucide-react"
@@ -86,15 +86,22 @@ export function MemorySnapshotsDialog({
     }
   }, [memoryId])
 
+  useEffect(() => {
+    if (!open) {
+      setSelectedSnapshot(null)
+      setRollbackConfirm(null)
+      return
+    }
+
+    void loadSnapshots()
+    setSelectedSnapshot(null)
+  }, [open, loadSnapshots])
+
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (nextOpen) {
-        loadSnapshots()
-        setSelectedSnapshot(null)
-      }
       onOpenChange(nextOpen)
     },
-    [loadSnapshots, onOpenChange]
+    [onOpenChange]
   )
 
   const handleRollback = async () => {
@@ -191,13 +198,21 @@ export function MemorySnapshotsDialog({
 
                   return (
                     <div key={snap.id} className="space-y-2">
-                      <button
+                      <div
+                        role="button"
+                        tabIndex={0}
                         className={`w-full text-left rounded-xl p-4 border transition-all ${
                           isSelected
                             ? "border-blue-500/40 bg-blue-500/5"
                             : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
                         }`}
                         onClick={() => setSelectedSnapshot(isSelected ? null : snap)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault()
+                            setSelectedSnapshot(isSelected ? null : snap)
+                          }
+                        }}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -228,7 +243,7 @@ export function MemorySnapshotsDialog({
                             {snap.new_content}
                           </p>
                         )}
-                      </button>
+                      </div>
 
                       {isSelected && (snap.old_content || snap.new_content || snap.old_metadata || snap.new_metadata) && (
                         <div className="ml-4">
